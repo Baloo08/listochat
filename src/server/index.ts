@@ -56,9 +56,9 @@ async function startServer() {
 
   // Serve static assets in production, setup vite dev server in dev
   if (env.NODE_ENV === 'production') {
-    app.use(express.static(path.join(__dirname, '../../dist/client')));
+    app.use(express.static(__dirname));
     app.get('*', (req, res) => {
-      res.sendFile(path.join(__dirname, '../../dist/client/index.html'));
+      res.sendFile(path.join(__dirname, 'index.html'));
     });
   } else {
     try {
