@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { query } from './pool.js';
 import { User, UserRecord } from '../../shared/types.js';
 
-function hashPassword(password: string): string {
+export function hashPassword(password: string): string {
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
   return `${salt}:${hash}`;
@@ -57,8 +57,14 @@ export async function getUserById(id: string): Promise<User | null> {
   return result.rows[0] || null;
 }
 
-export async function createUser(data: Partial<UserRecord>): Promise<User> {
-  const pwdHash = data.passwordHash ? data.passwordHash : (data as any).password ? hashPassword((data as any).password) : null;
+export async function createUser(data: Partial<UserRecord> & { password?: string }): Promise<User> {
+  let pwdHash = null;
+  if (data.password) {
+    pwdHash = hashPassword(data.password);
+  } else if (data.passwordHash) {
+    pwdHash = data.passwordHash.includes(':') ? data.passwordHash : hashPassword(data.passwordHash);
+  }
+
   
   const result = await query(`
     INSERT INTO users (

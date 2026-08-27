@@ -56,10 +56,11 @@ router.post('/', async (req, res) => {
         tenantId: tenant.id,
         name: `${name} Admin`,
         email: adminEmail,
-        passwordHash: adminPassword,
+        password: adminPassword,
         role: 'admin'
       });
     }
+
 
     await saveAgentConfig(tenant.id, {
       systemPrompt: `Eres el Asistente Virtual Inteligente de ${name}. Atiende a los clientes con amabilidad y ayuda a agendar citas o tomar órdenes.`,
