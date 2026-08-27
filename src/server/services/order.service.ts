@@ -1,89 +1,91 @@
-import * as ordersRepo from '../repositories/orders.repo.js';
-import * as productsRepo from '../repositories/products.repo.js';
+import { createOrder, updateOrderStatus as updateOrderRepoStatus, confirmPayment as confirmPaymentRepo } from '../db/orders.repo.js';
+import { getProductsByTenant, updateProduct } from '../db/products.repo.js';
 import { sendMessage } from './evolution.js';
 
 export async function createOrderFromWhatsApp(tenantId: string, orderData: any): Promise<any> {
   try {
+    const allProducts = await getProductsByTenant(tenantId, true);
     const items = [];
-    let total = 0;
-    
-    for (const item of orderData.items) {
-      const product: any = await productsRepo.getProductByName(tenantId, item.productName);
-      if (product) {
-        items.push({
-          productId: product.id,
-          quantity: item.quantity,
-          price: product.price
+    let subtotal = 0;
+
+    for (const item of (orderData.items || [])) {
+      const product = allProducts.find(p => 
+        p.name.toLowerCase().includes((item.productName || '').toLowerCase())
+      );
+      
+      const unitPrice = product ? Number(product.price) : (item.unitPrice || 0);
+      const qty = item.quantity || 1;
+      const totalPrice = unitPrice * qty;
+      subtotal += totalPrice;
+
+      items.push({
+        productId: product?.id || null,
+        productName: product?.name || item.productName || 'Producto',
+        quantity: qty,
+        unitPrice,
+        totalPrice
+      });
+
+      if (product && product.trackStock) {
+        await updateProduct(product.id, tenantId, {
+          stock: Math.max(0, (product.stock || 0) - qty)
         });
-        total += product.price * item.quantity;
-        
-        await productsRepo.updateProductStock(tenantId, product.id, product.stock - item.quantity);
       }
     }
 
-    const order = await ordersRepo.createOrder(tenantId, {
-      total,
-      status: 'pending',
+    const order = await createOrder(
+      tenantId,
+      {
+        customerName: orderData.customerName || 'Cliente WhatsApp',
+        customerPhone: orderData.customerPhone || '',
+        source: 'whatsapp',
+        subtotal,
+        total: subtotal,
+        currency: 'CRC',
+        status: 'pending',
+        paymentMethod: orderData.paymentMethod || 'sinpe',
+        paymentStatus: 'pending'
+      },
       items
-    });
+    );
 
     return order;
   } catch (error) {
     console.error('Error creating order from WhatsApp:', error);
-    throw new Error('Failed to create order');
+    throw error;
   }
 }
 
 export async function createOrderFromStorefront(
   tenantId: string,
-  cartId: string,
   customerData: any,
+  items: any[],
   paymentMethod: string,
-  deliveryMethod: string
+  paymentReference?: string
 ): Promise<any> {
-  try {
-    const order = await ordersRepo.createOrder(tenantId, {
-      customerData,
-      paymentMethod,
-      deliveryMethod,
-      status: 'pending',
-      total: 0,
-      items: [] 
-    });
-    return order;
-  } catch (error) {
-    console.error('Error creating order from storefront:', error);
-    throw new Error('Failed to create order');
-  }
+  const subtotal = items.reduce((acc, i) => acc + (Number(i.unitPrice || 0) * (i.quantity || 1)), 0);
+  return await createOrder(
+    tenantId,
+    {
+      customerName: customerData.name,
+      customerPhone: customerData.phone,
+      customerAddress: customerData.address,
+      source: 'store',
+      subtotal,
+      total: subtotal,
+      paymentMethod: paymentMethod as any,
+      paymentStatus: paymentReference ? 'proof_sent' : 'pending',
+      paymentReference: paymentReference || null,
+      status: 'pending'
+    },
+    items
+  );
 }
 
-export async function updateOrderStatus(
-  tenantId: string, 
-  orderId: string, 
-  status: string, 
-  instanceName?: string, 
-  customerPhone?: string
-): Promise<any> {
-  try {
-    const updatedOrder = await ordersRepo.updateOrderStatus(tenantId, orderId, status);
-    
-    if (instanceName && customerPhone) {
-      const text = `Tu orden #${orderId} ha cambiado de estado a: ${status}.`;
-      await sendMessage(instanceName, customerPhone, text);
-    }
-    
-    return updatedOrder;
-  } catch (error) {
-    console.error('Error updating order status:', error);
-    throw new Error('Failed to update order status');
-  }
+export async function updateOrderStatus(tenantId: string, orderId: string, status: string): Promise<any> {
+  return await updateOrderRepoStatus(orderId, tenantId, status);
 }
 
-export async function confirmPayment(tenantId: string, orderId: string, reference: string): Promise<any> {
-  try {
-    return await ordersRepo.updatePaymentStatus(tenantId, orderId, 'paid', reference);
-  } catch (error) {
-    console.error('Error confirming payment:', error);
-    throw new Error('Failed to confirm payment');
-  }
+export async function confirmPayment(tenantId: string, orderId: string, reference?: string): Promise<any> {
+  return await confirmPaymentRepo(orderId, tenantId, reference || 'Confirmado manual');
 }

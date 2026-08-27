@@ -1,9 +1,9 @@
 import { callAI, TenantAIConfig } from './ai-provider.js';
 import { decrypt } from './encryption.js';
-import * as agentRepo from '../repositories/agent.repo.js';
-import * as servicesRepo from '../repositories/services.repo.js';
-import * as productsRepo from '../repositories/products.repo.js';
-import * as appointmentsRepo from '../repositories/appointments.repo.js';
+import { getAgentConfig } from '../db/agent-config.repo.js';
+import { getServicesByTenant } from '../db/services.repo.js';
+import { getProductsByTenant } from '../db/products.repo.js';
+import { getTenantById } from '../db/tenant.repo.js';
 
 export interface AgentProcessResult {
   replyText: string;
@@ -23,15 +23,11 @@ export async function processWhatsAppMessageWithAI(
   senderName: string,
   chatHistory: { role: 'user' | 'assistant', content: string }[]
 ): Promise<AgentProcessResult> {
-  
-  // 1. Fetch data from DB
-  const agentConfig: any = await agentRepo.getAgentConfig(tenantId);
-  const services: any[] = await servicesRepo.getServices(tenantId);
-  
-  const storeEnabled = agentConfig?.storeEnabled ?? false;
-  const products: any[] = storeEnabled ? await productsRepo.getProducts(tenantId) : [];
-  
-  // 2. Format date and time in Costa Rica
+  const tenant = await getTenantById(tenantId);
+  const agentConfig: any = await getAgentConfig(tenantId);
+  const services: any[] = await getServicesByTenant(tenantId);
+  const products: any[] = await getProductsByTenant(tenantId, true);
+
   const now = new Date();
   const crTime = new Intl.DateTimeFormat('es-CR', {
     timeZone: 'America/Costa_Rica',
@@ -39,14 +35,10 @@ export async function processWhatsAppMessageWithAI(
     timeStyle: 'long',
   }).format(now);
 
-  const availableSlots = 'Lunes a Viernes 8am-5pm (Simplificado)';
-  const paymentMethods = 'Efectivo, Tarjeta, Sinpe Móvil';
-  
-  // 3. Build dynamic prompt
   let prompt = `
-Eres un asistente virtual profesional para un negocio a través de WhatsApp.
+Eres un asistente virtual inteligente para ${tenant?.name || 'nuestro negocio'} en WhatsApp.
 Configuración del asistente:
-${agentConfig?.systemPrompt || 'Ayuda a los clientes con sus consultas.'}
+${agentConfig?.systemPrompt || 'Ayuda a los clientes con sus consultas cordialmente.'}
 
 Información actual:
 - Fecha y hora actual en Costa Rica: ${crTime}
@@ -54,20 +46,10 @@ Información actual:
 - Teléfono del cliente: ${senderPhone}
 
 Catálogo de Servicios:
-${services.map(s => `- ${s.name}: ${s.description} (Precio: ${s.price}, Duración: ${s.duration} min)`).join('\n')}
-`;
+${services.map(s => `- ${s.name}: ${s.description || ''} (Precio: ₡${Number(s.price || 0).toLocaleString()}, Duración: ${s.duration || '60 min'})`).join('\n')}
 
-  if (storeEnabled) {
-    prompt += `
 Catálogo de Productos:
-${products.map(p => `- ${p.name}: ${p.description} (Precio: ${p.price}, Stock: ${p.stock})`).join('\n')}
-
-Métodos de pago aceptados: ${paymentMethods}
-`;
-  }
-
-  prompt += `
-Disponibilidad: ${availableSlots}
+${products.map(p => `- ${p.name}: ${p.description || ''} (Precio: ₡${Number(p.price || 0).toLocaleString()})`).join('\n')}
 
 Historial de Chat:
 ${chatHistory.map(h => `${h.role === 'user' ? 'Cliente' : 'Asistente'}: ${h.content}`).join('\n')}
@@ -75,34 +57,38 @@ ${chatHistory.map(h => `${h.role === 'user' ? 'Cliente' : 'Asistente'}: ${h.cont
 Último mensaje del cliente:
 Cliente: ${userMessage}
 
-Instrucciones Especiales y Comandos Ocultos (NO los muestres al cliente, inclúyelos en tu respuesta SOLAMENTE si se cumplen las condiciones, usa formato exacto):
+Instrucciones Especiales y Comandos Ocultos (NO los muestres al cliente, inclúyelos en tu respuesta SOLAMENTE si se confirman los datos):
 - Si el cliente confirma querer agendar un servicio, incluye al final de tu respuesta EXACTAMENTE:
-  COMMAND_BOOKING: {"serviceName": "Nombre", "date": "YYYY-MM-DD", "time": "HH:MM"}
+  <<<COMMAND_BOOKING: {"service": "Nombre del servicio", "date": "YYYY-MM-DD", "time": "HH:MM"}>>>
 - Si el cliente confirma querer hacer una compra de productos, incluye al final de tu respuesta EXACTAMENTE:
-  COMMAND_ORDER: {"items": [{"productName": "Nombre", "quantity": 1}]}
-- Si el cliente pide hablar con un humano o no puedes ayudarle, incluye al final de tu respuesta EXACTAMENTE:
-  COMMAND_HANDOFF: {"reason": "Motivo breve"}
+  <<<COMMAND_ORDER: {"items": [{"productName": "Nombre del producto", "quantity": 1}]}>>>
+- Si el cliente pide hablar con un humano, incluye al final de tu respuesta:
+  <<<COMMAND_HANDOFF: {"reason": "Motivo breve"}>>>
 
 Reglas estrictas:
 1. NUNCA inventes productos, servicios o precios que no estén en el catálogo.
 2. Usa el formato de WhatsApp para texto (ejemplo: *negrita*, _cursiva_).
-3. Sé profesional y amable.
-4. Responde de forma concisa.
+3. Sé profesional, conciso y amable.
 `;
 
-  // 4. Setup AI config
+  let apiKey = '';
+  if (tenant?.aiApiKeyEncrypted) {
+    try { apiKey = decrypt(tenant.aiApiKeyEncrypted); } catch (e) {}
+  }
+  if (!apiKey) {
+    apiKey = process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY || '';
+  }
+
   const config: TenantAIConfig = {
-    provider: (agentConfig?.aiProvider as 'gemini' | 'openai' | 'anthropic') || 'gemini',
-    apiKey: decrypt(agentConfig?.aiApiKey || ''),
-    model: agentConfig?.aiModel || 'gemini-1.5-flash',
+    provider: (tenant?.aiProvider as any) || 'gemini',
+    apiKey,
+    model: tenant?.aiModel || agentConfig?.model || 'gemini-2.5-flash',
     temperature: agentConfig?.temperature || 0.7,
   };
 
-  // 5. Call AI
   const aiResult = await callAI(config, prompt);
   let replyText = aiResult.text;
-  
-  // 6. Parse response for commands
+
   let isBookingDetected = false;
   let bookingData;
   let isOrderDetected = false;
@@ -110,34 +96,33 @@ Reglas estrictas:
   let isHandoffRequested = false;
   let handoffReason;
 
-  const bookingRegex = /COMMAND_BOOKING:\s*({.*})/i;
-  const orderRegex = /COMMAND_ORDER:\s*({.*})/i;
-  const handoffRegex = /COMMAND_HANDOFF:\s*({.*})/i;
+  const bookingRegex = /<<<COMMAND_BOOKING:\s*({.*?})>>>/s;
+  const orderRegex = /<<<COMMAND_ORDER:\s*({.*?})>>>/s;
+  const handoffRegex = /<<<COMMAND_HANDOFF:\s*({.*?})>>>/s;
 
   const bookingMatch = replyText.match(bookingRegex);
   if (bookingMatch && bookingMatch[1]) {
     isBookingDetected = true;
-    try { bookingData = JSON.parse(bookingMatch[1]); } catch (e) { console.error('Failed to parse booking data', e); }
+    try { bookingData = JSON.parse(bookingMatch[1]); } catch (e) {}
   }
 
   const orderMatch = replyText.match(orderRegex);
   if (orderMatch && orderMatch[1]) {
     isOrderDetected = true;
-    try { orderData = JSON.parse(orderMatch[1]); } catch (e) { console.error('Failed to parse order data', e); }
+    try { orderData = JSON.parse(orderMatch[1]); } catch (e) {}
   }
 
   const handoffMatch = replyText.match(handoffRegex);
   if (handoffMatch && handoffMatch[1]) {
     isHandoffRequested = true;
-    try { handoffReason = JSON.parse(handoffMatch[1]).reason; } catch (e) { console.error('Failed to parse handoff reason', e); }
+    try { handoffReason = JSON.parse(handoffMatch[1]).reason; } catch (e) {}
   }
 
-  // 7. Clean response text
   replyText = replyText
     .replace(bookingRegex, '')
     .replace(orderRegex, '')
     .replace(handoffRegex, '')
-    .replace(/\*\*/g, '*') // Fix double asterisks to single asterisk for WhatsApp
+    .replace(/\*\*/g, '*')
     .trim();
 
   return {

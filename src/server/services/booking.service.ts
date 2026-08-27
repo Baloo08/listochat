@@ -1,35 +1,29 @@
-import * as appointmentsRepo from '../repositories/appointments.repo.js';
-import * as servicesRepo from '../repositories/services.repo.js';
+import { createAppointment } from '../db/appointments.repo.js';
+import { getServicesByTenant } from '../db/services.repo.js';
 
 export async function createBookingFromCommand(tenantId: string, bookingData: any): Promise<any> {
   try {
-    const serviceName = bookingData.serviceName;
-    const service: any = await servicesRepo.getServiceByName(tenantId, serviceName);
-    
-    if (!service) {
-      throw new Error(`Service not found: ${serviceName}`);
-    }
+    const services = await getServicesByTenant(tenantId);
+    const matchedService = services.find(s => 
+      s.name.toLowerCase().includes((bookingData.service || '').toLowerCase())
+    ) || services[0];
 
-    const price = service.price;
-    const duration = service.duration;
+    const price = matchedService ? matchedService.price : 0;
 
-    const startDate = new Date(`${bookingData.date}T${bookingData.time}:00`);
-    const endDate = new Date(startDate.getTime() + duration * 60000);
-
-    const appointment = await appointmentsRepo.createAppointment(tenantId, {
-      serviceId: service.id,
-      serviceName: service.name,
-      date: bookingData.date,
-      time: bookingData.time,
-      price,
-      duration,
-      endTime: `${endDate.getHours().toString().padStart(2, '0')}:${endDate.getMinutes().toString().padStart(2, '0')}`,
-      status: 'confirmed'
+    const appointment = await createAppointment(tenantId, {
+      name: bookingData.customerName || 'Cliente WhatsApp',
+      whatsapp: bookingData.customerPhone || '',
+      service: matchedService ? matchedService.name : (bookingData.service || 'Servicio General'),
+      date: bookingData.date || new Date().toISOString().split('T')[0],
+      time: bookingData.time || '10:00 AM',
+      amount: Number(price),
+      details: bookingData.vehicleInfo || '',
+      status: 'pending'
     });
 
     return appointment;
   } catch (error) {
     console.error('Error creating booking from command:', error);
-    throw new Error('Failed to create booking');
+    throw error;
   }
 }
