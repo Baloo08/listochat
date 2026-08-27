@@ -1,19 +1,40 @@
 import { Router } from 'express';
 import { generateToken, authenticateToken } from '../middleware/auth.js';
-// DB import would go here
+import { getUserByEmail, verifyPassword } from '../db/users.repo.js';
 
 const router = Router();
 
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
-    // Mock authentication for now
-    if (email === 'admin@admin.com' && password === 'admin') {
-      const token = generateToken('1', 'tenant-1', 'superadmin');
-      res.json({ token, user: { id: '1', email, role: 'superadmin', tenantId: 'tenant-1' } });
+    if (!email || !password) {
+      res.status(400).json({ error: 'Email y contraseña requeridos' });
       return;
     }
-    res.status(401).json({ error: 'Credenciales inválidas' });
+
+    const user = await getUserByEmail(null, email);
+    if (!user) {
+      res.status(401).json({ error: 'Credenciales inválidas' });
+      return;
+    }
+
+    const isValid = verifyPassword(password, user.passwordHash);
+    if (!isValid) {
+      res.status(401).json({ error: 'Credenciales inválidas' });
+      return;
+    }
+
+    const token = generateToken(user.id, user.tenantId, user.role);
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        tenantId: user.tenantId
+      }
+    });
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ error: 'Error del servidor' });
@@ -21,7 +42,7 @@ router.post('/login', async (req, res) => {
 });
 
 router.get('/me', authenticateToken, (req, res) => {
-  res.json({ user: req.user });
+  res.json(req.user);
 });
 
 export default router;

@@ -47,8 +47,8 @@ export async function updateAppointment(id: string, tenantId: string, data: Part
   const fields = ['name', 'whatsapp', 'service', 'date', 'time', 'amount', 'status', 'details', 'vehicleModel'];
   for (const field of fields) {
     if ((data as any)[field] !== undefined) {
-      const dbField = field.replace(/[A-Z]/g, letter => \`_\${letter.toLowerCase()}\`);
-      updates.push(\`\${dbField} = $\${paramIdx++}\`);
+      const dbField = field.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+      updates.push(`${dbField} = $${paramIdx++}`);
       params.push((data as any)[field]);
     }
   }

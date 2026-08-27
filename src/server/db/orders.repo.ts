@@ -79,14 +79,14 @@ export async function updateOrder(id: string, tenantId: string, data: Partial<Or
   const fields = ['status', 'paymentStatus', 'paymentReference', 'notes'];
   for (const field of fields) {
     if ((data as any)[field] !== undefined) {
-      const dbField = field.replace(/[A-Z]/g, letter => \`_\${letter.toLowerCase()}\`);
-      updates.push(\`\${dbField} = $\${paramIdx++}\`);
+      const dbField = field.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+      updates.push(`${dbField} = $${paramIdx++}`);
       params.push((data as any)[field]);
     }
   }
 
   if (updates.length > 0) {
-    updates.push(\`updated_at = CURRENT_TIMESTAMP\`);
+    updates.push(`updated_at = CURRENT_TIMESTAMP`);
     await query(`UPDATE orders SET ${updates.join(', ')} WHERE id = $1 AND tenant_id = $2`, params);
   }
   return getOrderById(id, tenantId);

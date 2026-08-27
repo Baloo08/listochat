@@ -71,14 +71,14 @@ export async function updateProduct(id: string, tenantId: string, data: Partial<
   const fields = ['name', 'slug', 'description', 'price', 'compareAtPrice', 'currency', 'category', 'tags', 'stock', 'trackStock', 'sku', 'featured', 'active'];
   for (const field of fields) {
     if ((data as any)[field] !== undefined) {
-      const dbField = field.replace(/[A-Z]/g, letter => \`_\${letter.toLowerCase()}\`);
-      updates.push(\`\${dbField} = $\${paramIdx++}\`);
+      const dbField = field.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+      updates.push(`${dbField} = $${paramIdx++}`);
       params.push((data as any)[field]);
     }
   }
 
   if (updates.length > 0) {
-    updates.push(\`updated_at = CURRENT_TIMESTAMP\`);
+    updates.push(`updated_at = CURRENT_TIMESTAMP`);
     await query(`UPDATE products SET ${updates.join(', ')} WHERE id = $1 AND tenant_id = $2`, params);
   }
   return getProductById(id, tenantId);

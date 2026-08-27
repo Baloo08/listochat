@@ -1,50 +1,49 @@
 import { Router } from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import { tenantContext } from '../middleware/tenantContext.js';
+import { getTenantById, updateTenant } from '../db/tenant.repo.js';
+import { getInstanceStatus, connectInstance, disconnectInstance, createInstance } from '../services/evolution.js';
 
 const router = Router();
-
 router.use(authenticateToken);
 router.use(tenantContext);
 
 router.get('/status', async (req, res) => {
   try {
-    const { tenantId } = req;
-    res.json({ status: 'disconnected' });
+    const tenant = await getTenantById(req.tenantId);
+    const instanceName = tenant?.evolutionInstance || `tenant_${req.tenantId.slice(0,8)}`;
+    const status = await getInstanceStatus(instanceName);
+    res.json(status.data || { status: 'disconnected' });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Error al obtener estado' });
+    res.json({ status: 'disconnected' });
   }
 });
 
 router.post('/connect', async (req, res) => {
   try {
-    const { tenantId } = req;
-    // Evolution API connect logic
-    res.json({ qrCode: 'data:image/png;base64,...' });
+    const tenant = await getTenantById(req.tenantId);
+    let instanceName = tenant?.evolutionInstance;
+    if (!instanceName) {
+      instanceName = `tenant_${req.tenantId.slice(0,8)}`;
+      await updateTenant(req.tenantId, { evolutionInstance: instanceName });
+      await createInstance(instanceName);
+    }
+    const connectRes = await connectInstance(instanceName);
+    res.json(connectRes.data || { success: true });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: 'Error al conectar instancia' });
+    res.status(500).json({ error: 'Error conectando instancia' });
   }
 });
 
 router.post('/disconnect', async (req, res) => {
   try {
-    const { tenantId } = req;
-    res.json({ message: 'Instancia desconectada' });
+    const tenant = await getTenantById(req.tenantId);
+    const instanceName = tenant?.evolutionInstance || `tenant_${req.tenantId.slice(0,8)}`;
+    await disconnectInstance(instanceName);
+    res.json({ success: true });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Error al desconectar' });
-  }
-});
-
-router.post('/send-message', async (req, res) => {
-  try {
-    const { tenantId } = req;
-    res.json({ message: 'Mensaje enviado' });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Error al enviar mensaje' });
+    res.status(500).json({ error: 'Error desconectando instancia' });
   }
 });
 

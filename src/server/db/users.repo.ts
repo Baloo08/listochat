@@ -5,7 +5,7 @@ import { User, UserRecord } from '../../shared/types.js';
 function hashPassword(password: string): string {
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
-  return \`\${salt}:\${hash}\`;
+  return `${salt}:${hash}`;
 }
 
 export function verifyPassword(password: string, hashString: string): boolean {
@@ -79,23 +79,23 @@ export async function updateUser(id: string, tenantId: string, data: Partial<Use
   const params: any[] = [id, tenantId];
   let paramIdx = 3;
 
-  if (data.name !== undefined) { updates.push(\`name = $\${paramIdx++}\`); params.push(data.name); }
-  if (data.email !== undefined) { updates.push(\`email = $\${paramIdx++}\`); params.push(data.email); }
-  if (data.role !== undefined) { updates.push(\`role = $\${paramIdx++}\`); params.push(data.role); }
-  if (data.avatarUrl !== undefined) { updates.push(\`avatar_url = $\${paramIdx++}\`); params.push(data.avatarUrl); }
-  if (data.active !== undefined) { updates.push(\`active = $\${paramIdx++}\`); params.push(data.active); }
+  if (data.name !== undefined) { updates.push(`name = $${paramIdx++}`); params.push(data.name); }
+  if (data.email !== undefined) { updates.push(`email = $${paramIdx++}`); params.push(data.email); }
+  if (data.role !== undefined) { updates.push(`role = $${paramIdx++}`); params.push(data.role); }
+  if (data.avatarUrl !== undefined) { updates.push(`avatar_url = $${paramIdx++}`); params.push(data.avatarUrl); }
+  if (data.active !== undefined) { updates.push(`active = $${paramIdx++}`); params.push(data.active); }
   
   if ((data as any).password) {
-    updates.push(\`password_hash = $\${paramIdx++}\`);
+    updates.push(`password_hash = $${paramIdx++}`);
     params.push(hashPassword((data as any).password));
   } else if (data.passwordHash !== undefined) {
-    updates.push(\`password_hash = $\${paramIdx++}\`);
+    updates.push(`password_hash = $${paramIdx++}`);
     params.push(data.passwordHash);
   }
 
   if (updates.length === 0) return getUserById(id);
 
-  updates.push(\`updated_at = CURRENT_TIMESTAMP\`);
+  updates.push(`updated_at = CURRENT_TIMESTAMP`);
 
   const result = await query(`
     UPDATE users SET ${updates.join(', ')}

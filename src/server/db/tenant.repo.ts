@@ -84,8 +84,8 @@ export async function updateTenant(id: string, data: Partial<Tenant>): Promise<T
   if (keys.length === 0) return getTenantById(id);
 
   const setClause = keys.map((key, index) => {
-    const dbKey = key.replace(/[A-Z]/g, letter => \`_\${letter.toLowerCase()}\`);
-    return \`\${dbKey} = $\${index + 2}\`;
+    const dbKey = key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+    return `${dbKey} = $${index + 2}`;
   }).join(', ');
 
   const values = keys.map(k => (data as any)[k]);

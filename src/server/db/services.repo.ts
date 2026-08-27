@@ -47,8 +47,8 @@ export async function updateService(id: string, tenantId: string, data: Partial<
   const fields = ['name', 'description', 'price', 'priceDisplay', 'duration', 'estimatedMinutes', 'category', 'notes', 'active'];
   for (const field of fields) {
     if ((data as any)[field] !== undefined) {
-      const dbField = field.replace(/[A-Z]/g, letter => \`_\${letter.toLowerCase()}\`);
-      updates.push(\`\${dbField} = $\${paramIdx++}\`);
+      const dbField = field.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+      updates.push(`${dbField} = $${paramIdx++}`);
       params.push((data as any)[field]);
     }
   }

@@ -1,17 +1,16 @@
 import { Router } from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import { tenantContext } from '../middleware/tenantContext.js';
+import { getServicesByTenant, getServiceById, createService, updateService, deleteService } from '../db/services.repo.js';
 
 const router = Router();
-
 router.use(authenticateToken);
 router.use(tenantContext);
 
 router.get('/', async (req, res) => {
   try {
-    const { tenantId } = req;
-    // DB fetch logic scoped to tenantId
-    res.json({ data: [] });
+    const services = await getServicesByTenant(req.tenantId);
+    res.json(services);
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Error al obtener servicios' });
@@ -20,9 +19,8 @@ router.get('/', async (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const { tenantId } = req;
-    // Create service logic scoped to tenantId
-    res.status(201).json({ message: 'Servicio creado' });
+    const service = await createService(req.tenantId, req.body);
+    res.status(201).json(service);
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Error al crear servicio' });
@@ -31,9 +29,8 @@ router.post('/', async (req, res) => {
 
 router.put('/:id', async (req, res) => {
   try {
-    const { tenantId } = req;
-    // Update service logic
-    res.json({ message: 'Servicio actualizado' });
+    const updated = await updateService(req.params.id, req.tenantId, req.body);
+    res.json(updated);
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Error al actualizar servicio' });
@@ -42,9 +39,8 @@ router.put('/:id', async (req, res) => {
 
 router.delete('/:id', async (req, res) => {
   try {
-    const { tenantId } = req;
-    // Delete service logic
-    res.json({ message: 'Servicio eliminado' });
+    await deleteService(req.params.id, req.tenantId);
+    res.json({ success: true });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Error al eliminar servicio' });
