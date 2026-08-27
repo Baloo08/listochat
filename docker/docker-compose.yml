@@ -54,10 +54,15 @@ services:
       - redisdata:/data
 
   evolution:
-    image: atendai/evolution-api:latest
+    image: evoapicloud/evolution-api:latest
     environment:
-      - AUTH_TOKEN=changeme
-      - AUTH_BEARER=changeme
+      - AUTHENTICATION_API_KEY=changeme
+      - DATABASE_ENABLED=true
+      - DATABASE_PROVIDER=postgresql
+      - DATABASE_CONNECTION_URI=postgres://saas:changeme@postgres:5432/whatsapp_saas
+      - DATABASE_SAVE_DATA_INSTANCE=true
+      - DATABASE_SAVE_DATA_NEW_MESSAGE=true
+      - DATABASE_SAVE_DATA_CONTACTS=true
     ports:
       - "8080:8080"
     volumes:
