@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgres://saas:changeme@postgres:5432/whatsapp_saas
+      - REDIS_URL=redis://redis:6379
+      - EVOLUTION_API_URL=http://evolution:8080
+      - EVOLUTION_API_KEY=changeme
+      - JWT_SECRET=changeme-random-64-chars
+      - ENCRYPTION_KEY=changeme-32-bytes-hex
+      - BASE_DOMAIN=localhost
+      - APP_URL=http://localhost:3000
+      - UPLOAD_DIR=/app/uploads
+      - PORT=3000
+    volumes:
+      - uploads_data:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      evolution:
+        condition: service_started
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=saas
+      - POSTGRES_PASSWORD=changeme
+      - POSTGRES_DB=whatsapp_saas
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U saas -d whatsapp_saas"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+
+  evolution:
+    image: atendai/evolution-api:latest
+    environment:
+      - AUTH_TOKEN=changeme
+      - AUTH_BEARER=changeme
+    ports:
+      - "8080:8080"
+    volumes:
+      - evolution_instances:/evolution/instances
+      - evolution_store:/evolution/store
+
+volumes:
+  pgdata:
+  redisdata:
+  uploads_data:
+  evolution_instances:
+  evolution_store:
