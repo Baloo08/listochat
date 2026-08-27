@@ -10,7 +10,9 @@ router.use(tenantContext);
 router.get('/', async (req, res) => {
   try {
     const result = await query(
-      'SELECT * FROM notifications_log WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT 100',
+      `SELECT id, tenant_id as "tenantId", recipient as "recipientPhone", message, 
+              trigger_type as "triggerType", status, created_at as "timestamp" 
+       FROM notifications_log WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT 100`,
       [req.tenantId]
     );
     res.json(result.rows);

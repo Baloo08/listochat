@@ -17,7 +17,7 @@ import UsersManagement from './components/UsersManagement';
 import StorefrontView from '../storefront/StorefrontView';
 import { 
   Home, MessageSquare, Calendar, Wrench, ShoppingBag, 
-  Package, ClipboardList, Bot, Phone, Bell, Users, Settings, LogOut 
+  Package, ClipboardList, Bot, Phone, Bell, Users, Settings, LogOut, ArrowLeft, ShieldAlert
 } from 'lucide-react';
 
 export default function App() {
@@ -33,7 +33,20 @@ export default function App() {
     }
   }
 
-  if (loading) return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>Cargando...</div>;
+  const isImpersonating = !!localStorage.getItem('original_token');
+  const impersonatedTenantName = localStorage.getItem('impersonated_tenant') || 'este negocio';
+
+  const handleReturnToSuperadmin = () => {
+    const originalToken = localStorage.getItem('original_token');
+    if (originalToken) {
+      localStorage.setItem('token', originalToken);
+      localStorage.removeItem('original_token');
+      localStorage.removeItem('impersonated_tenant');
+      window.location.reload();
+    }
+  };
+
+  if (loading) return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>Cargando Betico...</div>;
 
   if (!isAuthenticated || !user) {
     return <Login />;
@@ -77,7 +90,7 @@ export default function App() {
         case 'notificaciones': return <NotificationsCenter />;
         case 'usuarios': return <UsersManagement />;
         case 'configuracion': return <TenantSettings />;
-        default: return <div>Trabajando en esta sección...</div>;
+        default: return <Dashboard />;
       }
     }
   };
@@ -110,7 +123,8 @@ export default function App() {
                 textAlign: 'left',
                 gap: '10px',
                 cursor: 'pointer',
-                transition: 'all 0.2s'
+                transition: 'all 0.2s',
+                fontWeight: currentPage === item.id ? '600' : 'normal'
               }}
             >
               {item.icon}
@@ -122,10 +136,26 @@ export default function App() {
 
       {/* Main Content */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+        {/* Impersonation Banner */}
+        {isImpersonating && (
+          <div style={{ backgroundColor: '#fef3c7', borderBottom: '1px solid #fde68a', padding: '10px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#92400e', fontSize: '0.85rem', fontWeight: '600' }}>
+              <ShieldAlert size={18} />
+              <span>Modo Soporte SuperAdmin: Estás navegando en el portal de <strong>{impersonatedTenantName}</strong>.</span>
+            </div>
+            <button 
+              onClick={handleReturnToSuperadmin}
+              style={{ padding: '5px 12px', backgroundColor: '#92400e', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', fontWeight: 'bold' }}
+            >
+              <ArrowLeft size={14} /> Volver al Panel SuperAdmin
+            </button>
+          </div>
+        )}
+
         <header style={{ height: '60px', minHeight: '60px', backgroundColor: 'var(--surface)', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 20px' }}>
-          <h2 style={{ fontSize: '1.1rem', fontWeight: '600' }}>{nav.find(n => n.id === currentPage)?.label}</h2>
+          <h2 style={{ fontSize: '1.1rem', fontWeight: '600', margin: 0 }}>{nav.find(n => n.id === currentPage)?.label || 'Dashboard'}</h2>
           <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-            <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>{user.name || user.email || 'Super Admin'} ({user.role})</span>
+            <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>{user.name || user.email || 'Usuario'} ({user.role})</span>
             <button onClick={logout} style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 10px', border: '1px solid var(--border)', borderRadius: '4px', backgroundColor: 'transparent', color: 'var(--danger)', cursor: 'pointer' }}>
               <LogOut size={16} /> Salir
             </button>

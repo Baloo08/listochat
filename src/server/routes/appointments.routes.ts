@@ -30,11 +30,22 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const { status } = req.body;
-    const updated = await updateAppointmentStatus(req.params.id, req.tenantId, status);
+    const updated = await updateAppointmentStatus(req.params.id, req.tenantId!, status);
     res.json(updated);
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Error al actualizar cita' });
+  }
+});
+
+router.put('/:id/status', async (req, res) => {
+  try {
+    const { status } = req.body;
+    const updated = await updateAppointmentStatus(req.params.id, req.tenantId!, status);
+    res.json(updated);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Error al actualizar estado de cita' });
   }
 });
 

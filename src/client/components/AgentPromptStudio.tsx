@@ -71,7 +71,7 @@ export default function AgentPromptStudio() {
       });
       if (res.ok) {
         const data = await res.json();
-        setSimOutput(data.reply);
+        setSimOutput(data.replyText || data.reply || data.text || 'Sin respuesta.');
       } else {
         setSimOutput('Error en la simulación.');
       }

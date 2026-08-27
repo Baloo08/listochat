@@ -2,12 +2,14 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import fs from 'fs';
 import { env } from './config/env.js';
 import { runMigrations } from './db/migrations.js';
 
 // Route imports
 import authRoutes from './routes/auth.routes.js';
 import tenantRoutes from './routes/tenant.routes.js';
+import usersRoutes from './routes/users.routes.js';
 import servicesRoutes from './routes/services.routes.js';
 import appointmentsRoutes from './routes/appointments.routes.js';
 import chatsRoutes from './routes/chats.routes.js';
@@ -17,6 +19,9 @@ import notificationsRoutes from './routes/notifications.routes.js';
 import storeRoutes from './routes/store.routes.js';
 import productsRoutes from './routes/products.routes.js';
 import ordersRoutes from './routes/orders.routes.js';
+import dashboardRoutes from './routes/dashboard.routes.js';
+import auditRoutes from './routes/audit.routes.js';
+import uploadRoutes from './routes/upload.routes.js';
 import storefrontRoutes from './routes/storefront.routes.js';
 import webhookRoutes from './routes/webhook.routes.js';
 
@@ -26,22 +31,29 @@ const __dirname = path.dirname(__filename);
 async function startServer() {
   const app = express();
 
+  // Ensure upload directory exists
+  const uploadPath = env.UPLOAD_DIR || path.join(process.cwd(), 'uploads');
+  if (!fs.existsSync(uploadPath)) {
+    fs.mkdirSync(uploadPath, { recursive: true });
+  }
+
   // Middleware
   app.use(cors());
-  app.use(express.json({ limit: '10mb' }));
-  app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+  app.use(express.json({ limit: '25mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 
   // Static uploads
-  app.use('/uploads', express.static(env.UPLOAD_DIR || path.join(process.cwd(), 'public/uploads')));
+  app.use('/uploads', express.static(uploadPath));
 
   // Health endpoint
   app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+    res.json({ status: 'ok', brand: 'Betico', timestamp: new Date().toISOString() });
   });
 
   // API Routes
   app.use('/api/auth', authRoutes);
   app.use('/api/tenants', tenantRoutes);
+  app.use('/api/users', usersRoutes);
   app.use('/api/services', servicesRoutes);
   app.use('/api/appointments', appointmentsRoutes);
   app.use('/api/chats', chatsRoutes);
@@ -51,6 +63,9 @@ async function startServer() {
   app.use('/api/store', storeRoutes);
   app.use('/api/products', productsRoutes);
   app.use('/api/orders', ordersRoutes);
+  app.use('/api/dashboard', dashboardRoutes);
+  app.use('/api/audit-logs', auditRoutes);
+  app.use('/api/upload', uploadRoutes);
   app.use('/api/storefront', storefrontRoutes);
   app.use('/api/webhook/evolution', webhookRoutes);
 
@@ -79,11 +94,10 @@ async function startServer() {
     console.log('Database migrations completed.');
   } catch (err) {
     console.error('Failed to run database migrations:', err);
-    // Depending on strictness, we could process.exit(1) here
   }
 
   app.listen(env.PORT, '0.0.0.0', () => {
-    console.log(`Server listening on http://0.0.0.0:${env.PORT}`);
+    console.log(`Betico Server listening on http://0.0.0.0:${env.PORT}`);
   });
 }
 

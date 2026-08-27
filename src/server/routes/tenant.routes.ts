@@ -1,9 +1,10 @@
 import { Router } from 'express';
-import { authenticateToken, requireSuperAdmin } from '../middleware/auth.js';
+import { authenticateToken, requireSuperAdmin, generateToken } from '../middleware/auth.js';
 import { getAllTenants, getTenantById, createTenant, updateTenant, deleteTenant } from '../db/tenant.repo.js';
 import { createUser } from '../db/users.repo.js';
 import { saveAgentConfig } from '../db/agent-config.repo.js';
 import { saveStoreSettings } from '../db/store-settings.repo.js';
+import { logAuditEvent } from '../db/audit.repo.js';
 
 const router = Router();
 
@@ -61,7 +62,6 @@ router.post('/', async (req, res) => {
       });
     }
 
-
     await saveAgentConfig(tenant.id, {
       systemPrompt: `Eres Betico, el Asistente Virtual Inteligente de ${name}. Atiende a los clientes con amabilidad, responde consultas y ayuda a agendar citas o tomar órdenes por WhatsApp.`,
       businessName: name,
@@ -82,6 +82,8 @@ router.post('/', async (req, res) => {
       pickupEnabled: true
     });
 
+    await logAuditEvent(req.user!.tenantId, req.user!.userId, 'create_tenant', 'tenant', tenant.id, { name, slug, plan }, req.ip, req.headers['user-agent']);
+
     res.status(201).json(tenant);
   } catch (error) {
     console.error('Error al crear inquilino:', error);
@@ -101,11 +103,40 @@ router.put('/:id', async (req, res) => {
 
 router.delete('/:id', async (req, res) => {
   try {
+    await logAuditEvent(req.user!.tenantId, req.user!.userId, 'delete_tenant', 'tenant', req.params.id, {}, req.ip, req.headers['user-agent']);
     await deleteTenant(req.params.id);
     res.json({ success: true, message: 'Inquilino eliminado' });
   } catch (error) {
     console.error('Error al eliminar inquilino:', error);
     res.status(500).json({ error: 'Error al eliminar inquilino' });
+  }
+});
+
+// Impersonation endpoint — SuperAdmin accesses a tenant's portal
+router.post('/:id/impersonate', async (req, res) => {
+  try {
+    const tenant = await getTenantById(req.params.id);
+    if (!tenant) {
+      res.status(404).json({ error: 'Inquilino no encontrado' });
+      return;
+    }
+
+    const impersonationToken = generateToken(req.user!.userId, tenant.id, 'admin');
+
+    await logAuditEvent(req.user!.tenantId, req.user!.userId, 'impersonate', 'tenant', tenant.id, { tenantName: tenant.name }, req.ip, req.headers['user-agent']);
+
+    res.json({
+      token: impersonationToken,
+      tenant: {
+        id: tenant.id,
+        name: tenant.name,
+        slug: tenant.slug,
+        plan: tenant.plan
+      }
+    });
+  } catch (error) {
+    console.error('Error al impersonar inquilino:', error);
+    res.status(500).json({ error: 'Error al impersonar inquilino' });
   }
 });
 

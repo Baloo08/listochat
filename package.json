@@ -27,7 +27,8 @@
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",
     "ssh2": "^1.17.0",
-    "uuid": "^11.1.0"
+    "uuid": "^11.1.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
