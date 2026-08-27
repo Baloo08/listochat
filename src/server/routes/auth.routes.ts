@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { generateToken, authenticateToken } from '../middleware/auth.js';
-import { getUserByEmail, verifyPassword } from '../db/users.repo.js';
+import { getUserByEmail, getUserById, verifyPassword } from '../db/users.repo.js';
 
 const router = Router();
 
@@ -41,8 +41,17 @@ router.post('/login', async (req, res) => {
   }
 });
 
-router.get('/me', authenticateToken, (req, res) => {
-  res.json(req.user);
+router.get('/me', authenticateToken, async (req: any, res) => {
+  try {
+    const user = await getUserById(req.user?.userId);
+    if (user) {
+      res.json(user);
+    } else {
+      res.json(req.user);
+    }
+  } catch (err) {
+    res.json(req.user);
+  }
 });
 
 export default router;

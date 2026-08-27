@@ -40,9 +40,7 @@ export default function App() {
   }
 
   const superAdminNav = [
-    { id: 'dashboard', label: 'Dashboard', icon: <Home size={20} /> },
-    { id: 'tenants', label: 'Inquilinos', icon: <Users size={20} /> },
-    { id: 'settings', label: 'Configuración', icon: <Settings size={20} /> },
+    { id: 'tenants', label: 'Clientes & Inquilinos', icon: <Users size={20} /> },
   ];
 
   const tenantNav = [
@@ -64,11 +62,7 @@ export default function App() {
 
   const renderContent = () => {
     if (user.role === 'superadmin') {
-      switch (currentPage) {
-        case 'dashboard': return <div>SuperAdmin Dashboard</div>;
-        case 'tenants': return <SuperAdminPanel />;
-        default: return <div>Página no encontrada</div>;
-      }
+      return <SuperAdminPanel />;
     } else {
       switch (currentPage) {
         case 'dashboard': return <Dashboard />;
@@ -131,7 +125,7 @@ export default function App() {
         <header style={{ height: '60px', minHeight: '60px', backgroundColor: 'var(--surface)', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 20px' }}>
           <h2 style={{ fontSize: '1.1rem', fontWeight: '600' }}>{nav.find(n => n.id === currentPage)?.label}</h2>
           <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-            <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>{user.name} ({user.role})</span>
+            <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>{user.name || user.email || 'Super Admin'} ({user.role})</span>
             <button onClick={logout} style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 10px', border: '1px solid var(--border)', borderRadius: '4px', backgroundColor: 'transparent', color: 'var(--danger)', cursor: 'pointer' }}>
               <LogOut size={16} /> Salir
             </button>
