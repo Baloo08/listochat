@@ -1,9 +1,10 @@
 import pg from 'pg';
+import { env } from '../config/env.js';
 
 const { Pool } = pg;
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/whatsapp_saas',
+  connectionString: env.DATABASE_URL,
 });
 
 pool.on('error', (err) => {
