@@ -258,7 +258,7 @@ export async function runMigrations() {
   if (checkAdmin.rows.length === 0) {
     const salt = crypto.randomBytes(16).toString('hex');
     const hash = crypto.pbkdf2Sync(superAdminPassword, salt, 1000, 64, 'sha512').toString('hex');
-    const fullHash = \`\${salt}:\${hash}\`;
+    const fullHash = `${salt}:${hash}`;
 
     const tenantRes = await query(`
       INSERT INTO tenants (name, slug, active, plan) 
