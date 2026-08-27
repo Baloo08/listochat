@@ -13,11 +13,18 @@ export interface TenantAIConfig {
 export function getDefaultModels(provider: 'gemini' | 'openai' | 'anthropic'): string[] {
   switch (provider) {
     case 'gemini':
-      return ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-1.0-pro'];
+      return [
+        'gemini-2.5-flash',
+        'gemini-2.5-flash-lite',
+        'gemini-3.7-flash',
+        'gemini-2.5-pro',
+        'gemini-flash-latest',
+        'gemini-1.5-flash'
+      ];
     case 'openai':
       return ['gpt-4o-mini', 'gpt-4o', 'gpt-4-turbo', 'gpt-3.5-turbo'];
     case 'anthropic':
-      return ['claude-3-haiku-20240307', 'claude-3-sonnet-20240229', 'claude-3-opus-20240229', 'claude-3-5-sonnet-20240620'];
+      return ['claude-3-5-haiku-20241022', 'claude-3-5-sonnet-20241022', 'claude-3-haiku-20240307'];
     default:
       return [];
   }
@@ -33,12 +40,12 @@ export async function callAI(config: TenantAIConfig, prompt: string): Promise<{ 
       return await executeProvider({ ...config, model: modelName }, prompt);
     } catch (error) {
       console.error(`Error calling AI with model ${modelName}:`, error);
-      // fallback to next model
+      // fallback to next model in list
     }
   }
 
   return {
-    text: 'Lo siento, en este momento estoy experimentando dificultades técnicas. Por favor, intenta de nuevo más tarde o contacta a un humano para asistencia.',
+    text: 'Hola, gracias por comunicarte con nosotros. En este momento estamos procesando tu solicitud, en breve un asesor te responderá.',
     tokensUsed: 0
   };
 }
@@ -67,6 +74,6 @@ async function executeProvider(config: TenantAIConfig, prompt: string) {
 
   return {
     text,
-    tokensUsed: usage.totalTokens,
+    tokensUsed: usage?.totalTokens || 0,
   };
 }

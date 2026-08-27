@@ -1,19 +1,30 @@
 import { query } from './pool.js';
 import { Product, ProductImage, ProductVariant } from '../../shared/types.js';
 
-export async function getProductsByTenant(tenantId: string): Promise<Product[]> {
-  const result = await query(`
-    SELECT id, tenant_id as "tenantId", name, slug, description, price, compare_at_price as "compareAtPrice",
-           currency, category, tags, stock, track_stock as "trackStock", sku, featured, active,
-           created_at as "createdAt", updated_at as "updatedAt"
-    FROM products 
-    WHERE tenant_id = $1
-    ORDER BY created_at DESC
-  `, [tenantId]);
-  
-  // A full implementation would batch-fetch images and variants here and attach them.
-  // For simplicity, we return empty arrays, but you should map them properly in production.
-  return result.rows.map(row => ({ ...row, images: [], variants: [] }));
+export async function getProductsByTenant(tenantId: string, activeOnly: boolean = false): Promise<Product[]> {
+  let sql = `
+    SELECT p.id, p.tenant_id as "tenantId", p.name, p.slug, p.description, p.price, p.compare_at_price as "compareAtPrice",
+           p.currency, p.category, p.tags, p.stock, p.track_stock as "trackStock", p.sku, p.featured, p.active,
+           p.created_at as "createdAt", p.updated_at as "updatedAt",
+           COALESCE(
+             (SELECT json_agg(json_build_object('id', pi.id, 'url', pi.url, 'isPrimary', pi.is_primary) ORDER BY pi.sort_order ASC)
+              FROM product_images pi WHERE pi.product_id = p.id), '[]'::json
+           ) as images,
+           COALESCE(
+             (SELECT json_agg(json_build_object('id', pv.id, 'name', pv.name, 'priceOverride', pv.price_override, 'stock', pv.stock))
+              FROM product_variants pv WHERE pv.product_id = p.id), '[]'::json
+           ) as variants
+    FROM products p
+    WHERE p.tenant_id = $1
+  `;
+  const params: any[] = [tenantId];
+  if (activeOnly) {
+    sql += ` AND p.active = true`;
+  }
+  sql += ` ORDER BY p.sort_order ASC, p.created_at DESC`;
+
+  const result = await query(sql, params);
+  return result.rows;
 }
 
 export async function getProductById(id: string, tenantId: string): Promise<Product | null> {

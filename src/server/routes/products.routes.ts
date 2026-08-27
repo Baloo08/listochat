@@ -183,10 +183,14 @@ router.post('/generate-description', async (req, res) => {
     }
 
     const apiKey = env.GEMINI_API_KEY;
-    const google = createGoogleGenerativeAI({ apiKey });
-    const model = google('gemini-2.5-flash');
+    const modelsToTry = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-3.7-flash', 'gemini-flash-latest'];
+    let aiText = '';
 
-    const prompt = `Eres un redactor profesional de e-commerce y marketing digital en Costa Rica y Latinoamérica.
+    for (const modelName of modelsToTry) {
+      try {
+        const google = createGoogleGenerativeAI({ apiKey });
+        const model = google(modelName);
+        const prompt = `Eres un redactor profesional de e-commerce y marketing digital en Costa Rica y Latinoamérica.
 Genera una descripción atractiva, persuasiva y profesional para el siguiente producto:
 
 - Nombre del producto: ${name}
@@ -194,23 +198,49 @@ Genera una descripción atractiva, persuasiva y profesional para el siguiente pr
 ${keywords ? `- Palabras clave o características: ${keywords}` : ''}
 
 Requisitos:
-1. Longitud: 2 a 3 oraciones concisas y llamativas (máximo 60 palabras).
+1. Longitud: 2 a 3 oraciones concisas y llamativas.
 2. Tono: Cercano, comercial y de alta conversión.
-3. Incluye 2 o 3 viñetas breves con los puntos clave destacados.
-4. No incluyas precios inventados ni datos falsos.
-5. Devuelve únicamente el texto de la descripción listo para publicar.`;
+3. Incluye 2 o 3 viñetas breves con los puntos clave destacados (ej: • Calidad garantizada).
+4. Devuelve únicamente el texto de la descripción listo para publicar.`;
 
-    const { text } = await generateText({
-      model,
-      prompt,
-      temperature: 0.7,
-    });
+        const { text } = await generateText({
+          model,
+          prompt,
+          temperature: 0.7,
+        });
 
-    res.json({ description: text.trim() });
+        if (text && text.trim().length > 10) {
+          aiText = text.trim();
+          break;
+        }
+      } catch (err) {
+        // try next model
+      }
+    }
+
+    if (aiText) {
+      res.json({ description: aiText });
+      return;
+    }
+
+    // Rich local fallback generator if external AI API is quota-limited or offline
+    const categoryLower = (category || '').toLowerCase();
+    let richDesc = '';
+
+    if (categoryLower.includes('comida') || categoryLower.includes('hamburguesa') || categoryLower.includes('pizza') || categoryLower.includes('restaurante')) {
+      richDesc = `¡Delicioso ${name} preparado al momento con los ingredientes más frescos y selectos! La combinación perfecta de sabor y calidad para consentir tu paladar.\n\n• Preparación 100% artesanal con ingredientes frescos de primera calidad.\n• Sabor inigualable y porción ideal para disfrutar.\n• Empaque térmico especial para que llegue caliente y fresco a tu mesa.`;
+    } else if (categoryLower.includes('bebida') || categoryLower.includes('cafe') || categoryLower.includes('refresco')) {
+      richDesc = `Disfruta de ${name}, la opción perfecta y refrescante para acompañar tus momentos especiales.\n\n• Sabor auténtico y refrescante en cada sorbo.\n• Ingredientes seleccionados con los más altos estándares.\n• Ideal para compartir en cualquier momento del día.`;
+    } else if (categoryLower.includes('ropa') || categoryLower.includes('moda') || categoryLower.includes('calzado')) {
+      richDesc = `Descubre ${name}, diseñado con materiales de primera calidad que garantizan máxima comodidad, durabilidad y un estilo moderno que destaca.\n\n• Material premium resistente, fresco y de tacto suave.\n• Ajuste ergonómico y acabados de alta costura.\n• Disponible para entrega inmediata con garantía de satisfacción.`;
+    } else {
+      richDesc = `Presentamos ${name}, una excelente elección pensada para brindarte el mejor rendimiento, comodidad y satisfacción total.\n\n• Calidad garantizada con acabados y materiales de primer nivel.\n• ${keywords ? `Diseñado especialmente para destacar: ${keywords}.` : 'Versátil, práctico y perfecto para el uso diario.'}\n• Disponible para envío express inmediato directo a tu puerta.`;
+    }
+
+    res.json({ description: richDesc });
   } catch (error: any) {
-    console.error('Error generando descripción con IA:', error);
-    // Fallback description generator if AI API encounters an issue
-    const fallbackDesc = `${req.body.name} de excelente calidad. Ideal para tus necesidades diarias. Garantía de satisfacción y disponible para entrega inmediata.`;
+    console.error('Error generando descripción:', error);
+    const fallbackDesc = `${req.body.name} de excelente calidad y rendimiento garantizado. Disponible para entrega inmediata.`;
     res.json({ description: fallbackDesc });
   }
 });

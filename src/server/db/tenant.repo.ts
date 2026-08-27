@@ -26,14 +26,18 @@ export async function getTenantById(id: string): Promise<Tenant | null> {
 }
 
 export async function getTenantBySlug(slug: string): Promise<Tenant | null> {
+  const cleanSlug = (slug || '').trim().toLowerCase();
   const result = await query(`
-    SELECT id, name, slug, custom_domain as "customDomain", 
-           ai_provider as "aiProvider", ai_api_key_encrypted as "aiApiKeyEncrypted",
-           ai_model as "aiModel", evolution_instance as "evolutionInstance", 
-           whatsapp_number as "whatsappNumber", plan, active, 
-           settings_json as "settingsJson", created_at as "createdAt"
-    FROM tenants WHERE slug = $1
-  `, [slug]);
+    SELECT t.id, t.name, t.slug, t.custom_domain as "customDomain", 
+           t.ai_provider as "aiProvider", t.ai_api_key_encrypted as "aiApiKeyEncrypted",
+           t.ai_model as "aiModel", t.evolution_instance as "evolutionInstance", 
+           t.whatsapp_number as "whatsappNumber", t.plan, t.active, 
+           t.settings_json as "settingsJson", t.created_at as "createdAt"
+    FROM tenants t
+    LEFT JOIN store_settings ss ON ss.tenant_id = t.id
+    WHERE LOWER(t.slug) = $1 OR LOWER(ss.store_slug) = $1
+    LIMIT 1
+  `, [cleanSlug]);
   return result.rows[0] || null;
 }
 
