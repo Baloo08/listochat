@@ -140,6 +140,12 @@ export default function StorefrontView({ slug }: { slug: string }) {
         </div>
       </main>
 
+      {/* Footer */}
+      <footer style={{ textAlign: 'center', padding: '30px 20px', color: '#9ca3af', fontSize: '0.85rem', borderTop: '1px solid #f3f4f6', marginTop: '40px' }}>
+        <p style={{ margin: 0 }}>⚡ Potenciado por <strong>Betico</strong> &middot; Asistente Virtual & Tienda WhatsApp</p>
+      </footer>
+
+
       {/* Cart Drawer */}
       {cartOpen && (
         <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: '100%', maxWidth: '400px', backgroundColor: 'white', boxShadow: '-2px 0 10px rgba(0,0,0,0.1)', zIndex: 100, display: 'flex', flexDirection: 'column' }}>

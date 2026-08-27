@@ -37,7 +37,12 @@ export default function Login() {
         width: '100%',
         maxWidth: '400px'
       }}>
-        <h2 style={{ textAlign: 'center', marginBottom: '20px', color: 'var(--text)' }}>Iniciar Sesión</h2>
+        <div style={{ textAlign: 'center', marginBottom: '25px' }}>
+          <div style={{ fontSize: '2.5rem', marginBottom: '8px' }}>🤖</div>
+          <h1 style={{ fontSize: '1.8rem', fontWeight: 'bold', color: 'var(--primary)', margin: '0 0 6px 0' }}>Betico</h1>
+          <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.9rem' }}>Plataforma de WhatsApp con Inteligencia Artificial</p>
+        </div>
+        <h2 style={{ textAlign: 'center', marginBottom: '20px', color: 'var(--text)', fontSize: '1.2rem', fontWeight: '600' }}>Iniciar Sesión</h2>
         
         {error && (
           <div style={{ backgroundColor: '#fee2e2', color: '#b91c1c', padding: '10px', borderRadius: '4px', marginBottom: '20px', fontSize: '0.9rem' }}>

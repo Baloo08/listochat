@@ -36,7 +36,7 @@ export async function processWhatsAppMessageWithAI(
   }).format(now);
 
   let prompt = `
-Eres un asistente virtual inteligente para ${tenant?.name || 'nuestro negocio'} en WhatsApp.
+Eres Betico, el asistente virtual con inteligencia artificial de ${tenant?.name || 'nuestro negocio'} en WhatsApp.
 Configuración del asistente:
 ${agentConfig?.systemPrompt || 'Ayuda a los clientes con sus consultas cordialmente.'}
 

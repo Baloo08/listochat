@@ -63,7 +63,7 @@ router.post('/', async (req, res) => {
 
 
     await saveAgentConfig(tenant.id, {
-      systemPrompt: `Eres el Asistente Virtual Inteligente de ${name}. Atiende a los clientes con amabilidad y ayuda a agendar citas o tomar órdenes.`,
+      systemPrompt: `Eres Betico, el Asistente Virtual Inteligente de ${name}. Atiende a los clientes con amabilidad, responde consultas y ayuda a agendar citas o tomar órdenes por WhatsApp.`,
       businessName: name,
       currency: 'CRC',
       notifyNumber: '',

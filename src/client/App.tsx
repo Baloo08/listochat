@@ -92,8 +92,13 @@ export default function App() {
     <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: 'var(--background)' }}>
       {/* Sidebar */}
       <div style={{ width: '250px', backgroundColor: 'var(--surface)', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ padding: '20px', fontSize: '1.25rem', fontWeight: 'bold', borderBottom: '1px solid var(--border)' }}>
-          WhatsApp AI SaaS
+        <div style={{ padding: '20px', borderBottom: '1px solid var(--border)' }}>
+          <div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span>🤖</span> Betico
+          </div>
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px', fontWeight: '500' }}>
+            WhatsApp AI & E-commerce
+          </div>
         </div>
         <nav style={{ flex: 1, padding: '10px 0', overflowY: 'auto' }}>
           {nav.map(item => (

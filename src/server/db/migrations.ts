@@ -251,8 +251,8 @@ export async function runMigrations() {
 
   await query(tables);
 
-  const superAdminEmail = process.env.SUPERADMIN_EMAIL || 'admin@example.com';
-  const superAdminPassword = process.env.SUPERADMIN_PASSWORD || 'admin123';
+  const superAdminEmail = process.env.SUPERADMIN_EMAIL || 'admin@betico.cr';
+  const superAdminPassword = process.env.SUPERADMIN_PASSWORD || 'BeticoAdmin2026!';
 
   const checkAdmin = await query(`SELECT id FROM users WHERE email = $1`, [superAdminEmail]);
   if (checkAdmin.rows.length === 0) {
@@ -262,7 +262,7 @@ export async function runMigrations() {
 
     const tenantRes = await query(`
       INSERT INTO tenants (name, slug, active, plan) 
-      VALUES ('Superadmin Tenant', 'superadmin', true, 'enterprise') 
+      VALUES ('Betico Superadmin', 'superadmin', true, 'enterprise') 
       RETURNING id
     `);
     const tenantId = tenantRes.rows[0].id;
