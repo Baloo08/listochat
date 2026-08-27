@@ -43,10 +43,10 @@ export default function EvolutionManager() {
   useEffect(() => {
     fetchStatus();
 
-    // Poll every 4 seconds to check if status changes to connected
+    // Poll every 3 seconds to check if status changes to connected
     pollTimerRef.current = setInterval(() => {
       fetchStatus();
-    }, 4000);
+    }, 3000);
 
     return () => {
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
@@ -90,6 +90,20 @@ export default function EvolutionManager() {
     }
   };
 
+  const renderQrImage = () => {
+    if (!qrCodeData) return null;
+
+    if (qrCodeData.startsWith('data:image')) {
+      return <img src={qrCodeData} alt="WhatsApp QR Code" style={{ width: '250px', height: '250px', display: 'block' }} />;
+    }
+    
+    if (qrCodeData.startsWith('iVBORw0') || (qrCodeData.length > 500 && !qrCodeData.includes('@'))) {
+      return <img src={`data:image/png;base64,${qrCodeData}`} alt="WhatsApp QR Code" style={{ width: '250px', height: '250px', display: 'block' }} />;
+    }
+
+    return <QRCodeSVG value={qrCodeData} size={250} level="M" />;
+  };
+
   if (loading) {
     return <div style={{ padding: '40px', textAlign: 'center' }}>Verificando conexión con WhatsApp...</div>;
   }
@@ -131,7 +145,7 @@ export default function EvolutionManager() {
         </div>
       ) : (
         <div style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '10px', padding: '30px', textAlign: 'center' }}>
-          {status === 'qrcode' && qrCodeData ? (
+          {(status === 'qrcode' || qrCodeData) ? (
             <div>
               <h3 style={{ margin: '0 0 10px 0', fontSize: '1.25rem', fontWeight: 'bold' }}>
                 Escanea el Código QR con tu WhatsApp
@@ -141,11 +155,7 @@ export default function EvolutionManager() {
               </p>
 
               <div style={{ display: 'inline-block', padding: '16px', backgroundColor: 'white', borderRadius: '12px', border: '2px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', marginBottom: '20px' }}>
-                {qrCodeData.startsWith('data:image') ? (
-                  <img src={qrCodeData} alt="WhatsApp QR Code" style={{ width: '250px', height: '250px', display: 'block' }} />
-                ) : (
-                  <QRCodeSVG value={qrCodeData} size={250} level="M" />
-                )}
+                {renderQrImage()}
               </div>
 
               {pairingCode && (

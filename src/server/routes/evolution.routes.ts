@@ -13,36 +13,43 @@ router.get('/status', async (req, res) => {
   try {
     const tenant = await getTenantById(req.tenantId!);
     const instanceName = tenant?.evolutionInstance || `tenant_${req.tenantId!.slice(0, 8)}`;
+    
     const statusRes = await getInstanceStatus(instanceName);
     const rawData = statusRes.data || {};
-
-    // Evolution API v2 returns { instance: { state: "open"|"connecting"|"close" } }
     const state = rawData?.instance?.state || rawData?.state || 'disconnected';
 
-    if (state === 'connecting' || state === 'close') {
-      // Try to get QR code by calling connect
-      try {
-        const connectRes = await connectInstance(instanceName);
-        const connectData = connectRes.data || {};
-        const qrcode = connectData?.base64 || connectData?.qrcode?.base64 || connectData?.code || null;
-        const pairingCode = connectData?.pairingCode || null;
+    if (state === 'open' || state === 'connected') {
+      res.json({
+        status: 'connected',
+        instanceName,
+        whatsappNumber: tenant?.whatsappNumber
+      });
+      return;
+    }
 
+    // If instance is connecting or disconnected, fetch QR code
+    try {
+      const connectRes = await connectInstance(instanceName);
+      const connectData = connectRes.data || {};
+      const qrcode = connectData?.base64 || connectData?.qrcode?.base64 || connectData?.code || null;
+      const pairingCode = connectData?.pairingCode || null;
+
+      if (qrcode) {
         res.json({
-          status: qrcode ? 'qrcode' : state,
+          status: 'qrcode',
           qrcode,
           pairingCode,
           instanceName
         });
         return;
-      } catch (e) {
-        // Fall through to return status without QR
       }
+    } catch (e) {
+      // ignore
     }
 
     res.json({
-      status: state === 'open' ? 'connected' : state,
-      instanceName,
-      whatsappNumber: tenant?.whatsappNumber
+      status: state,
+      instanceName
     });
   } catch (error) {
     res.json({ status: 'disconnected' });
@@ -57,22 +64,28 @@ router.post('/connect', async (req, res) => {
     if (!instanceName) {
       instanceName = `tenant_${req.tenantId!.slice(0, 8)}`;
       await updateTenant(req.tenantId!, { evolutionInstance: instanceName });
-
-      // Create instance in Evolution API
-      const createRes = await createInstance(instanceName);
-      console.log('Instance created:', createRes.data);
-
-      // Set webhook URL
-      const appUrl = env.APP_URL || `http://betico_app:80`;
-      await setWebhook(instanceName, `${appUrl}/api/webhook/evolution`);
     }
 
-    const connectRes = await connectInstance(instanceName);
-    const connectData = connectRes.data || {};
+    // Try creating instance first (if already exists, Evolution API will return error or existing info)
+    const createRes = await createInstance(instanceName);
+    let qrcode = createRes.data?.qrcode?.base64 || createRes.data?.qrcode?.code || null;
+    let pairingCode = createRes.data?.qrcode?.pairingCode || null;
 
-    // Extract QR code from Evolution API response
-    const qrcode = connectData?.base64 || connectData?.qrcode?.base64 || connectData?.code || null;
-    const pairingCode = connectData?.pairingCode || null;
+    // If not in create, get it from connect endpoint
+    if (!qrcode) {
+      const connectRes = await connectInstance(instanceName);
+      const connectData = connectRes.data || {};
+      qrcode = connectData?.base64 || connectData?.qrcode?.base64 || connectData?.code || null;
+      pairingCode = connectData?.pairingCode || null;
+    }
+
+    // Configure webhook
+    try {
+      const appUrl = env.APP_URL || `http://betico_app:80`;
+      await setWebhook(instanceName, `${appUrl}/api/webhook/evolution`);
+    } catch (e) {
+      // ignore
+    }
 
     res.json({
       status: qrcode ? 'qrcode' : 'connecting',

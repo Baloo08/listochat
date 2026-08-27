@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { generateToken, authenticateToken } from '../middleware/auth.js';
 import { getUserByEmail, getUserById, verifyPassword } from '../db/users.repo.js';
+import { getTenantById } from '../db/tenant.repo.js';
 import { logAuditEvent } from '../db/audit.repo.js';
 
 const router = Router();
@@ -55,11 +56,21 @@ router.post('/login', async (req, res) => {
 router.get('/me', authenticateToken, async (req: any, res) => {
   try {
     const user = await getUserById(req.user?.userId);
-    if (user) {
-      res.json(user);
-    } else {
-      res.json(req.user);
-    }
+    const tenant = await getTenantById(req.user?.tenantId);
+    
+    // Always honor the token's active tenantId and role (vital for impersonation!)
+    const activeTenantId = req.user?.tenantId || user?.tenantId;
+    const activeRole = req.user?.role || user?.role || 'admin';
+    
+    res.json({
+      id: user?.id || req.user?.userId,
+      email: user?.email || 'admin@betico.cr',
+      name: user?.name || 'Super Admin',
+      role: activeRole,
+      tenantId: activeTenantId,
+      tenantName: tenant?.name || 'Mi Negocio',
+      tenantSlug: tenant?.slug || ''
+    });
   } catch (err) {
     res.json(req.user);
   }
