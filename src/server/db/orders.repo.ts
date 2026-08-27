@@ -91,3 +91,10 @@ export async function updateOrder(id: string, tenantId: string, data: Partial<Or
   }
   return getOrderById(id, tenantId);
 }
+
+export async function updateOrderStatus(id: string, tenantId: string, status: any) {
+  return updateOrder(id, tenantId, { status });
+}
+export async function confirmPayment(id: string, tenantId: string, paymentReference?: string) {
+  return updateOrder(id, tenantId, { paymentStatus: 'paid', paymentReference: paymentReference || 'Confirmado manual' });
+}

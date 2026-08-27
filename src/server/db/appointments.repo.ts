@@ -70,3 +70,7 @@ export async function deleteAppointment(id: string, tenantId: string): Promise<b
   const result = await query('DELETE FROM appointments WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
   return (result.rowCount || 0) > 0;
 }
+
+export async function updateAppointmentStatus(id: string, tenantId: string, status: any) {
+  return updateAppointment(id, tenantId, { status });
+}

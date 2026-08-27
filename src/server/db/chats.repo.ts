@@ -36,3 +36,6 @@ export async function updateChatStatus(id: string, tenantId: string, status: str
     WHERE id = $2 AND tenant_id = $3
   `, [status, id, tenantId]);
 }
+
+export const getChatMessagesByTenant = getChatsByTenant;
+export const saveChatMessage = createChatMessage;

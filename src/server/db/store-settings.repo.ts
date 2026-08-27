@@ -66,3 +66,5 @@ export async function upsertStoreSettings(tenantId: string, data: Partial<StoreS
   
   return result.rows[0];
 }
+
+export const saveStoreSettings = upsertStoreSettings;
