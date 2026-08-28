@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Clock, Plus, Filter, CheckCircle, XCircle, AlertCircle, RefreshCw, MessageCircle, Link as LinkIcon, Copy, ExternalLink, Settings, Save, Trash2, Sun, Palmtree } from 'lucide-react';
+import { Calendar, Clock, Plus, Filter, CheckCircle, XCircle, AlertCircle, RefreshCw, MessageCircle, Link as LinkIcon, Copy, ExternalLink, Settings, Save, Trash2, Sun, Palmtree, HelpCircle, FormInput } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
-import { Appointment, ScheduleSettings, DayBreakConfig } from '../../shared/types';
+import { Appointment, ScheduleSettings, DayBreakConfig, BookingField } from '../../shared/types';
 
 export default function Bookings() {
   const [activeTab, setActiveTab] = useState<'list' | 'schedule'>('list');
@@ -40,6 +40,12 @@ export default function Bookings() {
     sunday: []
   });
   const [selectedDayForBlock, setSelectedDayForBlock] = useState('monday');
+
+  // Custom Form Fields State
+  const [customFields, setCustomFields] = useState<BookingField[]>([
+    { id: 'f_1', label: 'Detalle o Motivo de Consulta', placeholder: 'Ej: Consulta General o Síntomas', type: 'text', required: false },
+    { id: 'f_2', label: 'Notas o Comentarios Adicionales', placeholder: 'Cualquier indicación especial...', type: 'textarea', required: false }
+  ]);
 
   // Vacation Mode State
   const [vacationEnabled, setVacationEnabled] = useState(false);
@@ -92,6 +98,9 @@ export default function Bookings() {
         }
         if (sch.bloquesConfig?.days) {
           setBloquesDays(sch.bloquesConfig.days);
+        }
+        if (sch.customFields && sch.customFields.length > 0) {
+          setCustomFields(sch.customFields);
         }
         if (sch.vacationConfig) {
           setVacationEnabled(sch.vacationConfig.enabled || false);
@@ -169,6 +178,7 @@ export default function Bookings() {
           days: bloquesDays,
           slotMinutes: Number(slotMinutes)
         },
+        customFields,
         vacationConfig: {
           enabled: vacationEnabled,
           startDate: vacationStart,
@@ -223,6 +233,26 @@ export default function Bookings() {
     setEnabledDates(prev => prev.filter(d => d !== dateStr));
   };
 
+  // Custom Fields Handlers
+  const addCustomField = () => {
+    const newField: BookingField = {
+      id: `f_${Date.now()}`,
+      label: 'Nueva Pregunta',
+      placeholder: 'Escribe tu respuesta...',
+      type: 'text',
+      required: false
+    };
+    setCustomFields(prev => [...prev, newField]);
+  };
+
+  const updateCustomField = (id: string, key: keyof BookingField, val: any) => {
+    setCustomFields(prev => prev.map(f => f.id === id ? { ...f, [key]: val } : f));
+  };
+
+  const removeCustomField = (id: string) => {
+    setCustomFields(prev => prev.filter(f => f.id !== id));
+  };
+
   const publicBookingUrl = `${window.location.origin}/reservas/${tenantSlug}`;
 
   const copyBookingLink = () => {
@@ -259,7 +289,7 @@ export default function Bookings() {
         <div>
           <h2 style={{ margin: '0 0 4px 0', fontSize: '1.5rem', fontWeight: 'bold' }}>Agenda y Reservas</h2>
           <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-            Control de citas, descansos por día, vacaciones y portal público de agendamiento online
+            Control de citas, horarios, preguntas del formulario y portal de agendamiento online
           </p>
         </div>
 
@@ -340,7 +370,7 @@ export default function Bookings() {
             gap: '8px'
           }}
         >
-          <Settings size={18} /> ⚙️ Horarios, Bloques & Vacaciones
+          <Settings size={18} /> ⚙️ Horarios, Formulario & Vacaciones
         </button>
       </div>
 
@@ -413,7 +443,7 @@ export default function Bookings() {
                         <span>🛠️ {appt.service}</span>
                         {appt.whatsapp && <span>📱 {appt.whatsapp}</span>}
                       </div>
-                      {appt.vehicleModel && <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px' }}>🚗 {appt.vehicleModel}</div>}
+                      {appt.details && <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px' }}>📝 {appt.details}</div>}
                     </div>
                   </div>
 
@@ -460,10 +490,11 @@ export default function Bookings() {
         </>
       )}
 
-      {/* TAB 2: SCHEDULE CONFIGURATION */}
+      {/* TAB 2: SCHEDULE & CUSTOM FORM FIELDS CONFIGURATION */}
       {activeTab === 'schedule' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           
+          {/* Schedule Mode Card */}
           <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
               <div>
@@ -476,13 +507,13 @@ export default function Bookings() {
                 disabled={savingSchedule}
                 style={{ padding: '9px 18px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', borderRadius: '6px', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.9rem' }}
               >
-                <Save size={16} /> {savingSchedule ? 'Guardando...' : 'Guardar Horarios'}
+                <Save size={16} /> {savingSchedule ? 'Guardando...' : 'Guardar Configuración'}
               </button>
             </div>
 
             {scheduleSavedToast && (
               <div style={{ padding: '10px 16px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534', borderRadius: '6px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', fontWeight: '600' }}>
-                <CheckCircle size={16} /> ¡Configuración de horarios guardada exitosamente!
+                <CheckCircle size={16} /> ¡Configuración de horarios y formulario guardada exitosamente!
               </div>
             )}
 
@@ -789,6 +820,84 @@ export default function Bookings() {
                 </div>
               </div>
             )}
+          </div>
+
+          {/* CUSTOM BOOKING FORM QUESTIONS / FIELDS */}
+          <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div>
+                <h3 style={{ margin: '0 0 4px 0', fontSize: '1.15rem', fontWeight: 'bold' }}>📝 Preguntas del Formulario de Reservas</h3>
+                <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.85rem' }}>Personaliza qué información deseas solicitar a los clientes al agendar una cita</p>
+              </div>
+
+              <button
+                type="button"
+                onClick={addCustomField}
+                style={{ padding: '8px 14px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <Plus size={16} /> + Agregar Pregunta
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {customFields.map((field, idx) => (
+                <div key={field.id} style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid var(--border)', display: 'grid', gridTemplateColumns: '2fr 2fr 1fr auto auto', gap: '10px', alignItems: 'center' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 'bold', marginBottom: '2px' }}>Pregunta / Etiqueta</label>
+                    <input
+                      type="text"
+                      value={field.label}
+                      onChange={(e) => updateCustomField(field.id, 'label', e.target.value)}
+                      style={{ width: '100%', padding: '6px 8px', borderRadius: '4px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 'bold', marginBottom: '2px' }}>Texto de ayuda (Placeholder)</label>
+                    <input
+                      type="text"
+                      value={field.placeholder || ''}
+                      onChange={(e) => updateCustomField(field.id, 'placeholder', e.target.value)}
+                      style={{ width: '100%', padding: '6px 8px', borderRadius: '4px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 'bold', marginBottom: '2px' }}>Tipo</label>
+                    <select
+                      value={field.type}
+                      onChange={(e) => updateCustomField(field.id, 'type', e.target.value)}
+                      style={{ width: '100%', padding: '6px 8px', borderRadius: '4px', border: '1px solid var(--border)', fontSize: '0.85rem', backgroundColor: 'white' }}
+                    >
+                      <option value="text">Texto corto</option>
+                      <option value="textarea">Texto largo</option>
+                      <option value="number">Número</option>
+                    </select>
+                  </div>
+
+                  <div style={{ textAlign: 'center' }}>
+                    <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 'bold', marginBottom: '2px' }}>Obligatorio</label>
+                    <input
+                      type="checkbox"
+                      checked={field.required}
+                      onChange={(e) => updateCustomField(field.id, 'required', e.target.checked)}
+                      style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                    />
+                  </div>
+
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => removeCustomField(field.id)}
+                      style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '6px', marginTop: '12px' }}
+                      title="Eliminar pregunta"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
 
           {/* VACATION MODE / DATE BLOCKING CARD */}

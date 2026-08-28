@@ -36,6 +36,7 @@ router.get('/public/:slug/info', async (req, res) => {
       theme: store?.storeTheme,
       services: services.filter((s: any) => s.active !== false),
       scheduleMode: schedule?.scheduleMode || 'jornada',
+      customFields: schedule?.customFields || [],
       vacationConfig: schedule?.vacationConfig
     });
   } catch (error) {
@@ -177,7 +178,7 @@ router.get('/public/:slug/available-slots', async (req, res) => {
 
 router.post('/public/:slug/book', async (req, res) => {
   try {
-    const { serviceName, serviceId, date, time, customerName, customerPhone, details, vehicleModel } = req.body;
+    const { serviceName, serviceId, date, time, customerName, customerPhone, details, vehicleModel, customAnswers } = req.body;
     if (!serviceName || !date || !time || !customerName || !customerPhone) {
       res.status(400).json({ error: 'Servicio, fecha, hora, nombre y WhatsApp son requeridos' });
       return;
@@ -197,6 +198,17 @@ router.post('/public/:slug/book', async (req, res) => {
       amount = Number(matchedService.price || 0);
     }
 
+    let combinedDetails = details || '';
+    if (customAnswers && typeof customAnswers === 'object') {
+      const answersList = Object.entries(customAnswers)
+        .filter(([_, val]) => val && String(val).trim().length > 0)
+        .map(([key, val]) => `${key}: ${val}`)
+        .join(' | ');
+      if (answersList) {
+        combinedDetails = combinedDetails ? `${combinedDetails} | ${answersList}` : answersList;
+      }
+    }
+
     const appt = await createAppointment(tenant.id, {
       name: customerName,
       whatsapp: customerPhone,
@@ -205,7 +217,7 @@ router.post('/public/:slug/book', async (req, res) => {
       time,
       amount,
       status: 'confirmed',
-      details: details || '',
+      details: combinedDetails,
       vehicleModel: vehicleModel || ''
     });
 
@@ -221,7 +233,7 @@ Hola *${customerName}*, tu cita para *${serviceName}* ha quedado agendada en *${
 ⏰ *Hora:* ${time}
 💰 *Valor:* ₡${amount.toLocaleString('es-CR')}
 ${vehicleModel ? `🚗 *Vehículo / Detalle:* ${vehicleModel}` : ''}
-${details ? `📝 *Notas:* ${details}` : ''}
+${combinedDetails ? `📝 *Información:* ${combinedDetails}` : ''}
 
 👉 _Te enviaremos un recordatorio antes de tu cita. Si necesitas reprogramar, por favor responde a este mensaje._ ¡Te esperamos!`;
 
@@ -241,7 +253,7 @@ ${details ? `📝 *Notas:* ${details}` : ''}
 🛠️ *Servicio:* ${serviceName}
 🗓️ *Fecha:* ${date} a las ${time}
 💰 *Monto:* ₡${amount.toLocaleString('es-CR')}
-${vehicleModel ? `🚗 *Detalles:* ${vehicleModel}` : ''}`;
+${combinedDetails ? `📝 *Detalles:* ${combinedDetails}` : ''}`;
 
       try {
         await sendMessage(tenant.evolutionInstance, adminPhone, adminMsg);

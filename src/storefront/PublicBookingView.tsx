@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Clock, User, Phone, CheckCircle, Sparkles, MessageCircle, AlertCircle, Palmtree, MapPin } from 'lucide-react';
+import { BookingField } from '../shared/types';
 
 interface PublicBookingViewProps {
   slug: string;
@@ -22,11 +23,10 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [vacationAlert, setVacationAlert] = useState<string | null>(null);
 
-  // Form Fields
+  // Standard Form Fields
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
-  const [vehicleModel, setVehicleModel] = useState('');
-  const [details, setDetails] = useState('');
+  const [customAnswers, setCustomAnswers] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [bookingSuccess, setBookingSuccess] = useState<any>(null);
 
@@ -86,11 +86,24 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
     fetchSlots();
   }, [selectedDate, slug]);
 
+  const handleCustomAnswerChange = (fieldLabel: string, val: string) => {
+    setCustomAnswers(prev => ({ ...prev, [fieldLabel]: val }));
+  };
+
   const handleBook = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedService || !selectedDate || !selectedTime || !customerName || !customerPhone) {
       alert('Por favor completa todos los campos requeridos');
       return;
+    }
+
+    // Validate required custom fields
+    const customFields: BookingField[] = businessInfo?.customFields || [];
+    for (const field of customFields) {
+      if (field.required && !customAnswers[field.label]?.trim()) {
+        alert(`Por favor responde la pregunta obligatoria: "${field.label}"`);
+        return;
+      }
     }
 
     setSubmitting(true);
@@ -105,8 +118,7 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
           time: selectedTime,
           customerName,
           customerPhone,
-          vehicleModel,
-          details
+          customAnswers
         })
       });
 
@@ -189,6 +201,7 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
               setBookingSuccess(null);
               setSelectedService(null);
               setSelectedTime(null);
+              setCustomAnswers({});
             }}
             style={{ width: '100%', padding: '12px', backgroundColor: 'transparent', color: '#64748b', border: '1px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontWeight: '500' }}
           >
@@ -198,6 +211,8 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
       </div>
     );
   }
+
+  const customFields: BookingField[] = businessInfo.customFields || [];
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: bgColor, fontFamily, color: '#1e293b', paddingBottom: '60px' }}>
@@ -263,7 +278,7 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
           </div>
         </div>
 
-        {/* Step 2 & 3: Date and Time Slot */}
+        {/* Step 2: Date and Time Slot */}
         {selectedService && (
           <div style={{ backgroundColor: cardBg, borderRadius: cardRadius, padding: '24px', border: '1px solid #e2e8f0', marginBottom: '20px', boxShadow: cardShadow }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
@@ -340,7 +355,7 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
           </div>
         )}
 
-        {/* Step 3: Customer Details Form */}
+        {/* Step 3: Customer Details & Custom Questions Form */}
         {selectedService && selectedTime && !vacationAlert && (
           <form onSubmit={handleBook} style={{ backgroundColor: cardBg, borderRadius: cardRadius, padding: '24px', border: '1px solid #e2e8f0', boxShadow: cardShadow }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
@@ -374,27 +389,43 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
                 <span style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '3px', display: 'block' }}>Te enviaremos la confirmación y recordatorio a este número.</span>
               </div>
 
-              <div>
-                <label style={{ display: 'block', marginBottom: '5px', fontWeight: '600', fontSize: '0.85rem' }}>Detalle o Vehículo (Opcional)</label>
-                <input
-                  type="text"
-                  value={vehicleModel}
-                  onChange={(e) => setVehicleModel(e.target.value)}
-                  placeholder="Ej: Toyota RAV4 2022 o Consulta General"
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.9rem' }}
-                />
-              </div>
+              {/* Dynamic Custom Questions */}
+              {customFields.map(field => (
+                <div key={field.id}>
+                  <label style={{ display: 'block', marginBottom: '5px', fontWeight: '600', fontSize: '0.85rem' }}>
+                    {field.label} {field.required ? '*' : '(Opcional)'}
+                  </label>
 
-              <div>
-                <label style={{ display: 'block', marginBottom: '5px', fontWeight: '600', fontSize: '0.85rem' }}>Notas o Comentarios Adicionales</label>
-                <textarea
-                  rows={2}
-                  value={details}
-                  onChange={(e) => setDetails(e.target.value)}
-                  placeholder="Cualquier indicación especial para tu cita..."
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.9rem' }}
-                />
-              </div>
+                  {field.type === 'textarea' ? (
+                    <textarea
+                      rows={2}
+                      required={field.required}
+                      placeholder={field.placeholder || 'Escribe tu respuesta...'}
+                      value={customAnswers[field.label] || ''}
+                      onChange={(e) => handleCustomAnswerChange(field.label, e.target.value)}
+                      style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.9rem' }}
+                    />
+                  ) : field.type === 'number' ? (
+                    <input
+                      type="number"
+                      required={field.required}
+                      placeholder={field.placeholder || '0'}
+                      value={customAnswers[field.label] || ''}
+                      onChange={(e) => handleCustomAnswerChange(field.label, e.target.value)}
+                      style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.9rem' }}
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      required={field.required}
+                      placeholder={field.placeholder || 'Escribe tu respuesta...'}
+                      value={customAnswers[field.label] || ''}
+                      onChange={(e) => handleCustomAnswerChange(field.label, e.target.value)}
+                      style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.9rem' }}
+                    />
+                  )}
+                </div>
+              ))}
             </div>
 
             <div style={{ marginTop: '25px' }}>

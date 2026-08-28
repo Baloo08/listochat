@@ -226,6 +226,15 @@ export interface DayBreakConfig {
   breakEnd: string;
 }
 
+export interface BookingField {
+  id: string;
+  label: string;
+  placeholder?: string;
+  type: 'text' | 'textarea' | 'select' | 'number';
+  required: boolean;
+  options?: string[]; // for select dropdowns
+}
+
 export interface ScheduleSettings {
   id?: string;
   tenantId: string;
@@ -248,6 +257,7 @@ export interface ScheduleSettings {
     days: Record<string, Array<{ start: string; end: string }>>;
     slotMinutes?: number;
   };
+  customFields?: BookingField[];
   vacationConfig?: VacationConfig;
   updatedAt?: Date;
 }
