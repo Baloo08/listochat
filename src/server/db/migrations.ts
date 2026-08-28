@@ -300,6 +300,15 @@ export async function runMigrations() {
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS driver_id UUID REFERENCES delivery_drivers(id) ON DELETE SET NULL;
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS waze_url TEXT;
 
+    CREATE TABLE IF NOT EXISTS uploaded_files (
+      filename VARCHAR(255) PRIMARY KEY,
+      mime_type VARCHAR(100),
+      data_base64 TEXT NOT NULL,
+      size INT,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_uploaded_files_filename ON uploaded_files(filename);
     CREATE INDEX IF NOT EXISTS idx_delivery_drivers_tenant ON delivery_drivers(tenant_id);
     CREATE INDEX IF NOT EXISTS idx_schedule_settings_tenant ON schedule_settings(tenant_id);
     CREATE INDEX IF NOT EXISTS idx_chat_sessions_tenant ON chat_sessions(tenant_id);

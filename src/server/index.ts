@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import fs from 'fs';
 import { env } from './config/env.js';
 import { runMigrations } from './db/migrations.js';
+import { query } from './db/pool.js';
 
 // Route imports
 import authRoutes from './routes/auth.routes.js';
@@ -45,7 +46,40 @@ async function startServer() {
   app.use(express.json({ limit: '25mb' }));
   app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 
-  // Static uploads
+  // Auto-healing persistent uploads route (restores from PostgreSQL if container is fresh)
+  app.get('/uploads/:filename', async (req, res, next) => {
+    try {
+      const filename = path.basename(req.params.filename);
+      const filePath = path.join(uploadPath, filename);
+
+      if (fs.existsSync(filePath)) {
+        return res.sendFile(filePath);
+      }
+
+      // Restore from PostgreSQL database
+      const dbFile = await query('SELECT mime_type, data_base64 FROM uploaded_files WHERE filename = $1', [filename]);
+      if (dbFile.rows.length > 0) {
+        const { mime_type, data_base64 } = dbFile.rows[0];
+        const buffer = Buffer.from(data_base64, 'base64');
+        
+        try {
+          fs.writeFileSync(filePath, buffer);
+        } catch (wErr) {
+          // ignore disk cache write error
+        }
+
+        res.set('Content-Type', mime_type || 'image/jpeg');
+        res.set('Cache-Control', 'public, max-age=31536000');
+        return res.send(buffer);
+      }
+
+      res.status(404).send('Imagen no encontrada');
+    } catch (err) {
+      console.error('Error serving upload:', err);
+      next();
+    }
+  });
+
   app.use('/uploads', express.static(uploadPath));
 
   // Health endpoint
