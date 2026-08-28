@@ -4,6 +4,8 @@ import { getAgentConfig } from '../db/agent-config.repo.js';
 import { getServicesByTenant } from '../db/services.repo.js';
 import { getProductsByTenant } from '../db/products.repo.js';
 import { getTenantById } from '../db/tenant.repo.js';
+import { getStoreSettings } from '../db/store-settings.repo.js';
+import { getScheduleSettings } from '../db/schedule.repo.js';
 
 export interface AgentProcessResult {
   replyText: string;
@@ -27,6 +29,8 @@ export async function processWhatsAppMessageWithAI(
   const agentConfig: any = await getAgentConfig(tenantId);
   const services: any[] = await getServicesByTenant(tenantId);
   const products: any[] = await getProductsByTenant(tenantId, true);
+  const store = await getStoreSettings(tenantId);
+  const schedule = await getScheduleSettings(tenantId);
 
   const now = new Date();
   const crTime = new Intl.DateTimeFormat('es-CR', {
@@ -35,40 +39,95 @@ export async function processWhatsAppMessageWithAI(
     timeStyle: 'long',
   }).format(now);
 
-  let prompt = `
-Eres Betico, el asistente virtual con inteligencia artificial de ${tenant?.name || 'nuestro negocio'} en WhatsApp.
-Configuración del asistente:
-${agentConfig?.systemPrompt || 'Ayuda a los clientes con sus consultas cordialmente.'}
+  const baseUrl = process.env.APP_URL || 'https://betico-app.qvtdko.easypanel.host';
+  const storeUrl = tenant?.slug ? `${baseUrl}/tienda/${tenant.slug}` : '';
+  const bookingUrl = tenant?.slug ? `${baseUrl}/reservas/${tenant.slug}` : '';
 
-Información actual:
+  // Format Payment Methods Info
+  let paymentInfo = 'Métodos de Pago Disponibles:\n';
+  if (store?.acceptSinpe && store.sinpePhone) {
+    paymentInfo += `- SINPE Móvil: ${store.sinpePhone} (Titular: ${store.sinpeName || tenant?.name})\n`;
+  }
+  if (store?.acceptTransfer && store.bankAccountInfo) {
+    paymentInfo += `- Transferencia Bancaria: ${store.bankAccountInfo}\n`;
+  }
+  if (store?.acceptCashOnDelivery) {
+    paymentInfo += `- Efectivo / Contra entrega aceptado\n`;
+  }
+  if (store?.deliveryEnabled) {
+    paymentInfo += `- Envíos a domicilio: Tarifa estándar ₡${Number(store.deliveryFee || 0).toLocaleString('es-CR')}\n`;
+  }
+  if (store?.pickupEnabled) {
+    paymentInfo += `- Retiro en tienda/local disponible gratis\n`;
+  }
+
+  // Format Schedule & Availability Info
+  let scheduleInfo = 'Horarios y Disponibilidad de Agenda:\n';
+  if (schedule?.jornadaConfig) {
+    const j = schedule.jornadaConfig;
+    scheduleInfo += `- Horario de atención: ${j.startHour || '08:00'} a ${j.endHour || '17:00'}\n`;
+    scheduleInfo += `- Duración estándar por cita: ${j.slotMinutes || 45} minutos\n`;
+    if (j.hasBreak) {
+      scheduleInfo += `- Horario de descanso/almuerzo: ${j.breakStart || '12:00'} a ${j.breakEnd || '13:00'}\n`;
+    }
+  }
+
+  if (schedule?.vacationConfig?.enabled) {
+    const v = schedule.vacationConfig;
+    scheduleInfo += `\n⚠️ ATENCIÓN - MODO VACACIONES / CIERRE TEMPORAL ACTIVO:\n`;
+    scheduleInfo += `- Período de cierre: del ${v.startDate} al ${v.endDate}\n`;
+    scheduleInfo += `- Mensaje al cliente: "${v.message}"\n`;
+    scheduleInfo += `- Si el cliente solicita cita dentro de esas fechas, infórmale amablemente del cierre temporal.\n`;
+  }
+
+  if (schedule?.customFields && schedule.customFields.length > 0) {
+    scheduleInfo += `\nPreguntas específicas que debes hacer al cliente al agendar:\n`;
+    schedule.customFields.forEach((f: any) => {
+      scheduleInfo += `- ${f.label}${f.required ? ' (Requerido)' : ' (Opcional)'}\n`;
+    });
+  }
+
+  let prompt = `
+Eres el Asistente Virtual Oficial con Inteligencia Artificial de *${tenant?.name || 'nuestro negocio'}* en WhatsApp.
+
+Configuración e Instrucciones de Personalidad (System Prompt):
+${agentConfig?.systemPrompt || 'Atiende amablemente a los clientes, brinda información de servicios y ayuda a agendar citas o compras.'}
+
+Contexto Operativo en Tiempo Real:
 - Fecha y hora actual en Costa Rica: ${crTime}
 - Nombre del cliente: ${senderName}
 - Teléfono del cliente: ${senderPhone}
+${bookingUrl ? `- Enlace directo para agendar en línea: ${bookingUrl}` : ''}
+${storeUrl ? `- Enlace directo a la tienda en línea: ${storeUrl}` : ''}
 
-Catálogo de Servicios:
-${services.map(s => `- ${s.name}: ${s.description || ''} (Precio: ₡${Number(s.price || 0).toLocaleString()}, Duración: ${s.duration || '60 min'})`).join('\n')}
+${scheduleInfo}
 
-Catálogo de Productos:
-${products.map(p => `- ${p.name}: ${p.description || ''} (Precio: ₡${Number(p.price || 0).toLocaleString()})`).join('\n')}
+${paymentInfo}
 
-Historial de Chat:
+Catálogo Oficial de Servicios Disponibles:
+${services.length > 0 ? services.map(s => `• ${s.name}: ${s.description || ''} | Precio: ₡${Number(s.price || 0).toLocaleString('es-CR')} | Duración: ${s.duration || `${s.estimatedMinutes || 45} min`}`).join('\n') : 'No hay servicios registrados actualmente.'}
+
+Catálogo Oficial de Productos Disponibles:
+${products.length > 0 ? products.map(p => `• ${p.name}: ${p.description || ''} | Precio: ₡${Number(p.price || 0).toLocaleString('es-CR')} | Stock: ${p.stock ?? 'disponible'}`).join('\n') : 'No hay productos en inventario actualmente.'}
+
+Historial Reciente de la Conversación:
 ${chatHistory.map(h => `${h.role === 'user' ? 'Cliente' : 'Asistente'}: ${h.content}`).join('\n')}
 
-Último mensaje del cliente:
+Último mensaje recibido:
 Cliente: ${userMessage}
 
-Instrucciones Especiales y Comandos Ocultos (NO los muestres al cliente, inclúyelos en tu respuesta SOLAMENTE si se confirman los datos):
+Instrucciones Especiales y Comandos Ocultos (NO los muestres al cliente en el texto visible, inclúyelos en tu respuesta SOLAMENTE si se confirman los datos):
 - Si el cliente confirma querer agendar un servicio, incluye al final de tu respuesta EXACTAMENTE:
-  <<<COMMAND_BOOKING: {"service": "Nombre del servicio", "date": "YYYY-MM-DD", "time": "HH:MM"}>>>
+  <<<COMMAND_BOOKING: {"service": "Nombre del servicio", "date": "YYYY-MM-DD", "time": "HH:MM", "customerName": "${senderName}"}>>>
 - Si el cliente confirma querer hacer una compra de productos, incluye al final de tu respuesta EXACTAMENTE:
   <<<COMMAND_ORDER: {"items": [{"productName": "Nombre del producto", "quantity": 1}]}>>>
-- Si el cliente pide hablar con un humano, incluye al final de tu respuesta:
+- Si el cliente pide hablar con un humano o asesor, incluye al final:
   <<<COMMAND_HANDOFF: {"reason": "Motivo breve"}>>>
 
-Reglas estrictas:
-1. NUNCA inventes productos, servicios o precios que no estén en el catálogo.
-2. Usa el formato de WhatsApp para texto (ejemplo: *negrita*, _cursiva_).
-3. Sé profesional, conciso y amable.
+Reglas estrictas de comportamiento:
+1. NUNCA inventes productos, servicios o precios que no figuren en los catálogos anteriores.
+2. Utiliza siempre el formato nativo de WhatsApp (*negrita* para resaltar, _cursiva_ y emojis con moderación).
+3. Sé cordial, resolutivo, claro y conciso.
 `;
 
   let apiKey = '';

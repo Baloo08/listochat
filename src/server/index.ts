@@ -24,6 +24,7 @@ import auditRoutes from './routes/audit.routes.js';
 import uploadRoutes from './routes/upload.routes.js';
 import storefrontRoutes from './routes/storefront.routes.js';
 import webhookRoutes from './routes/webhook.routes.js';
+import calendarRoutes from './routes/calendar.routes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -67,6 +68,7 @@ async function startServer() {
   app.use('/api/audit-logs', auditRoutes);
   app.use('/api/upload', uploadRoutes);
   app.use('/api/storefront', storefrontRoutes);
+  app.use('/api/calendar', calendarRoutes);
   app.use('/api/webhook/evolution', webhookRoutes);
   app.use('/api/webhook', webhookRoutes);
   app.use('/webhook', webhookRoutes);

@@ -60,6 +60,41 @@ export default function AgentPromptStudio() {
           }
         }
       }
+
+      // Also pre-fetch store and schedule settings to pre-fill wizard with existing business info
+      try {
+        const storeRes = await fetch('/api/store', { headers: getHeaders() });
+        const scheduleRes = await fetch('/api/appointments/schedule', { headers: getHeaders() });
+        const store = storeRes.ok ? await storeRes.json() : null;
+        const sch = scheduleRes.ok ? await scheduleRes.json() : null;
+
+        if (store || sch) {
+          setWizardAnswers(prev => {
+            let pm = prev.paymentMethods;
+            if (store) {
+              const methods: string[] = [];
+              if (store.acceptSinpe && store.sinpePhone) methods.push(`SINPE Móvil (${store.sinpePhone})`);
+              if (store.acceptTransfer) methods.push('Transferencia Bancaria IBAN');
+              if (store.acceptCashOnDelivery) methods.push('Efectivo contra entrega');
+              if (methods.length > 0) pm = methods.join(', ');
+            }
+
+            let lh = prev.locationAndHours;
+            if (sch?.jornadaConfig) {
+              lh = `Lunes a Sábado de ${sch.jornadaConfig.startHour || '08:00'} a ${sch.jornadaConfig.endHour || '17:00'}`;
+            }
+
+            return {
+              ...prev,
+              businessName: store?.storeName || prev.businessName,
+              paymentMethods: pm,
+              locationAndHours: lh
+            };
+          });
+        }
+      } catch (e) {
+        // ignore
+      }
     } catch (error) {
       console.error('Error fetching prompt:', error);
     } finally {

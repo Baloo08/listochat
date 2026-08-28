@@ -1,17 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Clock, Plus, Filter, CheckCircle, XCircle, AlertCircle, RefreshCw, MessageCircle, Link as LinkIcon, Copy, ExternalLink, Settings, Save, Trash2, Sun, Palmtree, HelpCircle, FormInput } from 'lucide-react';
+import { Calendar, Clock, Plus, Filter, CheckCircle, XCircle, AlertCircle, RefreshCw, MessageCircle, Link as LinkIcon, Copy, ExternalLink, Settings, Save, Trash2, Sun, Palmtree, HelpCircle, FormInput, Smartphone, Monitor, Share2, Check } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
 import { Appointment, ScheduleSettings, DayBreakConfig, BookingField } from '../../shared/types';
 
 export default function Bookings() {
-  const [activeTab, setActiveTab] = useState<'list' | 'schedule'>('list');
+  const [activeTab, setActiveTab] = useState<'list' | 'schedule' | 'calendarSync'>('list');
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterDate, setFilterDate] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [showNewModal, setShowNewModal] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [tenantSlug, setTenantSlug] = useState('demo');
+  const [copiedBookingLink, setCopiedBookingLink] = useState(false);
+  const [copiedCalendarLink, setCopiedCalendarLink] = useState(false);
+  const [tenantSlug, setTenantSlug] = useState('clinicasonrisas');
 
   // Schedule Settings State
   const [scheduleMode, setScheduleMode] = useState<'jornada' | 'fechas' | 'bloques'>('jornada');
@@ -254,11 +255,21 @@ export default function Bookings() {
   };
 
   const publicBookingUrl = `${window.location.origin}/reservas/${tenantSlug}`;
+  const hostNoProtocol = window.location.host;
+  const calendarIcsUrl = `${window.location.origin}/api/calendar/${tenantSlug}.ics`;
+  const calendarWebcalUrl = `webcal://${hostNoProtocol}/api/calendar/${tenantSlug}.ics`;
+  const googleCalendarSubscribeUrl = `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(calendarWebcalUrl)}`;
 
   const copyBookingLink = () => {
     navigator.clipboard.writeText(publicBookingUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    setCopiedBookingLink(true);
+    setTimeout(() => setCopiedBookingLink(false), 2000);
+  };
+
+  const copyCalendarLink = () => {
+    navigator.clipboard.writeText(calendarIcsUrl);
+    setCopiedCalendarLink(true);
+    setTimeout(() => setCopiedCalendarLink(false), 2000);
   };
 
   const filtered = appointments.filter(a => {
@@ -282,14 +293,14 @@ export default function Bookings() {
   }
 
   return (
-    <div style={{ maxWidth: '950px' }}>
+    <div style={{ maxWidth: '980px' }}>
       
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
         <div>
           <h2 style={{ margin: '0 0 4px 0', fontSize: '1.5rem', fontWeight: 'bold' }}>Agenda y Reservas</h2>
           <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-            Control de citas, horarios, preguntas del formulario y portal de agendamiento online
+            Control de citas, horarios, preguntas del formulario y sincronización con Apple/Google Calendar
           </p>
         </div>
 
@@ -320,7 +331,7 @@ export default function Bookings() {
             onClick={copyBookingLink}
             style={{ padding: '8px 14px', backgroundColor: 'white', border: '1px solid #93c5fd', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', fontWeight: '600', color: '#1d4ed8' }}
           >
-            <Copy size={15} /> {copied ? '¡Copiado!' : 'Copiar'}
+            <Copy size={15} /> {copiedBookingLink ? '¡Copiado!' : 'Copiar'}
           </button>
           <a
             href={publicBookingUrl}
@@ -370,7 +381,26 @@ export default function Bookings() {
             gap: '8px'
           }}
         >
-          <Settings size={18} /> ⚙️ Horarios, Formulario & Vacaciones
+          <Settings size={18} /> ⚙️ Horarios & Formulario
+        </button>
+
+        <button
+          onClick={() => setActiveTab('calendarSync')}
+          style={{
+            padding: '10px 18px',
+            border: 'none',
+            borderBottom: activeTab === 'calendarSync' ? '2px solid #7c3aed' : '2px solid transparent',
+            backgroundColor: 'transparent',
+            color: activeTab === 'calendarSync' ? '#7c3aed' : 'var(--text-muted)',
+            fontWeight: '600',
+            fontSize: '0.95rem',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}
+        >
+          <Share2 size={18} /> 📲 Sincronizar con Apple / Google Calendar
         </button>
       </div>
 
@@ -952,6 +982,112 @@ export default function Bookings() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 3: CALENDAR SYNC (APPLE / GOOGLE / OUTLOOK) */}
+      {activeTab === 'calendarSync' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          
+          <div style={{ backgroundColor: 'var(--surface)', padding: '26px', borderRadius: '14px', border: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
+              <div style={{ width: '42px', height: '42px', backgroundColor: '#ede9fe', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Share2 size={22} color="#7c3aed" />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 'bold' }}>Suscripción en Tiempo Real a Calendarios</h3>
+                <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                  Visualiza todas las citas agendadas por WhatsApp o la web en tu iPhone, Mac, Android o Google Calendar automáticamente.
+                </p>
+              </div>
+            </div>
+
+            {/* Calendar Link Box */}
+            <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '10px', border: '1px solid #e2e8f0', marginBottom: '25px' }}>
+              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '6px' }}>
+                Enlace Universal de Calendario (iCal / Webcal)
+              </label>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <input
+                  type="text"
+                  readOnly
+                  value={calendarIcsUrl}
+                  style={{ flex: 1, minWidth: '260px', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', backgroundColor: 'white', fontSize: '0.9rem', fontFamily: 'monospace' }}
+                />
+                <button
+                  onClick={copyCalendarLink}
+                  style={{ padding: '10px 16px', backgroundColor: 'white', border: '1px solid #cbd5e1', borderRadius: '6px', cursor: 'pointer', fontWeight: '600', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
+                  {copiedCalendarLink ? <Check size={16} color="#16a34a" /> : <Copy size={16} />}
+                  {copiedCalendarLink ? '¡Enlace Copiado!' : 'Copiar Enlace'}
+                </button>
+              </div>
+            </div>
+
+            {/* Quick 1-Click Subscription Buttons */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '14px', marginBottom: '30px' }}>
+              
+              {/* Apple Calendar Button */}
+              <a
+                href={calendarWebcalUrl}
+                style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '16px', borderRadius: '10px', backgroundColor: '#0f172a', color: 'white', textDecoration: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}
+              >
+                <Smartphone size={28} />
+                <div>
+                  <div style={{ fontWeight: 'bold', fontSize: '0.95rem' }}>Apple Calendar</div>
+                  <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Abrir en iPhone, iPad o Mac</div>
+                </div>
+              </a>
+
+              {/* Google Calendar Button */}
+              <a
+                href={googleCalendarSubscribeUrl}
+                target="_blank"
+                rel="noreferrer"
+                style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '16px', borderRadius: '10px', backgroundColor: '#2563eb', color: 'white', textDecoration: 'none', boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.2)' }}
+              >
+                <Calendar size={28} />
+                <div>
+                  <div style={{ fontWeight: 'bold', fontSize: '0.95rem' }}>Google Calendar</div>
+                  <div style={{ fontSize: '0.75rem', color: '#bfdbfe' }}>Añadir a Google Calendar (Web / Android)</div>
+                </div>
+              </a>
+            </div>
+
+            {/* Step-by-step Instructions */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 'bold' }}>📖 Instrucciones de Configuración Rápida:</h4>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '14px' }}>
+                <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                  <strong style={{ display: 'block', fontSize: '0.9rem', marginBottom: '6px' }}>🍏 En iPhone o iPad:</strong>
+                  <ol style={{ margin: 0, paddingLeft: '18px', fontSize: '0.85rem', color: '#475569', lineHeight: '1.6' }}>
+                    <li>Toca el botón negro <strong>Apple Calendar</strong> arriba.</li>
+                    <li>iOS te preguntará si deseas suscribirte al calendario. Toca <strong>Suscribirse</strong>.</li>
+                    <li>Elige el color deseado y toca <strong>Añadir</strong>. ¡Listo!</li>
+                  </ol>
+                </div>
+
+                <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                  <strong style={{ display: 'block', fontSize: '0.9rem', marginBottom: '6px' }}>📅 En Google Calendar:</strong>
+                  <ol style={{ margin: 0, paddingLeft: '18px', fontSize: '0.85rem', color: '#475569', lineHeight: '1.6' }}>
+                    <li>Toca el botón azul <strong>Google Calendar</strong> arriba.</li>
+                    <li>Se abrirá Google Calendar y te preguntará <strong>¿Añadir calendario?</strong></li>
+                    <li>Presiona <strong>Añadir</strong> y verás todas las citas sincronizadas en tu cuenta.</li>
+                  </ol>
+                </div>
+
+                <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                  <strong style={{ display: 'block', fontSize: '0.9rem', marginBottom: '6px' }}>💻 En Outlook o Windows:</strong>
+                  <ol style={{ margin: 0, paddingLeft: '18px', fontSize: '0.85rem', color: '#475569', lineHeight: '1.6' }}>
+                    <li>Copia el enlace de arriba con el botón <strong>Copiar Enlace</strong>.</li>
+                    <li>En Outlook, ve a Calendario -&gt; <strong>Agregar calendario</strong>.</li>
+                    <li>Selecciona <strong>Suscribirse desde la web</strong> y pega la URL.</li>
+                  </ol>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
