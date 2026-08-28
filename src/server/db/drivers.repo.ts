@@ -23,13 +23,14 @@ export async function getDriverById(id: string, tenantId: string): Promise<Deliv
 }
 
 export async function getDriverByPin(pin: string, phone?: string): Promise<DeliveryDriver | null> {
+  const cleanPin = (pin || '').trim();
   let sql = `
     SELECT id, tenant_id as "tenantId", name, phone, access_pin as "accessPin",
            vehicle_type as "vehicleType", plate_number as "plateNumber", active, created_at as "createdAt"
     FROM delivery_drivers
-    WHERE access_pin = $1 AND active = TRUE
+    WHERE TRIM(access_pin) = $1 AND active = TRUE
   `;
-  const params: any[] = [pin.trim()];
+  const params: any[] = [cleanPin];
   if (phone) {
     const clean = phone.replace(/\D/g, '');
     sql += ` AND (REPLACE(phone, '-', '') LIKE '%' || $2 OR phone LIKE '%' || $2)`;

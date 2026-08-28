@@ -6,8 +6,28 @@ import { getOrderById, updateOrder } from '../db/orders.repo.js';
 import { getTenantById } from '../db/tenant.repo.js';
 import { getStoreSettings } from '../db/store-settings.repo.js';
 import { sendMessage } from '../services/evolution.js';
+import { query } from '../db/pool.js';
 
 const router = Router();
+
+function normalizeCostaRicaPhone(phone: string): string {
+  let clean = (phone || '').replace(/\D/g, '');
+  if (clean.length === 8) {
+    clean = '506' + clean;
+  }
+  return clean;
+}
+
+async function resolveInstanceName(tenantId: string): Promise<string | undefined> {
+  const tenant = await getTenantById(tenantId);
+  if (tenant?.evolutionInstance) return tenant.evolutionInstance;
+
+  const anyActiveInstance = await query(`SELECT evolution_instance FROM tenants WHERE evolution_instance IS NOT NULL AND evolution_instance != '' LIMIT 1`);
+  if (anyActiveInstance.rows.length > 0) {
+    return anyActiveInstance.rows[0].evolution_instance;
+  }
+  return undefined;
+}
 
 // =======================================================
 // PUBLIC DRIVER PORTAL ROUTES (Authenticated via PIN)
@@ -24,7 +44,7 @@ router.post('/portal/login', async (req, res) => {
 
     const driver = await getDriverByPin(pin, phone);
     if (!driver) {
-      res.status(401).json({ error: 'PIN o teléfono inválido' });
+      res.status(401).json({ error: 'Código PIN no encontrado o incorrecto' });
       return;
     }
 
@@ -38,6 +58,7 @@ router.post('/portal/login', async (req, res) => {
         tenantId: driver.tenantId,
         name: driver.name,
         phone: driver.phone,
+        accessPin: driver.accessPin,
         vehicleType: driver.vehicleType,
         plateNumber: driver.plateNumber,
         businessName: storeSettings?.storeName || tenant?.name || 'Comercio'
@@ -103,8 +124,8 @@ router.post('/portal/orders/:id/deliver', async (req, res) => {
     // Notify customer via WhatsApp
     const tenant = await getTenantById(driver.tenantId);
     const storeSettings = await getStoreSettings(driver.tenantId);
-    const instanceName = tenant?.evolutionInstance;
-    const cleanCustomerPhone = (order.customerPhone || '').replace(/\D/g, '');
+    const instanceName = await resolveInstanceName(driver.tenantId);
+    const cleanCustomerPhone = normalizeCostaRicaPhone(order.customerPhone || '');
 
     if (instanceName && cleanCustomerPhone) {
       const customTpl = storeSettings?.notificationTemplates?.orderDelivered;
@@ -182,6 +203,44 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+// Send Welcome Message with PIN & Portal Link to Driver
+router.post('/:id/send-welcome', async (req, res) => {
+  try {
+    const driver = await getDriverById(req.params.id, req.tenantId!);
+    if (!driver) {
+      res.status(404).json({ error: 'Repartidor no encontrado' });
+      return;
+    }
+
+    const tenant = await getTenantById(req.tenantId!);
+    const storeSettings = await getStoreSettings(req.tenantId!);
+    const instanceName = await resolveInstanceName(req.tenantId!);
+    const cleanDriverPhone = normalizeCostaRicaPhone(driver.phone);
+    const appOrigin = process.env.APP_URL || 'https://betico-app.qvtdko.easypanel.host';
+    const driverPortalUrl = `${appOrigin}/repartidor?pin=${driver.accessPin || '1234'}`;
+    const businessName = storeSettings?.storeName || tenant?.name || 'Nuestro Comercio';
+
+    const welcomeMsg = `👋 *¡Hola ${driver.name}!*
+
+Has sido registrado como repartidor en *${businessName}*.
+
+🔑 *Tu Código PIN de Acceso:* *${driver.accessPin || '1234'}*
+📲 *Tu Enlace de Entregas:* ${driverPortalUrl}
+
+Ingresa al enlace para ver tus pedidos asignados, abrir rutas en Waze y marcar entregas en tiempo real. 🛵💨`;
+
+    if (instanceName && cleanDriverPhone) {
+      await sendMessage(instanceName, cleanDriverPhone, welcomeMsg);
+      res.json({ success: true, message: 'WhatsApp de bienvenida enviado con éxito', driverPortalUrl });
+    } else {
+      res.json({ success: false, error: 'No hay instancia de WhatsApp activa o teléfono inválido', driverPortalUrl });
+    }
+  } catch (error) {
+    console.error('Send welcome error:', error);
+    res.status(500).json({ error: 'Error enviando mensaje de bienvenida' });
+  }
+});
+
 // Dispatch order to driver via WhatsApp & set status to "en_camino"
 router.post('/:id/dispatch-order', async (req, res) => {
   try {
@@ -200,7 +259,7 @@ router.post('/:id/dispatch-order', async (req, res) => {
 
     const tenant = await getTenantById(req.tenantId!);
     const storeSettings = await getStoreSettings(req.tenantId!);
-    const instanceName = tenant?.evolutionInstance;
+    const instanceName = await resolveInstanceName(req.tenantId!);
 
     // Generate Waze navigation URL if coordinates exist
     let wazeUrl = '';
@@ -217,8 +276,8 @@ router.post('/:id/dispatch-order', async (req, res) => {
       status: 'en_camino' as any
     });
 
-    const cleanDriverPhone = driver.phone.replace(/\D/g, '');
-    const cleanCustomerPhone = (order.customerPhone || '').replace(/\D/g, '');
+    const cleanDriverPhone = normalizeCostaRicaPhone(driver.phone);
+    const cleanCustomerPhone = normalizeCostaRicaPhone(order.customerPhone || '');
 
     // Format WhatsApp Dispatch Message for Driver
     const itemsList = (order.items || [])

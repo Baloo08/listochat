@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Store, Palette, Link as LinkIcon, Copy, ExternalLink, Save, CheckCircle, Upload, Image as ImageIcon, Sparkles, Pipette, Info, Utensils, ShoppingBag, Truck, MapPin, Package, Navigation, Users, Plus, Trash2, Phone, Bike, MessageSquare, Key, HelpCircle } from 'lucide-react';
+import { Store, Palette, Link as LinkIcon, Copy, ExternalLink, Save, CheckCircle, Upload, Image as ImageIcon, Sparkles, Pipette, Info, Utensils, ShoppingBag, Truck, MapPin, Package, Navigation, Users, Plus, Trash2, Phone, Bike, MessageSquare, Key, HelpCircle, Edit, Send } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
 import { StoreSettings as StoreSettingsType, StoreTheme, RestaurantConfig, DeliveryConfig, DeliveryDriver, NotificationTemplates } from '../../shared/types';
 
@@ -104,6 +104,11 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
   const [newDriverVehicle, setNewDriverVehicle] = useState<'moto' | 'bici' | 'auto'>('moto');
   const [newDriverPlate, setNewDriverPlate] = useState('');
   const [addingDriver, setAddingDriver] = useState(false);
+
+  // Edit Driver Modal State
+  const [editingDriver, setEditingDriver] = useState<DeliveryDriver | null>(null);
+  const [updatingDriver, setUpdatingDriver] = useState(false);
+  const [copiedPinDriverId, setCopiedPinDriverId] = useState<string | null>(null);
 
   // Design & Theme Fields
   const [primaryColor, setPrimaryColor] = useState('#16a34a');
@@ -249,13 +254,13 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
     }
     setAddingDriver(true);
     try {
-      const pinToUse = newDriverPin || Math.floor(1000 + Math.random() * 9000).toString();
+      const pinToUse = (newDriverPin && newDriverPin.trim()) || Math.floor(1000 + Math.random() * 9000).toString();
       await api.post('/api/drivers', {
-        name: newDriverName,
-        phone: newDriverPhone,
+        name: newDriverName.trim(),
+        phone: newDriverPhone.trim(),
         accessPin: pinToUse,
         vehicleType: newDriverVehicle,
-        plateNumber: newDriverPlate
+        plateNumber: newDriverPlate.trim()
       });
       setNewDriverName('');
       setNewDriverPhone('');
@@ -269,6 +274,28 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
     }
   };
 
+  const handleUpdateDriver = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingDriver) return;
+    setUpdatingDriver(true);
+    try {
+      await api.put(`/api/drivers/${editingDriver.id}`, {
+        name: editingDriver.name,
+        phone: editingDriver.phone,
+        accessPin: editingDriver.accessPin,
+        vehicleType: editingDriver.vehicleType,
+        plateNumber: editingDriver.plateNumber,
+        active: editingDriver.active
+      });
+      setEditingDriver(null);
+      await fetchDrivers();
+    } catch (e: any) {
+      alert('Error actualizando repartidor: ' + e.message);
+    } finally {
+      setUpdatingDriver(false);
+    }
+  };
+
   const handleDeleteDriver = async (id: string) => {
     if (!confirm('¿Eliminar este repartidor?')) return;
     try {
@@ -277,6 +304,32 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
     } catch (e) {
       alert('Error eliminando repartidor');
     }
+  };
+
+  const handleSendDriverWelcome = async (driver: DeliveryDriver) => {
+    try {
+      const res = await api.post(`/api/drivers/${driver.id}/send-welcome`, {});
+      if (res?.success) {
+        alert(`¡Mensaje de WhatsApp con PIN y enlace enviado a ${driver.name}!`);
+      } else {
+        const cleanPhone = driver.phone.replace(/\D/g, '');
+        const directUrl = `${window.location.origin}/repartidor?pin=${driver.accessPin || '1234'}`;
+        const waText = encodeURIComponent(`👋 ¡Hola ${driver.name}! Has sido registrado como repartidor en ${storeName || 'nuestro negocio'}.\n\n🔑 Tu PIN de acceso es: ${driver.accessPin || '1234'}\n📲 Tu portal de entregas: ${directUrl}`);
+        window.open(`https://wa.me/${cleanPhone.length === 8 ? '506' + cleanPhone : cleanPhone}?text=${waText}`, '_blank');
+      }
+    } catch (e) {
+      const cleanPhone = driver.phone.replace(/\D/g, '');
+      const directUrl = `${window.location.origin}/repartidor?pin=${driver.accessPin || '1234'}`;
+      const waText = encodeURIComponent(`👋 ¡Hola ${driver.name}! Has sido registrado como repartidor en ${storeName || 'nuestro negocio'}.\n\n🔑 Tu PIN de acceso es: ${driver.accessPin || '1234'}\n📲 Tu portal de entregas: ${directUrl}`);
+      window.open(`https://wa.me/${cleanPhone.length === 8 ? '506' + cleanPhone : cleanPhone}?text=${waText}`, '_blank');
+    }
+  };
+
+  const copyDriverPortalLink = (driver: DeliveryDriver) => {
+    const directUrl = `${window.location.origin}/repartidor?pin=${driver.accessPin || '1234'}`;
+    navigator.clipboard.writeText(directUrl);
+    setCopiedPinDriverId(driver.id);
+    setTimeout(() => setCopiedPinDriverId(null), 2500);
   };
 
   const handleFileUpload = async (file: File, type: 'logo' | 'banner') => {
@@ -764,8 +817,6 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
       {/* TAB 3: DELIVERY, GPS & CORREOS DE COSTA RICA */}
       {activeTab === 'delivery' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          
-          {/* Store Physical Origin Location */}
           <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
               <MapPin size={22} color="#2563eb" />
@@ -833,7 +884,6 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
             </div>
           </div>
 
-          {/* Delivery Express Distance vs Flat Rate */}
           <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
             <h3 style={{ margin: '0 0 14px 0', fontSize: '1.15rem', fontWeight: 'bold' }}>Tarifa de Envío Local / Moto Express</h3>
 
@@ -934,7 +984,7 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
         </div>
       )}
 
-      {/* TAB 4: REPARTIDORES & CODIGO PIN */}
+      {/* TAB 4: REPARTIDORES & CODIGO PIN & ACCIONES RAPIDAS */}
       {activeTab === 'drivers' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           
@@ -1018,32 +1068,164 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
             {drivers.length === 0 ? (
               <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', margin: 0 }}>No hay repartidores registrados todavía.</p>
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '14px' }}>
-                {drivers.map(d => (
-                  <div key={d.id} style={{ padding: '16px', backgroundColor: '#f8fafc', borderRadius: '10px', border: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <div style={{ width: '40px', height: '40px', backgroundColor: '#ccfbf1', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0f766e' }}>
-                        <Bike size={20} />
-                      </div>
-                      <div>
-                        <div style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>{d.name}</div>
-                        <div style={{ fontSize: '0.75rem', color: '#64748b' }}>📞 {d.phone} • {d.vehicleType?.toUpperCase()}</div>
-                        <div style={{ fontSize: '0.75rem', color: '#0f766e', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
-                          <Key size={12} /> PIN: {d.accessPin || '1234'}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px' }}>
+                {drivers.map(d => {
+                  const driverPortalUrl = `${window.location.origin}/repartidor?pin=${d.accessPin || '1234'}`;
+                  return (
+                    <div key={d.id} style={{ padding: '18px', backgroundColor: '#f8fafc', borderRadius: '12px', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div style={{ width: '42px', height: '42px', backgroundColor: '#ccfbf1', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0f766e' }}>
+                            <Bike size={22} />
+                          </div>
+                          <div>
+                            <div style={{ fontWeight: 'bold', fontSize: '1rem' }}>{d.name}</div>
+                            <div style={{ fontSize: '0.8rem', color: '#64748b' }}>📞 {d.phone} • {d.vehicleType?.toUpperCase()} {d.plateNumber ? `(${d.plateNumber})` : ''}</div>
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '4px' }}>
+                          <button
+                            onClick={() => setEditingDriver(d)}
+                            style={{ border: 'none', background: '#eff6ff', color: '#2563eb', cursor: 'pointer', padding: '6px', borderRadius: '6px' }}
+                            title="Editar repartidor"
+                          >
+                            <Edit size={16} />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteDriver(d.id)}
+                            style={{ border: 'none', background: '#fef2f2', color: '#ef4444', cursor: 'pointer', padding: '6px', borderRadius: '6px' }}
+                            title="Eliminar repartidor"
+                          >
+                            <Trash2 size={16} />
+                          </button>
                         </div>
                       </div>
-                    </div>
 
-                    <button
-                      onClick={() => handleDeleteDriver(d.id)}
-                      style={{ border: 'none', background: 'none', color: '#ef4444', cursor: 'pointer', padding: '6px' }}
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                ))}
+                      {/* PIN Tag */}
+                      <div style={{ padding: '8px 12px', backgroundColor: '#f0fdfa', borderRadius: '8px', border: '1px solid #99f6e4', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem' }}>
+                        <span style={{ color: '#0f766e', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <Key size={14} /> PIN de Acceso: <strong>{d.accessPin || '1234'}</strong>
+                        </span>
+                        <button
+                          onClick={() => copyDriverPortalLink(d)}
+                          style={{ padding: '4px 8px', backgroundColor: 'white', border: '1px solid #99f6e4', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold', color: '#0f766e', display: 'flex', alignItems: 'center', gap: '4px' }}
+                        >
+                          <Copy size={12} /> {copiedPinDriverId === d.id ? '¡Copiado!' : 'Copiar Enlace'}
+                        </button>
+                      </div>
+
+                      {/* Quick Action Buttons */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                        <button
+                          onClick={() => handleSendDriverWelcome(d)}
+                          style={{ padding: '8px', backgroundColor: '#16a34a', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                        >
+                          <Send size={13} /> WhatsApp PIN
+                        </button>
+
+                        <a
+                          href={driverPortalUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{ padding: '8px', backgroundColor: '#0f172a', color: 'white', borderRadius: '6px', textDecoration: 'none', fontSize: '0.75rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                        >
+                          <ExternalLink size={13} /> Abrir Portal
+                        </a>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* EDIT DRIVER MODAL */}
+      {editingDriver && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+          <div style={{ backgroundColor: 'white', borderRadius: '14px', maxWidth: '480px', width: '100%', padding: '24px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.2)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
+              <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Edit size={18} color="var(--primary)" /> Editar Perfil del Repartidor
+              </h3>
+              <button onClick={() => setEditingDriver(null)} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: '1.2rem', color: '#64748b' }}>✕</button>
+            </div>
+
+            <form onSubmit={handleUpdateDriver} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '4px' }}>Nombre Completo</label>
+                <input
+                  type="text"
+                  value={editingDriver.name}
+                  onChange={(e) => setEditingDriver({ ...editingDriver, name: e.target.value })}
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '4px' }}>Teléfono WhatsApp</label>
+                <input
+                  type="tel"
+                  value={editingDriver.phone}
+                  onChange={(e) => setEditingDriver({ ...editingDriver, phone: e.target.value })}
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '4px' }}>Código PIN de Acceso</label>
+                <input
+                  type="text"
+                  value={editingDriver.accessPin || '1234'}
+                  onChange={(e) => setEditingDriver({ ...editingDriver, accessPin: e.target.value })}
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem', fontWeight: 'bold', color: '#0f766e' }}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '4px' }}>Vehículo</label>
+                  <select
+                    value={editingDriver.vehicleType || 'moto'}
+                    onChange={(e) => setEditingDriver({ ...editingDriver, vehicleType: e.target.value as any })}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                  >
+                    <option value="moto">Motocicleta</option>
+                    <option value="bici">Bicicleta</option>
+                    <option value="auto">Automóvil / Carro</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '4px' }}>Placa</label>
+                  <input
+                    type="text"
+                    value={editingDriver.plateNumber || ''}
+                    onChange={(e) => setEditingDriver({ ...editingDriver, plateNumber: e.target.value })}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '12px' }}>
+                <button
+                  type="button"
+                  onClick={() => setEditingDriver(null)}
+                  style={{ padding: '8px 14px', backgroundColor: 'transparent', border: '1px solid #cbd5e1', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem' }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={updatingDriver}
+                  style={{ padding: '8px 16px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}
+                >
+                  {updatingDriver ? 'Guardando...' : 'Guardar Cambios'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -1080,8 +1262,6 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-              
-              {/* 1. Order Received (Customer) */}
               <div>
                 <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '4px' }}>
                   1. Notificación de Pedido Recibido (Al Cliente)
@@ -1094,7 +1274,6 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
                 />
               </div>
 
-              {/* 2. Order In Transit (Customer) */}
               <div>
                 <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '4px' }}>
                   2. Notificación de Pedido en Camino (Al Cliente)
@@ -1107,7 +1286,6 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
                 />
               </div>
 
-              {/* 3. Order Delivered (Customer) */}
               <div>
                 <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '4px' }}>
                   3. Notificación de Pedido Entregado con Éxito (Al Cliente)
@@ -1120,7 +1298,6 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
                 />
               </div>
 
-              {/* 4. Driver Dispatch */}
               <div>
                 <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '4px' }}>
                   4. Comanda de Despacho Asignada (Al Motorizado / Repartidor)

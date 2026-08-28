@@ -282,6 +282,7 @@ export async function runMigrations() {
     );
 
     ALTER TABLE delivery_drivers ADD COLUMN IF NOT EXISTS access_pin VARCHAR(20);
+    UPDATE delivery_drivers SET access_pin = '1234' WHERE access_pin IS NULL OR access_pin = '';
     ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS store_mode VARCHAR(50) DEFAULT 'retail';
     ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS restaurant_config JSONB;
     ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS delivery_config JSONB;
