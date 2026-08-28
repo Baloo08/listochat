@@ -68,6 +68,8 @@ async function startServer() {
   app.use('/api/upload', uploadRoutes);
   app.use('/api/storefront', storefrontRoutes);
   app.use('/api/webhook/evolution', webhookRoutes);
+  app.use('/api/webhook', webhookRoutes);
+  app.use('/webhook', webhookRoutes);
 
   // Serve static assets in production, setup vite dev server in dev
   if (env.NODE_ENV === 'production') {

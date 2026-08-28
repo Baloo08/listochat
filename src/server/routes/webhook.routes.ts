@@ -10,35 +10,48 @@ import { query } from '../db/pool.js';
 const router = Router();
 
 const handleWebhook = async (req: any, res: any) => {
-  res.status(200).send('OK');
+  // Return immediate 200 OK to Evolution API
+  res.status(200).send({ status: 'SUCCESS' });
 
   try {
     const payload = req.body || {};
+    const eventName = (payload.event || '').toLowerCase().replace(/_/g, '.');
     const instanceName = payload.instance || payload.instanceName || req.query.instance;
-    const data = payload.data || payload;
 
-    if (payload.event && payload.event !== 'messages.upsert' && payload.event !== 'messages-upsert' && payload.event !== 'send.message') {
+    console.log(`[Webhook] Received event: '${payload.event}' for instance: '${instanceName}'`);
+
+    // Filter non-message events
+    if (eventName && !eventName.includes('message') && !eventName.includes('upsert')) {
       return;
     }
 
-    const key = data.key || {};
-    const fromMe = key.fromMe || data.fromMe || false;
-    const remoteJid = key.remoteJid || data.remoteJid || data.sender;
+    const data = payload.data || payload;
+    // Evolution API v2 sends messages inside data.messages array or directly in data
+    const msgItem = (Array.isArray(data?.messages) ? data.messages[0] : data) || {};
+    const key = msgItem.key || data?.key || {};
 
+    const fromMe = key.fromMe === true || msgItem.fromMe === true || data?.fromMe === true;
+    const remoteJid = key.remoteJid || msgItem.remoteJid || data?.remoteJid || data?.sender;
+
+    // Ignore broadcast and group messages
     if (!remoteJid || remoteJid.includes('@g.us') || remoteJid.includes('status@broadcast')) {
       return;
     }
 
-    const pushName = data.pushName || data.name || 'Cliente';
-    const messageObj = data.message || {};
+    const pushName = msgItem.pushName || data?.pushName || data?.name || 'Cliente';
+    const messageObj = msgItem.message || data?.message || {};
+
     const userMessage = (
       messageObj.conversation ||
       messageObj.extendedTextMessage?.text ||
       messageObj.imageMessage?.caption ||
-      data.message?.text ||
-      data.text ||
+      messageObj.videoMessage?.caption ||
+      data?.text ||
+      data?.message?.text ||
       ''
     ).trim();
+
+    console.log(`[Webhook] Parsed message from ${remoteJid} (${pushName}): "${userMessage}" [fromMe=${fromMe}]`);
 
     if (!userMessage) {
       return;
@@ -50,7 +63,7 @@ const handleWebhook = async (req: any, res: any) => {
     }
     if (!tenant) {
       const all = await getAllTenants();
-      tenant = all[0] || null;
+      tenant = all.find(t => t.slug !== 'superadmin') || all[0] || null;
     }
 
     if (!tenant || !tenant.active) {
@@ -60,6 +73,7 @@ const handleWebhook = async (req: any, res: any) => {
 
     const msgId = key.id || `msg_${Date.now()}`;
 
+    // If message was sent from the business phone itself
     if (fromMe) {
       await saveChatMessage({
         id: msgId,
@@ -73,6 +87,7 @@ const handleWebhook = async (req: any, res: any) => {
       return;
     }
 
+    // Save incoming user message
     await saveChatMessage({
       id: msgId,
       tenantId: tenant.id,
@@ -83,6 +98,7 @@ const handleWebhook = async (req: any, res: any) => {
       status: 'received'
     });
 
+    // Fetch conversation history
     const allChats = await getChatMessagesByTenant(tenant.id, 20);
     const history = allChats
       .filter((c: any) => (c.remoteJid || c.remote_jid) === remoteJid)
@@ -92,6 +108,8 @@ const handleWebhook = async (req: any, res: any) => {
       }));
 
     const cleanPhone = remoteJid.replace(/@.+$/, '').replace(/\D/g, '');
+
+    console.log(`[Webhook] Processing with AI for tenant '${tenant.name}'...`);
     const aiResult = await processWhatsAppMessageWithAI(
       tenant.id,
       userMessage,
@@ -101,12 +119,18 @@ const handleWebhook = async (req: any, res: any) => {
     );
 
     if (!aiResult || !aiResult.replyText) {
+      console.warn('[Webhook] No AI reply generated');
       return;
     }
 
-    const targetInstance = tenant.evolutionInstance || instanceName || `tenant_${tenant.id.slice(0, 8)}`;
-    await sendMessage(targetInstance, remoteJid, aiResult.replyText);
+    console.log(`[Webhook] AI generated reply: "${aiResult.replyText.slice(0, 100)}..."`);
 
+    // Send reply back via Evolution API
+    const targetInstance = tenant.evolutionInstance || instanceName || `tenant_${tenant.id.slice(0, 8)}`;
+    const sendRes = await sendMessage(targetInstance, remoteJid, aiResult.replyText);
+    console.log(`[Webhook] SendMessage status: success=${sendRes.success}`);
+
+    // Save AI reply to database
     await saveChatMessage({
       id: `ai_${Date.now()}`,
       tenantId: tenant.id,
@@ -115,9 +139,10 @@ const handleWebhook = async (req: any, res: any) => {
       fromMe: true,
       messageText: aiResult.replyText,
       aiResponse: aiResult.replyText,
-      status: 'sent'
+      status: sendRes.success ? 'sent' : 'failed'
     });
 
+    // Handle detected booking command
     if (aiResult.isBookingDetected && aiResult.bookingData) {
       try {
         await createBookingFromCommand(tenant.id, {
@@ -139,6 +164,7 @@ const handleWebhook = async (req: any, res: any) => {
       }
     }
 
+    // Handle detected order command
     if (aiResult.isOrderDetected && aiResult.orderData) {
       try {
         await createOrderFromWhatsApp(tenant.id, {
@@ -167,5 +193,7 @@ const handleWebhook = async (req: any, res: any) => {
 
 router.post('/', handleWebhook);
 router.post('/evolution', handleWebhook);
+router.post('/messages-upsert', handleWebhook);
+router.post('/messages_upsert', handleWebhook);
 
 export default router;
