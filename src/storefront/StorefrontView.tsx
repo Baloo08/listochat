@@ -1,9 +1,47 @@
 import React, { useState, useEffect } from 'react';
-import { ShoppingBag, Search, Plus, Minus, X, Check, ArrowRight, MessageCircle, AlertCircle, Trash2, MapPin, Truck, Store, ShieldCheck, Tag, Utensils, Navigation } from 'lucide-react';
-import { Product, StoreSettings } from '../shared/types';
+import { ShoppingBag, Search, Plus, Minus, X, Check, ArrowRight, MessageCircle, AlertCircle, Trash2, MapPin, Truck, Store, ShieldCheck, Tag, Utensils, Navigation, Package } from 'lucide-react';
+import { Product, StoreSettings, DeliveryConfig } from '../shared/types';
 
 interface StorefrontProps {
   slug: string;
+}
+
+function calculateDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371; // Earth radius in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const directKm = R * c;
+  return Math.round(directKm * 1.25 * 10) / 10; // Road distance estimate factor 1.25
+}
+
+function calculateCorreosCrRate(
+  origin: 'GAM' | 'RESTO',
+  dest: 'GAM' | 'RESTO',
+  weightKg: number,
+  includeIva: boolean
+): number {
+  const ivaFactor = includeIva ? 1.13 : 1.0;
+  let firstKg = 2168.14;
+  let extraKg = 1238.94;
+
+  if (origin === 'GAM' && dest === 'GAM') {
+    firstKg = 2168.14;
+    extraKg = 1238.94;
+  } else if ((origin === 'GAM' && dest === 'RESTO') || (origin === 'RESTO' && dest === 'GAM')) {
+    firstKg = 2964.60;
+    extraKg = 1371.68;
+  } else if (origin === 'RESTO' && dest === 'RESTO') {
+    firstKg = 3761.06;
+    extraKg = 1548.67;
+  }
+
+  const extraCount = Math.max(0, Math.ceil(weightKg - 1));
+  const baseTotal = firstKg + (extraCount * extraKg);
+  return Math.round(baseTotal * ivaFactor);
 }
 
 export default function StorefrontView({ slug }: StorefrontProps) {
@@ -19,15 +57,16 @@ export default function StorefrontView({ slug }: StorefrontProps) {
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [modalQuantity, setModalQuantity] = useState(1);
-  const [addedAnimation, setAddedAnimation] = useState(false);
 
   // Checkout Form State
-  const [consumptionMode, setConsumptionMode] = useState<'dine_in' | 'pickup' | 'delivery'>('pickup');
+  const [consumptionMode, setConsumptionMode] = useState<'dine_in' | 'pickup' | 'delivery' | 'correos_cr'>('pickup');
+  const [correosDestination, setCorreosDestination] = useState<'GAM' | 'RESTO'>('GAM');
   const [tableNumber, setTableNumber] = useState('1');
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerAddress, setCustomerAddress] = useState('');
   const [customerGps, setCustomerGps] = useState<{ lat?: number; lng?: number; mapsUrl?: string }>({});
+  const [calculatedKm, setCalculatedKm] = useState<number | null>(null);
   const [fetchingGps, setFetchingGps] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'sinpe' | 'transfer' | 'cash'>('sinpe');
   const [paymentReference, setPaymentReference] = useState('');
@@ -95,8 +134,6 @@ export default function StorefrontView({ slug }: StorefrontProps) {
       }
       return [...prev, { product, quantity }];
     });
-    setAddedAnimation(true);
-    setTimeout(() => setAddedAnimation(false), 1500);
   };
 
   const updateCartQuantity = (productId: string, delta: number) => {
@@ -125,6 +162,15 @@ export default function StorefrontView({ slug }: StorefrontProps) {
         const lng = position.coords.longitude;
         const mapsUrl = `https://maps.google.com/?q=${lat},${lng}`;
         setCustomerGps({ lat, lng, mapsUrl });
+
+        // Calculate distance in KM if store location is configured
+        if (store?.deliveryConfig?.storeLocation?.lat && store?.deliveryConfig?.storeLocation?.lng) {
+          const sLat = store.deliveryConfig.storeLocation.lat;
+          const sLng = store.deliveryConfig.storeLocation.lng;
+          const km = calculateDistanceKm(sLat, sLng, lat, lng);
+          setCalculatedKm(km);
+        }
+
         setCustomerAddress(prev => prev ? `${prev} (GPS: ${mapsUrl})` : `Ubicación GPS: ${mapsUrl}`);
         setFetchingGps(false);
       },
@@ -136,9 +182,43 @@ export default function StorefrontView({ slug }: StorefrontProps) {
     );
   };
 
-  const isDelivery = consumptionMode === 'delivery';
+  const dConfig: DeliveryConfig = store?.deliveryConfig || {
+    deliveryType: 'flat',
+    storeLocation: { lat: 9.9333, lng: -84.0833, address: 'San José' },
+    baseDeliveryFee: 1500,
+    baseDeliveryKm: 3,
+    feePerExtraKm: 350,
+    maxDeliveryRadiusKm: 25,
+    correosCrEnabled: true,
+    originLocationType: 'GAM',
+    correosIncludeIva: true
+  };
+
+  // Cart total & weight
   const cartSubtotal = cart.reduce((acc, item) => acc + (Number(item.product.price || 0) * item.quantity), 0);
-  const deliveryFee = (isDelivery && store?.deliveryEnabled) ? Number(store.deliveryFee || 0) : 0;
+  const totalWeightKg = Math.max(1, cart.reduce((acc, item) => acc + (0.5 * item.quantity), 0)); // 500g default per item
+
+  let deliveryFee = 0;
+  if (consumptionMode === 'delivery') {
+    if (dConfig.deliveryType === 'distance' && calculatedKm !== null) {
+      if (calculatedKm <= dConfig.baseDeliveryKm) {
+        deliveryFee = dConfig.baseDeliveryFee;
+      } else {
+        const extraKm = Math.ceil(calculatedKm - dConfig.baseDeliveryKm);
+        deliveryFee = dConfig.baseDeliveryFee + (extraKm * dConfig.feePerExtraKm);
+      }
+    } else {
+      deliveryFee = Number(store?.deliveryFee || dConfig.baseDeliveryFee || 0);
+    }
+  } else if (consumptionMode === 'correos_cr') {
+    deliveryFee = calculateCorreosCrRate(
+      dConfig.originLocationType || 'GAM',
+      correosDestination,
+      totalWeightKg,
+      dConfig.correosIncludeIva !== false
+    );
+  }
+
   const cartTotal = cartSubtotal + deliveryFee;
   const totalItemsCount = cart.reduce((acc, item) => acc + item.quantity, 0);
 
@@ -148,21 +228,22 @@ export default function StorefrontView({ slug }: StorefrontProps) {
       alert('Por favor ingresa tu nombre y número de WhatsApp');
       return;
     }
-    if (isDelivery && !customerAddress && !customerGps.mapsUrl) {
-      alert('Por favor ingresa la dirección de entrega o presiona Usar GPS');
+    if ((consumptionMode === 'delivery' || consumptionMode === 'correos_cr') && !customerAddress && !customerGps.mapsUrl) {
+      alert('Por favor ingresa la dirección de entrega');
       return;
     }
 
     setIsSubmitting(true);
     try {
+      const isDeliveryType = consumptionMode === 'delivery' || consumptionMode === 'correos_cr';
       const payload = {
         customerName,
         customerPhone,
-        customerAddress: isDelivery ? customerAddress : undefined,
-        customerLocation: customerGps.mapsUrl ? customerGps : undefined,
+        customerAddress: isDeliveryType ? customerAddress : undefined,
+        customerLocation: customerGps.mapsUrl ? { ...customerGps, distanceKm: calculatedKm } : undefined,
         consumptionMode,
         tableNumber: consumptionMode === 'dine_in' ? tableNumber : undefined,
-        deliveryMethod: isDelivery ? 'delivery' : 'pickup',
+        deliveryMethod: consumptionMode === 'correos_cr' ? 'correos_cr' : (consumptionMode === 'delivery' ? 'delivery' : 'pickup'),
         paymentMethod,
         paymentReference: paymentReference || undefined,
         notes: orderNotes || undefined,
@@ -230,7 +311,7 @@ export default function StorefrontView({ slug }: StorefrontProps) {
   return (
     <div style={{ minHeight: '100vh', backgroundColor: bgColor, fontFamily, color: '#1e293b', paddingBottom: '90px' }}>
       
-      {/* Optional Store Banner Hero */}
+      {/* Banner */}
       {store.storeBannerUrl && (
         <div style={{ width: '100%', height: '220px', overflow: 'hidden', position: 'relative' }}>
           <img src={store.storeBannerUrl} alt={store.storeName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -238,7 +319,7 @@ export default function StorefrontView({ slug }: StorefrontProps) {
         </div>
       )}
 
-      {/* Store Header */}
+      {/* Header */}
       <header style={{ backgroundColor: 'white', borderBottom: '1px solid #e2e8f0', padding: '20px', position: 'sticky', top: 0, zIndex: 30, boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
         <div style={{ maxWidth: '1100px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '15px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
@@ -272,7 +353,7 @@ export default function StorefrontView({ slug }: StorefrontProps) {
 
             <button
               onClick={() => setIsCartOpen(true)}
-              style={{ padding: '8px 16px', backgroundColor: primaryColor, color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.9rem', fontWeight: 'bold', position: 'relative' }}
+              style={{ padding: '8px 16px', backgroundColor: primaryColor, color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.9rem', fontWeight: 'bold' }}
             >
               <ShoppingBag size={18} />
               <span>Ver Orden</span>
@@ -286,7 +367,7 @@ export default function StorefrontView({ slug }: StorefrontProps) {
         </div>
       </header>
 
-      {/* Main Container */}
+      {/* Main Content */}
       <main style={{ maxWidth: '1100px', margin: '25px auto', padding: '0 20px' }}>
         
         {/* Search & Categories */}
@@ -308,16 +389,10 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                 key={cat}
                 onClick={() => setActiveCategory(cat)}
                 style={{
-                  padding: '8px 16px',
-                  borderRadius: '20px',
-                  border: 'none',
+                  padding: '8px 16px', borderRadius: '20px', border: 'none',
                   backgroundColor: activeCategory === cat ? primaryColor : 'white',
                   color: activeCategory === cat ? 'white' : '#475569',
-                  fontWeight: '600',
-                  fontSize: '0.85rem',
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                  boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                  fontWeight: '600', fontSize: '0.85rem', cursor: 'pointer', whiteSpace: 'nowrap', boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
                 }}
               >
                 {cat}
@@ -331,7 +406,6 @@ export default function StorefrontView({ slug }: StorefrontProps) {
           <div style={{ textAlign: 'center', padding: '50px 20px', backgroundColor: 'white', borderRadius: cardRadius, border: '1px solid #e2e8f0' }}>
             <ShoppingBag size={40} color="#94a3b8" style={{ margin: '0 auto 10px auto' }} />
             <h3 style={{ margin: '0 0 6px 0', fontSize: '1.1rem' }}>No se encontraron productos</h3>
-            <p style={{ color: '#64748b', fontSize: '0.85rem', margin: 0 }}>Intenta con otro término de búsqueda o categoría.</p>
           </div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '20px' }}>
@@ -339,14 +413,8 @@ export default function StorefrontView({ slug }: StorefrontProps) {
               <div
                 key={prod.id}
                 style={{
-                  backgroundColor: cardBg,
-                  borderRadius: cardRadius,
-                  boxShadow: cardShadow,
-                  overflow: 'hidden',
-                  border: '1px solid #e2e8f0',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  transition: 'transform 0.15s ease'
+                  backgroundColor: cardBg, borderRadius: cardRadius, boxShadow: cardShadow,
+                  overflow: 'hidden', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column'
                 }}
               >
                 <div
@@ -380,11 +448,9 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                   )}
 
                   <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '10px', borderTop: '1px solid #f1f5f9' }}>
-                    <div>
-                      <span style={{ fontSize: '1.15rem', fontWeight: 'bold', color: primaryColor }}>
-                        ₡{Number(prod.price || 0).toLocaleString('es-CR')}
-                      </span>
-                    </div>
+                    <span style={{ fontSize: '1.15rem', fontWeight: 'bold', color: primaryColor }}>
+                      ₡{Number(prod.price || 0).toLocaleString('es-CR')}
+                    </span>
 
                     <button
                       onClick={() => addToCart(prod, 1)}
@@ -425,7 +491,6 @@ export default function StorefrontView({ slug }: StorefrontProps) {
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 60, display: 'flex', justifyContent: 'flex-end' }}>
           <div style={{ backgroundColor: 'white', width: '100%', maxWidth: '480px', height: '100%', display: 'flex', flexDirection: 'column', boxShadow: '-4px 0 15px rgba(0,0,0,0.1)' }}>
             
-            {/* Drawer Header */}
             <div style={{ padding: '18px 20px', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <ShoppingBag size={20} color={primaryColor} /> {isRestaurant ? 'Tu Orden' : 'Tu Carrito'} ({totalItemsCount})
@@ -435,7 +500,6 @@ export default function StorefrontView({ slug }: StorefrontProps) {
               </button>
             </div>
 
-            {/* Drawer Body */}
             <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
               {cart.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '40px 10px', color: '#64748b' }}>
@@ -477,21 +541,20 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                     ))}
                   </div>
 
-                  {/* Consumption Mode Selector (Restaurant vs Retail) */}
+                  {/* Delivery & Consumption Selector */}
                   <div style={{ marginBottom: '20px' }}>
                     <label style={{ display: 'block', fontWeight: '600', fontSize: '0.85rem', marginBottom: '8px' }}>
-                      {isRestaurant ? '¿Dónde deseas consumir tus alimentos?' : 'Método de Entrega'}
+                      {isRestaurant ? '¿Dónde deseas consumir tus alimentos?' : 'Modalidad de Entrega'}
                     </label>
                     
                     {isRestaurant ? (
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '8px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '8px' }}>
                         {restConfig.allowDineIn && (
                           <button
                             type="button"
                             onClick={() => setConsumptionMode('dine_in')}
                             style={{
-                              padding: '10px 8px',
-                              borderRadius: '8px',
+                              padding: '10px 8px', borderRadius: '8px',
                               border: `2px solid ${consumptionMode === 'dine_in' ? primaryColor : '#cbd5e1'}`,
                               backgroundColor: consumptionMode === 'dine_in' ? `${primaryColor}15` : 'white',
                               color: consumptionMode === 'dine_in' ? primaryColor : '#475569',
@@ -508,8 +571,7 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                             type="button"
                             onClick={() => setConsumptionMode('pickup')}
                             style={{
-                              padding: '10px 8px',
-                              borderRadius: '8px',
+                              padding: '10px 8px', borderRadius: '8px',
                               border: `2px solid ${consumptionMode === 'pickup' ? primaryColor : '#cbd5e1'}`,
                               backgroundColor: consumptionMode === 'pickup' ? `${primaryColor}15` : 'white',
                               color: consumptionMode === 'pickup' ? primaryColor : '#475569',
@@ -526,8 +588,7 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                             type="button"
                             onClick={() => setConsumptionMode('delivery')}
                             style={{
-                              padding: '10px 8px',
-                              borderRadius: '8px',
+                              padding: '10px 8px', borderRadius: '8px',
                               border: `2px solid ${consumptionMode === 'delivery' ? primaryColor : '#cbd5e1'}`,
                               backgroundColor: consumptionMode === 'delivery' ? `${primaryColor}15` : 'white',
                               color: consumptionMode === 'delivery' ? primaryColor : '#475569',
@@ -540,45 +601,62 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                         )}
                       </div>
                     ) : (
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '8px' }}>
                         <button
                           type="button"
                           onClick={() => setConsumptionMode('pickup')}
                           style={{
-                            padding: '10px',
-                            borderRadius: '8px',
+                            padding: '10px', borderRadius: '8px',
                             border: `2px solid ${consumptionMode === 'pickup' ? primaryColor : '#cbd5e1'}`,
                             backgroundColor: consumptionMode === 'pickup' ? `${primaryColor}10` : 'white',
                             color: consumptionMode === 'pickup' ? primaryColor : '#475569',
-                            fontWeight: '600', fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'
+                            fontWeight: '600', fontSize: '0.8rem', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px'
                           }}
                         >
-                          <Store size={16} /> Retiro en Tienda
+                          <Store size={18} />
+                          <span>Retiro en Local</span>
                         </button>
 
                         <button
                           type="button"
                           onClick={() => setConsumptionMode('delivery')}
                           style={{
-                            padding: '10px',
-                            borderRadius: '8px',
+                            padding: '10px', borderRadius: '8px',
                             border: `2px solid ${consumptionMode === 'delivery' ? primaryColor : '#cbd5e1'}`,
                             backgroundColor: consumptionMode === 'delivery' ? `${primaryColor}10` : 'white',
                             color: consumptionMode === 'delivery' ? primaryColor : '#475569',
-                            fontWeight: '600', fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'
+                            fontWeight: '600', fontSize: '0.8rem', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px'
                           }}
                         >
-                          <Truck size={16} /> Envío ({store.deliveryFee ? `₡${Number(store.deliveryFee).toLocaleString('es-CR')}` : 'Gratis'})
+                          <Truck size={18} />
+                          <span>Envío Express / KM</span>
                         </button>
+
+                        {dConfig.correosCrEnabled && (
+                          <button
+                            type="button"
+                            onClick={() => setConsumptionMode('correos_cr')}
+                            style={{
+                              padding: '10px', borderRadius: '8px',
+                              border: `2px solid ${consumptionMode === 'correos_cr' ? '#0284c7' : '#cbd5e1'}`,
+                              backgroundColor: consumptionMode === 'correos_cr' ? '#e0f2fe' : 'white',
+                              color: consumptionMode === 'correos_cr' ? '#0284c7' : '#475569',
+                              fontWeight: '600', fontSize: '0.8rem', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px'
+                            }}
+                          >
+                            <Package size={18} />
+                            <span>Correos de CR (EMS)</span>
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
 
-                  {/* If Dine-In Mode Selected */}
+                  {/* Dine-In Table Picker */}
                   {isRestaurant && consumptionMode === 'dine_in' && restConfig.dineInMode === 'table_number' && (
                     <div style={{ marginBottom: '16px', backgroundColor: '#ffedd5', padding: '12px', borderRadius: '8px', border: '1px solid #fed7aa' }}>
                       <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', color: '#9a3412', marginBottom: '4px' }}>
-                        🔢 Selecciona o Escribe tu Número de Mesa:
+                        🔢 Selecciona tu Número de Mesa:
                       </label>
                       <select
                         value={tableNumber}
@@ -592,7 +670,47 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                     </div>
                   )}
 
-                  {/* Checkout Form Details */}
+                  {/* Correos de Costa Rica Destination Zone */}
+                  {consumptionMode === 'correos_cr' && (
+                    <div style={{ marginBottom: '16px', backgroundColor: '#f0f9ff', padding: '14px', borderRadius: '8px', border: '1px solid #bae6fd' }}>
+                      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', color: '#0369a1', marginBottom: '6px' }}>
+                        📦 Destino del Paquete (Correos de Costa Rica):
+                      </label>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                        <button
+                          type="button"
+                          onClick={() => setCorreosDestination('GAM')}
+                          style={{
+                            padding: '8px', borderRadius: '6px',
+                            border: `2px solid ${correosDestination === 'GAM' ? '#0284c7' : '#cbd5e1'}`,
+                            backgroundColor: correosDestination === 'GAM' ? '#0284c7' : 'white',
+                            color: correosDestination === 'GAM' ? 'white' : '#475569',
+                            fontWeight: 'bold', fontSize: '0.8rem', cursor: 'pointer'
+                          }}
+                        >
+                          Gran Área Metrop. (GAM)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCorreosDestination('RESTO')}
+                          style={{
+                            padding: '8px', borderRadius: '6px',
+                            border: `2px solid ${correosDestination === 'RESTO' ? '#0284c7' : '#cbd5e1'}`,
+                            backgroundColor: correosDestination === 'RESTO' ? '#0284c7' : 'white',
+                            color: correosDestination === 'RESTO' ? 'white' : '#475569',
+                            fontWeight: 'bold', fontSize: '0.8rem', cursor: 'pointer'
+                          }}
+                        >
+                          Resto del País (Costas/Rural)
+                        </button>
+                      </div>
+                      <span style={{ fontSize: '0.75rem', color: '#0369a1', display: 'block', marginTop: '6px' }}>
+                        Tarifa EMS calculada para {totalWeightKg} kg: <strong>₡{deliveryFee.toLocaleString('es-CR')}</strong>
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Customer Information Form */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
                     <div>
                       <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>Nombre Completo *</label>
@@ -616,8 +734,8 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                       />
                     </div>
 
-                    {/* Delivery Address & GPS Location Button */}
-                    {isDelivery && (
+                    {/* Delivery / Correos Address with GPS */}
+                    {(consumptionMode === 'delivery' || consumptionMode === 'correos_cr') && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <label style={{ fontSize: '0.8rem', fontWeight: '600' }}>Dirección de Entrega Exacta *</label>
@@ -627,19 +745,19 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                             disabled={fetchingGps}
                             style={{ padding: '4px 8px', backgroundColor: '#eff6ff', color: '#1d4ed8', border: '1px solid #93c5fd', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}
                           >
-                            <Navigation size={12} /> {fetchingGps ? 'Obteniendo GPS...' : '📍 Usar mi Ubicación GPS'}
+                            <Navigation size={12} /> {fetchingGps ? 'Calculando GPS...' : '📍 Usar mi GPS'}
                           </button>
                         </div>
                         <textarea
                           rows={2}
-                          placeholder="Provincia, cantón, señas exactas o punto de referencia..."
+                          placeholder={consumptionMode === 'correos_cr' ? "Provincia, cantón, distrito, código postal o sucursal de Correos..." : "Provincia, cantón, señas exactas..."}
                           value={customerAddress}
                           onChange={(e) => setCustomerAddress(e.target.value)}
                           style={{ width: '100%', padding: '9px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem' }}
                         />
-                        {customerGps.mapsUrl && (
-                          <div style={{ fontSize: '0.75rem', color: '#15803d', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <Check size={12} /> Coordenadas GPS detectadas exitosamente
+                        {calculatedKm !== null && consumptionMode === 'delivery' && (
+                          <div style={{ fontSize: '0.75rem', color: '#15803d', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: '600' }}>
+                            <Check size={12} /> Distancia calculada al local: {calculatedKm} km (Envío: ₡{deliveryFee.toLocaleString('es-CR')})
                           </div>
                         )}
                       </div>
@@ -699,10 +817,10 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                     )}
 
                     <div>
-                      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>Notas o Indicaciones Especiales</label>
+                      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>Notas o Indicaciones</label>
                       <input
                         type="text"
-                        placeholder="Ej: Sin cebolla, extra salsa..."
+                        placeholder="Indicaciones especiales para la entrega o preparación..."
                         value={orderNotes}
                         onChange={(e) => setOrderNotes(e.target.value)}
                         style={{ width: '100%', padding: '9px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem' }}
@@ -723,7 +841,9 @@ export default function StorefrontView({ slug }: StorefrontProps) {
 
                 {deliveryFee > 0 && (
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontSize: '0.85rem', color: '#64748b' }}>
-                    <span>Costo de Envío Express:</span>
+                    <span>
+                      {consumptionMode === 'correos_cr' ? 'Costo Correos CR (EMS):' : (calculatedKm ? `Envío Express (${calculatedKm} km):` : 'Costo de Envío:')}
+                    </span>
                     <span>₡{deliveryFee.toLocaleString('es-CR')}</span>
                   </div>
                 )}
@@ -746,9 +866,7 @@ export default function StorefrontView({ slug }: StorefrontProps) {
         </div>
       )}
 
-      {/* ==========================================
-          ORDER SUCCESS MODAL
-      ========================================== */}
+      {/* Order Success Modal */}
       {orderCompleted && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
           <div style={{ backgroundColor: 'white', borderRadius: '16px', maxWidth: '480px', width: '100%', padding: '30px', textAlign: 'center', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.2)' }}>
@@ -766,7 +884,7 @@ export default function StorefrontView({ slug }: StorefrontProps) {
             <div style={{ backgroundColor: '#f8fafc', borderRadius: '10px', padding: '16px', textAlign: 'left', marginBottom: '20px', fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: '6px', border: '1px solid #e2e8f0' }}>
               <div><strong>Cliente:</strong> {orderCompleted.customerName} ({orderCompleted.customerPhone})</div>
               <div><strong>Total:</strong> ₡{Number(orderCompleted.total).toLocaleString('es-CR')}</div>
-              <div><strong>Modalidad:</strong> {orderCompleted.consumptionMode === 'dine_in' ? `En Mesa (#${orderCompleted.tableNumber || 1})` : orderCompleted.deliveryMethod === 'delivery' ? 'A Domicilio' : 'Para Llevar / Retiro'}</div>
+              <div><strong>Modalidad:</strong> {orderCompleted.consumptionMode === 'correos_cr' ? '📦 Correos de Costa Rica (EMS)' : (orderCompleted.consumptionMode === 'dine_in' ? `En Mesa (#${orderCompleted.tableNumber || 1})` : (orderCompleted.deliveryMethod === 'delivery' ? '🛵 A Domicilio Express' : 'Retiro en Local'))}</div>
             </div>
 
             {orderCompleted.whatsappNumber && (

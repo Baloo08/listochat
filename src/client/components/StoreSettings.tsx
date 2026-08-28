@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Store, Palette, Link as LinkIcon, Copy, ExternalLink, Save, CheckCircle, Upload, Image as ImageIcon, Sparkles, Pipette, Info, Utensils, ShoppingBag } from 'lucide-react';
+import { Store, Palette, Link as LinkIcon, Copy, ExternalLink, Save, CheckCircle, Upload, Image as ImageIcon, Sparkles, Pipette, Info, Utensils, ShoppingBag, Truck, MapPin, Package, Navigation } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
-import { StoreSettings as StoreSettingsType, StoreTheme, RestaurantConfig } from '../../shared/types';
+import { StoreSettings as StoreSettingsType, StoreTheme, RestaurantConfig, DeliveryConfig } from '../../shared/types';
 
 export default function StoreSettings() {
-  const [activeTab, setActiveTab] = useState<'general' | 'restaurant' | 'design'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'restaurant' | 'delivery' | 'design'>('general');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -38,6 +38,23 @@ export default function StoreSettings() {
     allowDelivery: true
   });
 
+  // Delivery & Correos de Costa Rica Settings
+  const [deliveryConfig, setDeliveryConfig] = useState<DeliveryConfig>({
+    deliveryType: 'flat',
+    storeLocation: {
+      lat: 9.9333,
+      lng: -84.0833,
+      address: 'San José, Costa Rica'
+    },
+    baseDeliveryFee: 1500,
+    baseDeliveryKm: 3,
+    feePerExtraKm: 350,
+    maxDeliveryRadiusKm: 25,
+    correosCrEnabled: true,
+    originLocationType: 'GAM',
+    correosIncludeIva: true
+  });
+
   // Design & Theme Fields
   const [primaryColor, setPrimaryColor] = useState('#16a34a');
   const [backgroundColor, setBackgroundColor] = useState('#f8fafc');
@@ -49,6 +66,7 @@ export default function StoreSettings() {
   // File Upload State
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingBanner, setUploadingBanner] = useState(false);
+  const [fetchingStoreGps, setFetchingStoreGps] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
   const bannerInputRef = useRef<HTMLInputElement>(null);
 
@@ -67,14 +85,6 @@ export default function StoreSettings() {
     { name: 'Negro Carbón', hex: '#0f172a' }
   ];
 
-  const BG_PRESETS = [
-    { name: 'Gris Moderno', hex: '#f8fafc' },
-    { name: 'Blanco Puro', hex: '#ffffff' },
-    { name: 'Cálido Crema', hex: '#fffbeb' },
-    { name: 'Azul Suave', hex: '#f0f9ff' },
-    { name: 'Oscuro Noche', hex: '#0f172a' }
-  ];
-
   useEffect(() => {
     const fetchSettings = async () => {
       try {
@@ -89,6 +99,19 @@ export default function StoreSettings() {
               tableCount: data.restaurantConfig.tableCount || 15,
               allowPickup: data.restaurantConfig.allowPickup !== false,
               allowDelivery: data.restaurantConfig.allowDelivery !== false
+            });
+          }
+          if (data.deliveryConfig) {
+            setDeliveryConfig({
+              deliveryType: data.deliveryConfig.deliveryType || 'flat',
+              storeLocation: data.deliveryConfig.storeLocation || { lat: 9.9333, lng: -84.0833, address: 'San José, Costa Rica' },
+              baseDeliveryFee: data.deliveryConfig.baseDeliveryFee ?? 1500,
+              baseDeliveryKm: data.deliveryConfig.baseDeliveryKm ?? 3,
+              feePerExtraKm: data.deliveryConfig.feePerExtraKm ?? 350,
+              maxDeliveryRadiusKm: data.deliveryConfig.maxDeliveryRadiusKm ?? 25,
+              correosCrEnabled: data.deliveryConfig.correosCrEnabled !== false,
+              originLocationType: data.deliveryConfig.originLocationType || 'GAM',
+              correosIncludeIva: data.deliveryConfig.correosIncludeIva !== false
             });
           }
           setStoreName(data.storeName || '');
@@ -125,6 +148,32 @@ export default function StoreSettings() {
     fetchSettings();
   }, []);
 
+  const handleCaptureStoreLocation = () => {
+    if (!navigator.geolocation) {
+      alert('Tu navegador no soporta geolocalización.');
+      return;
+    }
+    setFetchingStoreGps(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setDeliveryConfig(prev => ({
+          ...prev,
+          storeLocation: {
+            ...prev.storeLocation,
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude
+          }
+        }));
+        setFetchingStoreGps(false);
+      },
+      (err) => {
+        alert('Error al obtener coordenadas: ' + err.message);
+        setFetchingStoreGps(false);
+      },
+      { enableHighAccuracy: true }
+    );
+  };
+
   const handleFileUpload = async (file: File, type: 'logo' | 'banner') => {
     const token = localStorage.getItem('token');
     const formData = new FormData();
@@ -148,13 +197,14 @@ export default function StoreSettings() {
       if (type === 'logo') setStoreLogoUrl(data.url);
       else setStoreBannerUrl(data.url);
 
-      // Auto-save immediately to database so reload never loses the image
+      // Auto-save immediately to database
       try {
         const cleanSlug = storeSlug ? storeSlug.toLowerCase().trim().replace(/[^a-z0-9]/g, '') : undefined;
         await api.post('/api/store', {
           storeEnabled,
           storeMode,
           restaurantConfig,
+          deliveryConfig,
           storeName,
           storeSlug: cleanSlug || storeSlug,
           storeDescription,
@@ -211,6 +261,7 @@ export default function StoreSettings() {
         storeEnabled,
         storeMode,
         restaurantConfig,
+        deliveryConfig,
         storeName,
         storeSlug: cleanSlug || storeSlug,
         storeDescription,
@@ -252,14 +303,14 @@ export default function StoreSettings() {
   }
 
   return (
-    <div style={{ maxWidth: '950px' }}>
+    <div style={{ maxWidth: '980px' }}>
       
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
         <div>
-          <h2 style={{ margin: '0 0 5px 0', fontSize: '1.5rem', fontWeight: 'bold' }}>Configuración de Tienda y Diseño</h2>
+          <h2 style={{ margin: '0 0 5px 0', fontSize: '1.5rem', fontWeight: 'bold' }}>Configuración de Tienda & Envíos</h2>
           <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-            Personaliza el catálogo, modo restaurante, métodos de pago, colores de marca y aspecto visual
+            Control de catálogo, modo restaurante, cálculo de envíos por KM, Correos de Costa Rica y diseño
           </p>
         </div>
 
@@ -274,7 +325,7 @@ export default function StoreSettings() {
 
       {saveMessage && (
         <div style={{ padding: '12px 16px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534', borderRadius: '8px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '600', fontSize: '0.9rem' }}>
-          <CheckCircle size={18} /> ¡Configuración y diseño guardados exitosamente!
+          <CheckCircle size={18} /> ¡Configuración y tarifas guardadas exitosamente!
         </div>
       )}
 
@@ -311,82 +362,76 @@ export default function StoreSettings() {
       </div>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', marginBottom: '25px', gap: '10px' }}>
+      <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', marginBottom: '25px', gap: '10px', overflowX: 'auto' }}>
         <button
           onClick={() => setActiveTab('general')}
           style={{
-            padding: '10px 18px',
+            padding: '10px 16px',
             border: 'none',
             borderBottom: activeTab === 'general' ? '2px solid var(--primary)' : '2px solid transparent',
             backgroundColor: 'transparent',
             color: activeTab === 'general' ? 'var(--primary)' : 'var(--text-muted)',
-            fontWeight: '600',
-            fontSize: '0.95rem',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px'
+            fontWeight: '600', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap'
           }}
         >
-          <Store size={18} /> General y Modalidad
+          <Store size={17} /> General & Modalidad
+        </button>
+
+        <button
+          onClick={() => setActiveTab('delivery')}
+          style={{
+            padding: '10px 16px',
+            border: 'none',
+            borderBottom: activeTab === 'delivery' ? '2px solid #2563eb' : '2px solid transparent',
+            backgroundColor: 'transparent',
+            color: activeTab === 'delivery' ? '#2563eb' : 'var(--text-muted)',
+            fontWeight: '600', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap'
+          }}
+        >
+          <Truck size={17} /> 🚚 Envíos, GPS & Correos CR
         </button>
 
         <button
           onClick={() => setActiveTab('restaurant')}
           style={{
-            padding: '10px 18px',
+            padding: '10px 16px',
             border: 'none',
             borderBottom: activeTab === 'restaurant' ? '2px solid #ea580c' : '2px solid transparent',
             backgroundColor: 'transparent',
             color: activeTab === 'restaurant' ? '#ea580c' : 'var(--text-muted)',
-            fontWeight: '600',
-            fontSize: '0.95rem',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px'
+            fontWeight: '600', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap'
           }}
         >
-          <Utensils size={18} /> 🍽️ Modo Restaurante {storeMode === 'restaurant' ? '(Activo)' : ''}
+          <Utensils size={17} /> 🍽️ Modo Restaurante {storeMode === 'restaurant' ? '(Activo)' : ''}
         </button>
 
         <button
           onClick={() => setActiveTab('design')}
           style={{
-            padding: '10px 18px',
+            padding: '10px 16px',
             border: 'none',
             borderBottom: activeTab === 'design' ? '2px solid var(--primary)' : '2px solid transparent',
             backgroundColor: 'transparent',
             color: activeTab === 'design' ? 'var(--primary)' : 'var(--text-muted)',
-            fontWeight: '600',
-            fontSize: '0.95rem',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px'
+            fontWeight: '600', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap'
           }}
         >
-          <Palette size={18} /> 🎨 Diseño y Personalización Visual
+          <Palette size={17} /> 🎨 Diseño Visual
         </button>
       </div>
 
-      {/* TAB 1: GENERAL & PAYMENTS */}
+      {/* TAB 1: GENERAL & BASIC SETTINGS */}
       {activeTab === 'general' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           
-          {/* Store Mode Selector Card */}
           <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
             <h3 style={{ margin: '0 0 12px 0', fontSize: '1.15rem', fontWeight: 'bold' }}>Modalidad del Catálogo</h3>
-            <p style={{ margin: '0 0 16px 0', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-              Elige el tipo de experiencia que tendrán tus clientes al abrir la página web
-            </p>
-
+            
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
               <div
                 onClick={() => setStoreMode('retail')}
                 style={{
-                  padding: '16px',
-                  borderRadius: '10px',
+                  padding: '16px', borderRadius: '10px',
                   border: `2px solid ${storeMode === 'retail' ? 'var(--primary)' : 'var(--border)'}`,
                   backgroundColor: storeMode === 'retail' ? 'rgba(22, 163, 74, 0.05)' : 'white',
                   cursor: 'pointer'
@@ -398,16 +443,15 @@ export default function StoreSettings() {
                     Tienda Minorista / Comercio
                   </strong>
                 </div>
-                <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b', lineHeight: '1.4' }}>
-                  Catálogo estándar de productos, carrito de compras, opciones de envío y retiro.
+                <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b' }}>
+                  Catálogo estándar con compras, carrito y envíos tradicionales.
                 </p>
               </div>
 
               <div
                 onClick={() => setStoreMode('restaurant')}
                 style={{
-                  padding: '16px',
-                  borderRadius: '10px',
+                  padding: '16px', borderRadius: '10px',
                   border: `2px solid ${storeMode === 'restaurant' ? '#ea580c' : 'var(--border)'}`,
                   backgroundColor: storeMode === 'restaurant' ? 'rgba(234, 88, 12, 0.05)' : 'white',
                   cursor: 'pointer'
@@ -419,14 +463,13 @@ export default function StoreSettings() {
                     🍽️ Modo Restaurante / Menú Digital
                   </strong>
                 </div>
-                <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b', lineHeight: '1.4' }}>
-                  Menú gastronómico con opciones para comer en mesa/local, para llevar o delivery.
+                <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b' }}>
+                  Menú con pedidos a la mesa (número de mesa), para llevar o express.
                 </p>
               </div>
             </div>
           </div>
 
-          {/* General Information Card */}
           <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
             <h3 style={{ margin: '0 0 16px 0', fontSize: '1.15rem', fontWeight: 'bold' }}>Información Básica</h3>
             
@@ -451,118 +494,295 @@ export default function StoreSettings() {
                   placeholder="Ej: clinicasonrisas"
                   style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.9rem' }}
                 />
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '3px', display: 'block' }}>Solo letras y números sin espacios ni símbolos.</span>
               </div>
 
               <div>
                 <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '5px' }}>Descripción Corta o Eslogan</label>
                 <textarea
-                  rows={3}
+                  rows={2}
                   value={storeDescription}
                   onChange={(e) => setStoreDescription(e.target.value)}
-                  placeholder="Ej: Los mejores platillos y cortes a la parrilla..."
+                  placeholder="Ej: Servicios de calidad y entregas express..."
                   style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.9rem' }}
                 />
-              </div>
-            </div>
-          </div>
-
-          {/* Payment Methods Card */}
-          <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
-            <h3 style={{ margin: '0 0 16px 0', fontSize: '1.15rem', fontWeight: 'bold' }}>Métodos de Pago Aceptados</h3>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {/* SINPE */}
-              <div style={{ padding: '16px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid var(--border)' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', fontSize: '0.95rem', cursor: 'pointer', marginBottom: acceptSinpe ? '12px' : '0' }}>
-                  <input
-                    type="checkbox"
-                    checked={acceptSinpe}
-                    onChange={(e) => setAcceptSinpe(e.target.checked)}
-                  />
-                  <span>Aceptar SINPE Móvil</span>
-                </label>
-
-                {acceptSinpe && (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>Número de Teléfono SINPE</label>
-                      <input
-                        type="text"
-                        value={sinpePhone}
-                        onChange={(e) => setSinpePhone(e.target.value)}
-                        placeholder="Ej: 8888-8888"
-                        style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>Nombre del Titular</label>
-                      <input
-                        type="text"
-                        value={sinpeName}
-                        onChange={(e) => setSinpeName(e.target.value)}
-                        placeholder="Ej: Daniel Vega"
-                        style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Transferencia */}
-              <div style={{ padding: '16px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid var(--border)' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', fontSize: '0.95rem', cursor: 'pointer', marginBottom: acceptTransfer ? '12px' : '0' }}>
-                  <input
-                    type="checkbox"
-                    checked={acceptTransfer}
-                    onChange={(e) => setAcceptTransfer(e.target.checked)}
-                  />
-                  <span>Aceptar Transferencia Bancaria (IBAN)</span>
-                </label>
-
-                {acceptTransfer && (
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>Cuentas Bancarias / IBAN</label>
-                    <textarea
-                      rows={2}
-                      value={bankAccountInfo}
-                      onChange={(e) => setBankAccountInfo(e.target.value)}
-                      placeholder="BAC: CR00000000000000000000..."
-                      style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
-                    />
-                  </div>
-                )}
-              </div>
-
-              {/* Delivery Fee */}
-              <div style={{ padding: '16px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid var(--border)' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', fontSize: '0.95rem', cursor: 'pointer', marginBottom: deliveryEnabled ? '12px' : '0' }}>
-                  <input
-                    type="checkbox"
-                    checked={deliveryEnabled}
-                    onChange={(e) => setDeliveryEnabled(e.target.checked)}
-                  />
-                  <span>Habilitar Envío a Domicilio / Express</span>
-                </label>
-
-                {deliveryEnabled && (
-                  <div style={{ maxWidth: '280px' }}>
-                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>Costo de Envío Estándar (₡)</label>
-                    <input
-                      type="number"
-                      value={deliveryFee}
-                      onChange={(e) => setDeliveryFee(Number(e.target.value))}
-                      style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
-                    />
-                  </div>
-                )}
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* TAB 2: RESTAURANT MODE CONFIGURATION */}
+      {/* TAB 2: DELIVERY, GPS & CORREOS DE COSTA RICA */}
+      {activeTab === 'delivery' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          
+          {/* Store Physical Origin Location */}
+          <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+              <MapPin size={22} color="#2563eb" />
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 'bold' }}>Ubicación de Origen del Local</h3>
+                <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  Punto de referencia inicial para calcular los kilómetros de distancia de entrega al cliente
+                </p>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>Dirección Física o Localidad</label>
+                <input
+                  type="text"
+                  value={deliveryConfig.storeLocation?.address || ''}
+                  onChange={(e) => setDeliveryConfig({
+                    ...deliveryConfig,
+                    storeLocation: { ...(deliveryConfig.storeLocation || {}), address: e.target.value }
+                  })}
+                  placeholder="Ej: 100m norte del Parque Central, San José"
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '10px', alignItems: 'flex-end' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--text-muted)', marginBottom: '3px' }}>Latitud</label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={deliveryConfig.storeLocation?.lat || 9.9333}
+                    onChange={(e) => setDeliveryConfig({
+                      ...deliveryConfig,
+                      storeLocation: { ...(deliveryConfig.storeLocation || {}), lat: parseFloat(e.target.value) }
+                    })}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--text-muted)', marginBottom: '3px' }}>Longitud</label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={deliveryConfig.storeLocation?.lng || -84.0833}
+                    onChange={(e) => setDeliveryConfig({
+                      ...deliveryConfig,
+                      storeLocation: { ...(deliveryConfig.storeLocation || {}), lng: parseFloat(e.target.value) }
+                    })}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleCaptureStoreLocation}
+                  disabled={fetchingStoreGps}
+                  style={{ padding: '8px 14px', backgroundColor: '#eff6ff', color: '#1d4ed8', border: '1px solid #93c5fd', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px', height: '38px' }}
+                >
+                  <Navigation size={14} /> {fetchingStoreGps ? 'Capturando...' : '📍 Capturar GPS Actual'}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Delivery Express Distance vs Flat Rate */}
+          <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+            <h3 style={{ margin: '0 0 14px 0', fontSize: '1.15rem', fontWeight: 'bold' }}>Tarifa de Envío Local / Moto Express</h3>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px' }}>
+              <div
+                onClick={() => setDeliveryConfig({ ...deliveryConfig, deliveryType: 'flat' })}
+                style={{
+                  padding: '14px', borderRadius: '8px',
+                  border: `2px solid ${deliveryConfig.deliveryType === 'flat' ? '#2563eb' : 'var(--border)'}`,
+                  backgroundColor: deliveryConfig.deliveryType === 'flat' ? 'rgba(37, 99, 235, 0.05)' : 'white',
+                  cursor: 'pointer'
+                }}
+              >
+                <strong style={{ fontSize: '0.9rem', color: deliveryConfig.deliveryType === 'flat' ? '#2563eb' : '#1e293b' }}>
+                  💵 Tarifa Plana Fija
+                </strong>
+                <span style={{ display: 'block', fontSize: '0.75rem', color: '#64748b', marginTop: '3px' }}>
+                  Mismo costo de envío para cualquier pedido sin importar la distancia.
+                </span>
+              </div>
+
+              <div
+                onClick={() => setDeliveryConfig({ ...deliveryConfig, deliveryType: 'distance' })}
+                style={{
+                  padding: '14px', borderRadius: '8px',
+                  border: `2px solid ${deliveryConfig.deliveryType === 'distance' ? '#2563eb' : 'var(--border)'}`,
+                  backgroundColor: deliveryConfig.deliveryType === 'distance' ? 'rgba(37, 99, 235, 0.05)' : 'white',
+                  cursor: 'pointer'
+                }}
+              >
+                <strong style={{ fontSize: '0.9rem', color: deliveryConfig.deliveryType === 'distance' ? '#2563eb' : '#1e293b' }}>
+                  📐 Cálculo Dinámico por KM
+                </strong>
+                <span style={{ display: 'block', fontSize: '0.75rem', color: '#64748b', marginTop: '3px' }}>
+                  Calcula la distancia GPS entre el local y el cliente y cobra por km recorrido.
+                </span>
+              </div>
+            </div>
+
+            {deliveryConfig.deliveryType === 'flat' ? (
+              <div style={{ maxWidth: '300px' }}>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>Costo de Envío Fijo (₡)</label>
+                <input
+                  type="number"
+                  value={deliveryFee}
+                  onChange={(e) => setDeliveryFee(Number(e.target.value))}
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                />
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '14px', backgroundColor: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '3px' }}>Tarifa Base (₡)</label>
+                  <input
+                    type="number"
+                    value={deliveryConfig.baseDeliveryFee}
+                    onChange={(e) => setDeliveryConfig({ ...deliveryConfig, baseDeliveryFee: Number(e.target.value) })}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                  />
+                  <span style={{ fontSize: '0.7rem', color: '#64748b' }}>Costo mínimo de salida</span>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '3px' }}>KM Base Incluidos</label>
+                  <input
+                    type="number"
+                    value={deliveryConfig.baseDeliveryKm}
+                    onChange={(e) => setDeliveryConfig({ ...deliveryConfig, baseDeliveryKm: Number(e.target.value) })}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                  />
+                  <span style={{ fontSize: '0.7rem', color: '#64748b' }}>Ej: primeros 3 km</span>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '3px' }}>Costo por KM Adicional (₡)</label>
+                  <input
+                    type="number"
+                    value={deliveryConfig.feePerExtraKm}
+                    onChange={(e) => setDeliveryConfig({ ...deliveryConfig, feePerExtraKm: Number(e.target.value) })}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                  />
+                  <span style={{ fontSize: '0.7rem', color: '#64748b' }}>Por cada km extra</span>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '3px' }}>Radio Máximo de Cobertura (KM)</label>
+                  <input
+                    type="number"
+                    value={deliveryConfig.maxDeliveryRadiusKm}
+                    onChange={(e) => setDeliveryConfig({ ...deliveryConfig, maxDeliveryRadiusKm: Number(e.target.value) })}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                  />
+                  <span style={{ fontSize: '0.7rem', color: '#64748b' }}>Límite express</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Correos de Costa Rica EMS Nacional Card */}
+          <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Package size={22} color="#15803d" />
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 'bold' }}>📦 Correos de Costa Rica (EMS Nacional)</h3>
+                  <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                    Envíos a todo el país según tarifario oficial GAM y Resto del País
+                  </p>
+                </div>
+              </div>
+
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.9rem', color: '#15803d' }}>
+                <input
+                  type="checkbox"
+                  checked={deliveryConfig.correosCrEnabled}
+                  onChange={(e) => setDeliveryConfig({ ...deliveryConfig, correosCrEnabled: e.target.checked })}
+                />
+                <span>Habilitar Correos CR</span>
+              </label>
+            </div>
+
+            {deliveryConfig.correosCrEnabled && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', backgroundColor: '#f0fdf4', padding: '16px', borderRadius: '8px', border: '1px solid #bbf7d0' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', color: '#166534', marginBottom: '4px' }}>
+                      📍 ¿Dónde está ubicada tu sucursal o bodega?
+                    </label>
+                    <select
+                      value={deliveryConfig.originLocationType}
+                      onChange={(e) => setDeliveryConfig({ ...deliveryConfig, originLocationType: e.target.value as any })}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #86efac', backgroundColor: 'white', fontSize: '0.85rem', fontWeight: '600' }}
+                    >
+                      <option value="GAM">Gran Área Metropolitana (GAM)</option>
+                      <option value="RESTO">Resto del País (Rural / Costas)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', color: '#166534', marginBottom: '4px' }}>
+                      Impuesto de Valor Agregado (13% IVA)
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', cursor: 'pointer', marginTop: '8px' }}>
+                      <input
+                        type="checkbox"
+                        checked={deliveryConfig.correosIncludeIva}
+                        onChange={(e) => setDeliveryConfig({ ...deliveryConfig, correosIncludeIva: e.target.checked })}
+                      />
+                      <span>Incluir 13% de IVA en la tarifa de Correos de CR</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Rates Table Display */}
+                <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem', textAlign: 'left' }}>
+                    <thead>
+                      <tr style={{ backgroundColor: '#0284c7', color: 'white' }}>
+                        <th style={{ padding: '8px 12px' }}>Sucursal Local</th>
+                        <th style={{ padding: '8px 12px' }}>Destino del Envío</th>
+                        <th style={{ padding: '8px 12px' }}>Primer kg</th>
+                        <th style={{ padding: '8px 12px' }}>kg adicional</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr style={{ borderBottom: '1px solid #e2e8f0', backgroundColor: deliveryConfig.originLocationType === 'GAM' ? '#f0f9ff' : 'white' }}>
+                        <td style={{ padding: '8px 12px', fontWeight: 'bold' }}>GAM</td>
+                        <td style={{ padding: '8px 12px' }}>GAM</td>
+                        <td style={{ padding: '8px 12px', fontWeight: '600' }}>₡2.168,14 {deliveryConfig.correosIncludeIva ? '(+13% = ₡2.450)' : ''}</td>
+                        <td style={{ padding: '8px 12px' }}>₡1.238,94</td>
+                      </tr>
+                      <tr style={{ borderBottom: '1px solid #e2e8f0', backgroundColor: deliveryConfig.originLocationType === 'GAM' ? '#f0f9ff' : 'white' }}>
+                        <td style={{ padding: '8px 12px', fontWeight: 'bold' }}>GAM</td>
+                        <td style={{ padding: '8px 12px' }}>Resto del País</td>
+                        <td style={{ padding: '8px 12px', fontWeight: '600' }}>₡2.964,60 {deliveryConfig.correosIncludeIva ? '(+13% = ₡3.350)' : ''}</td>
+                        <td style={{ padding: '8px 12px' }}>₡1.371,68</td>
+                      </tr>
+                      <tr style={{ borderBottom: '1px solid #e2e8f0', backgroundColor: deliveryConfig.originLocationType === 'RESTO' ? '#f0f9ff' : 'white' }}>
+                        <td style={{ padding: '8px 12px', fontWeight: 'bold' }}>Resto del País</td>
+                        <td style={{ padding: '8px 12px' }}>GAM</td>
+                        <td style={{ padding: '8px 12px', fontWeight: '600' }}>₡2.964,60 {deliveryConfig.correosIncludeIva ? '(+13% = ₡3.350)' : ''}</td>
+                        <td style={{ padding: '8px 12px' }}>₡1.371,68</td>
+                      </tr>
+                      <tr style={{ backgroundColor: deliveryConfig.originLocationType === 'RESTO' ? '#f0f9ff' : 'white' }}>
+                        <td style={{ padding: '8px 12px', fontWeight: 'bold' }}>Resto del País</td>
+                        <td style={{ padding: '8px 12px' }}>Resto del País</td>
+                        <td style={{ padding: '8px 12px', fontWeight: '600' }}>₡3.761,06 {deliveryConfig.correosIncludeIva ? '(+13% = ₡4.250)' : ''}</td>
+                        <td style={{ padding: '8px 12px' }}>₡1.548,67</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 3: RESTAURANT CONFIGURATION */}
       {activeTab === 'restaurant' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
@@ -573,14 +793,13 @@ export default function StoreSettings() {
               <div>
                 <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'bold' }}>Configuración de Modo Restaurante</h3>
                 <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                  Personaliza cómo los clientes ordenan alimentos y bebidas en tu local o a domicilio
+                  Personaliza cómo los comensales ordenan en mesa, para llevar o express
                 </p>
               </div>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '20px' }}>
               
-              {/* Option 1: Comer en el Local */}
               <div style={{ padding: '18px', backgroundColor: '#f8fafc', borderRadius: '10px', border: '1px solid var(--border)' }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer', marginBottom: restaurantConfig.allowDineIn ? '14px' : '0' }}>
                   <input
@@ -595,14 +814,13 @@ export default function StoreSettings() {
                   <div style={{ paddingLeft: '28px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <div>
                       <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '6px' }}>
-                        Modalidad de Identificación de Mesa / Entrega:
+                        Modalidad de Mesa:
                       </label>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                         <div
                           onClick={() => setRestaurantConfig({ ...restaurantConfig, dineInMode: 'table_number' })}
                           style={{
-                            padding: '10px 14px',
-                            borderRadius: '6px',
+                            padding: '10px 14px', borderRadius: '6px',
                             border: `2px solid ${restaurantConfig.dineInMode === 'table_number' ? '#ea580c' : '#cbd5e1'}`,
                             backgroundColor: restaurantConfig.dineInMode === 'table_number' ? 'rgba(234, 88, 12, 0.05)' : 'white',
                             cursor: 'pointer'
@@ -611,16 +829,12 @@ export default function StoreSettings() {
                           <strong style={{ fontSize: '0.85rem', color: restaurantConfig.dineInMode === 'table_number' ? '#ea580c' : '#1e293b' }}>
                             🔢 Rotular Número de Mesa
                           </strong>
-                          <span style={{ fontSize: '0.75rem', color: '#64748b', display: 'block', marginTop: '2px' }}>
-                            El comensal elige o ingresa su número de mesa
-                          </span>
                         </div>
 
                         <div
                           onClick={() => setRestaurantConfig({ ...restaurantConfig, dineInMode: 'call_by_name' })}
                           style={{
-                            padding: '10px 14px',
-                            borderRadius: '6px',
+                            padding: '10px 14px', borderRadius: '6px',
                             border: `2px solid ${restaurantConfig.dineInMode === 'call_by_name' ? '#ea580c' : '#cbd5e1'}`,
                             backgroundColor: restaurantConfig.dineInMode === 'call_by_name' ? 'rgba(234, 88, 12, 0.05)' : 'white',
                             cursor: 'pointer'
@@ -629,9 +843,6 @@ export default function StoreSettings() {
                           <strong style={{ fontSize: '0.85rem', color: restaurantConfig.dineInMode === 'call_by_name' ? '#ea580c' : '#1e293b' }}>
                             🗣️ Llamado por Nombre
                           </strong>
-                          <span style={{ fontSize: '0.75rem', color: '#64748b', display: 'block', marginTop: '2px' }}>
-                            Para entrega en mostrador o barra
-                          </span>
                         </div>
                       </div>
                     </div>
@@ -643,8 +854,7 @@ export default function StoreSettings() {
                         </label>
                         <input
                           type="number"
-                          min={1}
-                          max={100}
+                          min={1} max={100}
                           value={restaurantConfig.tableCount || 15}
                           onChange={(e) => setRestaurantConfig({ ...restaurantConfig, tableCount: Number(e.target.value) })}
                           style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
@@ -655,7 +865,6 @@ export default function StoreSettings() {
                 )}
               </div>
 
-              {/* Option 2: Para Llevar */}
               <div style={{ padding: '18px', backgroundColor: '#f8fafc', borderRadius: '10px', border: '1px solid var(--border)' }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer' }}>
                   <input
@@ -663,11 +872,10 @@ export default function StoreSettings() {
                     checked={restaurantConfig.allowPickup}
                     onChange={(e) => setRestaurantConfig({ ...restaurantConfig, allowPickup: e.target.checked })}
                   />
-                  <span>🥡 Permitir Ordenar Para Llevar / Retiro en Local</span>
+                  <span>🥡 Permitir Para Llevar / Retiro en Barra</span>
                 </label>
               </div>
 
-              {/* Option 3: Delivery */}
               <div style={{ padding: '18px', backgroundColor: '#f8fafc', borderRadius: '10px', border: '1px solid var(--border)' }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer' }}>
                   <input
@@ -675,7 +883,7 @@ export default function StoreSettings() {
                     checked={restaurantConfig.allowDelivery}
                     onChange={(e) => setRestaurantConfig({ ...restaurantConfig, allowDelivery: e.target.checked })}
                   />
-                  <span>🛵 Permitir Entrega a Domicilio / Express con GPS</span>
+                  <span>🛵 Permitir Delivery Express con GPS</span>
                 </label>
               </div>
             </div>
@@ -683,17 +891,15 @@ export default function StoreSettings() {
         </div>
       )}
 
-      {/* TAB 3: DESIGN & BRANDING */}
+      {/* TAB 4: DESIGN & BRANDING */}
       {activeTab === 'design' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           
-          {/* Media Upload Card */}
           <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
             <h3 style={{ margin: '0 0 16px 0', fontSize: '1.15rem', fontWeight: 'bold' }}>Logo y Banner de Portada</h3>
             
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
               
-              {/* Logo Upload */}
               <div>
                 <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '6px' }}>Logo del Negocio</label>
                 <div style={{ border: '2px dashed #cbd5e1', borderRadius: '8px', padding: '16px', textAlign: 'center', backgroundColor: '#f8fafc' }}>
@@ -722,7 +928,6 @@ export default function StoreSettings() {
                 </div>
               </div>
 
-              {/* Banner Upload */}
               <div>
                 <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '6px' }}>Banner de Portada</label>
                 <div style={{ border: '2px dashed #cbd5e1', borderRadius: '8px', padding: '16px', textAlign: 'center', backgroundColor: '#f8fafc' }}>
@@ -753,7 +958,6 @@ export default function StoreSettings() {
             </div>
           </div>
 
-          {/* Color Palette Card */}
           <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
             <h3 style={{ margin: '0 0 16px 0', fontSize: '1.15rem', fontWeight: 'bold' }}>Colores de Marca</h3>
 
@@ -766,11 +970,8 @@ export default function StoreSettings() {
                       key={c.hex}
                       onClick={() => setPrimaryColor(c.hex)}
                       style={{
-                        width: '32px',
-                        height: '32px',
-                        borderRadius: '50%',
-                        backgroundColor: c.hex,
-                        cursor: 'pointer',
+                        width: '32px', height: '32px', borderRadius: '50%',
+                        backgroundColor: c.hex, cursor: 'pointer',
                         border: primaryColor === c.hex ? '3px solid #000' : '2px solid transparent',
                         boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
                       }}

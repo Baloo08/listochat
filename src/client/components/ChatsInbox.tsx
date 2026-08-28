@@ -272,32 +272,57 @@ export default function ChatsInbox() {
                       cursor: 'pointer',
                       backgroundColor: isSelected ? '#f0fdf4' : 'transparent',
                       borderLeft: isSelected ? '4px solid var(--primary)' : '4px solid transparent',
-                      transition: 'all 0.15s ease'
+                      transition: 'all 0.15s ease',
+                      display: 'flex',
+                      gap: '10px',
+                      alignItems: 'center'
                     }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
-                      <strong style={{ fontSize: '0.85rem', color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '160px' }}>
-                        {conv.pushName}
-                      </strong>
-                      <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
-                        {formatMessageTime(conv.lastTimestamp)}
-                      </span>
+                    <div style={{
+                      width: '40px',
+                      height: '40px',
+                      borderRadius: '50%',
+                      backgroundColor: conv.isHumanMode ? '#fef3c7' : '#dcfce7',
+                      color: conv.isHumanMode ? '#b45309' : '#15803d',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontWeight: 'bold',
+                      fontSize: '0.85rem',
+                      flexShrink: 0
+                    }}>
+                      {conv.pushName.slice(0, 2).toUpperCase()}
                     </div>
 
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px' }}>
-                      <p style={{ margin: 0, fontSize: '0.75rem', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>
-                        {conv.lastMessage}
-                      </p>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                        <strong style={{ fontSize: '0.85rem', color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {conv.pushName}
+                        </strong>
+                        <span style={{ fontSize: '0.65rem', color: '#94a3b8' }}>
+                          {formatMessageTime(conv.lastTimestamp)}
+                        </span>
+                      </div>
 
-                      {conv.isHumanMode ? (
-                        <span style={{ padding: '1px 6px', borderRadius: '10px', fontSize: '0.65rem', backgroundColor: '#fef3c7', color: '#b45309', fontWeight: 'bold' }}>
-                          👤 Humano
-                        </span>
-                      ) : (
-                        <span style={{ padding: '1px 6px', borderRadius: '10px', fontSize: '0.65rem', backgroundColor: '#dcfce7', color: '#15803d', fontWeight: 'bold' }}>
-                          🤖 IA
-                        </span>
-                      )}
+                      <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '2px' }}>
+                        📞 +{conv.cleanPhone}
+                      </div>
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px' }}>
+                        <p style={{ margin: 0, fontSize: '0.75rem', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>
+                          {conv.lastMessage}
+                        </p>
+
+                        {conv.isHumanMode ? (
+                          <span style={{ padding: '2px 6px', borderRadius: '8px', fontSize: '0.65rem', backgroundColor: '#fef3c7', color: '#b45309', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
+                            ⏸️ IA Pausada
+                          </span>
+                        ) : (
+                          <span style={{ padding: '2px 6px', borderRadius: '8px', fontSize: '0.65rem', backgroundColor: '#dcfce7', color: '#15803d', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
+                            🤖 IA Activa
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
@@ -313,12 +338,12 @@ export default function ChatsInbox() {
             {/* Chat Top Bar */}
             <div style={{ padding: '12px 18px', backgroundColor: '#ffffff', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <div style={{ width: '38px', height: '38px', backgroundColor: '#e2e8f0', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', color: '#475569' }}>
+                <div style={{ width: '42px', height: '42px', backgroundColor: selectedConv.isHumanMode ? '#fef3c7' : '#dcfce7', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', color: selectedConv.isHumanMode ? '#b45309' : '#15803d' }}>
                   {selectedConv.pushName.slice(0, 2).toUpperCase()}
                 </div>
                 <div>
-                  <div style={{ fontWeight: 'bold', fontSize: '0.95rem', color: '#1e293b' }}>{selectedConv.pushName}</div>
-                  <div style={{ fontSize: '0.75rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div style={{ fontWeight: 'bold', fontSize: '1rem', color: '#1e293b' }}>{selectedConv.pushName}</div>
+                  <div style={{ fontSize: '0.8rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <span>+{selectedConv.cleanPhone}</span>
                     <a
                       href={`https://wa.me/${selectedConv.cleanPhone}`}
@@ -326,7 +351,7 @@ export default function ChatsInbox() {
                       rel="noreferrer"
                       style={{ color: '#16a34a', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '2px', fontWeight: 'bold' }}
                     >
-                      <ExternalLink size={11} /> Abrir WhatsApp
+                      <ExternalLink size={12} /> Abrir WhatsApp Web
                     </a>
                   </div>
                 </div>
@@ -337,28 +362,31 @@ export default function ChatsInbox() {
                 <button
                   onClick={() => handleToggleHumanMode(selectedConv.remoteJid, selectedConv.isHumanMode)}
                   style={{
-                    padding: '7px 14px',
+                    padding: '8px 16px',
                     borderRadius: '20px',
                     border: 'none',
                     cursor: 'pointer',
                     fontWeight: 'bold',
-                    fontSize: '0.8rem',
+                    fontSize: '0.85rem',
                     display: 'flex',
                     alignItems: 'center',
                     gap: '6px',
-                    backgroundColor: selectedConv.isHumanMode ? '#fef3c7' : '#dcfce7',
-                    color: selectedConv.isHumanMode ? '#b45309' : '#15803d',
+                    backgroundColor: selectedConv.isHumanMode ? '#fef2f2' : '#f0fdf4',
+                    color: selectedConv.isHumanMode ? '#dc2626' : '#16a34a',
+                    borderWidth: '1px',
+                    borderStyle: 'solid',
+                    borderColor: selectedConv.isHumanMode ? '#fecaca' : '#bbf7d0',
                     boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
                   }}
                   title="Presiona para pausar o activar la IA para este cliente"
                 >
                   {selectedConv.isHumanMode ? (
                     <>
-                      <UserCheck size={15} /> Modo Humano (IA Pausada) — Toca para Activar IA
+                      <UserCheck size={16} /> ⏸️ IA Pausada (Modo Humano) — Toca para Reactivar IA
                     </>
                   ) : (
                     <>
-                      <Bot size={15} /> 🤖 IA Respondiendo — Toca para Pausar
+                      <Bot size={16} /> 🤖 IA Activa — Toca para Pausar IA (Modo Humano)
                     </>
                   )}
                 </button>

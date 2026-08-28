@@ -119,12 +119,29 @@ export interface RestaurantConfig {
   allowDelivery: boolean;
 }
 
+export interface DeliveryConfig {
+  deliveryType: 'flat' | 'distance';
+  storeLocation?: {
+    lat?: number;
+    lng?: number;
+    address?: string;
+  };
+  baseDeliveryFee: number;
+  baseDeliveryKm: number;
+  feePerExtraKm: number;
+  maxDeliveryRadiusKm: number;
+  correosCrEnabled: boolean;
+  originLocationType: 'GAM' | 'RESTO';
+  correosIncludeIva: boolean;
+}
+
 export interface StoreSettings {
   id: string;
   tenantId: string;
   storeEnabled: boolean;
   storeMode?: 'retail' | 'restaurant';
   restaurantConfig?: RestaurantConfig;
+  deliveryConfig?: DeliveryConfig;
   storeName: string;
   storeSlug: string;
   storeDescription?: string;
