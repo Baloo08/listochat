@@ -12,17 +12,18 @@ router.use(authenticateToken);
 router.use(tenantContext);
 
 const STATUS_LABELS: Record<string, string> = {
-  pedido_recibido: '📥 Pedido Recibido',
-  pedido_aceptado: '✅ Pedido Aceptado',
-  procesando: '🍳 En Preparación / Procesando',
-  listo_entrega: '🛵 Listo para Entregar / Retirar',
-  entregado: '🎉 Entregado con Éxito',
-  cancelado: '❌ Cancelado',
-  pending: '📥 Pedido Recibido',
-  confirmed: '✅ Pedido Aceptado',
-  preparing: '🍳 En Preparación',
-  shipped: '🛵 En Camino',
-  delivered: '🎉 Entregado'
+  pedido_recibido: 'Pedido Recibido',
+  pedido_aceptado: 'Pedido Aceptado',
+  procesando: 'En Preparación / Cocina',
+  listo_entrega: 'Listo para Entregar',
+  en_camino: 'En Camino',
+  entregado: 'Entregado con Éxito',
+  cancelado: 'Cancelado',
+  pending: 'Pedido Recibido',
+  confirmed: 'Pedido Aceptado',
+  preparing: 'En Preparación',
+  shipped: 'En Camino',
+  delivered: 'Entregado'
 };
 
 router.get('/', async (req, res) => {

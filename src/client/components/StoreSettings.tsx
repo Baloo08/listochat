@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Store, Palette, Link as LinkIcon, Copy, ExternalLink, Save, CheckCircle, Upload, Image as ImageIcon, Sparkles, Pipette, Info, Utensils, ShoppingBag, Truck, MapPin, Package, Navigation, Users, Plus, Trash2, Phone, Bike } from 'lucide-react';
+import { Store, Palette, Link as LinkIcon, Copy, ExternalLink, Save, CheckCircle, Upload, Image as ImageIcon, Sparkles, Pipette, Info, Utensils, ShoppingBag, Truck, MapPin, Package, Navigation, Users, Plus, Trash2, Phone, Bike, MessageSquare, Key, HelpCircle } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
-import { StoreSettings as StoreSettingsType, StoreTheme, RestaurantConfig, DeliveryConfig, DeliveryDriver } from '../../shared/types';
+import { StoreSettings as StoreSettingsType, StoreTheme, RestaurantConfig, DeliveryConfig, DeliveryDriver, NotificationTemplates } from '../../shared/types';
 
 export default function StoreSettings() {
-  const [activeTab, setActiveTab] = useState<'general' | 'restaurant' | 'delivery' | 'drivers' | 'design'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'restaurant' | 'delivery' | 'drivers' | 'templates' | 'design'>('general');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -29,7 +29,7 @@ export default function StoreSettings() {
   const [deliveryFee, setDeliveryFee] = useState(2500);
   const [pickupEnabled, setPickupEnabled] = useState(true);
 
-  // Restaurant Mode Settings (Both Table number and Call by name can be enabled)
+  // Restaurant Mode Settings
   const [restaurantConfig, setRestaurantConfig] = useState<RestaurantConfig>({
     allowDineIn: true,
     allowTableNumber: true,
@@ -56,10 +56,51 @@ export default function StoreSettings() {
     correosIncludeIva: true
   });
 
+  // Notification Templates State
+  const [notificationTemplates, setNotificationTemplates] = useState<NotificationTemplates>({
+    orderReceived: `🎉 *¡Gracias por tu pedido en {tienda}!*
+
+Hola *{cliente}*, hemos recibido con éxito tu orden *#ORD-{pedido}*.
+
+💰 *Total:* {total}
+📦 *Estado:* En preparación
+
+Te estaremos notificando cuando tu pedido esté listo o en camino. ¡Muchas gracias por tu preferencia! ⭐`,
+    
+    orderInTransit: `🛵 *¡Tu pedido ya va en camino!*
+
+Hola *{cliente}*, tu orden *#ORD-{pedido}* de *{tienda}* acaba de salir y va en camino con nuestro repartidor *{repartidor}*.
+
+💰 *Monto a pagar al recibir:* {cobro}
+¡Pronto estaremos en tu puerta! 🚀`,
+
+    orderDelivered: `🎉 *¡Tu pedido ha sido entregado con éxito!*
+
+Hola *{cliente}*, tu orden *#ORD-{pedido}* de *{tienda}* ha sido entregada por nuestro repartidor *{repartidor}*.
+
+¡Muchas gracias por tu preferencia! Esperamos que lo disfrutes. ⭐`,
+
+    driverDispatch: `🛵 *NUEVA ENTREGA ASIGNADA* (#ORD-{pedido})
+
+Hola *{repartidor}*, tienes un nuevo pedido para entregar:
+
+👤 *Cliente:* {cliente}
+📞 *Teléfono Cliente:* {telefono}
+📍 *Dirección:* {direccion}
+
+{waze_line}{maps_line}
+📦 *Platillos / Productos:*
+{productos}
+
+💰 *Cobro al Cliente:* {cobro}
+{notas_line}`
+  });
+
   // Delivery Drivers State
   const [drivers, setDrivers] = useState<DeliveryDriver[]>([]);
   const [newDriverName, setNewDriverName] = useState('');
   const [newDriverPhone, setNewDriverPhone] = useState('');
+  const [newDriverPin, setNewDriverPin] = useState('');
   const [newDriverVehicle, setNewDriverVehicle] = useState<'moto' | 'bici' | 'auto'>('moto');
   const [newDriverPlate, setNewDriverPlate] = useState('');
   const [addingDriver, setAddingDriver] = useState(false);
@@ -133,6 +174,12 @@ export default function StoreSettings() {
               correosIncludeIva: data.deliveryConfig.correosIncludeIva !== false
             });
           }
+          if (data.notificationTemplates) {
+            setNotificationTemplates(prev => ({
+              ...prev,
+              ...data.notificationTemplates
+            }));
+          }
           setStoreName(data.storeName || '');
           setStoreSlug(data.storeSlug || '');
           setStoreDescription(data.storeDescription || '');
@@ -202,14 +249,17 @@ export default function StoreSettings() {
     }
     setAddingDriver(true);
     try {
+      const pinToUse = newDriverPin || Math.floor(1000 + Math.random() * 9000).toString();
       await api.post('/api/drivers', {
         name: newDriverName,
         phone: newDriverPhone,
+        accessPin: pinToUse,
         vehicleType: newDriverVehicle,
         plateNumber: newDriverPlate
       });
       setNewDriverName('');
       setNewDriverPhone('');
+      setNewDriverPin('');
       setNewDriverPlate('');
       await fetchDrivers();
     } catch (e: any) {
@@ -252,7 +302,6 @@ export default function StoreSettings() {
       if (type === 'logo') setStoreLogoUrl(data.url);
       else setStoreBannerUrl(data.url);
 
-      // Auto-save immediately to database
       try {
         const cleanSlug = storeSlug ? storeSlug.toLowerCase().trim().replace(/[^a-z0-9]/g, '') : undefined;
         await api.post('/api/store', {
@@ -260,6 +309,7 @@ export default function StoreSettings() {
           storeMode,
           restaurantConfig,
           deliveryConfig,
+          notificationTemplates,
           storeName,
           storeSlug: cleanSlug || storeSlug,
           storeDescription,
@@ -317,6 +367,7 @@ export default function StoreSettings() {
         storeMode,
         restaurantConfig,
         deliveryConfig,
+        notificationTemplates,
         storeName,
         storeSlug: cleanSlug || storeSlug,
         storeDescription,
@@ -365,7 +416,7 @@ export default function StoreSettings() {
         <div>
           <h2 style={{ margin: '0 0 5px 0', fontSize: '1.5rem', fontWeight: 'bold' }}>Configuración de Tienda & Envíos</h2>
           <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-            Control de catálogo, modo restaurante, cálculo de envíos por KM, Correos de Costa Rica y repartidores
+            Control de catálogo, modo restaurante, cálculo de envíos por KM, plantillas y repartidores
           </p>
         </div>
 
@@ -416,7 +467,7 @@ export default function StoreSettings() {
         </div>
       </div>
 
-      {/* Tabs with Clean Lucide SVG Icons (No Emojis) */}
+      {/* Tabs with Clean Lucide SVG Icons */}
       <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', marginBottom: '25px', gap: '10px', overflowX: 'auto' }}>
         <button
           onClick={() => setActiveTab('general')}
@@ -472,6 +523,20 @@ export default function StoreSettings() {
           }}
         >
           <Bike size={17} /> Repartidores / Motorizados ({drivers.length})
+        </button>
+
+        <button
+          onClick={() => setActiveTab('templates')}
+          style={{
+            padding: '10px 16px',
+            border: 'none',
+            borderBottom: activeTab === 'templates' ? '2px solid #8b5cf6' : '2px solid transparent',
+            backgroundColor: 'transparent',
+            color: activeTab === 'templates' ? '#8b5cf6' : 'var(--text-muted)',
+            fontWeight: '600', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap'
+          }}
+        >
+          <MessageSquare size={17} /> Plantillas de WhatsApp
         </button>
 
         <button
@@ -580,7 +645,7 @@ export default function StoreSettings() {
         </div>
       )}
 
-      {/* TAB 2: RESTAURANT MODE CONFIGURATION (Both Table and Name selectable) */}
+      {/* TAB 2: RESTAURANT MODE */}
       {activeTab === 'restaurant' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
@@ -597,7 +662,6 @@ export default function StoreSettings() {
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '20px' }}>
-              
               <div style={{ padding: '18px', backgroundColor: '#f8fafc', borderRadius: '10px', border: '1px solid var(--border)' }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer', marginBottom: restaurantConfig.allowDineIn ? '14px' : '0' }}>
                   <input
@@ -867,118 +931,19 @@ export default function StoreSettings() {
               </div>
             )}
           </div>
-
-          {/* Correos de Costa Rica EMS Nacional Card */}
-          <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <Package size={22} color="#15803d" />
-                <div>
-                  <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 'bold' }}>Correos de Costa Rica (EMS Nacional)</h3>
-                  <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                    Envíos a todo el país según tarifario oficial GAM y Resto del País
-                  </p>
-                </div>
-              </div>
-
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.9rem', color: '#15803d' }}>
-                <input
-                  type="checkbox"
-                  checked={deliveryConfig.correosCrEnabled}
-                  onChange={(e) => setDeliveryConfig({ ...deliveryConfig, correosCrEnabled: e.target.checked })}
-                />
-                <span>Habilitar Correos CR</span>
-              </label>
-            </div>
-
-            {deliveryConfig.correosCrEnabled && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', backgroundColor: '#f0fdf4', padding: '16px', borderRadius: '8px', border: '1px solid #bbf7d0' }}>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', color: '#166534', marginBottom: '4px' }}>
-                      ¿Dónde está ubicada tu sucursal o bodega?
-                    </label>
-                    <select
-                      value={deliveryConfig.originLocationType}
-                      onChange={(e) => setDeliveryConfig({ ...deliveryConfig, originLocationType: e.target.value as any })}
-                      style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #86efac', backgroundColor: 'white', fontSize: '0.85rem', fontWeight: '600' }}
-                    >
-                      <option value="GAM">Gran Área Metropolitana (GAM)</option>
-                      <option value="RESTO">Resto del País (Rural / Costas)</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', color: '#166534', marginBottom: '4px' }}>
-                      Impuesto de Valor Agregado (13% IVA)
-                    </label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', cursor: 'pointer', marginTop: '8px' }}>
-                      <input
-                        type="checkbox"
-                        checked={deliveryConfig.correosIncludeIva}
-                        onChange={(e) => setDeliveryConfig({ ...deliveryConfig, correosIncludeIva: e.target.checked })}
-                      />
-                      <span>Incluir 13% de IVA en la tarifa de Correos de CR</span>
-                    </label>
-                  </div>
-                </div>
-
-                {/* Rates Table Display */}
-                <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem', textAlign: 'left' }}>
-                    <thead>
-                      <tr style={{ backgroundColor: '#0284c7', color: 'white' }}>
-                        <th style={{ padding: '8px 12px' }}>Sucursal Local</th>
-                        <th style={{ padding: '8px 12px' }}>Destino del Envío</th>
-                        <th style={{ padding: '8px 12px' }}>Primer kg</th>
-                        <th style={{ padding: '8px 12px' }}>kg adicional</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr style={{ borderBottom: '1px solid #e2e8f0', backgroundColor: deliveryConfig.originLocationType === 'GAM' ? '#f0f9ff' : 'white' }}>
-                        <td style={{ padding: '8px 12px', fontWeight: 'bold' }}>GAM</td>
-                        <td style={{ padding: '8px 12px' }}>GAM</td>
-                        <td style={{ padding: '8px 12px', fontWeight: '600' }}>₡2.168,14 {deliveryConfig.correosIncludeIva ? '(+13% = ₡2.450)' : ''}</td>
-                        <td style={{ padding: '8px 12px' }}>₡1.238,94</td>
-                      </tr>
-                      <tr style={{ borderBottom: '1px solid #e2e8f0', backgroundColor: deliveryConfig.originLocationType === 'GAM' ? '#f0f9ff' : 'white' }}>
-                        <td style={{ padding: '8px 12px', fontWeight: 'bold' }}>GAM</td>
-                        <td style={{ padding: '8px 12px' }}>Resto del País</td>
-                        <td style={{ padding: '8px 12px', fontWeight: '600' }}>₡2.964,60 {deliveryConfig.correosIncludeIva ? '(+13% = ₡3.350)' : ''}</td>
-                        <td style={{ padding: '8px 12px' }}>₡1.371,68</td>
-                      </tr>
-                      <tr style={{ borderBottom: '1px solid #e2e8f0', backgroundColor: deliveryConfig.originLocationType === 'RESTO' ? '#f0f9ff' : 'white' }}>
-                        <td style={{ padding: '8px 12px', fontWeight: 'bold' }}>Resto del País</td>
-                        <td style={{ padding: '8px 12px' }}>GAM</td>
-                        <td style={{ padding: '8px 12px', fontWeight: '600' }}>₡2.964,60 {deliveryConfig.correosIncludeIva ? '(+13% = ₡3.350)' : ''}</td>
-                        <td style={{ padding: '8px 12px' }}>₡1.371,68</td>
-                      </tr>
-                      <tr style={{ backgroundColor: deliveryConfig.originLocationType === 'RESTO' ? '#f0f9ff' : 'white' }}>
-                        <td style={{ padding: '8px 12px', fontWeight: 'bold' }}>Resto del País</td>
-                        <td style={{ padding: '8px 12px' }}>Resto del País</td>
-                        <td style={{ padding: '8px 12px', fontWeight: '600' }}>₡3.761,06 {deliveryConfig.correosIncludeIva ? '(+13% = ₡4.250)' : ''}</td>
-                        <td style={{ padding: '8px 12px' }}>₡1.548,67</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-          </div>
         </div>
       )}
 
-      {/* TAB 4: REPARTIDORES / MOTORIZADOS */}
+      {/* TAB 4: REPARTIDORES & CODIGO PIN */}
       {activeTab === 'drivers' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           
-          {/* Add Driver Form */}
           <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
             <h3 style={{ margin: '0 0 14px 0', fontSize: '1.15rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Plus size={18} color="var(--primary)" /> Registrar Nuevo Repartidor / Motorizado
             </h3>
 
-            <form onSubmit={handleAddDriver} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', alignItems: 'flex-end' }}>
+            <form onSubmit={handleAddDriver} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '12px', alignItems: 'flex-end' }}>
               <div>
                 <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>Nombre Completo *</label>
                 <input
@@ -997,6 +962,17 @@ export default function StoreSettings() {
                   placeholder="Ej: 8888-8888"
                   value={newDriverPhone}
                   onChange={(e) => setNewDriverPhone(e.target.value)}
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>Código PIN de Acceso</label>
+                <input
+                  type="text"
+                  placeholder="Ej: 8492 (o automático)"
+                  value={newDriverPin}
+                  onChange={(e) => setNewDriverPin(e.target.value)}
                   style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
                 />
               </div>
@@ -1046,12 +1022,15 @@ export default function StoreSettings() {
                 {drivers.map(d => (
                   <div key={d.id} style={{ padding: '16px', backgroundColor: '#f8fafc', borderRadius: '10px', border: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <div style={{ width: '38px', height: '38px', backgroundColor: '#ccfbf1', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0f766e' }}>
+                      <div style={{ width: '40px', height: '40px', backgroundColor: '#ccfbf1', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0f766e' }}>
                         <Bike size={20} />
                       </div>
                       <div>
                         <div style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>{d.name}</div>
-                        <div style={{ fontSize: '0.75rem', color: '#64748b' }}>📞 {d.phone} • {d.vehicleType?.toUpperCase()} {d.plateNumber ? `(${d.plateNumber})` : ''}</div>
+                        <div style={{ fontSize: '0.75rem', color: '#64748b' }}>📞 {d.phone} • {d.vehicleType?.toUpperCase()}</div>
+                        <div style={{ fontSize: '0.75rem', color: '#0f766e', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                          <Key size={12} /> PIN: {d.accessPin || '1234'}
+                        </div>
                       </div>
                     </div>
 
@@ -1069,7 +1048,96 @@ export default function StoreSettings() {
         </div>
       )}
 
-      {/* TAB 5: DESIGN & BRANDING */}
+      {/* TAB 5: WHATSAPP NOTIFICATION TEMPLATES */}
+      {activeTab === 'templates' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
+              <div style={{ width: '42px', height: '42px', backgroundColor: '#ede9fe', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <MessageSquare size={22} color="#7c3aed" />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'bold' }}>Plantillas de Mensajes de WhatsApp</h3>
+                <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                  Personaliza los textos que se envían automáticamente a clientes y repartidores
+                </p>
+              </div>
+            </div>
+
+            <div style={{ padding: '12px 14px', backgroundColor: '#f5f3ff', borderRadius: '8px', border: '1px solid #ddd6fe', color: '#6d28d9', fontSize: '0.8rem', marginBottom: '20px' }}>
+              <strong>Variables disponibles para usar en tus textos:</strong>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '6px', fontFamily: 'monospace' }}>
+                <span style={{ backgroundColor: 'white', padding: '2px 6px', borderRadius: '4px', border: '1px solid #c4b5fd' }}>{'{cliente}'}</span>
+                <span style={{ backgroundColor: 'white', padding: '2px 6px', borderRadius: '4px', border: '1px solid #c4b5fd' }}>{'{pedido}'}</span>
+                <span style={{ backgroundColor: 'white', padding: '2px 6px', borderRadius: '4px', border: '1px solid #c4b5fd' }}>{'{total}'}</span>
+                <span style={{ backgroundColor: 'white', padding: '2px 6px', borderRadius: '4px', border: '1px solid #c4b5fd' }}>{'{tienda}'}</span>
+                <span style={{ backgroundColor: 'white', padding: '2px 6px', borderRadius: '4px', border: '1px solid #c4b5fd' }}>{'{repartidor}'}</span>
+                <span style={{ backgroundColor: 'white', padding: '2px 6px', borderRadius: '4px', border: '1px solid #c4b5fd' }}>{'{direccion}'}</span>
+                <span style={{ backgroundColor: 'white', padding: '2px 6px', borderRadius: '4px', border: '1px solid #c4b5fd' }}>{'{telefono}'}</span>
+                <span style={{ backgroundColor: 'white', padding: '2px 6px', borderRadius: '4px', border: '1px solid #c4b5fd' }}>{'{productos}'}</span>
+                <span style={{ backgroundColor: 'white', padding: '2px 6px', borderRadius: '4px', border: '1px solid #c4b5fd' }}>{'{cobro}'}</span>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+              
+              {/* 1. Order Received (Customer) */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '4px' }}>
+                  1. Notificación de Pedido Recibido (Al Cliente)
+                </label>
+                <textarea
+                  rows={4}
+                  value={notificationTemplates.orderReceived || ''}
+                  onChange={(e) => setNotificationTemplates({ ...notificationTemplates, orderReceived: e.target.value })}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                />
+              </div>
+
+              {/* 2. Order In Transit (Customer) */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '4px' }}>
+                  2. Notificación de Pedido en Camino (Al Cliente)
+                </label>
+                <textarea
+                  rows={4}
+                  value={notificationTemplates.orderInTransit || ''}
+                  onChange={(e) => setNotificationTemplates({ ...notificationTemplates, orderInTransit: e.target.value })}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                />
+              </div>
+
+              {/* 3. Order Delivered (Customer) */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '4px' }}>
+                  3. Notificación de Pedido Entregado con Éxito (Al Cliente)
+                </label>
+                <textarea
+                  rows={4}
+                  value={notificationTemplates.orderDelivered || ''}
+                  onChange={(e) => setNotificationTemplates({ ...notificationTemplates, orderDelivered: e.target.value })}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                />
+              </div>
+
+              {/* 4. Driver Dispatch */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '4px' }}>
+                  4. Comanda de Despacho Asignada (Al Motorizado / Repartidor)
+                </label>
+                <textarea
+                  rows={6}
+                  value={notificationTemplates.driverDispatch || ''}
+                  onChange={(e) => setNotificationTemplates({ ...notificationTemplates, driverDispatch: e.target.value })}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 6: DESIGN & BRANDING */}
       {activeTab === 'design' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           
@@ -1077,7 +1145,6 @@ export default function StoreSettings() {
             <h3 style={{ margin: '0 0 16px 0', fontSize: '1.15rem', fontWeight: 'bold' }}>Logo y Banner de Portada</h3>
             
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-              
               <div>
                 <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '6px' }}>Logo del Negocio</label>
                 <div style={{ border: '2px dashed #cbd5e1', borderRadius: '8px', padding: '16px', textAlign: 'center', backgroundColor: '#f8fafc' }}>

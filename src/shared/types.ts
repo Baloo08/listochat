@@ -126,10 +126,19 @@ export interface DeliveryDriver {
   tenantId: string;
   name: string;
   phone: string;
+  accessPin?: string;
   vehicleType?: 'moto' | 'bici' | 'auto';
   plateNumber?: string;
   active: boolean;
   createdAt?: string;
+}
+
+export interface NotificationTemplates {
+  orderReceived?: string;
+  orderInTransit?: string;
+  orderDelivered?: string;
+  driverDispatch?: string;
+  bookingConfirmed?: string;
 }
 
 export interface DeliveryConfig {
@@ -155,6 +164,7 @@ export interface StoreSettings {
   storeMode?: 'retail' | 'restaurant';
   restaurantConfig?: RestaurantConfig;
   deliveryConfig?: DeliveryConfig;
+  notificationTemplates?: NotificationTemplates;
   storeName: string;
   storeSlug: string;
   storeDescription?: string;
@@ -227,7 +237,7 @@ export interface OrderItem {
   totalPrice: number;
 }
 
-export type OrderStatus = 'pedido_recibido' | 'pedido_aceptado' | 'procesando' | 'listo_entrega' | 'entregado' | 'cancelado' | 'pending' | 'confirmed' | 'preparing' | 'shipped' | 'delivered';
+export type OrderStatus = 'pedido_recibido' | 'pedido_aceptado' | 'procesando' | 'listo_entrega' | 'en_camino' | 'entregado' | 'cancelado' | 'pending' | 'confirmed' | 'preparing' | 'shipped' | 'delivered';
 
 export interface Order {
   id: string;

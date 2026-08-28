@@ -281,9 +281,11 @@ export async function runMigrations() {
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
 
+    ALTER TABLE delivery_drivers ADD COLUMN IF NOT EXISTS access_pin VARCHAR(20);
     ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS store_mode VARCHAR(50) DEFAULT 'retail';
     ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS restaurant_config JSONB;
     ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS delivery_config JSONB;
+    ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS notification_templates JSONB;
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS consumption_mode VARCHAR(50);
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS table_number VARCHAR(50);
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_location JSONB;

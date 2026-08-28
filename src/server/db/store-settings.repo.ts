@@ -4,7 +4,8 @@ import { StoreSettings } from '../../shared/types.js';
 export async function getStoreSettings(tenantId: string): Promise<StoreSettings | null> {
   const result = await query(`
     SELECT id, tenant_id as "tenantId", store_enabled as "storeEnabled", store_mode as "storeMode",
-           restaurant_config as "restaurantConfig", delivery_config as "deliveryConfig", store_name as "storeName",
+           restaurant_config as "restaurantConfig", delivery_config as "deliveryConfig",
+           notification_templates as "notificationTemplates", store_name as "storeName",
            store_slug as "storeSlug", store_description as "storeDescription", store_logo_url as "storeLogoUrl",
            store_banner_url as "storeBannerUrl", store_theme as "storeTheme", currency,
            accept_sinpe as "acceptSinpe", sinpe_phone as "sinpePhone", sinpe_name as "sinpeName",
@@ -22,16 +23,18 @@ export async function getStoreSettings(tenantId: string): Promise<StoreSettings 
 export async function upsertStoreSettings(tenantId: string, data: Partial<StoreSettings>): Promise<StoreSettings> {
   const result = await query(`
     INSERT INTO store_settings (
-      tenant_id, store_enabled, store_mode, restaurant_config, delivery_config, store_name, store_slug, store_description, store_logo_url,
+      tenant_id, store_enabled, store_mode, restaurant_config, delivery_config, notification_templates,
+      store_name, store_slug, store_description, store_logo_url,
       store_banner_url, store_theme, currency, accept_sinpe, sinpe_phone, sinpe_name,
       accept_transfer, bank_account_info, accept_cash_on_delivery, delivery_enabled,
       delivery_fee, pickup_enabled, whatsapp_checkout, min_order_amount, store_message
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
     ON CONFLICT (tenant_id) DO UPDATE SET
       store_enabled = EXCLUDED.store_enabled,
       store_mode = EXCLUDED.store_mode,
       restaurant_config = EXCLUDED.restaurant_config,
       delivery_config = EXCLUDED.delivery_config,
+      notification_templates = EXCLUDED.notification_templates,
       store_name = EXCLUDED.store_name,
       store_slug = EXCLUDED.store_slug,
       store_description = EXCLUDED.store_description,
@@ -53,7 +56,8 @@ export async function upsertStoreSettings(tenantId: string, data: Partial<StoreS
       store_message = EXCLUDED.store_message,
       updated_at = CURRENT_TIMESTAMP
     RETURNING id, tenant_id as "tenantId", store_enabled as "storeEnabled", store_mode as "storeMode",
-           restaurant_config as "restaurantConfig", delivery_config as "deliveryConfig", store_name as "storeName",
+           restaurant_config as "restaurantConfig", delivery_config as "deliveryConfig",
+           notification_templates as "notificationTemplates", store_name as "storeName",
            store_slug as "storeSlug", store_description as "storeDescription", store_logo_url as "storeLogoUrl",
            store_banner_url as "storeBannerUrl", store_theme as "storeTheme", currency,
            accept_sinpe as "acceptSinpe", sinpe_phone as "sinpePhone", sinpe_name as "sinpeName",
@@ -62,15 +66,35 @@ export async function upsertStoreSettings(tenantId: string, data: Partial<StoreS
            delivery_fee as "deliveryFee", pickup_enabled as "pickupEnabled", whatsapp_checkout as "whatsappCheckout",
            min_order_amount as "minOrderAmount", store_message as "storeMessage"
   `, [
-    tenantId, data.storeEnabled || false, data.storeMode || 'retail', data.restaurantConfig ? JSON.stringify(data.restaurantConfig) : null,
-    data.deliveryConfig ? JSON.stringify(data.deliveryConfig) : null, data.storeName || '', data.storeSlug || '', data.storeDescription,
-    data.storeLogoUrl, data.storeBannerUrl, data.storeTheme ? JSON.stringify(data.storeTheme) : null, data.currency || 'CRC', data.acceptSinpe !== false,
-    data.sinpePhone, data.sinpeName, data.acceptTransfer !== false, data.bankAccountInfo,
-    data.acceptCashOnDelivery || false, data.deliveryEnabled || false, data.deliveryFee || 0,
-    data.pickupEnabled !== false, data.whatsappCheckout !== false, data.minOrderAmount || 0, data.storeMessage
+    tenantId,
+    data.storeEnabled !== false,
+    data.storeMode || 'retail',
+    JSON.stringify(data.restaurantConfig || {}),
+    JSON.stringify(data.deliveryConfig || {}),
+    JSON.stringify(data.notificationTemplates || {}),
+    data.storeName || '',
+    data.storeSlug || '',
+    data.storeDescription || '',
+    data.storeLogoUrl || '',
+    data.storeBannerUrl || '',
+    JSON.stringify(data.storeTheme || {}),
+    data.currency || 'CRC',
+    data.acceptSinpe !== false,
+    data.sinpePhone || '',
+    data.sinpeName || '',
+    data.acceptTransfer !== false,
+    data.bankAccountInfo || '',
+    data.acceptCashOnDelivery !== false,
+    data.deliveryEnabled !== false,
+    data.deliveryFee || 0,
+    data.pickupEnabled !== false,
+    data.whatsappCheckout !== false,
+    data.minOrderAmount || 0,
+    data.storeMessage || ''
   ]);
-  
+
   return result.rows[0];
 }
 
 export const saveStoreSettings = upsertStoreSettings;
+

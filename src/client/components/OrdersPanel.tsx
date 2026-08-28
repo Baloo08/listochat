@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ShoppingCart, Clock, CheckCircle, Truck, Package, XCircle, Eye, MessageCircle, AlertCircle, RefreshCw, Send, Check, Utensils, LayoutGrid, List, Navigation, Bike, MapPin, User, Phone, Store } from 'lucide-react';
+import { ShoppingCart, Clock, CheckCircle, Truck, Package, XCircle, Eye, MessageCircle, AlertCircle, RefreshCw, Send, Check, Utensils, LayoutGrid, List, Navigation, Bike, MapPin, User, Phone, Store, Maximize, ExternalLink } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
 import { Order, OrderStatus, DeliveryDriver } from '../../shared/types';
 
@@ -40,7 +40,7 @@ export default function OrdersPanel() {
   useEffect(() => {
     fetchOrders();
     fetchDrivers();
-    const timer = setInterval(fetchOrders, 6000); // Polling every 6s for new orders
+    const timer = setInterval(fetchOrders, 6000);
     return () => clearInterval(timer);
   }, []);
 
@@ -70,7 +70,7 @@ export default function OrdersPanel() {
     setDispatching(true);
     try {
       const res = await api.post(`/api/drivers/${driverId}/dispatch-order`, { orderId });
-      alert(`¡Pedido despachado exitosamente por WhatsApp a ${res.driverName}!`);
+      alert(`¡Pedido despachado por WhatsApp a ${res.driverName} y cambiado a estado 'En Camino'!`);
       await fetchOrders();
       if (selectedOrder) setSelectedOrder(null);
     } catch (e: any) {
@@ -88,7 +88,8 @@ export default function OrdersPanel() {
     procesando: { label: 'En Preparación', bg: '#fefce8', color: '#a16207', border: '#fef08a' },
     preparing: { label: 'En Preparación', bg: '#fefce8', color: '#a16207', border: '#fef08a' },
     listo_entrega: { label: 'Listo para Entregar', bg: '#faf5ff', color: '#7e22ce', border: '#e9d5ff' },
-    shipped: { label: 'Listo para Entregar', bg: '#faf5ff', color: '#7e22ce', border: '#e9d5ff' },
+    en_camino: { label: 'En Camino', bg: '#e0f2fe', color: '#0369a1', border: '#bae6fd' },
+    shipped: { label: 'En Camino', bg: '#e0f2fe', color: '#0369a1', border: '#bae6fd' },
     entregado: { label: 'Entregado', bg: '#f0fdf4', color: '#15803d', border: '#bbf7d0' },
     delivered: { label: 'Entregado', bg: '#f0fdf4', color: '#15803d', border: '#bbf7d0' },
     cancelado: { label: 'Cancelado', bg: '#fef2f2', color: '#b91c1c', border: '#fecaca' }
@@ -114,10 +115,18 @@ export default function OrdersPanel() {
     {
       id: 'listo',
       title: 'Listo / Para Despacho',
-      statuses: ['listo_entrega', 'shipped'],
+      statuses: ['listo_entrega'],
       borderColor: '#8b5cf6',
       badgeBg: '#faf5ff',
       badgeColor: '#7e22ce'
+    },
+    {
+      id: 'en_camino',
+      title: 'En Camino (Delivery)',
+      statuses: ['en_camino', 'shipped'],
+      borderColor: '#0284c7',
+      badgeBg: '#e0f2fe',
+      badgeColor: '#0369a1'
     },
     {
       id: 'entregados',
@@ -143,7 +152,7 @@ export default function OrdersPanel() {
 
   return (
     <div>
-      {/* Header */}
+      {/* Top Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -159,8 +168,18 @@ export default function OrdersPanel() {
           </p>
         </div>
 
-        {/* View Mode Toggle: Kanban vs List */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        {/* View Mode Toggle & Fullscreen KDS Button */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          
+          <a
+            href="/kds"
+            target="_blank"
+            rel="noreferrer"
+            style={{ padding: '8px 14px', backgroundColor: '#0f172a', color: 'white', borderRadius: '8px', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', fontWeight: 'bold' }}
+          >
+            <Maximize size={15} /> Pantalla Completa (KDS Cocina)
+          </a>
+
           <div style={{ display: 'flex', backgroundColor: '#e2e8f0', borderRadius: '8px', padding: '3px' }}>
             <button
               onClick={() => setViewMode('kanban')}
@@ -199,7 +218,7 @@ export default function OrdersPanel() {
           VIEW 1: KANBAN BOARD
       ========================================== */}
       {viewMode === 'kanban' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '16px', alignItems: 'flex-start' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '14px', alignItems: 'flex-start' }}>
           {KANBAN_COLUMNS.map(col => {
             const colOrders = orders.filter(o => col.statuses.includes(o.status));
             return (
@@ -218,7 +237,7 @@ export default function OrdersPanel() {
               >
                 {/* Column Header */}
                 <div style={{ padding: '14px 16px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'white' }}>
-                  <strong style={{ fontSize: '0.9rem', color: '#1e293b' }}>{col.title}</strong>
+                  <strong style={{ fontSize: '0.85rem', color: '#1e293b' }}>{col.title}</strong>
                   <span style={{ backgroundColor: col.badgeBg, color: col.badgeColor, padding: '2px 8px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold' }}>
                     {colOrders.length}
                   </span>
@@ -262,7 +281,7 @@ export default function OrdersPanel() {
                               </span>
                             ) : order.deliveryMethod === 'delivery' ? (
                               <span style={{ padding: '2px 8px', borderRadius: '6px', fontSize: '0.7rem', fontWeight: 'bold', backgroundColor: '#dbeafe', color: '#1d4ed8' }}>
-                                Delivery Express
+                                Delivery
                               </span>
                             ) : (
                               <span style={{ padding: '2px 8px', borderRadius: '6px', fontSize: '0.7rem', fontWeight: 'bold', backgroundColor: '#f1f5f9', color: '#475569' }}>
@@ -314,6 +333,15 @@ export default function OrdersPanel() {
 
                             {col.id === 'listo' && (
                               <button
+                                onClick={() => handleStatusChange(order.id, 'en_camino')}
+                                style={{ flex: 1, padding: '6px 10px', backgroundColor: '#0284c7', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}
+                              >
+                                En Camino
+                              </button>
+                            )}
+
+                            {col.id === 'en_camino' && (
+                              <button
                                 onClick={() => handleStatusChange(order.id, 'entregado')}
                                 style={{ flex: 1, padding: '6px 10px', backgroundColor: '#10b981', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}
                               >
@@ -348,7 +376,7 @@ export default function OrdersPanel() {
           VIEW 2: TRADITIONAL LIST TABLE
       ========================================== */}
       {viewMode === 'list' && (
-        <div style={{ backgroundColor: 'var(--surface)', borderRadius: '12px', border: '1px solid var(--border)', overflow: 'hidden' }}>
+        <div style={{ backgroundColor: 'var(--surface)', borderRadius: '12px', border: '1px solid var(--border)', overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
             <thead>
               <tr style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid var(--border)' }}>
@@ -406,7 +434,7 @@ export default function OrdersPanel() {
       )}
 
       {/* ==========================================
-          ORDER DETAILS & DRIVER DISPATCH MODAL WITH MAP
+          ORDER DETAILS & STATUS CORRECTION MODAL WITH MAP
       ========================================== */}
       {selectedOrder && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
@@ -422,6 +450,37 @@ export default function OrdersPanel() {
               <button onClick={() => setSelectedOrder(null)} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: '1.2rem', color: '#64748b' }}>✕</button>
             </div>
 
+            {/* Universal Status Selector (To fix mistakes / change status freely) */}
+            <div style={{ backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '10px', padding: '14px 16px', marginBottom: '18px' }}>
+              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', color: '#1e40af', marginBottom: '6px' }}>
+                Cambiar / Corregir Estado del Pedido:
+              </label>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <select
+                  value={selectedOrder.status}
+                  onChange={(e) => handleStatusChange(selectedOrder.id, e.target.value as OrderStatus)}
+                  disabled={updatingStatus}
+                  style={{ flex: 1, padding: '9px 12px', borderRadius: '6px', border: '1px solid #93c5fd', backgroundColor: 'white', fontSize: '0.9rem', fontWeight: 'bold', color: '#1e3a8a' }}
+                >
+                  <option value="pedido_recibido">1. Pedido Recibido</option>
+                  <option value="procesando">2. En Preparación / Cocina</option>
+                  <option value="listo_entrega">3. Listo para Entregar / Retirar</option>
+                  <option value="en_camino">4. En Camino (Con Repartidor)</option>
+                  <option value="entregado">5. Entregado con Éxito</option>
+                  <option value="cancelado">6. Cancelado</option>
+                </select>
+
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', color: '#1e40af', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={notifyCustomer}
+                    onChange={(e) => setNotifyCustomer(e.target.checked)}
+                  />
+                  <span>Notificar WhatsApp</span>
+                </label>
+              </div>
+            </div>
+
             {/* Customer & Delivery Info */}
             <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '10px', border: '1px solid #e2e8f0', marginBottom: '20px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '0.85rem' }}>
               <div><strong>Cliente:</strong> {selectedOrder.customerName}</div>
@@ -435,7 +494,7 @@ export default function OrdersPanel() {
               )}
             </div>
 
-            {/* Interactive Embedded Map View (Leaflet OpenStreetMap) */}
+            {/* Interactive Embedded Map View */}
             {selectedOrder.customerLocation?.lat && selectedOrder.customerLocation?.lng && (
               <div style={{ marginBottom: '20px', border: '1px solid #e2e8f0', borderRadius: '10px', overflow: 'hidden' }}>
                 <div style={{ padding: '8px 12px', backgroundColor: '#f1f5f9', fontSize: '0.8rem', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -462,7 +521,6 @@ export default function OrdersPanel() {
                   </div>
                 </div>
                 
-                {/* Embed Map Iframe */}
                 <iframe
                   title="Mapa de Entrega"
                   width="100%"
@@ -499,13 +557,13 @@ export default function OrdersPanel() {
               </div>
 
               <div style={{ marginTop: '10px', textAlign: 'right', fontSize: '1.1rem', fontWeight: 'bold', color: 'var(--primary)' }}>
-                Total a Cobrar: ₡{Number(selectedOrder.total).toLocaleString('es-CR')}
+                Total: ₡{Number(selectedOrder.total).toLocaleString('es-CR')}
               </div>
             </div>
 
             {/* Dispatch to Driver Section */}
             {selectedOrder.deliveryMethod === 'delivery' && (
-              <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '10px', padding: '16px', marginBottom: '20px' }}>
+              <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '10px', padding: '16px', marginBottom: '10px' }}>
                 <h4 style={{ margin: '0 0 8px 0', fontSize: '0.9rem', fontWeight: 'bold', color: '#166534', display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <Bike size={16} /> Despachar a Motorizado / Repartidor
                 </h4>
@@ -532,37 +590,6 @@ export default function OrdersPanel() {
                 </div>
               </div>
             )}
-
-            {/* Advance Status Controls */}
-            <div>
-              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '6px' }}>Cambiar Estado del Pedido:</label>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
-                <button
-                  onClick={() => handleStatusChange(selectedOrder.id, 'pedido_recibido')}
-                  style={{ padding: '8px 4px', backgroundColor: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}
-                >
-                  Recibido
-                </button>
-                <button
-                  onClick={() => handleStatusChange(selectedOrder.id, 'procesando')}
-                  style={{ padding: '8px 4px', backgroundColor: '#fefce8', color: '#a16207', border: '1px solid #fef08a', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}
-                >
-                  En Cocina
-                </button>
-                <button
-                  onClick={() => handleStatusChange(selectedOrder.id, 'listo_entrega')}
-                  style={{ padding: '8px 4px', backgroundColor: '#faf5ff', color: '#7e22ce', border: '1px solid #e9d5ff', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}
-                >
-                  Listo
-                </button>
-                <button
-                  onClick={() => handleStatusChange(selectedOrder.id, 'entregado')}
-                  style={{ padding: '8px 4px', backgroundColor: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}
-                >
-                  Entregado
-                </button>
-              </div>
-            </div>
           </div>
         </div>
       )}
