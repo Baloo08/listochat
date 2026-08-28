@@ -18,7 +18,7 @@ export async function getOrdersByTenant(tenantId: string): Promise<Order[]> {
   return result.rows.map(row => ({ ...row, items: [] }));
 }
 
-export async function getOrderById(id: string, tenantId: string): Promise<Order | null> {
+export async function getOrderById(id: string, tenantId?: string): Promise<Order | null> {
   const result = await query(`
     SELECT id, tenant_id as "tenantId", order_number as "orderNumber", customer_name as "customerName",
            customer_phone as "customerPhone", customer_email as "customerEmail", customer_address as "customerAddress",
@@ -26,10 +26,11 @@ export async function getOrderById(id: string, tenantId: string): Promise<Order 
            currency, status, payment_method as "paymentMethod", payment_status as "paymentStatus",
            payment_reference as "paymentReference", notes, delivery_method as "deliveryMethod",
            consumption_mode as "consumptionMode", table_number as "tableNumber", customer_location as "customerLocation",
-           chat_message_id as "chatMessageId", created_at as "createdAt", updated_at as "updatedAt"
+           chat_message_id as "chatMessageId", driver_id as "driverId", waze_url as "wazeUrl",
+           created_at as "createdAt", updated_at as "updatedAt"
     FROM orders 
-    WHERE id = $1 AND tenant_id = $2
-  `, [id, tenantId]);
+    WHERE id = $1
+  `, [id]);
   
   if (result.rows.length === 0) return null;
   const order = result.rows[0];
@@ -39,7 +40,6 @@ export async function getOrderById(id: string, tenantId: string): Promise<Order 
            variant_name as "variantName", quantity, unit_price as "unitPrice", total_price as "totalPrice"
     FROM order_items WHERE order_id = $1
   `, [id]);
-  
   order.items = itemsRes.rows;
   return order;
 }
