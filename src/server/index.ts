@@ -26,6 +26,7 @@ import storefrontRoutes from './routes/storefront.routes.js';
 import webhookRoutes from './routes/webhook.routes.js';
 import calendarRoutes from './routes/calendar.routes.js';
 import driversRoutes from './routes/drivers.routes.js';
+import superadminMetricsRoutes from './routes/superadmin-metrics.routes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -68,6 +69,7 @@ async function startServer() {
   app.use('/api/drivers', driversRoutes);
   app.use('/api/dashboard', dashboardRoutes);
   app.use('/api/audit-logs', auditRoutes);
+  app.use('/api/superadmin', superadminMetricsRoutes);
   app.use('/api/upload', uploadRoutes);
   app.use('/api/storefront', storefrontRoutes);
   app.use('/api/calendar', calendarRoutes);

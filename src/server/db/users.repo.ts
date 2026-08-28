@@ -4,12 +4,25 @@ import { User, UserRecord } from '../../shared/types.js';
 
 export function hashPassword(password: string): string {
   const salt = crypto.randomBytes(16).toString('hex');
-  const hash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
-  return `${salt}:${hash}`;
+  // High-security 100,000 iterations PBKDF2 with SHA-512
+  const hash = crypto.pbkdf2Sync(password, salt, 100000, 64, 'sha512').toString('hex');
+  return `v2:${salt}:${hash}`;
 }
 
 export function verifyPassword(password: string, hashString: string): boolean {
   if (!hashString) return false;
+  
+  // Check if hash is modern v2 (100,000 rounds)
+  if (hashString.startsWith('v2:')) {
+    const parts = hashString.split(':');
+    const salt = parts[1];
+    const storedHash = parts[2];
+    if (!salt || !storedHash) return false;
+    const hash = crypto.pbkdf2Sync(password, salt, 100000, 64, 'sha512').toString('hex');
+    return hash === storedHash;
+  }
+
+  // Legacy v1 format (salt:hash with 1,000 rounds)
   const [salt, storedHash] = hashString.split(':');
   if (!salt || !storedHash) return false;
   const hash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
@@ -34,9 +47,9 @@ export async function getUserByEmail(tenantId: string | null, email: string): Pr
            avatar_url as "avatarUrl", provider, active, password_hash as "passwordHash",
            created_at as "createdAt", updated_at as "updatedAt"
     FROM users 
-    WHERE email = $1
+    WHERE LOWER(email) = LOWER($1)
   `;
-  const params: any[] = [email];
+  const params: any[] = [email.trim()];
   
   if (tenantId) {
     q += ` AND tenant_id = $2`;
@@ -57,6 +70,19 @@ export async function getUserById(id: string): Promise<User | null> {
   return result.rows[0] || null;
 }
 
+export async function getAdminUserByTenant(tenantId: string): Promise<User | null> {
+  const result = await query(`
+    SELECT id, tenant_id as "tenantId", name, email, role, 
+           avatar_url as "avatarUrl", provider, active, 
+           created_at as "createdAt", updated_at as "updatedAt"
+    FROM users 
+    WHERE tenant_id = $1 AND role = 'admin'
+    ORDER BY created_at ASC
+    LIMIT 1
+  `, [tenantId]);
+  return result.rows[0] || null;
+}
+
 export async function createUser(data: Partial<UserRecord> & { password?: string }): Promise<User> {
   let pwdHash = null;
   if (data.password) {
@@ -65,7 +91,6 @@ export async function createUser(data: Partial<UserRecord> & { password?: string
     pwdHash = data.passwordHash.includes(':') ? data.passwordHash : hashPassword(data.passwordHash);
   }
 
-  
   const result = await query(`
     INSERT INTO users (
       tenant_id, name, email, password_hash, role, avatar_url, provider, active
@@ -74,7 +99,7 @@ export async function createUser(data: Partial<UserRecord> & { password?: string
            avatar_url as "avatarUrl", provider, active, 
            created_at as "createdAt", updated_at as "updatedAt"
   `, [
-    data.tenantId, data.name, data.email, pwdHash, 
+    data.tenantId, data.name, data.email?.toLowerCase().trim(), pwdHash, 
     data.role || 'admin', data.avatarUrl, data.provider || 'local', data.active !== false
   ]);
   return result.rows[0];
@@ -86,7 +111,7 @@ export async function updateUser(id: string, tenantId: string, data: Partial<Use
   let paramIdx = 3;
 
   if (data.name !== undefined) { updates.push(`name = $${paramIdx++}`); params.push(data.name); }
-  if (data.email !== undefined) { updates.push(`email = $${paramIdx++}`); params.push(data.email); }
+  if (data.email !== undefined) { updates.push(`email = $${paramIdx++}`); params.push(data.email.toLowerCase().trim()); }
   if (data.role !== undefined) { updates.push(`role = $${paramIdx++}`); params.push(data.role); }
   if (data.avatarUrl !== undefined) { updates.push(`avatar_url = $${paramIdx++}`); params.push(data.avatarUrl); }
   if (data.active !== undefined) { updates.push(`active = $${paramIdx++}`); params.push(data.active); }
@@ -112,6 +137,20 @@ export async function updateUser(id: string, tenantId: string, data: Partial<Use
   `, params);
 
   return result.rows[0] || null;
+}
+
+export async function resetTenantAdminPassword(tenantId: string, newPassword: string): Promise<boolean> {
+  const adminUser = await getAdminUserByTenant(tenantId);
+  const newHash = hashPassword(newPassword);
+
+  if (adminUser) {
+    await query(`
+      UPDATE users SET password_hash = $1, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $2 AND tenant_id = $3
+    `, [newHash, adminUser.id, tenantId]);
+    return true;
+  }
+  return false;
 }
 
 export async function deleteUser(id: string, tenantId: string): Promise<boolean> {

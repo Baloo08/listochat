@@ -18,6 +18,7 @@ import StorefrontView from '../storefront/StorefrontView';
 import PublicBookingView from '../storefront/PublicBookingView';
 import DriverPortal from './components/DriverPortal';
 import KDSFullscreen from './components/KDSFullscreen';
+import TenantLoginView from './components/TenantLoginView';
 
 import {
   Home,
@@ -55,6 +56,16 @@ export default function App() {
   if (pathname.startsWith('/reservas/')) {
     const slug = pathname.replace('/reservas/', '').split('/')[0];
     return <PublicBookingView slug={slug} />;
+  }
+
+  if (pathname.startsWith('/acceso/')) {
+    const slug = pathname.replace('/acceso/', '').split('/')[0];
+    return <TenantLoginView slug={slug} />;
+  }
+
+  if (pathname.startsWith('/admin/') || pathname.startsWith('/portal/')) {
+    const slug = pathname.replace('/admin/', '').replace('/portal/', '').split('/')[0];
+    return <TenantLoginView slug={slug} />;
   }
 
   if (pathname.startsWith('/repartidor')) {
