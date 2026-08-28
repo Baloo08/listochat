@@ -284,9 +284,16 @@ export async function runMigrations() {
     ALTER TABLE delivery_drivers ADD COLUMN IF NOT EXISTS access_pin VARCHAR(20);
     UPDATE delivery_drivers SET access_pin = '1234' WHERE access_pin IS NULL OR access_pin = '';
     ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS store_mode VARCHAR(50) DEFAULT 'retail';
+    ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS store_modules JSONB;
     ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS restaurant_config JSONB;
     ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS delivery_config JSONB;
+    ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS correos_cr_config JSONB;
+    ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS local_delivery_config JSONB;
+    ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS store_schedule JSONB;
+    ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS custom_stages JSONB;
     ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS notification_templates JSONB;
+    ALTER TABLE services ADD COLUMN IF NOT EXISTS parallel_slots INT DEFAULT 1;
+    ALTER TABLE schedule_settings ADD COLUMN IF NOT EXISTS global_parallel_slots INT DEFAULT 1;
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS consumption_mode VARCHAR(50);
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS table_number VARCHAR(50);
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_location JSONB;

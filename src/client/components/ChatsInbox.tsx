@@ -24,7 +24,9 @@ export default function ChatsInbox() {
   const [filterTab, setFilterTab] = useState<'all' | 'human' | 'ai'>('all');
   const [autoRefresh, setAutoRefresh] = useState(true);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const prevJidRef = useRef<string | null>(null);
+  const prevMessageCountRef = useRef<number>(0);
   const api = useApi();
 
   const loadChats = async (isBackground = false) => {
@@ -85,7 +87,7 @@ export default function ChatsInbox() {
     loadChats();
   }, []);
 
-  // Live Polling every 4 seconds
+  // Polling in background every 4s without disrupting user scroll
   useEffect(() => {
     if (!autoRefresh) return;
     const interval = setInterval(() => {
@@ -94,9 +96,31 @@ export default function ChatsInbox() {
     return () => clearInterval(interval);
   }, [autoRefresh, selectedJid]);
 
+  // Scroll to bottom only on conversation change or when new messages arrive and user is near bottom
+  const scrollToBottom = (force = false) => {
+    if (!messagesContainerRef.current) return;
+    const el = messagesContainerRef.current;
+    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
+    if (force || isNearBottom) {
+      el.scrollTop = el.scrollHeight;
+    }
+  };
+
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [selectedJid, conversations]);
+    if (selectedJid !== prevJidRef.current) {
+      prevJidRef.current = selectedJid;
+      setTimeout(() => scrollToBottom(true), 50);
+    }
+  }, [selectedJid]);
+
+  useEffect(() => {
+    const currentConv = conversations.find(c => c.remoteJid === selectedJid);
+    const count = currentConv?.messages?.length || 0;
+    if (count > prevMessageCountRef.current) {
+      prevMessageCountRef.current = count;
+      scrollToBottom(false);
+    }
+  }, [conversations, selectedJid]);
 
   const handleSendReply = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -113,6 +137,7 @@ export default function ChatsInbox() {
 
       setReplyText('');
       await loadChats(true);
+      setTimeout(() => scrollToBottom(true), 100);
     } catch (err) {
       alert('Error enviando mensaje');
     } finally {
@@ -151,172 +176,164 @@ export default function ChatsInbox() {
 
   const selectedConv = conversations.find(c => c.remoteJid === selectedJid);
 
-  const formatMessageTime = (dateStr?: any) => {
-    if (!dateStr) return '';
-    try {
-      const d = new Date(dateStr);
-      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    } catch (e) {
-      return '';
-    }
+  const formatMessageTime = (date?: Date | string) => {
+    if (!date) return '';
+    const d = new Date(date);
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
+  if (loading && conversations.length === 0) {
+    return <div style={{ padding: '40px', textAlign: 'center' }}>Cargando bandeja de WhatsApp...</div>;
+  }
+
   return (
-    <div style={{ maxWidth: '1100px', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ maxWidth: '1200px', height: 'calc(100vh - 120px)', display: 'flex', flexDirection: 'column' }}>
       
       {/* Top Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
         <div>
-          <h2 style={{ margin: '0 0 2px 0', fontSize: '1.4rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <MessageSquare size={22} color="var(--primary)" /> Bandeja de WhatsApp en Vivo
-          </h2>
+          <h2 style={{ margin: '0 0 4px 0', fontSize: '1.4rem', fontWeight: 'bold' }}>Bandeja de WhatsApp en Vivo</h2>
           <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-            Monitoreo en tiempo real, cambio a modo humano y respuestas manuales
+            Monitorea conversaciones, responde manualmente y controla el modo humano / IA
           </p>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', color: 'var(--text-muted)', cursor: 'pointer' }}>
+          <button
+            onClick={() => loadChats()}
+            style={{ padding: '8px 12px', backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem' }}
+          >
+            <RefreshCw size={14} /> Refrescar
+          </button>
+          
+          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', cursor: 'pointer', userSelect: 'none' }}>
             <input
               type="checkbox"
               checked={autoRefresh}
               onChange={(e) => setAutoRefresh(e.target.checked)}
             />
-            <span>Actualización en vivo (4s)</span>
+            <span>Auto-refresco (4s)</span>
           </label>
-
-          <button
-            onClick={() => loadChats(false)}
-            style={{ padding: '7px 12px', backgroundColor: 'white', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', fontWeight: '600' }}
-          >
-            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refrescar
-          </button>
         </div>
       </div>
 
-      {/* Main Split Panel */}
-      <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', height: '640px', backgroundColor: 'var(--surface)', borderRadius: '12px', border: '1px solid var(--border)', overflow: 'hidden' }}>
+      {/* Main Inbox Container */}
+      <div style={{ flex: 1, backgroundColor: 'var(--surface)', borderRadius: '12px', border: '1px solid var(--border)', display: 'grid', gridTemplateColumns: '360px 1fr', overflow: 'hidden', minHeight: 0 }}>
         
-        {/* Left Column: Conversations List */}
-        <div style={{ borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', backgroundColor: '#ffffff', height: '100%', overflow: 'hidden' }}>
+        {/* Left Column: Contact List */}
+        <div style={{ borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: '#ffffff', overflow: 'hidden' }}>
           
           {/* Search Box */}
-          <div style={{ padding: '12px', borderBottom: '1px solid var(--border)' }}>
+          <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
             <div style={{ position: 'relative' }}>
-              <Search size={16} color="var(--text-muted)" style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)' }} />
+              <Search size={16} color="var(--text-muted)" style={{ position: 'absolute', left: '10px', top: '10px' }} />
               <input
                 type="text"
-                placeholder="Buscar por cliente o teléfono..."
+                placeholder="Buscar cliente, número o mensaje..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                style={{ width: '100%', padding: '7px 10px 7px 32px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.8rem' }}
+                style={{ width: '100%', padding: '8px 10px 8px 34px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '0.85rem', backgroundColor: '#f8fafc' }}
               />
             </div>
           </div>
 
-          {/* Filter Pills with Lucide Icons (No Emojis) */}
-          <div style={{ display: 'flex', gap: '4px', padding: '8px 10px', borderBottom: '1px solid var(--border)', backgroundColor: '#f8fafc' }}>
+          {/* Filter Tabs */}
+          <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', backgroundColor: '#f8fafc', padding: '4px 8px', gap: '4px' }}>
             <button
               onClick={() => setFilterTab('all')}
               style={{
-                flex: 1, padding: '6px 4px', borderRadius: '6px', border: 'none',
-                backgroundColor: filterTab === 'all' ? 'var(--primary)' : 'transparent',
-                color: filterTab === 'all' ? 'white' : 'var(--text-muted)',
-                fontWeight: '600', fontSize: '0.75rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px'
+                flex: 1, padding: '6px', border: 'none', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer',
+                backgroundColor: filterTab === 'all' ? '#ffffff' : 'transparent',
+                color: filterTab === 'all' ? 'var(--primary)' : 'var(--text-muted)',
+                boxShadow: filterTab === 'all' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none'
               }}
             >
-              <MessageSquare size={13} /> Todos ({conversations.length})
+              Todos ({conversations.length})
             </button>
             <button
               onClick={() => setFilterTab('human')}
               style={{
-                flex: 1, padding: '6px 4px', borderRadius: '6px', border: 'none',
-                backgroundColor: filterTab === 'human' ? '#f59e0b' : 'transparent',
-                color: filterTab === 'human' ? 'white' : 'var(--text-muted)',
-                fontWeight: '600', fontSize: '0.75rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px'
+                flex: 1, padding: '6px', border: 'none', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer',
+                backgroundColor: filterTab === 'human' ? '#ffffff' : 'transparent',
+                color: filterTab === 'human' ? '#d97706' : 'var(--text-muted)',
+                boxShadow: filterTab === 'human' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none'
               }}
             >
-              <User size={13} /> Humano ({conversations.filter(c => c.isHumanMode).length})
+              👤 Modo Humano ({conversations.filter(c => c.isHumanMode).length})
             </button>
             <button
               onClick={() => setFilterTab('ai')}
               style={{
-                flex: 1, padding: '6px 4px', borderRadius: '6px', border: 'none',
-                backgroundColor: filterTab === 'ai' ? '#10b981' : 'transparent',
-                color: filterTab === 'ai' ? 'white' : 'var(--text-muted)',
-                fontWeight: '600', fontSize: '0.75rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px'
+                flex: 1, padding: '6px', border: 'none', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer',
+                backgroundColor: filterTab === 'ai' ? '#ffffff' : 'transparent',
+                color: filterTab === 'ai' ? '#16a34a' : 'var(--text-muted)',
+                boxShadow: filterTab === 'ai' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none'
               }}
             >
-              <Bot size={13} /> IA ({conversations.filter(c => !c.isHumanMode).length})
+              🤖 IA Activa ({conversations.filter(c => !c.isHumanMode).length})
             </button>
           </div>
 
-          {/* Conversations Scrollable List */}
+          {/* Conversations Scroll List */}
           <div style={{ flex: 1, overflowY: 'auto' }}>
             {filteredConversations.length === 0 ? (
-              <div style={{ padding: '30px 15px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                No hay conversaciones activas.
+              <div style={{ padding: '30px 20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                No hay conversaciones que coincidan.
               </div>
             ) : (
-              filteredConversations.map(conv => {
-                const isSelected = selectedJid === conv.remoteJid;
+              filteredConversations.map(c => {
+                const isSelected = c.remoteJid === selectedJid;
+
                 return (
                   <div
-                    key={conv.remoteJid}
-                    onClick={() => setSelectedJid(conv.remoteJid)}
+                    key={c.remoteJid}
+                    onClick={() => setSelectedJid(c.remoteJid)}
                     style={{
                       padding: '12px 14px',
                       borderBottom: '1px solid #f1f5f9',
                       cursor: 'pointer',
                       backgroundColor: isSelected ? '#f0fdf4' : 'transparent',
                       borderLeft: isSelected ? '4px solid var(--primary)' : '4px solid transparent',
-                      transition: 'all 0.15s ease',
+                      transition: 'background-color 0.15s',
                       display: 'flex',
                       gap: '10px',
                       alignItems: 'center'
                     }}
                   >
+                    {/* Avatar */}
                     <div style={{
-                      width: '40px',
-                      height: '40px',
-                      borderRadius: '50%',
-                      backgroundColor: conv.isHumanMode ? '#fef3c7' : '#dcfce7',
-                      color: conv.isHumanMode ? '#b45309' : '#15803d',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontWeight: 'bold',
-                      fontSize: '0.85rem',
-                      flexShrink: 0
+                      width: '42px', height: '42px', borderRadius: '50%',
+                      backgroundColor: c.isHumanMode ? '#fef3c7' : '#dcfce7',
+                      color: c.isHumanMode ? '#b45309' : '#15803d',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontWeight: 'bold', fontSize: '0.9rem', flexShrink: 0
                     }}>
-                      {conv.pushName.slice(0, 2).toUpperCase()}
+                      {c.pushName.slice(0, 2).toUpperCase()}
                     </div>
 
+                    {/* Info */}
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
-                        <strong style={{ fontSize: '0.85rem', color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {conv.pushName}
+                        <strong style={{ fontSize: '0.9rem', color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {c.pushName}
                         </strong>
-                        <span style={{ fontSize: '0.65rem', color: '#94a3b8' }}>
-                          {formatMessageTime(conv.lastTimestamp)}
+                        <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
+                          {formatMessageTime(c.lastTimestamp)}
                         </span>
                       </div>
 
-                      <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                        <Phone size={11} /> +{conv.cleanPhone}
+                      <div style={{ fontSize: '0.8rem', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: '4px' }}>
+                        {c.lastMessage}
                       </div>
 
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px' }}>
-                        <p style={{ margin: 0, fontSize: '0.75rem', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>
-                          {conv.lastMessage}
-                        </p>
-
-                        {conv.isHumanMode ? (
-                          <span style={{ padding: '2px 6px', borderRadius: '8px', fontSize: '0.65rem', backgroundColor: '#fef3c7', color: '#b45309', fontWeight: 'bold', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '2px' }}>
-                            <User size={10} /> Pausada
+                      {/* Status Badges */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {c.isHumanMode ? (
+                          <span style={{ fontSize: '0.7rem', backgroundColor: '#fef3c7', color: '#b45309', padding: '1px 6px', borderRadius: '4px', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                            <User size={10} /> Modo Humano
                           </span>
                         ) : (
-                          <span style={{ padding: '2px 6px', borderRadius: '8px', fontSize: '0.65rem', backgroundColor: '#dcfce7', color: '#15803d', fontWeight: 'bold', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '2px' }}>
+                          <span style={{ fontSize: '0.7rem', backgroundColor: '#dcfce7', color: '#15803d', padding: '1px 6px', borderRadius: '4px', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
                             <Bot size={10} /> IA Activa
                           </span>
                         )}
@@ -379,7 +396,7 @@ export default function ChatsInbox() {
                 >
                   {selectedConv.isHumanMode ? (
                     <>
-                      <UserCheck size={16} /> Modo Humano (IA Pausada) — Toca para Reactivar IA
+                      <UserCheck size={16} /> Modo Humano Activo — Toca para Reactivar IA
                     </>
                   ) : (
                     <>
@@ -390,12 +407,11 @@ export default function ChatsInbox() {
               </div>
             </div>
 
-            {/* Chat Thread Messages */}
-            <div style={{ flex: 1, padding: '18px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {/* Chat Thread Messages (with ref attached) */}
+            <div ref={messagesContainerRef} style={{ flex: 1, padding: '18px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {selectedConv.messages.map((m, idx) => {
                 const isFromMe = m.fromMe;
                 const isAI = m.aiResponse || m.pushName === 'Asistente IA';
-                const hasLocation = m.messageText.includes('http');
 
                 return (
                   <div
@@ -431,7 +447,6 @@ export default function ChatsInbox() {
                   </div>
                 );
               })}
-              <div ref={messagesEndRef} />
             </div>
 
             {/* Bottom Reply Bar */}
@@ -452,25 +467,23 @@ export default function ChatsInbox() {
                   color: 'white',
                   border: 'none',
                   borderRadius: '20px',
-                  cursor: 'pointer',
+                  cursor: sending || !replyText.trim() ? 'not-allowed' : 'pointer',
                   fontWeight: 'bold',
-                  fontSize: '0.9rem',
+                  fontSize: '0.85rem',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '6px'
+                  gap: '6px',
+                  opacity: sending || !replyText.trim() ? 0.6 : 1
                 }}
               >
-                <Send size={16} /> {sending ? 'Enviando...' : 'Enviar'}
+                <Send size={15} />
+                <span>{sending ? 'Enviando...' : 'Enviar'}</span>
               </button>
             </form>
           </div>
         ) : (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', backgroundColor: '#f8fafc', color: 'var(--text-muted)' }}>
-            <div style={{ textAlign: 'center' }}>
-              <MessageSquare size={48} color="#cbd5e1" style={{ margin: '0 auto 12px auto' }} />
-              <h3 style={{ margin: '0 0 6px 0', fontSize: '1.1rem' }}>Selecciona una conversación</h3>
-              <p style={{ margin: 0, fontSize: '0.85rem' }}>Elige un chat de la lista izquierda para ver el historial y responder.</p>
-            </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)', fontSize: '0.95rem' }}>
+            Selecciona una conversación para ver los mensajes
           </div>
         )}
       </div>

@@ -53,6 +53,7 @@ export default function Bookings() {
   const [vacationStart, setVacationStart] = useState('');
   const [vacationEnd, setVacationEnd] = useState('');
   const [vacationMessage, setVacationMessage] = useState('Estaremos cerrados temporalmente por vacaciones. ¡Pronto estaremos de vuelta!');
+  const [globalParallelSlots, setGlobalParallelSlots] = useState(1);
 
   const [savingSchedule, setSavingSchedule] = useState(false);
   const [scheduleSavedToast, setScheduleSavedToast] = useState(false);
@@ -97,6 +98,7 @@ export default function Bookings() {
       const sch = await api.get('/api/appointments/schedule');
       if (sch) {
         setScheduleMode(sch.scheduleMode || 'jornada');
+        if (sch.globalParallelSlots) setGlobalParallelSlots(sch.globalParallelSlots);
         if (sch.jornadaConfig) {
           setStartHour(sch.jornadaConfig.startHour || '08:00');
           setEndHour(sch.jornadaConfig.endHour || '17:00');
@@ -175,6 +177,7 @@ export default function Bookings() {
     try {
       await api.post('/api/appointments/schedule', {
         scheduleMode,
+        globalParallelSlots: Number(globalParallelSlots),
         jornadaConfig: {
           startHour,
           endHour,
@@ -559,6 +562,34 @@ export default function Bookings() {
                 <CheckCircle size={16} /> ¡Configuración de horarios y formulario guardada exitosamente!
               </div>
             )}
+
+            {/* Parallel Slots Capacity Card */}
+            <div style={{ backgroundColor: '#f8fafc', padding: '18px 20px', borderRadius: '10px', border: '1px solid var(--border)', marginBottom: '22px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+                <Users size={20} color="var(--primary)" />
+                <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 'bold' }}>Capacidad de Atención Simultánea (Cupos en Paralelo)</h4>
+              </div>
+              <p style={{ margin: '0 0 12px 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                Define cuántos clientes pueden agendar y ser atendidos al mismo tiempo en un mismo horario.
+              </p>
+
+              <div style={{ maxWidth: '300px' }}>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>
+                  Cupos Globales por Horario:
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={globalParallelSlots}
+                  onChange={(e) => setGlobalParallelSlots(Math.max(1, Number(e.target.value)))}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.9rem', fontWeight: 'bold' }}
+                />
+                <span style={{ fontSize: '0.75rem', color: '#64748b', display: 'block', marginTop: '3px' }}>
+                  Ej: Si tienes 3 especialistas o sillas disponibles, pon 3 para aceptar hasta 3 citas a la misma hora.
+                </span>
+              </div>
+            </div>
 
             {/* Mode Selector */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginBottom: '25px' }}>

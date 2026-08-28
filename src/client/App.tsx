@@ -2,61 +2,101 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from './hooks/useAuth';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
-import SuperAdminPanel from './components/SuperAdminPanel';
-import TenantSettings from './components/TenantSettings';
-import ProductManager from './components/ProductManager';
-import OrdersPanel from './components/OrdersPanel';
-import StoreSettings from './components/StoreSettings';
 import ChatsInbox from './components/ChatsInbox';
 import Bookings from './components/Bookings';
 import ServicesManager from './components/ServicesManager';
-import EvolutionManager from './components/EvolutionManager';
+import ProductManager from './components/ProductManager';
+import OrdersPanel from './components/OrdersPanel';
+import StoreSettings from './components/StoreSettings';
 import AgentPromptStudio from './components/AgentPromptStudio';
+import EvolutionManager from './components/EvolutionManager';
 import NotificationsCenter from './components/NotificationsCenter';
 import UsersManagement from './components/UsersManagement';
-import DriverPortal from './components/DriverPortal';
-import KDSFullscreen from './components/KDSFullscreen';
+import TenantSettings from './components/TenantSettings';
+import SuperAdminPanel from './components/SuperAdminPanel';
 import StorefrontView from '../storefront/StorefrontView';
 import PublicBookingView from '../storefront/PublicBookingView';
-import { 
-  Home, MessageSquare, Calendar, Wrench, ShoppingBag, 
-  Package, ClipboardList, Bot, Phone, Bell, Users, Settings, LogOut, ArrowLeft, ShieldAlert, Menu, X, Bike
+import DriverPortal from './components/DriverPortal';
+import KDSFullscreen from './components/KDSFullscreen';
+
+import {
+  Home,
+  MessageSquare,
+  Calendar,
+  Wrench,
+  ShoppingBag,
+  Package,
+  ClipboardList,
+  Bot,
+  Phone,
+  Bell,
+  Users,
+  Settings,
+  LogOut,
+  ShieldAlert,
+  ArrowLeft,
+  Menu,
+  X
 } from 'lucide-react';
 
 export default function App() {
-  const { isAuthenticated, loading, user, logout } = useAuth();
-  const [currentPage, setCurrentPage] = useState('dashboard');
-  const [unreadOrdersCount, setUnreadOrdersCount] = useState(0);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
-  // Check for public driver portal or KDS fullscreen routes before anything else
+  // Public route checks
   const pathname = window.location.pathname;
-
-  if (pathname.startsWith('/repartidor') || pathname.startsWith('/driver')) {
-    return <DriverPortal />;
-  }
-
-  if (pathname.startsWith('/kds') || pathname.startsWith('/comandas-live')) {
-    return <KDSFullscreen />;
-  }
 
   if (pathname.startsWith('/tienda/')) {
     const slug = pathname.replace('/tienda/', '').split('/')[0];
-    if (slug) {
-      return <StorefrontView slug={slug} />;
-    }
+    return <StorefrontView slug={slug} />;
   }
 
-  if (pathname.startsWith('/reservas/') || pathname.startsWith('/agendar/')) {
-    const slug = pathname.replace('/reservas/', '').replace('/agendar/', '').split('/')[0];
-    if (slug) {
-      return <PublicBookingView slug={slug} />;
-    }
+  if (pathname.startsWith('/reservas/')) {
+    const slug = pathname.replace('/reservas/', '').split('/')[0];
+    return <PublicBookingView slug={slug} />;
   }
 
-  // Periodic check for new unread orders if authenticated
+  if (pathname.startsWith('/repartidor')) {
+    return <DriverPortal />;
+  }
+
+  if (pathname.startsWith('/kds')) {
+    return <KDSFullscreen />;
+  }
+
+  const { isAuthenticated, user, loading, logout } = useAuth();
+  const [currentPage, setCurrentPage] = useState<string>('dashboard');
+  const [unreadOrdersCount, setUnreadOrdersCount] = useState<number>(0);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Tenant customization
+  const [storeMode, setStoreMode] = useState<'retail' | 'restaurant'>('retail');
+  const [storeModules, setStoreModules] = useState<{ storeEnabled: boolean; bookingsEnabled: boolean }>({
+    storeEnabled: true,
+    bookingsEnabled: true
+  });
+
   useEffect(() => {
-    if (!isAuthenticated || user?.role === 'superadmin') return;
+    if (!isAuthenticated || !user) return;
+
+    const fetchTenantStoreConfig = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+        const res = await fetch('/api/store', { headers: { Authorization: `Bearer ${token}` } });
+        if (res.ok) {
+          const data = await res.json();
+          if (data) {
+            setStoreMode(data.storeMode || 'retail');
+            if (data.storeModules) {
+              setStoreModules({
+                storeEnabled: data.storeModules.storeEnabled !== false,
+                bookingsEnabled: data.storeModules.bookingsEnabled !== false
+              });
+            }
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+    };
 
     const checkUnread = async () => {
       try {
@@ -74,6 +114,7 @@ export default function App() {
       }
     };
 
+    fetchTenantStoreConfig();
     checkUnread();
     const interval = setInterval(checkUnread, 12000);
     return () => clearInterval(interval);
@@ -98,26 +139,69 @@ export default function App() {
     return <Login />;
   }
 
-  const superAdminNav = [
-    { id: 'tenants', label: 'Clientes & Inquilinos', icon: <Users size={20} /> },
+  // GROUPED NAVIGATION
+  interface NavItem {
+    id: string;
+    label: string;
+    icon: React.ReactNode;
+    badge?: number;
+  }
+
+  interface NavGroup {
+    title: string;
+    items: NavItem[];
+  }
+
+  const superAdminNavGroups: NavGroup[] = [
+    {
+      title: 'SUPERADMINISTRADOR',
+      items: [
+        { id: 'tenants', label: 'Clientes & Inquilinos', icon: <Users size={18} /> }
+      ]
+    }
   ];
 
-  const tenantNav = [
-    { id: 'dashboard', label: 'Dashboard', icon: <Home size={20} /> },
-    { id: 'chats', label: 'Chats', icon: <MessageSquare size={20} /> },
-    { id: 'reservas', label: 'Reservas', icon: <Calendar size={20} /> },
-    { id: 'servicios', label: 'Servicios', icon: <Wrench size={20} /> },
-    { id: 'tienda', label: 'Tienda & Envíos', icon: <ShoppingBag size={20} /> },
-    { id: 'productos', label: 'Productos', icon: <Package size={20} /> },
-    { id: 'ordenes', label: 'Comandas & Pedidos', icon: <ClipboardList size={20} />, badge: unreadOrdersCount > 0 ? unreadOrdersCount : undefined },
-    { id: 'agente', label: 'Agente IA', icon: <Bot size={20} /> },
-    { id: 'whatsapp', label: 'WhatsApp', icon: <Phone size={20} /> },
-    { id: 'notificaciones', label: 'Notificaciones', icon: <Bell size={20} /> },
-    { id: 'usuarios', label: 'Usuarios', icon: <Users size={20} /> },
-    { id: 'configuracion', label: 'Configuración', icon: <Settings size={20} /> },
+  const tenantNavGroups: NavGroup[] = [
+    {
+      title: 'GENERAL & CLIENTES',
+      items: [
+        { id: 'dashboard', label: 'Dashboard', icon: <Home size={18} /> },
+        { id: 'chats', label: 'Chats en Vivo', icon: <MessageSquare size={18} /> },
+        { id: 'whatsapp', label: 'Conexión WhatsApp', icon: <Phone size={18} /> }
+      ]
+    },
+    ...(storeModules.storeEnabled !== false ? [{
+      title: storeMode === 'restaurant' ? 'RESTAURANTE & COCINA' : 'TIENDA & VENTAS',
+      items: [
+        { 
+          id: 'ordenes', 
+          label: storeMode === 'restaurant' ? 'Comandas' : 'Pedidos', 
+          icon: <ClipboardList size={18} />, 
+          badge: unreadOrdersCount > 0 ? unreadOrdersCount : undefined 
+        },
+        { id: 'productos', label: storeMode === 'restaurant' ? 'Menú / Platillos' : 'Catálogo Productos', icon: <Package size={18} /> },
+        { id: 'tienda', label: 'Tienda & Envíos', icon: <ShoppingBag size={18} /> }
+      ]
+    }] : []),
+    ...(storeModules.bookingsEnabled !== false ? [{
+      title: 'AGENDA & CITAS',
+      items: [
+        { id: 'reservas', label: 'Reservas & Agenda', icon: <Calendar size={18} /> },
+        { id: 'servicios', label: 'Servicios', icon: <Wrench size={18} /> }
+      ]
+    }] : []),
+    {
+      title: 'SISTEMA & AJUSTES',
+      items: [
+        { id: 'agente', label: 'Agente IA', icon: <Bot size={18} /> },
+        { id: 'notificaciones', label: 'Historial Envíos', icon: <Bell size={18} /> },
+        { id: 'usuarios', label: 'Usuarios', icon: <Users size={18} /> },
+        { id: 'configuracion', label: 'Configuración', icon: <Settings size={18} /> }
+      ]
+    }
   ];
 
-  const nav = user.role === 'superadmin' ? superAdminNav : tenantNav;
+  const navGroups = user.role === 'superadmin' ? superAdminNavGroups : tenantNavGroups;
 
   const handleNavClick = (pageId: string) => {
     setCurrentPage(pageId);
@@ -159,7 +243,7 @@ export default function App() {
 
       {/* Sidebar (Responsive for Desktop, Tablet & Mobile) */}
       <div style={{
-        width: '250px',
+        width: '260px',
         backgroundColor: 'var(--surface)',
         borderRight: '1px solid var(--border)',
         display: 'flex',
@@ -174,11 +258,11 @@ export default function App() {
       }}>
         <div style={{ padding: '20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ fontSize: '1.35rem', fontWeight: 'bold', color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Bot size={24} color="var(--primary)" /> <span>Betico</span>
             </div>
             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px', fontWeight: '500' }}>
-              WhatsApp AI & E-commerce
+              WhatsApp AI SaaS Platform
             </div>
           </div>
 
@@ -189,37 +273,46 @@ export default function App() {
           )}
         </div>
 
-        <nav style={{ flex: 1, padding: '10px 0', overflowY: 'auto' }}>
-          {nav.map(item => (
-            <button
-              key={item.id}
-              onClick={() => handleNavClick(item.id)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                width: '100%',
-                padding: '12px 20px',
-                border: 'none',
-                backgroundColor: currentPage === item.id ? 'var(--primary)' : 'transparent',
-                color: currentPage === item.id ? 'white' : 'var(--text-muted)',
-                textAlign: 'left',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                fontWeight: currentPage === item.id ? '600' : 'normal',
-                fontSize: '0.9rem'
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                {item.icon}
-                <span>{item.label}</span>
+        {/* Grouped Sidebar Navigation */}
+        <nav style={{ flex: 1, padding: '12px 0', overflowY: 'auto' }}>
+          {navGroups.map((group, gIdx) => (
+            <div key={gIdx} style={{ marginBottom: '14px' }}>
+              <div style={{ padding: '4px 20px', fontSize: '0.68rem', fontWeight: 'bold', color: '#94a3b8', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                {group.title}
               </div>
-              {item.badge && (
-                <span style={{ backgroundColor: '#ef4444', color: 'white', fontSize: '0.7rem', fontWeight: 'bold', padding: '2px 7px', borderRadius: '10px' }}>
-                  {item.badge}
-                </span>
-              )}
-            </button>
+
+              {group.items.map(item => (
+                <button
+                  key={item.id}
+                  onClick={() => handleNavClick(item.id)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    width: '100%',
+                    padding: '9px 20px',
+                    border: 'none',
+                    backgroundColor: currentPage === item.id ? 'var(--primary)' : 'transparent',
+                    color: currentPage === item.id ? 'white' : 'var(--text-muted)',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s',
+                    fontWeight: currentPage === item.id ? '600' : 'normal',
+                    fontSize: '0.85rem'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    {item.icon}
+                    <span>{item.label}</span>
+                  </div>
+                  {item.badge && (
+                    <span style={{ backgroundColor: '#ef4444', color: 'white', fontSize: '0.7rem', fontWeight: 'bold', padding: '2px 7px', borderRadius: '10px' }}>
+                      {item.badge}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
           ))}
         </nav>
       </div>
@@ -244,27 +337,49 @@ export default function App() {
         )}
 
         {/* Top Header */}
-        <header style={{ height: '60px', backgroundColor: 'var(--surface)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px', flexShrink: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <button
-              onClick={() => setMobileMenuOpen(true)}
-              style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#1e293b', padding: '6px', display: 'flex', alignItems: 'center' }}
-            >
-              <Menu size={22} />
-            </button>
-            <h1 style={{ fontSize: '1.15rem', fontWeight: '600', textTransform: 'capitalize', margin: 0 }}>
-              {nav.find(i => i.id === currentPage)?.label || currentPage}
+        <header style={{
+          height: '60px',
+          backgroundColor: 'var(--surface)',
+          borderBottom: '1px solid var(--border)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '0 20px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            {window.innerWidth < 768 && (
+              <button
+                onClick={() => setMobileMenuOpen(true)}
+                style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text)', padding: '4px' }}
+              >
+                <Menu size={22} />
+              </button>
+            )}
+            <h1 style={{ fontSize: '1.15rem', fontWeight: 'bold', margin: 0, textTransform: 'capitalize' }}>
+              {currentPage === 'ordenes' ? (storeMode === 'restaurant' ? 'Comandas' : 'Pedidos') : currentPage}
             </h1>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: 'var(--primary)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '0.85rem' }}>
+              <div style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '50%',
+                backgroundColor: 'var(--primary)',
+                color: 'white',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontWeight: 'bold',
+                fontSize: '0.85rem'
+              }}>
                 {user.name.charAt(0).toUpperCase()}
               </div>
-              <span style={{ fontSize: '0.85rem', fontWeight: '500' }}>
-                {user.name} <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>({user.role})</span>
-              </span>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span style={{ fontSize: '0.85rem', fontWeight: '600' }}>{user.name}</span>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{user.role}</span>
+              </div>
             </div>
 
             <button
@@ -272,27 +387,26 @@ export default function App() {
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '5px',
+                gap: '6px',
                 padding: '6px 12px',
-                border: '1px solid #fee2e2',
-                backgroundColor: '#fef2f2',
-                color: '#ef4444',
+                backgroundColor: 'transparent',
+                border: '1px solid var(--border)',
                 borderRadius: '6px',
                 cursor: 'pointer',
-                fontSize: '0.8rem',
-                fontWeight: '600'
+                color: 'var(--text-muted)',
+                fontSize: '0.85rem'
               }}
             >
-              <LogOut size={14} />
+              <LogOut size={16} />
               <span>Salir</span>
             </button>
           </div>
         </header>
 
-        {/* Scrollable Page Body */}
-        <div style={{ flex: 1, padding: '20px', overflowY: 'auto' }}>
+        {/* Dynamic Page Content */}
+        <main style={{ flex: 1, padding: '24px', overflowY: 'auto' }}>
           {renderContent()}
-        </div>
+        </main>
       </div>
     </div>
   );

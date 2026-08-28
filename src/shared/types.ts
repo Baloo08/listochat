@@ -1,14 +1,22 @@
+export type UserRole = 'superadmin' | 'admin' | 'staff' | 'viewer';
+export type OrderStatus = 'pedido_recibido' | 'pedido_aceptado' | 'procesando' | 'listo_entrega' | 'en_camino' | 'entregado' | 'cancelado' | 'pending' | 'confirmed' | 'preparing' | 'shipped' | 'delivered';
+export type PaymentMethod = 'sinpe' | 'transfer' | 'cash' | 'card';
+export type PaymentStatus = 'pending' | 'proof_sent' | 'paid' | 'refunded';
+export type DeliveryMethod = 'pickup' | 'delivery';
+export type AIProvider = 'gemini' | 'openai' | 'anthropic';
+export type SubscriptionPlan = 'starter' | 'pro' | 'business' | 'enterprise';
+
 export interface Tenant {
   id: string;
   name: string;
   slug: string;
   customDomain?: string;
-  aiProvider: 'gemini' | 'openai' | 'anthropic';
+  aiProvider: AIProvider;
   aiApiKeyEncrypted?: string;
   aiModel: string;
   evolutionInstance?: string;
   whatsappNumber?: string;
-  plan: 'starter' | 'pro' | 'business' | 'enterprise';
+  plan: SubscriptionPlan;
   active: boolean;
   createdAt: Date;
   settingsJson?: Record<string, any>;
@@ -19,7 +27,7 @@ export interface User {
   tenantId: string;
   name: string;
   email: string;
-  role: 'superadmin' | 'admin' | 'staff' | 'viewer';
+  role: UserRole;
   avatarUrl?: string;
   provider: 'local' | 'google';
   active: boolean;
@@ -41,6 +49,7 @@ export interface Service {
   duration: string;
   estimatedMinutes?: number;
   category?: string;
+  parallelSlots?: number;
   active: boolean;
   notes?: string;
   createdAt?: Date;
@@ -64,6 +73,7 @@ export interface Appointment {
 export interface AgentPromptConfig {
   id?: string;
   tenantId: string;
+  aiChatbotEnabled?: boolean;
   systemPrompt: string;
   model: string;
   temperature: number;
@@ -157,13 +167,55 @@ export interface DeliveryConfig {
   correosIncludeIva: boolean;
 }
 
+export interface CorreosCrRateBracket {
+  label: string;
+  maxGrams: number;
+  gamPrice: number;
+  restoPrice: number;
+}
+
+export interface CorreosCrConfig {
+  enabled: boolean;
+  serviceType: 'ems' | 'pyme';
+  rates: CorreosCrRateBracket[];
+  originType: 'GAM' | 'RESTO';
+  includeIva: boolean;
+}
+
+export interface LocalDeliveryConfig {
+  enabled: boolean;
+  fee: number;
+  freeAbove?: number;
+  estimatedHours?: string;
+  notes?: string;
+}
+
+export interface StoreScheduleConfig {
+  isOpenManual: boolean;
+  autoScheduleEnabled: boolean;
+  closedMessage?: string;
+  schedule: {
+    [dayKey: string]: { enabled: boolean; open: string; close: string };
+  };
+}
+
+export interface StoreModulesConfig {
+  storeEnabled: boolean;
+  bookingsEnabled: boolean;
+}
+
 export interface StoreSettings {
   id: string;
   tenantId: string;
   storeEnabled: boolean;
   storeMode?: 'retail' | 'restaurant';
+  storeModules?: StoreModulesConfig;
   restaurantConfig?: RestaurantConfig;
   deliveryConfig?: DeliveryConfig;
+  correosCrConfig?: CorreosCrConfig;
+  localDeliveryConfig?: LocalDeliveryConfig;
+  storeSchedule?: StoreScheduleConfig;
+  customStages?: Record<string, string>;
   notificationTemplates?: NotificationTemplates;
   storeName: string;
   storeSlug: string;
@@ -222,8 +274,6 @@ export interface Product {
   active: boolean;
   images: ProductImage[];
   variants: ProductVariant[];
-  createdAt?: Date;
-  updatedAt?: Date;
 }
 
 export interface OrderItem {
@@ -234,10 +284,8 @@ export interface OrderItem {
   variantName?: string;
   quantity: number;
   unitPrice: number;
-  totalPrice: number;
+  totalPrice?: number;
 }
-
-export type OrderStatus = 'pedido_recibido' | 'pedido_aceptado' | 'procesando' | 'listo_entrega' | 'en_camino' | 'entregado' | 'cancelado' | 'pending' | 'confirmed' | 'preparing' | 'shipped' | 'delivered';
 
 export interface Order {
   id: string;
@@ -247,6 +295,11 @@ export interface Order {
   customerPhone?: string;
   customerEmail?: string;
   customerAddress?: string;
+  customerLocation?: {
+    lat: number;
+    lng: number;
+    mapsUrl?: string;
+  };
   whatsappJid?: string;
   source: 'store' | 'whatsapp' | 'manual';
   items: OrderItem[];
@@ -256,36 +309,22 @@ export interface Order {
   total: number;
   currency: string;
   status: OrderStatus;
-  paymentMethod: 'sinpe' | 'transfer' | 'cash' | 'card';
-  paymentStatus: 'pending' | 'proof_sent' | 'paid' | 'refunded';
+  paymentMethod: PaymentMethod;
+  paymentStatus: PaymentStatus;
   paymentReference?: string;
   notes?: string;
-  deliveryMethod: 'pickup' | 'delivery';
+  deliveryMethod: DeliveryMethod;
   consumptionMode?: 'dine_in' | 'pickup' | 'delivery';
   tableNumber?: string;
-  customerLocation?: {
-    lat?: number;
-    lng?: number;
-    address?: string;
-    mapsUrl?: string;
-    distanceKm?: number;
-  };
   driverId?: string;
   wazeUrl?: string;
   chatMessageId?: string;
-  createdAt?: Date;
-  updatedAt?: Date;
-}
-
-export interface VacationConfig {
-  enabled: boolean;
-  startDate: string; // YYYY-MM-DD
-  endDate: string;   // YYYY-MM-DD
-  message: string;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface DayBreakConfig {
-  hasBreak: boolean;
+  enabled: boolean;
   breakStart: string;
   breakEnd: string;
 }
@@ -295,49 +334,36 @@ export interface BookingField {
   label: string;
   placeholder?: string;
   type: 'text' | 'textarea' | 'select' | 'number';
+  options?: string[];
   required: boolean;
-  options?: string[]; // for select dropdowns
 }
 
 export interface ScheduleSettings {
   id?: string;
   tenantId: string;
   scheduleMode: 'jornada' | 'fechas' | 'bloques';
+  globalParallelSlots?: number;
   jornadaConfig?: {
-    startHour: string; // "08:00"
-    endHour: string;   // "17:00"
-    slotMinutes: number; // 45
+    startHour: string;
+    endHour: string;
+    slotMinutes: number;
     hasBreak: boolean;
-    breakStart: string; // "12:00"
-    breakEnd: string;   // "13:00"
-    daysEnabled: number[]; // [1, 2, 3, 4, 5, 6]
-    perDayBreaks?: Record<number, DayBreakConfig>; // 1 = Lunes .. 7 = Domingo
+    breakStart: string;
+    breakEnd: string;
+    daysEnabled: number[];
+    perDayBreaks?: Record<number, DayBreakConfig>;
   };
   fechasConfig?: {
-    enabledDates: string[]; // ["2026-08-28", "2026-08-29"]
-    slotsByDate?: Record<string, string[]>;
+    enabledDates: string[];
   };
   bloquesConfig?: {
     days: Record<string, Array<{ start: string; end: string }>>;
-    slotMinutes?: number;
   };
   customFields?: BookingField[];
-  vacationConfig?: VacationConfig;
-  updatedAt?: Date;
-}
-
-export interface CartItem {
-  productId: string;
-  variantId?: string;
-  name: string;
-  price: number;
-  quantity: number;
-  image?: string;
-}
-
-export interface Cart {
-  items: CartItem[];
-  subtotal: number;
-  deliveryFee: number;
-  total: number;
+  vacationMode?: {
+    enabled: boolean;
+    startDate: string;
+    endDate: string;
+    message?: string;
+  };
 }

@@ -368,6 +368,13 @@ export default function StorefrontView({ slug }: StorefrontProps) {
         </div>
       </header>
 
+      {/* Closed Store Banner */}
+      {store.storeSchedule && store.storeSchedule.isOpenManual === false && (
+        <div style={{ backgroundColor: '#fee2e2', borderBottom: '1px solid #fecaca', color: '#991b1b', padding: '14px 20px', textAlign: 'center', fontSize: '0.9rem', fontWeight: 'bold' }}>
+          ⚠️ {store.storeSchedule.closedMessage || 'Actualmente nos encontramos cerrados para recepción de pedidos.'}
+        </div>
+      )}
+
       {/* Main Content */}
       <main style={{ maxWidth: '1100px', margin: '25px auto', padding: '0 20px' }}>
         

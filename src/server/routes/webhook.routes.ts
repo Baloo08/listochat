@@ -128,6 +128,12 @@ router.post('/', async (req, res) => {
     const lowerMsg = userMessage.toLowerCase();
     const isKeywordTriggered = handoffEnabled && keywords.some(k => lowerMsg.includes(k.toLowerCase().trim()));
 
+    // Check if AI Chatbot is enabled or if tenant is in Notifications-Only mode
+    if (agentConfig?.aiChatbotEnabled === false) {
+      console.log(`[Webhook] AI Chatbot is DISABLED for tenant '${tenant.name}'. Operating in Notifications-Only mode.`);
+      return;
+    }
+
     // Fetch conversation history
     const allChats = await getChatMessagesByTenant(tenant.id, 20);
     const history = allChats

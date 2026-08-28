@@ -1,33 +1,73 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Store, Palette, Link as LinkIcon, Copy, ExternalLink, Save, CheckCircle, Upload, Image as ImageIcon, Sparkles, Pipette, Info, Utensils, ShoppingBag, Truck, MapPin, Package, Navigation, Users, Plus, Trash2, Phone, Bike, MessageSquare, Key, HelpCircle, Edit, Send } from 'lucide-react';
+import { 
+  Store, Palette, Link as LinkIcon, Copy, ExternalLink, Save, CheckCircle, 
+  Upload, Image as ImageIcon, Sparkles, Pipette, Info, Utensils, ShoppingBag, 
+  Truck, MapPin, Package, Navigation, Users, Plus, Trash2, Phone, Bike, 
+  MessageSquare, Key, HelpCircle, Edit, Send, Clock, ToggleLeft, ToggleRight, 
+  Eye, Check, ShieldCheck, Box, Sliders
+} from 'lucide-react';
 import { useApi } from '../hooks/useApi';
-import { StoreSettings as StoreSettingsType, StoreTheme, RestaurantConfig, DeliveryConfig, DeliveryDriver, NotificationTemplates } from '../../shared/types';
+import { 
+  StoreSettings as StoreSettingsType, StoreTheme, RestaurantConfig, 
+  DeliveryConfig, DeliveryDriver, NotificationTemplates, CorreosCrConfig, 
+  LocalDeliveryConfig, StoreScheduleConfig, StoreModulesConfig, CorreosCrRateBracket 
+} from '../../shared/types';
 
 export default function StoreSettings() {
   const [activeTab, setActiveTab] = useState<'general' | 'restaurant' | 'delivery' | 'drivers' | 'templates' | 'design'>('general');
+  const [shippingSubTab, setShippingSubTab] = useState<'express' | 'local' | 'correos'>('express');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
   const [saveMessage, setSaveMessage] = useState(false);
 
-  // Form Fields
+  // General & Modules Form Fields
   const [storeEnabled, setStoreEnabled] = useState(true);
   const [storeMode, setStoreMode] = useState<'retail' | 'restaurant'>('retail');
+  const [storeModules, setStoreModules] = useState<StoreModulesConfig>({
+    storeEnabled: true,
+    bookingsEnabled: true
+  });
   const [storeName, setStoreName] = useState('');
   const [storeSlug, setStoreSlug] = useState('');
   const [storeDescription, setStoreDescription] = useState('');
   const [storeLogoUrl, setStoreLogoUrl] = useState('');
   const [storeBannerUrl, setStoreBannerUrl] = useState('');
   const [currency, setCurrency] = useState('CRC');
+
+  // Payments
   const [acceptSinpe, setAcceptSinpe] = useState(true);
   const [sinpePhone, setSinpePhone] = useState('');
   const [sinpeName, setSinpeName] = useState('');
   const [acceptTransfer, setAcceptTransfer] = useState(true);
   const [bankAccountInfo, setBankAccountInfo] = useState('');
   const [acceptCashOnDelivery, setAcceptCashOnDelivery] = useState(true);
-  const [deliveryEnabled, setDeliveryEnabled] = useState(true);
-  const [deliveryFee, setDeliveryFee] = useState(2500);
   const [pickupEnabled, setPickupEnabled] = useState(true);
+
+  // Store Schedule & Open/Closed Switch
+  const [storeSchedule, setStoreSchedule] = useState<StoreScheduleConfig>({
+    isOpenManual: true,
+    autoScheduleEnabled: false,
+    closedMessage: 'Actualmente nuestro local se encuentra cerrado. Puedes revisar nuestro catálogo y te atenderemos en nuestro próximo horario de apertura.',
+    schedule: {
+      monday: { enabled: true, open: '08:00', close: '20:00' },
+      tuesday: { enabled: true, open: '08:00', close: '20:00' },
+      wednesday: { enabled: true, open: '08:00', close: '20:00' },
+      thursday: { enabled: true, open: '08:00', close: '20:00' },
+      friday: { enabled: true, open: '08:00', close: '22:00' },
+      saturday: { enabled: true, open: '09:00', close: '22:00' },
+      sunday: { enabled: true, open: '09:00', close: '18:00' }
+    }
+  });
+
+  // Custom Stages Nomenclature
+  const [customStages, setCustomStages] = useState<Record<string, string>>({
+    fase_1: 'Pedido Recibido',
+    fase_2: 'En Cocina / Preparación',
+    fase_3: 'Listo para Entrega',
+    fase_4: 'En Camino (Delivery)',
+    fase_5: 'Entregado con Éxito'
+  });
 
   // Restaurant Mode Settings
   const [restaurantConfig, setRestaurantConfig] = useState<RestaurantConfig>({
@@ -39,9 +79,9 @@ export default function StoreSettings() {
     allowDelivery: true
   });
 
-  // Delivery & Correos de Costa Rica Settings
+  // 1. Moto Express Delivery (Por KM)
   const [deliveryConfig, setDeliveryConfig] = useState<DeliveryConfig>({
-    deliveryType: 'flat',
+    deliveryType: 'distance',
     storeLocation: {
       lat: 9.9333,
       lng: -84.0833,
@@ -51,12 +91,34 @@ export default function StoreSettings() {
     baseDeliveryKm: 3,
     feePerExtraKm: 350,
     maxDeliveryRadiusKm: 25,
-    correosCrEnabled: true,
+    correosCrEnabled: false,
     originLocationType: 'GAM',
     correosIncludeIva: true
   });
 
-  // Notification Templates State
+  // 2. Local Delivery (Comercio / Paquetería Local)
+  const [localDeliveryConfig, setLocalDeliveryConfig] = useState<LocalDeliveryConfig>({
+    enabled: true,
+    fee: 2500,
+    freeAbove: 35000,
+    estimatedHours: '24 a 48 horas',
+    notes: 'Entregas en Gran Área Metropolitana'
+  });
+
+  // 3. Correos de Costa Rica (EMS Courier & PymeExpress con Tarifas Editables)
+  const [correosCrConfig, setCorreosCrConfig] = useState<CorreosCrConfig>({
+    enabled: true,
+    serviceType: 'ems',
+    originType: 'GAM',
+    includeIva: true,
+    rates: [
+      { label: 'Hasta 1 kg', maxGrams: 1000, gamPrice: 2200, restoPrice: 2850 },
+      { label: 'Hasta 2 kg', maxGrams: 2000, gamPrice: 3100, restoPrice: 3950 },
+      { label: 'Kilo Adicional (c/u)', maxGrams: 1000, gamPrice: 1100, restoPrice: 1350 }
+    ]
+  });
+
+  // Notification Templates
   const [notificationTemplates, setNotificationTemplates] = useState<NotificationTemplates>({
     orderReceived: `🎉 *¡Gracias por tu pedido en {tienda}!*
 
@@ -156,6 +218,24 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
         if (data) {
           setStoreEnabled(data.storeEnabled !== false);
           setStoreMode(data.storeMode || 'retail');
+          if (data.storeModules) {
+            setStoreModules({
+              storeEnabled: data.storeModules.storeEnabled !== false,
+              bookingsEnabled: data.storeModules.bookingsEnabled !== false
+            });
+          }
+          if (data.storeSchedule) {
+            setStoreSchedule(prev => ({
+              ...prev,
+              ...data.storeSchedule
+            }));
+          }
+          if (data.customStages) {
+            setCustomStages(prev => ({
+              ...prev,
+              ...data.customStages
+            }));
+          }
           if (data.restaurantConfig) {
             setRestaurantConfig({
               allowDineIn: data.restaurantConfig.allowDineIn !== false,
@@ -168,7 +248,7 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
           }
           if (data.deliveryConfig) {
             setDeliveryConfig({
-              deliveryType: data.deliveryConfig.deliveryType || 'flat',
+              deliveryType: data.deliveryConfig.deliveryType || 'distance',
               storeLocation: data.deliveryConfig.storeLocation || { lat: 9.9333, lng: -84.0833, address: 'San José, Costa Rica' },
               baseDeliveryFee: data.deliveryConfig.baseDeliveryFee ?? 1500,
               baseDeliveryKm: data.deliveryConfig.baseDeliveryKm ?? 3,
@@ -179,11 +259,14 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
               correosIncludeIva: data.deliveryConfig.correosIncludeIva !== false
             });
           }
+          if (data.localDeliveryConfig) {
+            setLocalDeliveryConfig(prev => ({ ...prev, ...data.localDeliveryConfig }));
+          }
+          if (data.correosCrConfig) {
+            setCorreosCrConfig(prev => ({ ...prev, ...data.correosCrConfig }));
+          }
           if (data.notificationTemplates) {
-            setNotificationTemplates(prev => ({
-              ...prev,
-              ...data.notificationTemplates
-            }));
+            setNotificationTemplates(prev => ({ ...prev, ...data.notificationTemplates }));
           }
           setStoreName(data.storeName || '');
           setStoreSlug(data.storeSlug || '');
@@ -197,8 +280,6 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
           setAcceptTransfer(data.acceptTransfer !== false);
           setBankAccountInfo(data.bankAccountInfo || '');
           setAcceptCashOnDelivery(data.acceptCashOnDelivery !== false);
-          setDeliveryEnabled(data.deliveryEnabled !== false);
-          setDeliveryFee(Number(data.deliveryFee) || 0);
           setPickupEnabled(data.pickupEnabled !== false);
 
           if (data.storeTheme) {
@@ -355,43 +436,44 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
       if (type === 'logo') setStoreLogoUrl(data.url);
       else setStoreBannerUrl(data.url);
 
-      try {
-        const cleanSlug = storeSlug ? storeSlug.toLowerCase().trim().replace(/[^a-z0-9]/g, '') : undefined;
-        await api.post('/api/store', {
-          storeEnabled,
-          storeMode,
-          restaurantConfig,
-          deliveryConfig,
-          notificationTemplates,
-          storeName,
-          storeSlug: cleanSlug || storeSlug,
-          storeDescription,
-          storeLogoUrl: newLogo,
-          storeBannerUrl: newBanner,
-          storeTheme: {
-            primaryColor,
-            backgroundColor,
-            cardBackgroundColor,
-            cardRadius,
-            cardShadow,
-            fontFamily,
-            bannerUrl: newBanner,
-            logoUrl: newLogo
-          },
-          currency,
-          acceptSinpe,
-          sinpePhone,
-          sinpeName,
-          acceptTransfer,
-          bankAccountInfo,
-          acceptCashOnDelivery,
-          deliveryEnabled,
-          deliveryFee,
-          pickupEnabled
-        });
-        setSaveMessage(true);
-        setTimeout(() => setSaveMessage(false), 3000);
-      } catch (e) {}
+      const cleanSlug = storeSlug ? storeSlug.toLowerCase().trim().replace(/[^a-z0-9]/g, '') : undefined;
+      await api.post('/api/store', {
+        storeEnabled,
+        storeMode,
+        storeModules,
+        restaurantConfig,
+        deliveryConfig,
+        correosCrConfig,
+        localDeliveryConfig,
+        storeSchedule,
+        customStages,
+        notificationTemplates,
+        storeName,
+        storeSlug: cleanSlug || storeSlug,
+        storeDescription,
+        storeLogoUrl: newLogo,
+        storeBannerUrl: newBanner,
+        storeTheme: {
+          primaryColor,
+          backgroundColor,
+          cardBackgroundColor,
+          cardRadius,
+          cardShadow,
+          fontFamily,
+          bannerUrl: newBanner,
+          logoUrl: newLogo
+        },
+        currency,
+        acceptSinpe,
+        sinpePhone,
+        sinpeName,
+        acceptTransfer,
+        bankAccountInfo,
+        acceptCashOnDelivery,
+        pickupEnabled
+      });
+      setSaveMessage(true);
+      setTimeout(() => setSaveMessage(false), 3000);
     } catch (err) {
       alert('Error subiendo archivo: ' + err);
     } finally {
@@ -418,8 +500,13 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
       await api.post('/api/store', {
         storeEnabled,
         storeMode,
+        storeModules,
         restaurantConfig,
         deliveryConfig,
+        correosCrConfig,
+        localDeliveryConfig,
+        storeSchedule,
+        customStages,
         notificationTemplates,
         storeName,
         storeSlug: cleanSlug || storeSlug,
@@ -434,8 +521,6 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
         acceptTransfer,
         bankAccountInfo,
         acceptCashOnDelivery,
-        deliveryEnabled,
-        deliveryFee,
         pickupEnabled
       });
 
@@ -457,26 +542,35 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const updateCorreosRate = (index: number, field: 'gamPrice' | 'restoPrice', val: number) => {
+    const updatedRates = [...correosCrConfig.rates];
+    updatedRates[index] = { ...updatedRates[index], [field]: val };
+    setCorreosCrConfig({ ...correosCrConfig, rates: updatedRates });
+  };
+
   if (loading) {
     return <div style={{ padding: '40px', textAlign: 'center' }}>Cargando configuración de la tienda...</div>;
   }
 
+  const radiusValue = cardRadius === 'square' ? '0px' : cardRadius === 'pill' ? '24px' : '10px';
+  const shadowValue = cardShadow === 'none' ? 'none' : cardShadow === 'sm' ? '0 1px 3px rgba(0,0,0,0.08)' : cardShadow === 'lg' ? '0 10px 25px -5px rgba(0,0,0,0.15)' : '0 4px 12px rgba(0,0,0,0.08)';
+
   return (
-    <div style={{ maxWidth: '980px' }}>
+    <div style={{ maxWidth: '1000px', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
       
-      {/* Header */}
+      {/* Top Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
         <div>
-          <h2 style={{ margin: '0 0 5px 0', fontSize: '1.5rem', fontWeight: 'bold' }}>Configuración de Tienda & Envíos</h2>
+          <h2 style={{ margin: '0 0 5px 0', fontSize: '1.5rem', fontWeight: 'bold' }}>Configuración de Tienda, Envíos & Operación</h2>
           <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-            Control de catálogo, modo restaurante, cálculo de envíos por KM, plantillas y repartidores
+            Control de módulos, modalidad de comandas/pedidos, cálculo de envíos, horarios y diseño visual
           </p>
         </div>
 
         <button
           onClick={handleSave}
           disabled={saving}
-          style={{ padding: '10px 20px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+          style={{ padding: '10px 22px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.9rem' }}
         >
           <Save size={16} /> {saving ? 'Guardando...' : 'Guardar Cambios'}
         </button>
@@ -496,7 +590,7 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
           </div>
           <div>
             <div style={{ fontSize: '0.8rem', color: '#166534', fontWeight: 'bold', textTransform: 'uppercase' }}>
-              {storeMode === 'restaurant' ? 'Menú Digital de tu Restaurante' : 'Enlace Público de tu Tienda'}
+              {storeMode === 'restaurant' ? 'Menú Digital / Comandas de tu Restaurante' : 'Enlace Público de tu Tienda'}
             </div>
             <div style={{ fontSize: '0.95rem', fontWeight: '600', color: '#14532d', wordBreak: 'break-all' }}>{storeUrl}</div>
           </div>
@@ -515,7 +609,7 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
             rel="noreferrer"
             style={{ padding: '8px 14px', backgroundColor: '#16a34a', color: 'white', borderRadius: '6px', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', fontWeight: '600' }}
           >
-            <ExternalLink size={15} /> Ver Catálogo
+            <ExternalLink size={15} /> Ver Menú / Tienda
           </a>
         </div>
       </div>
@@ -525,54 +619,50 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
         <button
           onClick={() => setActiveTab('general')}
           style={{
-            padding: '10px 16px',
-            border: 'none',
+            padding: '10px 16px', border: 'none',
             borderBottom: activeTab === 'general' ? '2px solid var(--primary)' : '2px solid transparent',
             backgroundColor: 'transparent',
             color: activeTab === 'general' ? 'var(--primary)' : 'var(--text-muted)',
-            fontWeight: '600', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap'
+            fontWeight: 'bold', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap'
           }}
         >
-          <Store size={17} /> General & Modalidad
+          <Store size={17} /> General & Módulos
         </button>
 
         <button
           onClick={() => setActiveTab('restaurant')}
           style={{
-            padding: '10px 16px',
-            border: 'none',
+            padding: '10px 16px', border: 'none',
             borderBottom: activeTab === 'restaurant' ? '2px solid #ea580c' : '2px solid transparent',
             backgroundColor: 'transparent',
             color: activeTab === 'restaurant' ? '#ea580c' : 'var(--text-muted)',
-            fontWeight: '600', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap'
+            fontWeight: 'bold', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap'
           }}
         >
-          <Utensils size={17} /> Modo Restaurante {storeMode === 'restaurant' ? '(Activo)' : ''}
+          <Utensils size={17} /> Modo {storeMode === 'restaurant' ? 'Restaurante & Comandas' : 'Tienda & Fases'}
         </button>
 
         <button
           onClick={() => setActiveTab('delivery')}
           style={{
-            padding: '10px 16px',
-            border: 'none',
+            padding: '10px 16px', border: 'none',
             borderBottom: activeTab === 'delivery' ? '2px solid #2563eb' : '2px solid transparent',
             backgroundColor: 'transparent',
             color: activeTab === 'delivery' ? '#2563eb' : 'var(--text-muted)',
-            fontWeight: '600', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap'
+            fontWeight: 'bold', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap'
           }}
         >
-          <Truck size={17} /> Envíos, GPS & Correos CR
+          <Truck size={17} /> Envíos (Express / Domicilio / Correos CR)
         </button>
 
         <button
           onClick={() => setActiveTab('drivers')}
           style={{
-            padding: '10px 16px',
-            border: 'none',
+            padding: '10px 16px', border: 'none',
             borderBottom: activeTab === 'drivers' ? '2px solid #0d9488' : '2px solid transparent',
             backgroundColor: 'transparent',
             color: activeTab === 'drivers' ? '#0d9488' : 'var(--text-muted)',
-            fontWeight: '600', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap'
+            fontWeight: 'bold', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap'
           }}
         >
           <Bike size={17} /> Repartidores / Motorizados ({drivers.length})
@@ -581,36 +671,127 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
         <button
           onClick={() => setActiveTab('templates')}
           style={{
-            padding: '10px 16px',
-            border: 'none',
+            padding: '10px 16px', border: 'none',
             borderBottom: activeTab === 'templates' ? '2px solid #8b5cf6' : '2px solid transparent',
             backgroundColor: 'transparent',
             color: activeTab === 'templates' ? '#8b5cf6' : 'var(--text-muted)',
-            fontWeight: '600', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap'
+            fontWeight: 'bold', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap'
           }}
         >
-          <MessageSquare size={17} /> Plantillas de WhatsApp
+          <MessageSquare size={17} /> Plantillas WhatsApp
         </button>
 
         <button
           onClick={() => setActiveTab('design')}
           style={{
-            padding: '10px 16px',
-            border: 'none',
+            padding: '10px 16px', border: 'none',
             borderBottom: activeTab === 'design' ? '2px solid var(--primary)' : '2px solid transparent',
             backgroundColor: 'transparent',
             color: activeTab === 'design' ? 'var(--primary)' : 'var(--text-muted)',
-            fontWeight: '600', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap'
+            fontWeight: 'bold', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap'
           }}
         >
-          <Palette size={17} /> Diseño Visual
+          <Palette size={17} /> Diseño Visual & Tipografía
         </button>
       </div>
 
-      {/* TAB 1: GENERAL & BASIC SETTINGS */}
+      {/* TAB 1: GENERAL, MODULE BOOLEANS & STORE SCHEDULE */}
       {activeTab === 'general' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           
+          {/* Module Booleans (Optimization) */}
+          <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+            <h3 style={{ margin: '0 0 6px 0', fontSize: '1.15rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Sliders size={18} color="var(--primary)" /> Activación de Módulos (Optimización de Espacio)
+            </h3>
+            <p style={{ margin: '0 0 16px 0', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+              Activa o desactiva las funciones principales para simplificar la barra lateral según tu tipo de negocio.
+            </p>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+              <label style={{ padding: '16px', borderRadius: '10px', border: `2px solid ${storeModules.storeEnabled ? 'var(--primary)' : '#e2e8f0'}`, backgroundColor: storeModules.storeEnabled ? 'rgba(22, 163, 74, 0.05)' : '#f8fafc', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div>
+                  <div style={{ fontWeight: 'bold', fontSize: '0.95rem', color: '#1e293b' }}>Módulo de Tienda / Menú & Pedidos</div>
+                  <div style={{ fontSize: '0.8rem', color: '#64748b' }}>Catálogo de productos, comandas y envíos.</div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={storeModules.storeEnabled}
+                  onChange={(e) => setStoreModules({ ...storeModules, storeEnabled: e.target.checked })}
+                  style={{ width: '20px', height: '20px', cursor: 'pointer' }}
+                />
+              </label>
+
+              <label style={{ padding: '16px', borderRadius: '10px', border: `2px solid ${storeModules.bookingsEnabled ? '#2563eb' : '#e2e8f0'}`, backgroundColor: storeModules.bookingsEnabled ? 'rgba(37, 99, 235, 0.05)' : '#f8fafc', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div>
+                  <div style={{ fontWeight: 'bold', fontSize: '0.95rem', color: '#1e293b' }}>Módulo de Reservas & Citas</div>
+                  <div style={{ fontSize: '0.8rem', color: '#64748b' }}>Agenda online, servicios y cupos de atención.</div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={storeModules.bookingsEnabled}
+                  onChange={(e) => setStoreModules({ ...storeModules, bookingsEnabled: e.target.checked })}
+                  style={{ width: '20px', height: '20px', cursor: 'pointer' }}
+                />
+              </label>
+            </div>
+          </div>
+
+          {/* Master Open / Closed Switch & Orders Schedule */}
+          <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ width: '42px', height: '42px', backgroundColor: storeSchedule.isOpenManual ? '#dcfce7' : '#fee2e2', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: storeSchedule.isOpenManual ? '#166534' : '#b91c1c' }}>
+                  <Clock size={22} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 'bold' }}>Recepción de Pedidos (Abierto / Cerrado)</h3>
+                  <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                    Control de apertura para admitir o pausar la recepción de pedidos en la tienda y WhatsApp
+                  </p>
+                </div>
+              </div>
+
+              {/* Master Open/Close Switch */}
+              <button
+                type="button"
+                onClick={() => setStoreSchedule({ ...storeSchedule, isOpenManual: !storeSchedule.isOpenManual })}
+                style={{
+                  padding: '10px 20px',
+                  borderRadius: '24px',
+                  border: 'none',
+                  backgroundColor: storeSchedule.isOpenManual ? '#16a34a' : '#ef4444',
+                  color: 'white',
+                  fontWeight: 'bold',
+                  fontSize: '0.95rem',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.1)'
+                }}
+              >
+                {storeSchedule.isOpenManual ? <ToggleRight size={22} /> : <ToggleLeft size={22} />}
+                <span>{storeSchedule.isOpenManual ? 'LOCAL ABIERTO (Recibiendo Pedidos)' : 'LOCAL CERRADO (Pedidos Pausados)'}</span>
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '4px' }}>
+                  Mensaje a Mostrar al Cliente si el Local está Cerrado:
+                </label>
+                <textarea
+                  rows={2}
+                  value={storeSchedule.closedMessage || ''}
+                  onChange={(e) => setStoreSchedule({ ...storeSchedule, closedMessage: e.target.value })}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Modalidad de Operación */}
           <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
             <h3 style={{ margin: '0 0 12px 0', fontSize: '1.15rem', fontWeight: 'bold' }}>Modalidad del Catálogo</h3>
             
@@ -631,7 +812,7 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
                   </strong>
                 </div>
                 <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b' }}>
-                  Catálogo estándar con compras, carrito y envíos tradicionales.
+                  Gestión orientada a <strong>Pedidos</strong>, compras en línea y paquetería.
                 </p>
               </div>
 
@@ -651,29 +832,30 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
                   </strong>
                 </div>
                 <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b' }}>
-                  Menú con pedidos a la mesa (número de mesa), llamado por nombre, para llevar o express.
+                  Gestión orientada a <strong>Comandas</strong>, rotulación de mesa, llamado por nombre y KDS de cocina.
                 </p>
               </div>
             </div>
           </div>
 
+          {/* Información Básica */}
           <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
-            <h3 style={{ margin: '0 0 16px 0', fontSize: '1.15rem', fontWeight: 'bold' }}>Información Básica</h3>
+            <h3 style={{ margin: '0 0 16px 0', fontSize: '1.15rem', fontWeight: 'bold' }}>Información Básica del Negocio</h3>
             
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '5px' }}>Nombre del Negocio</label>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '5px' }}>Nombre Comercial</label>
                 <input
                   type="text"
                   value={storeName}
                   onChange={(e) => setStoreName(e.target.value)}
-                  placeholder="Ej: Betico Store o Restaurante La Casona"
+                  placeholder="Ej: Betico Express o Restaurante La Casona"
                   style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.9rem' }}
                 />
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '5px' }}>Slug / Identificador URL</label>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '5px' }}>Identificador URL (Slug)</label>
                 <input
                   type="text"
                   value={storeSlug}
@@ -689,7 +871,7 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
                   rows={2}
                   value={storeDescription}
                   onChange={(e) => setStoreDescription(e.target.value)}
-                  placeholder="Ej: Servicios de calidad y entregas express..."
+                  placeholder="Ej: Deliciosos platillos preparados al momento..."
                   style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.9rem' }}
                 />
               </div>
@@ -698,18 +880,87 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
         </div>
       )}
 
-      {/* TAB 2: RESTAURANT MODE */}
+      {/* TAB 2: RESTAURANT CONFIG & EDITABLE STAGES */}
       {activeTab === 'restaurant' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          
+          {/* Editable Stages Nomenclature */}
+          <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+            <h3 style={{ margin: '0 0 6px 0', fontSize: '1.15rem', fontWeight: 'bold' }}>
+              Personalización de Fases ({storeMode === 'restaurant' ? 'Comandas de Cocina' : 'Pedidos de Tienda'})
+            </h3>
+            <p style={{ margin: '0 0 16px 0', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+              Edita el nombre visible de cada etapa según la operación de tu negocio.
+            </p>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', color: '#2563eb', marginBottom: '3px' }}>Fase 1 (Inicial)</label>
+                <input
+                  type="text"
+                  value={customStages.fase_1 || ''}
+                  onChange={(e) => setCustomStages({ ...customStages, fase_1: e.target.value })}
+                  placeholder="Ej: Pedido Recibido"
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', color: '#f59e0b', marginBottom: '3px' }}>Fase 2 (En Proceso)</label>
+                <input
+                  type="text"
+                  value={customStages.fase_2 || ''}
+                  onChange={(e) => setCustomStages({ ...customStages, fase_2: e.target.value })}
+                  placeholder="Ej: En Cocina"
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', color: '#8b5cf6', marginBottom: '3px' }}>Fase 3 (Listo)</label>
+                <input
+                  type="text"
+                  value={customStages.fase_3 || ''}
+                  onChange={(e) => setCustomStages({ ...customStages, fase_3: e.target.value })}
+                  placeholder="Ej: Listo para Retiro"
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', color: '#0284c7', marginBottom: '3px' }}>Fase 4 (Despacho)</label>
+                <input
+                  type="text"
+                  value={customStages.fase_4 || ''}
+                  onChange={(e) => setCustomStages({ ...customStages, fase_4: e.target.value })}
+                  placeholder="Ej: En Camino"
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', color: '#10b981', marginBottom: '3px' }}>Fase 5 (Final)</label>
+                <input
+                  type="text"
+                  value={customStages.fase_5 || ''}
+                  onChange={(e) => setCustomStages({ ...customStages, fase_5: e.target.value })}
+                  placeholder="Ej: Entregado con Éxito"
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Restaurant Modes */}
           <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
               <div style={{ width: '42px', height: '42px', backgroundColor: '#ffedd5', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <Utensils size={22} color="#ea580c" />
               </div>
               <div>
-                <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'bold' }}>Configuración de Modo Restaurante</h3>
+                <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'bold' }}>Modalidades de Comanda en Restaurante</h3>
                 <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                  Personaliza cómo los comensales ordenan en mesa, para llevar o express
+                  Personaliza cómo los clientes ordenan en mesa, barra o express
                 </p>
               </div>
             </div>
@@ -727,47 +978,42 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
 
                 {restaurantConfig.allowDineIn && (
                   <div style={{ paddingLeft: '28px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '8px' }}>
-                        Modalidades de Identificación en Mesa (Puedes activar ambas):
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                      <label
+                        style={{
+                          padding: '12px 14px', borderRadius: '8px',
+                          border: `2px solid ${restaurantConfig.allowTableNumber ? '#ea580c' : '#cbd5e1'}`,
+                          backgroundColor: restaurantConfig.allowTableNumber ? 'rgba(234, 88, 12, 0.05)' : 'white',
+                          cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px'
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={restaurantConfig.allowTableNumber}
+                          onChange={(e) => setRestaurantConfig({ ...restaurantConfig, allowTableNumber: e.target.checked })}
+                        />
+                        <strong style={{ fontSize: '0.85rem', color: restaurantConfig.allowTableNumber ? '#ea580c' : '#1e293b' }}>
+                          Rotular Número de Mesa
+                        </strong>
                       </label>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                        <label
-                          style={{
-                            padding: '12px 14px', borderRadius: '8px',
-                            border: `2px solid ${restaurantConfig.allowTableNumber ? '#ea580c' : '#cbd5e1'}`,
-                            backgroundColor: restaurantConfig.allowTableNumber ? 'rgba(234, 88, 12, 0.05)' : 'white',
-                            cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px'
-                          }}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={restaurantConfig.allowTableNumber}
-                            onChange={(e) => setRestaurantConfig({ ...restaurantConfig, allowTableNumber: e.target.checked })}
-                          />
-                          <strong style={{ fontSize: '0.85rem', color: restaurantConfig.allowTableNumber ? '#ea580c' : '#1e293b' }}>
-                            Rotular Número de Mesa
-                          </strong>
-                        </label>
 
-                        <label
-                          style={{
-                            padding: '12px 14px', borderRadius: '8px',
-                            border: `2px solid ${restaurantConfig.allowCallByName ? '#ea580c' : '#cbd5e1'}`,
-                            backgroundColor: restaurantConfig.allowCallByName ? 'rgba(234, 88, 12, 0.05)' : 'white',
-                            cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px'
-                          }}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={restaurantConfig.allowCallByName}
-                            onChange={(e) => setRestaurantConfig({ ...restaurantConfig, allowCallByName: e.target.checked })}
-                          />
-                          <strong style={{ fontSize: '0.85rem', color: restaurantConfig.allowCallByName ? '#ea580c' : '#1e293b' }}>
-                            Llamado por Nombre
-                          </strong>
-                        </label>
-                      </div>
+                      <label
+                        style={{
+                          padding: '12px 14px', borderRadius: '8px',
+                          border: `2px solid ${restaurantConfig.allowCallByName ? '#ea580c' : '#cbd5e1'}`,
+                          backgroundColor: restaurantConfig.allowCallByName ? 'rgba(234, 88, 12, 0.05)' : 'white',
+                          cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px'
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={restaurantConfig.allowCallByName}
+                          onChange={(e) => setRestaurantConfig({ ...restaurantConfig, allowCallByName: e.target.checked })}
+                        />
+                        <strong style={{ fontSize: '0.85rem', color: restaurantConfig.allowCallByName ? '#ea580c' : '#1e293b' }}>
+                          Llamado por Nombre
+                        </strong>
+                      </label>
                     </div>
 
                     {restaurantConfig.allowTableNumber && (
@@ -814,177 +1060,335 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
         </div>
       )}
 
-      {/* TAB 3: DELIVERY, GPS & CORREOS DE COSTA RICA */}
+      {/* TAB 3: 3 INDEPENDENT SHIPPING METHODS */}
       {activeTab === 'delivery' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
-              <MapPin size={22} color="#2563eb" />
-              <div>
-                <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 'bold' }}>Ubicación de Origen del Local</h3>
-                <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                  Punto de referencia inicial para calcular los kilómetros de distancia de entrega al cliente
-                </p>
-              </div>
-            </div>
+          
+          {/* Sub-tabs for the 3 shipping types */}
+          <div style={{ display: 'flex', gap: '10px', backgroundColor: '#f1f5f9', padding: '6px', borderRadius: '10px' }}>
+            <button
+              onClick={() => setShippingSubTab('express')}
+              style={{
+                flex: 1, padding: '10px', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer',
+                backgroundColor: shippingSubTab === 'express' ? '#ffffff' : 'transparent',
+                color: shippingSubTab === 'express' ? '#ea580c' : '#64748b',
+                boxShadow: shippingSubTab === 'express' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'
+              }}
+            >
+              <Bike size={16} /> 1. Delivery Express (Moto / KM)
+            </button>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>Dirección Física o Localidad</label>
-                <input
-                  type="text"
-                  value={deliveryConfig.storeLocation?.address || ''}
-                  onChange={(e) => setDeliveryConfig({
-                    ...deliveryConfig,
-                    storeLocation: { ...(deliveryConfig.storeLocation || {}), address: e.target.value }
-                  })}
-                  placeholder="Ej: 100m norte del Parque Central, San José"
-                  style={{ width: '100%', padding: '9px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
-                />
-              </div>
+            <button
+              onClick={() => setShippingSubTab('local')}
+              style={{
+                flex: 1, padding: '10px', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer',
+                backgroundColor: shippingSubTab === 'local' ? '#ffffff' : 'transparent',
+                color: shippingSubTab === 'local' ? '#2563eb' : '#64748b',
+                boxShadow: shippingSubTab === 'local' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'
+              }}
+            >
+              <Truck size={16} /> 2. Entrega a Domicilio Estándar
+            </button>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '10px', alignItems: 'flex-end' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--text-muted)', marginBottom: '3px' }}>Latitud</label>
-                  <input
-                    type="number"
-                    step="any"
-                    value={deliveryConfig.storeLocation?.lat || 9.9333}
-                    onChange={(e) => setDeliveryConfig({
-                      ...deliveryConfig,
-                      storeLocation: { ...(deliveryConfig.storeLocation || {}), lat: parseFloat(e.target.value) }
-                    })}
-                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--text-muted)', marginBottom: '3px' }}>Longitud</label>
-                  <input
-                    type="number"
-                    step="any"
-                    value={deliveryConfig.storeLocation?.lng || -84.0833}
-                    onChange={(e) => setDeliveryConfig({
-                      ...deliveryConfig,
-                      storeLocation: { ...(deliveryConfig.storeLocation || {}), lng: parseFloat(e.target.value) }
-                    })}
-                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
-                  />
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleCaptureStoreLocation}
-                  disabled={fetchingStoreGps}
-                  style={{ padding: '8px 14px', backgroundColor: '#eff6ff', color: '#1d4ed8', border: '1px solid #93c5fd', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px', height: '38px' }}
-                >
-                  <Navigation size={14} /> {fetchingStoreGps ? 'Capturando...' : 'Capturar GPS Actual'}
-                </button>
-              </div>
-            </div>
+            <button
+              onClick={() => setShippingSubTab('correos')}
+              style={{
+                flex: 1, padding: '10px', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer',
+                backgroundColor: shippingSubTab === 'correos' ? '#ffffff' : 'transparent',
+                color: shippingSubTab === 'correos' ? '#0d9488' : '#64748b',
+                boxShadow: shippingSubTab === 'correos' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'
+              }}
+            >
+              <Box size={16} /> 3. Correos de Costa Rica (EMS / Pyme)
+            </button>
           </div>
 
-          <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
-            <h3 style={{ margin: '0 0 14px 0', fontSize: '1.15rem', fontWeight: 'bold' }}>Tarifa de Envío Local / Moto Express</h3>
+          {/* 1. MOTO EXPRESS DELIVERY CONFIG */}
+          {shippingSubTab === 'express' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+                  <MapPin size={22} color="#ea580c" />
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 'bold' }}>Punto de Origen GPS del Local</h3>
+                    <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                      Coordenadas exactas para calcular los kilómetros de distancia hasta la ubicación del cliente
+                    </p>
+                  </div>
+                </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px' }}>
-              <div
-                onClick={() => setDeliveryConfig({ ...deliveryConfig, deliveryType: 'flat' })}
-                style={{
-                  padding: '14px', borderRadius: '8px',
-                  border: `2px solid ${deliveryConfig.deliveryType === 'flat' ? '#2563eb' : 'var(--border)'}`,
-                  backgroundColor: deliveryConfig.deliveryType === 'flat' ? 'rgba(37, 99, 235, 0.05)' : 'white',
-                  cursor: 'pointer'
-                }}
-              >
-                <strong style={{ fontSize: '0.9rem', color: deliveryConfig.deliveryType === 'flat' ? '#2563eb' : '#1e293b' }}>
-                  Tarifa Plana Fija
-                </strong>
-                <span style={{ display: 'block', fontSize: '0.75rem', color: '#64748b', marginTop: '3px' }}>
-                  Mismo costo de envío para cualquier pedido sin importar la distancia.
-                </span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>Dirección Física del Local</label>
+                    <input
+                      type="text"
+                      value={deliveryConfig.storeLocation?.address || ''}
+                      onChange={(e) => setDeliveryConfig({
+                        ...deliveryConfig,
+                        storeLocation: { ...(deliveryConfig.storeLocation || {}), address: e.target.value }
+                      })}
+                      placeholder="Ej: 100m norte del Parque Central, San José"
+                      style={{ width: '100%', padding: '9px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                    />
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '10px', alignItems: 'flex-end' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--text-muted)', marginBottom: '3px' }}>Latitud</label>
+                      <input
+                        type="number" step="any"
+                        value={deliveryConfig.storeLocation?.lat || 9.9333}
+                        onChange={(e) => setDeliveryConfig({
+                          ...deliveryConfig,
+                          storeLocation: { ...(deliveryConfig.storeLocation || {}), lat: parseFloat(e.target.value) }
+                        })}
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--text-muted)', marginBottom: '3px' }}>Longitud</label>
+                      <input
+                        type="number" step="any"
+                        value={deliveryConfig.storeLocation?.lng || -84.0833}
+                        onChange={(e) => setDeliveryConfig({
+                          ...deliveryConfig,
+                          storeLocation: { ...(deliveryConfig.storeLocation || {}), lng: parseFloat(e.target.value) }
+                        })}
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleCaptureStoreLocation}
+                      disabled={fetchingStoreGps}
+                      style={{ padding: '8px 14px', backgroundColor: '#fff7ed', color: '#ea580c', border: '1px solid #fed7aa', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px', height: '38px' }}
+                    >
+                      <Navigation size={14} /> {fetchingStoreGps ? 'Capturando...' : 'Capturar GPS'}
+                    </button>
+                  </div>
+                </div>
               </div>
 
-              <div
-                onClick={() => setDeliveryConfig({ ...deliveryConfig, deliveryType: 'distance' })}
-                style={{
-                  padding: '14px', borderRadius: '8px',
-                  border: `2px solid ${deliveryConfig.deliveryType === 'distance' ? '#2563eb' : 'var(--border)'}`,
-                  backgroundColor: deliveryConfig.deliveryType === 'distance' ? 'rgba(37, 99, 235, 0.05)' : 'white',
-                  cursor: 'pointer'
-                }}
-              >
-                <strong style={{ fontSize: '0.9rem', color: deliveryConfig.deliveryType === 'distance' ? '#2563eb' : '#1e293b' }}>
-                  Cálculo Dinámico por KM
-                </strong>
-                <span style={{ display: 'block', fontSize: '0.75rem', color: '#64748b', marginTop: '3px' }}>
-                  Calcula la distancia GPS entre el local y el cliente y cobra por km recorrido.
-                </span>
+              <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+                <h3 style={{ margin: '0 0 14px 0', fontSize: '1.15rem', fontWeight: 'bold' }}>Tarifas de Delivery por Kilómetro</h3>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '14px', backgroundColor: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '3px' }}>Tarifa Base de Salida (₡)</label>
+                    <input
+                      type="number"
+                      value={deliveryConfig.baseDeliveryFee}
+                      onChange={(e) => setDeliveryConfig({ ...deliveryConfig, baseDeliveryFee: Number(e.target.value) })}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                    />
+                    <span style={{ fontSize: '0.7rem', color: '#64748b' }}>Costo mínimo de entrega</span>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '3px' }}>KM Base Incluidos</label>
+                    <input
+                      type="number"
+                      value={deliveryConfig.baseDeliveryKm}
+                      onChange={(e) => setDeliveryConfig({ ...deliveryConfig, baseDeliveryKm: Number(e.target.value) })}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                    />
+                    <span style={{ fontSize: '0.7rem', color: '#64748b' }}>Ej: primeros 3 km</span>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '3px' }}>Costo por KM Extra (₡)</label>
+                    <input
+                      type="number"
+                      value={deliveryConfig.feePerExtraKm}
+                      onChange={(e) => setDeliveryConfig({ ...deliveryConfig, feePerExtraKm: Number(e.target.value) })}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                    />
+                    <span style={{ fontSize: '0.7rem', color: '#64748b' }}>Por cada km adicional</span>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '3px' }}>Radio Máximo (KM)</label>
+                    <input
+                      type="number"
+                      value={deliveryConfig.maxDeliveryRadiusKm}
+                      onChange={(e) => setDeliveryConfig({ ...deliveryConfig, maxDeliveryRadiusKm: Number(e.target.value) })}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                    />
+                    <span style={{ fontSize: '0.7rem', color: '#64748b' }}>Límite de cobertura</span>
+                  </div>
+                </div>
               </div>
             </div>
+          )}
 
-            {deliveryConfig.deliveryType === 'flat' ? (
-              <div style={{ maxWidth: '300px' }}>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>Costo de Envío Fijo (₡)</label>
-                <input
-                  type="number"
-                  value={deliveryFee}
-                  onChange={(e) => setDeliveryFee(Number(e.target.value))}
-                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
-                />
+          {/* 2. LOCAL STANDARD DELIVERY CONFIG */}
+          {shippingSubTab === 'local' && (
+            <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <Truck size={22} color="#2563eb" />
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 'bold' }}>Entrega a Domicilio Estándar (Comercio / Paquetería)</h3>
+                    <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                      Envíos con mensajería fija o rutas programadas
+                    </p>
+                  </div>
+                </div>
+
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={localDeliveryConfig.enabled}
+                    onChange={(e) => setLocalDeliveryConfig({ ...localDeliveryConfig, enabled: e.target.checked })}
+                  />
+                  <span>Habilitar</span>
+                </label>
               </div>
-            ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '14px', backgroundColor: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid var(--border)' }}>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px', backgroundColor: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid var(--border)' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '3px' }}>Tarifa Base (₡)</label>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '3px' }}>Costo de Envío Fijo (₡)</label>
                   <input
                     type="number"
-                    value={deliveryConfig.baseDeliveryFee}
-                    onChange={(e) => setDeliveryConfig({ ...deliveryConfig, baseDeliveryFee: Number(e.target.value) })}
+                    value={localDeliveryConfig.fee}
+                    onChange={(e) => setLocalDeliveryConfig({ ...localDeliveryConfig, fee: Number(e.target.value) })}
                     style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
                   />
-                  <span style={{ fontSize: '0.7rem', color: '#64748b' }}>Costo mínimo de salida</span>
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '3px' }}>KM Base Incluidos</label>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '3px' }}>Envío Gratis a partir de (₡)</label>
                   <input
                     type="number"
-                    value={deliveryConfig.baseDeliveryKm}
-                    onChange={(e) => setDeliveryConfig({ ...deliveryConfig, baseDeliveryKm: Number(e.target.value) })}
+                    value={localDeliveryConfig.freeAbove || 0}
+                    onChange={(e) => setLocalDeliveryConfig({ ...localDeliveryConfig, freeAbove: Number(e.target.value) })}
+                    placeholder="Ej: 35000 (0 para desactivar)"
                     style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
                   />
-                  <span style={{ fontSize: '0.7rem', color: '#64748b' }}>Ej: primeros 3 km</span>
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '3px' }}>Costo por KM Extra (₡)</label>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '3px' }}>Tiempo Estimado de Entrega</label>
                   <input
-                    type="number"
-                    value={deliveryConfig.feePerExtraKm}
-                    onChange={(e) => setDeliveryConfig({ ...deliveryConfig, feePerExtraKm: Number(e.target.value) })}
+                    type="text"
+                    value={localDeliveryConfig.estimatedHours || ''}
+                    onChange={(e) => setLocalDeliveryConfig({ ...localDeliveryConfig, estimatedHours: e.target.value })}
+                    placeholder="Ej: 24 a 48 horas"
                     style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
                   />
-                  <span style={{ fontSize: '0.7rem', color: '#64748b' }}>Por cada km adicional</span>
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '3px' }}>Radio Máximo (KM)</label>
-                  <input
-                    type="number"
-                    value={deliveryConfig.maxDeliveryRadiusKm}
-                    onChange={(e) => setDeliveryConfig({ ...deliveryConfig, maxDeliveryRadiusKm: Number(e.target.value) })}
-                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
-                  />
-                  <span style={{ fontSize: '0.7rem', color: '#64748b' }}>Límite de cobertura</span>
                 </div>
               </div>
-            )}
-          </div>
+            </div>
+          )}
+
+          {/* 3. CORREOS DE COSTA RICA (EMS & PYMEEXPRESS CON TARIFAS EDITABLES) */}
+          {shippingSubTab === 'correos' && (
+            <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <Box size={22} color="#0d9488" />
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 'bold' }}>Correos de Costa Rica (Tarifas Editables)</h3>
+                    <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                      Envíos nacionales con EMS Courier o PymeExpress. Puedes ajustar las tarifas según tus convenios.
+                    </p>
+                  </div>
+                </div>
+
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={correosCrConfig.enabled}
+                    onChange={(e) => setCorreosCrConfig({ ...correosCrConfig, enabled: e.target.checked })}
+                  />
+                  <span>Habilitar Correos CR</span>
+                </label>
+              </div>
+
+              {/* Service Type & Origin */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '14px', marginBottom: '18px', backgroundColor: '#f0fdfa', padding: '14px', borderRadius: '8px', border: '1px solid #99f6e4' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', color: '#0f766e', marginBottom: '4px' }}>Tipo de Servicio</label>
+                  <select
+                    value={correosCrConfig.serviceType}
+                    onChange={(e) => setCorreosCrConfig({ ...correosCrConfig, serviceType: e.target.value as any })}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #99f6e4', fontSize: '0.85rem', backgroundColor: 'white' }}
+                  >
+                    <option value="ems">EMS Courier Nacional (Rápido / Prioritario)</option>
+                    <option value="pyme">PymeExpress (Tarifa Preferencial Emprendedor)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', color: '#0f766e', marginBottom: '4px' }}>Ubicación de Origen del Negocio</label>
+                  <select
+                    value={correosCrConfig.originType}
+                    onChange={(e) => setCorreosCrConfig({ ...correosCrConfig, originType: e.target.value as any })}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #99f6e4', fontSize: '0.85rem', backgroundColor: 'white' }}
+                  >
+                    <option value="GAM">Gran Área Metropolitana (GAM)</option>
+                    <option value="RESTO">Fuera de GAM / Resto del País</option>
+                  </select>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', fontWeight: 'bold', color: '#0f766e', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={correosCrConfig.includeIva}
+                      onChange={(e) => setCorreosCrConfig({ ...correosCrConfig, includeIva: e.target.checked })}
+                    />
+                    <span>Incluir IVA (13%)</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Editable Rate Table */}
+              <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
+                  <thead style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                    <tr>
+                      <th style={{ padding: '10px 14px' }}>Rango / Tramo de Peso</th>
+                      <th style={{ padding: '10px 14px' }}>Tarifa Dentro de GAM (₡)</th>
+                      <th style={{ padding: '10px 14px' }}>Tarifa Resto del País (₡)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {correosCrConfig.rates.map((bracket, idx) => (
+                      <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '10px 14px', fontWeight: 'bold' }}>{bracket.label}</td>
+                        <td style={{ padding: '10px 14px' }}>
+                          <input
+                            type="number"
+                            value={bracket.gamPrice}
+                            onChange={(e) => updateCorreosRate(idx, 'gamPrice', Number(e.target.value))}
+                            style={{ width: '140px', padding: '6px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem' }}
+                          />
+                        </td>
+                        <td style={{ padding: '10px 14px' }}>
+                          <input
+                            type="number"
+                            value={bracket.restoPrice}
+                            onChange={(e) => updateCorreosRate(idx, 'restoPrice', Number(e.target.value))}
+                            style={{ width: '140px', padding: '6px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem' }}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {/* TAB 4: REPARTIDORES & CODIGO PIN & ACCIONES RAPIDAS */}
+      {/* TAB 4: REPARTIDORES & CODIGO PIN */}
       {activeTab === 'drivers' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           
@@ -1102,7 +1506,6 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
                         </div>
                       </div>
 
-                      {/* PIN Tag */}
                       <div style={{ padding: '8px 12px', backgroundColor: '#f0fdfa', borderRadius: '8px', border: '1px solid #99f6e4', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem' }}>
                         <span style={{ color: '#0f766e', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
                           <Key size={14} /> PIN de Acceso: <strong>{d.accessPin || '1234'}</strong>
@@ -1115,7 +1518,6 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
                         </button>
                       </div>
 
-                      {/* Quick Action Buttons */}
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                         <button
                           onClick={() => handleSendDriverWelcome(d)}
@@ -1138,94 +1540,6 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
                 })}
               </div>
             )}
-          </div>
-        </div>
-      )}
-
-      {/* EDIT DRIVER MODAL */}
-      {editingDriver && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-          <div style={{ backgroundColor: 'white', borderRadius: '14px', maxWidth: '480px', width: '100%', padding: '24px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.2)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
-              <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Edit size={18} color="var(--primary)" /> Editar Perfil del Repartidor
-              </h3>
-              <button onClick={() => setEditingDriver(null)} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: '1.2rem', color: '#64748b' }}>✕</button>
-            </div>
-
-            <form onSubmit={handleUpdateDriver} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '4px' }}>Nombre Completo</label>
-                <input
-                  type="text"
-                  value={editingDriver.name}
-                  onChange={(e) => setEditingDriver({ ...editingDriver, name: e.target.value })}
-                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '4px' }}>Teléfono WhatsApp</label>
-                <input
-                  type="tel"
-                  value={editingDriver.phone}
-                  onChange={(e) => setEditingDriver({ ...editingDriver, phone: e.target.value })}
-                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '4px' }}>Código PIN de Acceso</label>
-                <input
-                  type="text"
-                  value={editingDriver.accessPin || '1234'}
-                  onChange={(e) => setEditingDriver({ ...editingDriver, accessPin: e.target.value })}
-                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem', fontWeight: 'bold', color: '#0f766e' }}
-                />
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '4px' }}>Vehículo</label>
-                  <select
-                    value={editingDriver.vehicleType || 'moto'}
-                    onChange={(e) => setEditingDriver({ ...editingDriver, vehicleType: e.target.value as any })}
-                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
-                  >
-                    <option value="moto">Motocicleta</option>
-                    <option value="bici">Bicicleta</option>
-                    <option value="auto">Automóvil / Carro</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '4px' }}>Placa</label>
-                  <input
-                    type="text"
-                    value={editingDriver.plateNumber || ''}
-                    onChange={(e) => setEditingDriver({ ...editingDriver, plateNumber: e.target.value })}
-                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '12px' }}>
-                <button
-                  type="button"
-                  onClick={() => setEditingDriver(null)}
-                  style={{ padding: '8px 14px', backgroundColor: 'transparent', border: '1px solid #cbd5e1', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem' }}
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={updatingDriver}
-                  style={{ padding: '8px 16px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}
-                >
-                  {updatingDriver ? 'Guardando...' : 'Guardar Cambios'}
-                </button>
-              </div>
-            </form>
           </div>
         </div>
       )}
@@ -1314,16 +1628,17 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
         </div>
       )}
 
-      {/* TAB 6: DESIGN & BRANDING */}
+      {/* TAB 6: DESIGN, TYPOGRAPHY & LIVE PREVIEW */}
       {activeTab === 'design' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           
+          {/* Logo & Banner Upload */}
           <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
             <h3 style={{ margin: '0 0 16px 0', fontSize: '1.15rem', fontWeight: 'bold' }}>Logo y Banner de Portada</h3>
             
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '6px' }}>Logo del Negocio</label>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '6px' }}>Logo del Negocio (512x512)</label>
                 <div style={{ border: '2px dashed #cbd5e1', borderRadius: '8px', padding: '16px', textAlign: 'center', backgroundColor: '#f8fafc' }}>
                   {storeLogoUrl ? (
                     <div style={{ marginBottom: '10px' }}>
@@ -1345,13 +1660,13 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
                     onClick={() => logoInputRef.current?.click()}
                     style={{ padding: '6px 12px', backgroundColor: 'white', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }}
                   >
-                    {uploadingLogo ? 'Subiendo...' : 'Subir Logo (512x512)'}
+                    {uploadingLogo ? 'Subiendo...' : 'Subir Logo'}
                   </button>
                 </div>
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '6px' }}>Banner de Portada</label>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '6px' }}>Banner de Portada (1200x400)</label>
                 <div style={{ border: '2px dashed #cbd5e1', borderRadius: '8px', padding: '16px', textAlign: 'center', backgroundColor: '#f8fafc' }}>
                   {storeBannerUrl ? (
                     <div style={{ marginBottom: '10px' }}>
@@ -1373,26 +1688,46 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
                     onClick={() => bannerInputRef.current?.click()}
                     style={{ padding: '6px 12px', backgroundColor: 'white', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }}
                   >
-                    {uploadingBanner ? 'Subiendo...' : 'Subir Banner (1200x400)'}
+                    {uploadingBanner ? 'Subiendo...' : 'Subir Banner'}
                   </button>
                 </div>
               </div>
             </div>
           </div>
 
-          <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
-            <h3 style={{ margin: '0 0 16px 0', fontSize: '1.15rem', fontWeight: 'bold' }}>Colores de Marca</h3>
+          {/* Typography, Colors, Radius & Shadows Controls + LIVE PREVIEW */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '20px' }}>
+            
+            {/* Left: Design Form Controls */}
+            <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <h3 style={{ margin: '0 0 10px 0', fontSize: '1.15rem', fontWeight: 'bold' }}>Estilo Visual & Tipografía</h3>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {/* Typography Selector */}
               <div>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '8px' }}>Color Primario de Marca</label>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '6px' }}>Tipografía (Fuente)</label>
+                <select
+                  value={fontFamily}
+                  onChange={(e) => setFontFamily(e.target.value as any)}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.9rem', backgroundColor: 'white' }}
+                >
+                  <option value="Inter">Inter (Moderna, Limpia, Legible)</option>
+                  <option value="Poppins">Poppins (Geométrica, Dinámica)</option>
+                  <option value="Roboto">Roboto (Clásica, Estructurada)</option>
+                  <option value="Montserrat">Montserrat (Elegante, Negocios)</option>
+                  <option value="Playfair Display">Playfair Display (Premium, Gourmet)</option>
+                </select>
+              </div>
+
+              {/* Colors */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '6px' }}>Color Primario de Marca</label>
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' }}>
                   {COLOR_PRESETS.map(c => (
                     <div
                       key={c.hex}
                       onClick={() => setPrimaryColor(c.hex)}
                       style={{
-                        width: '32px', height: '32px', borderRadius: '50%',
+                        width: '28px', height: '28px', borderRadius: '50%',
                         backgroundColor: c.hex, cursor: 'pointer',
                         border: primaryColor === c.hex ? '3px solid #000' : '2px solid transparent',
                         boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
@@ -1407,17 +1742,227 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
                     type="color"
                     value={primaryColor}
                     onChange={(e) => setPrimaryColor(e.target.value)}
-                    style={{ width: '40px', height: '36px', border: 'none', borderRadius: '4px', cursor: 'pointer', padding: 0 }}
+                    style={{ width: '38px', height: '34px', border: 'none', borderRadius: '4px', cursor: 'pointer', padding: 0 }}
                   />
                   <input
                     type="text"
                     value={primaryColor}
                     onChange={(e) => setPrimaryColor(e.target.value)}
-                    style={{ flex: 1, padding: '7px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem', fontFamily: 'monospace' }}
+                    style={{ flex: 1, padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem', fontFamily: 'monospace' }}
                   />
                 </div>
               </div>
+
+              {/* Card Radius */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '6px' }}>Curvatura de Tarjetas (Cards)</label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setCardRadius('square')}
+                    style={{ padding: '8px', borderRadius: '0px', border: `2px solid ${cardRadius === 'square' ? primaryColor : '#cbd5e1'}`, backgroundColor: cardRadius === 'square' ? '#f0fdf4' : 'white', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }}
+                  >
+                    Cuadrado (0px)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCardRadius('rounded')}
+                    style={{ padding: '8px', borderRadius: '8px', border: `2px solid ${cardRadius === 'rounded' ? primaryColor : '#cbd5e1'}`, backgroundColor: cardRadius === 'rounded' ? '#f0fdf4' : 'white', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }}
+                  >
+                    Redondeado (8px)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCardRadius('pill')}
+                    style={{ padding: '8px', borderRadius: '20px', border: `2px solid ${cardRadius === 'pill' ? primaryColor : '#cbd5e1'}`, backgroundColor: cardRadius === 'pill' ? '#f0fdf4' : 'white', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }}
+                  >
+                    Píldora (24px)
+                  </button>
+                </div>
+              </div>
+
+              {/* Card Shadows */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '6px' }}>Sombra de Tarjetas</label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setCardShadow('none')}
+                    style={{ padding: '6px', borderRadius: '6px', border: `1px solid ${cardShadow === 'none' ? primaryColor : '#cbd5e1'}`, backgroundColor: cardShadow === 'none' ? '#f0fdf4' : 'white', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}
+                  >
+                    Sin Sombra
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCardShadow('sm')}
+                    style={{ padding: '6px', borderRadius: '6px', border: `1px solid ${cardShadow === 'sm' ? primaryColor : '#cbd5e1'}`, backgroundColor: cardShadow === 'sm' ? '#f0fdf4' : 'white', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}
+                  >
+                    Suave
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCardShadow('md')}
+                    style={{ padding: '6px', borderRadius: '6px', border: `1px solid ${cardShadow === 'md' ? primaryColor : '#cbd5e1'}`, backgroundColor: cardShadow === 'md' ? '#f0fdf4' : 'white', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}
+                  >
+                    Media
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCardShadow('lg')}
+                    style={{ padding: '6px', borderRadius: '6px', border: `1px solid ${cardShadow === 'lg' ? primaryColor : '#cbd5e1'}`, backgroundColor: cardShadow === 'lg' ? '#f0fdf4' : 'white', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}
+                  >
+                    Elevada
+                  </button>
+                </div>
+              </div>
             </div>
+
+            {/* Right: LIVE PREVIEW OF CARDS */}
+            <div style={{ backgroundColor: '#f8fafc', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold', fontSize: '0.9rem', color: '#1e293b' }}>
+                <Eye size={18} color="var(--primary)" /> Previsualización en Vivo de tu Catálogo
+              </div>
+
+              <div
+                style={{
+                  fontFamily: fontFamily,
+                  backgroundColor: cardBackgroundColor,
+                  borderRadius: radiusValue,
+                  boxShadow: shadowValue,
+                  border: '1px solid #e2e8f0',
+                  overflow: 'hidden',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                {/* Sample Card Image */}
+                <div style={{ height: '140px', backgroundColor: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
+                  <ImageIcon size={36} />
+                </div>
+
+                {/* Sample Card Content */}
+                <div style={{ padding: '16px' }}>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 'bold', color: primaryColor, textTransform: 'uppercase', marginBottom: '4px' }}>
+                    Platillo / Producto Estrella
+                  </div>
+                  <h4 style={{ margin: '0 0 6px 0', fontSize: '1.05rem', fontWeight: 'bold', color: '#1e293b' }}>
+                    Pizza Especial de la Casa
+                  </h4>
+                  <p style={{ margin: '0 0 14px 0', fontSize: '0.8rem', color: '#64748b' }}>
+                    Ingredientes frescos seleccionados con salsa artesanal y queso mozzarella.
+                  </p>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '1.1rem', fontWeight: 'bold', color: primaryColor }}>
+                      ₡8.500
+                    </span>
+
+                    <button
+                      type="button"
+                      style={{
+                        padding: '8px 16px',
+                        backgroundColor: primaryColor,
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: radiusValue,
+                        fontWeight: 'bold',
+                        fontSize: '0.8rem',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      + Agregar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT DRIVER MODAL */}
+      {editingDriver && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+          <div style={{ backgroundColor: 'white', borderRadius: '14px', maxWidth: '480px', width: '100%', padding: '24px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.2)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
+              <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Edit size={18} color="var(--primary)" /> Editar Perfil del Repartidor
+              </h3>
+              <button onClick={() => setEditingDriver(null)} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: '1.2rem', color: '#64748b' }}>✕</button>
+            </div>
+
+            <form onSubmit={handleUpdateDriver} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '4px' }}>Nombre Completo</label>
+                <input
+                  type="text"
+                  value={editingDriver.name}
+                  onChange={(e) => setEditingDriver({ ...editingDriver, name: e.target.value })}
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '4px' }}>Teléfono WhatsApp</label>
+                <input
+                  type="tel"
+                  value={editingDriver.phone}
+                  onChange={(e) => setEditingDriver({ ...editingDriver, phone: e.target.value })}
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '4px' }}>Código PIN de Acceso</label>
+                <input
+                  type="text"
+                  value={editingDriver.accessPin || '1234'}
+                  onChange={(e) => setEditingDriver({ ...editingDriver, accessPin: e.target.value })}
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem', fontWeight: 'bold', color: '#0f766e' }}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '4px' }}>Vehículo</label>
+                  <select
+                    value={editingDriver.vehicleType || 'moto'}
+                    onChange={(e) => setEditingDriver({ ...editingDriver, vehicleType: e.target.value as any })}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                  >
+                    <option value="moto">Motocicleta</option>
+                    <option value="bici">Bicicleta</option>
+                    <option value="auto">Automóvil / Carro</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '4px' }}>Placa</label>
+                  <input
+                    type="text"
+                    value={editingDriver.plateNumber || ''}
+                    onChange={(e) => setEditingDriver({ ...editingDriver, plateNumber: e.target.value })}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '12px' }}>
+                <button
+                  type="button"
+                  onClick={() => setEditingDriver(null)}
+                  style={{ padding: '8px 14px', backgroundColor: 'transparent', border: '1px solid #cbd5e1', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem' }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={updatingDriver}
+                  style={{ padding: '8px 16px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}
+                >
+                  {updatingDriver ? 'Guardando...' : 'Guardar Cambios'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

@@ -156,18 +156,33 @@ router.get('/public/:slug/available-slots', async (req, res) => {
       }
     }
 
-    // Fetch existing appointments on that date to filter out already booked times
-    const existingAppts = await query(`
+    // Determine max parallel capacity (global or per-service)
+    let maxParallelSlots = schedule?.globalParallelSlots || 1;
+    if (serviceId) {
+      const srvRes = await query(`SELECT parallel_slots as "parallelSlots" FROM services WHERE id = $1 AND tenant_id = $2`, [serviceId, tenant.id]);
+      if (srvRes.rows[0]?.parallelSlots) {
+        maxParallelSlots = srvRes.rows[0].parallelSlots;
+      }
+    }
+
+    // Fetch active appointments on that date (completed and cancelled appointments free up the slot immediately!)
+    const activeAppts = await query(`
       SELECT time FROM appointments 
-      WHERE tenant_id = $1 AND date = $2 AND status != 'cancelled'
+      WHERE tenant_id = $1 AND date = $2 AND status IN ('pending', 'scheduled', 'confirmed')
     `, [tenant.id, dateStr]);
 
-    const bookedTimes = new Set(existingAppts.rows.map(r => r.time));
-    const availableSlots = candidateSlots.filter(t => !bookedTimes.has(t));
+    const timeCountMap: Record<string, number> = {};
+    for (const row of activeAppts.rows) {
+      timeCountMap[row.time] = (timeCountMap[row.time] || 0) + 1;
+    }
+
+    // A slot is available if active bookings at that time are less than the allowed parallel capacity
+    const availableSlots = candidateSlots.filter(t => (timeCountMap[t] || 0) < maxParallelSlots);
 
     res.json({
       date: dateStr,
       availableSlots,
+      maxParallelSlots,
       totalAvailable: availableSlots.length
     });
   } catch (error) {

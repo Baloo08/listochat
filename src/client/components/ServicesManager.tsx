@@ -21,6 +21,7 @@ export default function ServicesManager() {
   const [duration, setDuration] = useState('45 min');
   const [estimatedMinutes, setEstimatedMinutes] = useState<number>(45);
   const [category, setCategory] = useState('General');
+  const [parallelSlots, setParallelSlots] = useState<number>(1);
   const [active, setActive] = useState(true);
 
   const api = useApi();
@@ -48,6 +49,7 @@ export default function ServicesManager() {
     setDuration('45 min');
     setEstimatedMinutes(45);
     setCategory('General');
+    setParallelSlots(1);
     setActive(true);
     setIsModalOpen(true);
   };
@@ -60,6 +62,7 @@ export default function ServicesManager() {
     setDuration(svc.duration || '45 min');
     setEstimatedMinutes(Number(svc.estimatedMinutes) || 45);
     setCategory(svc.category || 'General');
+    setParallelSlots(svc.parallelSlots || 1);
     setActive(svc.active !== false);
     setIsModalOpen(true);
   };
@@ -80,6 +83,7 @@ export default function ServicesManager() {
         duration,
         estimatedMinutes: Number(estimatedMinutes),
         category: category || 'General',
+        parallelSlots: Math.max(1, Number(parallelSlots) || 1),
         active
       };
 
@@ -347,6 +351,23 @@ export default function ServicesManager() {
                     <option value={120}>2 horas</option>
                   </select>
                 </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '4px' }}>
+                  Cupos Simultáneos para este Servicio (Especialistas / Sillas)
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={parallelSlots}
+                  onChange={(e) => setParallelSlots(Math.max(1, Number(e.target.value)))}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.9rem' }}
+                />
+                <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                  Cuántos clientes pueden recibir este servicio al mismo tiempo (ej: 1 para VIP / 2 para limpieza estándar).
+                </span>
               </div>
 
               <div>

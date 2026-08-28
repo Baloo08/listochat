@@ -3,6 +3,7 @@ import { Bot, Save, Play, Sparkles, Wand2, CheckCircle, HelpCircle, X, ArrowRigh
 
 export default function AgentPromptStudio() {
   const [config, setConfig] = useState({
+    aiChatbotEnabled: true,
     systemPrompt: '',
     businessName: '',
     currency: 'CRC',
@@ -50,6 +51,7 @@ export default function AgentPromptStudio() {
         const data = await res.json();
         if (data) {
           setConfig({
+            aiChatbotEnabled: data.aiChatbotEnabled !== false,
             systemPrompt: data.systemPrompt || '',
             businessName: data.businessName || '',
             currency: data.currency || 'CRC',
@@ -254,6 +256,37 @@ ${wizardAnswers.paymentMethods}
         {/* Left Column: Prompt Configuration */}
         <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '18px' }}>
           
+          {/* AI Chatbot vs Notifications-Only Mode Switcher */}
+          <div style={{ padding: '16px', borderRadius: '10px', border: `2px solid ${config.aiChatbotEnabled !== false ? '#16a34a' : '#64748b'}`, backgroundColor: config.aiChatbotEnabled !== false ? '#f0fdf4' : '#f8fafc' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Bot size={24} color={config.aiChatbotEnabled !== false ? '#16a34a' : '#64748b'} />
+                <div>
+                  <strong style={{ fontSize: '0.95rem', color: '#1e293b' }}>
+                    {config.aiChatbotEnabled !== false ? 'Agente de IA para WhatsApp: ACTIVO' : 'Modo Solo Notificaciones Automáticas'}
+                  </strong>
+                  <p style={{ margin: '2px 0 0 0', fontSize: '0.8rem', color: '#64748b', maxWidth: '520px' }}>
+                    {config.aiChatbotEnabled !== false 
+                      ? 'El chatbot responderá automáticamente con IA a los clientes según las instrucciones y catálogo.' 
+                      : 'El sistema enviará notificaciones de pedidos, comandas, enlaces y despachos por WhatsApp sin requerir API Key de IA ni generar respuestas automáticas.'}
+                  </p>
+                </div>
+              </div>
+              
+              <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', gap: '8px', padding: '6px 12px', backgroundColor: 'white', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                <input
+                  type="checkbox"
+                  checked={config.aiChatbotEnabled !== false}
+                  onChange={(e) => setConfig({ ...config, aiChatbotEnabled: e.target.checked })}
+                  style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                />
+                <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: config.aiChatbotEnabled !== false ? '#16a34a' : '#64748b' }}>
+                  {config.aiChatbotEnabled !== false ? 'Activado' : 'Desactivado'}
+                </span>
+              </label>
+            </div>
+          </div>
+
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
             <div>
               <label style={{ display: 'block', marginBottom: '5px', fontWeight: '600', fontSize: '0.85rem' }}>Nombre Comercial del Negocio</label>
