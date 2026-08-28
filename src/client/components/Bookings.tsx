@@ -1,18 +1,61 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Clock, Plus, Filter, CheckCircle, XCircle, AlertCircle, RefreshCw, MessageCircle, Link as LinkIcon, Copy, ExternalLink, Settings, Save, Trash2, Sun, Palmtree, HelpCircle, FormInput, Smartphone, Monitor, Share2, Check } from 'lucide-react';
+import {
+  Calendar,
+  CalendarDays,
+  Clock,
+  Plus,
+  Filter,
+  CheckCircle,
+  XCircle,
+  AlertCircle,
+  RefreshCw,
+  MessageCircle,
+  Copy,
+  ExternalLink,
+  Settings,
+  Save,
+  Trash2,
+  Share2,
+  Users,
+  ChevronLeft,
+  ChevronRight,
+  User,
+  Phone,
+  FileText,
+  DollarSign,
+  Palmtree,
+  HelpCircle,
+  FormInput,
+  Check,
+  X
+} from 'lucide-react';
 import { useApi } from '../hooks/useApi';
-import { Appointment, ScheduleSettings, DayBreakConfig, BookingField } from '../../shared/types';
+import { Appointment, DayBreakConfig, BookingField } from '../../shared/types';
+
+const DAYS_OF_WEEK = [
+  { num: 1, name: 'Lunes', key: 'monday' },
+  { num: 2, name: 'Martes', key: 'tuesday' },
+  { num: 3, name: 'Miércoles', key: 'wednesday' },
+  { num: 4, name: 'Jueves', key: 'thursday' },
+  { num: 5, name: 'Viernes', key: 'friday' },
+  { num: 6, name: 'Sábado', key: 'saturday' },
+  { num: 7, name: 'Domingo', key: 'sunday' }
+];
 
 export default function Bookings() {
-  const [activeTab, setActiveTab] = useState<'list' | 'schedule' | 'calendarSync'>('list');
+  const [activeTab, setActiveTab] = useState<'list' | 'calendar' | 'schedule' | 'calendarSync'>('list');
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterDate, setFilterDate] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [showNewModal, setShowNewModal] = useState(false);
+  const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [copiedBookingLink, setCopiedBookingLink] = useState(false);
   const [copiedCalendarLink, setCopiedCalendarLink] = useState(false);
   const [tenantSlug, setTenantSlug] = useState('clinicasonrisas');
+
+  // Calendar View State
+  const [currentCalDate, setCurrentCalDate] = useState<Date>(new Date());
 
   // Schedule Settings State
   const [scheduleMode, setScheduleMode] = useState<'jornada' | 'fechas' | 'bloques'>('jornada');
@@ -85,7 +128,7 @@ export default function Bookings() {
   const fetchAppointments = async () => {
     try {
       const data = await api.get('/api/appointments');
-      if (data) setAppointments(data);
+      if (data && Array.isArray(data)) setAppointments(data);
     } catch (err) {
       console.error('Error fetching appointments:', err);
     } finally {
@@ -106,30 +149,36 @@ export default function Bookings() {
           setHasBreak(sch.jornadaConfig.hasBreak !== false);
           setBreakStart(sch.jornadaConfig.breakStart || '12:00');
           setBreakEnd(sch.jornadaConfig.breakEnd || '13:00');
-          if (sch.jornadaConfig.daysEnabled) setDaysEnabled(sch.jornadaConfig.daysEnabled);
-          if (sch.jornadaConfig.perDayBreaks) setPerDayBreaks(sch.jornadaConfig.perDayBreaks);
+          if (sch.jornadaConfig.daysEnabled && Array.isArray(sch.jornadaConfig.daysEnabled)) {
+            setDaysEnabled(sch.jornadaConfig.daysEnabled);
+          }
+          if (sch.jornadaConfig.perDayBreaks && typeof sch.jornadaConfig.perDayBreaks === 'object') {
+            setPerDayBreaks(sch.jornadaConfig.perDayBreaks);
+          }
         }
-        if (sch.fechasConfig?.enabledDates) {
+        if (sch.fechasConfig && Array.isArray(sch.fechasConfig.enabledDates)) {
           setEnabledDates(sch.fechasConfig.enabledDates);
         }
-        if (sch.bloquesConfig?.days) {
+        if (sch.bloquesConfig && sch.bloquesConfig.days && typeof sch.bloquesConfig.days === 'object') {
           setBloquesDays(sch.bloquesConfig.days);
         }
-        if (sch.customFields && sch.customFields.length > 0) {
+        if (sch.customFields && Array.isArray(sch.customFields)) {
           setCustomFields(sch.customFields);
         }
         if (sch.vacationConfig) {
-          setVacationEnabled(sch.vacationConfig.enabled || false);
+          setVacationEnabled(!!sch.vacationConfig.enabled);
           setVacationStart(sch.vacationConfig.startDate || '');
           setVacationEnd(sch.vacationConfig.endDate || '');
-          setVacationMessage(sch.vacationConfig.message || 'Estaremos cerrados temporalmente por vacaciones.');
+          if (sch.vacationConfig.message) setVacationMessage(sch.vacationConfig.message);
         }
       }
 
-      const me = await api.get('/api/auth/me');
-      if (me?.tenantSlug) setTenantSlug(me.tenantSlug);
+      const tenantRes = await api.get('/api/auth/me');
+      if (tenantRes?.tenantSlug) {
+        setTenantSlug(tenantRes.tenantSlug);
+      }
     } catch (err) {
-      // ignore
+      console.error('Error fetching schedule:', err);
     }
   };
 
@@ -140,35 +189,55 @@ export default function Bookings() {
 
   const handleCreateAppointment = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!newName || !newWhatsapp || !newDate || !newTime) {
+      alert('Por favor completa todos los campos requeridos');
+      return;
+    }
+
     try {
       await api.post('/api/appointments', {
         name: newName,
         whatsapp: newWhatsapp,
-        service: newService,
+        service: newService || 'Consulta General',
         date: newDate,
         time: newTime,
-        amount: newAmount,
-        details: newDetails,
-        status: 'confirmed'
+        amount: Number(newAmount),
+        details: newDetails
       });
+
       setShowNewModal(false);
       setNewName('');
       setNewWhatsapp('');
       setNewService('');
       setNewDate('');
       setNewTime('');
-      await fetchAppointments();
+      setNewDetails('');
+      fetchAppointments();
     } catch (err) {
-      alert('Error al agendar cita');
+      alert('Error al registrar la cita');
     }
   };
 
-  const handleStatusChange = async (id: string, status: any) => {
+  const handleStatusChange = async (id: string, newStatus: string) => {
     try {
-      await api.put(`/api/appointments/${id}/status`, { status, notifyCustomer: true });
-      await fetchAppointments();
+      await api.put(`/api/appointments/${id}`, { status: newStatus });
+      fetchAppointments();
+      if (selectedAppointment && selectedAppointment.id === id) {
+        setSelectedAppointment({ ...selectedAppointment, status: newStatus as any });
+      }
     } catch (err) {
-      alert('Error al actualizar estado');
+      alert('Error al actualizar el estado');
+    }
+  };
+
+  const handleDeleteAppointment = async (id: string) => {
+    if (!confirm('¿Seguro que deseas eliminar esta cita?')) return;
+    try {
+      await api.del(`/api/appointments/${id}`);
+      setSelectedAppointment(null);
+      fetchAppointments();
+    } catch (err) {
+      alert('Error al eliminar la cita');
     }
   };
 
@@ -185,17 +254,17 @@ export default function Bookings() {
           hasBreak,
           breakStart,
           breakEnd,
-          daysEnabled,
-          perDayBreaks
+          daysEnabled: daysEnabled || [],
+          perDayBreaks: perDayBreaks || {}
         },
         fechasConfig: {
-          enabledDates
+          enabledDates: enabledDates || []
         },
         bloquesConfig: {
-          days: bloquesDays,
+          days: bloquesDays || {},
           slotMinutes: Number(slotMinutes)
         },
-        customFields,
+        customFields: customFields || [],
         vacationConfig: {
           enabled: vacationEnabled,
           startDate: vacationStart,
@@ -241,13 +310,13 @@ export default function Bookings() {
   };
 
   const addSpecificDate = () => {
-    if (!newDateToAdd || enabledDates.includes(newDateToAdd)) return;
+    if (!newDateToAdd || (enabledDates || []).includes(newDateToAdd)) return;
     setEnabledDates(prev => [...prev, newDateToAdd].sort());
     setNewDateToAdd('');
   };
 
   const removeSpecificDate = (dateStr: string) => {
-    setEnabledDates(prev => prev.filter(d => d !== dateStr));
+    setEnabledDates(prev => (prev || []).filter(d => d !== dateStr));
   };
 
   // Custom Fields Handlers
@@ -259,22 +328,21 @@ export default function Bookings() {
       type: 'text',
       required: false
     };
-    setCustomFields(prev => [...prev, newField]);
+    setCustomFields(prev => [...(prev || []), newField]);
   };
 
   const updateCustomField = (id: string, key: keyof BookingField, val: any) => {
-    setCustomFields(prev => prev.map(f => f.id === id ? { ...f, [key]: val } : f));
+    setCustomFields(prev => (prev || []).map(f => f.id === id ? { ...f, [key]: val } : f));
   };
 
   const removeCustomField = (id: string) => {
-    setCustomFields(prev => prev.filter(f => f.id !== id));
+    setCustomFields(prev => (prev || []).filter(f => f.id !== id));
   };
 
   const publicBookingUrl = `${window.location.origin}/reservas/${tenantSlug}`;
   const hostNoProtocol = window.location.host;
   const calendarIcsUrl = `${window.location.origin}/api/calendar/${tenantSlug}.ics`;
   const calendarWebcalUrl = `webcal://${hostNoProtocol}/api/calendar/${tenantSlug}.ics`;
-  const googleCalendarSubscribeUrl = `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(calendarWebcalUrl)}`;
 
   const copyBookingLink = () => {
     navigator.clipboard.writeText(publicBookingUrl);
@@ -288,35 +356,35 @@ export default function Bookings() {
     setTimeout(() => setCopiedCalendarLink(false), 2000);
   };
 
-  const filtered = appointments.filter(a => {
+  const filtered = (appointments || []).filter(a => {
     const matchesDate = !filterDate || a.date === filterDate;
     const matchesStatus = filterStatus === 'all' || a.status === filterStatus;
     return matchesDate && matchesStatus;
   });
 
-  const DAYS_OF_WEEK = [
-    { num: 1, name: 'Lunes', key: 'monday' },
-    { num: 2, name: 'Martes', key: 'tuesday' },
-    { num: 3, name: 'Miércoles', key: 'wednesday' },
-    { num: 4, name: 'Jueves', key: 'thursday' },
-    { num: 5, name: 'Viernes', key: 'friday' },
-    { num: 6, name: 'Sábado', key: 'saturday' },
-    { num: 7, name: 'Domingo', key: 'sunday' }
-  ];
+  // Calendar Helpers
+  const year = currentCalDate.getFullYear();
+  const month = currentCalDate.getMonth();
+  const firstDayOfMonth = new Date(year, month, 1).getDay(); // 0 = Sunday
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+
+  const prevMonth = () => setCurrentCalDate(new Date(year, month - 1, 1));
+  const nextMonth = () => setCurrentCalDate(new Date(year, month + 1, 1));
 
   if (loading) {
     return <div style={{ padding: '40px', textAlign: 'center' }}>Cargando agenda de citas...</div>;
   }
 
   return (
-    <div style={{ maxWidth: '980px' }}>
+    <div style={{ maxWidth: '1080px' }}>
       
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
         <div>
           <h2 style={{ margin: '0 0 4px 0', fontSize: '1.5rem', fontWeight: 'bold' }}>Agenda y Reservas</h2>
           <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-            Control de citas, horarios, preguntas del formulario y sincronización con Apple/Google Calendar
+            Control de citas, calendario interactivo, horarios de disponibilidad y sincronización externa
           </p>
         </div>
 
@@ -330,7 +398,7 @@ export default function Bookings() {
         )}
       </div>
 
-      {/* Public Booking Link Card */}
+      {/* Public Booking Link Banner */}
       <div style={{ backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '12px', padding: '16px 20px', marginBottom: '25px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '15px', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <div style={{ width: '40px', height: '40px', backgroundColor: '#dbeafe', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -347,7 +415,7 @@ export default function Bookings() {
             onClick={copyBookingLink}
             style={{ padding: '8px 14px', backgroundColor: 'white', border: '1px solid #93c5fd', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', fontWeight: '600', color: '#1d4ed8' }}
           >
-            <Copy size={15} /> {copiedBookingLink ? '¡Copiado!' : 'Copiar'}
+            <Copy size={15} /> {copiedBookingLink ? 'Copiado' : 'Copiar Enlace'}
           </button>
           <a
             href={publicBookingUrl}
@@ -360,8 +428,8 @@ export default function Bookings() {
         </div>
       </div>
 
-      {/* Tabs */}
-      <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', marginBottom: '20px', gap: '10px' }}>
+      {/* Clean SVG Tabs (Zero emojis) */}
+      <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', marginBottom: '20px', gap: '8px', flexWrap: 'wrap' }}>
         <button
           onClick={() => setActiveTab('list')}
           style={{
@@ -371,14 +439,33 @@ export default function Bookings() {
             backgroundColor: 'transparent',
             color: activeTab === 'list' ? 'var(--primary)' : 'var(--text-muted)',
             fontWeight: '600',
-            fontSize: '0.95rem',
+            fontSize: '0.9rem',
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
             gap: '8px'
           }}
         >
-          <Calendar size={18} /> Citas Agendadas ({appointments.length})
+          <Calendar size={18} /> Citas Agendadas ({(appointments || []).length})
+        </button>
+
+        <button
+          onClick={() => setActiveTab('calendar')}
+          style={{
+            padding: '10px 18px',
+            border: 'none',
+            borderBottom: activeTab === 'calendar' ? '2px solid var(--primary)' : '2px solid transparent',
+            backgroundColor: 'transparent',
+            color: activeTab === 'calendar' ? 'var(--primary)' : 'var(--text-muted)',
+            fontWeight: '600',
+            fontSize: '0.9rem',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}
+        >
+          <CalendarDays size={18} /> Vista Calendario
         </button>
 
         <button
@@ -390,14 +477,14 @@ export default function Bookings() {
             backgroundColor: 'transparent',
             color: activeTab === 'schedule' ? 'var(--primary)' : 'var(--text-muted)',
             fontWeight: '600',
-            fontSize: '0.95rem',
+            fontSize: '0.9rem',
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
             gap: '8px'
           }}
         >
-          <Settings size={18} /> ⚙️ Horarios & Formulario
+          <Clock size={18} /> Horarios & Disponibilidad
         </button>
 
         <button
@@ -409,142 +496,283 @@ export default function Bookings() {
             backgroundColor: 'transparent',
             color: activeTab === 'calendarSync' ? '#7c3aed' : 'var(--text-muted)',
             fontWeight: '600',
-            fontSize: '0.95rem',
+            fontSize: '0.9rem',
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
             gap: '8px'
           }}
         >
-          <Share2 size={18} /> 📲 Sincronizar con Apple / Google Calendar
+          <Share2 size={18} /> Sincronizar Calendarios
         </button>
       </div>
 
-      {/* TAB 1: APPOINTMENTS LIST */}
+      {/* ==============================================================
+          TAB 1: LISTA DE CITAS
+      ============================================================== */}
       {activeTab === 'list' && (
-        <>
+        <div>
           {/* Filters */}
-          <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', flexWrap: 'wrap' }}>
-            <input
-              type="date"
-              value={filterDate}
-              onChange={(e) => setFilterDate(e.target.value)}
-              style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
-            />
+          <div style={{ display: 'flex', gap: '12px', marginBottom: '20px', flexWrap: 'wrap', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: 'var(--surface)', padding: '6px 12px', borderRadius: '8px', border: '1px solid var(--border)' }}>
+              <Filter size={16} color="var(--text-muted)" />
+              <input
+                type="date"
+                value={filterDate}
+                onChange={(e) => setFilterDate(e.target.value)}
+                style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: '0.85rem' }}
+              />
+              {filterDate && (
+                <button onClick={() => setFilterDate('')} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#64748b' }}>
+                  <X size={14} />
+                </button>
+              )}
+            </div>
 
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
-              style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem', backgroundColor: 'white' }}
+              style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: 'var(--surface)', fontSize: '0.85rem' }}
             >
               <option value="all">Todos los estados</option>
-              <option value="confirmed">Confirmadas</option>
               <option value="pending">Pendientes</option>
+              <option value="scheduled">Programadas</option>
+              <option value="confirmed">Confirmadas</option>
               <option value="completed">Completadas</option>
               <option value="cancelled">Canceladas</option>
             </select>
 
-            {(filterDate || filterStatus !== 'all') && (
-              <button
-                onClick={() => { setFilterDate(''); setFilterStatus('all'); }}
-                style={{ padding: '8px 12px', backgroundColor: 'transparent', border: '1px solid var(--border)', borderRadius: '6px', fontSize: '0.85rem', cursor: 'pointer' }}
-              >
-                Limpiar filtros
-              </button>
-            )}
+            <button
+              onClick={fetchAppointments}
+              style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: 'var(--surface)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem' }}
+            >
+              <RefreshCw size={14} /> Actualizar
+            </button>
           </div>
 
-          {/* Appointments List */}
+          {/* Appointments Table */}
           {filtered.length === 0 ? (
-            <div style={{ padding: '40px', textAlign: 'center', backgroundColor: 'var(--surface)', borderRadius: '10px', border: '1px solid var(--border)' }}>
-              <Calendar size={36} color="var(--text-muted)" style={{ margin: '0 auto 10px auto' }} />
-              <p style={{ color: 'var(--text-muted)', margin: 0 }}>No hay citas agendadas con los filtros seleccionados.</p>
+            <div style={{ padding: '40px', textAlign: 'center', backgroundColor: 'var(--surface)', borderRadius: '10px', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
+              No se encontraron citas con los filtros aplicados.
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {filtered.map(appt => (
-                <div
-                  key={appt.id}
-                  style={{
-                    backgroundColor: 'var(--surface)',
-                    padding: '16px 20px',
-                    borderRadius: '10px',
-                    border: '1px solid var(--border)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: '15px',
-                    flexWrap: 'wrap'
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                    <div style={{ backgroundColor: '#f1f5f9', padding: '10px 14px', borderRadius: '8px', textAlign: 'center', minWidth: '85px' }}>
-                      <div style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--text-muted)', textTransform: 'uppercase' }}>{formatShortDate(appt.date)}</div>
-                      <div style={{ fontSize: '1rem', fontWeight: 'bold', color: 'var(--primary)' }}>{appt.time}</div>
-                    </div>
-
-                    <div>
-                      <div style={{ fontWeight: 'bold', fontSize: '1rem' }}>{appt.name}</div>
-                      <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
-                        <span>🛠️ {appt.service}</span>
-                        {appt.whatsapp && <span>📱 {appt.whatsapp}</span>}
-                      </div>
-                      {appt.details && <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px' }}>📝 {appt.details}</div>}
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <div style={{ fontWeight: 'bold', fontSize: '1.05rem', color: 'var(--text)' }}>
-                      ₡{Number(appt.amount || 0).toLocaleString('es-CR')}
-                    </div>
-
-                    <select
-                      value={appt.status}
-                      onChange={(e) => handleStatusChange(appt.id, e.target.value)}
-                      style={{
-                        padding: '6px 10px',
-                        borderRadius: '6px',
-                        fontSize: '0.8rem',
-                        fontWeight: '600',
-                        backgroundColor: appt.status === 'confirmed' ? '#dcfce7' : appt.status === 'completed' ? '#dbeafe' : appt.status === 'cancelled' ? '#fee2e2' : '#fef9c3',
-                        color: appt.status === 'confirmed' ? '#15803d' : appt.status === 'completed' ? '#1d4ed8' : appt.status === 'cancelled' ? '#b91c1c' : '#854d0e',
-                        border: '1px solid var(--border)',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      <option value="pending">Pendiente</option>
-                      <option value="confirmed">Confirmada</option>
-                      <option value="completed">Completada</option>
-                      <option value="cancelled">Cancelada</option>
-                    </select>
-
-                    {appt.whatsapp && (
-                      <a
-                        href={`https://wa.me/${appt.whatsapp.replace(/\D/g, '')}?text=${encodeURIComponent(`Hola ${appt.name}, nos comunicamos para dar seguimiento a tu cita de ${appt.service} el ${appt.date} a las ${appt.time}.`)}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{ padding: '6px', backgroundColor: '#25d366', color: 'white', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                      >
-                        <MessageCircle size={16} />
-                      </a>
-                    )}
-                  </div>
-                </div>
-              ))}
+            <div style={{ backgroundColor: 'var(--surface)', borderRadius: '12px', border: '1px solid var(--border)', overflow: 'hidden' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--border)', backgroundColor: '#f8fafc', color: 'var(--text-muted)', textAlign: 'left' }}>
+                    <th style={{ padding: '12px 16px' }}>Cliente</th>
+                    <th style={{ padding: '12px 16px' }}>Servicio</th>
+                    <th style={{ padding: '12px 16px' }}>Fecha & Hora</th>
+                    <th style={{ padding: '12px 16px' }}>Monto</th>
+                    <th style={{ padding: '12px 16px' }}>Estado</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'right' }}>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map(app => (
+                    <tr key={app.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                      <td style={{ padding: '12px 16px' }}>
+                        <div style={{ fontWeight: '600' }}>{app.name}</div>
+                        <a
+                          href={`https://wa.me/${app.whatsapp.replace(/\D/g, '')}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{ fontSize: '0.8rem', color: '#16a34a', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}
+                        >
+                          <MessageCircle size={13} /> {app.whatsapp}
+                        </a>
+                      </td>
+                      <td style={{ padding: '12px 16px' }}>
+                        <div style={{ fontWeight: '500' }}>{app.service}</div>
+                        {app.details && <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{app.details}</div>}
+                      </td>
+                      <td style={{ padding: '12px 16px' }}>
+                        <div style={{ fontWeight: '600' }}>{formatShortDate(app.date)}</div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{app.time}</div>
+                      </td>
+                      <td style={{ padding: '12px 16px', fontWeight: '600' }}>
+                        ₡{Number(app.amount || 0).toLocaleString('es-CR')}
+                      </td>
+                      <td style={{ padding: '12px 16px' }}>
+                        <select
+                          value={app.status}
+                          onChange={(e) => handleStatusChange(app.id, e.target.value)}
+                          style={{
+                            padding: '4px 8px',
+                            borderRadius: '6px',
+                            fontSize: '0.8rem',
+                            fontWeight: '600',
+                            border: '1px solid var(--border)',
+                            backgroundColor:
+                              app.status === 'confirmed' ? '#f0fdf4' :
+                              app.status === 'completed' ? '#eff6ff' :
+                              app.status === 'cancelled' ? '#fef2f2' : '#fefce8',
+                            color:
+                              app.status === 'confirmed' ? '#16a34a' :
+                              app.status === 'completed' ? '#2563eb' :
+                              app.status === 'cancelled' ? '#dc2626' : '#ca8a04'
+                          }}
+                        >
+                          <option value="pending">Pendiente</option>
+                          <option value="scheduled">Programada</option>
+                          <option value="confirmed">Confirmada</option>
+                          <option value="completed">Completada</option>
+                          <option value="cancelled">Cancelada</option>
+                        </select>
+                      </td>
+                      <td style={{ padding: '12px 16px', textAlign: 'right' }}>
+                        <button
+                          onClick={() => setSelectedAppointment(app)}
+                          style={{ padding: '6px 10px', backgroundColor: '#f1f5f9', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: '600', marginRight: '6px' }}
+                        >
+                          Detalles
+                        </button>
+                        <button
+                          onClick={() => handleDeleteAppointment(app.id)}
+                          style={{ padding: '6px', backgroundColor: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer' }}
+                          title="Eliminar cita"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
-        </>
+        </div>
       )}
 
-      {/* TAB 2: SCHEDULE & CUSTOM FORM FIELDS CONFIGURATION */}
+      {/* ==============================================================
+          TAB 2: VISTA CALENDARIO MENSUAL
+      ============================================================== */}
+      {activeTab === 'calendar' && (
+        <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+          {/* Calendar Month Header */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+            <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Calendar size={22} color="var(--primary)" /> {monthNames[month]} {year}
+            </h3>
+
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                onClick={prevMonth}
+                style={{ padding: '8px 12px', backgroundColor: 'white', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.85rem', fontWeight: '600' }}
+              >
+                <ChevronLeft size={16} /> Anterior
+              </button>
+              <button
+                onClick={() => setCurrentCalDate(new Date())}
+                style={{ padding: '8px 14px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: '600' }}
+              >
+                Hoy
+              </button>
+              <button
+                onClick={nextMonth}
+                style={{ padding: '8px 12px', backgroundColor: 'white', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.85rem', fontWeight: '600' }}
+              >
+                Siguiente <ChevronRight size={16} />
+              </button>
+            </div>
+          </div>
+
+          {/* Days of Week Header */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px', marginBottom: '4px', textAlign: 'center' }}>
+            {['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'].map((d, i) => (
+              <div key={i} style={{ padding: '8px 0', fontWeight: 'bold', fontSize: '0.8rem', color: '#64748b', backgroundColor: '#f8fafc', borderRadius: '4px' }}>
+                {d}
+              </div>
+            ))}
+          </div>
+
+          {/* Calendar Grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px' }}>
+            {/* Blank offset days */}
+            {Array.from({ length: firstDayOfMonth }).map((_, i) => (
+              <div key={`blank-${i}`} style={{ minHeight: '95px', backgroundColor: '#f8fafc', borderRadius: '6px', border: '1px dashed #e2e8f0', opacity: 0.5 }} />
+            ))}
+
+            {/* Month Days */}
+            {Array.from({ length: daysInMonth }).map((_, i) => {
+              const dayNum = i + 1;
+              const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
+              const dayAppointments = (appointments || []).filter(a => a.date === dateStr);
+              const isToday = new Date().toISOString().split('T')[0] === dateStr;
+
+              return (
+                <div
+                  key={dayNum}
+                  style={{
+                    minHeight: '95px',
+                    backgroundColor: isToday ? '#f0fdf4' : 'white',
+                    border: isToday ? '2px solid var(--primary)' : '1px solid var(--border)',
+                    borderRadius: '6px',
+                    padding: '6px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px',
+                    overflow: 'hidden'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontWeight: 'bold', fontSize: '0.85rem', color: isToday ? 'var(--primary)' : 'var(--text)' }}>
+                      {dayNum}
+                    </span>
+                    {dayAppointments.length > 0 && (
+                      <span style={{ fontSize: '0.65rem', fontWeight: 'bold', padding: '1px 5px', borderRadius: '10px', backgroundColor: 'var(--primary)', color: 'white' }}>
+                        {dayAppointments.length}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Appointments list in day cell */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', overflowY: 'auto', maxHeight: '75px' }}>
+                    {dayAppointments.map(app => {
+                      const isConfirmed = app.status === 'confirmed';
+                      const isCompleted = app.status === 'completed';
+                      return (
+                        <div
+                          key={app.id}
+                          onClick={() => setSelectedAppointment(app)}
+                          style={{
+                            padding: '3px 6px',
+                            borderRadius: '4px',
+                            backgroundColor: isConfirmed ? '#dcfce7' : isCompleted ? '#dbeafe' : '#fef9c3',
+                            border: `1px solid ${isConfirmed ? '#86efac' : isCompleted ? '#93c5fd' : '#fde047'}`,
+                            fontSize: '0.7rem',
+                            fontWeight: '600',
+                            color: isConfirmed ? '#166534' : isCompleted ? '#1e40af' : '#854d0e',
+                            cursor: 'pointer',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis'
+                          }}
+                          title={`${app.time} - ${app.name} (${app.service})`}
+                        >
+                          {app.time} {app.name}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ==============================================================
+          TAB 3: HORARIOS & FORMULARIO
+      ============================================================== */}
       {activeTab === 'schedule' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           
-          {/* Schedule Mode Card */}
+          {/* Schedule Settings Card */}
           <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
               <div>
-                <h3 style={{ margin: '0 0 4px 0', fontSize: '1.2rem', fontWeight: 'bold' }}>Modalidad de Disponibilidad</h3>
+                <h3 style={{ margin: '0 0 4px 0', fontSize: '1.2rem', fontWeight: 'bold' }}>Modalidad de Disponibilidad y Horarios</h3>
                 <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.85rem' }}>Selecciona cómo deseas que los clientes puedan agendar citas</p>
               </div>
 
@@ -661,7 +889,7 @@ export default function Bookings() {
                   <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '8px' }}>Días de Atención Habilitados</label>
                   <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                     {DAYS_OF_WEEK.map(d => {
-                      const isEnabled = daysEnabled.includes(d.num);
+                      const isEnabled = (daysEnabled || []).includes(d.num);
                       return (
                         <button
                           key={d.num}
@@ -690,7 +918,7 @@ export default function Bookings() {
                   <h4 style={{ margin: '0 0 10px 0', fontSize: '0.95rem', fontWeight: 'bold' }}>Descansos / Almuerzo por Día</h4>
                   
                   <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', marginBottom: '14px' }}>
-                    {DAYS_OF_WEEK.filter(d => daysEnabled.includes(d.num)).map(d => (
+                    {DAYS_OF_WEEK.filter(d => (daysEnabled || []).includes(d.num)).map(d => (
                       <button
                         key={d.num}
                         type="button"
@@ -712,7 +940,7 @@ export default function Bookings() {
                   </div>
 
                   {(() => {
-                    const currentBreak = perDayBreaks[selectedDayForBreak] || {
+                    const currentBreak = (perDayBreaks || {})[selectedDayForBreak] || {
                       hasBreak: hasBreak,
                       breakStart: breakStart,
                       breakEnd: breakEnd
@@ -723,7 +951,7 @@ export default function Bookings() {
                         <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', fontWeight: '600', cursor: 'pointer' }}>
                           <input
                             type="checkbox"
-                            checked={currentBreak.hasBreak}
+                            checked={!!currentBreak.hasBreak}
                             onChange={(e) => {
                               setPerDayBreaks(prev => ({
                                 ...prev,
@@ -740,7 +968,7 @@ export default function Bookings() {
                               <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '3px' }}>Inicio del descanso:</span>
                               <input
                                 type="time"
-                                value={currentBreak.breakStart}
+                                value={currentBreak.breakStart || '12:00'}
                                 onChange={(e) => {
                                   setPerDayBreaks(prev => ({
                                     ...prev,
@@ -754,7 +982,7 @@ export default function Bookings() {
                               <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '3px' }}>Fin del descanso:</span>
                               <input
                                 type="time"
-                                value={currentBreak.breakEnd}
+                                value={currentBreak.breakEnd || '13:00'}
                                 onChange={(e) => {
                                   setPerDayBreaks(prev => ({
                                     ...prev,
@@ -816,11 +1044,11 @@ export default function Bookings() {
                     </button>
                   </div>
 
-                  {(bloquesDays[selectedDayForBlock] || []).length === 0 ? (
+                  {((bloquesDays || {})[selectedDayForBlock] || []).length === 0 ? (
                     <p style={{ margin: 0, fontSize: '0.85rem', color: '#94a3b8' }}>No hay bloques configurados para este día (cerrado).</p>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                      {(bloquesDays[selectedDayForBlock] || []).map((block, idx) => (
+                      {((bloquesDays || {})[selectedDayForBlock] || []).map((block, idx) => (
                         <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '10px', backgroundColor: 'white', padding: '10px', borderRadius: '6px', border: '1px solid var(--border)' }}>
                           <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--text-muted)' }}>Bloque {idx + 1}:</span>
                           <input
@@ -862,121 +1090,105 @@ export default function Bookings() {
                   <input
                     type="date"
                     value={newDateToAdd}
-                    min={new Date().toISOString().split('T')[0]}
                     onChange={(e) => setNewDateToAdd(e.target.value)}
                     style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.9rem' }}
                   />
                   <button
                     type="button"
                     onClick={addSpecificDate}
-                    style={{ padding: '8px 14px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}
+                    style={{ padding: '8px 14px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px' }}
                   >
-                    + Habilitar Fecha
+                    <Plus size={16} /> Habilitar Fecha
                   </button>
                 </div>
 
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '10px' }}>
-                  {enabledDates.map(dateStr => (
-                    <div
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  {(enabledDates || []).map(dateStr => (
+                    <span
                       key={dateStr}
-                      style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', backgroundColor: '#f1f5f9', borderRadius: '20px', border: '1px solid #cbd5e1', fontSize: '0.85rem', fontWeight: '600' }}
+                      style={{ padding: '6px 12px', backgroundColor: '#f1f5f9', border: '1px solid var(--border)', borderRadius: '20px', fontSize: '0.85rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px' }}
                     >
-                      <span>🗓️ {dateStr}</span>
-                      <button
-                        type="button"
+                      {formatShortDate(dateStr)}
+                      <X
+                        size={14}
+                        style={{ cursor: 'pointer', color: '#ef4444' }}
                         onClick={() => removeSpecificDate(dateStr)}
-                        style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '0 2px' }}
-                      >
-                        ✕
-                      </button>
-                    </div>
+                      />
+                    </span>
                   ))}
+                  {(enabledDates || []).length === 0 && (
+                    <p style={{ margin: 0, fontSize: '0.85rem', color: '#94a3b8' }}>No hay fechas específicas agregadas.</p>
+                  )}
                 </div>
               </div>
             )}
           </div>
 
-          {/* CUSTOM BOOKING FORM QUESTIONS / FIELDS */}
+          {/* Custom Form Questions Card */}
           <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <div>
-                <h3 style={{ margin: '0 0 4px 0', fontSize: '1.15rem', fontWeight: 'bold' }}>📝 Preguntas del Formulario de Reservas</h3>
-                <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.85rem' }}>Personaliza qué información deseas solicitar a los clientes al agendar una cita</p>
+                <h3 style={{ margin: '0 0 4px 0', fontSize: '1.15rem', fontWeight: 'bold' }}>Preguntas del Formulario de Reserva</h3>
+                <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.85rem' }}>Personaliza las preguntas que responderá el cliente al agendar</p>
               </div>
-
               <button
                 type="button"
                 onClick={addCustomField}
-                style={{ padding: '8px 14px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}
+                style={{ padding: '7px 12px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}
               >
-                <Plus size={16} /> + Agregar Pregunta
+                <Plus size={14} /> Nueva Pregunta
               </button>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {customFields.map((field, idx) => (
-                <div key={field.id} style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid var(--border)', display: 'grid', gridTemplateColumns: '2fr 2fr 1fr auto auto', gap: '10px', alignItems: 'center' }}>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 'bold', marginBottom: '2px' }}>Pregunta / Etiqueta</label>
-                    <input
-                      type="text"
-                      value={field.label}
-                      onChange={(e) => updateCustomField(field.id, 'label', e.target.value)}
-                      style={{ width: '100%', padding: '6px 8px', borderRadius: '4px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
-                    />
-                  </div>
-
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 'bold', marginBottom: '2px' }}>Texto de ayuda (Placeholder)</label>
-                    <input
-                      type="text"
-                      value={field.placeholder || ''}
-                      onChange={(e) => updateCustomField(field.id, 'placeholder', e.target.value)}
-                      style={{ width: '100%', padding: '6px 8px', borderRadius: '4px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
-                    />
-                  </div>
-
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 'bold', marginBottom: '2px' }}>Tipo</label>
-                    <select
-                      value={field.type}
-                      onChange={(e) => updateCustomField(field.id, 'type', e.target.value)}
-                      style={{ width: '100%', padding: '6px 8px', borderRadius: '4px', border: '1px solid var(--border)', fontSize: '0.85rem', backgroundColor: 'white' }}
-                    >
-                      <option value="text">Texto corto</option>
-                      <option value="textarea">Texto largo</option>
-                      <option value="number">Número</option>
-                    </select>
-                  </div>
-
-                  <div style={{ textAlign: 'center' }}>
-                    <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 'bold', marginBottom: '2px' }}>Obligatorio</label>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {(customFields || []).map((field, idx) => (
+                <div key={field.id} style={{ display: 'grid', gridTemplateColumns: '1.5fr 1.5fr 1fr auto auto', gap: '10px', alignItems: 'center', padding: '12px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                  <input
+                    type="text"
+                    value={field.label}
+                    onChange={(e) => updateCustomField(field.id, 'label', e.target.value)}
+                    placeholder="Título de la pregunta"
+                    style={{ padding: '6px 10px', borderRadius: '4px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                  />
+                  <input
+                    type="text"
+                    value={field.placeholder}
+                    onChange={(e) => updateCustomField(field.id, 'placeholder', e.target.value)}
+                    placeholder="Texto de ayuda"
+                    style={{ padding: '6px 10px', borderRadius: '4px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                  />
+                  <select
+                    value={field.type}
+                    onChange={(e) => updateCustomField(field.id, 'type', e.target.value)}
+                    style={{ padding: '6px 10px', borderRadius: '4px', border: '1px solid var(--border)', fontSize: '0.85rem', backgroundColor: 'white' }}
+                  >
+                    <option value="text">Texto corto</option>
+                    <option value="textarea">Texto largo</option>
+                    <option value="number">Número</option>
+                  </select>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer' }}>
                     <input
                       type="checkbox"
                       checked={field.required}
                       onChange={(e) => updateCustomField(field.id, 'required', e.target.checked)}
-                      style={{ width: '18px', height: '18px', cursor: 'pointer' }}
                     />
-                  </div>
-
-                  <div>
-                    <button
-                      type="button"
-                      onClick={() => removeCustomField(field.id)}
-                      style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '6px', marginTop: '12px' }}
-                      title="Eliminar pregunta"
-                    >
-                      <Trash2 size={18} />
-                    </button>
-                  </div>
+                    <span>Requerido</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => removeCustomField(field.id)}
+                    style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px' }}
+                  >
+                    <Trash2 size={16} />
+                  </button>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* VACATION MODE / DATE BLOCKING CARD */}
+          {/* Vacation Mode Card */}
           <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
               <Palmtree size={22} color="#059669" />
               <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 'bold' }}>Modo Vacaciones y Cierre Temporal</h3>
             </div>
@@ -1030,7 +1242,9 @@ export default function Bookings() {
         </div>
       )}
 
-      {/* TAB 3: CALENDAR SYNC (APPLE / GOOGLE / OUTLOOK) */}
+      {/* ==============================================================
+          TAB 4: SINCRONIZACIÓN CON CALENDARIOS EXTERNOS
+      ============================================================== */}
       {activeTab === 'calendarSync' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           
@@ -1069,121 +1283,194 @@ export default function Bookings() {
               </div>
             </div>
 
-            {/* Quick 1-Click Subscription Buttons */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '14px', marginBottom: '30px' }}>
-              
-              {/* Apple Calendar Button */}
-              <a
-                href={calendarWebcalUrl}
-                style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '16px', borderRadius: '10px', backgroundColor: '#0f172a', color: 'white', textDecoration: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}
-              >
-                <Smartphone size={28} />
-                <div>
-                  <div style={{ fontWeight: 'bold', fontSize: '0.95rem' }}>Apple Calendar</div>
-                  <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Abrir en iPhone, iPad o Mac</div>
-                </div>
-              </a>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '16px' }}>
+              <div style={{ padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0', backgroundColor: 'white' }}>
+                <h4 style={{ margin: '0 0 6px 0', fontSize: '0.95rem', fontWeight: 'bold' }}>iPhone, iPad y Mac (Apple Calendar)</h4>
+                <p style={{ margin: '0 0 12px 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  Abre este enlace directamente en Safari o copia la URL en Ajustes - Calendario - Cuentas - Añadir cuenta suscrita.
+                </p>
+                <a
+                  href={calendarWebcalUrl}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 14px', backgroundColor: '#0f172a', color: 'white', borderRadius: '6px', textDecoration: 'none', fontSize: '0.85rem', fontWeight: '600' }}
+                >
+                  <ExternalLink size={14} /> Suscribir en Apple Calendar
+                </a>
+              </div>
 
-              {/* Google Calendar Button */}
-              <a
-                href={googleCalendarSubscribeUrl}
-                target="_blank"
-                rel="noreferrer"
-                style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '16px', borderRadius: '10px', backgroundColor: '#2563eb', color: 'white', textDecoration: 'none', boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.2)' }}
-              >
-                <Calendar size={28} />
-                <div>
-                  <div style={{ fontWeight: 'bold', fontSize: '0.95rem' }}>Google Calendar</div>
-                  <div style={{ fontSize: '0.75rem', color: '#bfdbfe' }}>Añadir a Google Calendar (Web / Android)</div>
-                </div>
-              </a>
-            </div>
-
-            {/* Step-by-step Instructions */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 'bold' }}>📖 Instrucciones de Configuración Rápida:</h4>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '14px' }}>
-                <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid var(--border)' }}>
-                  <strong style={{ display: 'block', fontSize: '0.9rem', marginBottom: '6px' }}>🍏 En iPhone o iPad:</strong>
-                  <ol style={{ margin: 0, paddingLeft: '18px', fontSize: '0.85rem', color: '#475569', lineHeight: '1.6' }}>
-                    <li>Toca el botón negro <strong>Apple Calendar</strong> arriba.</li>
-                    <li>iOS te preguntará si deseas suscribirte al calendario. Toca <strong>Suscribirse</strong>.</li>
-                    <li>Elige el color deseado y toca <strong>Añadir</strong>. ¡Listo!</li>
-                  </ol>
-                </div>
-
-                <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid var(--border)' }}>
-                  <strong style={{ display: 'block', fontSize: '0.9rem', marginBottom: '6px' }}>📅 En Google Calendar:</strong>
-                  <ol style={{ margin: 0, paddingLeft: '18px', fontSize: '0.85rem', color: '#475569', lineHeight: '1.6' }}>
-                    <li>Toca el botón azul <strong>Google Calendar</strong> arriba.</li>
-                    <li>Se abrirá Google Calendar y te preguntará <strong>¿Añadir calendario?</strong></li>
-                    <li>Presiona <strong>Añadir</strong> y verás todas las citas sincronizadas en tu cuenta.</li>
-                  </ol>
-                </div>
-
-                <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid var(--border)' }}>
-                  <strong style={{ display: 'block', fontSize: '0.9rem', marginBottom: '6px' }}>💻 En Outlook o Windows:</strong>
-                  <ol style={{ margin: 0, paddingLeft: '18px', fontSize: '0.85rem', color: '#475569', lineHeight: '1.6' }}>
-                    <li>Copia el enlace de arriba con el botón <strong>Copiar Enlace</strong>.</li>
-                    <li>En Outlook, ve a Calendario -&gt; <strong>Agregar calendario</strong>.</li>
-                    <li>Selecciona <strong>Suscribirse desde la web</strong> y pega la URL.</li>
-                  </ol>
-                </div>
+              <div style={{ padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0', backgroundColor: 'white' }}>
+                <h4 style={{ margin: '0 0 6px 0', fontSize: '0.95rem', fontWeight: 'bold' }}>Google Calendar & Android</h4>
+                <p style={{ margin: '0 0 12px 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  En Google Calendar web, haz clic en Otros calendarios (+) - Desde URL y pega el enlace copiado arriba.
+                </p>
+                <button
+                  onClick={copyCalendarLink}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 14px', backgroundColor: '#1e40af', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: '600' }}
+                >
+                  <Copy size={14} /> Copiar URL para Google
+                </button>
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* ==========================================
-          NEW APPOINTMENT MODAL
-      ========================================== */}
+      {/* ==============================================================
+          MODAL: DETALLES DE CITA
+      ============================================================== */}
+      {selectedAppointment && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+          <div style={{ backgroundColor: 'white', borderRadius: '14px', maxWidth: '520px', width: '100%', padding: '26px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.15)' }}>
+            
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Calendar size={20} color="var(--primary)" />
+                <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'bold' }}>Detalles de la Cita</h3>
+              </div>
+              <button onClick={() => setSelectedAppointment(null)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#64748b' }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', backgroundColor: '#f8fafc', padding: '14px', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                <div>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block' }}>Cliente:</span>
+                  <strong style={{ fontSize: '0.95rem' }}>{selectedAppointment.name}</strong>
+                </div>
+                <div>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block' }}>WhatsApp:</span>
+                  <a
+                    href={`https://wa.me/${selectedAppointment.whatsapp.replace(/\D/g, '')}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ fontSize: '0.9rem', color: '#16a34a', fontWeight: 'bold', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                  >
+                    <MessageCircle size={14} /> {selectedAppointment.whatsapp}
+                  </a>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block' }}>Servicio:</span>
+                  <span style={{ fontWeight: '600', fontSize: '0.9rem' }}>{selectedAppointment.service}</span>
+                </div>
+                <div>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block' }}>Monto:</span>
+                  <span style={{ fontWeight: 'bold', fontSize: '0.95rem', color: 'var(--primary)' }}>
+                    ₡{Number(selectedAppointment.amount || 0).toLocaleString('es-CR')}
+                  </span>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block' }}>Fecha:</span>
+                  <span style={{ fontWeight: '600' }}>{formatShortDate(selectedAppointment.date)}</span>
+                </div>
+                <div>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block' }}>Hora:</span>
+                  <span style={{ fontWeight: '600' }}>{selectedAppointment.time}</span>
+                </div>
+              </div>
+
+              {selectedAppointment.details && (
+                <div>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '2px' }}>Detalles / Respuestas del Formulario:</span>
+                  <div style={{ padding: '10px', backgroundColor: '#f1f5f9', borderRadius: '6px', fontSize: '0.85rem', whiteSpace: 'pre-wrap' }}>
+                    {selectedAppointment.details}
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>Cambiar Estado:</span>
+                <select
+                  value={selectedAppointment.status}
+                  onChange={(e) => handleStatusChange(selectedAppointment.id, e.target.value)}
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.9rem', fontWeight: 'bold', backgroundColor: 'white' }}
+                >
+                  <option value="pending">Pendiente</option>
+                  <option value="scheduled">Programada</option>
+                  <option value="confirmed">Confirmada</option>
+                  <option value="completed">Completada (Libera cupo de horario)</option>
+                  <option value="cancelled">Cancelada (Libera cupo de horario)</option>
+                </select>
+              </div>
+            </div>
+
+            <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
+              <button
+                onClick={() => handleDeleteAppointment(selectedAppointment.id)}
+                style={{ padding: '8px 14px', backgroundColor: '#fee2e2', color: '#dc2626', border: '1px solid #fca5a5', borderRadius: '6px', cursor: 'pointer', fontWeight: '600', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <Trash2 size={15} /> Eliminar Cita
+              </button>
+
+              <button
+                onClick={() => setSelectedAppointment(null)}
+                style={{ padding: '8px 18px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '600', fontSize: '0.85rem' }}
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==============================================================
+          MODAL: NUEVA CITA MANUAL
+      ============================================================== */}
       {showNewModal && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-          <div style={{ backgroundColor: 'white', borderRadius: '12px', maxWidth: '480px', width: '100%', padding: '24px', boxShadow: '0 20px 25px rgba(0,0,0,0.1)' }}>
-            <h3 style={{ margin: '0 0 16px 0', fontSize: '1.2rem', fontWeight: 'bold' }}>Agendar Nueva Cita</h3>
+          <div style={{ backgroundColor: 'white', borderRadius: '14px', maxWidth: '480px', width: '100%', padding: '24px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.15)' }}>
+            
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
+              <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'bold' }}>Agendar Nueva Cita</h3>
+              <button onClick={() => setShowNewModal(false)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#64748b' }}>
+                <X size={20} />
+              </button>
+            </div>
 
             <form onSubmit={handleCreateAppointment} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '4px' }}>Nombre del Cliente *</label>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>Nombre del Cliente *</label>
                 <input
                   type="text"
                   required
+                  placeholder="Ej: Sofía Herrera"
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
-                  placeholder="Ej: Daniel Vega"
                   style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
                 />
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '4px' }}>Teléfono WhatsApp *</label>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>WhatsApp *</label>
                 <input
                   type="tel"
                   required
+                  placeholder="Ej: 50688889999"
                   value={newWhatsapp}
                   onChange={(e) => setNewWhatsapp(e.target.value)}
-                  placeholder="Ej: 8888-8888"
                   style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
                 />
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '4px' }}>Servicio *</label>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>Servicio</label>
                 <input
                   type="text"
-                  required
+                  placeholder="Ej: Limpieza Dental"
                   value={newService}
                   onChange={(e) => setNewService(e.target.value)}
-                  placeholder="Ej: Consulta Dental / Detallado de Auto"
                   style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
                 />
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '4px' }}>Fecha *</label>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>Fecha *</label>
                   <input
                     type="date"
                     required
@@ -1193,7 +1480,7 @@ export default function Bookings() {
                   />
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '4px' }}>Hora *</label>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>Hora *</label>
                   <input
                     type="time"
                     required
@@ -1204,40 +1491,41 @@ export default function Bookings() {
                 </div>
               </div>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '4px' }}>Monto (₡)</label>
-                <input
-                  type="number"
-                  value={newAmount}
-                  onChange={(e) => setNewAmount(Number(e.target.value))}
-                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
-                />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>Monto (₡ CRC)</label>
+                  <input
+                    type="number"
+                    value={newAmount}
+                    onChange={(e) => setNewAmount(Number(e.target.value))}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>Detalles / Notas</label>
+                  <input
+                    type="text"
+                    placeholder="Notas..."
+                    value={newDetails}
+                    onChange={(e) => setNewDetails(e.target.value)}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                  />
+                </div>
               </div>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '4px' }}>Notas o Detalles</label>
-                <input
-                  type="text"
-                  value={newDetails}
-                  onChange={(e) => setNewDetails(e.target.value)}
-                  placeholder="Detalles adicionales..."
-                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
-                />
-              </div>
-
-              <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
+              <div style={{ marginTop: '14px', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
                 <button
                   type="button"
                   onClick={() => setShowNewModal(false)}
-                  style={{ flex: 1, padding: '10px', backgroundColor: 'transparent', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', fontWeight: '500' }}
+                  style={{ padding: '8px 14px', backgroundColor: 'transparent', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem' }}
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  style={{ flex: 1, padding: '10px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
+                  style={{ padding: '8px 18px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}
                 >
-                  Agendar Cita
+                  Guardar Cita
                 </button>
               </div>
             </form>

@@ -36,7 +36,11 @@ import {
   ShieldAlert,
   ArrowLeft,
   Menu,
-  X
+  X,
+  ChevronLeft,
+  ChevronRight,
+  PanelLeftClose,
+  PanelLeftOpen
 } from 'lucide-react';
 
 export default function App() {
@@ -65,6 +69,9 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState<string>('dashboard');
   const [unreadOrdersCount, setUnreadOrdersCount] = useState<number>(0);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    return localStorage.getItem('sidebar_collapsed') === 'true';
+  });
 
   // Tenant customization
   const [storeMode, setStoreMode] = useState<'retail' | 'restaurant'>('retail');
@@ -72,6 +79,12 @@ export default function App() {
     storeEnabled: true,
     bookingsEnabled: true
   });
+
+  const toggleSidebar = () => {
+    const nextState = !isSidebarCollapsed;
+    setIsSidebarCollapsed(nextState);
+    localStorage.setItem('sidebar_collapsed', String(nextState));
+  };
 
   useEffect(() => {
     if (!isAuthenticated || !user) return;
@@ -230,6 +243,8 @@ export default function App() {
     }
   };
 
+  const sidebarWidth = isSidebarCollapsed ? '72px' : '260px';
+
   return (
     <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: 'var(--background)', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
       
@@ -241,9 +256,9 @@ export default function App() {
         />
       )}
 
-      {/* Sidebar (Responsive for Desktop, Tablet & Mobile) */}
+      {/* Sidebar (Collapsible for Desktop, Slide-over for Mobile) */}
       <div style={{
-        width: '260px',
+        width: sidebarWidth,
         backgroundColor: 'var(--surface)',
         borderRight: '1px solid var(--border)',
         display: 'flex',
@@ -254,17 +269,33 @@ export default function App() {
         left: 0,
         zIndex: 50,
         transform: window.innerWidth < 768 && !mobileMenuOpen ? 'translateX(-100%)' : 'translateX(0)',
-        transition: 'transform 0.25s ease'
+        transition: 'width 0.2s ease, transform 0.25s ease',
+        overflow: 'hidden'
       }}>
-        <div style={{ padding: '20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <div style={{ fontSize: '1.35rem', fontWeight: 'bold', color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Bot size={24} color="var(--primary)" /> <span>Betico</span>
+        {/* Sidebar Header */}
+        <div style={{
+          padding: isSidebarCollapsed ? '16px 12px' : '20px',
+          borderBottom: '1px solid var(--border)',
+          display: 'flex',
+          justifyContent: isSidebarCollapsed ? 'center' : 'space-between',
+          alignItems: 'center',
+          height: '60px',
+          boxSizing: 'border-box'
+        }}>
+          {!isSidebarCollapsed ? (
+            <div>
+              <div style={{ fontSize: '1.35rem', fontWeight: 'bold', color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Bot size={24} color="var(--primary)" /> <span>Betico</span>
+              </div>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: '500' }}>
+                WhatsApp AI SaaS
+              </div>
             </div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px', fontWeight: '500' }}>
-              WhatsApp AI SaaS Platform
+          ) : (
+            <div style={{ display: 'flex', justifyContent: 'center' }} title="Betico SaaS">
+              <Bot size={26} color="var(--primary)" />
             </div>
-          </div>
+          )}
 
           {window.innerWidth < 768 && (
             <button onClick={() => setMobileMenuOpen(false)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#64748b' }}>
@@ -276,45 +307,81 @@ export default function App() {
         {/* Grouped Sidebar Navigation */}
         <nav style={{ flex: 1, padding: '12px 0', overflowY: 'auto' }}>
           {navGroups.map((group, gIdx) => (
-            <div key={gIdx} style={{ marginBottom: '14px' }}>
-              <div style={{ padding: '4px 20px', fontSize: '0.68rem', fontWeight: 'bold', color: '#94a3b8', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-                {group.title}
-              </div>
+            <div key={gIdx} style={{ marginBottom: isSidebarCollapsed ? '10px' : '14px' }}>
+              {!isSidebarCollapsed && (
+                <div style={{ padding: '4px 20px', fontSize: '0.68rem', fontWeight: 'bold', color: '#94a3b8', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                  {group.title}
+                </div>
+              )}
 
-              {group.items.map(item => (
-                <button
-                  key={item.id}
-                  onClick={() => handleNavClick(item.id)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    width: '100%',
-                    padding: '9px 20px',
-                    border: 'none',
-                    backgroundColor: currentPage === item.id ? 'var(--primary)' : 'transparent',
-                    color: currentPage === item.id ? 'white' : 'var(--text-muted)',
-                    textAlign: 'left',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s',
-                    fontWeight: currentPage === item.id ? '600' : 'normal',
-                    fontSize: '0.85rem'
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    {item.icon}
-                    <span>{item.label}</span>
-                  </div>
-                  {item.badge && (
-                    <span style={{ backgroundColor: '#ef4444', color: 'white', fontSize: '0.7rem', fontWeight: 'bold', padding: '2px 7px', borderRadius: '10px' }}>
-                      {item.badge}
-                    </span>
-                  )}
-                </button>
-              ))}
+              {group.items.map(item => {
+                const isActive = currentPage === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => handleNavClick(item.id)}
+                    title={isSidebarCollapsed ? item.label : undefined}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: isSidebarCollapsed ? 'center' : 'space-between',
+                      width: '100%',
+                      padding: isSidebarCollapsed ? '10px 0' : '9px 20px',
+                      border: 'none',
+                      backgroundColor: isActive ? 'var(--primary)' : 'transparent',
+                      color: isActive ? 'white' : 'var(--text-muted)',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s',
+                      fontWeight: isActive ? '600' : 'normal',
+                      fontSize: '0.85rem',
+                      position: 'relative'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: isSidebarCollapsed ? 0 : '10px', justifyContent: isSidebarCollapsed ? 'center' : 'flex-start' }}>
+                      {item.icon}
+                      {!isSidebarCollapsed && <span>{item.label}</span>}
+                    </div>
+                    {item.badge && !isSidebarCollapsed && (
+                      <span style={{ backgroundColor: '#ef4444', color: 'white', fontSize: '0.7rem', fontWeight: 'bold', padding: '2px 7px', borderRadius: '10px' }}>
+                        {item.badge}
+                      </span>
+                    )}
+                    {item.badge && isSidebarCollapsed && (
+                      <span style={{ position: 'absolute', top: '6px', right: '14px', width: '8px', height: '8px', backgroundColor: '#ef4444', borderRadius: '50%' }} />
+                    )}
+                  </button>
+                );
+              })}
             </div>
           ))}
         </nav>
+
+        {/* Sidebar Collapse Toggle Button at Bottom */}
+        {window.innerWidth >= 768 && (
+          <div style={{ padding: '12px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: isSidebarCollapsed ? 'center' : 'flex-end' }}>
+            <button
+              onClick={toggleSidebar}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '8px 12px',
+                backgroundColor: '#f8fafc',
+                border: '1px solid var(--border)',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontSize: '0.8rem',
+                fontWeight: '600',
+                color: 'var(--text-muted)'
+              }}
+              title={isSidebarCollapsed ? "Expandir barra lateral" : "Colapsar a solo íconos"}
+            >
+              {isSidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+              {!isSidebarCollapsed && <span>Colapsar Menú</span>}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Main Content Area */}
