@@ -409,11 +409,11 @@ export default function App() {
         </div>
 
         {/* Grouped Sidebar Navigation */}
-        <nav style={{ flex: 1, padding: '12px 0', overflowY: 'auto' }}>
+        <nav style={{ flex: 1, padding: '14px 0', overflowY: 'auto' }}>
           {navGroups.map((group, gIdx) => (
-            <div key={gIdx} style={{ marginBottom: isSidebarCollapsed ? '10px' : '14px' }}>
+            <div key={gIdx} style={{ marginBottom: isSidebarCollapsed ? '12px' : '16px' }}>
               {!isSidebarCollapsed && (
-                <div style={{ padding: '4px 20px', fontSize: '0.68rem', fontWeight: 'bold', color: '#94a3b8', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                <div style={{ padding: '6px 18px 4px 18px', fontSize: '0.68rem', fontWeight: '800', color: '#94a3b8', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
                   {group.title}
                 </div>
               )}
@@ -429,30 +429,34 @@ export default function App() {
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: isSidebarCollapsed ? 'center' : 'space-between',
-                      width: '100%',
-                      padding: isSidebarCollapsed ? '10px 0' : '9px 20px',
+                      width: isSidebarCollapsed ? 'calc(100% - 16px)' : 'calc(100% - 20px)',
+                      margin: isSidebarCollapsed ? '3px 8px' : '2px 10px',
+                      padding: isSidebarCollapsed ? '10px 0' : '9px 12px',
                       border: 'none',
-                      backgroundColor: isActive ? 'var(--primary)' : 'transparent',
-                      color: isActive ? 'white' : 'var(--text-muted)',
+                      borderRadius: 'var(--radius-md)',
+                      backgroundColor: isActive ? '#eff6ff' : 'transparent',
+                      color: isActive ? '#2563eb' : '#475569',
                       textAlign: 'left',
                       cursor: 'pointer',
-                      transition: 'all 0.15s',
-                      fontWeight: isActive ? '600' : 'normal',
-                      fontSize: '0.85rem',
+                      transition: 'all 0.15s cubic-bezier(0.4, 0, 0.2, 1)',
+                      fontWeight: isActive ? '700' : '500',
+                      fontSize: '0.86rem',
                       position: 'relative'
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: isSidebarCollapsed ? 0 : '10px', justifyContent: isSidebarCollapsed ? 'center' : 'flex-start' }}>
-                      {item.icon}
+                      <span style={{ color: isActive ? '#2563eb' : '#64748b', display: 'flex', alignItems: 'center' }}>
+                        {item.icon}
+                      </span>
                       {!isSidebarCollapsed && <span>{item.label}</span>}
                     </div>
                     {item.badge && !isSidebarCollapsed && (
-                      <span style={{ backgroundColor: '#ef4444', color: 'white', fontSize: '0.7rem', fontWeight: 'bold', padding: '2px 7px', borderRadius: '10px' }}>
+                      <span style={{ backgroundColor: '#ef4444', color: 'white', fontSize: '0.7rem', fontWeight: '800', padding: '2px 7px', borderRadius: 'var(--radius-full)', boxShadow: '0 0 6px rgba(239, 68, 68, 0.4)' }}>
                         {item.badge}
                       </span>
                     )}
                     {item.badge && isSidebarCollapsed && (
-                      <span style={{ position: 'absolute', top: '6px', right: '14px', width: '8px', height: '8px', backgroundColor: '#ef4444', borderRadius: '50%' }} />
+                      <span style={{ position: 'absolute', top: '6px', right: '10px', width: '8px', height: '8px', backgroundColor: '#ef4444', borderRadius: '50%', boxShadow: '0 0 6px rgba(239, 68, 68, 0.5)' }} />
                     )}
                   </button>
                 );
@@ -463,7 +467,7 @@ export default function App() {
 
         {/* Sidebar Collapse Toggle Button at Bottom */}
         {window.innerWidth >= 768 && (
-          <div style={{ padding: '12px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: isSidebarCollapsed ? 'center' : 'flex-end' }}>
+          <div style={{ padding: '12px 14px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: isSidebarCollapsed ? 'center' : 'flex-end' }}>
             <button
               onClick={toggleSidebar}
               style={{
@@ -471,9 +475,9 @@ export default function App() {
                 alignItems: 'center',
                 gap: '6px',
                 padding: '8px 12px',
-                backgroundColor: '#f8fafc',
+                backgroundColor: 'var(--background)',
                 border: '1px solid var(--border)',
-                borderRadius: '8px',
+                borderRadius: 'var(--radius-md)',
                 cursor: 'pointer',
                 fontSize: '0.8rem',
                 fontWeight: '600',
@@ -500,7 +504,7 @@ export default function App() {
             </div>
             <button
               onClick={handleReturnToSuperadmin}
-              style={{ padding: '4px 12px', backgroundColor: '#d97706', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}
+              style={{ padding: '5px 14px', backgroundColor: '#d97706', color: 'white', border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}
             >
               <ArrowLeft size={14} /> Volver a SuperAdmin
             </button>
@@ -509,67 +513,69 @@ export default function App() {
 
         {/* Top Header */}
         <header style={{
-          height: '60px',
+          height: '64px',
           backgroundColor: 'var(--surface)',
           borderBottom: '1px solid var(--border)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '0 20px'
+          padding: '0 24px',
+          boxShadow: 'var(--shadow-xs)'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
             {window.innerWidth < 768 && (
               <button
                 onClick={() => setMobileMenuOpen(true)}
-                style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text)', padding: '4px' }}
+                style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text)', padding: '6px' }}
               >
                 <Menu size={22} />
               </button>
             )}
-            <h1 style={{ fontSize: '1.15rem', fontWeight: 'bold', margin: 0 }}>
+            <h1 style={{ fontSize: '1.2rem', fontWeight: '800', letterSpacing: '-0.02em', margin: 0, color: 'var(--text)' }}>
               {
                 currentPage === 'sa_tenants' ? 'Inquilinos & Accesos' :
                 currentPage === 'sa_financials' ? 'Finanzas del SaaS' :
                 currentPage === 'sa_system' ? 'Servidor & Recursos' :
                 currentPage === 'sa_apis' ? 'APIs & Tráfico' :
                 currentPage === 'sa_audit' ? 'Auditoría & Seguridad' :
-                currentPage === 'ordenes' ? (storeMode === 'restaurant' ? 'Comandas' : 'Pedidos') :
+                currentPage === 'ordenes' ? (storeMode === 'restaurant' ? 'Comandas & Pedidos' : 'Órdenes de Compra') :
                 currentPage === 'dashboard' ? 'Dashboard' :
-                currentPage === 'chats' ? 'Chats en Vivo' :
+                currentPage === 'chats' ? 'Bandeja de WhatsApp' :
                 currentPage === 'campaigns' ? 'Marketing, Difusión & CRM' :
                 currentPage === 'whatsapp' ? 'Conexión WhatsApp' :
-                currentPage === 'productos' ? (storeMode === 'restaurant' ? 'Menú / Platillos' : 'Catálogo Productos') :
-                currentPage === 'tienda' ? 'Tienda & Envíos' :
-                currentPage === 'reservas' ? 'Reservas & Agenda' :
-                currentPage === 'servicios' ? 'Servicios' :
-                currentPage === 'agente' ? 'Agente IA' :
-                currentPage === 'notificaciones' ? 'Historial Envíos' :
-                currentPage === 'usuarios' ? 'Usuarios' :
-                currentPage === 'configuracion' ? 'Configuración' :
+                currentPage === 'productos' ? (storeMode === 'restaurant' ? 'Menú / Platillos' : 'Catálogo de Productos') :
+                currentPage === 'tienda' ? 'Personalización de Tienda' :
+                currentPage === 'reservas' ? 'Agenda de Citas' :
+                currentPage === 'servicios' ? 'Catálogo de Servicios' :
+                currentPage === 'agente' ? 'Estudio Agente IA' :
+                currentPage === 'notificaciones' ? 'Historial de Notificaciones' :
+                currentPage === 'usuarios' ? 'Gestión de Equipo' :
+                currentPage === 'configuracion' ? 'Configuración General' :
                 currentPage
               }
             </h1>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '5px 10px', borderRadius: 'var(--radius-md)', backgroundColor: 'var(--background)', border: '1px solid var(--border)' }}>
               <div style={{
                 width: '32px',
                 height: '32px',
-                borderRadius: '50%',
+                borderRadius: 'var(--radius-full)',
                 backgroundColor: 'var(--primary)',
                 color: 'white',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                fontWeight: 'bold',
-                fontSize: '0.85rem'
+                fontWeight: '800',
+                fontSize: '0.85rem',
+                boxShadow: 'var(--shadow-xs)'
               }}>
                 {user.name.charAt(0).toUpperCase()}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <span style={{ fontSize: '0.85rem', fontWeight: '600' }}>{user.name}</span>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{user.role}</span>
+                <span style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--text)', lineHeight: '1.2' }}>{user.name}</span>
+                <span style={{ fontSize: '0.72rem', fontWeight: '600', color: 'var(--text-muted)' }}>{user.role === 'superadmin' ? 'SuperAdmin' : 'Administrador'}</span>
               </div>
             </div>
 
@@ -579,14 +585,16 @@ export default function App() {
                 display: 'flex',
                 alignItems: 'center',
                 gap: '6px',
-                padding: '6px 12px',
+                padding: '7px 12px',
                 backgroundColor: 'transparent',
                 border: '1px solid var(--border)',
-                borderRadius: '6px',
+                borderRadius: 'var(--radius-md)',
                 cursor: 'pointer',
                 color: 'var(--text-muted)',
-                fontSize: '0.85rem'
+                fontSize: '0.85rem',
+                fontWeight: '600'
               }}
+              title="Cerrar sesión"
             >
               <LogOut size={16} />
               <span>Salir</span>
@@ -595,7 +603,7 @@ export default function App() {
         </header>
 
         {/* Dynamic Page Content */}
-        <main style={{ flex: 1, padding: '24px', overflowY: 'auto' }}>
+        <main style={{ flex: 1, padding: '28px', overflowY: 'auto' }}>
           {renderContent()}
         </main>
       </div>
