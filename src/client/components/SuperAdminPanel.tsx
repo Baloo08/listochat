@@ -141,10 +141,22 @@ interface Financials {
   }>;
 }
 
-export default function SuperAdminPanel() {
-  const [activeTab, setActiveTab] = useState<'tenants' | 'system' | 'apis' | 'financials' | 'audit'>('tenants');
+interface SuperAdminPanelProps {
+  activeTabProp?: 'tenants' | 'system' | 'apis' | 'financials' | 'audit';
+  onTabChangeProp?: (tab: 'tenants' | 'system' | 'apis' | 'financials' | 'audit') => void;
+  hideTabBar?: boolean;
+}
+
+export default function SuperAdminPanel({ activeTabProp, onTabChangeProp, hideTabBar = false }: SuperAdminPanelProps = {}) {
+  const [activeTab, setActiveTab] = useState<'tenants' | 'system' | 'apis' | 'financials' | 'audit'>(activeTabProp || 'tenants');
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [loadingTenants, setLoadingTenants] = useState(true);
+
+  useEffect(() => {
+    if (activeTabProp) {
+      setActiveTab(activeTabProp);
+    }
+  }, [activeTabProp]);
 
   // System & Financials Metrics
   const [systemMetrics, setSystemMetrics] = useState<SystemMetrics | null>(null);
@@ -372,73 +384,75 @@ export default function SuperAdminPanel() {
         </div>
       </div>
 
-      {/* Tabs Bar */}
-      <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', marginBottom: '24px', gap: '8px', overflowX: 'auto' }}>
-        <button
-          onClick={() => setActiveTab('tenants')}
-          style={{
-            padding: '12px 18px', border: 'none',
-            borderBottom: activeTab === 'tenants' ? '2px solid var(--primary)' : '2px solid transparent',
-            backgroundColor: 'transparent',
-            color: activeTab === 'tenants' ? 'var(--primary)' : 'var(--text-muted)',
-            fontWeight: 'bold', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap'
-          }}
-        >
-          <Building2 size={18} /> Inquilinos & Accesos ({tenants.length})
-        </button>
+      {/* Tabs Bar (Shown when not hidden by sidebar mode) */}
+      {!hideTabBar && (
+        <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', marginBottom: '24px', gap: '8px', overflowX: 'auto' }}>
+          <button
+            onClick={() => setActiveTab('tenants')}
+            style={{
+              padding: '12px 18px', border: 'none',
+              borderBottom: activeTab === 'tenants' ? '2px solid var(--primary)' : '2px solid transparent',
+              backgroundColor: 'transparent',
+              color: activeTab === 'tenants' ? 'var(--primary)' : 'var(--text-muted)',
+              fontWeight: 'bold', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap'
+            }}
+          >
+            <Building2 size={18} /> Inquilinos & Accesos ({tenants.length})
+          </button>
 
-        <button
-          onClick={() => setActiveTab('system')}
-          style={{
-            padding: '12px 18px', border: 'none',
-            borderBottom: activeTab === 'system' ? '2px solid #2563eb' : '2px solid transparent',
-            backgroundColor: 'transparent',
-            color: activeTab === 'system' ? '#2563eb' : 'var(--text-muted)',
-            fontWeight: 'bold', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap'
-          }}
-        >
-          <Server size={18} /> Servidor & Recursos
-        </button>
+          <button
+            onClick={() => setActiveTab('system')}
+            style={{
+              padding: '12px 18px', border: 'none',
+              borderBottom: activeTab === 'system' ? '2px solid #2563eb' : '2px solid transparent',
+              backgroundColor: 'transparent',
+              color: activeTab === 'system' ? '#2563eb' : 'var(--text-muted)',
+              fontWeight: 'bold', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap'
+            }}
+          >
+            <Server size={18} /> Servidor & Recursos
+          </button>
 
-        <button
-          onClick={() => setActiveTab('apis')}
-          style={{
-            padding: '12px 18px', border: 'none',
-            borderBottom: activeTab === 'apis' ? '2px solid #0d9488' : '2px solid transparent',
-            backgroundColor: 'transparent',
-            color: activeTab === 'apis' ? '#0d9488' : 'var(--text-muted)',
-            fontWeight: 'bold', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap'
-          }}
-        >
-          <Activity size={18} /> APIs & Tráfico
-        </button>
+          <button
+            onClick={() => setActiveTab('apis')}
+            style={{
+              padding: '12px 18px', border: 'none',
+              borderBottom: activeTab === 'apis' ? '2px solid #0d9488' : '2px solid transparent',
+              backgroundColor: 'transparent',
+              color: activeTab === 'apis' ? '#0d9488' : 'var(--text-muted)',
+              fontWeight: 'bold', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap'
+            }}
+          >
+            <Activity size={18} /> APIs & Tráfico
+          </button>
 
-        <button
-          onClick={() => setActiveTab('financials')}
-          style={{
-            padding: '12px 18px', border: 'none',
-            borderBottom: activeTab === 'financials' ? '2px solid #16a34a' : '2px solid transparent',
-            backgroundColor: 'transparent',
-            color: activeTab === 'financials' ? '#16a34a' : 'var(--text-muted)',
-            fontWeight: 'bold', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap'
-          }}
-        >
-          <DollarSign size={18} /> Finanzas del SaaS
-        </button>
+          <button
+            onClick={() => setActiveTab('financials')}
+            style={{
+              padding: '12px 18px', border: 'none',
+              borderBottom: activeTab === 'financials' ? '2px solid #16a34a' : '2px solid transparent',
+              backgroundColor: 'transparent',
+              color: activeTab === 'financials' ? '#16a34a' : 'var(--text-muted)',
+              fontWeight: 'bold', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap'
+            }}
+          >
+            <DollarSign size={18} /> Finanzas del SaaS
+          </button>
 
-        <button
-          onClick={() => setActiveTab('audit')}
-          style={{
-            padding: '12px 18px', border: 'none',
-            borderBottom: activeTab === 'audit' ? '2px solid #8b5cf6' : '2px solid transparent',
-            backgroundColor: 'transparent',
-            color: activeTab === 'audit' ? '#8b5cf6' : 'var(--text-muted)',
-            fontWeight: 'bold', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap'
-          }}
-        >
-          <ShieldAlert size={18} /> Auditoría & Seguridad
-        </button>
-      </div>
+          <button
+            onClick={() => setActiveTab('audit')}
+            style={{
+              padding: '12px 18px', border: 'none',
+              borderBottom: activeTab === 'audit' ? '2px solid #8b5cf6' : '2px solid transparent',
+              backgroundColor: 'transparent',
+              color: activeTab === 'audit' ? '#8b5cf6' : 'var(--text-muted)',
+              fontWeight: 'bold', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap'
+            }}
+          >
+            <ShieldAlert size={18} /> Auditoría & Seguridad
+          </button>
+        </div>
+      )}
 
       {/* ==============================================================
           TAB 1: TENANTS & ACCESS MANAGEMENT

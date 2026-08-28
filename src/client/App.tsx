@@ -35,6 +35,10 @@ import {
   Settings,
   LogOut,
   ShieldAlert,
+  ShieldCheck,
+  Server,
+  Activity,
+  DollarSign,
   ArrowLeft,
   Menu,
   X,
@@ -99,6 +103,13 @@ export default function App() {
 
   useEffect(() => {
     if (!isAuthenticated || !user) return;
+
+    if (user.role === 'superadmin') {
+      if (currentPage === 'dashboard') {
+        setCurrentPage('sa_tenants');
+      }
+      return;
+    }
 
     const fetchTenantStoreConfig = async () => {
       try {
@@ -178,9 +189,18 @@ export default function App() {
 
   const superAdminNavGroups: NavGroup[] = [
     {
-      title: 'SUPERADMINISTRADOR',
+      title: 'GESTIÓN SAAS',
       items: [
-        { id: 'tenants', label: 'Clientes & Inquilinos', icon: <Users size={18} /> }
+        { id: 'sa_tenants', label: 'Inquilinos & Accesos', icon: <Users size={18} /> },
+        { id: 'sa_financials', label: 'Finanzas del SaaS', icon: <DollarSign size={18} /> }
+      ]
+    },
+    {
+      title: 'INFRAESTRUCTURA & SISTEMA',
+      items: [
+        { id: 'sa_system', label: 'Servidor & Recursos', icon: <Server size={18} /> },
+        { id: 'sa_apis', label: 'APIs & Tráfico', icon: <Activity size={18} /> },
+        { id: 'sa_audit', label: 'Auditoría & Seguridad', icon: <ShieldCheck size={18} /> }
       ]
     }
   ];
@@ -234,7 +254,23 @@ export default function App() {
 
   const renderContent = () => {
     if (user.role === 'superadmin') {
-      return <SuperAdminPanel />;
+      const tabMap: Record<string, 'tenants' | 'system' | 'apis' | 'financials' | 'audit'> = {
+        sa_tenants: 'tenants',
+        sa_financials: 'financials',
+        sa_system: 'system',
+        sa_apis: 'apis',
+        sa_audit: 'audit',
+        tenants: 'tenants',
+        dashboard: 'tenants'
+      };
+      const activeTab = tabMap[currentPage] || 'tenants';
+      return (
+        <SuperAdminPanel
+          activeTabProp={activeTab}
+          onTabChangeProp={(tab) => setCurrentPage(`sa_${tab}`)}
+          hideTabBar={true}
+        />
+      );
     } else {
       switch (currentPage) {
         case 'dashboard': return <Dashboard />;
@@ -462,8 +498,27 @@ export default function App() {
                 <Menu size={22} />
               </button>
             )}
-            <h1 style={{ fontSize: '1.15rem', fontWeight: 'bold', margin: 0, textTransform: 'capitalize' }}>
-              {currentPage === 'ordenes' ? (storeMode === 'restaurant' ? 'Comandas' : 'Pedidos') : currentPage}
+            <h1 style={{ fontSize: '1.15rem', fontWeight: 'bold', margin: 0 }}>
+              {
+                currentPage === 'sa_tenants' ? 'Inquilinos & Accesos' :
+                currentPage === 'sa_financials' ? 'Finanzas del SaaS' :
+                currentPage === 'sa_system' ? 'Servidor & Recursos' :
+                currentPage === 'sa_apis' ? 'APIs & Tráfico' :
+                currentPage === 'sa_audit' ? 'Auditoría & Seguridad' :
+                currentPage === 'ordenes' ? (storeMode === 'restaurant' ? 'Comandas' : 'Pedidos') :
+                currentPage === 'dashboard' ? 'Dashboard' :
+                currentPage === 'chats' ? 'Chats en Vivo' :
+                currentPage === 'whatsapp' ? 'Conexión WhatsApp' :
+                currentPage === 'productos' ? (storeMode === 'restaurant' ? 'Menú / Platillos' : 'Catálogo Productos') :
+                currentPage === 'tienda' ? 'Tienda & Envíos' :
+                currentPage === 'reservas' ? 'Reservas & Agenda' :
+                currentPage === 'servicios' ? 'Servicios' :
+                currentPage === 'agente' ? 'Agente IA' :
+                currentPage === 'notificaciones' ? 'Historial Envíos' :
+                currentPage === 'usuarios' ? 'Usuarios' :
+                currentPage === 'configuracion' ? 'Configuración' :
+                currentPage
+              }
             </h1>
           </div>
 
