@@ -24,7 +24,8 @@ router.get('/', async (req, res) => {
     let sql = `
       SELECT p.id, p.tenant_id as "tenantId", p.name, p.slug, p.description, p.price, 
              p.compare_at_price as "compareAtPrice", p.currency, p.category, p.tags, 
-             p.stock, p.track_stock as "trackStock", p.sku, p.featured, p.active,
+             p.stock, p.track_stock as "trackStock", p.weight_grams as "weightGrams",
+             p.custom_variables as "customVariables", p.sku, p.featured, p.active,
              p.created_at as "createdAt", p.updated_at as "updatedAt",
              COALESCE(
                (SELECT json_agg(json_build_object('id', pi.id, 'url', pi.url, 'isPrimary', pi.is_primary))
