@@ -299,7 +299,9 @@ router.post('/:id/dispatch-order', async (req, res) => {
 
     // Update order with assigned driver, waze URL, and set status to "en_camino"
     await updateOrder(orderId, req.tenantId!, {
-      status: 'en_camino' as any
+      status: 'en_camino' as any,
+      driverId: driver.id,
+      wazeUrl: wazeUrl
     });
 
     const cleanDriverPhone = normalizeCostaRicaPhone(driver.phone);

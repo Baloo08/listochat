@@ -149,7 +149,8 @@ router.post('/:slug/checkout', async (req, res) => {
     );
 
     const orderCode = `#ORD-${order.orderNumber}`;
-    const cleanCustomerPhone = customerPhone.replace(/\D/g, '');
+    let cleanCustomerPhone = customerPhone.replace(/\D/g, '');
+    if (cleanCustomerPhone.length === 8) cleanCustomerPhone = '506' + cleanCustomerPhone;
 
     // Format items list for WhatsApp
     const itemsSummary = formattedItems
@@ -171,7 +172,8 @@ router.post('/:slug/checkout', async (req, res) => {
 
     // 1. Send WhatsApp confirmation message to customer
     if (tenant.evolutionInstance && cleanCustomerPhone) {
-      const customerMsg = `🛍️ *¡Pedido Confirmado en ${storeName}!*
+      const customReceived = store?.notificationTemplates?.orderReceived;
+      let customerMsg = customReceived || `🛍️ *¡Pedido Confirmado en ${storeName}!*
 
 Hola *${customerName}*, hemos recibido tu orden con el código *${orderCode}*.
 
@@ -188,6 +190,12 @@ ${modeText}
 ${paymentReference ? `📄 *Comprobante:* ${paymentReference}\n` : ''}
 👉 En breve confirmaremos el inicio de preparación. ¡Muchas gracias por tu preferencia!`;
 
+      customerMsg = customerMsg
+        .replace(/{cliente}/g, customerName)
+        .replace(/{pedido}/g, String(order.orderNumber))
+        .replace(/{tienda}/g, storeName)
+        .replace(/{total}/g, `₡${total.toLocaleString('es-CR')}`);
+
       try {
         await sendMessage(tenant.evolutionInstance, cleanCustomerPhone, customerMsg);
       } catch (err) {
@@ -198,7 +206,8 @@ ${paymentReference ? `📄 *Comprobante:* ${paymentReference}\n` : ''}
     // 2. Send WhatsApp alert to store admin/notify phone
     const adminPhone = store?.sinpePhone || tenant.whatsappNumber;
     if (tenant.evolutionInstance && adminPhone) {
-      const cleanAdminPhone = adminPhone.replace(/\D/g, '');
+      let cleanAdminPhone = adminPhone.replace(/\D/g, '');
+      if (cleanAdminPhone.length === 8) cleanAdminPhone = '506' + cleanAdminPhone;
       const adminAlert = `🔔 *¡NUEVO PEDIDO RECIBIDO!* ${orderCode}
 
 👤 *Cliente:* ${customerName} (${customerPhone})

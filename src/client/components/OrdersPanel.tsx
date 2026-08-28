@@ -400,6 +400,11 @@ export default function OrdersPanel() {
                     <td style={{ padding: '14px 16px' }}>
                       <div style={{ fontWeight: '600', fontSize: '0.9rem' }}>{order.customerName}</div>
                       <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{order.customerPhone || 'Sin teléfono'}</div>
+                      {order.items && order.items.length > 0 && (
+                        <div style={{ fontSize: '0.75rem', color: '#475569', marginTop: '4px', fontWeight: '500', maxWidth: '320px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          📦 {order.items.map(i => `${i.quantity}x ${i.productName}`).join(', ')}
+                        </div>
+                      )}
                     </td>
                     <td style={{ padding: '14px 16px', fontWeight: 'bold', color: 'var(--primary)' }}>
                       ₡{Number(order.total).toLocaleString('es-CR')}

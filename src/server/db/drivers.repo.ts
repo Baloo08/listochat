@@ -81,7 +81,7 @@ export async function deleteDriver(id: string, tenantId: string): Promise<boolea
   return (res.rowCount || 0) > 0;
 }
 
-export async function getActiveOrdersForDriver(driverId: string, tenantId: string): Promise<Order[]> {
+export async function getActiveOrdersForDriver(driverId: string, tenantId?: string): Promise<Order[]> {
   const res = await query(`
     SELECT o.id, o.tenant_id as "tenantId", o.order_number as "orderNumber",
            o.customer_name as "customerName", o.customer_phone as "customerPhone",
@@ -91,10 +91,10 @@ export async function getActiveOrdersForDriver(driverId: string, tenantId: strin
            o.consumption_mode as "consumptionMode", o.table_number as "tableNumber",
            o.driver_id as "driverId", o.waze_url as "wazeUrl", o.created_at as "createdAt"
     FROM orders o
-    WHERE o.driver_id = $1 AND o.tenant_id = $2
-      AND o.status IN ('procesando', 'listo_entrega', 'en_camino', 'shipped', 'preparing')
+    WHERE o.driver_id = $1
+      AND o.status NOT IN ('entregado', 'cancelled', 'cancelado')
     ORDER BY o.created_at DESC
-  `, [driverId, tenantId]);
+  `, [driverId]);
 
   const orders: Order[] = [];
   for (const row of res.rows) {

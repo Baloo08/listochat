@@ -68,6 +68,19 @@ export default function Bookings() {
 
   const api = useApi();
 
+  const formatShortDate = (dateStr?: string): string => {
+    if (!dateStr) return '';
+    const clean = dateStr.split('T')[0];
+    const parts = clean.split('-');
+    if (parts.length === 3) {
+      const [year, month, day] = parts;
+      const months = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Set', 'Oct', 'Nov', 'Dic'];
+      const mIdx = parseInt(month, 10) - 1;
+      return `${day} ${months[mIdx] || month} ${year}`;
+    }
+    return dateStr;
+  };
+
   const fetchAppointments = async () => {
     try {
       const data = await api.get('/api/appointments');
@@ -462,8 +475,8 @@ export default function Bookings() {
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                    <div style={{ backgroundColor: '#f1f5f9', padding: '10px 14px', borderRadius: '8px', textAlign: 'center', minWidth: '70px' }}>
-                      <div style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--text-muted)', textTransform: 'uppercase' }}>{appt.date}</div>
+                    <div style={{ backgroundColor: '#f1f5f9', padding: '10px 14px', borderRadius: '8px', textAlign: 'center', minWidth: '85px' }}>
+                      <div style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--text-muted)', textTransform: 'uppercase' }}>{formatShortDate(appt.date)}</div>
                       <div style={{ fontSize: '1rem', fontWeight: 'bold', color: 'var(--primary)' }}>{appt.time}</div>
                     </div>
 
