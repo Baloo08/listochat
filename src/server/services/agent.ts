@@ -138,7 +138,7 @@ Reglas estrictas de comportamiento:
     apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY || 'AQ.Ab8RN6IHcdDKDITkdIOjt8SznSc6lS_1grotOA6SQ6fjZnd2SQ';
   }
 
-  const model = tenant?.aiModel === 'gemini-2.5-flash' ? 'gemini-1.5-flash' : (tenant?.aiModel || agentConfig?.model || 'gemini-1.5-flash');
+  const model = tenant?.aiModel || agentConfig?.model || 'gemini-2.5-flash';
 
   const config: TenantAIConfig = {
     provider: (tenant?.aiProvider as any) || 'gemini',

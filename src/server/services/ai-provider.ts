@@ -16,10 +16,11 @@ export function getDefaultModels(provider: 'gemini' | 'openai' | 'anthropic'): s
   switch (provider) {
     case 'gemini':
       return [
-        'gemini-1.5-flash',
-        'gemini-2.0-flash',
-        'gemini-1.5-flash-8b',
-        'gemini-1.5-pro'
+        'gemini-2.5-flash',
+        'gemini-flash-latest',
+        'gemini-2.5-flash-lite',
+        'gemini-2.5-pro',
+        'gemini-3.7-flash'
       ];
     case 'openai':
       return ['gpt-4o-mini', 'gpt-4o', 'gpt-4-turbo', 'gpt-3.5-turbo'];
@@ -33,7 +34,7 @@ export function getDefaultModels(provider: 'gemini' | 'openai' | 'anthropic'): s
 export async function callAI(config: TenantAIConfig, prompt: string): Promise<{ text: string, tokensUsed: number }> {
   const provider = config.provider || 'gemini';
   const apiKey = config.apiKey || (provider === 'gemini' ? DEFAULT_GEMINI_KEY : '');
-  const chosenModel = config.model === 'gemini-2.5-flash' ? 'gemini-1.5-flash' : (config.model || 'gemini-1.5-flash');
+  const chosenModel = config.model || 'gemini-2.5-flash';
   
   const defaultModels = getDefaultModels(provider);
   const fallbackModels = [chosenModel, ...defaultModels.filter(m => m !== chosenModel)];
@@ -68,7 +69,7 @@ async function executeProvider(config: TenantAIConfig, prompt: string) {
   if (config.provider === 'gemini') {
     const key = config.apiKey || DEFAULT_GEMINI_KEY;
     const google = createGoogleGenerativeAI({ apiKey: key });
-    model = google(config.model || 'gemini-1.5-flash');
+    model = google(config.model || 'gemini-2.5-flash');
   } else if (config.provider === 'openai') {
     const openai = createOpenAI({ apiKey: config.apiKey });
     model = openai(config.model || 'gpt-4o-mini');
