@@ -199,7 +199,7 @@ export default function OrdersPanel() {
                       ₡{Number(order.total).toLocaleString('es-CR')}
                     </td>
                     <td style={{ padding: '14px 16px', fontSize: '0.85rem' }}>
-                      {order.deliveryMethod === 'delivery' ? '🛵 Domicilio' : '🏪 Retiro Local'}
+                      {order.consumptionMode === 'dine_in' ? `🍽️ Mesa #${order.tableNumber || 1}` : order.deliveryMethod === 'delivery' ? '🛵 Domicilio' : '🏪 Retiro Local'}
                     </td>
                     <td style={{ padding: '14px 16px' }}>
                       <span style={{ padding: '4px 10px', borderRadius: '6px', backgroundColor: statusStyle.bg, color: statusStyle.color, border: `1px solid ${statusStyle.border}`, fontSize: '0.8rem', fontWeight: '600' }}>
@@ -250,11 +250,24 @@ export default function OrdersPanel() {
             <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '10px', border: '1px solid #e2e8f0', marginBottom: '20px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '0.85rem' }}>
               <div><strong>Cliente:</strong> {selectedOrder.customerName}</div>
               <div><strong>Teléfono:</strong> {selectedOrder.customerPhone || 'No registrado'}</div>
-              <div><strong>Método de Entrega:</strong> {selectedOrder.deliveryMethod === 'delivery' ? 'A Domicilio' : 'Retiro en Tienda'}</div>
+              <div><strong>Modalidad / Entrega:</strong> {selectedOrder.consumptionMode === 'dine_in' ? `🍽️ En Mesa #${selectedOrder.tableNumber || 1}` : selectedOrder.deliveryMethod === 'delivery' ? '🛵 A Domicilio' : '🏪 Retiro en Tienda'}</div>
               <div><strong>Método de Pago:</strong> {selectedOrder.paymentMethod.toUpperCase()} ({selectedOrder.paymentStatus})</div>
               {selectedOrder.customerAddress && (
                 <div style={{ gridColumn: '1 / -1' }}>
                   <strong>Dirección de Entrega:</strong> {selectedOrder.customerAddress}
+                </div>
+              )}
+              {selectedOrder.customerLocation?.mapsUrl && (
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <strong>Ubicación GPS:</strong>{' '}
+                  <a
+                    href={selectedOrder.customerLocation.mapsUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ color: '#2563eb', fontWeight: 'bold', textDecoration: 'underline' }}
+                  >
+                    📍 Abrir Coordenadas en Google Maps
+                  </a>
                 </div>
               )}
               {selectedOrder.paymentReference && (

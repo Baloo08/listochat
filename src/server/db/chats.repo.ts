@@ -48,7 +48,56 @@ export async function createChatMessage(tenantIdOrData: string | Partial<ChatMes
     msgId, tenantId, remoteJid, pushName, fromMe, 
     messageText, aiResponse ? true : false, status
   ]);
+
+  // Also update session last activity
+  if (remoteJid) {
+    try {
+      await query(`
+        INSERT INTO chat_sessions (tenant_id, remote_jid, updated_at)
+        VALUES ($1, $2, CURRENT_TIMESTAMP)
+        ON CONFLICT (tenant_id, remote_jid) DO UPDATE SET updated_at = CURRENT_TIMESTAMP
+      `, [tenantId, remoteJid]);
+    } catch (e) {}
+  }
+
   return result.rows[0];
+}
+
+export async function getChatSession(tenantId: string, remoteJid: string): Promise<{ isHumanMode: boolean; unread: boolean; notes: string } | null> {
+  const result = await query(`
+    SELECT is_human_mode as "isHumanMode", unread, notes
+    FROM chat_sessions
+    WHERE tenant_id = $1 AND remote_jid = $2
+  `, [tenantId, remoteJid]);
+  return result.rows[0] || { isHumanMode: false, unread: false, notes: '' };
+}
+
+export async function getAllChatSessions(tenantId: string): Promise<Record<string, { isHumanMode: boolean; unread: boolean; notes: string }>> {
+  const result = await query(`
+    SELECT remote_jid as "remoteJid", is_human_mode as "isHumanMode", unread, notes
+    FROM chat_sessions
+    WHERE tenant_id = $1
+  `, [tenantId]);
+  
+  const map: Record<string, { isHumanMode: boolean; unread: boolean; notes: string }> = {};
+  result.rows.forEach(r => {
+    map[r.remoteJid] = {
+      isHumanMode: r.isHumanMode || false,
+      unread: r.unread || false,
+      notes: r.notes || ''
+    };
+  });
+  return map;
+}
+
+export async function setChatHumanMode(tenantId: string, remoteJid: string, isHumanMode: boolean): Promise<void> {
+  await query(`
+    INSERT INTO chat_sessions (tenant_id, remote_jid, is_human_mode, updated_at)
+    VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+    ON CONFLICT (tenant_id, remote_jid) DO UPDATE SET
+      is_human_mode = EXCLUDED.is_human_mode,
+      updated_at = CURRENT_TIMESTAMP
+  `, [tenantId, remoteJid, isHumanMode]);
 }
 
 export async function updateChatStatus(id: string, tenantId: string, status: string): Promise<void> {

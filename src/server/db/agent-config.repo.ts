@@ -16,21 +16,26 @@ export async function getAgentConfig(tenantId: string): Promise<AgentPromptConfi
       systemPrompt: defaultSystemPrompt,
       model: 'gemini-2.5-flash',
       temperature: 0.7,
-      autoReplyEnabled: false
+      autoReplyEnabled: true,
+      humanHandoffEnabled: true,
+      handoffKeywords: ['humano', 'asesor', 'persona', 'agente', 'hablar con alguien', 'queja', 'reclamo', 'urgente']
     };
   }
 
-  const data = result.rows[0].configJson;
+  const data = result.rows[0].configJson || {};
   return {
     id: result.rows[0].id,
     tenantId: result.rows[0].tenantId,
     systemPrompt: data.systemPrompt || defaultSystemPrompt,
     model: data.model || 'gemini-2.5-flash',
     temperature: data.temperature ?? 0.7,
-    autoReplyEnabled: data.autoReplyEnabled ?? false,
+    autoReplyEnabled: data.autoReplyEnabled ?? true,
     notifyNumber: data.notifyNumber,
     businessName: data.businessName,
     currency: data.currency,
+    humanHandoffEnabled: data.humanHandoffEnabled ?? true,
+    handoffKeywords: data.handoffKeywords || ['humano', 'asesor', 'persona', 'agente', 'hablar con alguien', 'queja', 'reclamo', 'urgente'],
+    handoffNotifyPhone: data.handoffNotifyPhone || data.notifyNumber,
     updatedAt: result.rows[0].updatedAt
   };
 }
@@ -43,7 +48,10 @@ export async function saveAgentConfig(tenantId: string, config: Partial<AgentPro
     autoReplyEnabled: config.autoReplyEnabled,
     notifyNumber: config.notifyNumber,
     businessName: config.businessName,
-    currency: config.currency
+    currency: config.currency,
+    humanHandoffEnabled: config.humanHandoffEnabled,
+    handoffKeywords: config.handoffKeywords,
+    handoffNotifyPhone: config.handoffNotifyPhone
   };
 
   const result = await query(`
@@ -65,6 +73,9 @@ export async function saveAgentConfig(tenantId: string, config: Partial<AgentPro
     notifyNumber: data.notifyNumber,
     businessName: data.businessName,
     currency: data.currency,
+    humanHandoffEnabled: data.humanHandoffEnabled,
+    handoffKeywords: data.handoffKeywords,
+    handoffNotifyPhone: data.handoffNotifyPhone,
     updatedAt: result.rows[0].updatedAt
   };
 }

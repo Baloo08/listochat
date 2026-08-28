@@ -71,6 +71,9 @@ export interface AgentPromptConfig {
   notifyNumber?: string;
   businessName?: string;
   currency?: string;
+  humanHandoffEnabled?: boolean;
+  handoffKeywords?: string[];
+  handoffNotifyPhone?: string;
   updatedAt?: Date;
 }
 
@@ -108,10 +111,20 @@ export interface StoreTheme {
   logoUrl?: string;
 }
 
+export interface RestaurantConfig {
+  allowDineIn: boolean;
+  dineInMode: 'table_number' | 'call_by_name';
+  tableCount: number;
+  allowPickup: boolean;
+  allowDelivery: boolean;
+}
+
 export interface StoreSettings {
   id: string;
   tenantId: string;
   storeEnabled: boolean;
+  storeMode?: 'retail' | 'restaurant';
+  restaurantConfig?: RestaurantConfig;
   storeName: string;
   storeSlug: string;
   storeDescription?: string;
@@ -208,6 +221,14 @@ export interface Order {
   paymentReference?: string;
   notes?: string;
   deliveryMethod: 'pickup' | 'delivery';
+  consumptionMode?: 'dine_in' | 'pickup' | 'delivery';
+  tableNumber?: string;
+  customerLocation?: {
+    lat?: number;
+    lng?: number;
+    address?: string;
+    mapsUrl?: string;
+  };
   chatMessageId?: string;
   createdAt?: Date;
   updatedAt?: Date;

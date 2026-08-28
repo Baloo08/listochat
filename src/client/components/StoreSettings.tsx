@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Store, Palette, Link as LinkIcon, Copy, ExternalLink, Save, CheckCircle, Upload, Image as ImageIcon, Sparkles, Pipette, Info } from 'lucide-react';
+import { Store, Palette, Link as LinkIcon, Copy, ExternalLink, Save, CheckCircle, Upload, Image as ImageIcon, Sparkles, Pipette, Info, Utensils, ShoppingBag } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
-import { StoreSettings as StoreSettingsType, StoreTheme } from '../../shared/types';
+import { StoreSettings as StoreSettingsType, StoreTheme, RestaurantConfig } from '../../shared/types';
 
 export default function StoreSettings() {
-  const [activeTab, setActiveTab] = useState<'general' | 'design'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'restaurant' | 'design'>('general');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -12,6 +12,7 @@ export default function StoreSettings() {
 
   // Form Fields
   const [storeEnabled, setStoreEnabled] = useState(true);
+  const [storeMode, setStoreMode] = useState<'retail' | 'restaurant'>('retail');
   const [storeName, setStoreName] = useState('');
   const [storeSlug, setStoreSlug] = useState('');
   const [storeDescription, setStoreDescription] = useState('');
@@ -27,6 +28,15 @@ export default function StoreSettings() {
   const [deliveryEnabled, setDeliveryEnabled] = useState(true);
   const [deliveryFee, setDeliveryFee] = useState(2500);
   const [pickupEnabled, setPickupEnabled] = useState(true);
+
+  // Restaurant Mode Settings
+  const [restaurantConfig, setRestaurantConfig] = useState<RestaurantConfig>({
+    allowDineIn: true,
+    dineInMode: 'table_number',
+    tableCount: 15,
+    allowPickup: true,
+    allowDelivery: true
+  });
 
   // Design & Theme Fields
   const [primaryColor, setPrimaryColor] = useState('#16a34a');
@@ -71,6 +81,16 @@ export default function StoreSettings() {
         const data = await api.get('/api/store');
         if (data) {
           setStoreEnabled(data.storeEnabled !== false);
+          setStoreMode(data.storeMode || 'retail');
+          if (data.restaurantConfig) {
+            setRestaurantConfig({
+              allowDineIn: data.restaurantConfig.allowDineIn !== false,
+              dineInMode: data.restaurantConfig.dineInMode || 'table_number',
+              tableCount: data.restaurantConfig.tableCount || 15,
+              allowPickup: data.restaurantConfig.allowPickup !== false,
+              allowDelivery: data.restaurantConfig.allowDelivery !== false
+            });
+          }
           setStoreName(data.storeName || '');
           setStoreSlug(data.storeSlug || '');
           setStoreDescription(data.storeDescription || '');
@@ -122,8 +142,48 @@ export default function StoreSettings() {
 
       if (!res.ok) throw new Error('Error al subir imagen');
       const data = await res.json();
+      const newLogo = type === 'logo' ? data.url : storeLogoUrl;
+      const newBanner = type === 'banner' ? data.url : storeBannerUrl;
+
       if (type === 'logo') setStoreLogoUrl(data.url);
       else setStoreBannerUrl(data.url);
+
+      // Auto-save immediately to database so reload never loses the image
+      try {
+        const cleanSlug = storeSlug ? storeSlug.toLowerCase().trim().replace(/[^a-z0-9]/g, '') : undefined;
+        await api.post('/api/store', {
+          storeEnabled,
+          storeMode,
+          restaurantConfig,
+          storeName,
+          storeSlug: cleanSlug || storeSlug,
+          storeDescription,
+          storeLogoUrl: newLogo,
+          storeBannerUrl: newBanner,
+          storeTheme: {
+            primaryColor,
+            backgroundColor,
+            cardBackgroundColor,
+            cardRadius,
+            cardShadow,
+            fontFamily,
+            bannerUrl: newBanner,
+            logoUrl: newLogo
+          },
+          currency,
+          acceptSinpe,
+          sinpePhone,
+          sinpeName,
+          acceptTransfer,
+          bankAccountInfo,
+          acceptCashOnDelivery,
+          deliveryEnabled,
+          deliveryFee,
+          pickupEnabled
+        });
+        setSaveMessage(true);
+        setTimeout(() => setSaveMessage(false), 3000);
+      } catch (e) {}
     } catch (err) {
       alert('Error subiendo archivo: ' + err);
     } finally {
@@ -149,6 +209,8 @@ export default function StoreSettings() {
 
       await api.post('/api/store', {
         storeEnabled,
+        storeMode,
+        restaurantConfig,
         storeName,
         storeSlug: cleanSlug || storeSlug,
         storeDescription,
@@ -197,7 +259,7 @@ export default function StoreSettings() {
         <div>
           <h2 style={{ margin: '0 0 5px 0', fontSize: '1.5rem', fontWeight: 'bold' }}>Configuración de Tienda y Diseño</h2>
           <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-            Personaliza el catálogo, métodos de pago, colores de marca y aspecto visual de tu negocio
+            Personaliza el catálogo, modo restaurante, métodos de pago, colores de marca y aspecto visual
           </p>
         </div>
 
@@ -223,7 +285,9 @@ export default function StoreSettings() {
             <LinkIcon size={20} color="#166534" />
           </div>
           <div>
-            <div style={{ fontSize: '0.8rem', color: '#166534', fontWeight: 'bold', textTransform: 'uppercase' }}>Enlace Público de tu Tienda</div>
+            <div style={{ fontSize: '0.8rem', color: '#166534', fontWeight: 'bold', textTransform: 'uppercase' }}>
+              {storeMode === 'restaurant' ? 'Menú Digital de tu Restaurante' : 'Enlace Público de tu Tienda'}
+            </div>
             <div style={{ fontSize: '0.95rem', fontWeight: '600', color: '#14532d', wordBreak: 'break-all' }}>{storeUrl}</div>
           </div>
         </div>
@@ -231,7 +295,7 @@ export default function StoreSettings() {
         <div style={{ display: 'flex', gap: '8px' }}>
           <button
             onClick={copyStoreLink}
-            style={{ padding: '8px 14px', backgroundColor: 'white', border: '1px solid #86efac', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', fontWeight: '600', color: '#166534' }}
+            style={{ padding: '8px 14px', backgroundColor: 'white', border: '1px solid #bbf7d0', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', fontWeight: '600', color: '#166534' }}
           >
             <Copy size={15} /> {copied ? '¡Copiado!' : 'Copiar'}
           </button>
@@ -241,7 +305,7 @@ export default function StoreSettings() {
             rel="noreferrer"
             style={{ padding: '8px 14px', backgroundColor: '#16a34a', color: 'white', borderRadius: '6px', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', fontWeight: '600' }}
           >
-            <ExternalLink size={15} /> Ver Tienda
+            <ExternalLink size={15} /> Ver Catálogo
           </a>
         </div>
       </div>
@@ -264,7 +328,26 @@ export default function StoreSettings() {
             gap: '8px'
           }}
         >
-          <Store size={18} /> General y Pagos
+          <Store size={18} /> General y Modalidad
+        </button>
+
+        <button
+          onClick={() => setActiveTab('restaurant')}
+          style={{
+            padding: '10px 18px',
+            border: 'none',
+            borderBottom: activeTab === 'restaurant' ? '2px solid #ea580c' : '2px solid transparent',
+            backgroundColor: 'transparent',
+            color: activeTab === 'restaurant' ? '#ea580c' : 'var(--text-muted)',
+            fontWeight: '600',
+            fontSize: '0.95rem',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}
+        >
+          <Utensils size={18} /> 🍽️ Modo Restaurante {storeMode === 'restaurant' ? '(Activo)' : ''}
         </button>
 
         <button
@@ -291,6 +374,58 @@ export default function StoreSettings() {
       {activeTab === 'general' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           
+          {/* Store Mode Selector Card */}
+          <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+            <h3 style={{ margin: '0 0 12px 0', fontSize: '1.15rem', fontWeight: 'bold' }}>Modalidad del Catálogo</h3>
+            <p style={{ margin: '0 0 16px 0', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+              Elige el tipo de experiencia que tendrán tus clientes al abrir la página web
+            </p>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+              <div
+                onClick={() => setStoreMode('retail')}
+                style={{
+                  padding: '16px',
+                  borderRadius: '10px',
+                  border: `2px solid ${storeMode === 'retail' ? 'var(--primary)' : 'var(--border)'}`,
+                  backgroundColor: storeMode === 'retail' ? 'rgba(22, 163, 74, 0.05)' : 'white',
+                  cursor: 'pointer'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                  <ShoppingBag size={20} color={storeMode === 'retail' ? 'var(--primary)' : '#64748b'} />
+                  <strong style={{ fontSize: '1rem', color: storeMode === 'retail' ? 'var(--primary)' : '#1e293b' }}>
+                    Tienda Minorista / Comercio
+                  </strong>
+                </div>
+                <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b', lineHeight: '1.4' }}>
+                  Catálogo estándar de productos, carrito de compras, opciones de envío y retiro.
+                </p>
+              </div>
+
+              <div
+                onClick={() => setStoreMode('restaurant')}
+                style={{
+                  padding: '16px',
+                  borderRadius: '10px',
+                  border: `2px solid ${storeMode === 'restaurant' ? '#ea580c' : 'var(--border)'}`,
+                  backgroundColor: storeMode === 'restaurant' ? 'rgba(234, 88, 12, 0.05)' : 'white',
+                  cursor: 'pointer'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                  <Utensils size={20} color={storeMode === 'restaurant' ? '#ea580c' : '#64748b'} />
+                  <strong style={{ fontSize: '1rem', color: storeMode === 'restaurant' ? '#ea580c' : '#1e293b' }}>
+                    🍽️ Modo Restaurante / Menú Digital
+                  </strong>
+                </div>
+                <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b', lineHeight: '1.4' }}>
+                  Menú gastronómico con opciones para comer en mesa/local, para llevar o delivery.
+                </p>
+              </div>
+            </div>
+          </div>
+
           {/* General Information Card */}
           <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
             <h3 style={{ margin: '0 0 16px 0', fontSize: '1.15rem', fontWeight: 'bold' }}>Información Básica</h3>
@@ -302,7 +437,7 @@ export default function StoreSettings() {
                   type="text"
                   value={storeName}
                   onChange={(e) => setStoreName(e.target.value)}
-                  placeholder="Ej: Betico Store"
+                  placeholder="Ej: Betico Store o Restaurante La Casona"
                   style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.9rem' }}
                 />
               </div>
@@ -320,12 +455,12 @@ export default function StoreSettings() {
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '5px' }}>Descripción del Negocio</label>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '5px' }}>Descripción Corta o Eslogan</label>
                 <textarea
-                  rows={2}
+                  rows={3}
                   value={storeDescription}
                   onChange={(e) => setStoreDescription(e.target.value)}
-                  placeholder="Breve presentación de tus productos o servicios..."
+                  placeholder="Ej: Los mejores platillos y cortes a la parrilla..."
                   style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.9rem' }}
                 />
               </div>
@@ -334,381 +469,329 @@ export default function StoreSettings() {
 
           {/* Payment Methods Card */}
           <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
-            <h3 style={{ margin: '0 0 16px 0', fontSize: '1.15rem', fontWeight: 'bold' }}>Métodos de Cobro y Pagos</h3>
+            <h3 style={{ margin: '0 0 16px 0', fontSize: '1.15rem', fontWeight: 'bold' }}>Métodos de Pago Aceptados</h3>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               {/* SINPE */}
               <div style={{ padding: '16px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid var(--border)' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: '600', cursor: 'pointer', marginBottom: acceptSinpe ? '12px' : '0' }}>
-                  <input type="checkbox" checked={acceptSinpe} onChange={(e) => setAcceptSinpe(e.target.checked)} />
-                  <span>Aceptar pagos por SINPE Móvil</span>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', fontSize: '0.95rem', cursor: 'pointer', marginBottom: acceptSinpe ? '12px' : '0' }}>
+                  <input
+                    type="checkbox"
+                    checked={acceptSinpe}
+                    onChange={(e) => setAcceptSinpe(e.target.checked)}
+                  />
+                  <span>Aceptar SINPE Móvil</span>
                 </label>
 
                 {acceptSinpe && (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                    <input
-                      type="text"
-                      placeholder="Teléfono SINPE (ej: 8888-8888)"
-                      value={sinpePhone}
-                      onChange={(e) => setSinpePhone(e.target.value)}
-                      style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
-                    />
-                    <input
-                      type="text"
-                      placeholder="Nombre del Titular"
-                      value={sinpeName}
-                      onChange={(e) => setSinpeName(e.target.value)}
-                      style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>Número de Teléfono SINPE</label>
+                      <input
+                        type="text"
+                        value={sinpePhone}
+                        onChange={(e) => setSinpePhone(e.target.value)}
+                        placeholder="Ej: 8888-8888"
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>Nombre del Titular</label>
+                      <input
+                        type="text"
+                        value={sinpeName}
+                        onChange={(e) => setSinpeName(e.target.value)}
+                        placeholder="Ej: Daniel Vega"
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Transferencia */}
+              <div style={{ padding: '16px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', fontSize: '0.95rem', cursor: 'pointer', marginBottom: acceptTransfer ? '12px' : '0' }}>
+                  <input
+                    type="checkbox"
+                    checked={acceptTransfer}
+                    onChange={(e) => setAcceptTransfer(e.target.checked)}
+                  />
+                  <span>Aceptar Transferencia Bancaria (IBAN)</span>
+                </label>
+
+                {acceptTransfer && (
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>Cuentas Bancarias / IBAN</label>
+                    <textarea
+                      rows={2}
+                      value={bankAccountInfo}
+                      onChange={(e) => setBankAccountInfo(e.target.value)}
+                      placeholder="BAC: CR00000000000000000000..."
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
                     />
                   </div>
                 )}
               </div>
 
-              {/* Transfer */}
+              {/* Delivery Fee */}
               <div style={{ padding: '16px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid var(--border)' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: '600', cursor: 'pointer', marginBottom: acceptTransfer ? '10px' : '0' }}>
-                  <input type="checkbox" checked={acceptTransfer} onChange={(e) => setAcceptTransfer(e.target.checked)} />
-                  <span>Aceptar Transferencia Bancaria (IBAN)</span>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', fontSize: '0.95rem', cursor: 'pointer', marginBottom: deliveryEnabled ? '12px' : '0' }}>
+                  <input
+                    type="checkbox"
+                    checked={deliveryEnabled}
+                    onChange={(e) => setDeliveryEnabled(e.target.checked)}
+                  />
+                  <span>Habilitar Envío a Domicilio / Express</span>
                 </label>
 
-                {acceptTransfer && (
-                  <textarea
-                    rows={2}
-                    placeholder="Banco, Cuenta IBAN, Cédula / Razón Social..."
-                    value={bankAccountInfo}
-                    onChange={(e) => setBankAccountInfo(e.target.value)}
-                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
-                  />
+                {deliveryEnabled && (
+                  <div style={{ maxWidth: '280px' }}>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>Costo de Envío Estándar (₡)</label>
+                    <input
+                      type="number"
+                      value={deliveryFee}
+                      onChange={(e) => setDeliveryFee(Number(e.target.value))}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                    />
+                  </div>
                 )}
-              </div>
-
-              {/* Delivery Options */}
-              <div style={{ padding: '16px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid var(--border)' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: '600', cursor: 'pointer' }}>
-                    <input type="checkbox" checked={deliveryEnabled} onChange={(e) => setDeliveryEnabled(e.target.checked)} />
-                    <span>Habilitar Envíos a Domicilio</span>
-                  </label>
-
-                  {deliveryEnabled && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '25px' }}>
-                      <span style={{ fontSize: '0.85rem' }}>Tarifa de Envío estándar (₡):</span>
-                      <input
-                        type="number"
-                        value={deliveryFee}
-                        onChange={(e) => setDeliveryFee(Number(e.target.value))}
-                        style={{ width: '120px', padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
-                      />
-                    </div>
-                  )}
-
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: '600', cursor: 'pointer' }}>
-                    <input type="checkbox" checked={pickupEnabled} onChange={(e) => setPickupEnabled(e.target.checked)} />
-                    <span>Permitir Retiro en Tienda / Local (Gratis)</span>
-                  </label>
-                </div>
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* TAB 2: DESIGN & VISUAL CUSTOMIZATION */}
+      {/* TAB 2: RESTAURANT MODE CONFIGURATION */}
+      {activeTab === 'restaurant' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
+              <div style={{ width: '42px', height: '42px', backgroundColor: '#ffedd5', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Utensils size={22} color="#ea580c" />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'bold' }}>Configuración de Modo Restaurante</h3>
+                <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                  Personaliza cómo los clientes ordenan alimentos y bebidas en tu local o a domicilio
+                </p>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '20px' }}>
+              
+              {/* Option 1: Comer en el Local */}
+              <div style={{ padding: '18px', backgroundColor: '#f8fafc', borderRadius: '10px', border: '1px solid var(--border)' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer', marginBottom: restaurantConfig.allowDineIn ? '14px' : '0' }}>
+                  <input
+                    type="checkbox"
+                    checked={restaurantConfig.allowDineIn}
+                    onChange={(e) => setRestaurantConfig({ ...restaurantConfig, allowDineIn: e.target.checked })}
+                  />
+                  <span>🍽️ Permitir Comer en el Local (En Mesa)</span>
+                </label>
+
+                {restaurantConfig.allowDineIn && (
+                  <div style={{ paddingLeft: '28px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '6px' }}>
+                        Modalidad de Identificación de Mesa / Entrega:
+                      </label>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                        <div
+                          onClick={() => setRestaurantConfig({ ...restaurantConfig, dineInMode: 'table_number' })}
+                          style={{
+                            padding: '10px 14px',
+                            borderRadius: '6px',
+                            border: `2px solid ${restaurantConfig.dineInMode === 'table_number' ? '#ea580c' : '#cbd5e1'}`,
+                            backgroundColor: restaurantConfig.dineInMode === 'table_number' ? 'rgba(234, 88, 12, 0.05)' : 'white',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <strong style={{ fontSize: '0.85rem', color: restaurantConfig.dineInMode === 'table_number' ? '#ea580c' : '#1e293b' }}>
+                            🔢 Rotular Número de Mesa
+                          </strong>
+                          <span style={{ fontSize: '0.75rem', color: '#64748b', display: 'block', marginTop: '2px' }}>
+                            El comensal elige o ingresa su número de mesa
+                          </span>
+                        </div>
+
+                        <div
+                          onClick={() => setRestaurantConfig({ ...restaurantConfig, dineInMode: 'call_by_name' })}
+                          style={{
+                            padding: '10px 14px',
+                            borderRadius: '6px',
+                            border: `2px solid ${restaurantConfig.dineInMode === 'call_by_name' ? '#ea580c' : '#cbd5e1'}`,
+                            backgroundColor: restaurantConfig.dineInMode === 'call_by_name' ? 'rgba(234, 88, 12, 0.05)' : 'white',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <strong style={{ fontSize: '0.85rem', color: restaurantConfig.dineInMode === 'call_by_name' ? '#ea580c' : '#1e293b' }}>
+                            🗣️ Llamado por Nombre
+                          </strong>
+                          <span style={{ fontSize: '0.75rem', color: '#64748b', display: 'block', marginTop: '2px' }}>
+                            Para entrega en mostrador o barra
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {restaurantConfig.dineInMode === 'table_number' && (
+                      <div style={{ maxWidth: '240px' }}>
+                        <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>
+                          Cantidad de Mesas Disponibles:
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={100}
+                          value={restaurantConfig.tableCount || 15}
+                          onChange={(e) => setRestaurantConfig({ ...restaurantConfig, tableCount: Number(e.target.value) })}
+                          style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Option 2: Para Llevar */}
+              <div style={{ padding: '18px', backgroundColor: '#f8fafc', borderRadius: '10px', border: '1px solid var(--border)' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={restaurantConfig.allowPickup}
+                    onChange={(e) => setRestaurantConfig({ ...restaurantConfig, allowPickup: e.target.checked })}
+                  />
+                  <span>🥡 Permitir Ordenar Para Llevar / Retiro en Local</span>
+                </label>
+              </div>
+
+              {/* Option 3: Delivery */}
+              <div style={{ padding: '18px', backgroundColor: '#f8fafc', borderRadius: '10px', border: '1px solid var(--border)' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={restaurantConfig.allowDelivery}
+                    onChange={(e) => setRestaurantConfig({ ...restaurantConfig, allowDelivery: e.target.checked })}
+                  />
+                  <span>🛵 Permitir Entrega a Domicilio / Express con GPS</span>
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 3: DESIGN & BRANDING */}
       {activeTab === 'design' && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '25px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           
-          {/* Controls Column */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          {/* Media Upload Card */}
+          <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+            <h3 style={{ margin: '0 0 16px 0', fontSize: '1.15rem', fontWeight: 'bold' }}>Logo y Banner de Portada</h3>
             
-            {/* Branding Images Upload */}
-            <div style={{ backgroundColor: 'var(--surface)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border)' }}>
-              <h3 style={{ margin: '0 0 14px 0', fontSize: '1.05rem', fontWeight: 'bold' }}>Logo y Banner de Marca</h3>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                {/* Logo Upload */}
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                    <label style={{ fontSize: '0.85rem', fontWeight: '600' }}>Logo del Negocio</label>
-                    <span style={{ fontSize: '0.75rem', color: '#0284c7', backgroundColor: '#e0f2fe', padding: '2px 6px', borderRadius: '4px', fontWeight: '600' }}>
-                      📐 Ideal: 512 x 512 px (1:1)
-                    </span>
-                  </div>
-
-                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '6px' }}>
-                    {storeLogoUrl ? (
-                      <img src={storeLogoUrl} alt="Logo" style={{ width: '48px', height: '48px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--border)' }} />
-                    ) : (
-                      <div style={{ width: '48px', height: '48px', borderRadius: '50%', backgroundColor: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
-                        <ImageIcon size={20} />
-                      </div>
-                    )}
-
-                    <div style={{ flex: 1 }}>
-                      <input
-                        type="file"
-                        ref={logoInputRef}
-                        accept="image/*"
-                        style={{ display: 'none' }}
-                        onChange={(e) => {
-                          if (e.target.files?.[0]) handleFileUpload(e.target.files[0], 'logo');
-                        }}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => logoInputRef.current?.click()}
-                        disabled={uploadingLogo}
-                        style={{ padding: '6px 12px', backgroundColor: 'white', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: '600', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                      >
-                        <Upload size={14} /> {uploadingLogo ? 'Subiendo...' : 'Subir Archivo de Imagen'}
-                      </button>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+              
+              {/* Logo Upload */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '6px' }}>Logo del Negocio</label>
+                <div style={{ border: '2px dashed #cbd5e1', borderRadius: '8px', padding: '16px', textAlign: 'center', backgroundColor: '#f8fafc' }}>
+                  {storeLogoUrl ? (
+                    <div style={{ marginBottom: '10px' }}>
+                      <img src={storeLogoUrl} alt="Logo" style={{ maxHeight: '90px', maxWidth: '100%', objectFit: 'contain', borderRadius: '6px' }} />
                     </div>
-                  </div>
-                </div>
-
-                {/* Banner Upload */}
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                    <label style={{ fontSize: '0.85rem', fontWeight: '600' }}>Banner Superior / Portada</label>
-                    <span style={{ fontSize: '0.75rem', color: '#0284c7', backgroundColor: '#e0f2fe', padding: '2px 6px', borderRadius: '4px', fontWeight: '600' }}>
-                      📐 Ideal: 1200 x 400 px (3:1)
-                    </span>
-                  </div>
-
-                  <div style={{ marginTop: '6px' }}>
-                    <input
-                      type="file"
-                      ref={bannerInputRef}
-                      accept="image/*"
-                      style={{ display: 'none' }}
-                      onChange={(e) => {
-                        if (e.target.files?.[0]) handleFileUpload(e.target.files[0], 'banner');
-                      }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => bannerInputRef.current?.click()}
-                      disabled={uploadingBanner}
-                      style={{ padding: '6px 12px', backgroundColor: 'white', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: '600', display: 'inline-flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}
-                    >
-                      <Upload size={14} /> {uploadingBanner ? 'Subiendo...' : 'Subir Archivo de Portada'}
-                    </button>
-
-                    {storeBannerUrl && (
-                      <div style={{ height: '60px', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--border)' }}>
-                        <img src={storeBannerUrl} alt="Banner" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Colors Palette & Exact HEX */}
-            <div style={{ backgroundColor: 'var(--surface)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border)' }}>
-              <h3 style={{ margin: '0 0 14px 0', fontSize: '1.05rem', fontWeight: 'bold' }}>Paleta Cromática & Códigos HEX</h3>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                {/* Primary Color */}
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '8px' }}>
-                    Color Primario de Marca (Botones y Acentos)
-                  </label>
+                  ) : (
+                    <ImageIcon size={36} color="#94a3b8" style={{ margin: '0 auto 8px auto' }} />
+                  )}
                   
-                  {/* Presets */}
-                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '10px' }}>
-                    {COLOR_PRESETS.map(c => (
-                      <button
-                        key={c.hex}
-                        type="button"
-                        onClick={() => setPrimaryColor(c.hex)}
-                        title={c.name}
-                        style={{
-                          width: '28px',
-                          height: '28px',
-                          borderRadius: '50%',
-                          backgroundColor: c.hex,
-                          border: primaryColor.toLowerCase() === c.hex.toLowerCase() ? '3px solid #000' : '2px solid white',
-                          boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-                          cursor: 'pointer'
-                        }}
-                      />
-                    ))}
-                  </div>
-
-                  {/* Exact Hex & Gotero Input */}
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <input
-                      type="color"
-                      value={primaryColor}
-                      onChange={(e) => setPrimaryColor(e.target.value)}
-                      style={{ width: '40px', height: '36px', borderRadius: '6px', border: '1px solid var(--border)', cursor: 'pointer', padding: 0 }}
-                    />
-                    <div style={{ position: 'relative', flex: 1 }}>
-                      <input
-                        type="text"
-                        value={primaryColor}
-                        onChange={(e) => setPrimaryColor(e.target.value)}
-                        placeholder="#16a34a"
-                        style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem', fontFamily: 'monospace' }}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Background Color */}
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '8px' }}>
-                    Color de Fondo de la Página
-                  </label>
-                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px' }}>
-                    {BG_PRESETS.map(b => (
-                      <button
-                        key={b.hex}
-                        type="button"
-                        onClick={() => setBackgroundColor(b.hex)}
-                        style={{
-                          padding: '5px 10px',
-                          borderRadius: '6px',
-                          backgroundColor: b.hex,
-                          color: b.hex === '#0f172a' ? 'white' : '#1e293b',
-                          border: backgroundColor.toLowerCase() === b.hex.toLowerCase() ? `2px solid ${primaryColor}` : '1px solid #cbd5e1',
-                          fontSize: '0.75rem',
-                          fontWeight: '600',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        {b.name}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <input
-                      type="color"
-                      value={backgroundColor}
-                      onChange={(e) => setBackgroundColor(e.target.value)}
-                      style={{ width: '40px', height: '36px', borderRadius: '6px', border: '1px solid var(--border)', cursor: 'pointer', padding: 0 }}
-                    />
-                    <input
-                      type="text"
-                      value={backgroundColor}
-                      onChange={(e) => setBackgroundColor(e.target.value)}
-                      placeholder="#f8fafc"
-                      style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem', fontFamily: 'monospace' }}
-                    />
-                  </div>
+                  <input
+                    type="file"
+                    ref={logoInputRef}
+                    accept="image/*"
+                    style={{ display: 'none' }}
+                    onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0], 'logo')}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => logoInputRef.current?.click()}
+                    style={{ padding: '6px 12px', backgroundColor: 'white', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }}
+                  >
+                    {uploadingLogo ? 'Subiendo...' : 'Subir Logo (512x512)'}
+                  </button>
                 </div>
               </div>
-            </div>
 
-            {/* Typography & Card Shapes */}
-            <div style={{ backgroundColor: 'var(--surface)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border)' }}>
-              <h3 style={{ margin: '0 0 14px 0', fontSize: '1.05rem', fontWeight: 'bold' }}>Tipografía y Formas</h3>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '6px' }}>Tipografía</label>
-                  <select
-                    value={fontFamily}
-                    onChange={(e) => setFontFamily(e.target.value as any)}
-                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.9rem', backgroundColor: 'white' }}
+              {/* Banner Upload */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '6px' }}>Banner de Portada</label>
+                <div style={{ border: '2px dashed #cbd5e1', borderRadius: '8px', padding: '16px', textAlign: 'center', backgroundColor: '#f8fafc' }}>
+                  {storeBannerUrl ? (
+                    <div style={{ marginBottom: '10px' }}>
+                      <img src={storeBannerUrl} alt="Banner" style={{ maxHeight: '90px', maxWidth: '100%', objectFit: 'cover', borderRadius: '6px' }} />
+                    </div>
+                  ) : (
+                    <ImageIcon size={36} color="#94a3b8" style={{ margin: '0 auto 8px auto' }} />
+                  )}
+                  
+                  <input
+                    type="file"
+                    ref={bannerInputRef}
+                    accept="image/*"
+                    style={{ display: 'none' }}
+                    onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0], 'banner')}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => bannerInputRef.current?.click()}
+                    style={{ padding: '6px 12px', backgroundColor: 'white', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }}
                   >
-                    <option value="Inter">Inter (Moderna y Limpia)</option>
-                    <option value="Poppins">Poppins (Comercial y Amigable)</option>
-                    <option value="Roboto">Roboto (Clásica y Legible)</option>
-                    <option value="Montserrat">Montserrat (Elegante y Vanguardista)</option>
-                    <option value="Playfair Display">Playfair Display (Gourmet / Boutique)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '6px' }}>Esquinas de Tarjetas</label>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
-                    {(['square', 'rounded', 'pill'] as const).map(r => (
-                      <button
-                        key={r}
-                        type="button"
-                        onClick={() => setCardRadius(r)}
-                        style={{
-                          padding: '8px',
-                          borderRadius: '6px',
-                          border: cardRadius === r ? `2px solid ${primaryColor}` : '1px solid var(--border)',
-                          backgroundColor: cardRadius === r ? `${primaryColor}10` : 'white',
-                          color: cardRadius === r ? primaryColor : 'var(--text)',
-                          fontWeight: '600',
-                          fontSize: '0.8rem',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        {r === 'square' ? 'Cuadradas' : r === 'rounded' ? 'Suaves' : 'Redondeadas'}
-                      </button>
-                    ))}
-                  </div>
+                    {uploadingBanner ? 'Subiendo...' : 'Subir Banner (1200x400)'}
+                  </button>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Live Preview Column */}
-          <div style={{ position: 'sticky', top: '20px', height: 'fit-content' }}>
-            <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '12px', border: '1px solid var(--border)', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '14px', color: primaryColor, fontWeight: 'bold', fontSize: '0.9rem' }}>
-                <Sparkles size={16} /> Previsualización en Vivo de tu Marca
-              </div>
+          {/* Color Palette Card */}
+          <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+            <h3 style={{ margin: '0 0 16px 0', fontSize: '1.15rem', fontWeight: 'bold' }}>Colores de Marca</h3>
 
-              {/* Mock Container */}
-              <div style={{ backgroundColor, padding: '16px', borderRadius: '10px', border: '1px solid #e2e8f0', fontFamily, minHeight: '340px' }}>
-                {/* Mock Banner */}
-                {storeBannerUrl ? (
-                  <div style={{ height: '70px', borderRadius: '8px', overflow: 'hidden', marginBottom: '12px' }}>
-                    <img src={storeBannerUrl} alt="Banner" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  </div>
-                ) : (
-                  <div style={{ height: '40px', backgroundColor: primaryColor, borderRadius: '8px', opacity: 0.8, marginBottom: '12px' }} />
-                )}
-
-                {/* Mock Header */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    {storeLogoUrl ? (
-                      <img src={storeLogoUrl} alt="Logo" style={{ width: '30px', height: '30px', borderRadius: '50%', objectFit: 'cover' }} />
-                    ) : (
-                      <div style={{ width: '30px', height: '30px', backgroundColor: primaryColor, borderRadius: '50%', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 'bold' }}>
-                        B
-                      </div>
-                    )}
-                    <strong style={{ fontSize: '0.9rem', color: backgroundColor === '#0f172a' ? 'white' : '#1e293b' }}>
-                      {storeName || 'Tu Negocio'}
-                    </strong>
-                  </div>
-                  <span style={{ fontSize: '0.7rem', backgroundColor: primaryColor, color: 'white', padding: '3px 8px', borderRadius: '12px', fontWeight: 'bold' }}>
-                    🛒 1
-                  </span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '8px' }}>Color Primario de Marca</label>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' }}>
+                  {COLOR_PRESETS.map(c => (
+                    <div
+                      key={c.hex}
+                      onClick={() => setPrimaryColor(c.hex)}
+                      style={{
+                        width: '32px',
+                        height: '32px',
+                        borderRadius: '50%',
+                        backgroundColor: c.hex,
+                        cursor: 'pointer',
+                        border: primaryColor === c.hex ? '3px solid #000' : '2px solid transparent',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                      }}
+                      title={c.name}
+                    />
+                  ))}
                 </div>
 
-                {/* Mock Card */}
-                <div
-                  style={{
-                    backgroundColor: cardBackgroundColor,
-                    borderRadius: cardRadius === 'pill' ? '16px' : cardRadius === 'square' ? '4px' : '10px',
-                    boxShadow: cardShadow === 'lg' ? '0 10px 15px rgba(0,0,0,0.1)' : '0 2px 4px rgba(0,0,0,0.05)',
-                    border: '1px solid #e2e8f0',
-                    overflow: 'hidden'
-                  }}
-                >
-                  <div style={{ height: '90px', backgroundColor: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: '0.75rem' }}>
-                    📸 Foto / Servicio
-                  </div>
-                  <div style={{ padding: '12px' }}>
-                    <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#1e293b', marginBottom: '4px' }}>Servicio o Producto Estrella</div>
-                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '8px' }}>Atención personalizada de alta calidad...</div>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span style={{ fontSize: '0.95rem', fontWeight: 'bold', color: primaryColor }}>₡25,000</span>
-                      <button style={{ padding: '4px 10px', backgroundColor: primaryColor, color: 'white', border: 'none', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' }}>
-                        Seleccionar
-                      </button>
-                    </div>
-                  </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', maxWidth: '240px' }}>
+                  <input
+                    type="color"
+                    value={primaryColor}
+                    onChange={(e) => setPrimaryColor(e.target.value)}
+                    style={{ width: '40px', height: '36px', border: 'none', borderRadius: '4px', cursor: 'pointer', padding: 0 }}
+                  />
+                  <input
+                    type="text"
+                    value={primaryColor}
+                    onChange={(e) => setPrimaryColor(e.target.value)}
+                    style={{ flex: 1, padding: '7px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem', fontFamily: 'monospace' }}
+                  />
                 </div>
               </div>
             </div>

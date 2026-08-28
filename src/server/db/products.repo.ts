@@ -54,6 +54,33 @@ export async function getProductById(id: string, tenantId: string): Promise<Prod
   return product;
 }
 
+export async function getProductBySlug(slug: string, tenantId: string): Promise<Product | null> {
+  const result = await query(`
+    SELECT id, tenant_id as "tenantId", name, slug, description, price, compare_at_price as "compareAtPrice",
+           currency, category, tags, stock, track_stock as "trackStock", sku, featured, active,
+           created_at as "createdAt", updated_at as "updatedAt"
+    FROM products 
+    WHERE slug = $1 AND tenant_id = $2
+  `, [slug, tenantId]);
+  
+  if (result.rows.length === 0) return null;
+  const product = result.rows[0];
+
+  const imgRes = await query(`
+    SELECT id, url, alt_text as "altText", sort_order as "sortOrder", is_primary as "isPrimary"
+    FROM product_images WHERE product_id = $1 ORDER BY sort_order ASC
+  `, [product.id]);
+  
+  const varRes = await query(`
+    SELECT id, name, sku, price_override as "priceOverride", stock, attributes, active
+    FROM product_variants WHERE product_id = $1
+  `, [product.id]);
+
+  product.images = imgRes.rows;
+  product.variants = varRes.rows;
+  return product;
+}
+
 export async function createProduct(tenantId: string, data: Partial<Product>): Promise<Product> {
   const result = await query(`
     INSERT INTO products (

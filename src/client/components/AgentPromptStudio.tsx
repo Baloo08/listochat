@@ -292,6 +292,61 @@ ${wizardAnswers.paymentMethods}
             />
           </div>
 
+          {/* Human Handoff & Escalation Card */}
+          <div style={{ backgroundColor: '#fefce8', padding: '16px', borderRadius: '8px', border: '1px solid #fef08a' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '1.1rem' }}>🚨</span>
+                <div>
+                  <strong style={{ fontSize: '0.9rem', color: '#854d0e', display: 'block' }}>Escalado y Modo de Atención Humana</strong>
+                  <span style={{ fontSize: '0.75rem', color: '#a16207' }}>Pausa la IA y notifica al administrador cuando el cliente requiera un asesor humano</span>
+                </div>
+              </div>
+
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.8rem', color: '#854d0e' }}>
+                <input
+                  type="checkbox"
+                  checked={config.humanHandoffEnabled !== false}
+                  onChange={e => setConfig({ ...config, humanHandoffEnabled: e.target.checked })}
+                />
+                <span>Habilitado</span>
+              </label>
+            </div>
+
+            {config.humanHandoffEnabled !== false && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '10px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', color: '#854d0e', marginBottom: '3px' }}>
+                    📱 Teléfono del Administrador para Alertas (WhatsApp):
+                  </label>
+                  <input
+                    type="tel"
+                    value={config.handoffNotifyPhone || config.notifyNumber || ''}
+                    onChange={e => setConfig({ ...config, handoffNotifyPhone: e.target.value, notifyNumber: e.target.value })}
+                    placeholder="Ej: 50688888888"
+                    style={{ width: '100%', padding: '7px 10px', borderRadius: '6px', border: '1px solid #fde047', backgroundColor: 'white', fontSize: '0.85rem' }}
+                  />
+                  <span style={{ fontSize: '0.7rem', color: '#a16207', display: 'block', marginTop: '2px' }}>
+                    Recibirá un resumen por WhatsApp cuando la IA detecte que un cliente solicita atención humana.
+                  </span>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', color: '#854d0e', marginBottom: '3px' }}>
+                    🔑 Palabras Clave de Activación (separadas por comas):
+                  </label>
+                  <input
+                    type="text"
+                    value={(config.handoffKeywords || ['humano', 'asesor', 'persona', 'agente', 'hablar con alguien', 'queja', 'reclamo', 'urgente']).join(', ')}
+                    onChange={e => setConfig({ ...config, handoffKeywords: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
+                    placeholder="humano, asesor, persona, queja, hablar con alguien"
+                    style={{ width: '100%', padding: '7px 10px', borderRadius: '6px', border: '1px solid #fde047', backgroundColor: 'white', fontSize: '0.85rem' }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Quick Presets */}
           <div style={{ backgroundColor: '#f8fafc', padding: '14px', borderRadius: '8px', border: '1px solid var(--border)' }}>
             <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--text-muted)', display: 'block', marginBottom: '8px' }}>

@@ -8,6 +8,7 @@ export async function getOrdersByTenant(tenantId: string): Promise<Order[]> {
            whatsapp_jid as "whatsappJid", source, subtotal, delivery_fee as "deliveryFee", discount, total,
            currency, status, payment_method as "paymentMethod", payment_status as "paymentStatus",
            payment_reference as "paymentReference", notes, delivery_method as "deliveryMethod",
+           consumption_mode as "consumptionMode", table_number as "tableNumber", customer_location as "customerLocation",
            chat_message_id as "chatMessageId", created_at as "createdAt", updated_at as "updatedAt"
     FROM orders 
     WHERE tenant_id = $1
@@ -24,6 +25,7 @@ export async function getOrderById(id: string, tenantId: string): Promise<Order 
            whatsapp_jid as "whatsappJid", source, subtotal, delivery_fee as "deliveryFee", discount, total,
            currency, status, payment_method as "paymentMethod", payment_status as "paymentStatus",
            payment_reference as "paymentReference", notes, delivery_method as "deliveryMethod",
+           consumption_mode as "consumptionMode", table_number as "tableNumber", customer_location as "customerLocation",
            chat_message_id as "chatMessageId", created_at as "createdAt", updated_at as "updatedAt"
     FROM orders 
     WHERE id = $1 AND tenant_id = $2
@@ -42,29 +44,32 @@ export async function getOrderById(id: string, tenantId: string): Promise<Order 
   return order;
 }
 
-export async function createOrder(tenantId: string, data: Partial<Order>): Promise<Order> {
+export async function createOrder(tenantId: string, data: Partial<Order>, items?: OrderItem[]): Promise<Order> {
   const result = await query(`
     INSERT INTO orders (
       tenant_id, customer_name, customer_phone, customer_email, customer_address, whatsapp_jid,
       source, subtotal, delivery_fee, discount, total, currency, status, payment_method, 
-      payment_status, notes, delivery_method
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+      payment_status, payment_reference, notes, delivery_method, consumption_mode, table_number, customer_location
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
     RETURNING id
   `, [
     tenantId, data.customerName, data.customerPhone, data.customerEmail, data.customerAddress, data.whatsappJid,
     data.source || 'store', data.subtotal, data.deliveryFee || 0, data.discount || 0, data.total, data.currency || 'CRC',
-    data.status || 'pending', data.paymentMethod, data.paymentStatus || 'pending', data.notes, data.deliveryMethod
+    data.status || 'pedido_recibido', data.paymentMethod, data.paymentStatus || 'pending', data.paymentReference || null,
+    data.notes || null, data.deliveryMethod || 'pickup', data.consumptionMode || null, data.tableNumber || null,
+    data.customerLocation ? JSON.stringify(data.customerLocation) : null
   ]);
   
   const orderId = result.rows[0].id;
+  const orderItems = items || data.items || [];
   
-  if (data.items && data.items.length > 0) {
-    for (const item of data.items) {
+  if (orderItems && orderItems.length > 0) {
+    for (const item of orderItems) {
       await query(`
         INSERT INTO order_items (
           order_id, product_id, variant_id, tenant_id, product_name, variant_name, quantity, unit_price, total_price
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-      `, [orderId, item.productId, item.variantId, tenantId, item.productName, item.variantName, item.quantity, item.unitPrice, item.totalPrice]);
+      `, [orderId, item.productId || null, item.variantId || null, tenantId, item.productName, item.variantName || null, item.quantity, item.unitPrice, Number(item.unitPrice) * Number(item.quantity)]);
     }
   }
   

@@ -260,7 +260,24 @@ export async function runMigrations() {
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS chat_sessions (
+      tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+      remote_jid VARCHAR(100) NOT NULL,
+      is_human_mode BOOLEAN DEFAULT FALSE,
+      unread BOOLEAN DEFAULT FALSE,
+      notes TEXT,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (tenant_id, remote_jid)
+    );
+
+    ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS store_mode VARCHAR(50) DEFAULT 'retail';
+    ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS restaurant_config JSONB;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS consumption_mode VARCHAR(50);
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS table_number VARCHAR(50);
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_location JSONB;
+
     CREATE INDEX IF NOT EXISTS idx_schedule_settings_tenant ON schedule_settings(tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_chat_sessions_tenant ON chat_sessions(tenant_id);
     CREATE INDEX IF NOT EXISTS idx_audit_logs_tenant ON audit_logs(tenant_id);
     CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON audit_logs(created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_users_tenant_id ON users(tenant_id);

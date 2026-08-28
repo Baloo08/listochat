@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ShoppingBag, Search, Plus, Minus, X, Check, ArrowRight, MessageCircle, AlertCircle, Trash2, MapPin, Truck, Store, ShieldCheck, Tag } from 'lucide-react';
+import { ShoppingBag, Search, Plus, Minus, X, Check, ArrowRight, MessageCircle, AlertCircle, Trash2, MapPin, Truck, Store, ShieldCheck, Tag, Utensils, Navigation } from 'lucide-react';
 import { Product, StoreSettings } from '../shared/types';
 
 interface StorefrontProps {
@@ -22,10 +22,13 @@ export default function StorefrontView({ slug }: StorefrontProps) {
   const [addedAnimation, setAddedAnimation] = useState(false);
 
   // Checkout Form State
-  const [deliveryMethod, setDeliveryMethod] = useState<'delivery' | 'pickup'>('pickup');
+  const [consumptionMode, setConsumptionMode] = useState<'dine_in' | 'pickup' | 'delivery'>('pickup');
+  const [tableNumber, setTableNumber] = useState('1');
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerAddress, setCustomerAddress] = useState('');
+  const [customerGps, setCustomerGps] = useState<{ lat?: number; lng?: number; mapsUrl?: string }>({});
+  const [fetchingGps, setFetchingGps] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'sinpe' | 'transfer' | 'cash'>('sinpe');
   const [paymentReference, setPaymentReference] = useState('');
   const [orderNotes, setOrderNotes] = useState('');
@@ -39,6 +42,12 @@ export default function StorefrontView({ slug }: StorefrontProps) {
         if (!storeRes.ok) throw new Error('Tienda no encontrada');
         const storeData = await storeRes.json();
         setStore(storeData);
+
+        if (storeData.storeMode === 'restaurant') {
+          if (storeData.restaurantConfig?.allowDineIn) setConsumptionMode('dine_in');
+          else if (storeData.restaurantConfig?.allowPickup) setConsumptionMode('pickup');
+          else setConsumptionMode('delivery');
+        }
 
         const prodRes = await fetch(`/api/storefront/${slug}/products`);
         if (prodRes.ok) {
@@ -104,8 +113,32 @@ export default function StorefrontView({ slug }: StorefrontProps) {
     );
   };
 
+  const handleGetGpsLocation = () => {
+    if (!navigator.geolocation) {
+      alert('Tu navegador no soporta geolocalización GPS.');
+      return;
+    }
+    setFetchingGps(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        const mapsUrl = `https://maps.google.com/?q=${lat},${lng}`;
+        setCustomerGps({ lat, lng, mapsUrl });
+        setCustomerAddress(prev => prev ? `${prev} (GPS: ${mapsUrl})` : `Ubicación GPS: ${mapsUrl}`);
+        setFetchingGps(false);
+      },
+      (error) => {
+        alert('No se pudo obtener la ubicación GPS: ' + error.message);
+        setFetchingGps(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  const isDelivery = consumptionMode === 'delivery';
   const cartSubtotal = cart.reduce((acc, item) => acc + (Number(item.product.price || 0) * item.quantity), 0);
-  const deliveryFee = (deliveryMethod === 'delivery' && store?.deliveryEnabled) ? Number(store.deliveryFee || 0) : 0;
+  const deliveryFee = (isDelivery && store?.deliveryEnabled) ? Number(store.deliveryFee || 0) : 0;
   const cartTotal = cartSubtotal + deliveryFee;
   const totalItemsCount = cart.reduce((acc, item) => acc + item.quantity, 0);
 
@@ -115,8 +148,8 @@ export default function StorefrontView({ slug }: StorefrontProps) {
       alert('Por favor ingresa tu nombre y número de WhatsApp');
       return;
     }
-    if (deliveryMethod === 'delivery' && !customerAddress) {
-      alert('Por favor ingresa la dirección de entrega');
+    if (isDelivery && !customerAddress && !customerGps.mapsUrl) {
+      alert('Por favor ingresa la dirección de entrega o presiona Usar GPS');
       return;
     }
 
@@ -125,8 +158,11 @@ export default function StorefrontView({ slug }: StorefrontProps) {
       const payload = {
         customerName,
         customerPhone,
-        customerAddress: deliveryMethod === 'delivery' ? customerAddress : undefined,
-        deliveryMethod,
+        customerAddress: isDelivery ? customerAddress : undefined,
+        customerLocation: customerGps.mapsUrl ? customerGps : undefined,
+        consumptionMode,
+        tableNumber: consumptionMode === 'dine_in' ? tableNumber : undefined,
+        deliveryMethod: isDelivery ? 'delivery' : 'pickup',
         paymentMethod,
         paymentReference: paymentReference || undefined,
         notes: orderNotes || undefined,
@@ -171,7 +207,7 @@ export default function StorefrontView({ slug }: StorefrontProps) {
   if (loading) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: bgColor, fontFamily }}>
-        <p style={{ fontSize: '1.2rem', color: '#64748b' }}>Cargando catálogo de la tienda...</p>
+        <p style={{ fontSize: '1.2rem', color: '#64748b' }}>Cargando catálogo...</p>
       </div>
     );
   }
@@ -181,12 +217,15 @@ export default function StorefrontView({ slug }: StorefrontProps) {
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f8fafc', padding: '20px', fontFamily }}>
         <div style={{ textAlign: 'center', maxWidth: '450px', backgroundColor: 'white', padding: '35px', borderRadius: '16px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
           <AlertCircle size={48} color="#ef4444" style={{ margin: '0 auto 15px auto' }} />
-          <h2 style={{ margin: '0 0 10px 0', fontSize: '1.4rem' }}>Tienda no encontrada</h2>
-          <p style={{ color: '#64748b', fontSize: '0.95rem' }}>La tienda ingresada no existe o se encuentra temporalmente desactivada.</p>
+          <h2 style={{ margin: '0 0 10px 0', fontSize: '1.4rem' }}>Catálogo no disponible</h2>
+          <p style={{ color: '#64748b', fontSize: '0.95rem' }}>La página ingresada no existe o se encuentra desactivada.</p>
         </div>
       </div>
     );
   }
+
+  const isRestaurant = store.storeMode === 'restaurant';
+  const restConfig = store.restaurantConfig || { allowDineIn: true, dineInMode: 'table_number', tableCount: 15, allowPickup: true, allowDelivery: true };
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: bgColor, fontFamily, color: '#1e293b', paddingBottom: '90px' }}>
@@ -207,7 +246,14 @@ export default function StorefrontView({ slug }: StorefrontProps) {
               <img src={store.storeLogoUrl} alt={store.storeName} style={{ width: '48px', height: '48px', borderRadius: '50%', objectFit: 'cover', border: '2px solid #e2e8f0' }} />
             )}
             <div>
-              <h1 style={{ margin: 0, fontSize: '1.35rem', fontWeight: 'bold' }}>{store.storeName}</h1>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <h1 style={{ margin: 0, fontSize: '1.35rem', fontWeight: 'bold' }}>{store.storeName}</h1>
+                {isRestaurant && (
+                  <span style={{ padding: '2px 8px', borderRadius: '12px', fontSize: '0.7rem', backgroundColor: '#ffedd5', color: '#ea580c', fontWeight: 'bold' }}>
+                    Menú Digital
+                  </span>
+                )}
+              </div>
               {store.storeDescription && <p style={{ margin: '2px 0 0 0', color: '#64748b', fontSize: '0.85rem' }}>{store.storeDescription}</p>}
             </div>
           </div>
@@ -215,22 +261,21 @@ export default function StorefrontView({ slug }: StorefrontProps) {
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             {store.whatsappNumber && (
               <a
-                href={`https://wa.me/${store.whatsappNumber.replace(/\D/g, '')}?text=${encodeURIComponent(`Hola, estoy viendo tu tienda ${store.storeName} y tengo una consulta.`)}`}
+                href={`https://wa.me/${store.whatsappNumber.replace(/\D/g, '')}?text=${encodeURIComponent(`Hola, estoy viendo su catálogo ${store.storeName} y tengo una consulta.`)}`}
                 target="_blank"
                 rel="noreferrer"
-                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 14px', backgroundColor: '#25d366', color: 'white', borderRadius: '8px', textDecoration: 'none', fontWeight: '600', fontSize: '0.85rem' }}
+                style={{ padding: '8px 14px', backgroundColor: '#25d366', color: 'white', borderRadius: '8px', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', fontWeight: 'bold' }}
               >
-                <MessageCircle size={16} /> <span style={{ display: window.innerWidth > 500 ? 'inline' : 'none' }}>WhatsApp</span>
+                <MessageCircle size={16} /> WhatsApp
               </a>
             )}
 
-            {/* Cart Button Header */}
             <button
               onClick={() => setIsCartOpen(true)}
-              style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '8px 16px', backgroundColor: primaryColor, color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', fontSize: '0.9rem' }}
+              style={{ padding: '8px 16px', backgroundColor: primaryColor, color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.9rem', fontWeight: 'bold', position: 'relative' }}
             >
               <ShoppingBag size={18} />
-              <span>Carrito</span>
+              <span>Ver Orden</span>
               {totalItemsCount > 0 && (
                 <span style={{ backgroundColor: 'white', color: primaryColor, borderRadius: '50%', width: '22px', height: '22px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 'bold' }}>
                   {totalItemsCount}
@@ -244,16 +289,16 @@ export default function StorefrontView({ slug }: StorefrontProps) {
       {/* Main Container */}
       <main style={{ maxWidth: '1100px', margin: '25px auto', padding: '0 20px' }}>
         
-        {/* Search & Category Filter Bar */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginBottom: '25px' }}>
-          <div style={{ position: 'relative', width: '100%' }}>
+        {/* Search & Categories */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '30px' }}>
+          <div style={{ position: 'relative' }}>
             <Search size={18} color="#94a3b8" style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)' }} />
             <input
               type="text"
-              placeholder="Buscar productos en la tienda..."
+              placeholder={isRestaurant ? "Buscar platillos, bebidas, postres..." : "Buscar productos en el catálogo..."}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              style={{ width: '100%', padding: '12px 14px 12px 42px', borderRadius: '10px', border: '1px solid #cbd5e1', backgroundColor: 'white', fontSize: '0.95rem' }}
+              style={{ width: '100%', padding: '12px 14px 12px 42px', borderRadius: '10px', border: '1px solid #cbd5e1', backgroundColor: 'white', fontSize: '0.95rem', outline: 'none' }}
             />
           </div>
 
@@ -268,12 +313,11 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                   border: 'none',
                   backgroundColor: activeCategory === cat ? primaryColor : 'white',
                   color: activeCategory === cat ? 'white' : '#475569',
-                  fontWeight: activeCategory === cat ? '600' : '500',
+                  fontWeight: '600',
                   fontSize: '0.85rem',
                   cursor: 'pointer',
                   whiteSpace: 'nowrap',
-                  boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
-                  transition: 'all 0.15s ease'
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
                 }}
               >
                 {cat}
@@ -284,184 +328,93 @@ export default function StorefrontView({ slug }: StorefrontProps) {
 
         {/* Product Grid */}
         {filteredProducts.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '60px 20px', backgroundColor: cardBg, borderRadius: cardRadius, border: '1px solid #e2e8f0' }}>
-            <p style={{ fontSize: '1.1rem', color: '#64748b', margin: 0 }}>No se encontraron productos disponibles.</p>
+          <div style={{ textAlign: 'center', padding: '50px 20px', backgroundColor: 'white', borderRadius: cardRadius, border: '1px solid #e2e8f0' }}>
+            <ShoppingBag size={40} color="#94a3b8" style={{ margin: '0 auto 10px auto' }} />
+            <h3 style={{ margin: '0 0 6px 0', fontSize: '1.1rem' }}>No se encontraron productos</h3>
+            <p style={{ color: '#64748b', fontSize: '0.85rem', margin: 0 }}>Intenta con otro término de búsqueda o categoría.</p>
           </div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '20px' }}>
-            {filteredProducts.map(product => {
-              const primaryImg = product.images?.[0]?.url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&auto=format&fit=crop&q=60';
-              const hasDiscount = product.compareAtPrice && product.compareAtPrice > product.price;
-              const discountPercent = hasDiscount ? Math.round(((product.compareAtPrice! - product.price) / product.compareAtPrice!) * 100) : 0;
-
-              return (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '20px' }}>
+            {filteredProducts.map(prod => (
+              <div
+                key={prod.id}
+                style={{
+                  backgroundColor: cardBg,
+                  borderRadius: cardRadius,
+                  boxShadow: cardShadow,
+                  overflow: 'hidden',
+                  border: '1px solid #e2e8f0',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  transition: 'transform 0.15s ease'
+                }}
+              >
                 <div
-                  key={product.id}
-                  onClick={() => {
-                    setSelectedProduct(product);
-                    setModalQuantity(1);
-                  }}
-                  style={{
-                    backgroundColor: cardBg,
-                    borderRadius: cardRadius,
-                    boxShadow: cardShadow,
-                    border: '1px solid #e2e8f0',
-                    overflow: 'hidden',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    transition: 'transform 0.15s ease, box-shadow 0.15s ease'
-                  }}
+                  onClick={() => { setSelectedProduct(prod); setModalQuantity(1); }}
+                  style={{ height: '180px', backgroundColor: '#f1f5f9', cursor: 'pointer', overflow: 'hidden', position: 'relative' }}
                 >
-                  <div style={{ height: '180px', position: 'relative', overflow: 'hidden', backgroundColor: '#f1f5f9' }}>
-                    <img src={primaryImg} alt={product.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    {hasDiscount && (
-                      <span style={{ position: 'absolute', top: '10px', left: '10px', backgroundColor: '#ef4444', color: 'white', padding: '3px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 'bold' }}>
-                        -{discountPercent}%
-                      </span>
-                    )}
-                    {product.category && (
-                      <span style={{ position: 'absolute', bottom: '10px', left: '10px', backgroundColor: 'rgba(0,0,0,0.6)', color: 'white', padding: '2px 8px', borderRadius: '4px', fontSize: '0.7rem' }}>
-                        {product.category}
-                      </span>
-                    )}
-                  </div>
+                  <img
+                    src={prod.images?.[0]?.url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&auto=format&fit=crop&q=60'}
+                    alt={prod.name}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
+                  {prod.category && (
+                    <span style={{ position: 'absolute', top: '10px', left: '10px', backgroundColor: 'rgba(0,0,0,0.6)', color: 'white', padding: '3px 8px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold' }}>
+                      {prod.category}
+                    </span>
+                  )}
+                </div>
 
-                  <div style={{ padding: '16px', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', flex: 1 }}>
+                  <h3
+                    onClick={() => { setSelectedProduct(prod); setModalQuantity(1); }}
+                    style={{ margin: '0 0 6px 0', fontSize: '1rem', fontWeight: 'bold', cursor: 'pointer' }}
+                  >
+                    {prod.name}
+                  </h3>
+
+                  {prod.description && (
+                    <p style={{ margin: '0 0 12px 0', fontSize: '0.8rem', color: '#64748b', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                      {prod.description}
+                    </p>
+                  )}
+
+                  <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '10px', borderTop: '1px solid #f1f5f9' }}>
                     <div>
-                      <h3 style={{ margin: '0 0 6px 0', fontSize: '1rem', fontWeight: '600', lineHeight: 1.3 }}>{product.name}</h3>
-                      {product.description && (
-                        <p style={{ margin: '0 0 12px 0', color: '#64748b', fontSize: '0.8rem', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                          {product.description}
-                        </p>
-                      )}
+                      <span style={{ fontSize: '1.15rem', fontWeight: 'bold', color: primaryColor }}>
+                        ₡{Number(prod.price || 0).toLocaleString('es-CR')}
+                      </span>
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '10px' }}>
-                      <div>
-                        <div style={{ fontSize: '1.15rem', fontWeight: 'bold', color: primaryColor }}>
-                          ₡{Number(product.price).toLocaleString('es-CR')}
-                        </div>
-                        {hasDiscount && (
-                          <div style={{ fontSize: '0.8rem', color: '#94a3b8', textDecoration: 'line-through' }}>
-                            ₡{Number(product.compareAtPrice).toLocaleString('es-CR')}
-                          </div>
-                        )}
-                      </div>
-
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          addToCart(product, 1);
-                        }}
-                        style={{ padding: '8px 12px', backgroundColor: primaryColor, color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: '600', fontSize: '0.8rem' }}
-                      >
-                        <Plus size={15} /> Agregar
-                      </button>
-                    </div>
+                    <button
+                      onClick={() => addToCart(prod, 1)}
+                      style={{ padding: '8px 14px', backgroundColor: primaryColor, color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                    >
+                      <Plus size={15} /> Agregar
+                    </button>
                   </div>
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </div>
         )}
       </main>
 
-      {/* Floating Bottom Cart Bar for Mobile */}
+      {/* Floating Bottom Cart Bar */}
       {totalItemsCount > 0 && !isCartOpen && (
-        <div style={{ position: 'fixed', bottom: '20px', left: '20px', right: '20px', zIndex: 40, maxWidth: '600px', margin: '0 auto' }}>
+        <div style={{ position: 'fixed', bottom: '20px', left: '50%', transform: 'translateX(-50%)', zIndex: 40, width: '90%', maxWidth: '480px' }}>
           <button
             onClick={() => setIsCartOpen(true)}
-            style={{ width: '100%', padding: '14px 20px', backgroundColor: primaryColor, color: 'white', border: 'none', borderRadius: '12px', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', fontWeight: 'bold', fontSize: '1rem' }}
+            style={{ width: '100%', padding: '14px 20px', backgroundColor: primaryColor, color: 'white', border: 'none', borderRadius: '30px', fontWeight: 'bold', fontSize: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.3)', cursor: 'pointer' }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span style={{ backgroundColor: 'rgba(255,255,255,0.25)', padding: '4px 10px', borderRadius: '20px', fontSize: '0.85rem' }}>
-                {totalItemsCount} {totalItemsCount === 1 ? 'producto' : 'productos'}
+              <span style={{ backgroundColor: 'white', color: primaryColor, borderRadius: '50%', width: '26px', height: '26px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.85rem' }}>
+                {totalItemsCount}
               </span>
-              <span>Ver Pedido</span>
+              <span>{isRestaurant ? 'Ver mi Orden' : 'Ver Carrito'}</span>
             </div>
-            <span>₡{cartSubtotal.toLocaleString('es-CR')}</span>
+            <span>₡{cartTotal.toLocaleString('es-CR')} →</span>
           </button>
-        </div>
-      )}
-
-      {/* ==========================================
-          PRODUCT DETAIL MODAL
-      ========================================== */}
-      {selectedProduct && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-          <div style={{ backgroundColor: 'white', borderRadius: '16px', maxWidth: '520px', width: '100%', maxHeight: '90vh', overflowY: 'auto', position: 'relative', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.15)' }}>
-            
-            <button
-              onClick={() => setSelectedProduct(null)}
-              style={{ position: 'absolute', top: '15px', right: '15px', zIndex: 10, width: '32px', height: '32px', backgroundColor: 'rgba(255,255,255,0.9)', border: 'none', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}
-            >
-              <X size={18} color="#334155" />
-            </button>
-
-            <div style={{ height: '240px', backgroundColor: '#f1f5f9', position: 'relative' }}>
-              <img
-                src={selectedProduct.images?.[0]?.url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&auto=format&fit=crop&q=60'}
-                alt={selectedProduct.name}
-                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-              />
-            </div>
-
-            <div style={{ padding: '24px' }}>
-              {selectedProduct.category && (
-                <span style={{ fontSize: '0.75rem', color: primaryColor, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                  {selectedProduct.category}
-                </span>
-              )}
-              <h2 style={{ margin: '4px 0 10px 0', fontSize: '1.35rem', fontWeight: 'bold' }}>{selectedProduct.name}</h2>
-
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', marginBottom: '16px' }}>
-                <span style={{ fontSize: '1.5rem', fontWeight: 'bold', color: primaryColor }}>
-                  ₡{Number(selectedProduct.price).toLocaleString('es-CR')}
-                </span>
-                {selectedProduct.compareAtPrice && selectedProduct.compareAtPrice > selectedProduct.price && (
-                  <span style={{ fontSize: '1rem', color: '#94a3b8', textDecoration: 'line-through' }}>
-                    ₡{Number(selectedProduct.compareAtPrice).toLocaleString('es-CR')}
-                  </span>
-                )}
-              </div>
-
-              {selectedProduct.description && (
-                <div style={{ color: '#475569', fontSize: '0.9rem', lineHeight: 1.6, marginBottom: '24px', whiteSpace: 'pre-line' }}>
-                  {selectedProduct.description}
-                </div>
-              )}
-
-              {/* Quantity Controls & Add to Cart */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '15px', borderTop: '1px solid #f1f5f9', paddingTop: '20px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #cbd5e1', borderRadius: '8px', overflow: 'hidden' }}>
-                  <button
-                    onClick={() => setModalQuantity(q => Math.max(1, q - 1))}
-                    style={{ padding: '8px 12px', backgroundColor: '#f8fafc', border: 'none', cursor: 'pointer' }}
-                  >
-                    <Minus size={16} />
-                  </button>
-                  <span style={{ padding: '8px 14px', fontWeight: 'bold', fontSize: '0.95rem' }}>{modalQuantity}</span>
-                  <button
-                    onClick={() => setModalQuantity(q => q + 1)}
-                    style={{ padding: '8px 12px', backgroundColor: '#f8fafc', border: 'none', cursor: 'pointer' }}
-                  >
-                    <Plus size={16} />
-                  </button>
-                </div>
-
-                <button
-                  onClick={() => {
-                    addToCart(selectedProduct, modalQuantity);
-                    setSelectedProduct(null);
-                  }}
-                  style={{ flex: 1, padding: '12px', backgroundColor: primaryColor, color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.95rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
-                >
-                  <ShoppingBag size={18} /> Agregar ₡{(Number(selectedProduct.price) * modalQuantity).toLocaleString('es-CR')}
-                </button>
-              </div>
-            </div>
-          </div>
         </div>
       )}
 
@@ -469,40 +422,36 @@ export default function StorefrontView({ slug }: StorefrontProps) {
           SHOPPING CART & CHECKOUT DRAWER
       ========================================== */}
       {isCartOpen && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 60, display: 'flex', justifyContent: 'flex-end' }}>
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 60, display: 'flex', justifyContent: 'flex-end' }}>
           <div style={{ backgroundColor: 'white', width: '100%', maxWidth: '480px', height: '100%', display: 'flex', flexDirection: 'column', boxShadow: '-4px 0 15px rgba(0,0,0,0.1)' }}>
             
-            {/* Cart Header */}
-            <div style={{ padding: '20px', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <ShoppingBag size={22} color={primaryColor} />
-                <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 'bold' }}>Tu Carrito ({totalItemsCount})</h2>
-              </div>
-              <button
-                onClick={() => setIsCartOpen(false)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}
-              >
-                <X size={22} />
+            {/* Drawer Header */}
+            <div style={{ padding: '18px 20px', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <ShoppingBag size={20} color={primaryColor} /> {isRestaurant ? 'Tu Orden' : 'Tu Carrito'} ({totalItemsCount})
+              </h2>
+              <button onClick={() => setIsCartOpen(false)} style={{ border: 'none', background: 'none', cursor: 'pointer', padding: '4px' }}>
+                <X size={20} />
               </button>
             </div>
 
-            {/* Cart Body */}
+            {/* Drawer Body */}
             <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
               {cart.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '40px 0', color: '#94a3b8' }}>
-                  <ShoppingBag size={48} style={{ margin: '0 auto 12px auto' }} />
-                  <p style={{ fontSize: '1rem', margin: 0 }}>Tu carrito está vacío.</p>
+                <div style={{ textAlign: 'center', padding: '40px 10px', color: '#64748b' }}>
+                  <ShoppingBag size={48} color="#cbd5e1" style={{ margin: '0 auto 12px auto' }} />
+                  <p style={{ margin: 0, fontSize: '0.95rem' }}>No has agregado productos a tu orden todavía.</p>
                 </div>
               ) : (
                 <>
                   {/* Items List */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px' }}>
                     {cart.map(item => (
                       <div key={item.product.id} style={{ display: 'flex', gap: '12px', alignItems: 'center', padding: '10px', backgroundColor: '#f8fafc', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
                         <img
                           src={item.product.images?.[0]?.url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=120&auto=format&fit=crop&q=60'}
                           alt={item.product.name}
-                          style={{ width: '50px', height: '50px', borderRadius: '8px', objectFit: 'cover' }}
+                          style={{ width: '48px', height: '48px', borderRadius: '8px', objectFit: 'cover' }}
                         />
                         <div style={{ flex: 1 }}>
                           <div style={{ fontWeight: '600', fontSize: '0.9rem' }}>{item.product.name}</div>
@@ -528,53 +477,120 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                     ))}
                   </div>
 
-                  {/* Delivery Selector */}
+                  {/* Consumption Mode Selector (Restaurant vs Retail) */}
                   <div style={{ marginBottom: '20px' }}>
-                    <label style={{ display: 'block', fontWeight: '600', fontSize: '0.85rem', marginBottom: '8px' }}>Método de Entrega</label>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                      <button
-                        type="button"
-                        onClick={() => setDeliveryMethod('pickup')}
-                        style={{
-                          padding: '10px',
-                          borderRadius: '8px',
-                          border: `2px solid ${deliveryMethod === 'pickup' ? primaryColor : '#cbd5e1'}`,
-                          backgroundColor: deliveryMethod === 'pickup' ? `${primaryColor}10` : 'white',
-                          color: deliveryMethod === 'pickup' ? primaryColor : '#475569',
-                          fontWeight: '600',
-                          fontSize: '0.85rem',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '6px'
-                        }}
-                      >
-                        <Store size={16} /> Retiro en Tienda
-                      </button>
+                    <label style={{ display: 'block', fontWeight: '600', fontSize: '0.85rem', marginBottom: '8px' }}>
+                      {isRestaurant ? '¿Dónde deseas consumir tus alimentos?' : 'Método de Entrega'}
+                    </label>
+                    
+                    {isRestaurant ? (
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '8px' }}>
+                        {restConfig.allowDineIn && (
+                          <button
+                            type="button"
+                            onClick={() => setConsumptionMode('dine_in')}
+                            style={{
+                              padding: '10px 8px',
+                              borderRadius: '8px',
+                              border: `2px solid ${consumptionMode === 'dine_in' ? primaryColor : '#cbd5e1'}`,
+                              backgroundColor: consumptionMode === 'dine_in' ? `${primaryColor}15` : 'white',
+                              color: consumptionMode === 'dine_in' ? primaryColor : '#475569',
+                              fontWeight: '600', fontSize: '0.8rem', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px'
+                            }}
+                          >
+                            <Utensils size={18} />
+                            <span>En Mesa / Local</span>
+                          </button>
+                        )}
 
-                      <button
-                        type="button"
-                        onClick={() => setDeliveryMethod('delivery')}
-                        style={{
-                          padding: '10px',
-                          borderRadius: '8px',
-                          border: `2px solid ${deliveryMethod === 'delivery' ? primaryColor : '#cbd5e1'}`,
-                          backgroundColor: deliveryMethod === 'delivery' ? `${primaryColor}10` : 'white',
-                          color: deliveryMethod === 'delivery' ? primaryColor : '#475569',
-                          fontWeight: '600',
-                          fontSize: '0.85rem',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '6px'
-                        }}
-                      >
-                        <Truck size={16} /> Envío ({store.deliveryFee ? `₡${Number(store.deliveryFee).toLocaleString('es-CR')}` : 'Gratis'})
-                      </button>
-                    </div>
+                        {restConfig.allowPickup && (
+                          <button
+                            type="button"
+                            onClick={() => setConsumptionMode('pickup')}
+                            style={{
+                              padding: '10px 8px',
+                              borderRadius: '8px',
+                              border: `2px solid ${consumptionMode === 'pickup' ? primaryColor : '#cbd5e1'}`,
+                              backgroundColor: consumptionMode === 'pickup' ? `${primaryColor}15` : 'white',
+                              color: consumptionMode === 'pickup' ? primaryColor : '#475569',
+                              fontWeight: '600', fontSize: '0.8rem', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px'
+                            }}
+                          >
+                            <Store size={18} />
+                            <span>Para Llevar</span>
+                          </button>
+                        )}
+
+                        {restConfig.allowDelivery && (
+                          <button
+                            type="button"
+                            onClick={() => setConsumptionMode('delivery')}
+                            style={{
+                              padding: '10px 8px',
+                              borderRadius: '8px',
+                              border: `2px solid ${consumptionMode === 'delivery' ? primaryColor : '#cbd5e1'}`,
+                              backgroundColor: consumptionMode === 'delivery' ? `${primaryColor}15` : 'white',
+                              color: consumptionMode === 'delivery' ? primaryColor : '#475569',
+                              fontWeight: '600', fontSize: '0.8rem', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px'
+                            }}
+                          >
+                            <Truck size={18} />
+                            <span>Delivery Express</span>
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                        <button
+                          type="button"
+                          onClick={() => setConsumptionMode('pickup')}
+                          style={{
+                            padding: '10px',
+                            borderRadius: '8px',
+                            border: `2px solid ${consumptionMode === 'pickup' ? primaryColor : '#cbd5e1'}`,
+                            backgroundColor: consumptionMode === 'pickup' ? `${primaryColor}10` : 'white',
+                            color: consumptionMode === 'pickup' ? primaryColor : '#475569',
+                            fontWeight: '600', fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'
+                          }}
+                        >
+                          <Store size={16} /> Retiro en Tienda
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setConsumptionMode('delivery')}
+                          style={{
+                            padding: '10px',
+                            borderRadius: '8px',
+                            border: `2px solid ${consumptionMode === 'delivery' ? primaryColor : '#cbd5e1'}`,
+                            backgroundColor: consumptionMode === 'delivery' ? `${primaryColor}10` : 'white',
+                            color: consumptionMode === 'delivery' ? primaryColor : '#475569',
+                            fontWeight: '600', fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'
+                          }}
+                        >
+                          <Truck size={16} /> Envío ({store.deliveryFee ? `₡${Number(store.deliveryFee).toLocaleString('es-CR')}` : 'Gratis'})
+                        </button>
+                      </div>
+                    )}
                   </div>
+
+                  {/* If Dine-In Mode Selected */}
+                  {isRestaurant && consumptionMode === 'dine_in' && restConfig.dineInMode === 'table_number' && (
+                    <div style={{ marginBottom: '16px', backgroundColor: '#ffedd5', padding: '12px', borderRadius: '8px', border: '1px solid #fed7aa' }}>
+                      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', color: '#9a3412', marginBottom: '4px' }}>
+                        🔢 Selecciona o Escribe tu Número de Mesa:
+                      </label>
+                      <select
+                        value={tableNumber}
+                        onChange={(e) => setTableNumber(e.target.value)}
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #f97316', backgroundColor: 'white', fontSize: '0.9rem', fontWeight: 'bold' }}
+                      >
+                        {Array.from({ length: restConfig.tableCount || 15 }, (_, i) => (
+                          <option key={i + 1} value={String(i + 1)}>Mesa #{i + 1}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
 
                   {/* Checkout Form Details */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
@@ -600,16 +616,32 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                       />
                     </div>
 
-                    {deliveryMethod === 'delivery' && (
-                      <div>
-                        <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>Dirección de Entrega Exacta *</label>
+                    {/* Delivery Address & GPS Location Button */}
+                    {isDelivery && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <label style={{ fontSize: '0.8rem', fontWeight: '600' }}>Dirección de Entrega Exacta *</label>
+                          <button
+                            type="button"
+                            onClick={handleGetGpsLocation}
+                            disabled={fetchingGps}
+                            style={{ padding: '4px 8px', backgroundColor: '#eff6ff', color: '#1d4ed8', border: '1px solid #93c5fd', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}
+                          >
+                            <Navigation size={12} /> {fetchingGps ? 'Obteniendo GPS...' : '📍 Usar mi Ubicación GPS'}
+                          </button>
+                        </div>
                         <textarea
                           rows={2}
-                          placeholder="Provincia, cantón, señas exactas..."
+                          placeholder="Provincia, cantón, señas exactas o punto de referencia..."
                           value={customerAddress}
                           onChange={(e) => setCustomerAddress(e.target.value)}
                           style={{ width: '100%', padding: '9px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem' }}
                         />
+                        {customerGps.mapsUrl && (
+                          <div style={{ fontSize: '0.75rem', color: '#15803d', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <Check size={12} /> Coordenadas GPS detectadas exitosamente
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -637,7 +669,7 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                               checked={paymentMethod === 'transfer'}
                               onChange={() => setPaymentMethod('transfer')}
                             />
-                            <span>🏦 Transferencia Bancaria</span>
+                            <span>🏦 Transferencia Bancaria IBAN</span>
                           </label>
                         )}
 
@@ -667,10 +699,10 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                     )}
 
                     <div>
-                      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>Notas del Pedido (Opcional)</label>
+                      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>Notas o Indicaciones Especiales</label>
                       <input
                         type="text"
-                        placeholder="Ej: Tocar el timbre, sin cebolla..."
+                        placeholder="Ej: Sin cebolla, extra salsa..."
                         value={orderNotes}
                         onChange={(e) => setOrderNotes(e.target.value)}
                         style={{ width: '100%', padding: '9px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem' }}
@@ -691,7 +723,7 @@ export default function StorefrontView({ slug }: StorefrontProps) {
 
                 {deliveryFee > 0 && (
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontSize: '0.85rem', color: '#64748b' }}>
-                    <span>Costo de Envío:</span>
+                    <span>Costo de Envío Express:</span>
                     <span>₡{deliveryFee.toLocaleString('es-CR')}</span>
                   </div>
                 )}
@@ -706,7 +738,7 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                   disabled={isSubmitting}
                   style={{ width: '100%', padding: '14px', backgroundColor: primaryColor, color: 'white', border: 'none', borderRadius: '10px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}
                 >
-                  {isSubmitting ? 'Procesando Pedido...' : `Finalizar Pedido • ₡${cartTotal.toLocaleString('es-CR')}`}
+                  {isSubmitting ? 'Procesando...' : `Confirmar Pedido • ₡${cartTotal.toLocaleString('es-CR')}`}
                 </button>
               </div>
             )}
@@ -725,16 +757,16 @@ export default function StorefrontView({ slug }: StorefrontProps) {
             </div>
 
             <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#166534', margin: '0 0 6px 0' }}>
-              ¡Pedido Recibido con Éxito!
+              ¡Orden Recibida con Éxito!
             </h2>
             <p style={{ color: '#64748b', fontSize: '0.9rem', margin: '0 0 20px 0' }}>
-              Tu orden <strong style={{ color: '#1e293b' }}>{orderCompleted.orderCode}</strong> ha sido registrada y enviada a <strong>{orderCompleted.storeName || store.storeName}</strong>.
+              Tu pedido <strong style={{ color: '#1e293b' }}>{orderCompleted.orderCode}</strong> ha sido registrado en <strong>{orderCompleted.storeName || store.storeName}</strong>.
             </p>
 
             <div style={{ backgroundColor: '#f8fafc', borderRadius: '10px', padding: '16px', textAlign: 'left', marginBottom: '20px', fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: '6px', border: '1px solid #e2e8f0' }}>
               <div><strong>Cliente:</strong> {orderCompleted.customerName} ({orderCompleted.customerPhone})</div>
-              <div><strong>Total a Pagar:</strong> ₡{Number(orderCompleted.total).toLocaleString('es-CR')}</div>
-              <div><strong>Método de Entrega:</strong> {orderCompleted.deliveryMethod === 'delivery' ? 'A Domicilio' : 'Retiro en Tienda'}</div>
+              <div><strong>Total:</strong> ₡{Number(orderCompleted.total).toLocaleString('es-CR')}</div>
+              <div><strong>Modalidad:</strong> {orderCompleted.consumptionMode === 'dine_in' ? `En Mesa (#${orderCompleted.tableNumber || 1})` : orderCompleted.deliveryMethod === 'delivery' ? 'A Domicilio' : 'Para Llevar / Retiro'}</div>
             </div>
 
             {orderCompleted.whatsappNumber && (
@@ -750,9 +782,9 @@ export default function StorefrontView({ slug }: StorefrontProps) {
 
             <button
               onClick={() => setOrderCompleted(null)}
-              style={{ width: '100%', padding: '10px', backgroundColor: 'transparent', color: '#64748b', border: '1px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontWeight: '500', fontSize: '0.85rem' }}
+              style={{ width: '100%', padding: '10px', backgroundColor: 'transparent', border: '1px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', fontSize: '0.85rem', color: '#64748b' }}
             >
-              Cerrar y Volver a la Tienda
+              Cerrar y Seguir Navegando
             </button>
           </div>
         </div>

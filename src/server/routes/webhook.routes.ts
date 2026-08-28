@@ -4,7 +4,8 @@ import { processWhatsAppMessageWithAI } from '../services/agent.js';
 import { sendMessage } from '../services/evolution.js';
 import { createBookingFromCommand } from '../services/booking.service.js';
 import { createOrderFromWhatsApp } from '../services/order.service.js';
-import { saveChatMessage, getChatMessagesByTenant } from '../db/chats.repo.js';
+import { saveChatMessage, getChatMessagesByTenant, getChatSession, setChatHumanMode } from '../db/chats.repo.js';
+import { getAgentConfig } from '../db/agent-config.repo.js';
 import { query } from '../db/pool.js';
 
 const router = Router();
@@ -47,7 +48,8 @@ router.post('/', async (req, res) => {
       return;
     }
 
-    const userMessage = (
+    // Extract text or location
+    let userMessage = (
       data?.message?.conversation ||
       data?.message?.extendedTextMessage?.text ||
       data?.message?.imageMessage?.caption ||
@@ -55,6 +57,13 @@ router.post('/', async (req, res) => {
       data?.message?.text ||
       ''
     ).trim();
+
+    // Check for native WhatsApp Location Message
+    const loc = data?.message?.locationMessage || data?.message?.liveLocationMessage;
+    if (loc?.degreesLatitude && loc?.degreesLongitude) {
+      const mapsUrl = `https://maps.google.com/?q=${loc.degreesLatitude},${loc.degreesLongitude}`;
+      userMessage = `📍 [Ubicación Compartida]: ${mapsUrl} (${loc.name || loc.address || 'Ubicación GPS'})`;
+    }
 
     console.log(`[Webhook] Parsed message from ${remoteJid} (${pushName}): "${userMessage}" [fromMe=${fromMe}]`);
 
@@ -77,13 +86,14 @@ router.post('/', async (req, res) => {
     }
 
     const msgId = key.id || `msg_${Date.now()}`;
+    const cleanPhone = remoteJid.replace(/@.+$/, '').replace(/\D/g, '');
 
-    // If message was sent from the business phone itself
+    // If message was sent from the business phone itself (manual operator)
     if (fromMe) {
       await saveChatMessage(tenant.id, {
         id: msgId,
         remoteJid,
-        pushName: 'Asistente IA',
+        pushName: 'Operador / Asistente',
         fromMe: true,
         messageText: userMessage,
         status: 'sent'
@@ -101,6 +111,23 @@ router.post('/', async (req, res) => {
       status: 'received'
     });
 
+    // Check if conversation is currently in Human Mode (AI paused)
+    const session = await getChatSession(tenant.id, remoteJid);
+    if (session?.isHumanMode) {
+      console.log(`[Webhook] Chat ${remoteJid} is in HUMAN MODE. Skipping AI auto-reply.`);
+      return;
+    }
+
+    // Fetch tenant's agent configuration
+    const agentConfig: any = await getAgentConfig(tenant.id);
+
+    // Check for Human Handoff trigger keywords
+    const handoffEnabled = agentConfig?.humanHandoffEnabled !== false;
+    const defaultKeywords = ['humano', 'asesor', 'persona', 'agente', 'hablar con alguien', 'queja', 'reclamo', 'urgente'];
+    const keywords: string[] = agentConfig?.handoffKeywords || defaultKeywords;
+    const lowerMsg = userMessage.toLowerCase();
+    const isKeywordTriggered = handoffEnabled && keywords.some(k => lowerMsg.includes(k.toLowerCase().trim()));
+
     // Fetch conversation history
     const allChats = await getChatMessagesByTenant(tenant.id, 20);
     const history = allChats
@@ -109,8 +136,6 @@ router.post('/', async (req, res) => {
         role: (c.fromMe || c.from_me) ? 'assistant' : 'user',
         content: c.messageText || c.message_text || c.aiResponse || c.ai_response || ''
       }));
-
-    const cleanPhone = remoteJid.replace(/@.+$/, '').replace(/\D/g, '');
 
     console.log(`[Webhook] Processing with AI for tenant '${tenant.name}'...`);
     const aiResult = await processWhatsAppMessageWithAI(
@@ -121,6 +146,46 @@ router.post('/', async (req, res) => {
       history
     );
 
+    const targetInstance = tenant.evolutionInstance || instanceName || `tenant_${tenant.id.slice(0, 8)}`;
+
+    // Handle Human Handoff (either keyword or AI COMMAND_HANDOFF)
+    if (handoffEnabled && (isKeywordTriggered || aiResult.isHandoffRequested)) {
+      console.log(`[Webhook] Human Handoff triggered for ${remoteJid}!`);
+      await setChatHumanMode(tenant.id, remoteJid, true);
+
+      const customerHandoffReply = `👤 *Atención Personalizada:* Entendido *${pushName}*, te estamos comunicando con un asesor humano para atenderte directamente. En breve te responderá.`;
+      await sendMessage(targetInstance, cleanPhone, customerHandoffReply);
+
+      await saveChatMessage(tenant.id, {
+        id: `ai_${Date.now()}`,
+        remoteJid,
+        pushName: 'Asistente IA',
+        fromMe: true,
+        messageText: customerHandoffReply,
+        aiResponse: customerHandoffReply,
+        status: 'sent'
+      });
+
+      // Send alert notification to admin
+      const adminPhone = (agentConfig?.handoffNotifyPhone || tenant.whatsappNumber || '').replace(/\D/g, '');
+      if (adminPhone) {
+        const reason = aiResult.handoffReason || (isKeywordTriggered ? `El cliente escribió: "${userMessage}"` : 'El cliente solicita hablar con un asesor humano.');
+        const alertMsg = `🚨 *¡ATENCIÓN HUMANA REQUERIDA!*
+
+👤 *Cliente:* ${pushName} (${cleanPhone})
+📝 *Resumen / Motivo:* ${reason}
+
+👉 _La IA ha sido pausada automáticamente para este chat. Puedes responderle directamente desde WhatsApp o desde tu Panel de Betico._`;
+
+        try {
+          await sendMessage(targetInstance, adminPhone, alertMsg);
+        } catch (e) {
+          console.error('Error sending handoff alert to admin:', e);
+        }
+      }
+      return;
+    }
+
     if (!aiResult || !aiResult.replyText) {
       console.warn('[Webhook] No AI reply generated');
       return;
@@ -129,7 +194,6 @@ router.post('/', async (req, res) => {
     console.log(`[Webhook] AI generated reply: "${aiResult.replyText.slice(0, 100)}..."`);
 
     // Send reply back via Evolution API
-    const targetInstance = tenant.evolutionInstance || instanceName || `tenant_${tenant.id.slice(0, 8)}`;
     const sendRes = await sendMessage(targetInstance, cleanPhone, aiResult.replyText);
     console.log(`[Webhook] SendMessage status: success=${sendRes.success}`);
 
