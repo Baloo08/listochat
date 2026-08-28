@@ -303,6 +303,38 @@ export async function runMigrations() {
     ALTER TABLE services ADD COLUMN IF NOT EXISTS custom_variables JSONB;
     ALTER TABLE order_items ADD COLUMN IF NOT EXISTS selected_variables JSONB;
     ALTER TABLE appointments ADD COLUMN IF NOT EXISTS selected_variables JSONB;
+    ALTER TABLE appointments ADD COLUMN IF NOT EXISTS reminder_1_sent BOOLEAN DEFAULT FALSE;
+    ALTER TABLE appointments ADD COLUMN IF NOT EXISTS reminder_2_sent BOOLEAN DEFAULT FALSE;
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS reminder_config JSONB;
+
+    CREATE TABLE IF NOT EXISTS customers (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+      name VARCHAR(255) NOT NULL,
+      phone VARCHAR(50) NOT NULL,
+      email VARCHAR(255),
+      tags TEXT[] DEFAULT '{}',
+      total_orders INT DEFAULT 0,
+      total_spent NUMERIC(10, 2) DEFAULT 0,
+      last_interaction TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(tenant_id, phone)
+    );
+
+    CREATE TABLE IF NOT EXISTS whatsapp_campaigns (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+      name VARCHAR(255) NOT NULL,
+      message_template TEXT NOT NULL,
+      media_url TEXT,
+      target_segment VARCHAR(50) DEFAULT 'all',
+      target_tag VARCHAR(100),
+      total_recipients INT DEFAULT 0,
+      sent_count INT DEFAULT 0,
+      failed_count INT DEFAULT 0,
+      status VARCHAR(50) DEFAULT 'draft',
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
 
     CREATE TABLE IF NOT EXISTS uploaded_files (
       filename VARCHAR(255) PRIMARY KEY,
@@ -312,6 +344,9 @@ export async function runMigrations() {
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE INDEX IF NOT EXISTS idx_customers_tenant ON customers(tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone);
+    CREATE INDEX IF NOT EXISTS idx_campaigns_tenant ON whatsapp_campaigns(tenant_id);
     CREATE INDEX IF NOT EXISTS idx_uploaded_files_filename ON uploaded_files(filename);
     CREATE INDEX IF NOT EXISTS idx_delivery_drivers_tenant ON delivery_drivers(tenant_id);
     CREATE INDEX IF NOT EXISTS idx_schedule_settings_tenant ON schedule_settings(tenant_id);

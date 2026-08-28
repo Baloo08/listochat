@@ -1,11 +1,17 @@
 import express from 'express';
+import http from 'http';
+import { Server as SocketIOServer } from 'socket.io';
 import cors from 'cors';
+import helmet from 'helmet';
+import compression from 'compression';
+import rateLimit from 'express-rate-limit';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 import { env } from './config/env.js';
 import { runMigrations } from './db/migrations.js';
 import { query } from './db/pool.js';
+import { startReminderScheduler } from './services/reminder.service.js';
 
 // Route imports
 import authRoutes from './routes/auth.routes.js';
@@ -28,12 +34,33 @@ import webhookRoutes from './routes/webhook.routes.js';
 import calendarRoutes from './routes/calendar.routes.js';
 import driversRoutes from './routes/drivers.routes.js';
 import superadminMetricsRoutes from './routes/superadmin-metrics.routes.js';
+import campaignsRoutes from './routes/campaigns.routes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 async function startServer() {
   const app = express();
+  const server = http.createServer(app);
+
+  // Setup Real-time WebSockets
+  const io = new SocketIOServer(server, {
+    cors: { origin: '*', methods: ['GET', 'POST'] }
+  });
+
+  io.on('connection', (socket) => {
+    socket.on('join_tenant', (tenantId: string) => {
+      if (tenantId) {
+        socket.join(`tenant_${tenantId}`);
+      }
+    });
+  });
+
+  // Attach io instance to all requests for emitting events in routes
+  app.use((req, res, next) => {
+    (req as any).io = io;
+    next();
+  });
 
   // Ensure upload directory exists
   const uploadPath = env.UPLOAD_DIR || path.join(process.cwd(), 'uploads');
@@ -41,10 +68,31 @@ async function startServer() {
     fs.mkdirSync(uploadPath, { recursive: true });
   }
 
-  // Middleware
+  // Security & Performance Middlewares
+  app.use(helmet({
+    contentSecurityPolicy: false, // Don't block external Google Fonts or Unsplash CDN images
+    crossOriginResourcePolicy: { policy: "cross-origin" }
+  }));
+  app.use(compression());
   app.use(cors());
   app.use(express.json({ limit: '25mb' }));
   app.use(express.urlencoded({ extended: true, limit: '25mb' }));
+
+  // Rate limiters for protection against brute-force and DoS
+  const authLimiter = rateLimit({
+    windowMs: 5 * 60 * 1000, // 5 minutes
+    max: 30, // 30 login attempts per 5 mins
+    message: { error: 'Demasiados intentos de acceso. Por favor intenta de nuevo en 5 minutos.' },
+    standardHeaders: true,
+    legacyHeaders: false
+  });
+
+  const publicLimiter = rateLimit({
+    windowMs: 1 * 60 * 1000, // 1 minute
+    max: 200, // 200 requests per minute per IP
+    standardHeaders: true,
+    legacyHeaders: false
+  });
 
   // Auto-healing persistent uploads route (restores from PostgreSQL if container is fresh)
   app.get('/uploads/:filename', async (req, res, next) => {
@@ -88,6 +136,7 @@ async function startServer() {
   });
 
   // API Routes
+  app.use('/api/auth/login', authLimiter);
   app.use('/api/auth', authRoutes);
   app.use('/api/tenants', tenantRoutes);
   app.use('/api/users', usersRoutes);
@@ -105,7 +154,8 @@ async function startServer() {
   app.use('/api/audit-logs', auditRoutes);
   app.use('/api/superadmin', superadminMetricsRoutes);
   app.use('/api/upload', uploadRoutes);
-  app.use('/api/storefront', storefrontRoutes);
+  app.use('/api/campaigns', campaignsRoutes);
+  app.use('/api/storefront', publicLimiter, storefrontRoutes);
   app.use('/api/calendar', calendarRoutes);
   app.use('/api/webhook/evolution', webhookRoutes);
   app.use('/api/webhook', webhookRoutes);
@@ -134,11 +184,13 @@ async function startServer() {
   try {
     await runMigrations();
     console.log('Database migrations completed.');
+    // Start automated appointment reminder background scheduler
+    startReminderScheduler();
   } catch (err) {
     console.error('Failed to run database migrations:', err);
   }
 
-  app.listen(env.PORT, '0.0.0.0', () => {
+  server.listen(env.PORT, '0.0.0.0', () => {
     console.log(`Betico Server listening on http://0.0.0.0:${env.PORT}`);
   });
 }

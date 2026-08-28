@@ -239,6 +239,11 @@ router.post('/public/:slug/book', async (req, res) => {
       selectedVariables: req.body.selectedVariables
     });
 
+    // Emit real-time WebSocket event
+    if ((req as any).io) {
+      (req as any).io.to(`tenant_${tenant.id}`).emit('appointment:created', appt);
+    }
+
     const cleanCustomerPhone = customerPhone.replace(/\D/g, '');
 
     // 1. Send WhatsApp confirmation to customer

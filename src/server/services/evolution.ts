@@ -136,3 +136,24 @@ export async function markAsRead(instanceName: string, remoteJid: string, messag
     return { success: false, error };
   }
 }
+
+export async function sendMedia(instanceName: string, number: string, mediaUrl: string, caption?: string): Promise<EvolutionResponse> {
+  try {
+    const cleanNumber = (number || '').replace(/@.+$/, '').replace(/\D/g, '');
+    const response = await fetch(`${EVOLUTION_API_URL}/message/sendMedia/${instanceName}`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({
+        number: cleanNumber,
+        mediatype: 'image',
+        media: mediaUrl,
+        caption: caption || '',
+        delay: 1200
+      })
+    });
+    const data = await response.json();
+    return { success: response.ok, data };
+  } catch (error) {
+    return { success: false, error };
+  }
+}

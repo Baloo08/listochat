@@ -197,6 +197,11 @@ Hola *${order.customerName}*, te informamos que tu orden *#ORD-${order.orderNumb
       }
     }
 
+    // Emit real-time WebSocket event
+    if ((req as any).io) {
+      (req as any).io.to(`tenant_${order.tenantId || req.tenantId!}`).emit('order:updated', updated);
+    }
+
     res.json(updated);
   } catch (error) {
     console.error(error);

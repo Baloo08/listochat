@@ -15,6 +15,8 @@ export interface AgentProcessResult {
   orderData?: any;
   isHandoffRequested: boolean;
   handoffReason?: string;
+  isMediaDetected?: boolean;
+  mediaData?: { mediaUrl: string; caption?: string };
   tokensUsed?: number;
 }
 
@@ -87,18 +89,27 @@ export async function processWhatsAppMessageWithAI(
     });
   }
 
+  const formatProductWithPhoto = (p: any) => {
+    let photoUrl = '';
+    if (p.images && p.images.length > 0) {
+      const rawUrl = p.images[0].url;
+      photoUrl = rawUrl.startsWith('http') ? rawUrl : `${baseUrl}${rawUrl}`;
+    }
+    return `• ${p.name}: ${p.description || ''} | Precio: ₡${Number(p.price || 0).toLocaleString('es-CR')} | Stock: ${p.stock ?? 'disponible'}${photoUrl ? ` | FotoURL: ${photoUrl}` : ''}`;
+  };
+
   let prompt = `
 Eres el Asistente Virtual Oficial con Inteligencia Artificial de *${tenant?.name || 'nuestro negocio'}* en WhatsApp.
 
 Configuración e Instrucciones de Personalidad (System Prompt):
 ${agentConfig?.systemPrompt || 'Atiende amablemente a los clientes, brinda información de servicios y ayuda a agendar citas o compras.'}
 
-Contexto Operativo en Tiempo Real:
+Contexto Operativo y Enlaces Oficiales en Tiempo Real:
 - Fecha y hora actual en Costa Rica: ${crTime}
 - Nombre del cliente: ${senderName}
 - Teléfono del cliente: ${senderPhone}
-${bookingUrl ? `- Enlace directo para agendar en línea: ${bookingUrl}` : ''}
-${storeUrl ? `- Enlace directo a la tienda en línea: ${storeUrl}` : ''}
+${bookingUrl ? `- Enlace directo del negocio para agendar citas en línea: ${bookingUrl}` : ''}
+${storeUrl ? `- Enlace directo a la tienda / menú en línea: ${storeUrl}` : ''}
 
 ${scheduleInfo}
 
@@ -108,7 +119,7 @@ Catálogo Oficial de Servicios Disponibles:
 ${services.length > 0 ? services.map(s => `• ${s.name}: ${s.description || ''} | Precio: ₡${Number(s.price || 0).toLocaleString('es-CR')} | Duración: ${s.duration || `${s.estimatedMinutes || 45} min`}`).join('\n') : 'No hay servicios registrados actualmente.'}
 
 Catálogo Oficial de Productos Disponibles:
-${products.length > 0 ? products.map(p => `• ${p.name}: ${p.description || ''} | Precio: ₡${Number(p.price || 0).toLocaleString('es-CR')} | Stock: ${p.stock ?? 'disponible'}`).join('\n') : 'No hay productos en inventario actualmente.'}
+${products.length > 0 ? products.map(p => formatProductWithPhoto(p)).join('\n') : 'No hay productos en inventario actualmente.'}
 
 Historial Reciente de la Conversación:
 ${chatHistory.map(h => `${h.role === 'user' ? 'Cliente' : 'Asistente'}: ${h.content}`).join('\n')}
@@ -116,7 +127,11 @@ ${chatHistory.map(h => `${h.role === 'user' ? 'Cliente' : 'Asistente'}: ${h.cont
 Último mensaje recibido:
 Cliente: ${userMessage}
 
-Instrucciones Especiales y Comandos Ocultos (NO los muestres al cliente en el texto visible, inclúyelos en tu respuesta SOLAMENTE si se confirman los datos):
+Instrucciones Especiales y Comandos Ocultos (NO los muestres al cliente en el texto visible, inclúyelos en tu respuesta SOLAMENTE si se confirman los datos o se solicita una foto):
+- Si el cliente solicita ver una foto, imagen o cómo luce un producto y dicho producto tiene FotoURL en el catálogo, incluye al final de tu respuesta EXACTAMENTE:
+  <<<COMMAND_SEND_MEDIA: {"mediaUrl": "URL_DE_LA_FOTO", "caption": "Descripción breve del producto"}>>>
+- Si el cliente pregunta por la tienda, catálogo digital o menú completo, invítalo educadamente y dale el enlace: ${storeUrl || 'nuestro catálogo digital'}
+- Si el cliente pregunta cómo agendar una cita o ver los horarios disponibles, dale el enlace: ${bookingUrl || 'nuestro portal de reservas'}
 - Si el cliente confirma querer agendar un servicio, incluye al final de tu respuesta EXACTAMENTE:
   <<<COMMAND_BOOKING: {"service": "Nombre del servicio", "date": "YYYY-MM-DD", "time": "HH:MM", "customerName": "${senderName}"}>>>
 - Si el cliente confirma querer hacer una compra de productos, incluye al final de tu respuesta EXACTAMENTE:
@@ -156,10 +171,13 @@ Reglas estrictas de comportamiento:
   let orderData;
   let isHandoffRequested = false;
   let handoffReason;
+  let isMediaDetected = false;
+  let mediaData;
 
   const bookingRegex = /<<<COMMAND_BOOKING:\s*({.*?})>>>/s;
   const orderRegex = /<<<COMMAND_ORDER:\s*({.*?})>>>/s;
   const handoffRegex = /<<<COMMAND_HANDOFF:\s*({.*?})>>>/s;
+  const mediaRegex = /<<<COMMAND_SEND_MEDIA:\s*({.*?})>>>/s;
 
   const bookingMatch = replyText.match(bookingRegex);
   if (bookingMatch && bookingMatch[1]) {
@@ -179,10 +197,17 @@ Reglas estrictas de comportamiento:
     try { handoffReason = JSON.parse(handoffMatch[1]).reason; } catch (e) {}
   }
 
+  const mediaMatch = replyText.match(mediaRegex);
+  if (mediaMatch && mediaMatch[1]) {
+    isMediaDetected = true;
+    try { mediaData = JSON.parse(mediaMatch[1]); } catch (e) {}
+  }
+
   replyText = replyText
     .replace(bookingRegex, '')
     .replace(orderRegex, '')
     .replace(handoffRegex, '')
+    .replace(mediaRegex, '')
     .replace(/\*\*/g, '*')
     .trim();
 
@@ -194,6 +219,8 @@ Reglas estrictas de comportamiento:
     orderData,
     isHandoffRequested,
     handoffReason,
+    isMediaDetected,
+    mediaData,
     tokensUsed: aiResult.tokensUsed
   };
 }

@@ -148,6 +148,15 @@ router.post('/:slug/checkout', async (req, res) => {
       formattedItems
     );
 
+    // Emit real-time WebSocket event to Kitchen Display & Admin Dashboard
+    if ((req as any).io) {
+      (req as any).io.to(`tenant_${tenant.id}`).emit('order:created', {
+        ...order,
+        items: formattedItems,
+        storeName
+      });
+    }
+
     const orderCode = `#ORD-${order.orderNumber}`;
     let cleanCustomerPhone = customerPhone.replace(/\D/g, '');
     if (cleanCustomerPhone.length === 8) cleanCustomerPhone = '506' + cleanCustomerPhone;

@@ -1,0 +1,277 @@
+import { Router } from 'express';
+import { authenticateToken } from '../middleware/auth.js';
+import { query } from '../db/pool.js';
+import { sendMessage, sendMedia } from '../services/evolution.js';
+import { getTenantById } from '../db/tenant.repo.js';
+
+const router = Router();
+router.use(authenticateToken);
+
+// ==========================================
+// REMINDER SETTINGS (CUSTOMIZABLE BY TENANT)
+// ==========================================
+router.get('/reminder-settings', async (req, res) => {
+  try {
+    const tenantId = req.user!.tenantId;
+    const result = await query(`SELECT reminder_config as "reminderConfig" FROM tenants WHERE id = $1`, [tenantId]);
+    const config = result.rows[0]?.reminderConfig || {
+      enabled: true,
+      firstReminderEnabled: true,
+      firstReminderHoursBefore: 24,
+      firstReminderTemplate: '👋 Hola *{{nombre}}*, te recordamos tu cita para *{{servicio}}* agendada para el día *{{fecha}}* a las *{{hora}}* en *{{negocio}}*. ¡Te esperamos!',
+      secondReminderEnabled: true,
+      secondReminderHoursBefore: 2,
+      secondReminderTemplate: '⏰ Hola *{{nombre}}*, tu cita para *{{servicio}}* en *{{negocio}}* es hoy a las *{{hora}}* (en unas {{horas}} horas). Si necesitas reagendar, avísanos con tiempo.'
+    };
+    res.json(config);
+  } catch (error) {
+    console.error('Error getting reminder settings:', error);
+    res.status(500).json({ error: 'Error al obtener configuración de recordatorios' });
+  }
+});
+
+router.post('/reminder-settings', async (req, res) => {
+  try {
+    const tenantId = req.user!.tenantId;
+    const config = req.body;
+    await query(`UPDATE tenants SET reminder_config = $1 WHERE id = $2`, [JSON.stringify(config), tenantId]);
+    res.json({ success: true, config });
+  } catch (error) {
+    console.error('Error saving reminder settings:', error);
+    res.status(500).json({ error: 'Error al guardar configuración de recordatorios' });
+  }
+});
+
+// ==========================================
+// CUSTOMERS & CRM AUDIENCE
+// ==========================================
+router.get('/customers', async (req, res) => {
+  try {
+    const tenantId = req.user!.tenantId;
+
+    // Sync recent customers from orders & appointments into customers table
+    await query(`
+      INSERT INTO customers (tenant_id, name, phone, email, total_orders, total_spent, last_interaction)
+      SELECT 
+        $1 as tenant_id,
+        customer_name as name,
+        customer_phone as phone,
+        customer_email as email,
+        COUNT(id) as total_orders,
+        SUM(total) as total_spent,
+        MAX(created_at) as last_interaction
+      FROM orders
+      WHERE tenant_id = $1 AND customer_phone IS NOT NULL AND customer_phone != ''
+      GROUP BY customer_name, customer_phone, customer_email
+      ON CONFLICT (tenant_id, phone) DO UPDATE SET
+        name = EXCLUDED.name,
+        total_orders = EXCLUDED.total_orders,
+        total_spent = EXCLUDED.total_spent,
+        last_interaction = EXCLUDED.last_interaction
+    `, [tenantId]);
+
+    // Also sync from appointments
+    await query(`
+      INSERT INTO customers (tenant_id, name, phone, total_orders, total_spent, last_interaction)
+      SELECT 
+        $1 as tenant_id,
+        name,
+        whatsapp as phone,
+        COUNT(id) as total_orders,
+        SUM(amount) as total_spent,
+        MAX(created_at) as last_interaction
+      FROM appointments
+      WHERE tenant_id = $1 AND whatsapp IS NOT NULL AND whatsapp != ''
+      GROUP BY name, whatsapp
+      ON CONFLICT (tenant_id, phone) DO UPDATE SET
+        last_interaction = GREATEST(customers.last_interaction, EXCLUDED.last_interaction)
+    `, [tenantId]);
+
+    const result = await query(`
+      SELECT id, name, phone, email, tags, total_orders as "totalOrders", 
+             total_spent as "totalSpent", last_interaction as "lastInteraction", created_at as "createdAt"
+      FROM customers
+      WHERE tenant_id = $1
+      ORDER BY last_interaction DESC
+    `, [tenantId]);
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching customers:', error);
+    res.status(500).json({ error: 'Error al obtener lista de clientes' });
+  }
+});
+
+router.post('/customers/:id/tags', async (req, res) => {
+  try {
+    const tenantId = req.user!.tenantId;
+    const { tags } = req.body;
+    const result = await query(`
+      UPDATE customers SET tags = $1 
+      WHERE id = $2 AND tenant_id = $3
+      RETURNING id, tags
+    `, [tags, req.params.id, tenantId]);
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error updating customer tags:', error);
+    res.status(500).json({ error: 'Error al actualizar etiquetas' });
+  }
+});
+
+// ==========================================
+// WHATSAPP CAMPAIGNS (MASS BROADCASTS)
+// ==========================================
+router.get('/', async (req, res) => {
+  try {
+    const tenantId = req.user!.tenantId;
+    const result = await query(`
+      SELECT id, name, message_template as "messageTemplate", media_url as "mediaUrl",
+             target_segment as "targetSegment", target_tag as "targetTag",
+             total_recipients as "totalRecipients", sent_count as "sentCount",
+             failed_count as "failedCount", status, created_at as "createdAt"
+      FROM whatsapp_campaigns
+      WHERE tenant_id = $1
+      ORDER BY created_at DESC
+    `, [tenantId]);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching campaigns:', error);
+    res.status(500).json({ error: 'Error al obtener campañas' });
+  }
+});
+
+router.post('/', async (req, res) => {
+  try {
+    const tenantId = req.user!.tenantId;
+    const { name, messageTemplate, mediaUrl, targetSegment, targetTag } = req.body;
+
+    if (!name || !messageTemplate) {
+      res.status(400).json({ error: 'Nombre de campaña y mensaje son obligatorios' });
+      return;
+    }
+
+    // Determine target recipient count
+    let countQuery = `SELECT COUNT(*) as count FROM customers WHERE tenant_id = $1`;
+    const params: any[] = [tenantId];
+
+    if (targetSegment === 'tag' && targetTag) {
+      countQuery += ` AND $2 = ANY(tags)`;
+      params.push(targetTag);
+    }
+
+    const countRes = await query(countQuery, params);
+    const totalRecipients = parseInt(countRes.rows[0]?.count || '0', 10);
+
+    const result = await query(`
+      INSERT INTO whatsapp_campaigns (tenant_id, name, message_template, media_url, target_segment, target_tag, total_recipients, status)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, 'draft')
+      RETURNING id, name, message_template as "messageTemplate", media_url as "mediaUrl",
+                target_segment as "targetSegment", target_tag as "targetTag",
+                total_recipients as "totalRecipients", sent_count as "sentCount",
+                failed_count as "failedCount", status, created_at as "createdAt"
+    `, [tenantId, name, messageTemplate, mediaUrl || null, targetSegment || 'all', targetTag || null, totalRecipients]);
+
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error('Error creating campaign:', error);
+    res.status(500).json({ error: 'Error al crear campaña' });
+  }
+});
+
+router.post('/:id/send', async (req, res) => {
+  try {
+    const tenantId = req.user!.tenantId;
+    const campaignId = req.params.id;
+
+    const campRes = await query(`
+      SELECT * FROM whatsapp_campaigns WHERE id = $1 AND tenant_id = $2
+    `, [campaignId, tenantId]);
+
+    if (campRes.rows.length === 0) {
+      res.status(404).json({ error: 'Campaña no encontrada' });
+      return;
+    }
+
+    const campaign = campRes.rows[0];
+    const tenant = await getTenantById(tenantId);
+
+    if (!tenant || !tenant.evolutionInstance) {
+      res.status(400).json({ error: 'El negocio no tiene una conexión de WhatsApp activa para realizar envíos' });
+      return;
+    }
+
+    // Mark as sending
+    await query(`UPDATE whatsapp_campaigns SET status = 'sending' WHERE id = $1`, [campaignId]);
+
+    // Fetch target customers
+    let custQuery = `SELECT name, phone FROM customers WHERE tenant_id = $1`;
+    const params: any[] = [tenantId];
+    if (campaign.target_segment === 'tag' && campaign.target_tag) {
+      custQuery += ` AND $2 = ANY(tags)`;
+      params.push(campaign.target_tag);
+    }
+
+    const customersRes = await query(custQuery, params);
+    const customers = customersRes.rows;
+
+    res.json({ success: true, message: `Campaña iniciada para ${customers.length} destinatarios`, total: customers.length });
+
+    // Asynchronous background queue with delay to protect WhatsApp number against bans
+    (async () => {
+      let sentCount = 0;
+      let failedCount = 0;
+
+      for (const cust of customers) {
+        try {
+          const cleanPhone = cust.phone.replace(/\D/g, '');
+          if (!cleanPhone) continue;
+
+          const text = campaign.message_template
+            .replace(/\{\{nombre\}\}/gi, cust.name || 'estimado cliente')
+            .replace(/\{\{negocio\}\}/gi, tenant.name);
+
+          let sendRes;
+          if (campaign.media_url) {
+            sendRes = await sendMedia(tenant.evolutionInstance, cleanPhone, campaign.media_url, text);
+          } else {
+            sendRes = await sendMessage(tenant.evolutionInstance, cleanPhone, text);
+          }
+
+          if (sendRes.success) {
+            sentCount++;
+          } else {
+            failedCount++;
+          }
+        } catch (e) {
+          failedCount++;
+        }
+
+        // Update progress in DB every 3 sends
+        if ((sentCount + failedCount) % 3 === 0) {
+          await query(`
+            UPDATE whatsapp_campaigns 
+            SET sent_count = $1, failed_count = $2 
+            WHERE id = $3
+          `, [sentCount, failedCount, campaignId]);
+        }
+
+        // Sleep 3.5 seconds between messages (Anti-Spam / Anti-Ban throttle)
+        await new Promise(r => setTimeout(r, 3500));
+      }
+
+      await query(`
+        UPDATE whatsapp_campaigns 
+        SET sent_count = $1, failed_count = $2, status = 'completed' 
+        WHERE id = $3
+      `, [sentCount, failedCount, campaignId]);
+
+      console.log(`[Campaigns] Campaign ${campaignId} finished. Sent: ${sentCount}, Failed: ${failedCount}`);
+    })();
+
+  } catch (error) {
+    console.error('Error starting campaign send:', error);
+    res.status(500).json({ error: 'Error al enviar campaña' });
+  }
+});
+
+export default router;

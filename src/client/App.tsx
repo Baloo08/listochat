@@ -19,6 +19,9 @@ import PublicBookingView from '../storefront/PublicBookingView';
 import DriverPortal from './components/DriverPortal';
 import KDSFullscreen from './components/KDSFullscreen';
 import TenantLoginView from './components/TenantLoginView';
+import CampaignsManager from './components/CampaignsManager';
+import { io } from 'socket.io-client';
+import { playOrderNotificationSound, playBookingNotificationSound } from './utils/sound';
 
 import {
   Home,
@@ -39,6 +42,8 @@ import {
   Server,
   Activity,
   DollarSign,
+  Send,
+  Volume2,
   ArrowLeft,
   Menu,
   X,
@@ -151,8 +156,24 @@ export default function App() {
 
     fetchTenantStoreConfig();
     checkUnread();
-    const interval = setInterval(checkUnread, 12000);
-    return () => clearInterval(interval);
+
+    const socket = io(window.location.origin);
+    if (user.tenantId) {
+      socket.emit('join_tenant', user.tenantId);
+    }
+    socket.on('order:created', () => {
+      playOrderNotificationSound();
+      setUnreadOrdersCount(prev => prev + 1);
+    });
+    socket.on('appointment:created', () => {
+      playBookingNotificationSound();
+    });
+
+    const interval = setInterval(checkUnread, 15000);
+    return () => {
+      socket.disconnect();
+      clearInterval(interval);
+    };
   }, [isAuthenticated, user]);
 
   const isImpersonating = !!localStorage.getItem('original_token');
@@ -235,6 +256,12 @@ export default function App() {
       ]
     }] : []),
     {
+      title: 'MARKETING & DIFUSIÓN',
+      items: [
+        { id: 'campaigns', label: 'Difusión & CRM', icon: <Send size={18} /> }
+      ]
+    },
+    {
       title: 'SISTEMA & AJUSTES',
       items: [
         { id: 'agente', label: 'Agente IA', icon: <Bot size={18} /> },
@@ -275,6 +302,7 @@ export default function App() {
       switch (currentPage) {
         case 'dashboard': return <Dashboard />;
         case 'chats': return <ChatsInbox />;
+        case 'campaigns': return <CampaignsManager />;
         case 'reservas': return <Bookings />;
         case 'servicios': return <ServicesManager />;
         case 'productos': return <ProductManager />;
@@ -508,6 +536,7 @@ export default function App() {
                 currentPage === 'ordenes' ? (storeMode === 'restaurant' ? 'Comandas' : 'Pedidos') :
                 currentPage === 'dashboard' ? 'Dashboard' :
                 currentPage === 'chats' ? 'Chats en Vivo' :
+                currentPage === 'campaigns' ? 'Marketing, Difusión & CRM' :
                 currentPage === 'whatsapp' ? 'Conexión WhatsApp' :
                 currentPage === 'productos' ? (storeMode === 'restaurant' ? 'Menú / Platillos' : 'Catálogo Productos') :
                 currentPage === 'tienda' ? 'Tienda & Envíos' :

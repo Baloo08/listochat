@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Utensils, Clock, CheckCircle, Flame, Zap, Truck, Maximize, Minimize, RefreshCw, Eye, X, MapPin, Phone, MessageSquare, AlertCircle } from 'lucide-react';
+import { Utensils, Clock, CheckCircle, Flame, Zap, Truck, Maximize, Minimize, RefreshCw, Eye, X, MapPin, Phone, MessageSquare, AlertCircle, Volume2, VolumeX } from 'lucide-react';
 import { Order, OrderStatus } from '../../shared/types';
 import { useApi } from '../hooks/useApi';
+import { io } from 'socket.io-client';
+import { playOrderNotificationSound } from '../utils/sound';
 
 export default function KDSFullscreen() {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -9,6 +11,7 @@ export default function KDSFullscreen() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [soundEnabled, setSoundEnabled] = useState(true);
   const api = useApi();
 
   const fetchOrders = async () => {
@@ -27,9 +30,28 @@ export default function KDSFullscreen() {
 
   useEffect(() => {
     fetchOrders();
-    const interval = setInterval(fetchOrders, 5000);
-    return () => clearInterval(interval);
-  }, []);
+
+    // Connect to WebSocket for instant 0ms real-time order arrival
+    const socket = io(window.location.origin);
+    
+    socket.on('order:created', (newOrder: Order) => {
+      if (soundEnabled) playOrderNotificationSound();
+      setOrders(prev => [newOrder, ...prev.filter(o => o.id !== newOrder.id)]);
+      setLastUpdated(new Date());
+    });
+
+    socket.on('order:updated', (updatedOrder: Order) => {
+      setOrders(prev => prev.map(o => o.id === updatedOrder.id ? updatedOrder : o));
+      setLastUpdated(new Date());
+    });
+
+    const interval = setInterval(fetchOrders, 10000); // Polling as secondary backup
+
+    return () => {
+      socket.disconnect();
+      clearInterval(interval);
+    };
+  }, [soundEnabled]);
 
   const handleToggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -127,6 +149,19 @@ export default function KDSFullscreen() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <button
+            onClick={() => {
+              const next = !soundEnabled;
+              setSoundEnabled(next);
+              if (next) playOrderNotificationSound();
+            }}
+            style={{ padding: '8px 14px', backgroundColor: soundEnabled ? '#1e3a5f' : '#334155', color: 'white', border: `1px solid ${soundEnabled ? '#3b82f6' : '#475569'}`, borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', fontWeight: '600' }}
+            title={soundEnabled ? 'Silenciar alertas sonoras' : 'Activar alertas sonoras'}
+          >
+            {soundEnabled ? <Volume2 size={16} color="#38bdf8" /> : <VolumeX size={16} color="#94a3b8" />}
+            <span>{soundEnabled ? 'Sonido Activo' : 'Silenciado'}</span>
+          </button>
+
           <button
             onClick={() => fetchOrders()}
             style={{ padding: '8px 14px', backgroundColor: '#334155', color: 'white', border: '1px solid #475569', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', fontWeight: '600' }}

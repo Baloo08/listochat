@@ -352,3 +352,41 @@ export interface Order {
   createdAt: Date;
   updatedAt: Date;
 }
+
+export interface ReminderConfig {
+  enabled: boolean;
+  firstReminderEnabled: boolean;
+  firstReminderHoursBefore: number; // e.g. 24
+  firstReminderTemplate: string;
+  secondReminderEnabled: boolean;
+  secondReminderHoursBefore: number; // e.g. 2
+  secondReminderTemplate: string;
+}
+
+export interface WhatsAppCampaign {
+  id: string;
+  tenantId: string;
+  name: string;
+  messageTemplate: string;
+  mediaUrl?: string;
+  targetSegment: 'all' | 'orders' | 'bookings' | 'tag';
+  targetTag?: string;
+  totalRecipients: number;
+  sentCount: number;
+  failedCount: number;
+  status: 'draft' | 'sending' | 'completed' | 'failed';
+  createdAt: string;
+}
+
+export interface Customer {
+  id: string;
+  tenantId: string;
+  name: string;
+  phone: string;
+  email?: string;
+  tags: string[];
+  totalOrders: number;
+  totalSpent: number;
+  lastInteraction?: string;
+  createdAt: string;
+}

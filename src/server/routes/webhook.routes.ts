@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { getTenantByEvolutionInstance, getAllTenants } from '../db/tenant.repo.js';
 import { processWhatsAppMessageWithAI } from '../services/agent.js';
-import { sendMessage } from '../services/evolution.js';
+import { sendMessage, sendMedia } from '../services/evolution.js';
 import { createBookingFromCommand } from '../services/booking.service.js';
 import { createOrderFromWhatsApp } from '../services/order.service.js';
 import { saveChatMessage, getChatMessagesByTenant, getChatSession, setChatHumanMode } from '../db/chats.repo.js';
@@ -199,9 +199,15 @@ router.post('/', async (req, res) => {
 
     console.log(`[Webhook] AI generated reply: "${aiResult.replyText.slice(0, 100)}..."`);
 
-    // Send reply back via Evolution API
-    const sendRes = await sendMessage(targetInstance, cleanPhone, aiResult.replyText);
-    console.log(`[Webhook] SendMessage status: success=${sendRes.success}`);
+    // Send reply back via Evolution API (image if media requested, or standard text)
+    let sendRes;
+    if (aiResult.isMediaDetected && aiResult.mediaData?.mediaUrl) {
+      console.log(`[Webhook] Sending product photo to customer: ${aiResult.mediaData.mediaUrl}`);
+      sendRes = await sendMedia(targetInstance, cleanPhone, aiResult.mediaData.mediaUrl, aiResult.replyText || aiResult.mediaData.caption);
+    } else {
+      sendRes = await sendMessage(targetInstance, cleanPhone, aiResult.replyText);
+    }
+    console.log(`[Webhook] Message send status: success=${sendRes.success}`);
 
     // Save AI reply to database
     await saveChatMessage(tenant.id, {
