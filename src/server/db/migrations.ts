@@ -270,13 +270,27 @@ export async function runMigrations() {
       PRIMARY KEY (tenant_id, remote_jid)
     );
 
+    CREATE TABLE IF NOT EXISTS delivery_drivers (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+      name VARCHAR(100) NOT NULL,
+      phone VARCHAR(50) NOT NULL,
+      vehicle_type VARCHAR(50) DEFAULT 'moto',
+      plate_number VARCHAR(50),
+      active BOOLEAN DEFAULT TRUE,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
     ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS store_mode VARCHAR(50) DEFAULT 'retail';
     ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS restaurant_config JSONB;
     ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS delivery_config JSONB;
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS consumption_mode VARCHAR(50);
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS table_number VARCHAR(50);
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_location JSONB;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS driver_id UUID REFERENCES delivery_drivers(id) ON DELETE SET NULL;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS waze_url TEXT;
 
+    CREATE INDEX IF NOT EXISTS idx_delivery_drivers_tenant ON delivery_drivers(tenant_id);
     CREATE INDEX IF NOT EXISTS idx_schedule_settings_tenant ON schedule_settings(tenant_id);
     CREATE INDEX IF NOT EXISTS idx_chat_sessions_tenant ON chat_sessions(tenant_id);
     CREATE INDEX IF NOT EXISTS idx_audit_logs_tenant ON audit_logs(tenant_id);

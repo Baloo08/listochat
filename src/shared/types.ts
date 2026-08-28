@@ -113,10 +113,23 @@ export interface StoreTheme {
 
 export interface RestaurantConfig {
   allowDineIn: boolean;
-  dineInMode: 'table_number' | 'call_by_name';
+  allowTableNumber: boolean;
+  allowCallByName: boolean;
+  dineInMode?: 'table_number' | 'call_by_name' | 'both';
   tableCount: number;
   allowPickup: boolean;
   allowDelivery: boolean;
+}
+
+export interface DeliveryDriver {
+  id: string;
+  tenantId: string;
+  name: string;
+  phone: string;
+  vehicleType?: 'moto' | 'bici' | 'auto';
+  plateNumber?: string;
+  active: boolean;
+  createdAt?: string;
 }
 
 export interface DeliveryConfig {
@@ -245,7 +258,10 @@ export interface Order {
     lng?: number;
     address?: string;
     mapsUrl?: string;
+    distanceKm?: number;
   };
+  driverId?: string;
+  wazeUrl?: string;
   chatMessageId?: string;
   createdAt?: Date;
   updatedAt?: Date;

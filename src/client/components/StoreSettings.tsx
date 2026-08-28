@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Store, Palette, Link as LinkIcon, Copy, ExternalLink, Save, CheckCircle, Upload, Image as ImageIcon, Sparkles, Pipette, Info, Utensils, ShoppingBag, Truck, MapPin, Package, Navigation } from 'lucide-react';
+import { Store, Palette, Link as LinkIcon, Copy, ExternalLink, Save, CheckCircle, Upload, Image as ImageIcon, Sparkles, Pipette, Info, Utensils, ShoppingBag, Truck, MapPin, Package, Navigation, Users, Plus, Trash2, Phone, Bike } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
-import { StoreSettings as StoreSettingsType, StoreTheme, RestaurantConfig, DeliveryConfig } from '../../shared/types';
+import { StoreSettings as StoreSettingsType, StoreTheme, RestaurantConfig, DeliveryConfig, DeliveryDriver } from '../../shared/types';
 
 export default function StoreSettings() {
-  const [activeTab, setActiveTab] = useState<'general' | 'restaurant' | 'delivery' | 'design'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'restaurant' | 'delivery' | 'drivers' | 'design'>('general');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -29,10 +29,11 @@ export default function StoreSettings() {
   const [deliveryFee, setDeliveryFee] = useState(2500);
   const [pickupEnabled, setPickupEnabled] = useState(true);
 
-  // Restaurant Mode Settings
+  // Restaurant Mode Settings (Both Table number and Call by name can be enabled)
   const [restaurantConfig, setRestaurantConfig] = useState<RestaurantConfig>({
     allowDineIn: true,
-    dineInMode: 'table_number',
+    allowTableNumber: true,
+    allowCallByName: true,
     tableCount: 15,
     allowPickup: true,
     allowDelivery: true
@@ -54,6 +55,14 @@ export default function StoreSettings() {
     originLocationType: 'GAM',
     correosIncludeIva: true
   });
+
+  // Delivery Drivers State
+  const [drivers, setDrivers] = useState<DeliveryDriver[]>([]);
+  const [newDriverName, setNewDriverName] = useState('');
+  const [newDriverPhone, setNewDriverPhone] = useState('');
+  const [newDriverVehicle, setNewDriverVehicle] = useState<'moto' | 'bici' | 'auto'>('moto');
+  const [newDriverPlate, setNewDriverPlate] = useState('');
+  const [addingDriver, setAddingDriver] = useState(false);
 
   // Design & Theme Fields
   const [primaryColor, setPrimaryColor] = useState('#16a34a');
@@ -85,6 +94,15 @@ export default function StoreSettings() {
     { name: 'Negro Carbón', hex: '#0f172a' }
   ];
 
+  const fetchDrivers = async () => {
+    try {
+      const data = await api.get('/api/drivers');
+      if (data) setDrivers(data);
+    } catch (e) {
+      console.error('Error fetching drivers:', e);
+    }
+  };
+
   useEffect(() => {
     const fetchSettings = async () => {
       try {
@@ -95,7 +113,8 @@ export default function StoreSettings() {
           if (data.restaurantConfig) {
             setRestaurantConfig({
               allowDineIn: data.restaurantConfig.allowDineIn !== false,
-              dineInMode: data.restaurantConfig.dineInMode || 'table_number',
+              allowTableNumber: data.restaurantConfig.allowTableNumber !== false,
+              allowCallByName: data.restaurantConfig.allowCallByName !== false,
               tableCount: data.restaurantConfig.tableCount || 15,
               allowPickup: data.restaurantConfig.allowPickup !== false,
               allowDelivery: data.restaurantConfig.allowDelivery !== false
@@ -146,6 +165,7 @@ export default function StoreSettings() {
       }
     };
     fetchSettings();
+    fetchDrivers();
   }, []);
 
   const handleCaptureStoreLocation = () => {
@@ -172,6 +192,41 @@ export default function StoreSettings() {
       },
       { enableHighAccuracy: true }
     );
+  };
+
+  const handleAddDriver = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newDriverName || !newDriverPhone) {
+      alert('Nombre y teléfono del repartidor son requeridos');
+      return;
+    }
+    setAddingDriver(true);
+    try {
+      await api.post('/api/drivers', {
+        name: newDriverName,
+        phone: newDriverPhone,
+        vehicleType: newDriverVehicle,
+        plateNumber: newDriverPlate
+      });
+      setNewDriverName('');
+      setNewDriverPhone('');
+      setNewDriverPlate('');
+      await fetchDrivers();
+    } catch (e: any) {
+      alert('Error agregando repartidor: ' + e.message);
+    } finally {
+      setAddingDriver(false);
+    }
+  };
+
+  const handleDeleteDriver = async (id: string) => {
+    if (!confirm('¿Eliminar este repartidor?')) return;
+    try {
+      await api.del(`/api/drivers/${id}`);
+      await fetchDrivers();
+    } catch (e) {
+      alert('Error eliminando repartidor');
+    }
   };
 
   const handleFileUpload = async (file: File, type: 'logo' | 'banner') => {
@@ -310,7 +365,7 @@ export default function StoreSettings() {
         <div>
           <h2 style={{ margin: '0 0 5px 0', fontSize: '1.5rem', fontWeight: 'bold' }}>Configuración de Tienda & Envíos</h2>
           <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-            Control de catálogo, modo restaurante, cálculo de envíos por KM, Correos de Costa Rica y diseño
+            Control de catálogo, modo restaurante, cálculo de envíos por KM, Correos de Costa Rica y repartidores
           </p>
         </div>
 
@@ -325,7 +380,7 @@ export default function StoreSettings() {
 
       {saveMessage && (
         <div style={{ padding: '12px 16px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534', borderRadius: '8px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '600', fontSize: '0.9rem' }}>
-          <CheckCircle size={18} /> ¡Configuración y tarifas guardadas exitosamente!
+          <CheckCircle size={18} /> ¡Configuración guardada exitosamente!
         </div>
       )}
 
@@ -361,7 +416,7 @@ export default function StoreSettings() {
         </div>
       </div>
 
-      {/* Tabs */}
+      {/* Tabs with Clean Lucide SVG Icons (No Emojis) */}
       <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', marginBottom: '25px', gap: '10px', overflowX: 'auto' }}>
         <button
           onClick={() => setActiveTab('general')}
@@ -378,20 +433,6 @@ export default function StoreSettings() {
         </button>
 
         <button
-          onClick={() => setActiveTab('delivery')}
-          style={{
-            padding: '10px 16px',
-            border: 'none',
-            borderBottom: activeTab === 'delivery' ? '2px solid #2563eb' : '2px solid transparent',
-            backgroundColor: 'transparent',
-            color: activeTab === 'delivery' ? '#2563eb' : 'var(--text-muted)',
-            fontWeight: '600', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap'
-          }}
-        >
-          <Truck size={17} /> 🚚 Envíos, GPS & Correos CR
-        </button>
-
-        <button
           onClick={() => setActiveTab('restaurant')}
           style={{
             padding: '10px 16px',
@@ -402,7 +443,35 @@ export default function StoreSettings() {
             fontWeight: '600', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap'
           }}
         >
-          <Utensils size={17} /> 🍽️ Modo Restaurante {storeMode === 'restaurant' ? '(Activo)' : ''}
+          <Utensils size={17} /> Modo Restaurante {storeMode === 'restaurant' ? '(Activo)' : ''}
+        </button>
+
+        <button
+          onClick={() => setActiveTab('delivery')}
+          style={{
+            padding: '10px 16px',
+            border: 'none',
+            borderBottom: activeTab === 'delivery' ? '2px solid #2563eb' : '2px solid transparent',
+            backgroundColor: 'transparent',
+            color: activeTab === 'delivery' ? '#2563eb' : 'var(--text-muted)',
+            fontWeight: '600', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap'
+          }}
+        >
+          <Truck size={17} /> Envíos, GPS & Correos CR
+        </button>
+
+        <button
+          onClick={() => setActiveTab('drivers')}
+          style={{
+            padding: '10px 16px',
+            border: 'none',
+            borderBottom: activeTab === 'drivers' ? '2px solid #0d9488' : '2px solid transparent',
+            backgroundColor: 'transparent',
+            color: activeTab === 'drivers' ? '#0d9488' : 'var(--text-muted)',
+            fontWeight: '600', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap'
+          }}
+        >
+          <Bike size={17} /> Repartidores / Motorizados ({drivers.length})
         </button>
 
         <button
@@ -416,7 +485,7 @@ export default function StoreSettings() {
             fontWeight: '600', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap'
           }}
         >
-          <Palette size={17} /> 🎨 Diseño Visual
+          <Palette size={17} /> Diseño Visual
         </button>
       </div>
 
@@ -460,11 +529,11 @@ export default function StoreSettings() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
                   <Utensils size={20} color={storeMode === 'restaurant' ? '#ea580c' : '#64748b'} />
                   <strong style={{ fontSize: '1rem', color: storeMode === 'restaurant' ? '#ea580c' : '#1e293b' }}>
-                    🍽️ Modo Restaurante / Menú Digital
+                    Modo Restaurante / Menú Digital
                   </strong>
                 </div>
                 <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b' }}>
-                  Menú con pedidos a la mesa (número de mesa), para llevar o express.
+                  Menú con pedidos a la mesa (número de mesa), llamado por nombre, para llevar o express.
                 </p>
               </div>
             </div>
@@ -511,7 +580,124 @@ export default function StoreSettings() {
         </div>
       )}
 
-      {/* TAB 2: DELIVERY, GPS & CORREOS DE COSTA RICA */}
+      {/* TAB 2: RESTAURANT MODE CONFIGURATION (Both Table and Name selectable) */}
+      {activeTab === 'restaurant' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
+              <div style={{ width: '42px', height: '42px', backgroundColor: '#ffedd5', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Utensils size={22} color="#ea580c" />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'bold' }}>Configuración de Modo Restaurante</h3>
+                <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                  Personaliza cómo los comensales ordenan en mesa, para llevar o express
+                </p>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '20px' }}>
+              
+              <div style={{ padding: '18px', backgroundColor: '#f8fafc', borderRadius: '10px', border: '1px solid var(--border)' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer', marginBottom: restaurantConfig.allowDineIn ? '14px' : '0' }}>
+                  <input
+                    type="checkbox"
+                    checked={restaurantConfig.allowDineIn}
+                    onChange={(e) => setRestaurantConfig({ ...restaurantConfig, allowDineIn: e.target.checked })}
+                  />
+                  <span>Permitir Comer en el Local (En Mesa)</span>
+                </label>
+
+                {restaurantConfig.allowDineIn && (
+                  <div style={{ paddingLeft: '28px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '8px' }}>
+                        Modalidades de Identificación en Mesa (Puedes activar ambas):
+                      </label>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                        <label
+                          style={{
+                            padding: '12px 14px', borderRadius: '8px',
+                            border: `2px solid ${restaurantConfig.allowTableNumber ? '#ea580c' : '#cbd5e1'}`,
+                            backgroundColor: restaurantConfig.allowTableNumber ? 'rgba(234, 88, 12, 0.05)' : 'white',
+                            cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px'
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={restaurantConfig.allowTableNumber}
+                            onChange={(e) => setRestaurantConfig({ ...restaurantConfig, allowTableNumber: e.target.checked })}
+                          />
+                          <strong style={{ fontSize: '0.85rem', color: restaurantConfig.allowTableNumber ? '#ea580c' : '#1e293b' }}>
+                            Rotular Número de Mesa
+                          </strong>
+                        </label>
+
+                        <label
+                          style={{
+                            padding: '12px 14px', borderRadius: '8px',
+                            border: `2px solid ${restaurantConfig.allowCallByName ? '#ea580c' : '#cbd5e1'}`,
+                            backgroundColor: restaurantConfig.allowCallByName ? 'rgba(234, 88, 12, 0.05)' : 'white',
+                            cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px'
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={restaurantConfig.allowCallByName}
+                            onChange={(e) => setRestaurantConfig({ ...restaurantConfig, allowCallByName: e.target.checked })}
+                          />
+                          <strong style={{ fontSize: '0.85rem', color: restaurantConfig.allowCallByName ? '#ea580c' : '#1e293b' }}>
+                            Llamado por Nombre
+                          </strong>
+                        </label>
+                      </div>
+                    </div>
+
+                    {restaurantConfig.allowTableNumber && (
+                      <div style={{ maxWidth: '240px' }}>
+                        <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>
+                          Cantidad de Mesas Disponibles:
+                        </label>
+                        <input
+                          type="number"
+                          min={1} max={100}
+                          value={restaurantConfig.tableCount || 15}
+                          onChange={(e) => setRestaurantConfig({ ...restaurantConfig, tableCount: Number(e.target.value) })}
+                          style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ padding: '18px', backgroundColor: '#f8fafc', borderRadius: '10px', border: '1px solid var(--border)' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={restaurantConfig.allowPickup}
+                    onChange={(e) => setRestaurantConfig({ ...restaurantConfig, allowPickup: e.target.checked })}
+                  />
+                  <span>Permitir Para Llevar / Retiro en Barra</span>
+                </label>
+              </div>
+
+              <div style={{ padding: '18px', backgroundColor: '#f8fafc', borderRadius: '10px', border: '1px solid var(--border)' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={restaurantConfig.allowDelivery}
+                    onChange={(e) => setRestaurantConfig({ ...restaurantConfig, allowDelivery: e.target.checked })}
+                  />
+                  <span>Permitir Delivery Express con GPS y Waze</span>
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 3: DELIVERY, GPS & CORREOS DE COSTA RICA */}
       {activeTab === 'delivery' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           
@@ -577,7 +763,7 @@ export default function StoreSettings() {
                   disabled={fetchingStoreGps}
                   style={{ padding: '8px 14px', backgroundColor: '#eff6ff', color: '#1d4ed8', border: '1px solid #93c5fd', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px', height: '38px' }}
                 >
-                  <Navigation size={14} /> {fetchingStoreGps ? 'Capturando...' : '📍 Capturar GPS Actual'}
+                  <Navigation size={14} /> {fetchingStoreGps ? 'Capturando...' : 'Capturar GPS Actual'}
                 </button>
               </div>
             </div>
@@ -598,7 +784,7 @@ export default function StoreSettings() {
                 }}
               >
                 <strong style={{ fontSize: '0.9rem', color: deliveryConfig.deliveryType === 'flat' ? '#2563eb' : '#1e293b' }}>
-                  💵 Tarifa Plana Fija
+                  Tarifa Plana Fija
                 </strong>
                 <span style={{ display: 'block', fontSize: '0.75rem', color: '#64748b', marginTop: '3px' }}>
                   Mismo costo de envío para cualquier pedido sin importar la distancia.
@@ -615,7 +801,7 @@ export default function StoreSettings() {
                 }}
               >
                 <strong style={{ fontSize: '0.9rem', color: deliveryConfig.deliveryType === 'distance' ? '#2563eb' : '#1e293b' }}>
-                  📐 Cálculo Dinámico por KM
+                  Cálculo Dinámico por KM
                 </strong>
                 <span style={{ display: 'block', fontSize: '0.75rem', color: '#64748b', marginTop: '3px' }}>
                   Calcula la distancia GPS entre el local y el cliente y cobra por km recorrido.
@@ -658,25 +844,25 @@ export default function StoreSettings() {
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '3px' }}>Costo por KM Adicional (₡)</label>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '3px' }}>Costo por KM Extra (₡)</label>
                   <input
                     type="number"
                     value={deliveryConfig.feePerExtraKm}
                     onChange={(e) => setDeliveryConfig({ ...deliveryConfig, feePerExtraKm: Number(e.target.value) })}
                     style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
                   />
-                  <span style={{ fontSize: '0.7rem', color: '#64748b' }}>Por cada km extra</span>
+                  <span style={{ fontSize: '0.7rem', color: '#64748b' }}>Por cada km adicional</span>
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '3px' }}>Radio Máximo de Cobertura (KM)</label>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '3px' }}>Radio Máximo (KM)</label>
                   <input
                     type="number"
                     value={deliveryConfig.maxDeliveryRadiusKm}
                     onChange={(e) => setDeliveryConfig({ ...deliveryConfig, maxDeliveryRadiusKm: Number(e.target.value) })}
                     style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
                   />
-                  <span style={{ fontSize: '0.7rem', color: '#64748b' }}>Límite express</span>
+                  <span style={{ fontSize: '0.7rem', color: '#64748b' }}>Límite de cobertura</span>
                 </div>
               </div>
             )}
@@ -688,7 +874,7 @@ export default function StoreSettings() {
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <Package size={22} color="#15803d" />
                 <div>
-                  <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 'bold' }}>📦 Correos de Costa Rica (EMS Nacional)</h3>
+                  <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 'bold' }}>Correos de Costa Rica (EMS Nacional)</h3>
                   <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                     Envíos a todo el país según tarifario oficial GAM y Resto del País
                   </p>
@@ -710,7 +896,7 @@ export default function StoreSettings() {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', backgroundColor: '#f0fdf4', padding: '16px', borderRadius: '8px', border: '1px solid #bbf7d0' }}>
                   <div>
                     <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', color: '#166534', marginBottom: '4px' }}>
-                      📍 ¿Dónde está ubicada tu sucursal o bodega?
+                      ¿Dónde está ubicada tu sucursal o bodega?
                     </label>
                     <select
                       value={deliveryConfig.originLocationType}
@@ -782,116 +968,108 @@ export default function StoreSettings() {
         </div>
       )}
 
-      {/* TAB 3: RESTAURANT CONFIGURATION */}
-      {activeTab === 'restaurant' && (
+      {/* TAB 4: REPARTIDORES / MOTORIZADOS */}
+      {activeTab === 'drivers' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          
+          {/* Add Driver Form */}
           <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
-              <div style={{ width: '42px', height: '42px', backgroundColor: '#ffedd5', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Utensils size={22} color="#ea580c" />
-              </div>
+            <h3 style={{ margin: '0 0 14px 0', fontSize: '1.15rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Plus size={18} color="var(--primary)" /> Registrar Nuevo Repartidor / Motorizado
+            </h3>
+
+            <form onSubmit={handleAddDriver} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', alignItems: 'flex-end' }}>
               <div>
-                <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'bold' }}>Configuración de Modo Restaurante</h3>
-                <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                  Personaliza cómo los comensales ordenan en mesa, para llevar o express
-                </p>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>Nombre Completo *</label>
+                <input
+                  type="text"
+                  placeholder="Ej: Carlos Ramírez"
+                  value={newDriverName}
+                  onChange={(e) => setNewDriverName(e.target.value)}
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                />
               </div>
-            </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '20px' }}>
-              
-              <div style={{ padding: '18px', backgroundColor: '#f8fafc', borderRadius: '10px', border: '1px solid var(--border)' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer', marginBottom: restaurantConfig.allowDineIn ? '14px' : '0' }}>
-                  <input
-                    type="checkbox"
-                    checked={restaurantConfig.allowDineIn}
-                    onChange={(e) => setRestaurantConfig({ ...restaurantConfig, allowDineIn: e.target.checked })}
-                  />
-                  <span>🍽️ Permitir Comer en el Local (En Mesa)</span>
-                </label>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>Teléfono WhatsApp *</label>
+                <input
+                  type="tel"
+                  placeholder="Ej: 8888-8888"
+                  value={newDriverPhone}
+                  onChange={(e) => setNewDriverPhone(e.target.value)}
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                />
+              </div>
 
-                {restaurantConfig.allowDineIn && (
-                  <div style={{ paddingLeft: '28px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '6px' }}>
-                        Modalidad de Mesa:
-                      </label>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                        <div
-                          onClick={() => setRestaurantConfig({ ...restaurantConfig, dineInMode: 'table_number' })}
-                          style={{
-                            padding: '10px 14px', borderRadius: '6px',
-                            border: `2px solid ${restaurantConfig.dineInMode === 'table_number' ? '#ea580c' : '#cbd5e1'}`,
-                            backgroundColor: restaurantConfig.dineInMode === 'table_number' ? 'rgba(234, 88, 12, 0.05)' : 'white',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          <strong style={{ fontSize: '0.85rem', color: restaurantConfig.dineInMode === 'table_number' ? '#ea580c' : '#1e293b' }}>
-                            🔢 Rotular Número de Mesa
-                          </strong>
-                        </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>Vehículo</label>
+                <select
+                  value={newDriverVehicle}
+                  onChange={(e) => setNewDriverVehicle(e.target.value as any)}
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                >
+                  <option value="moto">Motocicleta</option>
+                  <option value="bici">Bicicleta</option>
+                  <option value="auto">Automóvil / Carro</option>
+                </select>
+              </div>
 
-                        <div
-                          onClick={() => setRestaurantConfig({ ...restaurantConfig, dineInMode: 'call_by_name' })}
-                          style={{
-                            padding: '10px 14px', borderRadius: '6px',
-                            border: `2px solid ${restaurantConfig.dineInMode === 'call_by_name' ? '#ea580c' : '#cbd5e1'}`,
-                            backgroundColor: restaurantConfig.dineInMode === 'call_by_name' ? 'rgba(234, 88, 12, 0.05)' : 'white',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          <strong style={{ fontSize: '0.85rem', color: restaurantConfig.dineInMode === 'call_by_name' ? '#ea580c' : '#1e293b' }}>
-                            🗣️ Llamado por Nombre
-                          </strong>
-                        </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>Placa (Opcional)</label>
+                <input
+                  type="text"
+                  placeholder="Ej: MOT-1234"
+                  value={newDriverPlate}
+                  onChange={(e) => setNewDriverPlate(e.target.value)}
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={addingDriver}
+                style={{ padding: '9px 16px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+              >
+                <Plus size={16} /> {addingDriver ? 'Guardando...' : 'Agregar'}
+              </button>
+            </form>
+          </div>
+
+          {/* Drivers List */}
+          <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+            <h3 style={{ margin: '0 0 16px 0', fontSize: '1.15rem', fontWeight: 'bold' }}>Repartidores Activos</h3>
+
+            {drivers.length === 0 ? (
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', margin: 0 }}>No hay repartidores registrados todavía.</p>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '14px' }}>
+                {drivers.map(d => (
+                  <div key={d.id} style={{ padding: '16px', backgroundColor: '#f8fafc', borderRadius: '10px', border: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <div style={{ width: '38px', height: '38px', backgroundColor: '#ccfbf1', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0f766e' }}>
+                        <Bike size={20} />
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>{d.name}</div>
+                        <div style={{ fontSize: '0.75rem', color: '#64748b' }}>📞 {d.phone} • {d.vehicleType?.toUpperCase()} {d.plateNumber ? `(${d.plateNumber})` : ''}</div>
                       </div>
                     </div>
 
-                    {restaurantConfig.dineInMode === 'table_number' && (
-                      <div style={{ maxWidth: '240px' }}>
-                        <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>
-                          Cantidad de Mesas Disponibles:
-                        </label>
-                        <input
-                          type="number"
-                          min={1} max={100}
-                          value={restaurantConfig.tableCount || 15}
-                          onChange={(e) => setRestaurantConfig({ ...restaurantConfig, tableCount: Number(e.target.value) })}
-                          style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
-                        />
-                      </div>
-                    )}
+                    <button
+                      onClick={() => handleDeleteDriver(d.id)}
+                      style={{ border: 'none', background: 'none', color: '#ef4444', cursor: 'pointer', padding: '6px' }}
+                    >
+                      <Trash2 size={16} />
+                    </button>
                   </div>
-                )}
+                ))}
               </div>
-
-              <div style={{ padding: '18px', backgroundColor: '#f8fafc', borderRadius: '10px', border: '1px solid var(--border)' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer' }}>
-                  <input
-                    type="checkbox"
-                    checked={restaurantConfig.allowPickup}
-                    onChange={(e) => setRestaurantConfig({ ...restaurantConfig, allowPickup: e.target.checked })}
-                  />
-                  <span>🥡 Permitir Para Llevar / Retiro en Barra</span>
-                </label>
-              </div>
-
-              <div style={{ padding: '18px', backgroundColor: '#f8fafc', borderRadius: '10px', border: '1px solid var(--border)' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer' }}>
-                  <input
-                    type="checkbox"
-                    checked={restaurantConfig.allowDelivery}
-                    onChange={(e) => setRestaurantConfig({ ...restaurantConfig, allowDelivery: e.target.checked })}
-                  />
-                  <span>🛵 Permitir Delivery Express con GPS</span>
-                </label>
-              </div>
-            </div>
+            )}
           </div>
         </div>
       )}
 
-      {/* TAB 4: DESIGN & BRANDING */}
+      {/* TAB 5: DESIGN & BRANDING */}
       {activeTab === 'design' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           

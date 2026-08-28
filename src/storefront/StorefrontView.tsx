@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ShoppingBag, Search, Plus, Minus, X, Check, ArrowRight, MessageCircle, AlertCircle, Trash2, MapPin, Truck, Store, ShieldCheck, Tag, Utensils, Navigation, Package } from 'lucide-react';
+import { ShoppingBag, Search, Plus, Minus, X, Check, ArrowRight, MessageCircle, AlertCircle, Trash2, MapPin, Truck, Store, ShieldCheck, Tag, Utensils, Navigation, Package, User } from 'lucide-react';
 import { Product, StoreSettings, DeliveryConfig } from '../shared/types';
 
 interface StorefrontProps {
@@ -7,7 +7,7 @@ interface StorefrontProps {
 }
 
 function calculateDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371; // Earth radius in km
+  const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
   const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
@@ -15,7 +15,7 @@ function calculateDistanceKm(lat1: number, lon1: number, lat2: number, lon2: num
             Math.sin(dLon / 2) * Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   const directKm = R * c;
-  return Math.round(directKm * 1.25 * 10) / 10; // Road distance estimate factor 1.25
+  return Math.round(directKm * 1.25 * 10) / 10;
 }
 
 function calculateCorreosCrRate(
@@ -60,6 +60,7 @@ export default function StorefrontView({ slug }: StorefrontProps) {
 
   // Checkout Form State
   const [consumptionMode, setConsumptionMode] = useState<'dine_in' | 'pickup' | 'delivery' | 'correos_cr'>('pickup');
+  const [dineInSubMode, setDineInSubMode] = useState<'table' | 'name'>('table');
   const [correosDestination, setCorreosDestination] = useState<'GAM' | 'RESTO'>('GAM');
   const [tableNumber, setTableNumber] = useState('1');
   const [customerName, setCustomerName] = useState('');
@@ -86,6 +87,9 @@ export default function StorefrontView({ slug }: StorefrontProps) {
           if (storeData.restaurantConfig?.allowDineIn) setConsumptionMode('dine_in');
           else if (storeData.restaurantConfig?.allowPickup) setConsumptionMode('pickup');
           else setConsumptionMode('delivery');
+
+          if (storeData.restaurantConfig?.allowTableNumber) setDineInSubMode('table');
+          else if (storeData.restaurantConfig?.allowCallByName) setDineInSubMode('name');
         }
 
         const prodRes = await fetch(`/api/storefront/${slug}/products`);
@@ -163,7 +167,6 @@ export default function StorefrontView({ slug }: StorefrontProps) {
         const mapsUrl = `https://maps.google.com/?q=${lat},${lng}`;
         setCustomerGps({ lat, lng, mapsUrl });
 
-        // Calculate distance in KM if store location is configured
         if (store?.deliveryConfig?.storeLocation?.lat && store?.deliveryConfig?.storeLocation?.lng) {
           const sLat = store.deliveryConfig.storeLocation.lat;
           const sLng = store.deliveryConfig.storeLocation.lng;
@@ -194,9 +197,8 @@ export default function StorefrontView({ slug }: StorefrontProps) {
     correosIncludeIva: true
   };
 
-  // Cart total & weight
   const cartSubtotal = cart.reduce((acc, item) => acc + (Number(item.product.price || 0) * item.quantity), 0);
-  const totalWeightKg = Math.max(1, cart.reduce((acc, item) => acc + (0.5 * item.quantity), 0)); // 500g default per item
+  const totalWeightKg = Math.max(1, cart.reduce((acc, item) => acc + (0.5 * item.quantity), 0));
 
   let deliveryFee = 0;
   if (consumptionMode === 'delivery') {
@@ -242,7 +244,7 @@ export default function StorefrontView({ slug }: StorefrontProps) {
         customerAddress: isDeliveryType ? customerAddress : undefined,
         customerLocation: customerGps.mapsUrl ? { ...customerGps, distanceKm: calculatedKm } : undefined,
         consumptionMode,
-        tableNumber: consumptionMode === 'dine_in' ? tableNumber : undefined,
+        tableNumber: consumptionMode === 'dine_in' && dineInSubMode === 'table' ? tableNumber : undefined,
         deliveryMethod: consumptionMode === 'correos_cr' ? 'correos_cr' : (consumptionMode === 'delivery' ? 'delivery' : 'pickup'),
         paymentMethod,
         paymentReference: paymentReference || undefined,
@@ -277,7 +279,6 @@ export default function StorefrontView({ slug }: StorefrontProps) {
     }
   };
 
-  // Theme Variables
   const primaryColor = store?.storeTheme?.primaryColor || '#16a34a';
   const bgColor = store?.storeTheme?.backgroundColor || '#f8fafc';
   const cardBg = store?.storeTheme?.cardBackgroundColor || '#ffffff';
@@ -306,7 +307,7 @@ export default function StorefrontView({ slug }: StorefrontProps) {
   }
 
   const isRestaurant = store.storeMode === 'restaurant';
-  const restConfig = store.restaurantConfig || { allowDineIn: true, dineInMode: 'table_number', tableCount: 15, allowPickup: true, allowDelivery: true };
+  const restConfig = store.restaurantConfig || { allowDineIn: true, allowTableNumber: true, allowCallByName: true, tableCount: 15, allowPickup: true, allowDelivery: true };
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: bgColor, fontFamily, color: '#1e293b', paddingBottom: '90px' }}>
@@ -330,8 +331,8 @@ export default function StorefrontView({ slug }: StorefrontProps) {
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <h1 style={{ margin: 0, fontSize: '1.35rem', fontWeight: 'bold' }}>{store.storeName}</h1>
                 {isRestaurant && (
-                  <span style={{ padding: '2px 8px', borderRadius: '12px', fontSize: '0.7rem', backgroundColor: '#ffedd5', color: '#ea580c', fontWeight: 'bold' }}>
-                    Menú Digital
+                  <span style={{ padding: '2px 8px', borderRadius: '12px', fontSize: '0.7rem', backgroundColor: '#ffedd5', color: '#ea580c', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <Utensils size={12} /> Menú Digital
                   </span>
                 )}
               </div>
@@ -541,7 +542,7 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                     ))}
                   </div>
 
-                  {/* Delivery & Consumption Selector */}
+                  {/* Delivery & Consumption Selector (No Emojis, clean Lucide icons) */}
                   <div style={{ marginBottom: '20px' }}>
                     <label style={{ display: 'block', fontWeight: '600', fontSize: '0.85rem', marginBottom: '8px' }}>
                       {isRestaurant ? '¿Dónde deseas consumir tus alimentos?' : 'Modalidad de Entrega'}
@@ -629,7 +630,7 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                           }}
                         >
                           <Truck size={18} />
-                          <span>Envío Express / KM</span>
+                          <span>Envío Express</span>
                         </button>
 
                         {dConfig.correosCrEnabled && (
@@ -645,68 +646,67 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                             }}
                           >
                             <Package size={18} />
-                            <span>Correos de CR (EMS)</span>
+                            <span>Correos de CR</span>
                           </button>
                         )}
                       </div>
                     )}
                   </div>
 
-                  {/* Dine-In Table Picker */}
-                  {isRestaurant && consumptionMode === 'dine_in' && restConfig.dineInMode === 'table_number' && (
-                    <div style={{ marginBottom: '16px', backgroundColor: '#ffedd5', padding: '12px', borderRadius: '8px', border: '1px solid #fed7aa' }}>
-                      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', color: '#9a3412', marginBottom: '4px' }}>
-                        🔢 Selecciona tu Número de Mesa:
-                      </label>
-                      <select
-                        value={tableNumber}
-                        onChange={(e) => setTableNumber(e.target.value)}
-                        style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #f97316', backgroundColor: 'white', fontSize: '0.9rem', fontWeight: 'bold' }}
-                      >
-                        {Array.from({ length: restConfig.tableCount || 15 }, (_, i) => (
-                          <option key={i + 1} value={String(i + 1)}>Mesa #{i + 1}</option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
+                  {/* Dine-In Options: Table Number vs Call by Name */}
+                  {isRestaurant && consumptionMode === 'dine_in' && (
+                    <div style={{ marginBottom: '16px', backgroundColor: '#ffedd5', padding: '14px', borderRadius: '8px', border: '1px solid #fed7aa' }}>
+                      {restConfig.allowTableNumber && restConfig.allowCallByName && (
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
+                          <button
+                            type="button"
+                            onClick={() => setDineInSubMode('table')}
+                            style={{
+                              padding: '6px 10px', borderRadius: '6px',
+                              border: `1px solid ${dineInSubMode === 'table' ? '#ea580c' : '#cbd5e1'}`,
+                              backgroundColor: dineInSubMode === 'table' ? '#ea580c' : 'white',
+                              color: dineInSubMode === 'table' ? 'white' : '#475569',
+                              fontWeight: 'bold', fontSize: '0.75rem', cursor: 'pointer'
+                            }}
+                          >
+                            Número de Mesa
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDineInSubMode('name')}
+                            style={{
+                              padding: '6px 10px', borderRadius: '6px',
+                              border: `1px solid ${dineInSubMode === 'name' ? '#ea580c' : '#cbd5e1'}`,
+                              backgroundColor: dineInSubMode === 'name' ? '#ea580c' : 'white',
+                              color: dineInSubMode === 'name' ? 'white' : '#475569',
+                              fontWeight: 'bold', fontSize: '0.75rem', cursor: 'pointer'
+                            }}
+                          >
+                            Llamado por Nombre
+                          </button>
+                        </div>
+                      )}
 
-                  {/* Correos de Costa Rica Destination Zone */}
-                  {consumptionMode === 'correos_cr' && (
-                    <div style={{ marginBottom: '16px', backgroundColor: '#f0f9ff', padding: '14px', borderRadius: '8px', border: '1px solid #bae6fd' }}>
-                      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', color: '#0369a1', marginBottom: '6px' }}>
-                        📦 Destino del Paquete (Correos de Costa Rica):
-                      </label>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                        <button
-                          type="button"
-                          onClick={() => setCorreosDestination('GAM')}
-                          style={{
-                            padding: '8px', borderRadius: '6px',
-                            border: `2px solid ${correosDestination === 'GAM' ? '#0284c7' : '#cbd5e1'}`,
-                            backgroundColor: correosDestination === 'GAM' ? '#0284c7' : 'white',
-                            color: correosDestination === 'GAM' ? 'white' : '#475569',
-                            fontWeight: 'bold', fontSize: '0.8rem', cursor: 'pointer'
-                          }}
-                        >
-                          Gran Área Metrop. (GAM)
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setCorreosDestination('RESTO')}
-                          style={{
-                            padding: '8px', borderRadius: '6px',
-                            border: `2px solid ${correosDestination === 'RESTO' ? '#0284c7' : '#cbd5e1'}`,
-                            backgroundColor: correosDestination === 'RESTO' ? '#0284c7' : 'white',
-                            color: correosDestination === 'RESTO' ? 'white' : '#475569',
-                            fontWeight: 'bold', fontSize: '0.8rem', cursor: 'pointer'
-                          }}
-                        >
-                          Resto del País (Costas/Rural)
-                        </button>
-                      </div>
-                      <span style={{ fontSize: '0.75rem', color: '#0369a1', display: 'block', marginTop: '6px' }}>
-                        Tarifa EMS calculada para {totalWeightKg} kg: <strong>₡{deliveryFee.toLocaleString('es-CR')}</strong>
-                      </span>
+                      {dineInSubMode === 'table' && restConfig.allowTableNumber ? (
+                        <div>
+                          <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', color: '#9a3412', marginBottom: '4px' }}>
+                            Selecciona tu Número de Mesa:
+                          </label>
+                          <select
+                            value={tableNumber}
+                            onChange={(e) => setTableNumber(e.target.value)}
+                            style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #f97316', backgroundColor: 'white', fontSize: '0.9rem', fontWeight: 'bold' }}
+                          >
+                            {Array.from({ length: restConfig.tableCount || 15 }, (_, i) => (
+                              <option key={i + 1} value={String(i + 1)}>Mesa #{i + 1}</option>
+                            ))}
+                          </select>
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: '0.8rem', color: '#9a3412' }}>
+                          Tu orden será anunciada por tu nombre cuando esté lista en el mostrador/mesa.
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -745,7 +745,7 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                             disabled={fetchingGps}
                             style={{ padding: '4px 8px', backgroundColor: '#eff6ff', color: '#1d4ed8', border: '1px solid #93c5fd', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}
                           >
-                            <Navigation size={12} /> {fetchingGps ? 'Calculando GPS...' : '📍 Usar mi GPS'}
+                            <Navigation size={12} /> {fetchingGps ? 'Calculando GPS...' : 'Usar mi GPS'}
                           </button>
                         </div>
                         <textarea
@@ -758,6 +758,18 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                         {calculatedKm !== null && consumptionMode === 'delivery' && (
                           <div style={{ fontSize: '0.75rem', color: '#15803d', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: '600' }}>
                             <Check size={12} /> Distancia calculada al local: {calculatedKm} km (Envío: ₡{deliveryFee.toLocaleString('es-CR')})
+                          </div>
+                        )}
+                        {customerGps.lat && customerGps.lng && (
+                          <div style={{ borderRadius: '6px', overflow: 'hidden', border: '1px solid #cbd5e1', marginTop: '4px' }}>
+                            <iframe
+                              title="Mapa GPS Cliente"
+                              width="100%"
+                              height="120"
+                              style={{ border: 0 }}
+                              loading="lazy"
+                              src={`https://maps.google.com/maps?q=${customerGps.lat},${customerGps.lng}&z=15&output=embed`}
+                            />
                           </div>
                         )}
                       </div>
@@ -775,7 +787,7 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                               checked={paymentMethod === 'sinpe'}
                               onChange={() => setPaymentMethod('sinpe')}
                             />
-                            <span>📱 SINPE Móvil {store.sinpePhone && `(${store.sinpePhone} - ${store.sinpeName || ''})`}</span>
+                            <span>SINPE Móvil {store.sinpePhone && `(${store.sinpePhone} - ${store.sinpeName || ''})`}</span>
                           </label>
                         )}
 
@@ -787,7 +799,7 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                               checked={paymentMethod === 'transfer'}
                               onChange={() => setPaymentMethod('transfer')}
                             />
-                            <span>🏦 Transferencia Bancaria IBAN</span>
+                            <span>Transferencia Bancaria IBAN</span>
                           </label>
                         )}
 
@@ -798,7 +810,7 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                             checked={paymentMethod === 'cash'}
                             onChange={() => setPaymentMethod('cash')}
                           />
-                          <span>💵 Efectivo / Pago al Recibir</span>
+                          <span>Efectivo / Pago al Recibir</span>
                         </label>
                       </div>
                     </div>
@@ -884,7 +896,7 @@ export default function StorefrontView({ slug }: StorefrontProps) {
             <div style={{ backgroundColor: '#f8fafc', borderRadius: '10px', padding: '16px', textAlign: 'left', marginBottom: '20px', fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: '6px', border: '1px solid #e2e8f0' }}>
               <div><strong>Cliente:</strong> {orderCompleted.customerName} ({orderCompleted.customerPhone})</div>
               <div><strong>Total:</strong> ₡{Number(orderCompleted.total).toLocaleString('es-CR')}</div>
-              <div><strong>Modalidad:</strong> {orderCompleted.consumptionMode === 'correos_cr' ? '📦 Correos de Costa Rica (EMS)' : (orderCompleted.consumptionMode === 'dine_in' ? `En Mesa (#${orderCompleted.tableNumber || 1})` : (orderCompleted.deliveryMethod === 'delivery' ? '🛵 A Domicilio Express' : 'Retiro en Local'))}</div>
+              <div><strong>Modalidad:</strong> {orderCompleted.consumptionMode === 'correos_cr' ? 'Correos de Costa Rica (EMS)' : (orderCompleted.consumptionMode === 'dine_in' ? (orderCompleted.tableNumber ? `En Mesa (#${orderCompleted.tableNumber})` : 'Llamado por Nombre') : (orderCompleted.deliveryMethod === 'delivery' ? 'A Domicilio Express' : 'Retiro en Local'))}</div>
             </div>
 
             {orderCompleted.whatsappNumber && (

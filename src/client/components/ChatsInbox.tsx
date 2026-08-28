@@ -55,7 +55,6 @@ export default function ChatsInbox() {
           conv.messages.push(m);
         });
 
-        // Sort messages inside conversation by createdAt ASC
         map.forEach(conv => {
           conv.messages.sort((a, b) => new Date(a.createdAt || '').getTime() - new Date(b.createdAt || '').getTime());
           if (conv.messages.length > 0) {
@@ -67,7 +66,6 @@ export default function ChatsInbox() {
         });
 
         const convList = Array.from(map.values());
-        // Sort conversations by lastTimestamp DESC
         convList.sort((a, b) => new Date(b.lastTimestamp).getTime() - new Date(a.lastTimestamp).getTime());
 
         setConversations(convList);
@@ -164,7 +162,7 @@ export default function ChatsInbox() {
   };
 
   return (
-    <div style={{ maxWidth: '1100px', height: 'calc(100vh - 120px)', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ maxWidth: '1100px', display: 'flex', flexDirection: 'column' }}>
       
       {/* Top Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
@@ -197,10 +195,10 @@ export default function ChatsInbox() {
       </div>
 
       {/* Main Split Panel */}
-      <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', flex: 1, backgroundColor: 'var(--surface)', borderRadius: '12px', border: '1px solid var(--border)', overflow: 'hidden', minHeight: '520px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', height: '640px', backgroundColor: 'var(--surface)', borderRadius: '12px', border: '1px solid var(--border)', overflow: 'hidden' }}>
         
         {/* Left Column: Conversations List */}
-        <div style={{ borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', backgroundColor: '#ffffff' }}>
+        <div style={{ borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', backgroundColor: '#ffffff', height: '100%', overflow: 'hidden' }}>
           
           {/* Search Box */}
           <div style={{ padding: '12px', borderBottom: '1px solid var(--border)' }}>
@@ -216,40 +214,40 @@ export default function ChatsInbox() {
             </div>
           </div>
 
-          {/* Filter Pills */}
+          {/* Filter Pills with Lucide Icons (No Emojis) */}
           <div style={{ display: 'flex', gap: '4px', padding: '8px 10px', borderBottom: '1px solid var(--border)', backgroundColor: '#f8fafc' }}>
             <button
               onClick={() => setFilterTab('all')}
               style={{
-                flex: 1, padding: '5px', borderRadius: '4px', border: 'none',
+                flex: 1, padding: '6px 4px', borderRadius: '6px', border: 'none',
                 backgroundColor: filterTab === 'all' ? 'var(--primary)' : 'transparent',
                 color: filterTab === 'all' ? 'white' : 'var(--text-muted)',
-                fontWeight: '600', fontSize: '0.75rem', cursor: 'pointer'
+                fontWeight: '600', fontSize: '0.75rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px'
               }}
             >
-              Todos ({conversations.length})
+              <MessageSquare size={13} /> Todos ({conversations.length})
             </button>
             <button
               onClick={() => setFilterTab('human')}
               style={{
-                flex: 1, padding: '5px', borderRadius: '4px', border: 'none',
+                flex: 1, padding: '6px 4px', borderRadius: '6px', border: 'none',
                 backgroundColor: filterTab === 'human' ? '#f59e0b' : 'transparent',
                 color: filterTab === 'human' ? 'white' : 'var(--text-muted)',
-                fontWeight: '600', fontSize: '0.75rem', cursor: 'pointer'
+                fontWeight: '600', fontSize: '0.75rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px'
               }}
             >
-              👤 Humano ({conversations.filter(c => c.isHumanMode).length})
+              <User size={13} /> Humano ({conversations.filter(c => c.isHumanMode).length})
             </button>
             <button
               onClick={() => setFilterTab('ai')}
               style={{
-                flex: 1, padding: '5px', borderRadius: '4px', border: 'none',
+                flex: 1, padding: '6px 4px', borderRadius: '6px', border: 'none',
                 backgroundColor: filterTab === 'ai' ? '#10b981' : 'transparent',
                 color: filterTab === 'ai' ? 'white' : 'var(--text-muted)',
-                fontWeight: '600', fontSize: '0.75rem', cursor: 'pointer'
+                fontWeight: '600', fontSize: '0.75rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px'
               }}
             >
-              🤖 IA ({conversations.filter(c => !c.isHumanMode).length})
+              <Bot size={13} /> IA ({conversations.filter(c => !c.isHumanMode).length})
             </button>
           </div>
 
@@ -304,8 +302,8 @@ export default function ChatsInbox() {
                         </span>
                       </div>
 
-                      <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '2px' }}>
-                        📞 +{conv.cleanPhone}
+                      <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                        <Phone size={11} /> +{conv.cleanPhone}
                       </div>
 
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px' }}>
@@ -314,12 +312,12 @@ export default function ChatsInbox() {
                         </p>
 
                         {conv.isHumanMode ? (
-                          <span style={{ padding: '2px 6px', borderRadius: '8px', fontSize: '0.65rem', backgroundColor: '#fef3c7', color: '#b45309', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
-                            ⏸️ IA Pausada
+                          <span style={{ padding: '2px 6px', borderRadius: '8px', fontSize: '0.65rem', backgroundColor: '#fef3c7', color: '#b45309', fontWeight: 'bold', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '2px' }}>
+                            <User size={10} /> Pausada
                           </span>
                         ) : (
-                          <span style={{ padding: '2px 6px', borderRadius: '8px', fontSize: '0.65rem', backgroundColor: '#dcfce7', color: '#15803d', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
-                            🤖 IA Activa
+                          <span style={{ padding: '2px 6px', borderRadius: '8px', fontSize: '0.65rem', backgroundColor: '#dcfce7', color: '#15803d', fontWeight: 'bold', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '2px' }}>
+                            <Bot size={10} /> IA Activa
                           </span>
                         )}
                       </div>
@@ -333,7 +331,7 @@ export default function ChatsInbox() {
 
         {/* Right Column: Active Chat Thread View */}
         {selectedConv ? (
-          <div style={{ display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: '#efeae2' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: '#efeae2', overflow: 'hidden' }}>
             
             {/* Chat Top Bar */}
             <div style={{ padding: '12px 18px', backgroundColor: '#ffffff', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
@@ -357,14 +355,16 @@ export default function ChatsInbox() {
                 </div>
               </div>
 
-              {/* Mode Toggle Button */}
+              {/* Mode Toggle Button with Lucide Icons */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <button
                   onClick={() => handleToggleHumanMode(selectedConv.remoteJid, selectedConv.isHumanMode)}
                   style={{
                     padding: '8px 16px',
                     borderRadius: '20px',
-                    border: 'none',
+                    borderWidth: '1px',
+                    borderStyle: 'solid',
+                    borderColor: selectedConv.isHumanMode ? '#fecaca' : '#bbf7d0',
                     cursor: 'pointer',
                     fontWeight: 'bold',
                     fontSize: '0.85rem',
@@ -373,20 +373,17 @@ export default function ChatsInbox() {
                     gap: '6px',
                     backgroundColor: selectedConv.isHumanMode ? '#fef2f2' : '#f0fdf4',
                     color: selectedConv.isHumanMode ? '#dc2626' : '#16a34a',
-                    borderWidth: '1px',
-                    borderStyle: 'solid',
-                    borderColor: selectedConv.isHumanMode ? '#fecaca' : '#bbf7d0',
                     boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
                   }}
                   title="Presiona para pausar o activar la IA para este cliente"
                 >
                   {selectedConv.isHumanMode ? (
                     <>
-                      <UserCheck size={16} /> ⏸️ IA Pausada (Modo Humano) — Toca para Reactivar IA
+                      <UserCheck size={16} /> Modo Humano (IA Pausada) — Toca para Reactivar IA
                     </>
                   ) : (
                     <>
-                      <Bot size={16} /> 🤖 IA Activa — Toca para Pausar IA (Modo Humano)
+                      <Bot size={16} /> IA Activa — Toca para Pausar IA (Modo Humano)
                     </>
                   )}
                 </button>
@@ -406,30 +403,30 @@ export default function ChatsInbox() {
                     style={{
                       alignSelf: isFromMe ? 'flex-end' : 'flex-start',
                       maxWidth: '75%',
-                      backgroundColor: isFromMe ? '#d9fdd3' : '#ffffff',
-                      borderRadius: '8px',
-                      padding: '8px 12px',
-                      boxShadow: '0 1px 1px rgba(0,0,0,0.1)',
+                      backgroundColor: isFromMe ? '#dcf8c6' : '#ffffff',
+                      borderRadius: isFromMe ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
+                      padding: '10px 14px',
+                      boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
                       position: 'relative',
-                      fontSize: '0.85rem',
-                      lineHeight: '1.4'
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '4px'
                     }}
                   >
-                    {/* Badge for AI vs Operator */}
-                    {isFromMe && (
-                      <div style={{ fontSize: '0.65rem', fontWeight: 'bold', color: isAI ? '#059669' : '#2563eb', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                        {isAI ? <><Bot size={11} /> Asistente IA</> : <><User size={11} /> Operador Humano</>}
+                    {/* Header Tag for AI */}
+                    {isFromMe && isAI && (
+                      <div style={{ fontSize: '0.7rem', color: '#16a34a', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <Bot size={12} /> Asistente IA
                       </div>
                     )}
 
-                    {/* Message Content */}
-                    <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: '#1e293b' }}>
+                    <div style={{ fontSize: '0.9rem', color: '#1e293b', whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: '1.4' }}>
                       {m.messageText}
                     </div>
 
-                    {/* Message Timestamp */}
-                    <div style={{ textAlign: 'right', fontSize: '0.65rem', color: '#94a3b8', marginTop: '4px' }}>
-                      {formatMessageTime(m.createdAt)}
+                    <div style={{ fontSize: '0.65rem', color: '#64748b', alignSelf: 'flex-end', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                      <span>{formatMessageTime(m.createdAt)}</span>
+                      {isFromMe && <CheckCircle2 size={12} color="#16a34a" />}
                     </div>
                   </div>
                 );
@@ -437,27 +434,43 @@ export default function ChatsInbox() {
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Manual Reply Input */}
-            <form onSubmit={handleSendReply} style={{ padding: '12px 16px', backgroundColor: '#f0f2f5', borderTop: '1px solid #e2e8f0', display: 'flex', gap: '10px', alignItems: 'center' }}>
+            {/* Bottom Reply Bar */}
+            <form onSubmit={handleSendReply} style={{ padding: '12px 16px', backgroundColor: '#f0f2f5', borderTop: '1px solid var(--border)', display: 'flex', gap: '10px', alignItems: 'center' }}>
               <input
                 type="text"
+                placeholder={`Escribir respuesta manual a ${selectedConv.pushName}...`}
                 value={replyText}
                 onChange={(e) => setReplyText(e.target.value)}
-                placeholder={selectedConv.isHumanMode ? "Escribe una respuesta manual al cliente..." : "Escribe una respuesta manual (el cliente la recibirá por WhatsApp)..."}
-                style={{ flex: 1, padding: '10px 14px', borderRadius: '24px', border: '1px solid #cbd5e1', fontSize: '0.85rem', outline: 'none', backgroundColor: 'white' }}
+                style={{ flex: 1, padding: '10px 14px', borderRadius: '20px', border: '1px solid #cbd5e1', backgroundColor: '#ffffff', fontSize: '0.9rem', outline: 'none' }}
               />
               <button
                 type="submit"
                 disabled={sending || !replyText.trim()}
-                style={{ padding: '10px 16px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                style={{
+                  padding: '10px 18px',
+                  backgroundColor: 'var(--primary)',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '20px',
+                  cursor: 'pointer',
+                  fontWeight: 'bold',
+                  fontSize: '0.9rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
               >
-                <Send size={16} />
+                <Send size={16} /> {sending ? 'Enviando...' : 'Enviar'}
               </button>
             </form>
           </div>
         ) : (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-            Selecciona una conversación para ver los mensajes.
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', backgroundColor: '#f8fafc', color: 'var(--text-muted)' }}>
+            <div style={{ textAlign: 'center' }}>
+              <MessageSquare size={48} color="#cbd5e1" style={{ margin: '0 auto 12px auto' }} />
+              <h3 style={{ margin: '0 0 6px 0', fontSize: '1.1rem' }}>Selecciona una conversación</h3>
+              <p style={{ margin: 0, fontSize: '0.85rem' }}>Elige un chat de la lista izquierda para ver el historial y responder.</p>
+            </div>
           </div>
         )}
       </div>
