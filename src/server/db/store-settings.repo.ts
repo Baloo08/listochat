@@ -20,7 +20,33 @@ export async function getStoreSettings(tenantId: string): Promise<StoreSettings 
     WHERE tenant_id = $1
   `, [tenantId]);
   
-  return result.rows[0] || null;
+  const row = result.rows[0];
+  if (!row) return null;
+
+  return {
+    ...row,
+    storeModules: row.storeModules || { storeEnabled: true, bookingsEnabled: true },
+    storeSchedule: row.storeSchedule || { isOpenManual: true, autoScheduleEnabled: false, schedule: {} },
+    correosCrConfig: row.correosCrConfig || {
+      enabled: true,
+      serviceType: 'ems',
+      originType: 'GAM',
+      includeIva: true,
+      rates: [
+        { label: 'Hasta 1 kg', maxGrams: 1000, gamPrice: 2200, restoPrice: 2850 },
+        { label: 'Hasta 2 kg', maxGrams: 2000, gamPrice: 3100, restoPrice: 3950 },
+        { label: 'Kilo Adicional (c/u)', maxGrams: 1000, gamPrice: 1100, restoPrice: 1350 }
+      ]
+    },
+    localDeliveryConfig: row.localDeliveryConfig || { enabled: true, fee: 2500, freeAbove: 35000, estimatedHours: '24 a 48 horas' },
+    customStages: row.customStages || {
+      fase_1: 'Pedido Recibido',
+      fase_2: 'En Cocina / Preparación',
+      fase_3: 'Listo para Entrega',
+      fase_4: 'En Camino (Delivery)',
+      fase_5: 'Entregado con Éxito'
+    }
+  };
 }
 
 export async function upsertStoreSettings(tenantId: string, data: Partial<StoreSettings>): Promise<StoreSettings> {
