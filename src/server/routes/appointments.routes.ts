@@ -224,16 +224,19 @@ router.post('/public/:slug/book', async (req, res) => {
       }
     }
 
+    const finalAmount = req.body.amount !== undefined ? Number(req.body.amount) : amount;
+
     const appt = await createAppointment(tenant.id, {
       name: customerName,
       whatsapp: customerPhone,
       service: serviceName,
       date,
       time,
-      amount,
+      amount: finalAmount,
       status: 'confirmed',
       details: combinedDetails,
-      vehicleModel: vehicleModel || ''
+      vehicleModel: vehicleModel || '',
+      selectedVariables: req.body.selectedVariables
     });
 
     const cleanCustomerPhone = customerPhone.replace(/\D/g, '');

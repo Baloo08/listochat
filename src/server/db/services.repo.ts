@@ -5,7 +5,8 @@ export async function getServicesByTenant(tenantId: string): Promise<Service[]> 
   const result = await query(`
     SELECT id, tenant_id as "tenantId", name, description, price, 
            price_display as "priceDisplay", duration, estimated_minutes as "estimatedMinutes",
-           category, parallel_slots as "parallelSlots", notes, active, created_at as "createdAt"
+           category, parallel_slots as "parallelSlots", custom_variables as "customVariables",
+           notes, active, created_at as "createdAt"
     FROM services 
     WHERE tenant_id = $1
     ORDER BY created_at DESC
@@ -17,7 +18,8 @@ export async function getServiceById(id: string, tenantId: string): Promise<Serv
   const result = await query(`
     SELECT id, tenant_id as "tenantId", name, description, price, 
            price_display as "priceDisplay", duration, estimated_minutes as "estimatedMinutes",
-           category, parallel_slots as "parallelSlots", notes, active, created_at as "createdAt"
+           category, parallel_slots as "parallelSlots", custom_variables as "customVariables",
+           notes, active, created_at as "createdAt"
     FROM services 
     WHERE id = $1 AND tenant_id = $2
   `, [id, tenantId]);
@@ -27,14 +29,16 @@ export async function getServiceById(id: string, tenantId: string): Promise<Serv
 export async function createService(tenantId: string, data: Partial<Service>): Promise<Service> {
   const result = await query(`
     INSERT INTO services (
-      tenant_id, name, description, price, price_display, duration, estimated_minutes, category, parallel_slots, notes, active
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      tenant_id, name, description, price, price_display, duration, estimated_minutes, category, parallel_slots, custom_variables, notes, active
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
     RETURNING id, tenant_id as "tenantId", name, description, price, 
            price_display as "priceDisplay", duration, estimated_minutes as "estimatedMinutes",
-           category, parallel_slots as "parallelSlots", notes, active, created_at as "createdAt"
+           category, parallel_slots as "parallelSlots", custom_variables as "customVariables",
+           notes, active, created_at as "createdAt"
   `, [
     tenantId, data.name, data.description, data.price, data.priceDisplay, data.duration, 
-    data.estimatedMinutes, data.category, data.parallelSlots || 1, data.notes, data.active !== false
+    data.estimatedMinutes, data.category, data.parallelSlots || 1, JSON.stringify(data.customVariables || []),
+    data.notes, data.active !== false
   ]);
   return result.rows[0];
 }
@@ -44,12 +48,13 @@ export async function updateService(id: string, tenantId: string, data: Partial<
   const params: any[] = [id, tenantId];
   let paramIdx = 3;
 
-  const fields = ['name', 'description', 'price', 'priceDisplay', 'duration', 'estimatedMinutes', 'category', 'parallelSlots', 'notes', 'active'];
+  const fields = ['name', 'description', 'price', 'priceDisplay', 'duration', 'estimatedMinutes', 'category', 'parallelSlots', 'customVariables', 'notes', 'active'];
   for (const field of fields) {
     if ((data as any)[field] !== undefined) {
       const dbField = field.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
       updates.push(`${dbField} = $${paramIdx++}`);
-      params.push((data as any)[field]);
+      const val = field === 'customVariables' ? JSON.stringify((data as any)[field]) : (data as any)[field];
+      params.push(val);
     }
   }
 
@@ -60,7 +65,8 @@ export async function updateService(id: string, tenantId: string, data: Partial<
     WHERE id = $1 AND tenant_id = $2
     RETURNING id, tenant_id as "tenantId", name, description, price, 
            price_display as "priceDisplay", duration, estimated_minutes as "estimatedMinutes",
-           category, parallel_slots as "parallelSlots", notes, active, created_at as "createdAt"
+           category, parallel_slots as "parallelSlots", custom_variables as "customVariables",
+           notes, active, created_at as "createdAt"
   `, params);
 
   return result.rows[0] || null;

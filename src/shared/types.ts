@@ -39,6 +39,24 @@ export interface UserRecord extends User {
   passwordHash: string;
 }
 
+// Custom variable option for products & services
+export interface CustomVariableOption {
+  id: string;
+  name: string; // e.g., "Rojo", "Azul", "Talla M", "XL", "SUV / 4x4", "Combo Agrandado", "Queso Extra"
+  priceDelta?: number; // +/- price adjustment e.g. +500, +1500, 0
+  durationMinutesDelta?: number; // +/- time adjustment for services e.g. +15 min, +30 min
+  colorHex?: string; // e.g. "#ef4444", "#3b82f6" for color variables
+}
+
+// Custom variable group for products & services
+export interface CustomVariable {
+  id: string;
+  name: string; // e.g. "Color", "Talla", "Tipo de Vehículo", "Combo / Agrandado", "Ingredientes Extras"
+  type: 'select' | 'radio' | 'color' | 'checkbox' | 'multiselect';
+  required: boolean;
+  options: CustomVariableOption[];
+}
+
 export interface Service {
   id: string;
   tenantId: string;
@@ -50,6 +68,7 @@ export interface Service {
   estimatedMinutes?: number;
   category?: string;
   parallelSlots?: number;
+  customVariables?: CustomVariable[];
   active: boolean;
   notes?: string;
   createdAt?: Date;
@@ -67,6 +86,8 @@ export interface Appointment {
   status: 'pending' | 'scheduled' | 'confirmed' | 'completed' | 'cancelled';
   details?: string;
   vehicleModel?: string;
+  selectedVariables?: Record<string, string | string[]>;
+  selectedVariablesSummary?: string;
   createdAt?: Date;
 }
 
@@ -116,7 +137,11 @@ export interface StoreTheme {
   cardBackgroundColor?: string;
   cardRadius?: 'square' | 'rounded' | 'pill';
   cardShadow?: 'none' | 'sm' | 'md' | 'lg';
-  fontFamily?: 'Inter' | 'Poppins' | 'Roboto' | 'Montserrat' | 'Playfair Display';
+  fontFamily?: string;
+  titleFontWeight?: 'normal' | 'medium' | 'semibold' | 'bold' | 'extrabold';
+  bodyFontWeight?: 'normal' | 'medium' | 'semibold' | 'bold';
+  titleColor?: string;
+  bodyTextColor?: string;
   bannerUrl?: string;
   logoUrl?: string;
 }
@@ -270,6 +295,8 @@ export interface Product {
   stock: number;
   trackStock: boolean;
   sku?: string;
+  weightGrams?: number;
+  customVariables?: CustomVariable[];
   featured: boolean;
   active: boolean;
   images: ProductImage[];
@@ -282,6 +309,8 @@ export interface OrderItem {
   variantId?: string;
   productName: string;
   variantName?: string;
+  selectedVariables?: Record<string, string | string[]>;
+  selectedVariablesSummary?: string;
   quantity: number;
   unitPrice: number;
   totalPrice?: number;
@@ -314,56 +343,12 @@ export interface Order {
   paymentReference?: string;
   notes?: string;
   deliveryMethod: DeliveryMethod;
-  consumptionMode?: 'dine_in' | 'pickup' | 'delivery';
+  consumptionMode?: 'dine_in' | 'pickup' | 'delivery' | 'correos_cr';
   tableNumber?: string;
   driverId?: string;
   wazeUrl?: string;
+  estimatedDelivery?: Date;
   chatMessageId?: string;
   createdAt: Date;
   updatedAt: Date;
-}
-
-export interface DayBreakConfig {
-  enabled: boolean;
-  breakStart: string;
-  breakEnd: string;
-}
-
-export interface BookingField {
-  id: string;
-  label: string;
-  placeholder?: string;
-  type: 'text' | 'textarea' | 'select' | 'number';
-  options?: string[];
-  required: boolean;
-}
-
-export interface ScheduleSettings {
-  id?: string;
-  tenantId: string;
-  scheduleMode: 'jornada' | 'fechas' | 'bloques';
-  globalParallelSlots?: number;
-  jornadaConfig?: {
-    startHour: string;
-    endHour: string;
-    slotMinutes: number;
-    hasBreak: boolean;
-    breakStart: string;
-    breakEnd: string;
-    daysEnabled: number[];
-    perDayBreaks?: Record<number, DayBreakConfig>;
-  };
-  fechasConfig?: {
-    enabledDates: string[];
-  };
-  bloquesConfig?: {
-    days: Record<string, Array<{ start: string; end: string }>>;
-  };
-  customFields?: BookingField[];
-  vacationMode?: {
-    enabled: boolean;
-    startDate: string;
-    endDate: string;
-    message?: string;
-  };
 }

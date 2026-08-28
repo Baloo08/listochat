@@ -181,7 +181,11 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
   const [cardBackgroundColor, setCardBackgroundColor] = useState('#ffffff');
   const [cardRadius, setCardRadius] = useState<'square' | 'rounded' | 'pill'>('rounded');
   const [cardShadow, setCardShadow] = useState<'none' | 'sm' | 'md' | 'lg'>('md');
-  const [fontFamily, setFontFamily] = useState<'Inter' | 'Poppins' | 'Roboto' | 'Montserrat' | 'Playfair Display'>('Inter');
+  const [fontFamily, setFontFamily] = useState<string>('Inter');
+  const [titleFontWeight, setTitleFontWeight] = useState<'normal' | 'medium' | 'semibold' | 'bold' | 'extrabold'>('bold');
+  const [bodyFontWeight, setBodyFontWeight] = useState<'normal' | 'medium' | 'semibold' | 'bold'>('normal');
+  const [titleColor, setTitleColor] = useState('#0f172a');
+  const [bodyTextColor, setBodyTextColor] = useState('#64748b');
 
   // File Upload State
   const [uploadingLogo, setUploadingLogo] = useState(false);
@@ -292,6 +296,10 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
             if (data.storeTheme.cardRadius) setCardRadius(data.storeTheme.cardRadius);
             if (data.storeTheme.cardShadow) setCardShadow(data.storeTheme.cardShadow);
             if (data.storeTheme.fontFamily) setFontFamily(data.storeTheme.fontFamily);
+            if (data.storeTheme.titleFontWeight) setTitleFontWeight(data.storeTheme.titleFontWeight);
+            if (data.storeTheme.bodyFontWeight) setBodyFontWeight(data.storeTheme.bodyFontWeight);
+            if (data.storeTheme.titleColor) setTitleColor(data.storeTheme.titleColor);
+            if (data.storeTheme.bodyTextColor) setBodyTextColor(data.storeTheme.bodyTextColor);
           }
         }
       } catch (err) {
@@ -496,6 +504,10 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
         cardRadius,
         cardShadow,
         fontFamily,
+        titleFontWeight,
+        bodyFontWeight,
+        titleColor,
+        bodyTextColor,
         bannerUrl: storeBannerUrl,
         logoUrl: storeLogoUrl
       };
@@ -1740,32 +1752,194 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
             </div>
           </div>
 
-          {/* Typography, Colors, Radius & Shadows Controls + LIVE PREVIEW */}
+          {/* Typography, Background, Colors, Radius & Shadows Controls + LIVE PREVIEW */}
           <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '20px' }}>
             
             {/* Left: Design Form Controls */}
-            <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <h3 style={{ margin: '0 0 10px 0', fontSize: '1.15rem', fontWeight: 'bold' }}>Estilo Visual & Tipografía</h3>
+            <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+              <h3 style={{ margin: '0 0 4px 0', fontSize: '1.15rem', fontWeight: 'bold' }}>Estilo Visual, Fondo & Tipografía</h3>
+              <p style={{ margin: '0 0 10px 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                Personaliza la estética visual de tu tienda pública o menú digital.
+              </p>
 
-              {/* Typography Selector */}
+              {/* 1. Color de Fondo General de la Tienda */}
               <div>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '6px' }}>Tipografía (Fuente)</label>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '6px' }}>Color de Fondo de la Página</label>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                  {[
+                    { name: 'Negro Puro', hex: '#0a0a0a' },
+                    { name: 'Azul Noche', hex: '#0f172a' },
+                    { name: 'Zinc Oscuro', hex: '#18181b' },
+                    { name: 'Gris Suave', hex: '#f8fafc' },
+                    { name: 'Blanco Puro', hex: '#ffffff' },
+                    { name: 'Crema / Warm', hex: '#fafaf9' }
+                  ].map(c => (
+                    <button
+                      key={c.hex}
+                      type="button"
+                      onClick={() => {
+                        setBackgroundColor(c.hex);
+                        // Auto adapt card background and title colors if dark
+                        if (c.hex === '#0a0a0a' || c.hex === '#0f172a' || c.hex === '#18181b') {
+                          setCardBackgroundColor('#1e293b');
+                          setTitleColor('#ffffff');
+                          setBodyTextColor('#94a3b8');
+                        } else {
+                          setCardBackgroundColor('#ffffff');
+                          setTitleColor('#0f172a');
+                          setBodyTextColor('#64748b');
+                        }
+                      }}
+                      style={{
+                        padding: '5px 10px', borderRadius: '6px',
+                        border: backgroundColor === c.hex ? '2px solid var(--primary)' : '1px solid #cbd5e1',
+                        backgroundColor: c.hex,
+                        color: (c.hex === '#0a0a0a' || c.hex === '#0f172a' || c.hex === '#18181b') ? '#ffffff' : '#0f172a',
+                        cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '5px'
+                      }}
+                    >
+                      <span style={{ width: '10px', height: '10px', borderRadius: '50%', border: '1px solid #94a3b8', backgroundColor: c.hex }} />
+                      {c.name}
+                    </button>
+                  ))}
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', maxWidth: '240px' }}>
+                  <input
+                    type="color"
+                    value={backgroundColor}
+                    onChange={(e) => setBackgroundColor(e.target.value)}
+                    style={{ width: '38px', height: '34px', border: 'none', borderRadius: '4px', cursor: 'pointer', padding: 0 }}
+                  />
+                  <input
+                    type="text"
+                    value={backgroundColor}
+                    onChange={(e) => setBackgroundColor(e.target.value)}
+                    placeholder="#f8fafc"
+                    style={{ flex: 1, padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem', fontFamily: 'monospace' }}
+                  />
+                </div>
+              </div>
+
+              {/* 2. Color de Fondo de Tarjetas */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '6px' }}>Color de Fondo de Tarjetas / Modales</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', maxWidth: '240px' }}>
+                  <input
+                    type="color"
+                    value={cardBackgroundColor}
+                    onChange={(e) => setCardBackgroundColor(e.target.value)}
+                    style={{ width: '38px', height: '34px', border: 'none', borderRadius: '4px', cursor: 'pointer', padding: 0 }}
+                  />
+                  <input
+                    type="text"
+                    value={cardBackgroundColor}
+                    onChange={(e) => setCardBackgroundColor(e.target.value)}
+                    placeholder="#ffffff"
+                    style={{ flex: 1, padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem', fontFamily: 'monospace' }}
+                  />
+                </div>
+              </div>
+
+              {/* 3. Typography Selector */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '6px' }}>Familia Tipográfica (Fuente)</label>
                 <select
                   value={fontFamily}
-                  onChange={(e) => setFontFamily(e.target.value as any)}
+                  onChange={(e) => setFontFamily(e.target.value)}
                   style={{ width: '100%', padding: '9px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.9rem', backgroundColor: 'white' }}
                 >
                   <option value="Inter">Inter (Moderna, Limpia, Legible)</option>
                   <option value="Poppins">Poppins (Geométrica, Dinámica)</option>
-                  <option value="Roboto">Roboto (Clásica, Estructurada)</option>
                   <option value="Montserrat">Montserrat (Elegante, Negocios)</option>
+                  <option value="Roboto">Roboto (Clásica, Estructurada)</option>
                   <option value="Playfair Display">Playfair Display (Premium, Gourmet)</option>
+                  <option value="Outfit">Outfit (Moderna & Minimalista)</option>
+                  <option value="Plus Jakarta Sans">Plus Jakarta Sans (Tech & SaaS)</option>
                 </select>
               </div>
 
-              {/* Colors */}
+              {/* 4. Title Typography: Weight and Color */}
+              <div style={{ padding: '14px', backgroundColor: '#f1f5f9', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <h4 style={{ margin: '0 0 10px 0', fontSize: '0.9rem', fontWeight: 'bold' }}>Tipografía de Títulos y Encabezados</h4>
+                
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '4px' }}>Grosor / Peso (Títulos)</label>
+                    <select
+                      value={titleFontWeight}
+                      onChange={(e) => setTitleFontWeight(e.target.value as any)}
+                      style={{ width: '100%', padding: '7px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.8rem', backgroundColor: 'white' }}
+                    >
+                      <option value="normal">Normal (400)</option>
+                      <option value="medium">Medium (500)</option>
+                      <option value="semibold">SemiBold (600)</option>
+                      <option value="bold">Bold (700)</option>
+                      <option value="extrabold">ExtraBold (800)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '4px' }}>Color de Títulos</label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <input
+                        type="color"
+                        value={titleColor}
+                        onChange={(e) => setTitleColor(e.target.value)}
+                        style={{ width: '32px', height: '32px', border: 'none', borderRadius: '4px', cursor: 'pointer', padding: 0 }}
+                      />
+                      <input
+                        type="text"
+                        value={titleColor}
+                        onChange={(e) => setTitleColor(e.target.value)}
+                        style={{ width: '85px', padding: '6px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.75rem', fontFamily: 'monospace' }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 5. Body Typography: Weight and Color */}
+              <div style={{ padding: '14px', backgroundColor: '#f1f5f9', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <h4 style={{ margin: '0 0 10px 0', fontSize: '0.9rem', fontWeight: 'bold' }}>Tipografía de Textos y Descripciones</h4>
+                
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '4px' }}>Grosor / Peso (Cuerpo)</label>
+                    <select
+                      value={bodyFontWeight}
+                      onChange={(e) => setBodyFontWeight(e.target.value as any)}
+                      style={{ width: '100%', padding: '7px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.8rem', backgroundColor: 'white' }}
+                    >
+                      <option value="normal">Normal (400)</option>
+                      <option value="medium">Medium (500)</option>
+                      <option value="semibold">SemiBold (600)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '4px' }}>Color de Texto</label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <input
+                        type="color"
+                        value={bodyTextColor}
+                        onChange={(e) => setBodyTextColor(e.target.value)}
+                        style={{ width: '32px', height: '32px', border: 'none', borderRadius: '4px', cursor: 'pointer', padding: 0 }}
+                      />
+                      <input
+                        type="text"
+                        value={bodyTextColor}
+                        onChange={(e) => setBodyTextColor(e.target.value)}
+                        style={{ width: '85px', padding: '6px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.75rem', fontFamily: 'monospace' }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 6. Primary Brand Color */}
               <div>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '6px' }}>Color Primario de Marca</label>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '6px' }}>Color Primario de Marca (Botones & Precios)</label>
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' }}>
                   {COLOR_PRESETS.map(c => (
                     <div
@@ -1798,7 +1972,7 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
                 </div>
               </div>
 
-              {/* Card Radius */}
+              {/* 7. Card Radius */}
               <div>
                 <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '6px' }}>Curvatura de Tarjetas (Cards)</label>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
@@ -1826,7 +2000,7 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
                 </div>
               </div>
 
-              {/* Card Shadows */}
+              {/* 8. Card Shadows */}
               <div>
                 <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '6px' }}>Sombra de Tarjetas</label>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px' }}>
@@ -1862,10 +2036,10 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
               </div>
             </div>
 
-            {/* Right: LIVE PREVIEW OF CARDS */}
-            <div style={{ backgroundColor: '#f8fafc', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold', fontSize: '0.9rem', color: '#1e293b' }}>
-                <Eye size={18} color="var(--primary)" /> Previsualización en Vivo de tu Catálogo
+            {/* Right: LIVE PREVIEW IN CANVAS */}
+            <div style={{ backgroundColor: backgroundColor, padding: '24px', borderRadius: '12px', border: '1px solid #cbd5e1', display: 'flex', flexDirection: 'column', gap: '14px', transition: 'background-color 0.2s ease' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold', fontSize: '0.9rem', color: titleColor }}>
+                <Eye size={18} color={primaryColor} /> Previsualización en Vivo de tu Catálogo
               </div>
 
               <div
@@ -1874,13 +2048,13 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
                   backgroundColor: cardBackgroundColor,
                   borderRadius: radiusValue,
                   boxShadow: shadowValue,
-                  border: '1px solid #e2e8f0',
+                  border: '1px solid rgba(150, 150, 150, 0.2)',
                   overflow: 'hidden',
                   transition: 'all 0.2s ease'
                 }}
               >
                 {/* Sample Card Image */}
-                <div style={{ height: '140px', backgroundColor: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
+                <div style={{ height: '140px', backgroundColor: 'rgba(150, 150, 150, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: bodyTextColor }}>
                   <ImageIcon size={36} />
                 </div>
 
@@ -1889,15 +2063,15 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
                   <div style={{ fontSize: '0.75rem', fontWeight: 'bold', color: primaryColor, textTransform: 'uppercase', marginBottom: '4px' }}>
                     Platillo / Producto Estrella
                   </div>
-                  <h4 style={{ margin: '0 0 6px 0', fontSize: '1.05rem', fontWeight: 'bold', color: '#1e293b' }}>
+                  <h4 style={{ margin: '0 0 6px 0', fontSize: '1.1rem', fontWeight: titleFontWeight, color: titleColor }}>
                     Pizza Especial de la Casa
                   </h4>
-                  <p style={{ margin: '0 0 14px 0', fontSize: '0.8rem', color: '#64748b' }}>
-                    Ingredientes frescos seleccionados con salsa artesanal y queso mozzarella.
+                  <p style={{ margin: '0 0 14px 0', fontSize: '0.85rem', fontWeight: bodyFontWeight, color: bodyTextColor }}>
+                    Ingredientes frescos seleccionados con salsa artesanal y queso mozzarella fundido.
                   </p>
 
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '1.1rem', fontWeight: 'bold', color: primaryColor }}>
+                    <span style={{ fontSize: '1.15rem', fontWeight: titleFontWeight, color: primaryColor }}>
                       ₡8.500
                     </span>
 

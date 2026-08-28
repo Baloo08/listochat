@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApi } from '../hooks/useApi';
-import { Edit, Trash2, Plus, Image as ImageIcon, Sparkles, FileSpreadsheet, Upload, Download, Search, Check, AlertCircle, X } from 'lucide-react';
+import { 
+  Edit, Trash2, Plus, Image as ImageIcon, Sparkles, FileSpreadsheet, 
+  Upload, Download, Search, Check, AlertCircle, X, Palette, Sliders, Layers, Tag
+} from 'lucide-react';
+import { CustomVariable, CustomVariableOption } from '../../shared/types';
 
 interface ProductImage {
   id?: string;
@@ -19,6 +23,8 @@ interface Product {
   sku?: string;
   stock: number;
   trackStock: boolean;
+  weightGrams?: number;
+  customVariables?: CustomVariable[];
   featured: boolean;
   active: boolean;
   currency: string;
@@ -33,6 +39,7 @@ export default function ProductManager() {
   const [categoryFilter, setCategoryFilter] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -44,8 +51,10 @@ export default function ProductManager() {
     weightGrams: '250',
     active: true,
     featured: false,
-    images: [] as string[]
+    images: [] as string[],
+    customVariables: [] as CustomVariable[]
   });
+
   const [saving, setSaving] = useState(false);
   const [generatingAi, setGeneratingAi] = useState(false);
   const [aiKeywords, setAiKeywords] = useState('');
@@ -100,7 +109,8 @@ export default function ProductManager() {
       weightGrams: '250',
       active: true,
       featured: false,
-      images: []
+      images: [],
+      customVariables: []
     });
     setShowModal(true);
   };
@@ -118,7 +128,8 @@ export default function ProductManager() {
       weightGrams: String(product.weightGrams || 250),
       active: product.active !== false,
       featured: product.featured || false,
-      images: (product.images || []).map(img => img.url)
+      images: (product.images || []).map(img => img.url),
+      customVariables: product.customVariables || []
     });
     setShowModal(true);
   };
@@ -171,6 +182,71 @@ export default function ProductManager() {
     }
   };
 
+  // Variable Helpers
+  const addVariableGroup = () => {
+    const newGroup: CustomVariable = {
+      id: 'var_' + Date.now(),
+      name: 'Nueva Variable (Ej: Talla, Color)',
+      type: 'select',
+      required: false,
+      options: [
+        { id: 'opt_1', name: 'Opción 1', priceDelta: 0 }
+      ]
+    };
+    setFormData(prev => ({
+      ...prev,
+      customVariables: [...prev.customVariables, newGroup]
+    }));
+  };
+
+  const updateVariableGroup = (index: number, updates: Partial<CustomVariable>) => {
+    setFormData(prev => {
+      const copy = [...prev.customVariables];
+      copy[index] = { ...copy[index], ...updates };
+      return { ...prev, customVariables: copy };
+    });
+  };
+
+  const removeVariableGroup = (index: number) => {
+    setFormData(prev => ({
+      ...prev,
+      customVariables: prev.customVariables.filter((_, i) => i !== index)
+    }));
+  };
+
+  const addOptionToGroup = (groupIndex: number) => {
+    setFormData(prev => {
+      const copy = [...prev.customVariables];
+      const group = copy[groupIndex];
+      const isColor = group.type === 'color';
+      const newOption: CustomVariableOption = {
+        id: 'opt_' + Date.now(),
+        name: isColor ? 'Color' : 'Nueva Opción',
+        priceDelta: 0,
+        colorHex: isColor ? '#3b82f6' : undefined
+      };
+      group.options = [...group.options, newOption];
+      return { ...prev, customVariables: copy };
+    });
+  };
+
+  const updateOptionInGroup = (groupIndex: number, optionIndex: number, updates: Partial<CustomVariableOption>) => {
+    setFormData(prev => {
+      const copy = [...prev.customVariables];
+      const group = copy[groupIndex];
+      group.options[optionIndex] = { ...group.options[optionIndex], ...updates };
+      return { ...prev, customVariables: copy };
+    });
+  };
+
+  const removeOptionFromGroup = (groupIndex: number, optionIndex: number) => {
+    setFormData(prev => {
+      const copy = [...prev.customVariables];
+      copy[groupIndex].options = copy[groupIndex].options.filter((_, i) => i !== optionIndex);
+      return { ...prev, customVariables: copy };
+    });
+  };
+
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name || !formData.price) {
@@ -182,15 +258,16 @@ export default function ProductManager() {
       const payload = {
         name: formData.name,
         description: formData.description,
-        price: parseFloat(formData.price),
-        compareAtPrice: formData.compareAtPrice ? parseFloat(formData.compareAtPrice) : null,
+        price: Number(formData.price),
+        compareAtPrice: formData.compareAtPrice ? Number(formData.compareAtPrice) : null,
         category: formData.category,
         sku: formData.sku,
-        stock: parseInt(formData.stock, 10) || 0,
-        weightGrams: parseInt(formData.weightGrams, 10) || 250,
+        stock: Number(formData.stock),
+        weightGrams: Number(formData.weightGrams || 250),
         active: formData.active,
         featured: formData.featured,
-        images: formData.images
+        images: formData.images.map((url, idx) => ({ url, sortOrder: idx, isPrimary: idx === 0 })),
+        customVariables: formData.customVariables
       };
 
       if (editingProduct) {
@@ -200,7 +277,7 @@ export default function ProductManager() {
       }
 
       setShowModal(false);
-      await loadProducts();
+      loadProducts();
     } catch (err: any) {
       alert('Error guardando producto: ' + (err.message || 'Verifique los datos'));
     } finally {
@@ -209,145 +286,39 @@ export default function ProductManager() {
   };
 
   const handleDeleteProduct = async (id: string, name: string) => {
-    if (confirm(`¿Eliminar el producto "${name}"?`)) {
+    if (confirm(`¿Estás seguro de eliminar el producto "${name}"?`)) {
       try {
         await api.del(`/api/products/${id}`);
-        await loadProducts();
+        loadProducts();
       } catch (err) {
-        alert('Error al eliminar producto');
+        alert('Error eliminando producto');
       }
-    }
-  };
-
-  const handleDownloadTemplate = () => {
-    window.location.href = '/api/products/template';
-  };
-
-  const handleBulkUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
-    const file = files[0];
-    const form = new FormData();
-    form.append('file', file);
-
-    setBulkUploading(true);
-    try {
-      const token = localStorage.getItem('token');
-      const res = await fetch('/api/products/bulk-upload', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        },
-        body: form
-      });
-      const data = await res.json();
-      if (data.success) {
-        setBulkResult({
-          count: data.createdCount,
-          total: data.totalRows,
-          errors: data.errors || []
-        });
-        await loadProducts();
-      } else {
-        alert('Error importando productos: ' + (data.error || 'Verifique el archivo'));
-      }
-    } catch (err) {
-      alert('Error en la carga masiva');
-    } finally {
-      setBulkUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
   return (
-    <div>
+    <div style={{ maxWidth: '1100px', margin: '0 auto', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+      
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '15px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '15px' }}>
         <div>
-          <h2 style={{ margin: '0 0 5px 0', fontSize: '1.5rem', fontWeight: 'bold' }}>Catálogo de Productos</h2>
-          <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.9rem' }}>Gestiona los productos, precios, inventario y descripciones de tu tienda virtual</p>
+          <h1 style={{ fontSize: '1.75rem', fontWeight: 'bold', margin: '0 0 4px 0' }}>Catálogo de Productos</h1>
+          <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.9rem' }}>Gestiona los productos, tallas, colores, precios y stock de tu catálogo</p>
         </div>
-        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-          <button 
-            onClick={handleDownloadTemplate}
-            style={{ 
-              padding: '9px 14px', 
-              backgroundColor: 'white', 
-              color: '#0f766e', 
-              border: '1px solid #0f766e', 
-              borderRadius: '6px', 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: '6px',
-              fontWeight: '600',
-              cursor: 'pointer',
-              fontSize: '0.85rem'
-            }}
-          >
-            <Download size={16} /> Plantilla Excel
-          </button>
 
-          <label 
-            style={{ 
-              padding: '9px 14px', 
-              backgroundColor: '#0f766e', 
-              color: 'white', 
-              border: 'none', 
-              borderRadius: '6px', 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: '6px',
-              fontWeight: '600',
-              cursor: 'pointer',
-              fontSize: '0.85rem'
-            }}
-          >
-            <Upload size={16} /> {bulkUploading ? 'Importando...' : 'Cargar Excel'}
-            <input 
-              type="file" 
-              ref={fileInputRef} 
-              accept=".xlsx, .xls" 
-              onChange={handleBulkUpload} 
-              style={{ display: 'none' }} 
-              disabled={bulkUploading}
-            />
-          </label>
-
+        <div style={{ display: 'flex', gap: '10px' }}>
           <button 
             onClick={handleOpenCreate}
             style={{ 
-              padding: '9px 16px', 
-              backgroundColor: 'var(--primary)', 
-              color: 'white', 
-              border: 'none', 
-              borderRadius: '6px', 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: '6px',
-              fontWeight: '600',
-              cursor: 'pointer',
-              fontSize: '0.85rem'
+              display: 'flex', alignItems: 'center', gap: '6px', 
+              padding: '9px 16px', backgroundColor: 'var(--primary)', color: 'white', 
+              border: 'none', borderRadius: '6px', fontWeight: '600', cursor: 'pointer' 
             }}
           >
-            <Plus size={16} /> Nuevo Producto
+            <Plus size={18} /> Nuevo Producto
           </button>
         </div>
       </div>
-
-      {/* Bulk result notification */}
-      {bulkResult && (
-        <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '15px', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <span style={{ fontWeight: '600', color: '#166534' }}>¡Carga masiva completada! </span>
-            <span style={{ color: '#15803d' }}>Se importaron {bulkResult.count} de {bulkResult.total} productos con éxito.</span>
-            {bulkResult.errors.length > 0 && (
-              <span style={{ color: '#b91c1c', marginLeft: '10px' }}>({bulkResult.errors.length} filas con error)</span>
-            )}
-          </div>
-          <button onClick={() => setBulkResult(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#166534' }}><X size={18} /></button>
-        </div>
-      )}
 
       {/* Filters & Search */}
       <div style={{ display: 'flex', gap: '12px', marginBottom: '20px', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -381,7 +352,7 @@ export default function ProductManager() {
               <th style={{ padding: '12px 16px', fontWeight: '600', color: 'var(--text-muted)', fontSize: '0.85rem' }}>NOMBRE</th>
               <th style={{ padding: '12px 16px', fontWeight: '600', color: 'var(--text-muted)', fontSize: '0.85rem' }}>CATEGORÍA</th>
               <th style={{ padding: '12px 16px', fontWeight: '600', color: 'var(--text-muted)', fontSize: '0.85rem' }}>PRECIO (CRC)</th>
-              <th style={{ padding: '12px 16px', fontWeight: '600', color: 'var(--text-muted)', fontSize: '0.85rem' }}>STOCK</th>
+              <th style={{ padding: '12px 16px', fontWeight: '600', color: 'var(--text-muted)', fontSize: '0.85rem' }}>VARIABLES</th>
               <th style={{ padding: '12px 16px', fontWeight: '600', color: 'var(--text-muted)', fontSize: '0.85rem' }}>ESTADO</th>
               <th style={{ padding: '12px 16px', fontWeight: '600', color: 'var(--text-muted)', fontSize: '0.85rem', textAlign: 'right' }}>ACCIONES</th>
             </tr>
@@ -395,12 +366,13 @@ export default function ProductManager() {
               <tr>
                 <td colSpan={7} style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-muted)' }}>
                   <p style={{ margin: '0 0 10px 0', fontSize: '1rem', fontWeight: '500' }}>No tienes productos registrados todavía.</p>
-                  <p style={{ margin: 0, fontSize: '0.85rem' }}>Puedes crear tu primer producto con el botón "Nuevo Producto" o importar un Excel completo.</p>
+                  <p style={{ margin: 0, fontSize: '0.85rem' }}>Crea tu primer producto con el botón "Nuevo Producto".</p>
                 </td>
               </tr>
             ) : (
               products.map(product => {
                 const primaryImage = product.images && product.images.length > 0 ? product.images[0].url : null;
+                const varCount = (product.customVariables || []).length;
                 return (
                   <tr key={product.id} style={{ borderBottom: '1px solid var(--border)' }}>
                     <td style={{ padding: '12px 16px' }}>
@@ -428,9 +400,13 @@ export default function ProductManager() {
                       )}
                     </td>
                     <td style={{ padding: '12px 16px' }}>
-                      <span style={{ color: product.stock > 0 ? 'inherit' : '#dc2626', fontWeight: product.stock <= 5 ? 'bold' : 'normal' }}>
-                        {product.stock} un.
-                      </span>
+                      {varCount > 0 ? (
+                        <span style={{ padding: '3px 8px', borderRadius: '12px', backgroundColor: '#e0f2fe', color: '#0369a1', fontSize: '0.75rem', fontWeight: '600' }}>
+                          {varCount} variable{varCount > 1 ? 's' : ''}
+                        </span>
+                      ) : (
+                        <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>Sin variables</span>
+                      )}
                     </td>
                     <td style={{ padding: '12px 16px' }}>
                       <span style={{ 
@@ -471,7 +447,7 @@ export default function ProductManager() {
       {/* Modal Crear / Editar */}
       {showModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '20px' }}>
-          <div style={{ backgroundColor: 'white', padding: '25px', borderRadius: '10px', width: '100%', maxWidth: '650px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }}>
+          <div style={{ backgroundColor: 'white', padding: '25px', borderRadius: '12px', width: '100%', maxWidth: '700px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.2)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
               <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 'bold' }}>
                 {editingProduct ? `Editar: ${editingProduct.name}` : 'Crear Nuevo Producto'}
@@ -485,7 +461,7 @@ export default function ProductManager() {
                 <input 
                   type="text" 
                   required
-                  placeholder="Ej: Hamburguesa Doble Queso, Lavado Premium, etc." 
+                  placeholder="Ej: Camisa Polo Slim Fit, Hamburguesa Doble, etc." 
                   value={formData.name}
                   onChange={e => setFormData({ ...formData, name: e.target.value })}
                   style={{ width: '100%', padding: '9px 12px', border: '1px solid var(--border)', borderRadius: '6px' }}
@@ -498,54 +474,40 @@ export default function ProductManager() {
                   <label style={{ fontSize: '0.85rem', fontWeight: '600' }}>Descripción del Producto</label>
                   <button 
                     type="button" 
-                    onClick={handleGenerateAiDescription}
+                    onClick={handleGenerateAiDescription} 
                     disabled={generatingAi}
-                    style={{ 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      gap: '5px', 
-                      background: 'none', 
-                      border: '1px solid #8b5cf6', 
-                      color: '#7c3aed', 
-                      borderRadius: '4px', 
-                      padding: '3px 8px', 
-                      fontSize: '0.75rem', 
-                      fontWeight: '600', 
-                      cursor: 'pointer' 
-                    }}
+                    style={{ background: 'none', border: 'none', color: '#7c3aed', fontSize: '0.8rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}
                   >
-                    <Sparkles size={14} color="#7c3aed" /> {generatingAi ? 'Generando con IA...' : '✨ Generar con IA'}
+                    <Sparkles size={14} /> {generatingAi ? 'Generando con IA...' : 'Generar con IA'}
                   </button>
                 </div>
                 <textarea 
-                  rows={4}
-                  placeholder="Describe los ingredientes, materiales, beneficios o detalles de este producto..."
+                  rows={3} 
+                  placeholder="Describe los detalles, ingredientes o características del producto..."
                   value={formData.description}
                   onChange={e => setFormData({ ...formData, description: e.target.value })}
-                  style={{ width: '100%', padding: '9px 12px', border: '1px solid var(--border)', borderRadius: '6px', resize: 'vertical' }}
+                  style={{ width: '100%', padding: '9px 12px', border: '1px solid var(--border)', borderRadius: '6px', fontSize: '0.85rem' }}
                 />
               </div>
 
-              {/* Prices and Category */}
+              {/* Prices & Category */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '4px' }}>Precio (₡ CRC) *</label>
+                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '4px' }}>Precio Base (CRC) *</label>
                   <input 
                     type="number" 
                     required
-                    step="any"
-                    placeholder="Ej: 4500" 
+                    placeholder="15000" 
                     value={formData.price}
                     onChange={e => setFormData({ ...formData, price: e.target.value })}
                     style={{ width: '100%', padding: '9px 12px', border: '1px solid var(--border)', borderRadius: '6px' }}
                   />
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '4px' }}>Precio Anterior (Tachado)</label>
+                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '4px' }}>Precio Comparación (Tachado)</label>
                   <input 
                     type="number" 
-                    step="any"
-                    placeholder="Ej: 5500" 
+                    placeholder="Ej: 18000" 
                     value={formData.compareAtPrice}
                     onChange={e => setFormData({ ...formData, compareAtPrice: e.target.value })}
                     style={{ width: '100%', padding: '9px 12px', border: '1px solid var(--border)', borderRadius: '6px' }}
@@ -555,7 +517,7 @@ export default function ProductManager() {
                   <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '4px' }}>Categoría</label>
                   <input 
                     type="text" 
-                    placeholder="Ej: Comidas, Bebidas, Ropa" 
+                    placeholder="Ej: Ropa, Comidas, Bebidas" 
                     value={formData.category}
                     onChange={e => setFormData({ ...formData, category: e.target.value })}
                     style={{ width: '100%', padding: '9px 12px', border: '1px solid var(--border)', borderRadius: '6px' }}
@@ -599,6 +561,145 @@ export default function ProductManager() {
                 </div>
               </div>
 
+              {/* ==============================================================
+                  CUSTOM VARIABLES & MODIFIERS (Tallas, Colores, Extras)
+              ============================================================== */}
+              <div style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '16px', backgroundColor: '#f8fafc' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <div>
+                    <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Sliders size={16} color="var(--primary)" /> Variables & Modificadores Personalizados
+                    </h4>
+                    <p style={{ margin: '2px 0 0 0', fontSize: '0.75rem', color: '#64748b' }}>
+                      Permite que tus clientes elijan tallas, colores con selector visual, materiales o extras que modifiquen el precio.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={addVariableGroup}
+                    style={{ padding: '6px 12px', backgroundColor: 'white', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                  >
+                    <Plus size={14} /> Agregar Variable
+                  </button>
+                </div>
+
+                {formData.customVariables.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '16px', color: '#94a3b8', fontSize: '0.8rem' }}>
+                    Este producto no tiene variables. Haz clic en "Agregar Variable" para configurar tallas, colores, etc.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    {formData.customVariables.map((group, gIdx) => (
+                      <div key={group.id || gIdx} style={{ backgroundColor: 'white', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '14px' }}>
+                        
+                        {/* Group Header */}
+                        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap' }}>
+                          <input
+                            type="text"
+                            placeholder="Nombre (ej: Color, Talla, Extra)"
+                            value={group.name}
+                            onChange={(e) => updateVariableGroup(gIdx, { name: e.target.value })}
+                            style={{ flex: 1, minWidth: '160px', padding: '6px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem', fontWeight: 'bold' }}
+                          />
+
+                          <select
+                            value={group.type}
+                            onChange={(e) => updateVariableGroup(gIdx, { type: e.target.value as any })}
+                            style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.8rem', backgroundColor: 'white' }}
+                          >
+                            <option value="select">Selección Única (Talla / Opción)</option>
+                            <option value="color">Círculo Cromático / Color (HEX)</option>
+                            <option value="checkbox">Múltiple Selección / Extras</option>
+                          </select>
+
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', cursor: 'pointer', color: '#475569' }}>
+                            <input
+                              type="checkbox"
+                              checked={group.required}
+                              onChange={(e) => updateVariableGroup(gIdx, { required: e.target.checked })}
+                            />
+                            <span>Obligatorio</span>
+                          </label>
+
+                          <button
+                            type="button"
+                            onClick={() => removeVariableGroup(gIdx)}
+                            style={{ border: 'none', background: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px' }}
+                            title="Eliminar grupo de variable"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+
+                        {/* Options List */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingLeft: '8px' }}>
+                          {group.options.map((opt, oIdx) => (
+                            <div key={opt.id || oIdx} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                              
+                              {/* If color picker */}
+                              {group.type === 'color' && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <input
+                                    type="color"
+                                    value={opt.colorHex || '#3b82f6'}
+                                    onChange={(e) => updateOptionInGroup(gIdx, oIdx, { colorHex: e.target.value })}
+                                    style={{ width: '32px', height: '32px', padding: 0, border: '1px solid #cbd5e1', borderRadius: '50%', cursor: 'pointer' }}
+                                    title="Seleccionar color en el círculo cromático"
+                                  />
+                                  <input
+                                    type="text"
+                                    placeholder="#000000"
+                                    value={opt.colorHex || '#3b82f6'}
+                                    onChange={(e) => updateOptionInGroup(gIdx, oIdx, { colorHex: e.target.value })}
+                                    style={{ width: '75px', padding: '5px 8px', borderRadius: '4px', border: '1px solid #cbd5e1', fontSize: '0.75rem', fontFamily: 'monospace' }}
+                                  />
+                                </div>
+                              )}
+
+                              <input
+                                type="text"
+                                placeholder={group.type === 'color' ? 'Nombre del color (ej: Azul Rey)' : 'Nombre de la opción (ej: Talla M)'}
+                                value={opt.name}
+                                onChange={(e) => updateOptionInGroup(gIdx, oIdx, { name: e.target.value })}
+                                style={{ flex: 1, padding: '6px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.8rem' }}
+                              />
+
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <span style={{ fontSize: '0.75rem', color: '#64748b' }}>₡+/-</span>
+                                <input
+                                  type="number"
+                                  placeholder="+/- Precio (0)"
+                                  value={opt.priceDelta || ''}
+                                  onChange={(e) => updateOptionInGroup(gIdx, oIdx, { priceDelta: Number(e.target.value) })}
+                                  style={{ width: '90px', padding: '6px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.8rem' }}
+                                />
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => removeOptionFromGroup(gIdx, oIdx)}
+                                style={{ border: 'none', background: 'none', color: '#94a3b8', cursor: 'pointer', padding: '4px' }}
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
+                          ))}
+
+                          <button
+                            type="button"
+                            onClick={() => addOptionToGroup(gIdx)}
+                            style={{ alignSelf: 'flex-start', border: 'none', background: 'none', color: 'var(--primary)', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}
+                          >
+                            <Plus size={13} /> Agregar Opción a {group.name || 'Variable'}
+                          </button>
+                        </div>
+
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               {/* Images */}
               <div>
                 <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '6px' }}>Imágenes del Producto</label>
@@ -632,7 +733,7 @@ export default function ProductManager() {
                     checked={formData.active} 
                     onChange={e => setFormData({ ...formData, active: e.target.checked })} 
                   />
-                  <span>Visible en la tienda virtual</span>
+                  <span>Visible en el catálogo</span>
                 </label>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', cursor: 'pointer' }}>
                   <input 

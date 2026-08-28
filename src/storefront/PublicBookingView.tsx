@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Clock, User, Phone, CheckCircle, Sparkles, MessageCircle, AlertCircle, Palmtree, MapPin } from 'lucide-react';
+import { Calendar, Clock, User, Phone, CheckCircle, Sparkles, MessageCircle, AlertCircle, Palmtree, MapPin, Sliders } from 'lucide-react';
 import { BookingField } from '../shared/types';
 
 interface PublicBookingViewProps {
@@ -14,6 +14,7 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
 
   // Booking Flow Steps
   const [selectedService, setSelectedService] = useState<any>(null);
+  const [serviceVariables, setServiceVariables] = useState<Record<string, any>>({});
   const [selectedDate, setSelectedDate] = useState<string>(() => {
     const today = new Date();
     return today.toISOString().split('T')[0];
@@ -52,7 +53,7 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
     if (businessInfo?.theme?.fontFamily) {
       const font = businessInfo.theme.fontFamily;
       const link = document.createElement('link');
-      link.href = `https://fonts.googleapis.com/css2?family=${font.replace(/\s+/g, '+')}:wght@300;400;500;600;700&display=swap`;
+      link.href = `https://fonts.googleapis.com/css2?family=${font.replace(/\s+/g, '+')}:wght@300;400;500;600;700;800&display=swap`;
       link.rel = 'stylesheet';
       document.head.appendChild(link);
     }
@@ -86,6 +87,43 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
     fetchSlots();
   }, [selectedDate, slug]);
 
+  const handleSelectService = (svc: any) => {
+    setSelectedService(svc);
+    const initialVars: Record<string, any> = {};
+    if (svc.customVariables && Array.isArray(svc.customVariables)) {
+      svc.customVariables.forEach((group: any) => {
+        if (group.options && group.options.length > 0) {
+          initialVars[group.name] = group.options[0].name;
+        }
+      });
+    }
+    setServiceVariables(initialVars);
+  };
+
+  const calculateEffectivePrice = (svc: any, vars: Record<string, any>) => {
+    let p = Number(svc?.price || 0);
+    if (!svc?.customVariables || !Array.isArray(svc.customVariables)) return p;
+    for (const group of svc.customVariables) {
+      const val = vars[group.name];
+      if (!val) continue;
+      const opt = group.options?.find((o: any) => o.name === val);
+      if (opt && opt.priceDelta) p += Number(opt.priceDelta);
+    }
+    return p;
+  };
+
+  const calculateEffectiveMinutes = (svc: any, vars: Record<string, any>) => {
+    let m = Number(svc?.estimatedMinutes || 45);
+    if (!svc?.customVariables || !Array.isArray(svc.customVariables)) return m;
+    for (const group of svc.customVariables) {
+      const val = vars[group.name];
+      if (!val) continue;
+      const opt = group.options?.find((o: any) => o.name === val);
+      if (opt && opt.durationMinutesDelta) m += Number(opt.durationMinutesDelta);
+    }
+    return m;
+  };
+
   const handleCustomAnswerChange = (fieldLabel: string, val: string) => {
     setCustomAnswers(prev => ({ ...prev, [fieldLabel]: val }));
   };
@@ -108,6 +146,8 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
 
     setSubmitting(true);
     try {
+      const effectiveAmount = calculateEffectivePrice(selectedService, serviceVariables);
+
       const res = await fetch(`/api/appointments/public/${slug}/book`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -116,8 +156,10 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
           serviceId: selectedService.id,
           date: selectedDate,
           time: selectedTime,
+          amount: effectiveAmount,
           customerName,
           customerPhone,
+          selectedVariables: serviceVariables,
           customAnswers
         })
       });
@@ -164,6 +206,7 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
   }
 
   if (bookingSuccess) {
+    const finalPrice = calculateEffectivePrice(selectedService, serviceVariables);
     return (
       <div style={{ minHeight: '100vh', backgroundColor: bgColor, padding: '40px 20px', fontFamily }}>
         <div style={{ maxWidth: '520px', margin: '0 auto', backgroundColor: cardBg, borderRadius: cardRadius, padding: '35px', textAlign: 'center', boxShadow: cardShadow, border: '1px solid #e2e8f0' }}>
@@ -179,10 +222,13 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
 
           <div style={{ backgroundColor: '#f8fafc', borderRadius: '12px', padding: '20px', textAlign: 'left', marginBottom: '25px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.9rem' }}>
             <div><strong>Servicio:</strong> {selectedService?.name}</div>
+            {Object.keys(serviceVariables).length > 0 && (
+              <div><strong>Opciones:</strong> {Object.entries(serviceVariables).map(([k, v]) => `${k}: ${v}`).join(' • ')}</div>
+            )}
             <div><strong>Fecha:</strong> {selectedDate}</div>
             <div><strong>Hora:</strong> {selectedTime}</div>
             <div><strong>Cliente:</strong> {customerName} ({customerPhone})</div>
-            {selectedService?.price > 0 && <div><strong>Monto estimado:</strong> ₡{Number(selectedService.price).toLocaleString('es-CR')}</div>}
+            {finalPrice > 0 && <div><strong>Monto estimado:</strong> ₡{finalPrice.toLocaleString('es-CR')}</div>}
           </div>
 
           {businessInfo.whatsappNumber && (
@@ -201,6 +247,7 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
               setBookingSuccess(null);
               setSelectedService(null);
               setSelectedTime(null);
+              setServiceVariables({});
               setCustomAnswers({});
             }}
             style={{ width: '100%', padding: '12px', backgroundColor: 'transparent', color: '#64748b', border: '1px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontWeight: '500' }}
@@ -219,25 +266,30 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
       
       {/* Optional Top Banner */}
       {businessInfo.bannerUrl && (
-        <div style={{ width: '100%', height: '180px', overflow: 'hidden', position: 'relative' }}>
-          <img src={businessInfo.bannerUrl} alt={businessInfo.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(0,0,0,0.1), rgba(0,0,0,0.5))' }} />
+        <div style={{ width: '100%', height: '160px', overflow: 'hidden' }}>
+          <img src={businessInfo.bannerUrl} alt="Banner" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
         </div>
       )}
 
-      {/* Hero Header */}
-      <div style={{ backgroundColor: 'white', borderBottom: '1px solid #e2e8f0', padding: '25px 20px', textAlign: 'center' }}>
-        <div style={{ maxWidth: '650px', margin: '0 auto' }}>
-          {businessInfo.logoUrl && (
-            <img src={businessInfo.logoUrl} alt={businessInfo.name} style={{ width: '64px', height: '64px', borderRadius: '50%', objectFit: 'cover', margin: '0 auto 12px auto', display: 'block', border: '2px solid #e2e8f0' }} />
-          )}
-          <h1 style={{ margin: '0 0 6px 0', fontSize: '1.6rem', fontWeight: 'bold' }}>{businessInfo.name}</h1>
-          <p style={{ margin: 0, color: '#64748b', fontSize: '0.95rem' }}>Portal Oficial de Reservas y Agendamiento Online</p>
-        </div>
-      </div>
-
-      <div style={{ maxWidth: '650px', margin: '30px auto', padding: '0 20px' }}>
+      {/* Main Container */}
+      <div style={{ maxWidth: '640px', margin: '0 auto', padding: '24px 16px' }}>
         
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px', backgroundColor: cardBg, borderRadius: cardRadius, padding: '20px', border: '1px solid #e2e8f0', boxShadow: cardShadow }}>
+          {businessInfo.logoUrl ? (
+            <img src={businessInfo.logoUrl} alt="Logo" style={{ width: '60px', height: '60px', borderRadius: '12px', objectFit: 'cover' }} />
+          ) : (
+            <div style={{ width: '60px', height: '60px', borderRadius: '12px', backgroundColor: primaryColor, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem', fontWeight: 'bold' }}>
+              {businessInfo.name.substring(0, 2).toUpperCase()}
+            </div>
+          )}
+
+          <div style={{ flex: 1 }}>
+            <h1 style={{ margin: '0 0 4px 0', fontSize: '1.4rem', fontWeight: 'bold' }}>{businessInfo.name}</h1>
+            <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>Agenda tu cita en línea de forma rápida y sencilla</p>
+          </div>
+        </div>
+
         {/* Step 1: Select Service */}
         <div style={{ backgroundColor: cardBg, borderRadius: cardRadius, padding: '24px', border: '1px solid #e2e8f0', marginBottom: '20px', boxShadow: cardShadow }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
@@ -248,30 +300,71 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {services.map(svc => {
               const isSelected = selectedService?.id === svc.id;
+              const hasVars = svc.customVariables && svc.customVariables.length > 0;
+              const price = isSelected ? calculateEffectivePrice(svc, serviceVariables) : Number(svc.price || 0);
+              const minutes = isSelected ? calculateEffectiveMinutes(svc, serviceVariables) : (svc.estimatedMinutes || 45);
+
               return (
                 <div
                   key={svc.id}
-                  onClick={() => setSelectedService(svc)}
+                  onClick={() => handleSelectService(svc)}
                   style={{
-                    padding: '14px 16px',
-                    borderRadius: '8px',
+                    padding: '16px',
+                    borderRadius: '10px',
                     border: `2px solid ${isSelected ? primaryColor : '#e2e8f0'}`,
                     backgroundColor: isSelected ? `${primaryColor}0a` : 'white',
                     cursor: 'pointer',
                     display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
+                    flexDirection: 'column',
+                    gap: '10px',
                     transition: 'all 0.15s ease'
                   }}
                 >
-                  <div>
-                    <div style={{ fontWeight: '600', fontSize: '0.95rem', color: isSelected ? primaryColor : '#1e293b' }}>{svc.name}</div>
-                    {svc.description && <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px' }}>{svc.description}</div>}
-                    {svc.duration && <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '4px' }}>⏱️ {svc.duration}</div>}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontWeight: 'bold', fontSize: '1rem', color: isSelected ? primaryColor : '#1e293b' }}>{svc.name}</div>
+                      {svc.description && <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px' }}>{svc.description}</div>}
+                      <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '4px' }}>⏱️ {minutes} minutos</div>
+                    </div>
+                    <div style={{ fontWeight: 'bold', fontSize: '1.1rem', color: primaryColor }}>
+                      ₡{price.toLocaleString('es-CR')}
+                    </div>
                   </div>
-                  <div style={{ fontWeight: 'bold', fontSize: '1.05rem', color: primaryColor }}>
-                    ₡{Number(svc.price || 0).toLocaleString('es-CR')}
-                  </div>
+
+                  {/* Variables selection if active service is selected */}
+                  {isSelected && hasVars && (
+                    <div style={{ paddingTop: '10px', borderTop: '1px dashed #cbd5e1', display: 'flex', flexDirection: 'column', gap: '10px' }} onClick={e => e.stopPropagation()}>
+                      {svc.customVariables.map((group: any) => (
+                        <div key={group.id}>
+                          <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', color: '#475569', marginBottom: '6px' }}>
+                            {group.name}:
+                          </label>
+                          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                            {group.options.map((opt: any) => {
+                              const isOptSelected = serviceVariables[group.name] === opt.name;
+                              return (
+                                <button
+                                  key={opt.id}
+                                  type="button"
+                                  onClick={() => setServiceVariables(prev => ({ ...prev, [group.name]: opt.name }))}
+                                  style={{
+                                    padding: '6px 12px', borderRadius: '6px',
+                                    border: isOptSelected ? `2px solid ${primaryColor}` : '1px solid #cbd5e1',
+                                    backgroundColor: isOptSelected ? primaryColor : 'white',
+                                    color: isOptSelected ? 'white' : '#1e293b',
+                                    fontWeight: isOptSelected ? 'bold' : 'normal',
+                                    fontSize: '0.8rem', cursor: 'pointer'
+                                  }}
+                                >
+                                  {opt.name} {opt.priceDelta ? `(+₡${opt.priceDelta.toLocaleString('es-CR')})` : ''} {opt.durationMinutesDelta ? `(+${opt.durationMinutesDelta} min)` : ''}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -355,102 +448,105 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
           </div>
         )}
 
-        {/* Step 3: Customer Details & Custom Questions Form */}
-        {selectedService && selectedTime && !vacationAlert && (
+        {/* Step 3: Customer Information & Custom Questions */}
+        {selectedService && selectedTime && (
           <form onSubmit={handleBook} style={{ backgroundColor: cardBg, borderRadius: cardRadius, padding: '24px', border: '1px solid #e2e8f0', boxShadow: cardShadow }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
               <span style={{ width: '26px', height: '26px', backgroundColor: primaryColor, color: 'white', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.85rem', fontWeight: 'bold' }}>3</span>
-              <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 'bold' }}>Ingresa tus Datos de Contacto</h3>
+              <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 'bold' }}>Tus Datos de Contacto</h3>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div>
-                <label style={{ display: 'block', marginBottom: '5px', fontWeight: '600', fontSize: '0.85rem' }}>Nombre Completo *</label>
-                <input
-                  type="text"
-                  required
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  placeholder="Ej: Carlos Murillo"
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.9rem' }}
-                />
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '4px' }}>Nombre y Apellidos *</label>
+                <div style={{ position: 'relative' }}>
+                  <User size={16} color="#94a3b8" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ej: María González"
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                    style={{ width: '100%', padding: '10px 14px 10px 38px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.9rem' }}
+                  />
+                </div>
               </div>
 
               <div>
-                <label style={{ display: 'block', marginBottom: '5px', fontWeight: '600', fontSize: '0.85rem' }}>Teléfono WhatsApp *</label>
-                <input
-                  type="tel"
-                  required
-                  value={customerPhone}
-                  onChange={(e) => setCustomerPhone(e.target.value)}
-                  placeholder="Ej: 8888-8888"
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.9rem' }}
-                />
-                <span style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '3px', display: 'block' }}>Te enviaremos la confirmación y recordatorio a este número.</span>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '4px' }}>WhatsApp de Contacto *</label>
+                <div style={{ position: 'relative' }}>
+                  <Phone size={16} color="#94a3b8" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+                  <input
+                    type="tel"
+                    required
+                    placeholder="Ej: 8888-8888"
+                    value={customerPhone}
+                    onChange={(e) => setCustomerPhone(e.target.value)}
+                    style={{ width: '100%', padding: '10px 14px 10px 38px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.9rem' }}
+                  />
+                </div>
+                <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Te enviaremos los detalles y recordatorios a este número.</span>
               </div>
 
-              {/* Dynamic Custom Questions */}
-              {customFields.map(field => (
+              {/* Dynamic Business Custom Fields */}
+              {customFields.map((field) => (
                 <div key={field.id}>
-                  <label style={{ display: 'block', marginBottom: '5px', fontWeight: '600', fontSize: '0.85rem' }}>
-                    {field.label} {field.required ? '*' : '(Opcional)'}
+                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '4px' }}>
+                    {field.label} {field.required && <span style={{ color: '#ef4444' }}>*</span>}
                   </label>
-
-                  {field.type === 'textarea' ? (
-                    <textarea
-                      rows={2}
+                  
+                  {field.type === 'select' ? (
+                    <select
                       required={field.required}
-                      placeholder={field.placeholder || 'Escribe tu respuesta...'}
                       value={customAnswers[field.label] || ''}
                       onChange={(e) => handleCustomAnswerChange(field.label, e.target.value)}
-                      style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.9rem' }}
-                    />
-                  ) : field.type === 'number' ? (
-                    <input
-                      type="number"
-                      required={field.required}
-                      placeholder={field.placeholder || '0'}
-                      value={customAnswers[field.label] || ''}
-                      onChange={(e) => handleCustomAnswerChange(field.label, e.target.value)}
-                      style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.9rem' }}
-                    />
+                      style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.9rem', backgroundColor: 'white' }}
+                    >
+                      <option value="">Selecciona una opción...</option>
+                      {field.options?.map(opt => (
+                        <option key={opt} value={opt}>{opt}</option>
+                      ))}
+                    </select>
                   ) : (
                     <input
-                      type="text"
+                      type={field.type === 'number' ? 'number' : 'text'}
                       required={field.required}
-                      placeholder={field.placeholder || 'Escribe tu respuesta...'}
+                      placeholder={field.placeholder || ''}
                       value={customAnswers[field.label] || ''}
                       onChange={(e) => handleCustomAnswerChange(field.label, e.target.value)}
-                      style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.9rem' }}
+                      style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.9rem' }}
                     />
                   )}
                 </div>
               ))}
-            </div>
 
-            <div style={{ marginTop: '25px' }}>
-              <button
-                type="submit"
-                disabled={submitting}
-                style={{
-                  width: '100%',
-                  padding: '14px',
-                  backgroundColor: primaryColor,
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontWeight: 'bold',
-                  fontSize: '1rem',
-                  cursor: 'pointer',
-                  boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)'
-                }}
-              >
-                {submitting ? 'Confirmando Reserva...' : `Confirmar Cita para el ${selectedDate} a las ${selectedTime}`}
-              </button>
+              <div style={{ marginTop: '10px' }}>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  style={{
+                    width: '100%',
+                    padding: '14px',
+                    backgroundColor: primaryColor,
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '1rem',
+                    fontWeight: 'bold',
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)'
+                  }}
+                >
+                  {submitting ? 'Agendando cita...' : `Confirmar Cita • ₡${calculateEffectivePrice(selectedService, serviceVariables).toLocaleString('es-CR')}`}
+                </button>
+              </div>
+
             </div>
           </form>
         )}
+
       </div>
+
     </div>
   );
 }

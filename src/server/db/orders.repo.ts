@@ -9,13 +9,13 @@ export async function getOrdersByTenant(tenantId: string): Promise<Order[]> {
            currency, status, payment_method as "paymentMethod", payment_status as "paymentStatus",
            payment_reference as "paymentReference", notes, delivery_method as "deliveryMethod",
            consumption_mode as "consumptionMode", table_number as "tableNumber", customer_location as "customerLocation",
-           chat_message_id as "chatMessageId", created_at as "createdAt", updated_at as "updatedAt"
+           chat_message_id as "chatMessageId", driver_id as "driverId", waze_url as "wazeUrl",
+           created_at as "createdAt", updated_at as "updatedAt"
     FROM orders 
     WHERE tenant_id = $1
     ORDER BY created_at DESC
   `, [tenantId]);
-  
-  return result.rows.map(row => ({ ...row, items: [] }));
+  return result.rows;
 }
 
 export async function getOrderById(id: string, tenantId?: string): Promise<Order | null> {
@@ -37,7 +37,8 @@ export async function getOrderById(id: string, tenantId?: string): Promise<Order
 
   const itemsRes = await query(`
     SELECT id, product_id as "productId", variant_id as "variantId", product_name as "productName",
-           variant_name as "variantName", quantity, unit_price as "unitPrice", total_price as "totalPrice"
+           variant_name as "variantName", selected_variables as "selectedVariables",
+           quantity, unit_price as "unitPrice", total_price as "totalPrice"
     FROM order_items WHERE order_id = $1
   `, [id]);
   order.items = itemsRes.rows;
@@ -67,9 +68,14 @@ export async function createOrder(tenantId: string, data: Partial<Order>, items?
     for (const item of orderItems) {
       await query(`
         INSERT INTO order_items (
-          order_id, product_id, variant_id, tenant_id, product_name, variant_name, quantity, unit_price, total_price
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-      `, [orderId, item.productId || null, item.variantId || null, tenantId, item.productName, item.variantName || null, item.quantity, item.unitPrice, Number(item.unitPrice) * Number(item.quantity)]);
+          order_id, product_id, variant_id, tenant_id, product_name, variant_name, selected_variables, quantity, unit_price, total_price
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      `, [
+        orderId, item.productId || null, item.variantId || null, tenantId, 
+        item.productName, item.variantName || null, 
+        item.selectedVariables ? JSON.stringify(item.selectedVariables) : null,
+        item.quantity, item.unitPrice, Number(item.unitPrice) * Number(item.quantity)
+      ]);
     }
   }
   
@@ -109,6 +115,7 @@ export async function updateOrder(id: string, tenantId: string, data: Partial<Or
 export async function updateOrderStatus(id: string, tenantId: string, status: any) {
   return updateOrder(id, tenantId, { status });
 }
+
 export async function confirmPayment(id: string, tenantId: string, paymentReference?: string) {
   return updateOrder(id, tenantId, { paymentStatus: 'paid', paymentReference: paymentReference || 'Confirmado manual' });
 }

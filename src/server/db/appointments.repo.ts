@@ -5,6 +5,7 @@ export async function getAppointmentsByTenant(tenantId: string): Promise<Appoint
   const result = await query(`
     SELECT id, tenant_id as "tenantId", name, whatsapp, service, 
            date, time, amount, status, details, vehicle_model as "vehicleModel",
+           selected_variables as "selectedVariables",
            created_at as "createdAt"
     FROM appointments 
     WHERE tenant_id = $1
@@ -17,6 +18,7 @@ export async function getAppointmentById(id: string, tenantId: string): Promise<
   const result = await query(`
     SELECT id, tenant_id as "tenantId", name, whatsapp, service, 
            date, time, amount, status, details, vehicle_model as "vehicleModel",
+           selected_variables as "selectedVariables",
            created_at as "createdAt"
     FROM appointments 
     WHERE id = $1 AND tenant_id = $2
@@ -27,14 +29,16 @@ export async function getAppointmentById(id: string, tenantId: string): Promise<
 export async function createAppointment(tenantId: string, data: Partial<Appointment>): Promise<Appointment> {
   const result = await query(`
     INSERT INTO appointments (
-      tenant_id, name, whatsapp, service, date, time, amount, status, details, vehicle_model
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      tenant_id, name, whatsapp, service, date, time, amount, status, details, vehicle_model, selected_variables
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
     RETURNING id, tenant_id as "tenantId", name, whatsapp, service, 
            date, time, amount, status, details, vehicle_model as "vehicleModel",
+           selected_variables as "selectedVariables",
            created_at as "createdAt"
   `, [
     tenantId, data.name, data.whatsapp, data.service, data.date, data.time, data.amount, 
-    data.status || 'pending', data.details, data.vehicleModel
+    data.status || 'pending', data.details, data.vehicleModel,
+    data.selectedVariables ? JSON.stringify(data.selectedVariables) : null
   ]);
   return result.rows[0];
 }
@@ -44,12 +48,13 @@ export async function updateAppointment(id: string, tenantId: string, data: Part
   const params: any[] = [id, tenantId];
   let paramIdx = 3;
 
-  const fields = ['name', 'whatsapp', 'service', 'date', 'time', 'amount', 'status', 'details', 'vehicleModel'];
+  const fields = ['name', 'whatsapp', 'service', 'date', 'time', 'amount', 'status', 'details', 'vehicleModel', 'selectedVariables'];
   for (const field of fields) {
     if ((data as any)[field] !== undefined) {
       const dbField = field.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
       updates.push(`${dbField} = $${paramIdx++}`);
-      params.push((data as any)[field]);
+      const val = field === 'selectedVariables' ? JSON.stringify((data as any)[field]) : (data as any)[field];
+      params.push(val);
     }
   }
 
@@ -60,17 +65,18 @@ export async function updateAppointment(id: string, tenantId: string, data: Part
     WHERE id = $1 AND tenant_id = $2
     RETURNING id, tenant_id as "tenantId", name, whatsapp, service, 
            date, time, amount, status, details, vehicle_model as "vehicleModel",
+           selected_variables as "selectedVariables",
            created_at as "createdAt"
   `, params);
 
   return result.rows[0] || null;
 }
 
-export async function deleteAppointment(id: string, tenantId: string): Promise<boolean> {
-  const result = await query('DELETE FROM appointments WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
-  return (result.rowCount || 0) > 0;
+export async function updateAppointmentStatus(id: string, tenantId: string, status: any): Promise<Appointment | null> {
+  return updateAppointment(id, tenantId, { status });
 }
 
-export async function updateAppointmentStatus(id: string, tenantId: string, status: any) {
-  return updateAppointment(id, tenantId, { status });
+export async function deleteAppointment(id: string, tenantId: string): Promise<boolean> {
+  const result = await query('DELETE FROM appointments WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
+  return (result.rowCount ?? 0) > 0;
 }

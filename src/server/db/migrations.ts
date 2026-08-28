@@ -299,6 +299,10 @@ export async function runMigrations() {
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_location JSONB;
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS driver_id UUID REFERENCES delivery_drivers(id) ON DELETE SET NULL;
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS waze_url TEXT;
+    ALTER TABLE products ADD COLUMN IF NOT EXISTS custom_variables JSONB;
+    ALTER TABLE services ADD COLUMN IF NOT EXISTS custom_variables JSONB;
+    ALTER TABLE order_items ADD COLUMN IF NOT EXISTS selected_variables JSONB;
+    ALTER TABLE appointments ADD COLUMN IF NOT EXISTS selected_variables JSONB;
 
     CREATE TABLE IF NOT EXISTS uploaded_files (
       filename VARCHAR(255) PRIMARY KEY,
