@@ -74,18 +74,14 @@ export async function disconnectInstance(instanceName: string): Promise<Evolutio
 
 export async function sendMessage(instanceName: string, number: string, text: string): Promise<EvolutionResponse> {
   try {
+    const cleanNumber = (number || '').replace(/@.+$/, '').replace(/\D/g, '');
     const response = await fetch(`${EVOLUTION_API_URL}/message/sendText/${instanceName}`, {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify({
-        number,
-        options: {
-          delay: 1200,
-          presence: 'composing'
-        },
-        textMessage: {
-          text
-        }
+        number: cleanNumber,
+        text: text,
+        delay: 1000
       })
     });
     const data = await response.json();

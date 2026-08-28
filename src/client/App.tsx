@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from './hooks/useAuth';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
@@ -15,6 +15,7 @@ import AgentPromptStudio from './components/AgentPromptStudio';
 import NotificationsCenter from './components/NotificationsCenter';
 import UsersManagement from './components/UsersManagement';
 import StorefrontView from '../storefront/StorefrontView';
+import PublicBookingView from '../storefront/PublicBookingView';
 import { 
   Home, MessageSquare, Calendar, Wrench, ShoppingBag, 
   Package, ClipboardList, Bot, Phone, Bell, Users, Settings, LogOut, ArrowLeft, ShieldAlert
@@ -23,8 +24,9 @@ import {
 export default function App() {
   const { isAuthenticated, loading, user, logout } = useAuth();
   const [currentPage, setCurrentPage] = useState('dashboard');
+  const [unreadOrdersCount, setUnreadOrdersCount] = useState(0);
 
-  // Check for public storefront route before anything else
+  // Check for public storefront or booking routes before anything else
   const pathname = window.location.pathname;
   if (pathname.startsWith('/tienda/')) {
     const slug = pathname.replace('/tienda/', '').split('/')[0];
@@ -32,6 +34,38 @@ export default function App() {
       return <StorefrontView slug={slug} />;
     }
   }
+
+  if (pathname.startsWith('/reservas/') || pathname.startsWith('/agendar/')) {
+    const slug = pathname.replace('/reservas/', '').replace('/agendar/', '').split('/')[0];
+    if (slug) {
+      return <PublicBookingView slug={slug} />;
+    }
+  }
+
+  // Periodic check for new unread orders if authenticated
+  useEffect(() => {
+    if (!isAuthenticated || user?.role === 'superadmin') return;
+
+    const checkUnread = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+        const res = await fetch('/api/orders/stats/unread', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setUnreadOrdersCount(data.newOrdersCount || 0);
+        }
+      } catch (e) {
+        // ignore
+      }
+    };
+
+    checkUnread();
+    const interval = setInterval(checkUnread, 12000);
+    return () => clearInterval(interval);
+  }, [isAuthenticated, user]);
 
   const isImpersonating = !!localStorage.getItem('original_token');
   const impersonatedTenantName = localStorage.getItem('impersonated_tenant') || 'este negocio';
@@ -63,7 +97,7 @@ export default function App() {
     { id: 'servicios', label: 'Servicios', icon: <Wrench size={20} /> },
     { id: 'tienda', label: 'Tienda', icon: <ShoppingBag size={20} /> },
     { id: 'productos', label: 'Productos', icon: <Package size={20} /> },
-    { id: 'ordenes', label: 'Órdenes', icon: <ClipboardList size={20} /> },
+    { id: 'ordenes', label: 'Órdenes', icon: <ClipboardList size={20} />, badge: unreadOrdersCount > 0 ? unreadOrdersCount : undefined },
     { id: 'agente', label: 'Agente IA', icon: <Bot size={20} /> },
     { id: 'whatsapp', label: 'WhatsApp', icon: <Phone size={20} /> },
     { id: 'notificaciones', label: 'Notificaciones', icon: <Bell size={20} /> },
@@ -115,20 +149,27 @@ export default function App() {
               style={{
                 display: 'flex',
                 alignItems: 'center',
+                justifyContent: 'space-between',
                 width: '100%',
                 padding: '10px 20px',
                 border: 'none',
                 backgroundColor: currentPage === item.id ? 'var(--primary)' : 'transparent',
                 color: currentPage === item.id ? 'white' : 'var(--text-muted)',
                 textAlign: 'left',
-                gap: '10px',
                 cursor: 'pointer',
                 transition: 'all 0.2s',
                 fontWeight: currentPage === item.id ? '600' : 'normal'
               }}
             >
-              {item.icon}
-              {item.label}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                {item.icon}
+                <span>{item.label}</span>
+              </div>
+              {item.badge && (
+                <span style={{ backgroundColor: '#ef4444', color: 'white', fontSize: '0.7rem', fontWeight: 'bold', padding: '2px 7px', borderRadius: '10px' }}>
+                  {item.badge}
+                </span>
+              )}
             </button>
           ))}
         </nav>

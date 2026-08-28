@@ -81,7 +81,7 @@ export interface ChatMessage {
   pushName?: string;
   fromMe: boolean;
   messageText: string;
-  aiResponse?: boolean;
+  aiResponse?: string;
   status?: string;
   createdAt?: Date;
 }
@@ -96,6 +96,18 @@ export interface NotificationLog {
   timestamp?: Date;
 }
 
+export interface StoreTheme {
+  primaryColor?: string;
+  accentColor?: string;
+  backgroundColor?: string;
+  cardBackgroundColor?: string;
+  cardRadius?: 'square' | 'rounded' | 'pill';
+  cardShadow?: 'none' | 'sm' | 'md' | 'lg';
+  fontFamily?: 'Inter' | 'Poppins' | 'Roboto' | 'Montserrat' | 'Playfair Display';
+  bannerUrl?: string;
+  logoUrl?: string;
+}
+
 export interface StoreSettings {
   id: string;
   tenantId: string;
@@ -105,7 +117,7 @@ export interface StoreSettings {
   storeDescription?: string;
   storeLogoUrl?: string;
   storeBannerUrl?: string;
-  storeTheme?: Record<string, string>;
+  storeTheme?: StoreTheme;
   currency: string;
   acceptSinpe: boolean;
   sinpePhone?: string;
@@ -162,7 +174,7 @@ export interface Product {
 }
 
 export interface OrderItem {
-  id: string;
+  id?: string;
   productId?: string;
   variantId?: string;
   productName: string;
@@ -171,6 +183,8 @@ export interface OrderItem {
   unitPrice: number;
   totalPrice: number;
 }
+
+export type OrderStatus = 'pedido_recibido' | 'pedido_aceptado' | 'procesando' | 'listo_entrega' | 'entregado' | 'cancelado' | 'pending' | 'confirmed' | 'preparing' | 'shipped' | 'delivered';
 
 export interface Order {
   id: string;
@@ -188,7 +202,7 @@ export interface Order {
   discount: number;
   total: number;
   currency: string;
-  status: 'pending' | 'confirmed' | 'preparing' | 'shipped' | 'delivered' | 'cancelled';
+  status: OrderStatus;
   paymentMethod: 'sinpe' | 'transfer' | 'cash' | 'card';
   paymentStatus: 'pending' | 'proof_sent' | 'paid' | 'refunded';
   paymentReference?: string;
@@ -199,47 +213,42 @@ export interface Order {
   updatedAt?: Date;
 }
 
+export interface ScheduleSettings {
+  id?: string;
+  tenantId: string;
+  scheduleMode: 'jornada' | 'fechas' | 'bloques';
+  jornadaConfig?: {
+    startHour: string; // "08:00"
+    endHour: string;   // "17:00"
+    slotMinutes: number; // 45
+    hasBreak: boolean;
+    breakStart: string; // "12:00"
+    breakEnd: string;   // "13:00"
+    daysEnabled: number[]; // [1, 2, 3, 4, 5, 6] (1 = Lunes, 7 = Domingo)
+  };
+  fechasConfig?: {
+    enabledDates: string[]; // ["2026-08-28", "2026-08-29"]
+    slotsByDate?: Record<string, string[]>;
+  };
+  bloquesConfig?: {
+    days: Record<string, Array<{ start: string; end: string }>>;
+    slotMinutes?: number;
+  };
+  updatedAt?: Date;
+}
+
 export interface CartItem {
-  id: string;
   productId: string;
   variantId?: string;
+  name: string;
+  price: number;
   quantity: number;
-  unitPrice: number;
+  image?: string;
 }
 
 export interface Cart {
-  id: string;
-  tenantId: string;
-  sessionId?: string;
-  whatsappId?: string;
-  customerName?: string;
-  customerPhone?: string;
-  customerEmail?: string;
-  status: string;
-  expiresAt: Date;
   items: CartItem[];
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export interface EvolutionState {
-  status: string;
-  qrCode?: string;
-  connectedPhone?: string;
-}
-
-export interface AuthState {
-  isAuthenticated: boolean;
-  user?: User;
-}
-
-export interface DbStatus {
-  connected: boolean;
-  error?: string;
-}
-
-export interface DashboardStats {
-  totalOrders: number;
-  totalRevenue: number;
-  totalCustomers: number;
+  subtotal: number;
+  deliveryFee: number;
+  total: number;
 }

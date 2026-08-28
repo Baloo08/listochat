@@ -1,164 +1,663 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar as CalendarIcon, Clock, User, Plus, Edit2, Trash2 } from 'lucide-react';
-
-interface Appointment {
-  id: string;
-  customerName: string;
-  customerPhone: string;
-  date: string;
-  time: string;
-  serviceName: string;
-  amount: number;
-  status: 'pending' | 'confirmed' | 'completed' | 'cancelled';
-}
+import { Calendar, Clock, Plus, Filter, CheckCircle, XCircle, AlertCircle, RefreshCw, MessageCircle, Link as LinkIcon, Copy, ExternalLink, Settings, Save } from 'lucide-react';
+import { useApi } from '../hooks/useApi';
+import { Appointment, ScheduleSettings } from '../../shared/types';
 
 export default function Bookings() {
+  const [activeTab, setActiveTab] = useState<'list' | 'schedule'>('list');
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filterDate, setFilterDate] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [showNewModal, setShowNewModal] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [tenantSlug, setTenantSlug] = useState('demo');
 
-  useEffect(() => {
-    fetchAppointments();
-  }, []);
+  // Schedule Settings State
+  const [scheduleMode, setScheduleMode] = useState<'jornada' | 'fechas' | 'bloques'>('jornada');
+  const [startHour, setStartHour] = useState('08:00');
+  const [endHour, setEndHour] = useState('17:00');
+  const [slotMinutes, setSlotMinutes] = useState(45);
+  const [hasBreak, setHasBreak] = useState(true);
+  const [breakStart, setBreakStart] = useState('12:00');
+  const [breakEnd, setBreakEnd] = useState('13:00');
+  const [daysEnabled, setDaysEnabled] = useState<number[]>([1, 2, 3, 4, 5, 6]);
+  const [savingSchedule, setSavingSchedule] = useState(false);
+  const [scheduleSavedToast, setScheduleSavedToast] = useState(false);
 
-  const getHeaders = () => {
-    const token = localStorage.getItem('token');
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`
-    };
-  };
+  // New Appointment Form State
+  const [newName, setNewName] = useState('');
+  const [newWhatsapp, setNewWhatsapp] = useState('');
+  const [newService, setNewService] = useState('');
+  const [newDate, setNewDate] = useState('');
+  const [newTime, setNewTime] = useState('');
+  const [newAmount, setNewAmount] = useState(15000);
+  const [newDetails, setNewDetails] = useState('');
+
+  const api = useApi();
 
   const fetchAppointments = async () => {
     try {
-      const res = await fetch('/api/appointments', { headers: getHeaders() });
-      if (res.ok) {
-        const data = await res.json();
-        setAppointments(data);
-      }
-    } catch (error) {
-      console.error('Error fetching appointments:', error);
+      const data = await api.get('/api/appointments');
+      if (data) setAppointments(data);
+    } catch (err) {
+      console.error('Error fetching appointments:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleStatusChange = async (id: string, newStatus: string) => {
+  const fetchScheduleAndTenant = async () => {
     try {
-      const res = await fetch(`/api/appointments/${id}/status`, {
-        method: 'PUT',
-        headers: getHeaders(),
-        body: JSON.stringify({ status: newStatus })
-      });
-      if (res.ok) {
-        fetchAppointments();
+      const sch = await api.get('/api/appointments/schedule');
+      if (sch) {
+        setScheduleMode(sch.scheduleMode || 'jornada');
+        if (sch.jornadaConfig) {
+          setStartHour(sch.jornadaConfig.startHour || '08:00');
+          setEndHour(sch.jornadaConfig.endHour || '17:00');
+          setSlotMinutes(sch.jornadaConfig.slotMinutes || 45);
+          setHasBreak(sch.jornadaConfig.hasBreak !== false);
+          setBreakStart(sch.jornadaConfig.breakStart || '12:00');
+          setBreakEnd(sch.jornadaConfig.breakEnd || '13:00');
+          if (sch.jornadaConfig.daysEnabled) setDaysEnabled(sch.jornadaConfig.daysEnabled);
+        }
       }
-    } catch (error) {
-      console.error('Error updating status:', error);
+
+      const me = await api.get('/api/auth/me');
+      if (me?.tenantSlug) setTenantSlug(me.tenantSlug);
+    } catch (err) {
+      // ignore
     }
   };
 
-  const filteredAppointments = filterStatus === 'all' 
-    ? appointments 
-    : appointments.filter(a => a.status === filterStatus);
+  useEffect(() => {
+    fetchAppointments();
+    fetchScheduleAndTenant();
+  }, []);
 
-  const getStatusColor = (status: string) => {
-    switch(status) {
-      case 'pending': return '#f59e0b'; // amber
-      case 'confirmed': return '#3b82f6'; // blue
-      case 'completed': return '#10b981'; // green
-      case 'cancelled': return '#ef4444'; // red
-      default: return 'gray';
+  const handleCreateAppointment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await api.post('/api/appointments', {
+        name: newName,
+        whatsapp: newWhatsapp,
+        service: newService,
+        date: newDate,
+        time: newTime,
+        amount: newAmount,
+        details: newDetails,
+        status: 'confirmed'
+      });
+      setShowNewModal(false);
+      setNewName('');
+      setNewWhatsapp('');
+      setNewService('');
+      setNewDate('');
+      setNewTime('');
+      await fetchAppointments();
+    } catch (err) {
+      alert('Error al agendar cita');
     }
   };
 
-  const getStatusLabel = (status: string) => {
-    switch(status) {
-      case 'pending': return 'Pendiente';
-      case 'confirmed': return 'Confirmado';
-      case 'completed': return 'Completado';
-      case 'cancelled': return 'Cancelado';
-      default: return status;
+  const handleStatusChange = async (id: string, status: any) => {
+    try {
+      await api.put(`/api/appointments/${id}/status`, { status, notifyCustomer: true });
+      await fetchAppointments();
+    } catch (err) {
+      alert('Error al actualizar estado');
     }
   };
+
+  const handleSaveSchedule = async () => {
+    setSavingSchedule(true);
+    try {
+      await api.post('/api/appointments/schedule', {
+        scheduleMode,
+        jornadaConfig: {
+          startHour,
+          endHour,
+          slotMinutes: Number(slotMinutes),
+          hasBreak,
+          breakStart,
+          breakEnd,
+          daysEnabled
+        }
+      });
+      setScheduleSavedToast(true);
+      setTimeout(() => setScheduleSavedToast(false), 3000);
+    } catch (err) {
+      alert('Error al guardar configuración de horarios');
+    } finally {
+      setSavingSchedule(false);
+    }
+  };
+
+  const toggleDay = (day: number) => {
+    setDaysEnabled(prev =>
+      prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day].sort()
+    );
+  };
+
+  const publicBookingUrl = `${window.location.origin}/reservas/${tenantSlug}`;
+
+  const copyBookingLink = () => {
+    navigator.clipboard.writeText(publicBookingUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const filtered = appointments.filter(a => {
+    const matchesDate = !filterDate || a.date === filterDate;
+    const matchesStatus = filterStatus === 'all' || a.status === filterStatus;
+    return matchesDate && matchesStatus;
+  });
+
+  const DAYS_OF_WEEK = [
+    { num: 1, name: 'Lun' },
+    { num: 2, name: 'Mar' },
+    { num: 3, name: 'Mié' },
+    { num: 4, name: 'Jue' },
+    { num: 5, name: 'Vie' },
+    { num: 6, name: 'Sáb' },
+    { num: 7, name: 'Dom' }
+  ];
+
+  if (loading) {
+    return <div style={{ padding: '40px', textAlign: 'center' }}>Cargando agenda de citas...</div>;
+  }
 
   return (
-    <div style={{ backgroundColor: 'var(--surface)', padding: '20px', borderRadius: '8px', border: '1px solid var(--border)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-        <h2>Gestión de Reservas</h2>
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <select 
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            style={{ padding: '8px 12px', borderRadius: '4px', border: '1px solid var(--border)' }}
+    <div style={{ maxWidth: '900px' }}>
+      
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
+        <div>
+          <h2 style={{ margin: '0 0 4px 0', fontSize: '1.5rem', fontWeight: 'bold' }}>Agenda y Reservas</h2>
+          <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+            Control de citas, horarios de atención y portal público de agendamiento online
+          </p>
+        </div>
+
+        {activeTab === 'list' && (
+          <button
+            onClick={() => setShowNewModal(true)}
+            style={{ padding: '10px 16px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.9rem' }}
           >
-            <option value="all">Todos los estados</option>
-            <option value="pending">Pendientes</option>
-            <option value="confirmed">Confirmados</option>
-            <option value="completed">Completados</option>
-            <option value="cancelled">Cancelados</option>
-          </select>
-          <button style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '8px 15px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
-            <Plus size={18} /> Nueva Reserva
+            <Plus size={16} /> Nueva Cita
           </button>
+        )}
+      </div>
+
+      {/* Public Booking Link Card */}
+      <div style={{ backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '12px', padding: '16px 20px', marginBottom: '25px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '15px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ width: '40px', height: '40px', backgroundColor: '#dbeafe', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Calendar size={20} color="#1d4ed8" />
+          </div>
+          <div>
+            <div style={{ fontSize: '0.8rem', color: '#1d4ed8', fontWeight: 'bold', textTransform: 'uppercase' }}>Portal Público de Reservas (Sin IA)</div>
+            <div style={{ fontSize: '0.95rem', fontWeight: '600', color: '#1e40af', wordBreak: 'break-all' }}>{publicBookingUrl}</div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button
+            onClick={copyBookingLink}
+            style={{ padding: '8px 14px', backgroundColor: 'white', border: '1px solid #93c5fd', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', fontWeight: '600', color: '#1d4ed8' }}
+          >
+            <Copy size={15} /> {copied ? '¡Copiado!' : 'Copiar'}
+          </button>
+          <a
+            href={publicBookingUrl}
+            target="_blank"
+            rel="noreferrer"
+            style={{ padding: '8px 14px', backgroundColor: '#2563eb', color: 'white', borderRadius: '6px', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', fontWeight: '600' }}
+          >
+            <ExternalLink size={15} /> Ver Portal
+          </a>
         </div>
       </div>
 
-      {loading ? (
-        <div style={{ textAlign: 'center', padding: '40px' }}>Cargando...</div>
-      ) : (
-        <div style={{ display: 'grid', gap: '15px' }}>
-          {filteredAppointments.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)' }}>No hay reservas encontradas.</div>
+      {/* Tabs */}
+      <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', marginBottom: '20px', gap: '10px' }}>
+        <button
+          onClick={() => setActiveTab('list')}
+          style={{
+            padding: '10px 18px',
+            border: 'none',
+            borderBottom: activeTab === 'list' ? '2px solid var(--primary)' : '2px solid transparent',
+            backgroundColor: 'transparent',
+            color: activeTab === 'list' ? 'var(--primary)' : 'var(--text-muted)',
+            fontWeight: '600',
+            fontSize: '0.95rem',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}
+        >
+          <Calendar size={18} /> Citas Agendadas ({appointments.length})
+        </button>
+
+        <button
+          onClick={() => setActiveTab('schedule')}
+          style={{
+            padding: '10px 18px',
+            border: 'none',
+            borderBottom: activeTab === 'schedule' ? '2px solid var(--primary)' : '2px solid transparent',
+            backgroundColor: 'transparent',
+            color: activeTab === 'schedule' ? 'var(--primary)' : 'var(--text-muted)',
+            fontWeight: '600',
+            fontSize: '0.95rem',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}
+        >
+          <Settings size={18} /> Configuración de Horarios
+        </button>
+      </div>
+
+      {/* TAB 1: APPOINTMENTS LIST */}
+      {activeTab === 'list' && (
+        <>
+          {/* Filters */}
+          <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', flexWrap: 'wrap' }}>
+            <input
+              type="date"
+              value={filterDate}
+              onChange={(e) => setFilterDate(e.target.value)}
+              style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+            />
+
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem', backgroundColor: 'white' }}
+            >
+              <option value="all">Todos los estados</option>
+              <option value="confirmed">Confirmadas</option>
+              <option value="pending">Pendientes</option>
+              <option value="completed">Completadas</option>
+              <option value="cancelled">Canceladas</option>
+            </select>
+
+            {(filterDate || filterStatus !== 'all') && (
+              <button
+                onClick={() => { setFilterDate(''); setFilterStatus('all'); }}
+                style={{ padding: '8px 12px', backgroundColor: 'transparent', border: '1px solid var(--border)', borderRadius: '6px', fontSize: '0.85rem', cursor: 'pointer' }}
+              >
+                Limpiar filtros
+              </button>
+            )}
+          </div>
+
+          {/* Appointments Grid */}
+          {filtered.length === 0 ? (
+            <div style={{ padding: '40px', textAlign: 'center', backgroundColor: 'var(--surface)', borderRadius: '10px', border: '1px solid var(--border)' }}>
+              <Calendar size={36} color="var(--text-muted)" style={{ margin: '0 auto 10px auto' }} />
+              <p style={{ color: 'var(--text-muted)', margin: 0 }}>No hay citas agendadas con los filtros seleccionados.</p>
+            </div>
           ) : (
-            filteredAppointments.map(appointment => (
-              <div key={appointment.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px', border: '1px solid var(--border)', borderRadius: '8px', backgroundColor: 'var(--background)' }}>
-                <div style={{ display: 'flex', gap: '30px' }}>
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 'bold' }}>
-                      <User size={16} /> {appointment.customerName}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {filtered.map(appt => (
+                <div
+                  key={appt.id}
+                  style={{
+                    backgroundColor: 'var(--surface)',
+                    padding: '16px 20px',
+                    borderRadius: '10px',
+                    border: '1px solid var(--border)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '15px',
+                    flexWrap: 'wrap'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                    <div style={{ backgroundColor: '#f1f5f9', padding: '10px 14px', borderRadius: '8px', textAlign: 'center', minWidth: '70px' }}>
+                      <div style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--text-muted)', textTransform: 'uppercase' }}>{appt.date}</div>
+                      <div style={{ fontSize: '1rem', fontWeight: 'bold', color: 'var(--primary)' }}>{appt.time}</div>
                     </div>
-                    <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{appointment.customerPhone}</div>
+
+                    <div>
+                      <div style={{ fontWeight: 'bold', fontSize: '1rem' }}>{appt.name}</div>
+                      <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
+                        <span>🛠️ {appt.service}</span>
+                        {appt.whatsapp && <span>📱 {appt.whatsapp}</span>}
+                      </div>
+                      {appt.vehicleModel && <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px' }}>🚗 {appt.vehicleModel}</div>}
+                    </div>
                   </div>
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                      <CalendarIcon size={16} /> {appointment.date}
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ fontWeight: 'bold', fontSize: '1.05rem', color: 'var(--text)' }}>
+                      ₡{Number(appt.amount || 0).toLocaleString('es-CR')}
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                      <Clock size={16} /> {appointment.time}
-                    </div>
-                  </div>
-                  <div>
-                    <div>{appointment.serviceName}</div>
-                    <div style={{ fontWeight: 'bold' }}>${appointment.amount}</div>
+
+                    <select
+                      value={appt.status}
+                      onChange={(e) => handleStatusChange(appt.id, e.target.value)}
+                      style={{
+                        padding: '6px 10px',
+                        borderRadius: '6px',
+                        fontSize: '0.8rem',
+                        fontWeight: '600',
+                        backgroundColor: appt.status === 'confirmed' ? '#dcfce7' : appt.status === 'completed' ? '#dbeafe' : appt.status === 'cancelled' ? '#fee2e2' : '#fef9c3',
+                        color: appt.status === 'confirmed' ? '#15803d' : appt.status === 'completed' ? '#1d4ed8' : appt.status === 'cancelled' ? '#b91c1c' : '#854d0e',
+                        border: '1px solid var(--border)',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <option value="pending">Pendiente</option>
+                      <option value="confirmed">Confirmada</option>
+                      <option value="completed">Completada</option>
+                      <option value="cancelled">Cancelada</option>
+                    </select>
+
+                    {appt.whatsapp && (
+                      <a
+                        href={`https://wa.me/${appt.whatsapp.replace(/\D/g, '')}?text=${encodeURIComponent(`Hola ${appt.name}, nos comunicamos para dar seguimiento a tu cita de ${appt.service} el ${appt.date} a las ${appt.time}.`)}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ padding: '6px', backgroundColor: '#25d366', color: 'white', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                      >
+                        <MessageCircle size={16} />
+                      </a>
+                    )}
                   </div>
                 </div>
-                
-                <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                  <span style={{ 
-                    padding: '4px 8px', 
-                    borderRadius: '12px', 
-                    fontSize: '0.8rem', 
-                    color: 'white',
-                    backgroundColor: getStatusColor(appointment.status)
-                  }}>
-                    {getStatusLabel(appointment.status)}
-                  </span>
-                  
-                  <select 
-                    value={appointment.status}
-                    onChange={(e) => handleStatusChange(appointment.id, e.target.value)}
-                    style={{ padding: '6px', borderRadius: '4px', border: '1px solid var(--border)' }}
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* TAB 2: SCHEDULE CONFIGURATION */}
+      {activeTab === 'schedule' && (
+        <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+            <div>
+              <h3 style={{ margin: '0 0 4px 0', fontSize: '1.2rem', fontWeight: 'bold' }}>Modalidad de Disponibilidad</h3>
+              <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.85rem' }}>Configura cómo se calculan los horarios que se ofrecen a los clientes</p>
+            </div>
+
+            <button
+              onClick={handleSaveSchedule}
+              disabled={savingSchedule}
+              style={{ padding: '9px 18px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', borderRadius: '6px', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.9rem' }}
+            >
+              <Save size={16} /> {savingSchedule ? 'Guardando...' : 'Guardar Horarios'}
+            </button>
+          </div>
+
+          {scheduleSavedToast && (
+            <div style={{ padding: '10px 16px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534', borderRadius: '6px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', fontWeight: '600' }}>
+              <CheckCircle size={16} /> ¡Configuración de horarios guardada exitosamente!
+            </div>
+          )}
+
+          {/* Mode Selector */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginBottom: '25px' }}>
+            {[
+              { id: 'jornada', title: 'Por Jornada', desc: 'Horas continuas con descansos programados' },
+              { id: 'fechas', title: 'Por Fechas Concretas', desc: 'Habilitar días y horas específicas' },
+              { id: 'bloques', title: 'Por Bloques de Tiempo', desc: 'Bloques de mañana y tarde por día' }
+            ].map(m => (
+              <div
+                key={m.id}
+                onClick={() => setScheduleMode(m.id as any)}
+                style={{
+                  padding: '14px',
+                  borderRadius: '8px',
+                  border: `2px solid ${scheduleMode === m.id ? 'var(--primary)' : 'var(--border)'}`,
+                  backgroundColor: scheduleMode === m.id ? 'rgba(22, 163, 74, 0.05)' : 'transparent',
+                  cursor: 'pointer'
+                }}
+              >
+                <div style={{ fontWeight: 'bold', fontSize: '0.95rem', color: scheduleMode === m.id ? 'var(--primary)' : 'var(--text)' }}>{m.title}</div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>{m.desc}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Mode 1: Jornada Settings */}
+          {scheduleMode === 'jornada' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '5px' }}>Hora de Inicio</label>
+                  <input
+                    type="time"
+                    value={startHour}
+                    onChange={(e) => setStartHour(e.target.value)}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.9rem' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '5px' }}>Hora de Cierre</label>
+                  <input
+                    type="time"
+                    value={endHour}
+                    onChange={(e) => setEndHour(e.target.value)}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.9rem' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '5px' }}>Duración por Cita</label>
+                  <select
+                    value={slotMinutes}
+                    onChange={(e) => setSlotMinutes(Number(e.target.value))}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.9rem', backgroundColor: 'white' }}
                   >
-                    <option value="pending">Marcar Pendiente</option>
-                    <option value="confirmed">Confirmar</option>
-                    <option value="completed">Completar</option>
-                    <option value="cancelled">Cancelar</option>
+                    <option value={30}>30 minutos</option>
+                    <option value={45}>45 minutos</option>
+                    <option value={60}>1 hora (60 min)</option>
+                    <option value={90}>1 hora 30 min</option>
+                    <option value={120}>2 horas</option>
                   </select>
                 </div>
               </div>
-            ))
+
+              {/* Break / Lunch Setting */}
+              <div style={{ padding: '16px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '600', fontSize: '0.85rem', cursor: 'pointer', marginBottom: hasBreak ? '12px' : '0' }}>
+                  <input type="checkbox" checked={hasBreak} onChange={(e) => setHasBreak(e.target.checked)} />
+                  <span>Programar descanso / almuerzo (se excluye de la agenda disponible)</span>
+                </label>
+
+                {hasBreak && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                    <div>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '3px' }}>Inicio del descanso:</span>
+                      <input
+                        type="time"
+                        value={breakStart}
+                        onChange={(e) => setBreakStart(e.target.value)}
+                        style={{ width: '100%', padding: '6px 8px', borderRadius: '4px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                      />
+                    </div>
+                    <div>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '3px' }}>Fin del descanso:</span>
+                      <input
+                        type="time"
+                        value={breakEnd}
+                        onChange={(e) => setBreakEnd(e.target.value)}
+                        style={{ width: '100%', padding: '6px 8px', borderRadius: '4px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Days Enabled */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '8px' }}>Días de Atención Habilitados</label>
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                  {DAYS_OF_WEEK.map(d => {
+                    const isEnabled = daysEnabled.includes(d.num);
+                    return (
+                      <button
+                        key={d.num}
+                        type="button"
+                        onClick={() => toggleDay(d.num)}
+                        style={{
+                          padding: '8px 14px',
+                          borderRadius: '6px',
+                          border: isEnabled ? '2px solid var(--primary)' : '1px solid var(--border)',
+                          backgroundColor: isEnabled ? 'var(--primary)' : 'white',
+                          color: isEnabled ? 'white' : 'var(--text)',
+                          fontWeight: 'bold',
+                          fontSize: '0.85rem',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {d.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
           )}
+
+          {/* Mode 2: Fechas Concretas */}
+          {scheduleMode === 'fechas' && (
+            <div style={{ padding: '16px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid var(--border)' }}>
+              <p style={{ margin: '0 0 10px 0', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                En esta modalidad, el sistema habilitará reservas en días específicos del mes que actives en el calendario.
+              </p>
+              <div style={{ fontSize: '0.85rem', color: 'var(--primary)', fontWeight: '600' }}>
+                ✓ Fechas activas predeterminadas para los próximos 30 días de Lunes a Sábado.
+              </div>
+            </div>
+          )}
+
+          {/* Mode 3: Bloques */}
+          {scheduleMode === 'bloques' && (
+            <div style={{ padding: '16px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid var(--border)' }}>
+              <p style={{ margin: '0 0 10px 0', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                Configura bloques horarios independientes para mañana (ej: 08:00 - 12:00) y tarde (ej: 14:00 - 18:00).
+              </p>
+              <div style={{ fontSize: '0.85rem', color: 'var(--primary)', fontWeight: '600' }}>
+                ✓ Bloque 1: 08:00 a 12:00 | Bloque 2: 13:30 a 17:30
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ==========================================
+          NEW APPOINTMENT MODAL
+      ========================================== */}
+      {showNewModal && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+          <div style={{ backgroundColor: 'white', borderRadius: '12px', maxWidth: '480px', width: '100%', padding: '24px', boxShadow: '0 20px 25px rgba(0,0,0,0.1)' }}>
+            <h3 style={{ margin: '0 0 16px 0', fontSize: '1.2rem', fontWeight: 'bold' }}>Agendar Nueva Cita</h3>
+
+            <form onSubmit={handleCreateAppointment} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '4px' }}>Nombre del Cliente *</label>
+                <input
+                  type="text"
+                  required
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  placeholder="Ej: Daniel Vega"
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '4px' }}>Teléfono WhatsApp *</label>
+                <input
+                  type="tel"
+                  required
+                  value={newWhatsapp}
+                  onChange={(e) => setNewWhatsapp(e.target.value)}
+                  placeholder="Ej: 8888-8888"
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '4px' }}>Servicio *</label>
+                <input
+                  type="text"
+                  required
+                  value={newService}
+                  onChange={(e) => setNewService(e.target.value)}
+                  placeholder="Ej: Consulta Dental / Detallado de Auto"
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '4px' }}>Fecha *</label>
+                  <input
+                    type="date"
+                    required
+                    value={newDate}
+                    onChange={(e) => setNewDate(e.target.value)}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '4px' }}>Hora *</label>
+                  <input
+                    type="time"
+                    required
+                    value={newTime}
+                    onChange={(e) => setNewTime(e.target.value)}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '4px' }}>Monto (₡)</label>
+                <input
+                  type="number"
+                  value={newAmount}
+                  onChange={(e) => setNewAmount(Number(e.target.value))}
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '4px' }}>Notas o Detalles</label>
+                <input
+                  type="text"
+                  value={newDetails}
+                  onChange={(e) => setNewDetails(e.target.value)}
+                  placeholder="Detalles adicionales..."
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowNewModal(false)}
+                  style={{ flex: 1, padding: '10px', backgroundColor: 'transparent', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', fontWeight: '500' }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  style={{ flex: 1, padding: '10px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
+                >
+                  Agendar Cita
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>

@@ -127,7 +127,7 @@ const handleWebhook = async (req: any, res: any) => {
 
     // Send reply back via Evolution API
     const targetInstance = tenant.evolutionInstance || instanceName || `tenant_${tenant.id.slice(0, 8)}`;
-    const sendRes = await sendMessage(targetInstance, remoteJid, aiResult.replyText);
+    const sendRes = await sendMessage(targetInstance, cleanPhone, aiResult.replyText);
     console.log(`[Webhook] SendMessage status: success=${sendRes.success}`);
 
     // Save AI reply to database
