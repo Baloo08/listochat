@@ -10,16 +10,16 @@ export interface TenantAIConfig {
   temperature: number;
 }
 
+const DEFAULT_GEMINI_KEY = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || 'AQ.Ab8RN6IHcdDKDITkdIOjt8SznSc6lS_1grotOA6SQ6fjZnd2SQ';
+
 export function getDefaultModels(provider: 'gemini' | 'openai' | 'anthropic'): string[] {
   switch (provider) {
     case 'gemini':
       return [
-        'gemini-2.5-flash',
-        'gemini-2.5-flash-lite',
-        'gemini-3.7-flash',
-        'gemini-2.5-pro',
-        'gemini-flash-latest',
-        'gemini-1.5-flash'
+        'gemini-1.5-flash',
+        'gemini-2.0-flash',
+        'gemini-1.5-flash-8b',
+        'gemini-1.5-pro'
       ];
     case 'openai':
       return ['gpt-4o-mini', 'gpt-4o', 'gpt-4-turbo', 'gpt-3.5-turbo'];
@@ -31,18 +31,30 @@ export function getDefaultModels(provider: 'gemini' | 'openai' | 'anthropic'): s
 }
 
 export async function callAI(config: TenantAIConfig, prompt: string): Promise<{ text: string, tokensUsed: number }> {
-  const defaultModels = getDefaultModels(config.provider);
-  // Put the chosen model first, then the rest as fallbacks
-  const fallbackModels = [config.model, ...defaultModels.filter(m => m !== config.model)];
+  const provider = config.provider || 'gemini';
+  const apiKey = config.apiKey || (provider === 'gemini' ? DEFAULT_GEMINI_KEY : '');
+  const chosenModel = config.model === 'gemini-2.5-flash' ? 'gemini-1.5-flash' : (config.model || 'gemini-1.5-flash');
+  
+  const defaultModels = getDefaultModels(provider);
+  const fallbackModels = [chosenModel, ...defaultModels.filter(m => m !== chosenModel)];
+
+  let lastError: any = null;
 
   for (const modelName of fallbackModels) {
     try {
-      return await executeProvider({ ...config, model: modelName }, prompt);
+      return await executeProvider({
+        provider,
+        apiKey,
+        model: modelName,
+        temperature: config.temperature ?? 0.7
+      }, prompt);
     } catch (error) {
+      lastError = error;
       console.error(`Error calling AI with model ${modelName}:`, error);
-      // fallback to next model in list
     }
   }
+
+  console.error('All AI fallback models failed. Last error:', lastError);
 
   return {
     text: 'Hola, gracias por comunicarte con nosotros. En este momento estamos procesando tu solicitud, en breve un asesor te responderá.',
@@ -54,14 +66,15 @@ async function executeProvider(config: TenantAIConfig, prompt: string) {
   let model;
   
   if (config.provider === 'gemini') {
-    const google = createGoogleGenerativeAI({ apiKey: config.apiKey });
-    model = google(config.model);
+    const key = config.apiKey || DEFAULT_GEMINI_KEY;
+    const google = createGoogleGenerativeAI({ apiKey: key });
+    model = google(config.model || 'gemini-1.5-flash');
   } else if (config.provider === 'openai') {
     const openai = createOpenAI({ apiKey: config.apiKey });
-    model = openai(config.model);
+    model = openai(config.model || 'gpt-4o-mini');
   } else if (config.provider === 'anthropic') {
     const anthropic = createAnthropic({ apiKey: config.apiKey });
-    model = anthropic(config.model);
+    model = anthropic(config.model || 'claude-3-5-haiku-20241022');
   } else {
     throw new Error(`Unsupported provider: ${config.provider}`);
   }
@@ -69,7 +82,7 @@ async function executeProvider(config: TenantAIConfig, prompt: string) {
   const { text, usage } = await generateText({
     model,
     prompt,
-    temperature: config.temperature,
+    temperature: config.temperature ?? 0.7,
   });
 
   return {
