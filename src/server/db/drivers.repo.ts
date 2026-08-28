@@ -12,13 +12,13 @@ export async function getDriversByTenant(tenantId: string): Promise<DeliveryDriv
   return res.rows;
 }
 
-export async function getDriverById(id: string, tenantId: string): Promise<DeliveryDriver | null> {
+export async function getDriverById(id: string, tenantId?: string): Promise<DeliveryDriver | null> {
   const res = await query(`
     SELECT id, tenant_id as "tenantId", name, phone, access_pin as "accessPin",
            vehicle_type as "vehicleType", plate_number as "plateNumber", active, created_at as "createdAt"
     FROM delivery_drivers
-    WHERE id = $1 AND tenant_id = $2
-  `, [id, tenantId]);
+    WHERE id = $1
+  `, [id]);
   return res.rows[0] || null;
 }
 

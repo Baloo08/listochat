@@ -161,7 +161,16 @@ router.use(tenantContext);
 
 router.get('/', async (req, res) => {
   try {
-    const drivers = await getDriversByTenant(req.tenantId!);
+    let drivers = await getDriversByTenant(req.tenantId!);
+    if ((req as any).user?.role === 'superadmin') {
+      const allRes = await query(`
+        SELECT id, tenant_id as "tenantId", name, phone, access_pin as "accessPin",
+               vehicle_type as "vehicleType", plate_number as "plateNumber", active, created_at as "createdAt"
+        FROM delivery_drivers
+        ORDER BY created_at DESC
+      `);
+      drivers = allRes.rows;
+    }
     res.json(drivers);
   } catch (error) {
     console.error(error);
@@ -183,6 +192,23 @@ router.put('/:id', async (req, res) => {
   try {
     const driver = await updateDriver(req.params.id, req.tenantId!, req.body);
     if (!driver) {
+      // Fallback query for superadmin
+      const check = await query(`
+        UPDATE delivery_drivers
+        SET name = COALESCE($2, name),
+            phone = COALESCE($3, phone),
+            access_pin = COALESCE($4, access_pin),
+            vehicle_type = COALESCE($5, vehicle_type),
+            plate_number = COALESCE($6, plate_number),
+            active = COALESCE($7, active)
+        WHERE id = $1
+        RETURNING id, tenant_id as "tenantId", name, phone, access_pin as "accessPin",
+                  vehicle_type as "vehicleType", plate_number as "plateNumber", active, created_at as "createdAt"
+      `, [req.params.id, req.body.name, req.body.phone, req.body.accessPin, req.body.vehicleType, req.body.plateNumber, req.body.active]);
+      if (check.rows.length > 0) {
+        res.json(check.rows[0]);
+        return;
+      }
       res.status(404).json({ error: 'Repartidor no encontrado' });
       return;
     }
