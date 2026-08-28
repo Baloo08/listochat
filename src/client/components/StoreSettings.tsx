@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Store, Palette, Link as LinkIcon, Copy, ExternalLink, Save, CheckCircle, Upload, Image as ImageIcon, Sparkles, RefreshCw } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Store, Palette, Link as LinkIcon, Copy, ExternalLink, Save, CheckCircle, Upload, Image as ImageIcon, Sparkles, Pipette, Info } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
 import { StoreSettings as StoreSettingsType, StoreTheme } from '../../shared/types';
 
@@ -36,6 +36,12 @@ export default function StoreSettings() {
   const [cardShadow, setCardShadow] = useState<'none' | 'sm' | 'md' | 'lg'>('md');
   const [fontFamily, setFontFamily] = useState<'Inter' | 'Poppins' | 'Roboto' | 'Montserrat' | 'Playfair Display'>('Inter');
 
+  // File Upload State
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [uploadingBanner, setUploadingBanner] = useState(false);
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  const bannerInputRef = useRef<HTMLInputElement>(null);
+
   const api = useApi();
 
   const COLOR_PRESETS = [
@@ -46,6 +52,8 @@ export default function StoreSettings() {
     { name: 'Rojo Carmesí', hex: '#e11d48' },
     { name: 'Naranja Cítrico', hex: '#ea580c' },
     { name: 'Ámbar Dorado', hex: '#d97706' },
+    { name: 'Rosa Neón', hex: '#db2777' },
+    { name: 'Turquesa', hex: '#0d9488' },
     { name: 'Negro Carbón', hex: '#0f172a' }
   ];
 
@@ -96,6 +104,33 @@ export default function StoreSettings() {
     };
     fetchSettings();
   }, []);
+
+  const handleFileUpload = async (file: File, type: 'logo' | 'banner') => {
+    const token = localStorage.getItem('token');
+    const formData = new FormData();
+    formData.append('file', file);
+
+    if (type === 'logo') setUploadingLogo(true);
+    else setUploadingBanner(true);
+
+    try {
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData
+      });
+
+      if (!res.ok) throw new Error('Error al subir imagen');
+      const data = await res.json();
+      if (type === 'logo') setStoreLogoUrl(data.url);
+      else setStoreBannerUrl(data.url);
+    } catch (err) {
+      alert('Error subiendo archivo: ' + err);
+    } finally {
+      if (type === 'logo') setUploadingLogo(false);
+      else setUploadingBanner(false);
+    }
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -155,14 +190,14 @@ export default function StoreSettings() {
   }
 
   return (
-    <div style={{ maxWidth: '900px' }}>
+    <div style={{ maxWidth: '950px' }}>
       
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
         <div>
-          <h2 style={{ margin: '0 0 5px 0', fontSize: '1.5rem', fontWeight: 'bold' }}>Configuración de Tienda Online</h2>
+          <h2 style={{ margin: '0 0 5px 0', fontSize: '1.5rem', fontWeight: 'bold' }}>Configuración de Tienda y Diseño</h2>
           <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-            Personaliza el diseño, métodos de pago y catálogo público de tu tienda en Betico
+            Personaliza el catálogo, métodos de pago, colores de marca y aspecto visual de tu negocio
           </p>
         </div>
 
@@ -262,7 +297,7 @@ export default function StoreSettings() {
             
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '5px' }}>Nombre de la Tienda</label>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '5px' }}>Nombre del Negocio</label>
                 <input
                   type="text"
                   value={storeName}
@@ -278,19 +313,19 @@ export default function StoreSettings() {
                   type="text"
                   value={storeSlug}
                   onChange={(e) => setStoreSlug(e.target.value.toLowerCase().replace(/[^a-z0-9]/g, ''))}
-                  placeholder="Ej: mitienda"
+                  placeholder="Ej: clinicasonrisas"
                   style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.9rem' }}
                 />
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '3px', display: 'block' }}>Solo letras y números sin espacios (ej: demo, miburger, clinica).</span>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '3px', display: 'block' }}>Solo letras y números sin espacios ni símbolos.</span>
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '5px' }}>Descripción de la Tienda</label>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '5px' }}>Descripción del Negocio</label>
                 <textarea
                   rows={2}
                   value={storeDescription}
                   onChange={(e) => setStoreDescription(e.target.value)}
-                  placeholder="Breve presentación de tus productos..."
+                  placeholder="Breve presentación de tus productos o servicios..."
                   style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.9rem' }}
                 />
               </div>
@@ -385,84 +420,158 @@ export default function StoreSettings() {
           {/* Controls Column */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             
-            {/* Branding Images */}
+            {/* Branding Images Upload */}
             <div style={{ backgroundColor: 'var(--surface)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border)' }}>
-              <h3 style={{ margin: '0 0 14px 0', fontSize: '1.05rem', fontWeight: 'bold' }}>Imágenes de Marca</h3>
+              <h3 style={{ margin: '0 0 14px 0', fontSize: '1.05rem', fontWeight: 'bold' }}>Logo y Banner de Marca</h3>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {/* Logo Upload */}
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '4px' }}>URL de Banner Superior</label>
-                  <input
-                    type="url"
-                    placeholder="https://.../banner.jpg"
-                    value={storeBannerUrl}
-                    onChange={(e) => setStoreBannerUrl(e.target.value)}
-                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
-                  />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                    <label style={{ fontSize: '0.85rem', fontWeight: '600' }}>Logo del Negocio</label>
+                    <span style={{ fontSize: '0.75rem', color: '#0284c7', backgroundColor: '#e0f2fe', padding: '2px 6px', borderRadius: '4px', fontWeight: '600' }}>
+                      📐 Ideal: 512 x 512 px (1:1)
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '6px' }}>
+                    {storeLogoUrl ? (
+                      <img src={storeLogoUrl} alt="Logo" style={{ width: '48px', height: '48px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--border)' }} />
+                    ) : (
+                      <div style={{ width: '48px', height: '48px', borderRadius: '50%', backgroundColor: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
+                        <ImageIcon size={20} />
+                      </div>
+                    )}
+
+                    <div style={{ flex: 1 }}>
+                      <input
+                        type="file"
+                        ref={logoInputRef}
+                        accept="image/*"
+                        style={{ display: 'none' }}
+                        onChange={(e) => {
+                          if (e.target.files?.[0]) handleFileUpload(e.target.files[0], 'logo');
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => logoInputRef.current?.click()}
+                        disabled={uploadingLogo}
+                        style={{ padding: '6px 12px', backgroundColor: 'white', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: '600', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                      >
+                        <Upload size={14} /> {uploadingLogo ? 'Subiendo...' : 'Subir Archivo de Imagen'}
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
+                {/* Banner Upload */}
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '4px' }}>URL del Logo de la Tienda</label>
-                  <input
-                    type="url"
-                    placeholder="https://.../logo.png"
-                    value={storeLogoUrl}
-                    onChange={(e) => setStoreLogoUrl(e.target.value)}
-                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
-                  />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                    <label style={{ fontSize: '0.85rem', fontWeight: '600' }}>Banner Superior / Portada</label>
+                    <span style={{ fontSize: '0.75rem', color: '#0284c7', backgroundColor: '#e0f2fe', padding: '2px 6px', borderRadius: '4px', fontWeight: '600' }}>
+                      📐 Ideal: 1200 x 400 px (3:1)
+                    </span>
+                  </div>
+
+                  <div style={{ marginTop: '6px' }}>
+                    <input
+                      type="file"
+                      ref={bannerInputRef}
+                      accept="image/*"
+                      style={{ display: 'none' }}
+                      onChange={(e) => {
+                        if (e.target.files?.[0]) handleFileUpload(e.target.files[0], 'banner');
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => bannerInputRef.current?.click()}
+                      disabled={uploadingBanner}
+                      style={{ padding: '6px 12px', backgroundColor: 'white', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: '600', display: 'inline-flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}
+                    >
+                      <Upload size={14} /> {uploadingBanner ? 'Subiendo...' : 'Subir Archivo de Portada'}
+                    </button>
+
+                    {storeBannerUrl && (
+                      <div style={{ height: '60px', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--border)' }}>
+                        <img src={storeBannerUrl} alt="Banner" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* Colors */}
+            {/* Colors Palette & Exact HEX */}
             <div style={{ backgroundColor: 'var(--surface)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border)' }}>
-              <h3 style={{ margin: '0 0 14px 0', fontSize: '1.05rem', fontWeight: 'bold' }}>Paleta de Colores</h3>
+              <h3 style={{ margin: '0 0 14px 0', fontSize: '1.05rem', fontWeight: 'bold' }}>Paleta Cromática & Códigos HEX</h3>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 {/* Primary Color */}
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '8px' }}>Color Primario (Botones y Acentos)</label>
-                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '8px' }}>
+                    Color Primario de Marca (Botones y Acentos)
+                  </label>
+                  
+                  {/* Presets */}
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '10px' }}>
                     {COLOR_PRESETS.map(c => (
                       <button
                         key={c.hex}
                         type="button"
                         onClick={() => setPrimaryColor(c.hex)}
+                        title={c.name}
                         style={{
-                          width: '30px',
-                          height: '30px',
+                          width: '28px',
+                          height: '28px',
                           borderRadius: '50%',
                           backgroundColor: c.hex,
-                          border: primaryColor === c.hex ? '3px solid #000' : '2px solid white',
+                          border: primaryColor.toLowerCase() === c.hex.toLowerCase() ? '3px solid #000' : '2px solid white',
                           boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
                           cursor: 'pointer'
                         }}
                       />
                     ))}
                   </div>
-                  <input
-                    type="color"
-                    value={primaryColor}
-                    onChange={(e) => setPrimaryColor(e.target.value)}
-                    style={{ width: '100%', height: '36px', borderRadius: '6px', cursor: 'pointer' }}
-                  />
+
+                  {/* Exact Hex & Gotero Input */}
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <input
+                      type="color"
+                      value={primaryColor}
+                      onChange={(e) => setPrimaryColor(e.target.value)}
+                      style={{ width: '40px', height: '36px', borderRadius: '6px', border: '1px solid var(--border)', cursor: 'pointer', padding: 0 }}
+                    />
+                    <div style={{ position: 'relative', flex: 1 }}>
+                      <input
+                        type="text"
+                        value={primaryColor}
+                        onChange={(e) => setPrimaryColor(e.target.value)}
+                        placeholder="#16a34a"
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem', fontFamily: 'monospace' }}
+                      />
+                    </div>
+                  </div>
                 </div>
 
                 {/* Background Color */}
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '8px' }}>Color de Fondo de la Tienda</label>
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '8px' }}>
+                    Color de Fondo de la Página
+                  </label>
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px' }}>
                     {BG_PRESETS.map(b => (
                       <button
                         key={b.hex}
                         type="button"
                         onClick={() => setBackgroundColor(b.hex)}
                         style={{
-                          padding: '6px 12px',
+                          padding: '5px 10px',
                           borderRadius: '6px',
                           backgroundColor: b.hex,
                           color: b.hex === '#0f172a' ? 'white' : '#1e293b',
-                          border: backgroundColor === b.hex ? `2px solid ${primaryColor}` : '1px solid #cbd5e1',
+                          border: backgroundColor.toLowerCase() === b.hex.toLowerCase() ? `2px solid ${primaryColor}` : '1px solid #cbd5e1',
                           fontSize: '0.75rem',
                           fontWeight: '600',
                           cursor: 'pointer'
@@ -472,17 +581,33 @@ export default function StoreSettings() {
                       </button>
                     ))}
                   </div>
+
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <input
+                      type="color"
+                      value={backgroundColor}
+                      onChange={(e) => setBackgroundColor(e.target.value)}
+                      style={{ width: '40px', height: '36px', borderRadius: '6px', border: '1px solid var(--border)', cursor: 'pointer', padding: 0 }}
+                    />
+                    <input
+                      type="text"
+                      value={backgroundColor}
+                      onChange={(e) => setBackgroundColor(e.target.value)}
+                      placeholder="#f8fafc"
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem', fontFamily: 'monospace' }}
+                    />
+                  </div>
                 </div>
               </div>
             </div>
 
             {/* Typography & Card Shapes */}
             <div style={{ backgroundColor: 'var(--surface)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border)' }}>
-              <h3 style={{ margin: '0 0 14px 0', fontSize: '1.05rem', fontWeight: 'bold' }}>Tipografía y Estilo de Tarjetas</h3>
+              <h3 style={{ margin: '0 0 14px 0', fontSize: '1.05rem', fontWeight: 'bold' }}>Tipografía y Formas</h3>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '6px' }}>Tipografía de la Tienda</label>
+                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '6px' }}>Tipografía</label>
                   <select
                     value={fontFamily}
                     onChange={(e) => setFontFamily(e.target.value as any)}
@@ -497,7 +622,7 @@ export default function StoreSettings() {
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '6px' }}>Esquinas de las Tarjetas</label>
+                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '6px' }}>Esquinas de Tarjetas</label>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
                     {(['square', 'rounded', 'pill'] as const).map(r => (
                       <button
@@ -528,10 +653,10 @@ export default function StoreSettings() {
           <div style={{ position: 'sticky', top: '20px', height: 'fit-content' }}>
             <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '12px', border: '1px solid var(--border)', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '14px', color: primaryColor, fontWeight: 'bold', fontSize: '0.9rem' }}>
-                <Sparkles size={16} /> Previsualización en Vivo de tu Tienda
+                <Sparkles size={16} /> Previsualización en Vivo de tu Marca
               </div>
 
-              {/* Mock Storefront Container */}
+              {/* Mock Container */}
               <div style={{ backgroundColor, padding: '16px', borderRadius: '10px', border: '1px solid #e2e8f0', fontFamily, minHeight: '340px' }}>
                 {/* Mock Banner */}
                 {storeBannerUrl ? (
@@ -545,11 +670,15 @@ export default function StoreSettings() {
                 {/* Mock Header */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <div style={{ width: '28px', height: '28px', backgroundColor: primaryColor, borderRadius: '50%', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', fontWeight: 'bold' }}>
-                      B
-                    </div>
+                    {storeLogoUrl ? (
+                      <img src={storeLogoUrl} alt="Logo" style={{ width: '30px', height: '30px', borderRadius: '50%', objectFit: 'cover' }} />
+                    ) : (
+                      <div style={{ width: '30px', height: '30px', backgroundColor: primaryColor, borderRadius: '50%', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 'bold' }}>
+                        B
+                      </div>
+                    )}
                     <strong style={{ fontSize: '0.9rem', color: backgroundColor === '#0f172a' ? 'white' : '#1e293b' }}>
-                      {storeName || 'Tu Tienda'}
+                      {storeName || 'Tu Negocio'}
                     </strong>
                   </div>
                   <span style={{ fontSize: '0.7rem', backgroundColor: primaryColor, color: 'white', padding: '3px 8px', borderRadius: '12px', fontWeight: 'bold' }}>
@@ -557,7 +686,7 @@ export default function StoreSettings() {
                   </span>
                 </div>
 
-                {/* Mock Product Card */}
+                {/* Mock Card */}
                 <div
                   style={{
                     backgroundColor: cardBackgroundColor,
@@ -568,15 +697,15 @@ export default function StoreSettings() {
                   }}
                 >
                   <div style={{ height: '90px', backgroundColor: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: '0.75rem' }}>
-                    📸 Foto del Producto
+                    📸 Foto / Servicio
                   </div>
                   <div style={{ padding: '12px' }}>
-                    <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#1e293b', marginBottom: '4px' }}>Hamburguesa Especial</div>
-                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '8px' }}>Carne premium artesanal con queso derretido...</div>
+                    <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#1e293b', marginBottom: '4px' }}>Servicio o Producto Estrella</div>
+                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '8px' }}>Atención personalizada de alta calidad...</div>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span style={{ fontSize: '0.95rem', fontWeight: 'bold', color: primaryColor }}>₡5,500</span>
+                      <span style={{ fontSize: '0.95rem', fontWeight: 'bold', color: primaryColor }}>₡25,000</span>
                       <button style={{ padding: '4px 10px', backgroundColor: primaryColor, color: 'white', border: 'none', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' }}>
-                        Agregar
+                        Seleccionar
                       </button>
                     </div>
                   </div>

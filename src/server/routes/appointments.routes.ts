@@ -35,7 +35,8 @@ router.get('/public/:slug/info', async (req, res) => {
       bannerUrl: store?.storeBannerUrl,
       theme: store?.storeTheme,
       services: services.filter((s: any) => s.active !== false),
-      scheduleMode: schedule?.scheduleMode || 'jornada'
+      scheduleMode: schedule?.scheduleMode || 'jornada',
+      vacationConfig: schedule?.vacationConfig
     });
   } catch (error) {
     console.error('Error fetching public booking info:', error);
@@ -58,7 +59,22 @@ router.get('/public/:slug/available-slots', async (req, res) => {
     }
 
     const schedule = await getScheduleSettings(tenant.id);
-    const selectedDate = new Date(`${date}T00:00:00`);
+    const dateStr = String(date);
+
+    // 1. Check Vacation Mode / Date Blocking
+    if (schedule?.vacationConfig?.enabled) {
+      const v = schedule.vacationConfig;
+      if (v.startDate && v.endDate && dateStr >= v.startDate && dateStr <= v.endDate) {
+        res.json({
+          availableSlots: [],
+          isVacation: true,
+          vacationMessage: v.message || 'Estaremos cerrados temporalmente por vacaciones.'
+        });
+        return;
+      }
+    }
+
+    const selectedDate = new Date(`${dateStr}T00:00:00`);
     const dayOfWeek = selectedDate.getDay() === 0 ? 7 : selectedDate.getDay(); // 1 = Lunes, 7 = Domingo
 
     let candidateSlots: string[] = [];
@@ -81,8 +97,15 @@ router.get('/public/:slug/available-slots', async (req, res) => {
 
       const [startH, startM] = j.startHour.split(':').map(Number);
       const [endH, endM] = j.endHour.split(':').map(Number);
-      const [breakStartH, breakStartM] = (j.breakStart || '12:00').split(':').map(Number);
-      const [breakEndH, breakEndM] = (j.breakEnd || '13:00').split(':').map(Number);
+      
+      // Check per-day break if configured, else global break
+      const dayBreak = j.perDayBreaks?.[dayOfWeek];
+      const hasBreakThisDay = dayBreak !== undefined ? dayBreak.hasBreak : (j.hasBreak !== false);
+      const breakStartStr = dayBreak?.breakStart || j.breakStart || '12:00';
+      const breakEndStr = dayBreak?.breakEnd || j.breakEnd || '13:00';
+
+      const [breakStartH, breakStartM] = breakStartStr.split(':').map(Number);
+      const [breakEndH, breakEndM] = breakEndStr.split(':').map(Number);
 
       const slotStep = j.slotMinutes || 45;
       let currentMinutes = (startH * 60) + startM;
@@ -92,7 +115,7 @@ router.get('/public/:slug/available-slots', async (req, res) => {
 
       while (currentMinutes + slotStep <= endMinutes) {
         // Skip if overlaps with break time
-        if (j.hasBreak && currentMinutes >= breakStartMinutes && currentMinutes < breakEndMinutes) {
+        if (hasBreakThisDay && currentMinutes >= breakStartMinutes && currentMinutes < breakEndMinutes) {
           currentMinutes += slotStep;
           continue;
         }
@@ -105,16 +128,16 @@ router.get('/public/:slug/available-slots', async (req, res) => {
       }
     } else if (schedule?.scheduleMode === 'fechas') {
       const f = schedule.fechasConfig || { enabledDates: [], slotsByDate: {} };
-      if (!f.enabledDates.includes(String(date))) {
+      if (!f.enabledDates.includes(dateStr)) {
         res.json({ availableSlots: [], message: 'No hay citas habilitadas para esta fecha' });
         return;
       }
-      candidateSlots = f.slotsByDate?.[String(date)] || ['09:00', '10:00', '11:00', '14:00', '15:00', '16:00'];
+      candidateSlots = f.slotsByDate?.[dateStr] || ['09:00', '10:00', '11:00', '14:00', '15:00', '16:00'];
     } else if (schedule?.scheduleMode === 'bloques') {
       const b = schedule.bloquesConfig || { days: {}, slotMinutes: 45 };
-      const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-      const dayName = dayNames[selectedDate.getDay()];
-      const blocks = b.days?.[dayName] || [];
+      const dayKeys = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+      const dayKey = dayKeys[selectedDate.getDay()];
+      const blocks = b.days?.[dayKey] || [];
 
       const slotStep = b.slotMinutes || 45;
       for (const block of blocks) {
@@ -136,13 +159,13 @@ router.get('/public/:slug/available-slots', async (req, res) => {
     const existingAppts = await query(`
       SELECT time FROM appointments 
       WHERE tenant_id = $1 AND date = $2 AND status != 'cancelled'
-    `, [tenant.id, String(date)]);
+    `, [tenant.id, dateStr]);
 
     const bookedTimes = new Set(existingAppts.rows.map(r => r.time));
     const availableSlots = candidateSlots.filter(t => !bookedTimes.has(t));
 
     res.json({
-      date,
+      date: dateStr,
       availableSlots,
       totalAvailable: availableSlots.length
     });

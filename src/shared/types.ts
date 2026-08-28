@@ -213,6 +213,19 @@ export interface Order {
   updatedAt?: Date;
 }
 
+export interface VacationConfig {
+  enabled: boolean;
+  startDate: string; // YYYY-MM-DD
+  endDate: string;   // YYYY-MM-DD
+  message: string;
+}
+
+export interface DayBreakConfig {
+  hasBreak: boolean;
+  breakStart: string;
+  breakEnd: string;
+}
+
 export interface ScheduleSettings {
   id?: string;
   tenantId: string;
@@ -224,7 +237,8 @@ export interface ScheduleSettings {
     hasBreak: boolean;
     breakStart: string; // "12:00"
     breakEnd: string;   // "13:00"
-    daysEnabled: number[]; // [1, 2, 3, 4, 5, 6] (1 = Lunes, 7 = Domingo)
+    daysEnabled: number[]; // [1, 2, 3, 4, 5, 6]
+    perDayBreaks?: Record<number, DayBreakConfig>; // 1 = Lunes .. 7 = Domingo
   };
   fechasConfig?: {
     enabledDates: string[]; // ["2026-08-28", "2026-08-29"]
@@ -234,6 +248,7 @@ export interface ScheduleSettings {
     days: Record<string, Array<{ start: string; end: string }>>;
     slotMinutes?: number;
   };
+  vacationConfig?: VacationConfig;
   updatedAt?: Date;
 }
 

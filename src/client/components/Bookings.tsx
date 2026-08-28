@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Clock, Plus, Filter, CheckCircle, XCircle, AlertCircle, RefreshCw, MessageCircle, Link as LinkIcon, Copy, ExternalLink, Settings, Save } from 'lucide-react';
+import { Calendar, Clock, Plus, Filter, CheckCircle, XCircle, AlertCircle, RefreshCw, MessageCircle, Link as LinkIcon, Copy, ExternalLink, Settings, Save, Trash2, Sun, Palmtree } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
-import { Appointment, ScheduleSettings } from '../../shared/types';
+import { Appointment, ScheduleSettings, DayBreakConfig } from '../../shared/types';
 
 export default function Bookings() {
   const [activeTab, setActiveTab] = useState<'list' | 'schedule'>('list');
@@ -22,6 +22,31 @@ export default function Bookings() {
   const [breakStart, setBreakStart] = useState('12:00');
   const [breakEnd, setBreakEnd] = useState('13:00');
   const [daysEnabled, setDaysEnabled] = useState<number[]>([1, 2, 3, 4, 5, 6]);
+  const [perDayBreaks, setPerDayBreaks] = useState<Record<number, DayBreakConfig>>({});
+  const [selectedDayForBreak, setSelectedDayForBreak] = useState<number>(1);
+
+  // Fechas Concretas State
+  const [enabledDates, setEnabledDates] = useState<string[]>([]);
+  const [newDateToAdd, setNewDateToAdd] = useState('');
+
+  // Bloques de Tiempo State
+  const [bloquesDays, setBloquesDays] = useState<Record<string, Array<{ start: string; end: string }>>>({
+    monday: [{ start: '08:00', end: '12:00' }, { start: '14:00', end: '18:00' }],
+    tuesday: [{ start: '08:00', end: '12:00' }, { start: '14:00', end: '18:00' }],
+    wednesday: [{ start: '08:00', end: '12:00' }, { start: '14:00', end: '18:00' }],
+    thursday: [{ start: '08:00', end: '12:00' }, { start: '14:00', end: '18:00' }],
+    friday: [{ start: '08:00', end: '12:00' }, { start: '14:00', end: '18:00' }],
+    saturday: [{ start: '08:00', end: '13:00' }],
+    sunday: []
+  });
+  const [selectedDayForBlock, setSelectedDayForBlock] = useState('monday');
+
+  // Vacation Mode State
+  const [vacationEnabled, setVacationEnabled] = useState(false);
+  const [vacationStart, setVacationStart] = useState('');
+  const [vacationEnd, setVacationEnd] = useState('');
+  const [vacationMessage, setVacationMessage] = useState('Estaremos cerrados temporalmente por vacaciones. ¡Pronto estaremos de vuelta!');
+
   const [savingSchedule, setSavingSchedule] = useState(false);
   const [scheduleSavedToast, setScheduleSavedToast] = useState(false);
 
@@ -60,6 +85,19 @@ export default function Bookings() {
           setBreakStart(sch.jornadaConfig.breakStart || '12:00');
           setBreakEnd(sch.jornadaConfig.breakEnd || '13:00');
           if (sch.jornadaConfig.daysEnabled) setDaysEnabled(sch.jornadaConfig.daysEnabled);
+          if (sch.jornadaConfig.perDayBreaks) setPerDayBreaks(sch.jornadaConfig.perDayBreaks);
+        }
+        if (sch.fechasConfig?.enabledDates) {
+          setEnabledDates(sch.fechasConfig.enabledDates);
+        }
+        if (sch.bloquesConfig?.days) {
+          setBloquesDays(sch.bloquesConfig.days);
+        }
+        if (sch.vacationConfig) {
+          setVacationEnabled(sch.vacationConfig.enabled || false);
+          setVacationStart(sch.vacationConfig.startDate || '');
+          setVacationEnd(sch.vacationConfig.endDate || '');
+          setVacationMessage(sch.vacationConfig.message || 'Estaremos cerrados temporalmente por vacaciones.');
         }
       }
 
@@ -121,7 +159,21 @@ export default function Bookings() {
           hasBreak,
           breakStart,
           breakEnd,
-          daysEnabled
+          daysEnabled,
+          perDayBreaks
+        },
+        fechasConfig: {
+          enabledDates
+        },
+        bloquesConfig: {
+          days: bloquesDays,
+          slotMinutes: Number(slotMinutes)
+        },
+        vacationConfig: {
+          enabled: vacationEnabled,
+          startDate: vacationStart,
+          endDate: vacationEnd,
+          message: vacationMessage
         }
       });
       setScheduleSavedToast(true);
@@ -139,6 +191,38 @@ export default function Bookings() {
     );
   };
 
+  const addBlockToDay = (dayKey: string) => {
+    setBloquesDays(prev => ({
+      ...prev,
+      [dayKey]: [...(prev[dayKey] || []), { start: '08:00', end: '12:00' }]
+    }));
+  };
+
+  const removeBlockFromDay = (dayKey: string, index: number) => {
+    setBloquesDays(prev => ({
+      ...prev,
+      [dayKey]: (prev[dayKey] || []).filter((_, i) => i !== index)
+    }));
+  };
+
+  const updateBlock = (dayKey: string, index: number, field: 'start' | 'end', value: string) => {
+    setBloquesDays(prev => {
+      const dayBlocks = [...(prev[dayKey] || [])];
+      dayBlocks[index] = { ...dayBlocks[index], [field]: value };
+      return { ...prev, [dayKey]: dayBlocks };
+    });
+  };
+
+  const addSpecificDate = () => {
+    if (!newDateToAdd || enabledDates.includes(newDateToAdd)) return;
+    setEnabledDates(prev => [...prev, newDateToAdd].sort());
+    setNewDateToAdd('');
+  };
+
+  const removeSpecificDate = (dateStr: string) => {
+    setEnabledDates(prev => prev.filter(d => d !== dateStr));
+  };
+
   const publicBookingUrl = `${window.location.origin}/reservas/${tenantSlug}`;
 
   const copyBookingLink = () => {
@@ -154,13 +238,13 @@ export default function Bookings() {
   });
 
   const DAYS_OF_WEEK = [
-    { num: 1, name: 'Lun' },
-    { num: 2, name: 'Mar' },
-    { num: 3, name: 'Mié' },
-    { num: 4, name: 'Jue' },
-    { num: 5, name: 'Vie' },
-    { num: 6, name: 'Sáb' },
-    { num: 7, name: 'Dom' }
+    { num: 1, name: 'Lunes', key: 'monday' },
+    { num: 2, name: 'Martes', key: 'tuesday' },
+    { num: 3, name: 'Miércoles', key: 'wednesday' },
+    { num: 4, name: 'Jueves', key: 'thursday' },
+    { num: 5, name: 'Viernes', key: 'friday' },
+    { num: 6, name: 'Sábado', key: 'saturday' },
+    { num: 7, name: 'Domingo', key: 'sunday' }
   ];
 
   if (loading) {
@@ -168,14 +252,14 @@ export default function Bookings() {
   }
 
   return (
-    <div style={{ maxWidth: '900px' }}>
+    <div style={{ maxWidth: '950px' }}>
       
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
         <div>
           <h2 style={{ margin: '0 0 4px 0', fontSize: '1.5rem', fontWeight: 'bold' }}>Agenda y Reservas</h2>
           <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-            Control de citas, horarios de atención y portal público de agendamiento online
+            Control de citas, descansos por día, vacaciones y portal público de agendamiento online
           </p>
         </div>
 
@@ -196,7 +280,7 @@ export default function Bookings() {
             <Calendar size={20} color="#1d4ed8" />
           </div>
           <div>
-            <div style={{ fontSize: '0.8rem', color: '#1d4ed8', fontWeight: 'bold', textTransform: 'uppercase' }}>Portal Público de Reservas (Sin IA)</div>
+            <div style={{ fontSize: '0.8rem', color: '#1d4ed8', fontWeight: 'bold', textTransform: 'uppercase' }}>Portal Público de Reservas</div>
             <div style={{ fontSize: '0.95rem', fontWeight: '600', color: '#1e40af', wordBreak: 'break-all' }}>{publicBookingUrl}</div>
           </div>
         </div>
@@ -256,7 +340,7 @@ export default function Bookings() {
             gap: '8px'
           }}
         >
-          <Settings size={18} /> Configuración de Horarios
+          <Settings size={18} /> ⚙️ Horarios, Bloques & Vacaciones
         </button>
       </div>
 
@@ -294,7 +378,7 @@ export default function Bookings() {
             )}
           </div>
 
-          {/* Appointments Grid */}
+          {/* Appointments List */}
           {filtered.length === 0 ? (
             <div style={{ padding: '40px', textAlign: 'center', backgroundColor: 'var(--surface)', borderRadius: '10px', border: '1px solid var(--border)' }}>
               <Calendar size={36} color="var(--text-muted)" style={{ margin: '0 auto 10px auto' }} />
@@ -378,177 +462,388 @@ export default function Bookings() {
 
       {/* TAB 2: SCHEDULE CONFIGURATION */}
       {activeTab === 'schedule' && (
-        <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
-            <div>
-              <h3 style={{ margin: '0 0 4px 0', fontSize: '1.2rem', fontWeight: 'bold' }}>Modalidad de Disponibilidad</h3>
-              <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.85rem' }}>Configura cómo se calculan los horarios que se ofrecen a los clientes</p>
-            </div>
-
-            <button
-              onClick={handleSaveSchedule}
-              disabled={savingSchedule}
-              style={{ padding: '9px 18px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', borderRadius: '6px', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.9rem' }}
-            >
-              <Save size={16} /> {savingSchedule ? 'Guardando...' : 'Guardar Horarios'}
-            </button>
-          </div>
-
-          {scheduleSavedToast && (
-            <div style={{ padding: '10px 16px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534', borderRadius: '6px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', fontWeight: '600' }}>
-              <CheckCircle size={16} /> ¡Configuración de horarios guardada exitosamente!
-            </div>
-          )}
-
-          {/* Mode Selector */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginBottom: '25px' }}>
-            {[
-              { id: 'jornada', title: 'Por Jornada', desc: 'Horas continuas con descansos programados' },
-              { id: 'fechas', title: 'Por Fechas Concretas', desc: 'Habilitar días y horas específicas' },
-              { id: 'bloques', title: 'Por Bloques de Tiempo', desc: 'Bloques de mañana y tarde por día' }
-            ].map(m => (
-              <div
-                key={m.id}
-                onClick={() => setScheduleMode(m.id as any)}
-                style={{
-                  padding: '14px',
-                  borderRadius: '8px',
-                  border: `2px solid ${scheduleMode === m.id ? 'var(--primary)' : 'var(--border)'}`,
-                  backgroundColor: scheduleMode === m.id ? 'rgba(22, 163, 74, 0.05)' : 'transparent',
-                  cursor: 'pointer'
-                }}
-              >
-                <div style={{ fontWeight: 'bold', fontSize: '0.95rem', color: scheduleMode === m.id ? 'var(--primary)' : 'var(--text)' }}>{m.title}</div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>{m.desc}</div>
-              </div>
-            ))}
-          </div>
-
-          {/* Mode 1: Jornada Settings */}
-          {scheduleMode === 'jornada' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '5px' }}>Hora de Inicio</label>
-                  <input
-                    type="time"
-                    value={startHour}
-                    onChange={(e) => setStartHour(e.target.value)}
-                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.9rem' }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '5px' }}>Hora de Cierre</label>
-                  <input
-                    type="time"
-                    value={endHour}
-                    onChange={(e) => setEndHour(e.target.value)}
-                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.9rem' }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '5px' }}>Duración por Cita</label>
-                  <select
-                    value={slotMinutes}
-                    onChange={(e) => setSlotMinutes(Number(e.target.value))}
-                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.9rem', backgroundColor: 'white' }}
-                  >
-                    <option value={30}>30 minutos</option>
-                    <option value={45}>45 minutos</option>
-                    <option value={60}>1 hora (60 min)</option>
-                    <option value={90}>1 hora 30 min</option>
-                    <option value={120}>2 horas</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Break / Lunch Setting */}
-              <div style={{ padding: '16px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid var(--border)' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '600', fontSize: '0.85rem', cursor: 'pointer', marginBottom: hasBreak ? '12px' : '0' }}>
-                  <input type="checkbox" checked={hasBreak} onChange={(e) => setHasBreak(e.target.checked)} />
-                  <span>Programar descanso / almuerzo (se excluye de la agenda disponible)</span>
-                </label>
-
-                {hasBreak && (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                    <div>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '3px' }}>Inicio del descanso:</span>
-                      <input
-                        type="time"
-                        value={breakStart}
-                        onChange={(e) => setBreakStart(e.target.value)}
-                        style={{ width: '100%', padding: '6px 8px', borderRadius: '4px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
-                      />
-                    </div>
-                    <div>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '3px' }}>Fin del descanso:</span>
-                      <input
-                        type="time"
-                        value={breakEnd}
-                        onChange={(e) => setBreakEnd(e.target.value)}
-                        style={{ width: '100%', padding: '6px 8px', borderRadius: '4px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Days Enabled */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          
+          <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '8px' }}>Días de Atención Habilitados</label>
-                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                  {DAYS_OF_WEEK.map(d => {
-                    const isEnabled = daysEnabled.includes(d.num);
-                    return (
+                <h3 style={{ margin: '0 0 4px 0', fontSize: '1.2rem', fontWeight: 'bold' }}>Modalidad de Disponibilidad</h3>
+                <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.85rem' }}>Selecciona cómo deseas que los clientes puedan agendar citas</p>
+              </div>
+
+              <button
+                onClick={handleSaveSchedule}
+                disabled={savingSchedule}
+                style={{ padding: '9px 18px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', borderRadius: '6px', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.9rem' }}
+              >
+                <Save size={16} /> {savingSchedule ? 'Guardando...' : 'Guardar Horarios'}
+              </button>
+            </div>
+
+            {scheduleSavedToast && (
+              <div style={{ padding: '10px 16px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534', borderRadius: '6px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', fontWeight: '600' }}>
+                <CheckCircle size={16} /> ¡Configuración de horarios guardada exitosamente!
+              </div>
+            )}
+
+            {/* Mode Selector */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginBottom: '25px' }}>
+              {[
+                { id: 'jornada', title: 'Por Jornada Continua', desc: 'Horas fijas con descansos programados' },
+                { id: 'bloques', title: 'Por Bloques de Tiempo', desc: 'Bloques de mañana y tarde por día' },
+                { id: 'fechas', title: 'Por Fechas Concretas', desc: 'Habilitar días y horas específicas' }
+              ].map(m => (
+                <div
+                  key={m.id}
+                  onClick={() => setScheduleMode(m.id as any)}
+                  style={{
+                    padding: '14px',
+                    borderRadius: '8px',
+                    border: `2px solid ${scheduleMode === m.id ? 'var(--primary)' : 'var(--border)'}`,
+                    backgroundColor: scheduleMode === m.id ? 'rgba(22, 163, 74, 0.05)' : 'transparent',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <div style={{ fontWeight: 'bold', fontSize: '0.95rem', color: scheduleMode === m.id ? 'var(--primary)' : 'var(--text)' }}>{m.title}</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>{m.desc}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* MODE 1: JORNADA CONTINUA */}
+            {scheduleMode === 'jornada' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '5px' }}>Hora de Apertura</label>
+                    <input
+                      type="time"
+                      value={startHour}
+                      onChange={(e) => setStartHour(e.target.value)}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.9rem' }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '5px' }}>Hora de Cierre</label>
+                    <input
+                      type="time"
+                      value={endHour}
+                      onChange={(e) => setEndHour(e.target.value)}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.9rem' }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '5px' }}>Intervalo por Cita</label>
+                    <select
+                      value={slotMinutes}
+                      onChange={(e) => setSlotMinutes(Number(e.target.value))}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.9rem', backgroundColor: 'white' }}
+                    >
+                      <option value={15}>15 minutos</option>
+                      <option value={30}>30 minutos</option>
+                      <option value={45}>45 minutos</option>
+                      <option value={60}>1 hora (60 min)</option>
+                      <option value={90}>1 hora 30 min</option>
+                      <option value={120}>2 horas</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Days Enabled */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '8px' }}>Días de Atención Habilitados</label>
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                    {DAYS_OF_WEEK.map(d => {
+                      const isEnabled = daysEnabled.includes(d.num);
+                      return (
+                        <button
+                          key={d.num}
+                          type="button"
+                          onClick={() => toggleDay(d.num)}
+                          style={{
+                            padding: '8px 14px',
+                            borderRadius: '6px',
+                            border: isEnabled ? '2px solid var(--primary)' : '1px solid var(--border)',
+                            backgroundColor: isEnabled ? 'var(--primary)' : 'white',
+                            color: isEnabled ? 'white' : 'var(--text)',
+                            fontWeight: 'bold',
+                            fontSize: '0.85rem',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {d.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Per-Day Break Configuration */}
+                <div style={{ padding: '16px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                  <h4 style={{ margin: '0 0 10px 0', fontSize: '0.95rem', fontWeight: 'bold' }}>Descansos / Almuerzo por Día</h4>
+                  
+                  <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', marginBottom: '14px' }}>
+                    {DAYS_OF_WEEK.filter(d => daysEnabled.includes(d.num)).map(d => (
                       <button
                         key={d.num}
                         type="button"
-                        onClick={() => toggleDay(d.num)}
+                        onClick={() => setSelectedDayForBreak(d.num)}
                         style={{
-                          padding: '8px 14px',
+                          padding: '6px 12px',
                           borderRadius: '6px',
-                          border: isEnabled ? '2px solid var(--primary)' : '1px solid var(--border)',
-                          backgroundColor: isEnabled ? 'var(--primary)' : 'white',
-                          color: isEnabled ? 'white' : 'var(--text)',
-                          fontWeight: 'bold',
-                          fontSize: '0.85rem',
+                          border: selectedDayForBreak === d.num ? '2px solid var(--primary)' : '1px solid var(--border)',
+                          backgroundColor: selectedDayForBreak === d.num ? 'var(--primary)' : 'white',
+                          color: selectedDayForBreak === d.num ? 'white' : 'var(--text)',
+                          fontWeight: '600',
+                          fontSize: '0.8rem',
                           cursor: 'pointer'
                         }}
                       >
                         {d.name}
                       </button>
+                    ))}
+                  </div>
+
+                  {(() => {
+                    const currentBreak = perDayBreaks[selectedDayForBreak] || {
+                      hasBreak: hasBreak,
+                      breakStart: breakStart,
+                      breakEnd: breakEnd
+                    };
+
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', fontWeight: '600', cursor: 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            checked={currentBreak.hasBreak}
+                            onChange={(e) => {
+                              setPerDayBreaks(prev => ({
+                                ...prev,
+                                [selectedDayForBreak]: { ...currentBreak, hasBreak: e.target.checked }
+                              }));
+                            }}
+                          />
+                          <span>Habilitar descanso para {DAYS_OF_WEEK.find(d => d.num === selectedDayForBreak)?.name}</span>
+                        </label>
+
+                        {currentBreak.hasBreak && (
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', maxWidth: '360px' }}>
+                            <div>
+                              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '3px' }}>Inicio del descanso:</span>
+                              <input
+                                type="time"
+                                value={currentBreak.breakStart}
+                                onChange={(e) => {
+                                  setPerDayBreaks(prev => ({
+                                    ...prev,
+                                    [selectedDayForBreak]: { ...currentBreak, breakStart: e.target.value }
+                                  }));
+                                }}
+                                style={{ width: '100%', padding: '6px 8px', borderRadius: '4px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                              />
+                            </div>
+                            <div>
+                              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '3px' }}>Fin del descanso:</span>
+                              <input
+                                type="time"
+                                value={currentBreak.breakEnd}
+                                onChange={(e) => {
+                                  setPerDayBreaks(prev => ({
+                                    ...prev,
+                                    [selectedDayForBreak]: { ...currentBreak, breakEnd: e.target.value }
+                                  }));
+                                }}
+                                style={{ width: '100%', padding: '6px 8px', borderRadius: '4px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     );
-                  })}
+                  })()}
                 </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Mode 2: Fechas Concretas */}
-          {scheduleMode === 'fechas' && (
-            <div style={{ padding: '16px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid var(--border)' }}>
-              <p style={{ margin: '0 0 10px 0', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                En esta modalidad, el sistema habilitará reservas en días específicos del mes que actives en el calendario.
-              </p>
-              <div style={{ fontSize: '0.85rem', color: 'var(--primary)', fontWeight: '600' }}>
-                ✓ Fechas activas predeterminadas para los próximos 30 días de Lunes a Sábado.
-              </div>
-            </div>
-          )}
+            {/* MODE 2: BLOQUES DE TIEMPO */}
+            {scheduleMode === 'bloques' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                  Configura bloques de atención independientes (por ejemplo: turno de mañana y turno de tarde) para cada día de la semana.
+                </p>
 
-          {/* Mode 3: Bloques */}
-          {scheduleMode === 'bloques' && (
-            <div style={{ padding: '16px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid var(--border)' }}>
-              <p style={{ margin: '0 0 10px 0', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                Configura bloques horarios independientes para mañana (ej: 08:00 - 12:00) y tarde (ej: 14:00 - 18:00).
-              </p>
-              <div style={{ fontSize: '0.85rem', color: 'var(--primary)', fontWeight: '600' }}>
-                ✓ Bloque 1: 08:00 a 12:00 | Bloque 2: 13:30 a 17:30
+                <div style={{ display: 'flex', gap: '6px', overflowX: 'auto' }}>
+                  {DAYS_OF_WEEK.map(d => (
+                    <button
+                      key={d.key}
+                      type="button"
+                      onClick={() => setSelectedDayForBlock(d.key)}
+                      style={{
+                        padding: '8px 14px',
+                        borderRadius: '6px',
+                        border: selectedDayForBlock === d.key ? '2px solid var(--primary)' : '1px solid var(--border)',
+                        backgroundColor: selectedDayForBlock === d.key ? 'var(--primary)' : 'white',
+                        color: selectedDayForBlock === d.key ? 'white' : 'var(--text)',
+                        fontWeight: 'bold',
+                        fontSize: '0.85rem',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {d.name}
+                    </button>
+                  ))}
+                </div>
+
+                <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 'bold' }}>
+                      Bloques para {DAYS_OF_WEEK.find(d => d.key === selectedDayForBlock)?.name}
+                    </h4>
+                    <button
+                      type="button"
+                      onClick={() => addBlockToDay(selectedDayForBlock)}
+                      style={{ padding: '6px 12px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}
+                    >
+                      <Plus size={14} /> Agregar Bloque
+                    </button>
+                  </div>
+
+                  {(bloquesDays[selectedDayForBlock] || []).length === 0 ? (
+                    <p style={{ margin: 0, fontSize: '0.85rem', color: '#94a3b8' }}>No hay bloques configurados para este día (cerrado).</p>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {(bloquesDays[selectedDayForBlock] || []).map((block, idx) => (
+                        <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '10px', backgroundColor: 'white', padding: '10px', borderRadius: '6px', border: '1px solid var(--border)' }}>
+                          <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--text-muted)' }}>Bloque {idx + 1}:</span>
+                          <input
+                            type="time"
+                            value={block.start}
+                            onChange={(e) => updateBlock(selectedDayForBlock, idx, 'start', e.target.value)}
+                            style={{ padding: '6px 8px', borderRadius: '4px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                          />
+                          <span>a</span>
+                          <input
+                            type="time"
+                            value={block.end}
+                            onChange={(e) => updateBlock(selectedDayForBlock, idx, 'end', e.target.value)}
+                            style={{ padding: '6px 8px', borderRadius: '4px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeBlockFromDay(selectedDayForBlock, idx)}
+                            style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px' }}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
+            )}
+
+            {/* MODE 3: FECHAS CONCRETAS */}
+            {scheduleMode === 'fechas' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                  Habilita únicamente fechas puntuales en el calendario donde se aceptarán reservas.
+                </p>
+
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                  <input
+                    type="date"
+                    value={newDateToAdd}
+                    min={new Date().toISOString().split('T')[0]}
+                    onChange={(e) => setNewDateToAdd(e.target.value)}
+                    style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.9rem' }}
+                  />
+                  <button
+                    type="button"
+                    onClick={addSpecificDate}
+                    style={{ padding: '8px 14px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}
+                  >
+                    + Habilitar Fecha
+                  </button>
+                </div>
+
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '10px' }}>
+                  {enabledDates.map(dateStr => (
+                    <div
+                      key={dateStr}
+                      style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', backgroundColor: '#f1f5f9', borderRadius: '20px', border: '1px solid #cbd5e1', fontSize: '0.85rem', fontWeight: '600' }}
+                    >
+                      <span>🗓️ {dateStr}</span>
+                      <button
+                        type="button"
+                        onClick={() => removeSpecificDate(dateStr)}
+                        style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '0 2px' }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* VACATION MODE / DATE BLOCKING CARD */}
+          <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
+              <Palmtree size={22} color="#059669" />
+              <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 'bold' }}>Modo Vacaciones y Cierre Temporal</h3>
             </div>
-          )}
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.9rem', fontWeight: '600', cursor: 'pointer', marginBottom: vacationEnabled ? '16px' : '0' }}>
+              <input
+                type="checkbox"
+                checked={vacationEnabled}
+                onChange={(e) => setVacationEnabled(e.target.checked)}
+              />
+              <span>Activar Modo Vacaciones (bloquea la agenda en las fechas indicadas)</span>
+            </label>
+
+            {vacationEnabled && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', backgroundColor: '#f0fdf4', padding: '16px', borderRadius: '8px', border: '1px solid #bbf7d0' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>Fecha de Inicio de Vacaciones</label>
+                    <input
+                      type="date"
+                      value={vacationStart}
+                      onChange={(e) => setVacationStart(e.target.value)}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>Fecha de Fin de Vacaciones</label>
+                    <input
+                      type="date"
+                      value={vacationEnd}
+                      onChange={(e) => setVacationEnd(e.target.value)}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>Mensaje Informativo para el Cliente</label>
+                  <textarea
+                    rows={2}
+                    value={vacationMessage}
+                    onChange={(e) => setVacationMessage(e.target.value)}
+                    placeholder="Estaremos cerrados por vacaciones de Semana Santa del 10 al 15 de abril..."
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

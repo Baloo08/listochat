@@ -21,6 +21,12 @@ export async function getScheduleSettings(tenantId: string): Promise<ScheduleSet
         breakStart: '12:00',
         breakEnd: '13:00',
         daysEnabled: [1, 2, 3, 4, 5, 6] // Lunes a Sábado
+      },
+      vacationConfig: {
+        enabled: false,
+        startDate: '',
+        endDate: '',
+        message: 'Estaremos cerrados temporalmente por vacaciones. ¡Pronto estaremos de vuelta!'
       }
     };
   }
@@ -34,6 +40,12 @@ export async function getScheduleSettings(tenantId: string): Promise<ScheduleSet
     jornadaConfig: config.jornadaConfig,
     fechasConfig: config.fechasConfig,
     bloquesConfig: config.bloquesConfig,
+    vacationConfig: config.vacationConfig || {
+      enabled: false,
+      startDate: '',
+      endDate: '',
+      message: 'Estaremos cerrados temporalmente por vacaciones. ¡Pronto estaremos de vuelta!'
+    },
     updatedAt: row.updatedAt
   };
 }
@@ -42,7 +54,8 @@ export async function saveScheduleSettings(tenantId: string, data: Partial<Sched
   const configJson = {
     jornadaConfig: data.jornadaConfig,
     fechasConfig: data.fechasConfig,
-    bloquesConfig: data.bloquesConfig
+    bloquesConfig: data.bloquesConfig,
+    vacationConfig: data.vacationConfig
   };
 
   const result = await query(`
@@ -64,6 +77,7 @@ export async function saveScheduleSettings(tenantId: string, data: Partial<Sched
     jornadaConfig: config.jornadaConfig,
     fechasConfig: config.fechasConfig,
     bloquesConfig: config.bloquesConfig,
+    vacationConfig: config.vacationConfig,
     updatedAt: row.updatedAt
   };
 }

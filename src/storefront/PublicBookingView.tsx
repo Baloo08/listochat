@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Clock, User, Phone, CheckCircle, ChevronLeft, ChevronRight, Sparkles, MessageCircle, AlertCircle } from 'lucide-react';
+import { Calendar, Clock, User, Phone, CheckCircle, Sparkles, MessageCircle, AlertCircle, Palmtree, MapPin } from 'lucide-react';
 
 interface PublicBookingViewProps {
   slug: string;
@@ -20,6 +20,7 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
+  const [vacationAlert, setVacationAlert] = useState<string | null>(null);
 
   // Form Fields
   const [customerName, setCustomerName] = useState('');
@@ -46,16 +47,33 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
     fetchInfo();
   }, [slug]);
 
+  // Load custom Google Font dynamically
+  useEffect(() => {
+    if (businessInfo?.theme?.fontFamily) {
+      const font = businessInfo.theme.fontFamily;
+      const link = document.createElement('link');
+      link.href = `https://fonts.googleapis.com/css2?family=${font.replace(/\s+/g, '+')}:wght@300;400;500;600;700&display=swap`;
+      link.rel = 'stylesheet';
+      document.head.appendChild(link);
+    }
+  }, [businessInfo?.theme?.fontFamily]);
+
   useEffect(() => {
     if (!selectedDate || !slug) return;
     const fetchSlots = async () => {
       setLoadingSlots(true);
       setSelectedTime(null);
+      setVacationAlert(null);
       try {
         const res = await fetch(`/api/appointments/public/${slug}/available-slots?date=${selectedDate}`);
         if (res.ok) {
           const data = await res.json();
-          setAvailableSlots(data.availableSlots || []);
+          if (data.isVacation) {
+            setVacationAlert(data.vacationMessage || 'Estaremos cerrados temporalmente por vacaciones.');
+            setAvailableSlots([]);
+          } else {
+            setAvailableSlots(data.availableSlots || []);
+          }
         } else {
           setAvailableSlots([]);
         }
@@ -107,11 +125,15 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
   };
 
   const primaryColor = businessInfo?.theme?.primaryColor || '#16a34a';
-  const fontFamily = businessInfo?.theme?.fontFamily || 'Inter';
+  const bgColor = businessInfo?.theme?.backgroundColor || '#f8fafc';
+  const cardBg = businessInfo?.theme?.cardBackgroundColor || '#ffffff';
+  const fontFamily = businessInfo?.theme?.fontFamily || 'Inter, sans-serif';
+  const cardRadius = businessInfo?.theme?.cardRadius === 'pill' ? '20px' : businessInfo?.theme?.cardRadius === 'square' ? '4px' : '12px';
+  const cardShadow = businessInfo?.theme?.cardShadow === 'lg' ? '0 10px 15px -3px rgba(0,0,0,0.1)' : businessInfo?.theme?.cardShadow === 'sm' ? '0 1px 3px rgba(0,0,0,0.05)' : '0 4px 6px -1px rgba(0,0,0,0.07)';
 
   if (loading) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f8fafc', fontFamily }}>
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: bgColor, fontFamily }}>
         <p style={{ fontSize: '1.1rem', color: '#64748b' }}>Cargando portal de reservas...</p>
       </div>
     );
@@ -131,8 +153,8 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
 
   if (bookingSuccess) {
     return (
-      <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc', padding: '40px 20px', fontFamily }}>
-        <div style={{ maxWidth: '520px', margin: '0 auto', backgroundColor: 'white', borderRadius: '16px', padding: '35px', textAlign: 'center', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0' }}>
+      <div style={{ minHeight: '100vh', backgroundColor: bgColor, padding: '40px 20px', fontFamily }}>
+        <div style={{ maxWidth: '520px', margin: '0 auto', backgroundColor: cardBg, borderRadius: cardRadius, padding: '35px', textAlign: 'center', boxShadow: cardShadow, border: '1px solid #e2e8f0' }}>
           <div style={{ width: '70px', height: '70px', backgroundColor: '#dcfce7', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px auto' }}>
             <CheckCircle size={40} color="#166534" />
           </div>
@@ -156,7 +178,7 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
               href={`https://wa.me/${businessInfo.whatsappNumber.replace(/\D/g, '')}?text=${encodeURIComponent(`Hola, acabo de agendar una cita para ${selectedService?.name} el ${selectedDate} a las ${selectedTime}. Mi nombre es ${customerName}.`)}`}
               target="_blank"
               rel="noreferrer"
-              style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', width: '100%', padding: '14px', backgroundColor: '#16a34a', color: 'white', borderRadius: '8px', textDecoration: 'none', fontWeight: '600', marginBottom: '15px' }}
+              style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', width: '100%', padding: '14px', backgroundColor: '#25d366', color: 'white', borderRadius: '8px', textDecoration: 'none', fontWeight: '600', marginBottom: '15px' }}
             >
               <MessageCircle size={20} /> Escribir al WhatsApp del Negocio
             </a>
@@ -178,7 +200,16 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
   }
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc', fontFamily, color: '#1e293b', paddingBottom: '60px' }}>
+    <div style={{ minHeight: '100vh', backgroundColor: bgColor, fontFamily, color: '#1e293b', paddingBottom: '60px' }}>
+      
+      {/* Optional Top Banner */}
+      {businessInfo.bannerUrl && (
+        <div style={{ width: '100%', height: '180px', overflow: 'hidden', position: 'relative' }}>
+          <img src={businessInfo.bannerUrl} alt={businessInfo.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(0,0,0,0.1), rgba(0,0,0,0.5))' }} />
+        </div>
+      )}
+
       {/* Hero Header */}
       <div style={{ backgroundColor: 'white', borderBottom: '1px solid #e2e8f0', padding: '25px 20px', textAlign: 'center' }}>
         <div style={{ maxWidth: '650px', margin: '0 auto' }}>
@@ -186,13 +217,14 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
             <img src={businessInfo.logoUrl} alt={businessInfo.name} style={{ width: '64px', height: '64px', borderRadius: '50%', objectFit: 'cover', margin: '0 auto 12px auto', display: 'block', border: '2px solid #e2e8f0' }} />
           )}
           <h1 style={{ margin: '0 0 6px 0', fontSize: '1.6rem', fontWeight: 'bold' }}>{businessInfo.name}</h1>
-          <p style={{ margin: 0, color: '#64748b', fontSize: '0.95rem' }}>Agenda tu cita o reserva de forma rápida y sencilla</p>
+          <p style={{ margin: 0, color: '#64748b', fontSize: '0.95rem' }}>Portal Oficial de Reservas y Agendamiento Online</p>
         </div>
       </div>
 
       <div style={{ maxWidth: '650px', margin: '30px auto', padding: '0 20px' }}>
+        
         {/* Step 1: Select Service */}
-        <div style={{ backgroundColor: 'white', borderRadius: '12px', padding: '24px', border: '1px solid #e2e8f0', marginBottom: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+        <div style={{ backgroundColor: cardBg, borderRadius: cardRadius, padding: '24px', border: '1px solid #e2e8f0', marginBottom: '20px', boxShadow: cardShadow }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
             <span style={{ width: '26px', height: '26px', backgroundColor: primaryColor, color: 'white', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.85rem', fontWeight: 'bold' }}>1</span>
             <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 'bold' }}>Selecciona el Servicio</h3>
@@ -233,7 +265,7 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
 
         {/* Step 2 & 3: Date and Time Slot */}
         {selectedService && (
-          <div style={{ backgroundColor: 'white', borderRadius: '12px', padding: '24px', border: '1px solid #e2e8f0', marginBottom: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+          <div style={{ backgroundColor: cardBg, borderRadius: cardRadius, padding: '24px', border: '1px solid #e2e8f0', marginBottom: '20px', boxShadow: cardShadow }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
               <span style={{ width: '26px', height: '26px', backgroundColor: primaryColor, color: 'white', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.85rem', fontWeight: 'bold' }}>2</span>
               <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 'bold' }}>Selecciona Fecha y Horario</h3>
@@ -252,52 +284,65 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
               />
             </div>
 
-            <div>
-              <label style={{ display: 'block', marginBottom: '10px', fontWeight: '600', fontSize: '0.85rem', color: '#475569' }}>
-                <Clock size={15} style={{ verticalAlign: 'middle', marginRight: '4px' }} /> Horarios Disponibles:
-              </label>
+            {/* Vacation Alert */}
+            {vacationAlert && (
+              <div style={{ padding: '16px', backgroundColor: '#fef3c7', border: '1px solid #fde68a', borderRadius: '8px', color: '#92400e', marginBottom: '15px', display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                <Palmtree size={22} color="#b45309" style={{ flexShrink: 0, marginTop: '2px' }} />
+                <div>
+                  <div style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Cierre Temporal / Vacaciones</div>
+                  <div style={{ fontSize: '0.85rem', marginTop: '2px' }}>{vacationAlert}</div>
+                </div>
+              </div>
+            )}
 
-              {loadingSlots ? (
-                <div style={{ padding: '20px', textAlign: 'center', color: '#94a3b8', fontSize: '0.9rem' }}>Consultando horarios disponibles...</div>
-              ) : availableSlots.length === 0 ? (
-                <div style={{ padding: '16px', backgroundColor: '#f1f5f9', borderRadius: '8px', textAlign: 'center', color: '#64748b', fontSize: '0.85rem' }}>
-                  No hay horarios disponibles para la fecha seleccionada. Por favor elige otro día.
-                </div>
-              ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(85px, 1fr))', gap: '8px' }}>
-                  {availableSlots.map(time => {
-                    const isTimeSelected = selectedTime === time;
-                    return (
-                      <button
-                        key={time}
-                        type="button"
-                        onClick={() => setSelectedTime(time)}
-                        style={{
-                          padding: '10px 0',
-                          textAlign: 'center',
-                          borderRadius: '8px',
-                          border: `2px solid ${isTimeSelected ? primaryColor : '#e2e8f0'}`,
-                          backgroundColor: isTimeSelected ? primaryColor : 'white',
-                          color: isTimeSelected ? 'white' : '#1e293b',
-                          fontWeight: '600',
-                          fontSize: '0.9rem',
-                          cursor: 'pointer',
-                          transition: 'all 0.15s ease'
-                        }}
-                      >
-                        {time}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+            {!vacationAlert && (
+              <div>
+                <label style={{ display: 'block', marginBottom: '10px', fontWeight: '600', fontSize: '0.85rem', color: '#475569' }}>
+                  <Clock size={15} style={{ verticalAlign: 'middle', marginRight: '4px' }} /> Horarios Disponibles:
+                </label>
+
+                {loadingSlots ? (
+                  <div style={{ padding: '20px', textAlign: 'center', color: '#94a3b8', fontSize: '0.9rem' }}>Consultando horarios disponibles...</div>
+                ) : availableSlots.length === 0 ? (
+                  <div style={{ padding: '16px', backgroundColor: '#f1f5f9', borderRadius: '8px', textAlign: 'center', color: '#64748b', fontSize: '0.85rem' }}>
+                    No hay horarios disponibles para la fecha seleccionada. Por favor elige otro día.
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(85px, 1fr))', gap: '8px' }}>
+                    {availableSlots.map(time => {
+                      const isTimeSelected = selectedTime === time;
+                      return (
+                        <button
+                          key={time}
+                          type="button"
+                          onClick={() => setSelectedTime(time)}
+                          style={{
+                            padding: '10px 0',
+                            textAlign: 'center',
+                            borderRadius: '8px',
+                            border: `2px solid ${isTimeSelected ? primaryColor : '#e2e8f0'}`,
+                            backgroundColor: isTimeSelected ? primaryColor : 'white',
+                            color: isTimeSelected ? 'white' : '#1e293b',
+                            fontWeight: '600',
+                            fontSize: '0.9rem',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          {time}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
-        {/* Step 4: Customer Details Form */}
-        {selectedService && selectedTime && (
-          <form onSubmit={handleBook} style={{ backgroundColor: 'white', borderRadius: '12px', padding: '24px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+        {/* Step 3: Customer Details Form */}
+        {selectedService && selectedTime && !vacationAlert && (
+          <form onSubmit={handleBook} style={{ backgroundColor: cardBg, borderRadius: cardRadius, padding: '24px', border: '1px solid #e2e8f0', boxShadow: cardShadow }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
               <span style={{ width: '26px', height: '26px', backgroundColor: primaryColor, color: 'white', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.85rem', fontWeight: 'bold' }}>3</span>
               <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 'bold' }}>Ingresa tus Datos de Contacto</h3>

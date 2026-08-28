@@ -1,52 +1,57 @@
 import { Router } from 'express';
 import { getTenantByEvolutionInstance, getAllTenants } from '../db/tenant.repo.js';
-import { getChatMessagesByTenant, saveChatMessage } from '../db/chats.repo.js';
 import { processWhatsAppMessageWithAI } from '../services/agent.js';
 import { sendMessage } from '../services/evolution.js';
 import { createBookingFromCommand } from '../services/booking.service.js';
 import { createOrderFromWhatsApp } from '../services/order.service.js';
+import { saveChatMessage, getChatMessagesByTenant } from '../db/chats.repo.js';
 import { query } from '../db/pool.js';
 
 const router = Router();
 
-const handleWebhook = async (req: any, res: any) => {
-  // Return immediate 200 OK to Evolution API
-  res.status(200).send({ status: 'SUCCESS' });
+router.post('/', async (req, res) => {
+  // Always return immediate 200 OK to WhatsApp/Evolution API
+  res.status(200).json({ status: 'received' });
 
   try {
     const payload = req.body || {};
-    const eventName = (payload.event || '').toLowerCase().replace(/_/g, '.');
-    const instanceName = payload.instance || payload.instanceName || req.query.instance;
+    const event = (payload.event || '').toLowerCase();
+    const instanceName = payload.instance || payload.instanceName;
 
-    console.log(`[Webhook] Received event: '${payload.event}' for instance: '${instanceName}'`);
+    console.log(`[Webhook] Received event: '${event}' for instance: '${instanceName}'`);
 
-    // Filter non-message events
-    if (eventName && !eventName.includes('message') && !eventName.includes('upsert')) {
+    // Only process message upsert events
+    if (event !== 'messages.upsert') {
       return;
     }
 
-    const data = payload.data || payload;
-    // Evolution API v2 sends messages inside data.messages array or directly in data
-    const msgItem = (Array.isArray(data?.messages) ? data.messages[0] : data) || {};
-    const key = msgItem.key || data?.key || {};
+    // Evolution API v2 structure
+    let data = payload.data;
+    if (Array.isArray(data?.messages) && data.messages.length > 0) {
+      data = data.messages[0];
+    } else if (Array.isArray(data) && data.length > 0) {
+      data = data[0];
+    }
 
-    const fromMe = key.fromMe === true || msgItem.fromMe === true || data?.fromMe === true;
-    const remoteJid = key.remoteJid || msgItem.remoteJid || data?.remoteJid || data?.sender;
-
-    // Ignore broadcast and group messages
-    if (!remoteJid || remoteJid.includes('@g.us') || remoteJid.includes('status@broadcast')) {
+    if (!data) {
       return;
     }
 
-    const pushName = msgItem.pushName || data?.pushName || data?.name || 'Cliente';
-    const messageObj = msgItem.message || data?.message || {};
+    const key = data.key || {};
+    const remoteJid = key.remoteJid || key.remoteJidAlt || '';
+    const fromMe = key.fromMe || false;
+    const pushName = data.pushName || 'Cliente';
+
+    // Ignore group chats or broadcast status updates
+    if (remoteJid.includes('@g.us') || remoteJid === 'status@broadcast') {
+      return;
+    }
 
     const userMessage = (
-      messageObj.conversation ||
-      messageObj.extendedTextMessage?.text ||
-      messageObj.imageMessage?.caption ||
-      messageObj.videoMessage?.caption ||
-      data?.text ||
+      data?.message?.conversation ||
+      data?.message?.extendedTextMessage?.text ||
+      data?.message?.imageMessage?.caption ||
+      data?.message?.videoMessage?.caption ||
       data?.message?.text ||
       ''
     ).trim();
@@ -75,9 +80,8 @@ const handleWebhook = async (req: any, res: any) => {
 
     // If message was sent from the business phone itself
     if (fromMe) {
-      await saveChatMessage({
+      await saveChatMessage(tenant.id, {
         id: msgId,
-        tenantId: tenant.id,
         remoteJid,
         pushName: 'Asistente IA',
         fromMe: true,
@@ -88,9 +92,8 @@ const handleWebhook = async (req: any, res: any) => {
     }
 
     // Save incoming user message
-    await saveChatMessage({
+    await saveChatMessage(tenant.id, {
       id: msgId,
-      tenantId: tenant.id,
       remoteJid,
       pushName,
       fromMe: false,
@@ -131,9 +134,8 @@ const handleWebhook = async (req: any, res: any) => {
     console.log(`[Webhook] SendMessage status: success=${sendRes.success}`);
 
     // Save AI reply to database
-    await saveChatMessage({
+    await saveChatMessage(tenant.id, {
       id: `ai_${Date.now()}`,
-      tenantId: tenant.id,
       remoteJid,
       pushName: 'Asistente IA',
       fromMe: true,
@@ -159,8 +161,8 @@ const handleWebhook = async (req: any, res: any) => {
           cleanPhone,
           `Nueva cita agendada por IA para ${pushName}`
         ]);
-      } catch (bookErr) {
-        console.error('[Webhook] Error creating booking from command:', bookErr);
+      } catch (err) {
+        console.error('[Webhook] Failed to process booking command:', err);
       }
     }
 
@@ -179,21 +181,15 @@ const handleWebhook = async (req: any, res: any) => {
           `notif_${Date.now()}`,
           tenant.id,
           cleanPhone,
-          `Nueva orden registrada por IA para ${pushName}`
+          `Nuevo pedido registrado por IA para ${pushName}`
         ]);
-      } catch (orderErr) {
-        console.error('[Webhook] Error creating order from command:', orderErr);
+      } catch (err) {
+        console.error('[Webhook] Failed to process order command:', err);
       }
     }
-
   } catch (error) {
-    console.error('[Webhook] Error processing incoming webhook:', error);
+    console.error('[Webhook] Error processing incoming WhatsApp webhook:', error);
   }
-};
-
-router.post('/', handleWebhook);
-router.post('/evolution', handleWebhook);
-router.post('/messages-upsert', handleWebhook);
-router.post('/messages_upsert', handleWebhook);
+});
 
 export default router;
