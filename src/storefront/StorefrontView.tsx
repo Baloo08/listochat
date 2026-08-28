@@ -992,6 +992,114 @@ export default function StorefrontView({ slug }: StorefrontProps) {
           </div>
         </div>
       )}
+
+      {/* Product Detail Modal */}
+      {selectedProduct && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.65)', zIndex: 65, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', backdropFilter: 'blur(3px)' }}>
+          <div style={{ backgroundColor: 'white', borderRadius: '18px', maxWidth: '520px', width: '100%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)', position: 'relative' }}>
+            
+            {/* Close Button */}
+            <button
+              onClick={() => setSelectedProduct(null)}
+              style={{ position: 'absolute', top: '14px', right: '14px', width: '36px', height: '36px', borderRadius: '50%', backgroundColor: 'rgba(0,0,0,0.5)', color: 'white', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10 }}
+            >
+              <X size={20} />
+            </button>
+
+            {/* Product Image */}
+            <div style={{ width: '100%', height: '250px', backgroundColor: '#f1f5f9', position: 'relative' }}>
+              <img
+                src={selectedProduct.images?.[0]?.url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&auto=format&fit=crop&q=60'}
+                alt={selectedProduct.name}
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              />
+              {selectedProduct.category && (
+                <span style={{ position: 'absolute', bottom: '12px', left: '14px', backgroundColor: 'rgba(0,0,0,0.7)', color: 'white', padding: '4px 10px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 'bold' }}>
+                  {selectedProduct.category}
+                </span>
+              )}
+            </div>
+
+            {/* Details Body */}
+            <div style={{ padding: '22px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '8px' }}>
+                <h2 style={{ margin: 0, fontSize: '1.35rem', fontWeight: 'bold', color: '#0f172a' }}>
+                  {selectedProduct.name}
+                </h2>
+                <div style={{ fontSize: '1.35rem', fontWeight: 'bold', color: primaryColor, whiteSpace: 'nowrap' }}>
+                  ₡{Number(selectedProduct.price).toLocaleString('es-CR')}
+                </div>
+              </div>
+
+              {selectedProduct.weightGrams && Number(selectedProduct.weightGrams) > 0 && (
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '3px 8px', backgroundColor: '#f1f5f9', borderRadius: '6px', fontSize: '0.75rem', color: '#64748b', fontWeight: '600', marginBottom: '12px' }}>
+                  <Package size={13} /> {selectedProduct.weightGrams} gramos
+                </div>
+              )}
+
+              {selectedProduct.description ? (
+                <p style={{ margin: '0 0 20px 0', fontSize: '0.9rem', color: '#475569', lineHeight: '1.5', whiteSpace: 'pre-wrap' }}>
+                  {selectedProduct.description}
+                </p>
+              ) : (
+                <p style={{ margin: '0 0 20px 0', fontSize: '0.85rem', color: '#94a3b8', fontStyle: 'italic' }}>
+                  Sin descripción adicional registrada.
+                </p>
+              )}
+
+              {/* Quantity & Add to Cart Controls */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px', paddingTop: '16px', borderTop: '1px solid #f1f5f9' }}>
+                <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #cbd5e1', borderRadius: '8px', backgroundColor: '#f8fafc' }}>
+                  <button
+                    onClick={() => setModalQuantity(Math.max(1, modalQuantity - 1))}
+                    style={{ padding: '8px 12px', border: 'none', background: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                  >
+                    <Minus size={16} />
+                  </button>
+                  <span style={{ fontSize: '1rem', fontWeight: 'bold', minWidth: '32px', textAlign: 'center' }}>
+                    {modalQuantity}
+                  </span>
+                  <button
+                    onClick={() => setModalQuantity(modalQuantity + 1)}
+                    style={{ padding: '8px 12px', border: 'none', background: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                  >
+                    <Plus size={16} />
+                  </button>
+                </div>
+
+                <button
+                  onClick={() => {
+                    addToCart(selectedProduct, modalQuantity);
+                    setSelectedProduct(null);
+                    setModalQuantity(1);
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: '12px 18px',
+                    backgroundColor: primaryColor,
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontWeight: 'bold',
+                    fontSize: '0.95rem',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    boxShadow: '0 4px 10px rgba(0,0,0,0.1)'
+                  }}
+                >
+                  <ShoppingBag size={18} />
+                  <span>Agregar • ₡{(Number(selectedProduct.price) * modalQuantity).toLocaleString('es-CR')}</span>
+                </button>
+              </div>
+
+            </div>
+
+          </div>
+        </div>
+      )}
     </div>
   );
 }

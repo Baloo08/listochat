@@ -4,9 +4,12 @@ import { useApi } from './useApi';
 export interface User {
   id: string;
   email: string;
-  role: 'superadmin' | 'tenant_admin' | 'staff';
-  tenant_id: string | null;
+  role: 'superadmin' | 'tenant_admin' | 'admin' | 'staff' | 'viewer';
+  tenantId: string | null;
+  tenant_id?: string | null;
   name: string;
+  tenantName?: string;
+  tenantSlug?: string;
 }
 
 export function useAuth() {
@@ -21,8 +24,15 @@ export function useAuth() {
       localStorage.setItem('token', token);
       api.get('/api/auth/me')
         .then(data => {
-          setUser(data);
-          setIsAuthenticated(true);
+          if (data && (data.id || data.userId)) {
+            setUser(data);
+            setIsAuthenticated(true);
+            if (data.tenantSlug && data.role !== 'superadmin') {
+              localStorage.setItem('last_tenant_slug', data.tenantSlug);
+            }
+          } else {
+            logout();
+          }
         })
         .catch(() => {
           logout();
@@ -45,16 +55,25 @@ export function useAuth() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email: email.trim(), password }),
       });
       
+      const data = await response.json();
       if (!response.ok) {
-        throw new Error('Login failed');
+        throw new Error(data.error || 'Correo o contraseña incorrectos');
       }
       
-      const data = await response.json();
-      setToken(data.token);
-      return true;
+      if (data.token) {
+        localStorage.setItem('token', data.token);
+        if (data.user?.tenantSlug && data.user?.role !== 'superadmin') {
+          localStorage.setItem('last_tenant_slug', data.user.tenantSlug);
+        }
+        setToken(data.token);
+        // Force fast seamless transition to dashboard
+        window.location.href = '/';
+        return true;
+      }
+      return false;
     } catch (error) {
       console.error('Login error:', error);
       throw error;
@@ -62,7 +81,21 @@ export function useAuth() {
   };
 
   const logout = () => {
+    const lastSlug = localStorage.getItem('last_tenant_slug');
+    const wasSuperAdmin = user?.role === 'superadmin';
+    localStorage.removeItem('token');
+    localStorage.removeItem('superadmin_token');
+    localStorage.removeItem('impersonated_tenant_name');
     setToken(null);
+    setUser(null);
+    setIsAuthenticated(false);
+
+    // If tenant admin logged out, redirect them back to their branded login portal
+    if (lastSlug && !wasSuperAdmin && !window.location.pathname.startsWith('/acceso/')) {
+      window.location.href = `/acceso/${lastSlug}`;
+    } else if (window.location.pathname !== '/' && !window.location.pathname.startsWith('/acceso/')) {
+      window.location.href = '/';
+    }
   };
 
   return { login, logout, user, isAuthenticated, loading };
