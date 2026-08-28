@@ -19,29 +19,62 @@ function calculateDistanceKm(lat1: number, lon1: number, lat2: number, lon2: num
 }
 
 function calculateCorreosCrRate(
+  correosConfig: any,
   origin: 'GAM' | 'RESTO',
   dest: 'GAM' | 'RESTO',
-  weightKg: number,
+  totalGrams: number,
   includeIva: boolean
-): number {
+): { rate: number; bracketLabel: string } {
   const ivaFactor = includeIva ? 1.13 : 1.0;
-  let firstKg = 2168.14;
-  let extraKg = 1238.94;
+  const isSameGam = origin === 'GAM' && dest === 'GAM';
+  const serviceType = correosConfig?.serviceType || 'pyme';
+  const customRates = correosConfig?.rates;
 
-  if (origin === 'GAM' && dest === 'GAM') {
-    firstKg = 2168.14;
-    extraKg = 1238.94;
-  } else if ((origin === 'GAM' && dest === 'RESTO') || (origin === 'RESTO' && dest === 'GAM')) {
-    firstKg = 2964.60;
-    extraKg = 1371.68;
-  } else if (origin === 'RESTO' && dest === 'RESTO') {
-    firstKg = 3761.06;
-    extraKg = 1548.67;
+  if (Array.isArray(customRates) && customRates.length > 0) {
+    const sorted = [...customRates].sort((a, b) => (Number(a.maxGrams) || 0) - (Number(b.maxGrams) || 0));
+    const matching = sorted.find(r => totalGrams <= (Number(r.maxGrams) || 999999));
+    if (matching) {
+      const price = isSameGam ? matching.gamPrice : matching.restoPrice;
+      return {
+        rate: Math.round(Number(price || 0) * ivaFactor),
+        bracketLabel: matching.label || `${totalGrams} g`
+      };
+    }
   }
 
-  const extraCount = Math.max(0, Math.ceil(weightKg - 1));
-  const baseTotal = firstKg + (extraCount * extraKg);
-  return Math.round(baseTotal * ivaFactor);
+  // Official Fallback Rates
+  if (serviceType === 'pyme') {
+    if (totalGrams <= 500) {
+      const base = isSameGam ? 1100 : 1350;
+      return { rate: Math.round(base * ivaFactor), bracketLabel: 'Pymes Liviano (Hasta 500 g)' };
+    } else if (totalGrams <= 2000) {
+      const base = isSameGam ? 1769.91 : 2477.88;
+      return { rate: Math.round(base * ivaFactor), bracketLabel: 'Pymes Especial Gold (Hasta 2 kg)' };
+    } else if (totalGrams <= 3000) {
+      const base = isSameGam ? 2425 : 3360;
+      return { rate: Math.round(base * ivaFactor), bracketLabel: 'Pyme Plus (Hasta 3 kg)' };
+    } else if (totalGrams <= 10000) {
+      const base = 3982.30;
+      return { rate: Math.round(base * ivaFactor), bracketLabel: 'Carga Liviana (3 a 10 kg)' };
+    } else if (totalGrams <= 20000) {
+      const base = 9800;
+      return { rate: Math.round(base * ivaFactor), bracketLabel: 'Pymes Pesado Express (10 a 20 kg)' };
+    } else if (totalGrams <= 30000) {
+      const base = 14000;
+      return { rate: Math.round(base * ivaFactor), bracketLabel: 'Pymes Pesado Express (20 a 30 kg)' };
+    } else {
+      const extraKg = Math.ceil((totalGrams - 30000) / 1000);
+      const base = 14000 + (extraKg * 1000);
+      return { rate: Math.round(base * ivaFactor), bracketLabel: `Pesado Express (${Math.round(totalGrams/1000)} kg)` };
+    }
+  } else {
+    let firstKg = isSameGam ? 2168.14 : (origin === 'RESTO' && dest === 'RESTO' ? 3761.06 : 2964.60);
+    let extraKgRate = isSameGam ? 1238.94 : (origin === 'RESTO' && dest === 'RESTO' ? 1548.67 : 1371.68);
+    const weightKg = Math.max(1, totalGrams / 1000);
+    const extraCount = Math.max(0, Math.ceil(weightKg - 1));
+    const baseTotal = firstKg + (extraCount * extraKgRate);
+    return { rate: Math.round(baseTotal * ivaFactor), bracketLabel: `EMS Courier (${Math.ceil(weightKg)} kg)` };
+  }
 }
 
 export default function StorefrontView({ slug }: StorefrontProps) {
@@ -198,9 +231,11 @@ export default function StorefrontView({ slug }: StorefrontProps) {
   };
 
   const cartSubtotal = cart.reduce((acc, item) => acc + (Number(item.product.price || 0) * item.quantity), 0);
-  const totalWeightKg = Math.max(1, cart.reduce((acc, item) => acc + (0.5 * item.quantity), 0));
+  const totalWeightGrams = cart.reduce((acc, item) => acc + ((Number(item.product.weightGrams) || 350) * item.quantity), 0);
 
   let deliveryFee = 0;
+  let correosRateInfo = { rate: 0, bracketLabel: '' };
+
   if (consumptionMode === 'delivery') {
     if (dConfig.deliveryType === 'distance' && calculatedKm !== null) {
       if (calculatedKm <= dConfig.baseDeliveryKm) {
@@ -213,12 +248,14 @@ export default function StorefrontView({ slug }: StorefrontProps) {
       deliveryFee = Number(store?.deliveryFee || dConfig.baseDeliveryFee || 0);
     }
   } else if (consumptionMode === 'correos_cr') {
-    deliveryFee = calculateCorreosCrRate(
+    correosRateInfo = calculateCorreosCrRate(
+      store?.correosCrConfig,
       dConfig.originLocationType || 'GAM',
       correosDestination,
-      totalWeightKg,
+      totalWeightGrams,
       dConfig.correosIncludeIva !== false
     );
+    deliveryFee = correosRateInfo.rate;
   }
 
   const cartTotal = cartSubtotal + deliveryFee;
@@ -740,6 +777,35 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                         style={{ width: '100%', padding: '9px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem' }}
                       />
                     </div>
+
+                    {/* Correos de CR Destination & Weight Badge */}
+                    {consumptionMode === 'correos_cr' && (
+                      <div style={{ backgroundColor: '#f0fdfa', border: '1px solid #99f6e4', borderRadius: '8px', padding: '10px 12px', marginBottom: '8px' }}>
+                        <div style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#0f766e', marginBottom: '6px' }}>
+                          📦 Peso estimado: {totalWeightGrams >= 1000 ? (totalWeightGrams / 1000).toFixed(2) + ' kg' : totalWeightGrams + ' g'} ({correosRateInfo.bracketLabel})
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', cursor: 'pointer', fontWeight: '600' }}>
+                            <input
+                              type="radio"
+                              name="correos_dest"
+                              checked={correosDestination === 'GAM'}
+                              onChange={() => setCorreosDestination('GAM')}
+                            />
+                            <span>Destino: Dentro de GAM</span>
+                          </label>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', cursor: 'pointer', fontWeight: '600' }}>
+                            <input
+                              type="radio"
+                              name="correos_dest"
+                              checked={correosDestination === 'RESTO'}
+                              onChange={() => setCorreosDestination('RESTO')}
+                            />
+                            <span>Destino: Fuera de GAM</span>
+                          </label>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Delivery / Correos Address with GPS */}
                     {(consumptionMode === 'delivery' || consumptionMode === 'correos_cr') && (

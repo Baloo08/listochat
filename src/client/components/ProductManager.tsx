@@ -41,6 +41,7 @@ export default function ProductManager() {
     category: '',
     sku: '',
     stock: '10',
+    weightGrams: '250',
     active: true,
     featured: false,
     images: [] as string[]
@@ -96,6 +97,7 @@ export default function ProductManager() {
       category: categories[0] || 'General',
       sku: '',
       stock: '10',
+      weightGrams: '250',
       active: true,
       featured: false,
       images: []
@@ -113,6 +115,7 @@ export default function ProductManager() {
       category: product.category || '',
       sku: product.sku || '',
       stock: String(product.stock),
+      weightGrams: String(product.weightGrams || 250),
       active: product.active !== false,
       featured: product.featured || false,
       images: (product.images || []).map(img => img.url)
@@ -184,6 +187,7 @@ export default function ProductManager() {
         category: formData.category,
         sku: formData.sku,
         stock: parseInt(formData.stock, 10) || 0,
+        weightGrams: parseInt(formData.weightGrams, 10) || 250,
         active: formData.active,
         featured: formData.featured,
         images: formData.images
@@ -559,8 +563,8 @@ export default function ProductManager() {
                 </div>
               </div>
 
-              {/* Stock and SKU */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              {/* Stock, SKU, and Weight in Grams */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '4px' }}>Inventario (Stock)</label>
                   <input 
@@ -580,6 +584,18 @@ export default function ProductManager() {
                     onChange={e => setFormData({ ...formData, sku: e.target.value })}
                     style={{ width: '100%', padding: '9px 12px', border: '1px solid var(--border)', borderRadius: '6px' }}
                   />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '4px' }}>Peso en Gramos (g)</label>
+                  <input 
+                    type="number" 
+                    min="0"
+                    placeholder="Ej: 350" 
+                    value={formData.weightGrams}
+                    onChange={e => setFormData({ ...formData, weightGrams: e.target.value })}
+                    style={{ width: '100%', padding: '9px 12px', border: '1px solid var(--border)', borderRadius: '6px' }}
+                  />
+                  <span style={{ fontSize: '0.7rem', color: '#64748b' }}>Para Correos de CR</span>
                 </div>
               </div>
 

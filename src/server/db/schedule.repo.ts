@@ -46,7 +46,7 @@ export async function getScheduleSettings(tenantId: string): Promise<ScheduleSet
     jornadaConfig: config.jornadaConfig,
     fechasConfig: config.fechasConfig,
     bloquesConfig: config.bloquesConfig,
-    customFields: config.customFields || defaultCustomFields,
+    customFields: Array.isArray(config.customFields) ? config.customFields : defaultCustomFields,
     vacationConfig: config.vacationConfig || {
       enabled: false,
       startDate: '',

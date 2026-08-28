@@ -85,11 +85,8 @@ export default function Bookings() {
   });
   const [selectedDayForBlock, setSelectedDayForBlock] = useState('monday');
 
-  // Custom Form Fields State
-  const [customFields, setCustomFields] = useState<BookingField[]>([
-    { id: 'f_1', label: 'Detalle o Motivo de Consulta', placeholder: 'Ej: Consulta General o Síntomas', type: 'text', required: false },
-    { id: 'f_2', label: 'Notas o Comentarios Adicionales', placeholder: 'Cualquier indicación especial...', type: 'textarea', required: false }
-  ]);
+  // Custom Form Fields State (empty by default so deleted fields don't resurrect)
+  const [customFields, setCustomFields] = useState<BookingField[]>([]);
 
   // Vacation Mode State
   const [vacationEnabled, setVacationEnabled] = useState(false);
@@ -111,6 +108,16 @@ export default function Bookings() {
   const [newDetails, setNewDetails] = useState('');
 
   const api = useApi();
+
+  const normalizeDate = (d?: string): string => {
+    if (!d) return '';
+    const clean = d.split('T')[0];
+    const parts = clean.split('-');
+    if (parts.length === 3) {
+      return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+    }
+    return clean;
+  };
 
   const formatShortDate = (dateStr?: string): string => {
     if (!dateStr) return '';
@@ -357,7 +364,7 @@ export default function Bookings() {
   };
 
   const filtered = (appointments || []).filter(a => {
-    const matchesDate = !filterDate || a.date === filterDate;
+    const matchesDate = !filterDate || normalizeDate(a.date) === normalizeDate(filterDate);
     const matchesStatus = filterStatus === 'all' || a.status === filterStatus;
     return matchesDate && matchesStatus;
   });
@@ -697,7 +704,7 @@ export default function Bookings() {
             {Array.from({ length: daysInMonth }).map((_, i) => {
               const dayNum = i + 1;
               const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
-              const dayAppointments = (appointments || []).filter(a => a.date === dateStr);
+              const dayAppointments = (appointments || []).filter(a => normalizeDate(a.date) === dateStr);
               const isToday = new Date().toISOString().split('T')[0] === dateStr;
 
               return (

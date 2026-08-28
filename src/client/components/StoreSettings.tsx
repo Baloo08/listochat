@@ -105,16 +105,19 @@ export default function StoreSettings() {
     notes: 'Entregas en Gran Área Metropolitana'
   });
 
-  // 3. Correos de Costa Rica (EMS Courier & PymeExpress con Tarifas Editables)
+  // 3. Correos de Costa Rica (Tarifas Oficiales PymeExpress & EMS Editables)
   const [correosCrConfig, setCorreosCrConfig] = useState<CorreosCrConfig>({
     enabled: true,
-    serviceType: 'ems',
+    serviceType: 'pyme',
     originType: 'GAM',
     includeIva: true,
     rates: [
-      { label: 'Hasta 1 kg', maxGrams: 1000, gamPrice: 2200, restoPrice: 2850 },
-      { label: 'Hasta 2 kg', maxGrams: 2000, gamPrice: 3100, restoPrice: 3950 },
-      { label: 'Kilo Adicional (c/u)', maxGrams: 1000, gamPrice: 1100, restoPrice: 1350 }
+      { label: 'Pymes Liviano (0 a 500 g)', maxGrams: 500, gamPrice: 1100, restoPrice: 1350 },
+      { label: 'Pymes Especial Gold (0 a 2 kg)', maxGrams: 2000, gamPrice: 1769.91, restoPrice: 2477.88 },
+      { label: 'Pyme Plus (0 a 3 kg)', maxGrams: 3000, gamPrice: 2425, restoPrice: 3360 },
+      { label: 'Carga Liviana (3 a 10 kg)', maxGrams: 10000, gamPrice: 3982.30, restoPrice: 3982.30 },
+      { label: 'Pesado Express (10 a 20 kg)', maxGrams: 20000, gamPrice: 9800, restoPrice: 9800 },
+      { label: 'Pesado Express (20 a 30 kg)', maxGrams: 30000, gamPrice: 14000, restoPrice: 14000 }
     ]
   });
 
@@ -951,112 +954,152 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
             </div>
           </div>
 
-          {/* Restaurant Modes */}
-          <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
-              <div style={{ width: '42px', height: '42px', backgroundColor: '#ffedd5', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Utensils size={22} color="#ea580c" />
+          {/* Restaurant vs Retail Modes */}
+          {storeMode === 'restaurant' ? (
+            <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
+                <div style={{ width: '42px', height: '42px', backgroundColor: '#ffedd5', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Utensils size={22} color="#ea580c" />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'bold' }}>Modalidades de Comanda en Restaurante</h3>
+                  <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                    Personaliza cómo los clientes ordenan en mesa, barra o express
+                  </p>
+                </div>
               </div>
-              <div>
-                <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'bold' }}>Modalidades de Comanda en Restaurante</h3>
-                <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                  Personaliza cómo los clientes ordenan en mesa, barra o express
-                </p>
-              </div>
-            </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '20px' }}>
-              <div style={{ padding: '18px', backgroundColor: '#f8fafc', borderRadius: '10px', border: '1px solid var(--border)' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer', marginBottom: restaurantConfig.allowDineIn ? '14px' : '0' }}>
-                  <input
-                    type="checkbox"
-                    checked={restaurantConfig.allowDineIn}
-                    onChange={(e) => setRestaurantConfig({ ...restaurantConfig, allowDineIn: e.target.checked })}
-                  />
-                  <span>Permitir Comer en el Local (En Mesa)</span>
-                </label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '20px' }}>
+                <div style={{ padding: '18px', backgroundColor: '#f8fafc', borderRadius: '10px', border: '1px solid var(--border)' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer', marginBottom: restaurantConfig.allowDineIn ? '14px' : '0' }}>
+                    <input
+                      type="checkbox"
+                      checked={restaurantConfig.allowDineIn}
+                      onChange={(e) => setRestaurantConfig({ ...restaurantConfig, allowDineIn: e.target.checked })}
+                    />
+                    <span>Permitir Comer en el Local (En Mesa)</span>
+                  </label>
 
-                {restaurantConfig.allowDineIn && (
-                  <div style={{ paddingLeft: '28px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                      <label
-                        style={{
-                          padding: '12px 14px', borderRadius: '8px',
-                          border: `2px solid ${restaurantConfig.allowTableNumber ? '#ea580c' : '#cbd5e1'}`,
-                          backgroundColor: restaurantConfig.allowTableNumber ? 'rgba(234, 88, 12, 0.05)' : 'white',
-                          cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px'
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={restaurantConfig.allowTableNumber}
-                          onChange={(e) => setRestaurantConfig({ ...restaurantConfig, allowTableNumber: e.target.checked })}
-                        />
-                        <strong style={{ fontSize: '0.85rem', color: restaurantConfig.allowTableNumber ? '#ea580c' : '#1e293b' }}>
-                          Rotular Número de Mesa
-                        </strong>
-                      </label>
-
-                      <label
-                        style={{
-                          padding: '12px 14px', borderRadius: '8px',
-                          border: `2px solid ${restaurantConfig.allowCallByName ? '#ea580c' : '#cbd5e1'}`,
-                          backgroundColor: restaurantConfig.allowCallByName ? 'rgba(234, 88, 12, 0.05)' : 'white',
-                          cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px'
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={restaurantConfig.allowCallByName}
-                          onChange={(e) => setRestaurantConfig({ ...restaurantConfig, allowCallByName: e.target.checked })}
-                        />
-                        <strong style={{ fontSize: '0.85rem', color: restaurantConfig.allowCallByName ? '#ea580c' : '#1e293b' }}>
-                          Llamado por Nombre
-                        </strong>
-                      </label>
-                    </div>
-
-                    {restaurantConfig.allowTableNumber && (
-                      <div style={{ maxWidth: '240px' }}>
-                        <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>
-                          Cantidad de Mesas Disponibles:
+                  {restaurantConfig.allowDineIn && (
+                    <div style={{ paddingLeft: '28px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                        <label
+                          style={{
+                            padding: '12px 14px', borderRadius: '8px',
+                            border: `2px solid ${restaurantConfig.allowTableNumber ? '#ea580c' : '#cbd5e1'}`,
+                            backgroundColor: restaurantConfig.allowTableNumber ? 'rgba(234, 88, 12, 0.05)' : 'white',
+                            cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px'
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={restaurantConfig.allowTableNumber}
+                            onChange={(e) => setRestaurantConfig({ ...restaurantConfig, allowTableNumber: e.target.checked })}
+                          />
+                          <strong style={{ fontSize: '0.85rem', color: restaurantConfig.allowTableNumber ? '#ea580c' : '#1e293b' }}>
+                            Rotular Número de Mesa
+                          </strong>
                         </label>
-                        <input
-                          type="number"
-                          min={1} max={100}
-                          value={restaurantConfig.tableCount || 15}
-                          onChange={(e) => setRestaurantConfig({ ...restaurantConfig, tableCount: Number(e.target.value) })}
-                          style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
-                        />
+
+                        <label
+                          style={{
+                            padding: '12px 14px', borderRadius: '8px',
+                            border: `2px solid ${restaurantConfig.allowCallByName ? '#ea580c' : '#cbd5e1'}`,
+                            backgroundColor: restaurantConfig.allowCallByName ? 'rgba(234, 88, 12, 0.05)' : 'white',
+                            cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px'
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={restaurantConfig.allowCallByName}
+                            onChange={(e) => setRestaurantConfig({ ...restaurantConfig, allowCallByName: e.target.checked })}
+                          />
+                          <strong style={{ fontSize: '0.85rem', color: restaurantConfig.allowCallByName ? '#ea580c' : '#1e293b' }}>
+                            Llamado por Nombre
+                          </strong>
+                        </label>
                       </div>
-                    )}
-                  </div>
-                )}
-              </div>
 
-              <div style={{ padding: '18px', backgroundColor: '#f8fafc', borderRadius: '10px', border: '1px solid var(--border)' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer' }}>
-                  <input
-                    type="checkbox"
-                    checked={restaurantConfig.allowPickup}
-                    onChange={(e) => setRestaurantConfig({ ...restaurantConfig, allowPickup: e.target.checked })}
-                  />
-                  <span>Permitir Para Llevar / Retiro en Barra</span>
-                </label>
-              </div>
+                      {restaurantConfig.allowTableNumber && (
+                        <div style={{ maxWidth: '240px' }}>
+                          <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>
+                            Cantidad de Mesas Disponibles:
+                          </label>
+                          <input
+                            type="number"
+                            min={1} max={100}
+                            value={restaurantConfig.tableCount || 15}
+                            onChange={(e) => setRestaurantConfig({ ...restaurantConfig, tableCount: Number(e.target.value) })}
+                            style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
 
-              <div style={{ padding: '18px', backgroundColor: '#f8fafc', borderRadius: '10px', border: '1px solid var(--border)' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer' }}>
-                  <input
-                    type="checkbox"
-                    checked={restaurantConfig.allowDelivery}
-                    onChange={(e) => setRestaurantConfig({ ...restaurantConfig, allowDelivery: e.target.checked })}
-                  />
-                  <span>Permitir Delivery Express con GPS y Waze</span>
-                </label>
+                <div style={{ padding: '18px', backgroundColor: '#f8fafc', borderRadius: '10px', border: '1px solid var(--border)' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={restaurantConfig.allowPickup}
+                      onChange={(e) => setRestaurantConfig({ ...restaurantConfig, allowPickup: e.target.checked })}
+                    />
+                    <span>Permitir Para Llevar / Retiro en Barra</span>
+                  </label>
+                </div>
+
+                <div style={{ padding: '18px', backgroundColor: '#f8fafc', borderRadius: '10px', border: '1px solid var(--border)' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={restaurantConfig.allowDelivery}
+                      onChange={(e) => setRestaurantConfig({ ...restaurantConfig, allowDelivery: e.target.checked })}
+                    />
+                    <span>Permitir Delivery Express con GPS y Waze</span>
+                  </label>
+                </div>
               </div>
             </div>
-          </div>
+          ) : (
+            <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
+                <div style={{ width: '42px', height: '42px', backgroundColor: '#e0f2fe', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <ShoppingBag size={22} color="#0284c7" />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'bold' }}>Modalidades de Entrega en Tienda Minorista</h3>
+                  <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                    Configura las opciones de despacho para clientes de tu tienda o catálogo comercial
+                  </p>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '16px' }}>
+                <div style={{ padding: '16px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold', fontSize: '0.95rem', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={pickupEnabled}
+                      onChange={(e) => setPickupEnabled(e.target.checked)}
+                    />
+                    <span>Permitir Retiro en Sucursal / Tienda Física (Pick-up)</span>
+                  </label>
+                </div>
+
+                <div style={{ padding: '16px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold', fontSize: '0.95rem', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={deliveryConfig.correosCrEnabled}
+                      onChange={(e) => setDeliveryConfig({ ...deliveryConfig, correosCrEnabled: e.target.checked })}
+                    />
+                    <span>Habilitar Despachos por Paquetería / Correos de Costa Rica</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1092,18 +1135,20 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
               <Truck size={16} /> 2. Entrega a Domicilio Estándar
             </button>
 
-            <button
-              onClick={() => setShippingSubTab('correos')}
-              style={{
-                flex: 1, padding: '10px', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer',
-                backgroundColor: shippingSubTab === 'correos' ? '#ffffff' : 'transparent',
-                color: shippingSubTab === 'correos' ? '#0d9488' : '#64748b',
-                boxShadow: shippingSubTab === 'correos' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'
-              }}
-            >
-              <Box size={16} /> 3. Correos de Costa Rica (EMS / Pyme)
-            </button>
+            {storeMode !== 'restaurant' && (
+              <button
+                onClick={() => setShippingSubTab('correos')}
+                style={{
+                  flex: 1, padding: '10px', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer',
+                  backgroundColor: shippingSubTab === 'correos' ? '#ffffff' : 'transparent',
+                  color: shippingSubTab === 'correos' ? '#0d9488' : '#64748b',
+                  boxShadow: shippingSubTab === 'correos' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'
+                }}
+              >
+                <Box size={16} /> 3. Correos de Costa Rica (EMS / Pyme)
+              </button>
+            )}
           </div>
 
           {/* 1. MOTO EXPRESS DELIVERY CONFIG */}

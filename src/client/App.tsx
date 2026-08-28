@@ -274,30 +274,59 @@ export default function App() {
       }}>
         {/* Sidebar Header */}
         <div style={{
-          padding: isSidebarCollapsed ? '16px 12px' : '20px',
+          padding: isSidebarCollapsed ? '12px 6px' : '14px 16px',
           borderBottom: '1px solid var(--border)',
           display: 'flex',
           justifyContent: isSidebarCollapsed ? 'center' : 'space-between',
           alignItems: 'center',
-          height: '60px',
+          height: '62px',
           boxSizing: 'border-box'
         }}>
           {!isSidebarCollapsed ? (
-            <div>
-              <div style={{ fontSize: '1.35rem', fontWeight: 'bold', color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Bot size={24} color="var(--primary)" /> <span>Betico</span>
-              </div>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: '500' }}>
-                WhatsApp AI SaaS
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Bot size={24} color="var(--primary)" />
+              <div>
+                <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: 'var(--primary)', lineHeight: '1.2' }}>Betico</div>
+                <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: '500' }}>WhatsApp AI SaaS</div>
               </div>
             </div>
           ) : (
-            <div style={{ display: 'flex', justifyContent: 'center' }} title="Betico SaaS">
+            <button
+              onClick={toggleSidebar}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                border: 'none',
+                background: 'none',
+                cursor: 'pointer',
+                padding: '4px'
+              }}
+              title="Expandir barra lateral"
+            >
               <Bot size={26} color="var(--primary)" />
-            </div>
+            </button>
           )}
 
-          {window.innerWidth < 768 && (
+          {window.innerWidth >= 768 ? (
+            <button
+              onClick={toggleSidebar}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '6px',
+                backgroundColor: '#f8fafc',
+                border: '1px solid var(--border)',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                color: 'var(--text-muted)'
+              }}
+              title={isSidebarCollapsed ? "Expandir barra lateral" : "Colapsar menú"}
+            >
+              {isSidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+            </button>
+          ) : (
             <button onClick={() => setMobileMenuOpen(false)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#64748b' }}>
               <X size={20} />
             </button>

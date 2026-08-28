@@ -29,23 +29,32 @@ export async function getStoreSettings(tenantId: string): Promise<StoreSettings 
     storeSchedule: row.storeSchedule || { isOpenManual: true, autoScheduleEnabled: false, schedule: {} },
     correosCrConfig: row.correosCrConfig || {
       enabled: true,
-      serviceType: 'ems',
+      serviceType: 'pyme',
       originType: 'GAM',
       includeIva: true,
       rates: [
-        { label: 'Hasta 1 kg', maxGrams: 1000, gamPrice: 2200, restoPrice: 2850 },
-        { label: 'Hasta 2 kg', maxGrams: 2000, gamPrice: 3100, restoPrice: 3950 },
-        { label: 'Kilo Adicional (c/u)', maxGrams: 1000, gamPrice: 1100, restoPrice: 1350 }
+        { label: 'Pymes Liviano (0 a 500 g)', minGrams: 0, maxGrams: 500, gamPrice: 1100, restoPrice: 1350 },
+        { label: 'Pymes Especial Gold (0 a 2 kg)', minGrams: 501, maxGrams: 2000, gamPrice: 1769.91, restoPrice: 2477.88 },
+        { label: 'Pyme Plus (0 a 3 kg)', minGrams: 2001, maxGrams: 3000, gamPrice: 2425, restoPrice: 3360 },
+        { label: 'Carga Liviana (3 a 10 kg)', minGrams: 3001, maxGrams: 10000, gamPrice: 3982.30, restoPrice: 3982.30 },
+        { label: 'Pesado Express (10 a 20 kg)', minGrams: 10001, maxGrams: 20000, gamPrice: 9800, restoPrice: 9800, extraPerKg: 1000 },
+        { label: 'Pesado Express (20 a 30 kg)', minGrams: 20001, maxGrams: 30000, gamPrice: 14000, restoPrice: 14000, extraPerKg: 1000 }
       ]
     },
     localDeliveryConfig: row.localDeliveryConfig || { enabled: true, fee: 2500, freeAbove: 35000, estimatedHours: '24 a 48 horas' },
-    customStages: row.customStages || {
-      fase_1: 'Pedido Recibido',
+    customStages: row.customStages || (row.storeMode === 'restaurant' ? {
+      fase_1: 'Comanda Recibida',
       fase_2: 'En Cocina / Preparación',
-      fase_3: 'Listo para Entrega',
+      fase_3: 'Listo para Servir / Entregar',
       fase_4: 'En Camino (Delivery)',
+      fase_5: 'Entregado / Servido'
+    } : {
+      fase_1: 'Pedido Recibido',
+      fase_2: 'En Empaque / Preparación',
+      fase_3: 'Listo para Despacho',
+      fase_4: 'En Tránsito (Delivery / Guía)',
       fase_5: 'Entregado con Éxito'
-    }
+    })
   };
 }
 
@@ -91,18 +100,18 @@ export async function upsertStoreSettings(tenantId: string, data: Partial<StoreS
       store_message = EXCLUDED.store_message,
       updated_at = CURRENT_TIMESTAMP
     RETURNING id, tenant_id as "tenantId", store_enabled as "storeEnabled", store_mode as "storeMode",
-           store_modules as "storeModules", restaurant_config as "restaurantConfig",
-           delivery_config as "deliveryConfig", correos_cr_config as "correosCrConfig",
-           local_delivery_config as "localDeliveryConfig", store_schedule as "storeSchedule",
-           custom_stages as "customStages", notification_templates as "notificationTemplates",
-           store_name as "storeName", store_slug as "storeSlug", store_description as "storeDescription",
-           store_logo_url as "storeLogoUrl", store_banner_url as "storeBannerUrl",
-           store_theme as "storeTheme", currency, accept_sinpe as "acceptSinpe",
-           sinpe_phone as "sinpePhone", sinpe_name as "sinpeName", accept_transfer as "acceptTransfer",
-           bank_account_info as "bankAccountInfo", accept_cash_on_delivery as "acceptCashOnDelivery",
-           delivery_enabled as "deliveryEnabled", delivery_fee as "deliveryFee",
-           pickup_enabled as "pickupEnabled", whatsapp_checkout as "whatsappCheckout",
-           min_order_amount as "minOrderAmount", store_message as "storeMessage"
+              store_modules as "storeModules", restaurant_config as "restaurantConfig",
+              delivery_config as "deliveryConfig", correos_cr_config as "correosCrConfig",
+              local_delivery_config as "localDeliveryConfig", store_schedule as "storeSchedule",
+              custom_stages as "customStages", notification_templates as "notificationTemplates",
+              store_name as "storeName", store_slug as "storeSlug", store_description as "storeDescription",
+              store_logo_url as "storeLogoUrl", store_banner_url as "storeBannerUrl",
+              store_theme as "storeTheme", currency, accept_sinpe as "acceptSinpe",
+              sinpe_phone as "sinpePhone", sinpe_name as "sinpeName", accept_transfer as "acceptTransfer",
+              bank_account_info as "bankAccountInfo", accept_cash_on_delivery as "acceptCashOnDelivery",
+              delivery_enabled as "deliveryEnabled", delivery_fee as "deliveryFee",
+              pickup_enabled as "pickupEnabled", whatsapp_checkout as "whatsappCheckout",
+              min_order_amount as "minOrderAmount", store_message as "storeMessage"
   `, [
     tenantId,
     data.storeEnabled !== false,
@@ -112,23 +121,23 @@ export async function upsertStoreSettings(tenantId: string, data: Partial<StoreS
     JSON.stringify(data.deliveryConfig || {}),
     JSON.stringify(data.correosCrConfig || {}),
     JSON.stringify(data.localDeliveryConfig || {}),
-    JSON.stringify(data.storeSchedule || { isOpenManual: true, autoScheduleEnabled: false, schedule: {} }),
+    JSON.stringify(data.storeSchedule || {}),
     JSON.stringify(data.customStages || {}),
     JSON.stringify(data.notificationTemplates || {}),
-    data.storeName || '',
-    data.storeSlug || '',
+    data.storeName || 'Mi Negocio',
+    data.storeSlug || 'tienda',
     data.storeDescription || '',
     data.storeLogoUrl || '',
     data.storeBannerUrl || '',
-    JSON.stringify(data.storeTheme || {}),
+    JSON.stringify(data.storeTheme || { primaryColor: '#16a34a', cardRadius: 'rounded', cardShadow: 'md', fontFamily: 'Inter' }),
     data.currency || 'CRC',
     data.acceptSinpe !== false,
     data.sinpePhone || '',
     data.sinpeName || '',
     data.acceptTransfer !== false,
     data.bankAccountInfo || '',
-    data.acceptCashOnDelivery !== false,
-    data.deliveryEnabled !== false,
+    data.acceptCashOnDelivery || false,
+    data.deliveryEnabled || false,
     data.deliveryFee || 0,
     data.pickupEnabled !== false,
     data.whatsappCheckout !== false,
