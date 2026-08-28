@@ -58,12 +58,74 @@ export default function ProductManager() {
   const [saving, setSaving] = useState(false);
   const [generatingAi, setGeneratingAi] = useState(false);
   const [aiKeywords, setAiKeywords] = useState('');
+  const [showBulkModal, setShowBulkModal] = useState(false);
   const [bulkUploading, setBulkUploading] = useState(false);
   const [bulkResult, setBulkResult] = useState<{ count: number; total: number; errors: any[] } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
 
   const api = useApi();
+
+  const handleDownloadTemplate = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch('/api/products/template', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Error al generar plantilla');
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'plantilla_productos_betico.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err: any) {
+      alert('Error al descargar plantilla: ' + (err.message || 'Error'));
+    }
+  };
+
+  const handleBulkUploadFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setBulkUploading(true);
+    setBulkResult(null);
+
+    try {
+      const token = localStorage.getItem('token');
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const res = await fetch('/api/products/bulk-upload', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`
+        },
+        body: formData
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Error al procesar el archivo Excel');
+      }
+
+      setBulkResult({
+        count: data.createdCount || 0,
+        total: data.totalRows || 0,
+        errors: data.errors || []
+      });
+
+      loadProducts();
+    } catch (err: any) {
+      alert('Error en la carga masiva: ' + (err.message || 'Verifique el archivo'));
+    } finally {
+      setBulkUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   const loadProducts = async () => {
     try {
@@ -306,13 +368,37 @@ export default function ProductManager() {
           <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.9rem' }}>Gestiona los productos, tallas, colores, precios y stock de tu catálogo</p>
         </div>
 
-        <div style={{ display: 'flex', gap: '10px' }}>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <button 
+            onClick={handleDownloadTemplate}
+            style={{ 
+              display: 'flex', alignItems: 'center', gap: '6px', 
+              padding: '9px 14px', backgroundColor: 'var(--surface)', color: 'var(--text)', 
+              border: '1px solid var(--border)', borderRadius: '6px', fontWeight: '600', cursor: 'pointer', fontSize: '0.85rem' 
+            }}
+            title="Descargar plantilla Excel oficial para llenar productos"
+          >
+            <Download size={16} /> Descargar Plantilla Excel
+          </button>
+
+          <button 
+            onClick={() => { setShowBulkModal(true); setBulkResult(null); }}
+            style={{ 
+              display: 'flex', alignItems: 'center', gap: '6px', 
+              padding: '9px 14px', backgroundColor: '#0284c7', color: 'white', 
+              border: 'none', borderRadius: '6px', fontWeight: '600', cursor: 'pointer', fontSize: '0.85rem' 
+            }}
+            title="Importar productos masivamente desde Excel"
+          >
+            <FileSpreadsheet size={16} /> Carga Masiva Excel
+          </button>
+
           <button 
             onClick={handleOpenCreate}
             style={{ 
               display: 'flex', alignItems: 'center', gap: '6px', 
               padding: '9px 16px', backgroundColor: 'var(--primary)', color: 'white', 
-              border: 'none', borderRadius: '6px', fontWeight: '600', cursor: 'pointer' 
+              border: 'none', borderRadius: '6px', fontWeight: '600', cursor: 'pointer', fontSize: '0.85rem' 
             }}
           >
             <Plus size={18} /> Nuevo Producto
@@ -763,6 +849,105 @@ export default function ProductManager() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Carga Masiva Excel */}
+      {showBulkModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '20px' }}>
+          <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '14px', width: '100%', maxWidth: '560px', border: '1px solid var(--border)', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.2)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <FileSpreadsheet size={22} color="#0284c7" />
+                <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 'bold' }}>Carga Masiva de Productos</h2>
+              </div>
+              <button onClick={() => { setShowBulkModal(false); setBulkResult(null); }} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <p style={{ margin: '0 0 16px 0', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+              Sube un archivo de Excel (<code>.xlsx</code> o <code>.xls</code>) con tus productos para agregarlos automáticamente a tu catálogo.
+            </p>
+
+            {/* Template Download Prompt */}
+            <div style={{ backgroundColor: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '10px', padding: '14px', marginBottom: '18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              <div style={{ fontSize: '0.85rem', color: '#0369a1' }}>
+                <strong>¿No tienes la plantilla oficial?</strong><br />
+                Descárgala con ejemplos listos para rellenar.
+              </div>
+              <button
+                type="button"
+                onClick={handleDownloadTemplate}
+                style={{ padding: '8px 14px', backgroundColor: '#0284c7', color: 'white', border: 'none', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <Download size={15} /> Descargar Plantilla
+              </button>
+            </div>
+
+            {/* Upload Area */}
+            <div
+              onClick={() => !bulkUploading && fileInputRef.current?.click()}
+              style={{
+                border: '2px dashed var(--border)',
+                borderRadius: '12px',
+                padding: '30px 20px',
+                textAlign: 'center',
+                cursor: bulkUploading ? 'not-allowed' : 'pointer',
+                backgroundColor: 'var(--background)',
+                marginBottom: '16px'
+              }}
+            >
+              <Upload size={32} color="#0284c7" style={{ margin: '0 auto 8px auto' }} />
+              <div style={{ fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '4px' }}>
+                {bulkUploading ? '⏳ Procesando archivo Excel...' : 'Haz clic para seleccionar tu archivo Excel'}
+              </div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                Formatos aceptados: .xlsx, .xls
+              </div>
+              <input
+                type="file"
+                ref={fileInputRef}
+                accept=".xlsx, .xls"
+                onChange={handleBulkUploadFile}
+                disabled={bulkUploading}
+                style={{ display: 'none' }}
+              />
+            </div>
+
+            {/* Results breakdown */}
+            {bulkResult && (
+              <div style={{ marginTop: '14px', padding: '14px', borderRadius: '8px', border: `1px solid ${bulkResult.errors.length > 0 ? '#fde68a' : '#bbf7d0'}`, backgroundColor: bulkResult.errors.length > 0 ? '#fffbeb' : '#f0fdf4' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', color: bulkResult.errors.length > 0 ? '#92400e' : '#166534', fontSize: '0.9rem', marginBottom: '4px' }}>
+                  <Check size={18} /> ¡Importación finalizada!
+                </div>
+                <div style={{ fontSize: '0.85rem', color: 'var(--text)' }}>
+                  Se crearon <strong>{bulkResult.count}</strong> de <strong>{bulkResult.total}</strong> productos encontrados.
+                </div>
+
+                {bulkResult.errors.length > 0 && (
+                  <div style={{ marginTop: '8px', borderTop: '1px solid #fde68a', paddingTop: '8px' }}>
+                    <div style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#b45309', marginBottom: '4px' }}>Advertencias o filas ignoradas:</div>
+                    <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '0.75rem', color: '#b45309' }}>
+                      {bulkResult.errors.map((err, idx) => (
+                        <li key={idx}>{err.error || err}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '18px' }}>
+              <button
+                type="button"
+                onClick={() => { setShowBulkModal(false); setBulkResult(null); }}
+                style={{ padding: '9px 18px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
+              >
+                Cerrar
+              </button>
+            </div>
           </div>
         </div>
       )}

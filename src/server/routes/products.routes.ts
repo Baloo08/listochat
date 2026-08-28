@@ -106,42 +106,76 @@ router.get('/template', (req, res) => {
 
 router.post('/bulk-upload', upload.single('file'), async (req, res) => {
   try {
-    if (!req.file) {
+    if (!req.file || !req.file.buffer) {
       res.status(400).json({ error: 'Archivo Excel requerido' });
       return;
     }
 
     const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
     const sheetName = workbook.SheetNames[0];
+    if (!sheetName) {
+      res.status(400).json({ error: 'El archivo Excel no contiene hojas de cálculo' });
+      return;
+    }
+
     const sheet = workbook.Sheets[sheetName];
     const rows: any[] = XLSX.utils.sheet_to_json(sheet);
 
     if (rows.length === 0) {
-      res.status(400).json({ error: 'La plantilla no contiene filas de productos' });
+      res.status(400).json({ error: 'La plantilla no contiene filas de productos para importar' });
       return;
     }
 
     let createdCount = 0;
     const errors: { row: number; error: string }[] = [];
 
+    // Helper to find value from row with case/accent insensitive key lookup
+    const getVal = (row: any, ...keys: string[]) => {
+      const normalizedKeys = keys.map(k => k.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim());
+      for (const [rKey, rVal] of Object.entries(row)) {
+        const normRKey = rKey.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+        if (normalizedKeys.includes(normRKey)) {
+          return rVal;
+        }
+      }
+      return undefined;
+    };
+
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
-      const name = row['Nombre'] || row['nombre'] || row['Name'];
-      const price = parseFloat(row['Precio'] || row['precio'] || row['Price'] || 0);
+      const rawName = getVal(row, 'Nombre', 'Producto', 'Name', 'Item');
+      const rawPrice = getVal(row, 'Precio', 'Price', 'Monto', 'Valor');
+
+      const name = rawName ? String(rawName).trim() : '';
+      const price = parseFloat(String(rawPrice || '').replace(/[^\d.-]/g, ''));
 
       if (!name || isNaN(price) || price < 0) {
-        errors.push({ row: i + 2, error: `Fila ${i + 2}: Nombre y Precio válido requeridos` });
+        errors.push({ row: i + 2, error: `Fila ${i + 2}: 'Nombre' y 'Precio' válido son requeridos.` });
         continue;
       }
 
-      const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') + '-' + Date.now().toString().slice(-4);
-      const compareAtPrice = row['PrecioComparacion'] || row['precioComparacion'] ? parseFloat(row['PrecioComparacion'] || row['precioComparacion']) : null;
-      const category = row['Categoria'] || row['categoria'] || 'General';
-      const description = row['Descripcion'] || row['descripcion'] || '';
-      const sku = row['SKU'] || row['sku'] || null;
-      const stock = parseInt(row['Stock'] || row['stock'] || '0', 10) || 0;
-      const activeStr = String(row['Activo'] || row['activo'] || 'SI').toUpperCase();
-      const active = activeStr === 'SI' || activeStr === 'TRUE' || activeStr === '1' || activeStr === 'S';
+      const cleanSlugBase = name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+      const uniqueSuffix = Math.random().toString(36).substring(2, 6);
+      const slug = `${cleanSlugBase || 'prod'}-${uniqueSuffix}`;
+
+      const rawComparePrice = getVal(row, 'PrecioComparacion', 'Precio Comparación', 'Precio_Comparacion', 'ComparePrice', 'Precio Anterior');
+      const compareAtPrice = rawComparePrice ? parseFloat(String(rawComparePrice).replace(/[^\d.-]/g, '')) : null;
+
+      const rawCategory = getVal(row, 'Categoria', 'Categoría', 'Category', 'Sección');
+      const category = rawCategory ? String(rawCategory).trim() : 'General';
+
+      const rawDesc = getVal(row, 'Descripcion', 'Descripción', 'Description', 'Detalle');
+      const description = rawDesc ? String(rawDesc).trim() : '';
+
+      const rawSku = getVal(row, 'SKU', 'Sku', 'Código', 'Codigo', 'Code');
+      const sku = rawSku ? String(rawSku).trim() : null;
+
+      const rawStock = getVal(row, 'Stock', 'Cantidad', 'Inventario', 'Qty');
+      const stock = parseInt(String(rawStock || '10').replace(/\D/g, ''), 10) || 0;
+
+      const rawActive = getVal(row, 'Activo', 'Active', 'Visible', 'Estado');
+      const activeStr = String(rawActive || 'SI').toUpperCase().trim();
+      const active = activeStr === 'SI' || activeStr === 'TRUE' || activeStr === '1' || activeStr === 'S' || activeStr === 'ACTIVO';
 
       try {
         await createProduct(req.tenantId!, {
@@ -154,11 +188,13 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
           sku: sku || undefined,
           stock,
           active,
+          tags: [],
+          customVariables: [],
           currency: 'CRC'
         });
         createdCount++;
       } catch (err: any) {
-        errors.push({ row: i + 2, error: err.message || 'Error al guardar en base de datos' });
+        errors.push({ row: i + 2, error: `Fila ${i + 2}: ${err.message || 'Error al guardar en base de datos'}` });
       }
     }
 
@@ -168,9 +204,9 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
       totalRows: rows.length,
       errors
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Bulk upload error:', error);
-    res.status(500).json({ error: 'Error procesando archivo Excel' });
+    res.status(500).json({ error: error.message || 'Error procesando archivo Excel' });
   }
 });
 
