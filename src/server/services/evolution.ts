@@ -101,14 +101,17 @@ export async function setWebhook(instanceName: string, webhookUrl: string): Prom
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify({
-        enabled: true,
-        url: webhookUrl,
-        webhookByEvents: false,
-        events: [
-          'MESSAGES_UPSERT',
-          'MESSAGES_UPDATE',
-          'SEND_MESSAGE'
-        ]
+        webhook: {
+          enabled: true,
+          url: webhookUrl,
+          byEvents: false,
+          base64: false,
+          events: [
+            'MESSAGES_UPSERT',
+            'MESSAGES_UPDATE',
+            'SEND_MESSAGE'
+          ]
+        }
       })
     });
     const data = await response.json();
