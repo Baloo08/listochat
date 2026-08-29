@@ -12,6 +12,7 @@ import { env } from './config/env.js';
 import { runMigrations } from './db/migrations.js';
 import { query } from './db/pool.js';
 import { startReminderScheduler } from './services/reminder.service.js';
+import { recoverInterruptedCampaigns } from './services/campaign-queue.service.js';
 
 // Route imports
 import authRoutes from './routes/auth.routes.js';
@@ -186,6 +187,8 @@ async function startServer() {
     console.log('Database migrations completed.');
     // Start automated appointment reminder background scheduler
     startReminderScheduler();
+    // Recover any active WhatsApp campaigns
+    recoverInterruptedCampaigns();
   } catch (err) {
     console.error('Failed to run database migrations:', err);
   }

@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import { query } from '../db/pool.js';
-import { sendMessage, sendMedia } from '../services/evolution.js';
 import { getTenantById } from '../db/tenant.repo.js';
+import { enqueueCampaign, pauseCampaign, resumeCampaign, cancelCampaign } from '../services/campaign-queue.service.js';
 
 const router = Router();
 router.use(authenticateToken);
@@ -192,85 +192,53 @@ router.post('/:id/send', async (req, res) => {
       return;
     }
 
-    const campaign = campRes.rows[0];
     const tenant = await getTenantById(tenantId);
-
     if (!tenant || !tenant.evolutionInstance) {
       res.status(400).json({ error: 'El negocio no tiene una conexión de WhatsApp activa para realizar envíos' });
       return;
     }
 
-    // Mark as sending
+    // Mark as sending in DB
     await query(`UPDATE whatsapp_campaigns SET status = 'sending' WHERE id = $1`, [campaignId]);
 
-    // Fetch target customers
-    let custQuery = `SELECT name, phone FROM customers WHERE tenant_id = $1`;
-    const params: any[] = [tenantId];
-    if (campaign.target_segment === 'tag' && campaign.target_tag) {
-      custQuery += ` AND $2 = ANY(tags)`;
-      params.push(campaign.target_tag);
-    }
+    // Enqueue to Redis persistent worker queue
+    await enqueueCampaign(campaignId, tenantId);
 
-    const customersRes = await query(custQuery, params);
-    const customers = customersRes.rows;
-
-    res.json({ success: true, message: `Campaña iniciada para ${customers.length} destinatarios`, total: customers.length });
-
-    // Asynchronous background queue with delay to protect WhatsApp number against bans
-    (async () => {
-      let sentCount = 0;
-      let failedCount = 0;
-
-      for (const cust of customers) {
-        try {
-          const cleanPhone = cust.phone.replace(/\D/g, '');
-          if (!cleanPhone) continue;
-
-          const text = campaign.message_template
-            .replace(/\{\{nombre\}\}/gi, cust.name || 'estimado cliente')
-            .replace(/\{\{negocio\}\}/gi, tenant.name);
-
-          let sendRes;
-          if (campaign.media_url) {
-            sendRes = await sendMedia(tenant.evolutionInstance, cleanPhone, campaign.media_url, text);
-          } else {
-            sendRes = await sendMessage(tenant.evolutionInstance, cleanPhone, text);
-          }
-
-          if (sendRes.success) {
-            sentCount++;
-          } else {
-            failedCount++;
-          }
-        } catch (e) {
-          failedCount++;
-        }
-
-        // Update progress in DB every 3 sends
-        if ((sentCount + failedCount) % 3 === 0) {
-          await query(`
-            UPDATE whatsapp_campaigns 
-            SET sent_count = $1, failed_count = $2 
-            WHERE id = $3
-          `, [sentCount, failedCount, campaignId]);
-        }
-
-        // Sleep 3.5 seconds between messages (Anti-Spam / Anti-Ban throttle)
-        await new Promise(r => setTimeout(r, 3500));
-      }
-
-      await query(`
-        UPDATE whatsapp_campaigns 
-        SET sent_count = $1, failed_count = $2, status = 'completed' 
-        WHERE id = $3
-      `, [sentCount, failedCount, campaignId]);
-
-      console.log(`[Campaigns] Campaign ${campaignId} finished. Sent: ${sentCount}, Failed: ${failedCount}`);
-    })();
-
+    res.json({ success: true, message: 'Campaña iniciada y encolada con éxito' });
   } catch (error) {
     console.error('Error starting campaign send:', error);
     res.status(500).json({ error: 'Error al enviar campaña' });
+  }
+});
+
+router.post('/:id/pause', async (req, res) => {
+  try {
+    const campaignId = req.params.id;
+    await pauseCampaign(campaignId);
+    res.json({ success: true, message: 'Campaña pausada' });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al pausar campaña' });
+  }
+});
+
+router.post('/:id/resume', async (req, res) => {
+  try {
+    const tenantId = req.user!.tenantId;
+    const campaignId = req.params.id;
+    await resumeCampaign(campaignId, tenantId);
+    res.json({ success: true, message: 'Campaña reanudada' });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al reanudar campaña' });
+  }
+});
+
+router.post('/:id/cancel', async (req, res) => {
+  try {
+    const campaignId = req.params.id;
+    await cancelCampaign(campaignId);
+    res.json({ success: true, message: 'Campaña cancelada' });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al cancelar campaña' });
   }
 });
 
