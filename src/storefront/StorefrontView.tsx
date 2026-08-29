@@ -467,13 +467,13 @@ export default function StorefrontView({ slug }: StorefrontProps) {
       
       {/* Top Banner (if uploaded) */}
       {store.storeBannerUrl && (
-        <div style={{ width: '100%', height: '180px', maxHeight: '220px', overflow: 'hidden', position: 'relative' }}>
+        <div style={{ width: '100%', aspectRatio: '16 / 5', minHeight: '140px', maxHeight: '320px', overflow: 'hidden', position: 'relative', backgroundColor: isDark ? '#0f172a' : '#f1f5f9' }}>
           <img
             src={store.storeBannerUrl}
             alt={store.storeName}
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center' }}
           />
-          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, transparent, rgba(0,0,0,0.4))' }} />
+          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, transparent 60%, rgba(0,0,0,0.5))' }} />
         </div>
       )}
 

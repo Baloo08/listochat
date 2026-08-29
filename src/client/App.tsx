@@ -98,7 +98,9 @@ export default function App() {
     return <TermsOfServiceView />;
   }
 
-  const [showLoginView, setShowLoginView] = useState<boolean>(pathname === '/login');
+  const [showLoginView, setShowLoginView] = useState<boolean>(
+    pathname === '/login' || pathname === '/superadmin' || pathname === '/admin'
+  );
   const { isAuthenticated, user, loading, logout } = useAuth();
   const [currentPage, setCurrentPage] = useState<string>('dashboard');
   const [unreadOrdersCount, setUnreadOrdersCount] = useState<number>(0);

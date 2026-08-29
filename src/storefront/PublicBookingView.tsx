@@ -266,8 +266,9 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
       
       {/* Optional Top Banner */}
       {businessInfo.bannerUrl && (
-        <div style={{ width: '100%', height: '160px', overflow: 'hidden' }}>
-          <img src={businessInfo.bannerUrl} alt="Banner" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        <div style={{ width: '100%', aspectRatio: '16 / 5', minHeight: '140px', maxHeight: '300px', overflow: 'hidden', position: 'relative' }}>
+          <img src={businessInfo.bannerUrl} alt="Banner" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center' }} />
+          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, transparent 60%, rgba(0,0,0,0.4))' }} />
         </div>
       )}
 
