@@ -227,6 +227,11 @@ router.post('/:id/confirm-payment', async (req, res) => {
       }
     }
 
+    // Emit real-time WebSocket event
+    if ((req as any).io) {
+      (req as any).io.to(`tenant_${req.tenantId!}`).emit('order:updated', updated || order);
+    }
+
     res.json(updated);
   } catch (error) {
     console.error(error);

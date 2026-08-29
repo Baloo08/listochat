@@ -157,3 +157,30 @@ export async function sendMedia(instanceName: string, number: string, mediaUrl: 
     return { success: false, error };
   }
 }
+
+export async function getBase64FromMediaMessage(instanceName: string, messageKey: any, messageData: any): Promise<{ base64?: string; mimetype?: string; error?: any }> {
+  try {
+    const response = await fetch(`${EVOLUTION_API_URL}/chat/getBase64FromMediaMessage/${instanceName}`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({
+        message: {
+          key: messageKey,
+          message: messageData
+        },
+        convertToMp4: false
+      })
+    });
+    if (!response.ok) {
+      const errText = await response.text();
+      return { error: errText };
+    }
+    const data = await response.json();
+    return {
+      base64: data.base64 || data.data?.base64,
+      mimetype: data.mimetype || data.data?.mimetype
+    };
+  } catch (error: any) {
+    return { error: error.message || error };
+  }
+}

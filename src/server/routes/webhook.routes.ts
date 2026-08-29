@@ -1,12 +1,14 @@
 import { Router } from 'express';
 import { getTenantByEvolutionInstance, getAllTenants } from '../db/tenant.repo.js';
 import { processWhatsAppMessageWithAI } from '../services/agent.js';
-import { sendMessage, sendMedia } from '../services/evolution.js';
+import { sendMessage, sendMedia, getBase64FromMediaMessage } from '../services/evolution.js';
 import { createBookingFromCommand } from '../services/booking.service.js';
 import { createOrderFromWhatsApp } from '../services/order.service.js';
 import { saveChatMessage, getChatMessagesByTenant, getChatSession, setChatHumanMode } from '../db/chats.repo.js';
 import { getAgentConfig } from '../db/agent-config.repo.js';
 import { query } from '../db/pool.js';
+import { transcribeAudioWithGemini } from '../services/audio-transcriber.service.js';
+import { analyzeSinpeReceipt } from '../services/sinpe-verifier.service.js';
 
 const router = Router();
 
@@ -42,13 +44,18 @@ router.post('/', async (req, res) => {
     const remoteJid = key.remoteJid || key.remoteJidAlt || '';
     const fromMe = key.fromMe || false;
     const pushName = data.pushName || 'Cliente';
+    const cleanPhone = remoteJid.replace(/@.+$/, '').replace(/\D/g, '');
 
     // Ignore group chats or broadcast status updates
     if (remoteJid.includes('@g.us') || remoteJid === 'status@broadcast') {
       return;
     }
 
-    // Extract text or location
+    // 1. Check for Voice Notes / Audio Messages
+    const isAudioMsg = data?.message?.audioMessage || data?.message?.pttMessage || data?.messageType === 'audioMessage';
+    let isVoiceNote = false;
+
+    // 2. Extract text or location
     let userMessage = (
       data?.message?.conversation ||
       data?.message?.extendedTextMessage?.text ||
@@ -65,12 +72,7 @@ router.post('/', async (req, res) => {
       userMessage = `📍 [Ubicación Compartida]: ${mapsUrl} (${loc.name || loc.address || 'Ubicación GPS'})`;
     }
 
-    console.log(`[Webhook] Parsed message from ${remoteJid} (${pushName}): "${userMessage}" [fromMe=${fromMe}]`);
-
-    if (!userMessage) {
-      return;
-    }
-
+    // Resolve tenant early
     let tenant = null;
     if (instanceName) {
       tenant = await getTenantByEvolutionInstance(instanceName);
@@ -85,8 +87,134 @@ router.post('/', async (req, res) => {
       return;
     }
 
+    const targetInstance = tenant.evolutionInstance || instanceName || `tenant_${tenant.id.slice(0, 8)}`;
+
+    // Process Voice Notes with Gemini Multimodal
+    if (isAudioMsg && !fromMe) {
+      console.log(`[Webhook] Detected Voice Note / Audio from ${remoteJid}! Fetching media base64...`);
+      let base64Audio = data?.base64 || data?.message?.base64;
+      const audioMime = data?.message?.audioMessage?.mimetype || 'audio/ogg';
+
+      if (!base64Audio) {
+        const mediaRes = await getBase64FromMediaMessage(targetInstance, key, data.message);
+        if (mediaRes.base64) {
+          base64Audio = mediaRes.base64;
+        }
+      }
+
+      if (base64Audio) {
+        const transcription = await transcribeAudioWithGemini(base64Audio, audioMime);
+        if (transcription.success && transcription.text) {
+          userMessage = transcription.text;
+          isVoiceNote = true;
+          console.log(`[Webhook] Voice note transcribed successfully: "${userMessage}"`);
+        }
+      }
+    }
+
+    // 3. Process Image Messages (SINPE Móvil receipt verification)
+    const isImageMsg = data?.message?.imageMessage || data?.messageType === 'imageMessage';
+    if (isImageMsg && !fromMe) {
+      console.log(`[Webhook] Detected Image from ${remoteJid}! Checking for pending order SINPE verification...`);
+      let base64Img = data?.base64 || data?.message?.base64;
+      const imgMime = data?.message?.imageMessage?.mimetype || 'image/jpeg';
+
+      if (!base64Img) {
+        const mediaRes = await getBase64FromMediaMessage(targetInstance, key, data.message);
+        if (mediaRes.base64) {
+          base64Img = mediaRes.base64;
+        }
+      }
+
+      if (base64Img) {
+        // Look up pending order for this customer
+        const pendingOrderRes = await query(`
+          SELECT id, order_number as "orderNumber", total, customer_name as "customerName", status, payment_status as "paymentStatus"
+          FROM orders
+          WHERE tenant_id = $1 
+            AND (whatsapp_jid = $2 OR customer_phone LIKE $3)
+            AND payment_status IN ('pending', 'proof_sent')
+          ORDER BY created_at DESC
+          LIMIT 1
+        `, [tenant.id, remoteJid, `%${cleanPhone.slice(-8)}%`]);
+
+        if (pendingOrderRes.rows.length > 0) {
+          const pendingOrder = pendingOrderRes.rows[0];
+          console.log(`[Webhook] Found pending order #${pendingOrder.orderNumber} (total: ₡${pendingOrder.total}) for ${cleanPhone}. Running SINPE verification...`);
+
+          const receiptAnalysis = await analyzeSinpeReceipt(base64Img, imgMime);
+          console.log('[Webhook] SINPE analysis result:', receiptAnalysis);
+
+          if (receiptAnalysis.isReceipt && receiptAnalysis.amount) {
+            const expectedTotal = Number(pendingOrder.total);
+            const paidAmount = receiptAnalysis.amount;
+
+            if (paidAmount >= expectedTotal * 0.95) {
+              // Payment verified! Update order to paid & confirmed
+              await query(`
+                UPDATE orders 
+                SET payment_status = 'paid', status = 'confirmed', payment_reference = $1, updated_at = CURRENT_TIMESTAMP
+                WHERE id = $2 AND tenant_id = $3
+              `, [receiptAnalysis.reference || `SINPE_${Date.now()}`, pendingOrder.id, tenant.id]);
+
+              // Emit real-time WebSocket event for KDS & Admin Dashboard
+              if ((req as any).io) {
+                (req as any).io.to(`tenant_${tenant.id}`).emit('order:updated', {
+                  id: pendingOrder.id,
+                  orderNumber: pendingOrder.orderNumber,
+                  status: 'confirmed',
+                  paymentStatus: 'paid',
+                  paymentReference: receiptAnalysis.reference
+                });
+              }
+
+              const confirmReply = `✅ *¡Pago SINPE Móvil Verificado con Éxito!*\n\nHemos validado tu comprobante por *₡${paidAmount.toLocaleString()}* ${receiptAnalysis.reference ? `(Ref: *${receiptAnalysis.reference}*)` : ''}.\n\nTu pedido *#${pendingOrder.orderNumber}* ha sido confirmado y enviado a preparación. 🍽️🚀\n\n¡Muchas gracias por tu compra!`;
+              await sendMessage(targetInstance, cleanPhone, confirmReply);
+
+              await saveChatMessage(tenant.id, {
+                id: `sinpe_${Date.now()}`,
+                remoteJid,
+                pushName: 'Sistema Pagos',
+                fromMe: true,
+                messageText: confirmReply,
+                aiResponse: confirmReply,
+                status: 'sent'
+              });
+
+              return;
+            } else {
+              // Amount is lower than order total
+              const partialReply = `⚠️ *Comprobante Recibido con Monto Menor*\n\nDetectamos una transferencia por *₡${paidAmount.toLocaleString()}*, pero el monto total de tu pedido *#${pendingOrder.orderNumber}* es de *₡${expectedTotal.toLocaleString()}*.\n\nPor favor realiza la transferencia por el saldo restante o escribe *humano* si necesitas ayuda con tu pago.`;
+              await sendMessage(targetInstance, cleanPhone, partialReply);
+
+              await saveChatMessage(tenant.id, {
+                id: `sinpe_partial_${Date.now()}`,
+                remoteJid,
+                pushName: 'Sistema Pagos',
+                fromMe: true,
+                messageText: partialReply,
+                aiResponse: partialReply,
+                status: 'sent'
+              });
+
+              return;
+            }
+          }
+        }
+      }
+
+      if (!userMessage) {
+        userMessage = data?.message?.imageMessage?.caption || 'Foto enviada por el cliente';
+      }
+    }
+
+    console.log(`[Webhook] Parsed message from ${remoteJid} (${pushName}): "${userMessage}" [fromMe=${fromMe}]`);
+
+    if (!userMessage) {
+      return;
+    }
+
     const msgId = key.id || `msg_${Date.now()}`;
-    const cleanPhone = remoteJid.replace(/@.+$/, '').replace(/\D/g, '');
 
     // If message was sent from the business phone itself (manual operator)
     if (fromMe) {
@@ -151,8 +279,6 @@ router.post('/', async (req, res) => {
       pushName,
       history
     );
-
-    const targetInstance = tenant.evolutionInstance || instanceName || `tenant_${tenant.id.slice(0, 8)}`;
 
     // Handle Human Handoff (either keyword or AI COMMAND_HANDOFF)
     if (handoffEnabled && (isKeywordTriggered || aiResult.isHandoffRequested)) {
