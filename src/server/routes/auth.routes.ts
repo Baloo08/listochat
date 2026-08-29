@@ -98,7 +98,17 @@ router.post('/login', async (req, res) => {
       return;
     }
 
-    const user = await getUserByEmail(null, email);
+    let user = null;
+    if (tenantSlug) {
+      const targetTenant = await getTenantBySlug(tenantSlug.toLowerCase().trim());
+      if (targetTenant) {
+        user = await getUserByEmail(targetTenant.id, email);
+      }
+    }
+    if (!user) {
+      user = await getUserByEmail(null, email);
+    }
+
     if (!user) {
       recordFailedAttempt(rateLimitKey);
       await logAuditEvent(null, null, 'login_failed', 'user', undefined, { email, reason: 'user_not_found' }, req.ip, req.headers['user-agent']);

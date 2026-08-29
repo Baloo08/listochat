@@ -10,9 +10,12 @@ export function hashPassword(password: string): string {
 }
 
 export function verifyPassword(password: string, hashString: string): boolean {
-  if (!hashString) return false;
+  if (!hashString || !password) return false;
   
-  // Check if hash is modern v2 (100,000 rounds)
+  // 1. Plain text comparison
+  if (password === hashString) return true;
+
+  // 2. Modern v2 format: "v2:salt:hash" (PBKDF2 100,000 rounds with sha512)
   if (hashString.startsWith('v2:')) {
     const parts = hashString.split(':');
     const salt = parts[1];
@@ -22,11 +25,37 @@ export function verifyPassword(password: string, hashString: string): boolean {
     return hash === storedHash;
   }
 
-  // Legacy v1 format (salt:hash with 1,000 rounds)
-  const [salt, storedHash] = hashString.split(':');
-  if (!salt || !storedHash) return false;
-  const hash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
-  return hash === storedHash;
+  // 3. Salted formats: "salt:hash"
+  if (hashString.includes(':')) {
+    const [salt, storedHash] = hashString.split(':');
+    if (salt && storedHash) {
+      // Check PBKDF2 1,000 rounds sha512 (v1 migrations format)
+      const hashPbkdf2_1k_512 = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
+      if (hashPbkdf2_1k_512 === storedHash) return true;
+
+      // Check PBKDF2 100,000 rounds sha512 without v2 prefix
+      const hashPbkdf2_100k_512 = crypto.pbkdf2Sync(password, salt, 100000, 64, 'sha512').toString('hex');
+      if (hashPbkdf2_100k_512 === storedHash) return true;
+
+      // Check PBKDF2 1,000 rounds sha256
+      const hashPbkdf2_1k_256 = crypto.pbkdf2Sync(password, salt, 1000, 32, 'sha256').toString('hex');
+      if (hashPbkdf2_1k_256 === storedHash) return true;
+
+      // Check SHA256 (salt + password)
+      const hashSha256_1 = crypto.createHash('sha256').update(salt + password).digest('hex');
+      if (hashSha256_1 === storedHash) return true;
+
+      // Check SHA256 (password + salt)
+      const hashSha256_2 = crypto.createHash('sha256').update(password + salt).digest('hex');
+      if (hashSha256_2 === storedHash) return true;
+    }
+  }
+
+  // 4. Standalone SHA256 hash
+  const plainSha256 = crypto.createHash('sha256').update(password).digest('hex');
+  if (plainSha256 === hashString) return true;
+
+  return false;
 }
 
 export async function getUsersByTenant(tenantId: string): Promise<User[]> {

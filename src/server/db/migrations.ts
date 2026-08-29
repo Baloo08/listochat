@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { query } from './pool.js';
+import { hashPassword } from './users.repo.js';
 
 export async function runMigrations() {
   console.log('Running database migrations...');
@@ -388,27 +389,38 @@ export async function runMigrations() {
 
   await query(tables);
 
-  const superAdminEmail = process.env.SUPERADMIN_EMAIL || 'admin@betico.cr';
+  const superAdminEmail = (process.env.SUPERADMIN_EMAIL || 'admin@betico.cr').toLowerCase().trim();
   const superAdminPassword = process.env.SUPERADMIN_PASSWORD || 'BeticoAdmin2026!';
+  const modernHash = hashPassword(superAdminPassword);
 
-  const checkAdmin = await query(`SELECT id FROM users WHERE email = $1`, [superAdminEmail]);
+  const checkAdmin = await query(`SELECT id, tenant_id FROM users WHERE LOWER(email) = LOWER($1)`, [superAdminEmail]);
   if (checkAdmin.rows.length === 0) {
-    const salt = crypto.randomBytes(16).toString('hex');
-    const hash = crypto.pbkdf2Sync(superAdminPassword, salt, 1000, 64, 'sha512').toString('hex');
-    const fullHash = `${salt}:${hash}`;
-
-    const tenantRes = await query(`
-      INSERT INTO tenants (name, slug, active, plan) 
-      VALUES ('Betico Superadmin', 'superadmin', true, 'enterprise') 
-      RETURNING id
-    `);
-    const tenantId = tenantRes.rows[0].id;
+    let tenantRes = await query(`SELECT id FROM tenants WHERE slug = 'superadmin'`);
+    let tenantId;
+    if (tenantRes.rows.length === 0) {
+      const created = await query(`
+        INSERT INTO tenants (name, slug, active, plan) 
+        VALUES ('Betico Superadmin', 'superadmin', true, 'enterprise') 
+        RETURNING id
+      `);
+      tenantId = created.rows[0].id;
+    } else {
+      tenantId = tenantRes.rows[0].id;
+    }
 
     await query(`
-      INSERT INTO users (tenant_id, name, email, password_hash, role)
-      VALUES ($1, 'Super Admin', $2, $3, 'superadmin')
-    `, [tenantId, superAdminEmail, fullHash]);
+      INSERT INTO users (tenant_id, name, email, password_hash, role, active)
+      VALUES ($1, 'Super Admin', $2, $3, 'superadmin', true)
+    `, [tenantId, superAdminEmail, modernHash]);
     console.log('Superadmin user created successfully.');
+  } else {
+    // Ensure superadmin password hash is updated and account is active
+    await query(`
+      UPDATE users 
+      SET password_hash = $1, active = true, role = 'superadmin', updated_at = CURRENT_TIMESTAMP
+      WHERE LOWER(email) = LOWER($2)
+    `, [modernHash, superAdminEmail]);
+    console.log('Superadmin user credentials synchronized.');
   }
 
   console.log('Migrations completed successfully.');
