@@ -21,6 +21,9 @@ import KDSFullscreen from './components/KDSFullscreen';
 import TenantLoginView from './components/TenantLoginView';
 import CampaignsManager from './components/CampaignsManager';
 import BranchesManager from './components/BranchesManager';
+import LandingPageView from './components/LandingPageView';
+import PrivacyPolicyView from './components/PrivacyPolicyView';
+import TermsOfServiceView from './components/TermsOfServiceView';
 import { io } from 'socket.io-client';
 import { playOrderNotificationSound, playBookingNotificationSound } from './utils/sound';
 
@@ -87,6 +90,15 @@ export default function App() {
     return <KDSFullscreen />;
   }
 
+  if (pathname === '/politica-de-privacidad' || pathname === '/privacidad') {
+    return <PrivacyPolicyView />;
+  }
+
+  if (pathname === '/terminos-y-condiciones' || pathname === '/terminos') {
+    return <TermsOfServiceView />;
+  }
+
+  const [showLoginView, setShowLoginView] = useState<boolean>(pathname === '/login');
   const { isAuthenticated, user, loading, logout } = useAuth();
   const [currentPage, setCurrentPage] = useState<string>('dashboard');
   const [unreadOrdersCount, setUnreadOrdersCount] = useState<number>(0);
@@ -194,7 +206,26 @@ export default function App() {
   if (loading) return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', fontFamily: 'system-ui, sans-serif' }}>Cargando Betico...</div>;
 
   if (!isAuthenticated || !user) {
-    return <Login />;
+    if (showLoginView || pathname === '/login') {
+      return (
+        <Login
+          onBack={() => {
+            setShowLoginView(false);
+            if (window.location.pathname === '/login') {
+              window.history.pushState({}, '', '/');
+            }
+          }}
+        />
+      );
+    }
+    return (
+      <LandingPageView
+        onLoginClick={() => {
+          setShowLoginView(true);
+          window.history.pushState({}, '', '/login');
+        }}
+      />
+    );
   }
 
   // GROUPED NAVIGATION

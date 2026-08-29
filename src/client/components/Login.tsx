@@ -2,7 +2,11 @@ import React, { useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { Bot, Mail, Lock, Eye, EyeOff, ArrowRight, AlertCircle, ShieldCheck } from 'lucide-react';
 
-export default function Login() {
+interface LoginProps {
+  onBack?: () => void;
+}
+
+export default function Login({ onBack }: LoginProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -48,6 +52,27 @@ export default function Login() {
         maxWidth: '420px',
         border: '1px solid rgba(255,255,255,0.1)'
       }}>
+        {onBack && (
+          <button
+            onClick={onBack}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#64748b',
+              fontSize: '0.85rem',
+              fontWeight: '600',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              marginBottom: '16px',
+              padding: 0
+            }}
+          >
+            ← Volver a Betico.tech
+          </button>
+        )}
+
         <div style={{ textAlign: 'center', marginBottom: '24px' }}>
           <div style={{
             width: '60px', height: '60px', backgroundColor: '#e0f2fe',
