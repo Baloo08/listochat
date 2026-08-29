@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   ShoppingBag, Search, Plus, Minus, X, Check, ArrowRight, MessageCircle, 
   AlertCircle, Trash2, MapPin, Truck, Store, ShieldCheck, Tag, Utensils, 
-  Navigation, Package, User, Palette, Sliders, CheckCircle2 
+  Navigation, Package, User, Palette, Sliders, CheckCircle2, Building2 
 } from 'lucide-react';
 import { Product, StoreSettings, DeliveryConfig, CustomVariable, CustomVariableOption } from '../shared/types';
 
@@ -133,6 +133,11 @@ export default function StorefrontView({ slug }: StorefrontProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderCompleted, setOrderCompleted] = useState<any | null>(null);
 
+  // Multi-Branch Franchise States
+  const [branches, setBranches] = useState<any[]>([]);
+  const [selectedBranch, setSelectedBranch] = useState<any | null>(null);
+  const [showBranchModal, setShowBranchModal] = useState<boolean>(false);
+
   useEffect(() => {
     const fetchStoreData = async () => {
       try {
@@ -149,6 +154,23 @@ export default function StorefrontView({ slug }: StorefrontProps) {
         if (prodRes.ok) {
           const prodData = await prodRes.json();
           setProducts(prodData);
+        }
+
+        // Fetch active branches
+        try {
+          const branchRes = await fetch(`/api/storefront/${slug}/branches`);
+          if (branchRes.ok) {
+            const bData = await branchRes.json();
+            if (Array.isArray(bData)) {
+              setBranches(bData);
+              if (bData.length > 0) {
+                const main = bData.find((b: any) => b.isMain) || bData[0];
+                setSelectedBranch(main);
+              }
+            }
+          }
+        } catch (bErr) {
+          // ignore
         }
       } catch (err: any) {
         setError(err.message || 'Error cargando la tienda');
@@ -372,6 +394,7 @@ export default function StorefrontView({ slug }: StorefrontProps) {
         deliveryMethod: consumptionMode === 'correos_cr' ? 'correos_cr' : (consumptionMode === 'delivery' ? 'delivery' : 'pickup'),
         paymentMethod,
         paymentReference: paymentReference || undefined,
+        branchId: selectedBranch?.id || undefined,
         notes: orderNotes || undefined,
         items: cart.map(item => ({
           productId: item.product.id,
@@ -497,6 +520,30 @@ export default function StorefrontView({ slug }: StorefrontProps) {
             >
               <MessageCircle size={16} /> Contactar
             </a>
+          )}
+
+          {branches.length >= 2 && (
+            <button
+              onClick={() => setShowBranchModal(true)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '8px 12px',
+                backgroundColor: isDark ? '#1e293b' : '#eff6ff',
+                border: `1px solid ${primaryColor}40`,
+                borderRadius: '20px',
+                color: primaryColor,
+                fontWeight: 'bold',
+                fontSize: '0.82rem',
+                cursor: 'pointer'
+              }}
+              title="Cambiar sucursal"
+            >
+              <MapPin size={14} />
+              <span>Sede: <strong>{selectedBranch?.name || 'Elegir'}</strong></span>
+              <span style={{ fontSize: '0.7rem' }}>▾</span>
+            </button>
           )}
 
           <button
@@ -1199,6 +1246,67 @@ export default function StorefrontView({ slug }: StorefrontProps) {
 
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* Branch Selection Modal */}
+      {showBranchModal && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.65)', zIndex: 85, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', backdropFilter: 'blur(3px)' }}>
+          <div style={{ backgroundColor: cardBg, borderRadius: '16px', maxWidth: '440px', width: '100%', padding: '24px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.2)', color: isDark ? '#ffffff' : '#0f172a' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Building2 size={20} color={primaryColor} />
+                Selecciona tu Sucursal
+              </h3>
+              <button onClick={() => setShowBranchModal(false)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: bodyTextColor }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <p style={{ fontSize: '0.85rem', color: bodyTextColor, margin: '0 0 16px 0' }}>
+              Elige la sede desde donde deseas retirar o recibir tu pedido:
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px' }}>
+              {branches.map((b: any) => {
+                const isSelected = selectedBranch?.id === b.id;
+                return (
+                  <div
+                    key={b.id}
+                    onClick={() => {
+                      setSelectedBranch(b);
+                      setShowBranchModal(false);
+                    }}
+                    style={{
+                      padding: '12px 14px',
+                      borderRadius: '10px',
+                      border: `2px solid ${isSelected ? primaryColor : (isDark ? '#334155' : '#e2e8f0')}`,
+                      backgroundColor: isSelected ? `${primaryColor}10` : (isDark ? '#1e293b' : '#f8fafc'),
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between'
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 'bold', fontSize: '0.95rem', color: isSelected ? primaryColor : titleColor }}>
+                        {b.name} {b.isMain && <span style={{ fontSize: '0.7rem', padding: '2px 6px', backgroundColor: '#dbeafe', color: '#1e40af', borderRadius: '4px', marginLeft: '6px' }}>Principal</span>}
+                      </div>
+                      {b.address && <div style={{ fontSize: '0.75rem', color: bodyTextColor, marginTop: '2px' }}>{b.address}</div>}
+                    </div>
+                    {isSelected && <CheckCircle2 size={18} color={primaryColor} />}
+                  </div>
+                );
+              })}
+            </div>
+
+            <button
+              onClick={() => setShowBranchModal(false)}
+              style={{ width: '100%', padding: '11px', backgroundColor: primaryColor, color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}
+            >
+              Confirmar Sede
+            </button>
           </div>
         </div>
       )}

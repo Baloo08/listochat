@@ -35,6 +35,30 @@ router.get('/:slug', async (req, res) => {
   }
 });
 
+// 1.1. Get Active Branches for Store
+router.get('/:slug/branches', async (req, res) => {
+  try {
+    const tenant = await getTenantBySlug(req.params.slug);
+    if (!tenant) {
+      res.status(404).json({ error: 'Tienda no encontrada' });
+      return;
+    }
+
+    const result = await query(`
+      SELECT id, name, code, address, phone, sinpe_phone as "sinpePhone", sinpe_name as "sinpeName",
+             latitude, longitude, is_main as "isMain"
+      FROM branches
+      WHERE tenant_id = $1 AND active = TRUE
+      ORDER BY is_main DESC, name ASC
+    `, [tenant.id]);
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Storefront branches error:', error);
+    res.status(500).json({ error: 'Error al obtener sucursales' });
+  }
+});
+
 // 2. List Active Products
 router.get('/:slug/products', async (req, res) => {
   try {
@@ -148,10 +172,16 @@ router.post('/:slug/checkout', async (req, res) => {
       formattedItems
     );
 
+    // Associate branch if provided
+    if (req.body.branchId) {
+      await query(`UPDATE orders SET branch_id = $1 WHERE id = $2`, [req.body.branchId, order.id]);
+    }
+
     // Emit real-time WebSocket event to Kitchen Display & Admin Dashboard
     if ((req as any).io) {
       (req as any).io.to(`tenant_${tenant.id}`).emit('order:created', {
         ...order,
+        branchId: req.body.branchId || null,
         items: formattedItems,
         storeName
       });

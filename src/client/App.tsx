@@ -20,6 +20,7 @@ import DriverPortal from './components/DriverPortal';
 import KDSFullscreen from './components/KDSFullscreen';
 import TenantLoginView from './components/TenantLoginView';
 import CampaignsManager from './components/CampaignsManager';
+import BranchesManager from './components/BranchesManager';
 import { io } from 'socket.io-client';
 import { playOrderNotificationSound, playBookingNotificationSound } from './utils/sound';
 
@@ -37,6 +38,7 @@ import {
   Users,
   Settings,
   LogOut,
+  Building2,
   ShieldAlert,
   ShieldCheck,
   Server,
@@ -264,6 +266,7 @@ export default function App() {
     {
       title: 'SISTEMA & AJUSTES',
       items: [
+        { id: 'sucursales', label: 'Sucursales', icon: <Building2 size={18} /> },
         { id: 'agente', label: 'Agente IA', icon: <Bot size={18} /> },
         { id: 'notificaciones', label: 'Historial Envíos', icon: <Bell size={18} /> },
         { id: 'usuarios', label: 'Usuarios', icon: <Users size={18} /> },
@@ -308,6 +311,7 @@ export default function App() {
         case 'productos': return <ProductManager />;
         case 'ordenes': return <OrdersPanel />;
         case 'tienda': return <StoreSettings />;
+        case 'sucursales': return <BranchesManager />;
         case 'agente': return <AgentPromptStudio />;
         case 'whatsapp': return <EvolutionManager />;
         case 'notificaciones': return <NotificationsCenter />;

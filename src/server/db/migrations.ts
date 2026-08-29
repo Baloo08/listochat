@@ -344,6 +344,29 @@ export async function runMigrations() {
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS branches (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+      name VARCHAR(255) NOT NULL,
+      code VARCHAR(50),
+      address TEXT,
+      phone VARCHAR(50),
+      sinpe_phone VARCHAR(50),
+      sinpe_name VARCHAR(100),
+      latitude NUMERIC,
+      longitude NUMERIC,
+      is_main BOOLEAN DEFAULT FALSE,
+      active BOOLEAN DEFAULT TRUE,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS branch_id UUID REFERENCES branches(id) ON DELETE SET NULL;
+    ALTER TABLE appointments ADD COLUMN IF NOT EXISTS branch_id UUID REFERENCES branches(id) ON DELETE SET NULL;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS branch_id UUID REFERENCES branches(id) ON DELETE SET NULL;
+
+    CREATE INDEX IF NOT EXISTS idx_branches_tenant ON branches(tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_orders_branch ON orders(branch_id);
     CREATE INDEX IF NOT EXISTS idx_customers_tenant ON customers(tenant_id);
     CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone);
     CREATE INDEX IF NOT EXISTS idx_campaigns_tenant ON whatsapp_campaigns(tenant_id);
