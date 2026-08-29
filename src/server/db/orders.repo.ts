@@ -3,17 +3,19 @@ import { Order, OrderItem } from '../../shared/types.js';
 
 export async function getOrdersByTenant(tenantId: string): Promise<Order[]> {
   const result = await query(`
-    SELECT id, tenant_id as "tenantId", order_number as "orderNumber", customer_name as "customerName",
-           customer_phone as "customerPhone", customer_email as "customerEmail", customer_address as "customerAddress",
-           whatsapp_jid as "whatsappJid", source, subtotal, delivery_fee as "deliveryFee", discount, total,
-           currency, status, payment_method as "paymentMethod", payment_status as "paymentStatus",
-           payment_reference as "paymentReference", notes, delivery_method as "deliveryMethod",
-           consumption_mode as "consumptionMode", table_number as "tableNumber", customer_location as "customerLocation",
-           chat_message_id as "chatMessageId", driver_id as "driverId", waze_url as "wazeUrl",
-           created_at as "createdAt", updated_at as "updatedAt"
-    FROM orders 
-    WHERE tenant_id = $1
-    ORDER BY created_at DESC
+    SELECT o.id, o.tenant_id as "tenantId", o.order_number as "orderNumber", o.customer_name as "customerName",
+           o.customer_phone as "customerPhone", o.customer_email as "customerEmail", o.customer_address as "customerAddress",
+           o.whatsapp_jid as "whatsappJid", o.source, o.subtotal, o.delivery_fee as "deliveryFee", o.discount, o.total,
+           o.currency, o.status, o.payment_method as "paymentMethod", o.payment_status as "paymentStatus",
+           o.payment_reference as "paymentReference", o.notes, o.delivery_method as "deliveryMethod",
+           o.consumption_mode as "consumptionMode", o.table_number as "tableNumber", o.customer_location as "customerLocation",
+           o.chat_message_id as "chatMessageId", o.driver_id as "driverId", o.waze_url as "wazeUrl",
+           o.branch_id as "branchId", b.name as "branchName",
+           o.created_at as "createdAt", o.updated_at as "updatedAt"
+    FROM orders o
+    LEFT JOIN branches b ON o.branch_id = b.id
+    WHERE o.tenant_id = $1
+    ORDER BY o.created_at DESC
   `, [tenantId]);
   return result.rows;
 }

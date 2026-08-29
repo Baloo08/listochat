@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Utensils, Clock, CheckCircle, Flame, Zap, Truck, Maximize, Minimize, RefreshCw, Eye, X, MapPin, Phone, MessageSquare, AlertCircle, Volume2, VolumeX } from 'lucide-react';
+import { Utensils, Clock, CheckCircle, Flame, Zap, Truck, Maximize, Minimize, RefreshCw, Eye, X, MapPin, Phone, MessageSquare, AlertCircle, Volume2, VolumeX, Building2 } from 'lucide-react';
 import { Order, OrderStatus } from '../../shared/types';
 import { useApi } from '../hooks/useApi';
 import { io } from 'socket.io-client';
@@ -7,6 +7,9 @@ import { playOrderNotificationSound } from '../utils/sound';
 
 export default function KDSFullscreen() {
   const [orders, setOrders] = useState<Order[]>([]);
+  const [branches, setBranches] = useState<any[]>([]);
+  const urlBranch = new URLSearchParams(window.location.search).get('branch');
+  const [selectedBranchId, setSelectedBranchId] = useState<string>(urlBranch || 'all');
   const [loading, setLoading] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(new Date());
@@ -28,14 +31,25 @@ export default function KDSFullscreen() {
     }
   };
 
+  const fetchBranches = async () => {
+    try {
+      const data = await api.get('/api/branches');
+      if (Array.isArray(data)) setBranches(data);
+    } catch (e) {
+      console.error('Error fetching branches in KDS:', e);
+    }
+  };
+
   useEffect(() => {
     fetchOrders();
+    fetchBranches();
 
     // Connect to WebSocket for instant 0ms real-time order arrival
     const socket = io(window.location.origin);
     
     socket.on('order:created', (newOrder: Order) => {
-      if (soundEnabled) playOrderNotificationSound();
+      const isMatch = selectedBranchId === 'all' || (newOrder as any).branchId === selectedBranchId;
+      if (isMatch && soundEnabled) playOrderNotificationSound();
       setOrders(prev => [newOrder, ...prev.filter(o => o.id !== newOrder.id)]);
       setLastUpdated(new Date());
     });
@@ -51,7 +65,7 @@ export default function KDSFullscreen() {
       socket.disconnect();
       clearInterval(interval);
     };
-  }, [soundEnabled]);
+  }, [soundEnabled, selectedBranchId]);
 
   const handleToggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -149,6 +163,29 @@ export default function KDSFullscreen() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {branches.length >= 2 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#334155', border: '1px solid #475569', borderRadius: '8px', padding: '6px 12px' }}>
+              <Building2 size={16} color="#38bdf8" />
+              <select
+                value={selectedBranchId}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSelectedBranchId(val);
+                  const url = new URL(window.location.href);
+                  if (val !== 'all') url.searchParams.set('branch', val);
+                  else url.searchParams.delete('branch');
+                  window.history.replaceState({}, '', url.toString());
+                }}
+                style={{ border: 'none', background: 'none', color: 'white', fontSize: '0.85rem', fontWeight: 'bold', outline: 'none', cursor: 'pointer' }}
+              >
+                <option value="all" style={{ background: '#1e293b', color: 'white' }}>🏢 Todas las Sedes ({branches.length})</option>
+                {branches.map(b => (
+                  <option key={b.id} value={b.id} style={{ background: '#1e293b', color: 'white' }}>Sede: {b.name} {b.isMain ? '(Matriz)' : ''}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <button
             onClick={() => {
               const next = !soundEnabled;
@@ -182,7 +219,8 @@ export default function KDSFullscreen() {
       {/* 5-Column KDS Board */}
       <main style={{ flex: 1, padding: '16px', display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '14px', overflowX: 'auto' }}>
         {columns.map(col => {
-          const colOrders = orders.filter(o => col.statuses.includes(o.status));
+          const displayedOrders = selectedBranchId === 'all' ? orders : orders.filter(o => (o as any).branchId === selectedBranchId);
+          const colOrders = displayedOrders.filter(o => col.statuses.includes(o.status));
 
           return (
             <div

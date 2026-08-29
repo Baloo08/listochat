@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { ShoppingCart, Clock, CheckCircle, Truck, Package, XCircle, Eye, MessageCircle, AlertCircle, RefreshCw, Send, Check, Utensils, LayoutGrid, List, Navigation, Bike, MapPin, User, Phone, Store, Maximize, ExternalLink } from 'lucide-react';
+import { ShoppingCart, Clock, CheckCircle, Truck, Package, XCircle, Eye, MessageCircle, AlertCircle, RefreshCw, Send, Check, Utensils, LayoutGrid, List, Navigation, Bike, MapPin, User, Phone, Store, Maximize, ExternalLink, Building2 } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
 import { Order, OrderStatus, DeliveryDriver } from '../../shared/types';
 
 export default function OrdersPanel() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [drivers, setDrivers] = useState<DeliveryDriver[]>([]);
+  const [branches, setBranches] = useState<any[]>([]);
+  const [selectedBranchId, setSelectedBranchId] = useState<string>('all');
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<'kanban' | 'list'>('kanban');
   const [filterStatus, setFilterStatus] = useState<string>('all');
@@ -37,9 +39,19 @@ export default function OrdersPanel() {
     }
   };
 
+  const fetchBranches = async () => {
+    try {
+      const data = await api.get('/api/branches');
+      if (Array.isArray(data)) setBranches(data);
+    } catch (err) {
+      console.error('Error fetching branches:', err);
+    }
+  };
+
   useEffect(() => {
     fetchOrders();
     fetchDrivers();
+    fetchBranches();
     const timer = setInterval(fetchOrders, 6000);
     return () => clearInterval(timer);
   }, []);
@@ -139,12 +151,13 @@ export default function OrdersPanel() {
   ];
 
   const filteredOrders = orders.filter(o => {
+    if (selectedBranchId !== 'all' && (o as any).branchId !== selectedBranchId) return false;
     if (filterStatus === 'all') return true;
     if (filterStatus === 'new') return o.status === 'pedido_recibido' || o.status === 'pending';
     return o.status === filterStatus;
   });
 
-  const newOrdersCount = orders.filter(o => o.status === 'pedido_recibido' || o.status === 'pending').length;
+  const newOrdersCount = filteredOrders.filter(o => o.status === 'pedido_recibido' || o.status === 'pending').length;
 
   if (loading) {
     return <div style={{ padding: '40px', textAlign: 'center' }}>Cargando panel de comandas y pedidos...</div>;
@@ -168,11 +181,27 @@ export default function OrdersPanel() {
           </p>
         </div>
 
-        {/* View Mode Toggle & Fullscreen KDS Button */}
+        {/* View Mode Toggle, Branch Selector & Fullscreen KDS Button */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
           
+          {branches.length >= 2 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '5px 10px', boxShadow: 'var(--shadow-sm)' }}>
+              <Building2 size={16} color="var(--primary)" />
+              <select
+                value={selectedBranchId}
+                onChange={(e) => setSelectedBranchId(e.target.value)}
+                style={{ border: 'none', background: 'none', fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--text)', outline: 'none', cursor: 'pointer' }}
+              >
+                <option value="all">🏢 Todas las Sedes ({branches.length})</option>
+                {branches.map(b => (
+                  <option key={b.id} value={b.id}>Sede: {b.name} {b.isMain ? '(Matriz)' : ''}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <a
-            href="/kds"
+            href={selectedBranchId !== 'all' ? `/kds?branch=${selectedBranchId}` : '/kds'}
             target="_blank"
             rel="noreferrer"
             style={{ padding: '8px 14px', backgroundColor: '#0f172a', color: 'white', borderRadius: '8px', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', fontWeight: 'bold' }}
@@ -220,7 +249,7 @@ export default function OrdersPanel() {
       {viewMode === 'kanban' && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '14px', alignItems: 'flex-start' }}>
           {KANBAN_COLUMNS.map(col => {
-            const colOrders = orders.filter(o => col.statuses.includes(o.status));
+            const colOrders = filteredOrders.filter(o => col.statuses.includes(o.status));
             return (
               <div
                 key={col.id}
@@ -270,7 +299,14 @@ export default function OrdersPanel() {
                         >
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                             <div>
-                              <strong style={{ fontSize: '0.95rem', color: '#1e293b' }}>#ORD-{order.orderNumber}</strong>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <strong style={{ fontSize: '0.95rem', color: '#1e293b' }}>#ORD-{order.orderNumber}</strong>
+                                {(order as any).branchName && (
+                                  <span style={{ fontSize: '0.68rem', padding: '1px 6px', backgroundColor: '#f3e8ff', color: '#6b21a8', borderRadius: '4px', fontWeight: 'bold' }}>
+                                    {(order as any).branchName}
+                                  </span>
+                                )}
+                              </div>
                               <div style={{ fontSize: '0.8rem', fontWeight: '600', color: '#475569' }}>{order.customerName}</div>
                             </div>
 
