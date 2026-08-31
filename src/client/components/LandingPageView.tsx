@@ -288,8 +288,8 @@ export default function LandingPageView({ onLoginClick }: LandingPageProps) {
           maxWidth: '100%',
           boxSizing: 'border-box'
         }}>
-          <Sparkles size={16} />
-          <span>El Sistema Inteligente para Negocios en Costa Rica</span>
+          <Zap size={16} />
+          <span>⚡ Impulsado por Betico IA: Nuestro Motor de IA Propio y Seguro</span>
         </div>
 
         {/* Main Title */}
@@ -738,6 +738,26 @@ export default function LandingPageView({ onLoginClick }: LandingPageProps) {
             <h3 style={{ fontSize: '1.15rem', fontWeight: '700', margin: '0 0 6px 0' }}>Difusiones Masivas & Marketing</h3>
             <p style={{ color: '#94a3b8', fontSize: '0.85rem', lineHeight: '1.6', margin: 0 }}>
               Envía promociones, ofertas y novedades a tus clientes por WhatsApp con control de cadencia inteligente para proteger tu número.
+            </p>
+          </div>
+
+          <div style={{ backgroundColor: '#131c2e', padding: '24px', borderRadius: '16px', border: '1px solid rgba(16, 185, 129, 0.25)', boxShadow: '0 8px 24px rgba(16, 185, 129, 0.1)' }}>
+            <div style={{ width: '42px', height: '42px', backgroundColor: 'rgba(16, 185, 129, 0.15)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '14px' }}>
+              <Zap size={22} color="#34d399" />
+            </div>
+            <h3 style={{ fontSize: '1.15rem', fontWeight: '700', margin: '0 0 6px 0', color: '#ecfdf5' }}>💸 Cero Tarifas Ocultas en Dólares</h3>
+            <p style={{ color: '#94a3b8', fontSize: '0.85rem', lineHeight: '1.6', margin: 0 }}>
+              Sin pagos extra de $20/mes o más, ni requerimiento de tarjetas internacionales. Tu motor de IA Betico viene 100% incluido y listo para usar en colones.
+            </p>
+          </div>
+
+          <div style={{ backgroundColor: '#131c2e', padding: '24px', borderRadius: '16px', border: '1px solid rgba(56, 189, 248, 0.25)', boxShadow: '0 8px 24px rgba(56, 189, 248, 0.1)' }}>
+            <div style={{ width: '42px', height: '42px', backgroundColor: 'rgba(56, 189, 248, 0.15)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '14px' }}>
+              <Store size={22} color="#38bdf8" />
+            </div>
+            <h3 style={{ fontSize: '1.15rem', fontWeight: '700', margin: '0 0 6px 0', color: '#f0f9ff' }}>🌐 Creador de Sitios Web Incluido</h3>
+            <p style={{ color: '#94a3b8', fontSize: '0.85rem', lineHeight: '1.6', margin: 0 }}>
+              Crea la página web oficial de tu negocio con tu logo, colores, textos y enlaces directos para comprar en la tienda online o agendar citas en 1 clic.
             </p>
           </div>
 

@@ -430,8 +430,39 @@ export async function runMigrations() {
       UNIQUE(tenant_id, month_year)
     );
 
+    CREATE TABLE IF NOT EXISTS tenant_websites (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID UNIQUE REFERENCES tenants(id) ON DELETE CASCADE,
+      website_enabled BOOLEAN DEFAULT true,
+      headline VARCHAR(255) DEFAULT 'Bienvenido a nuestro sitio oficial',
+      subheadline TEXT DEFAULT 'Calidad, confianza y la mejor atención personalizada directo a tu WhatsApp.',
+      about_title VARCHAR(255) DEFAULT 'Conoce Nuestra Historia',
+      about_text TEXT DEFAULT 'Somos un negocio apasionado por brindar el mejor servicio y productos de primera categoría. Nuestro compromiso es tu satisfacción total.',
+      about_image_url TEXT,
+      banner_image_url TEXT,
+      logo_url TEXT,
+      primary_color VARCHAR(50) DEFAULT '#2563eb',
+      accent_color VARCHAR(50) DEFAULT '#f59e0b',
+      font_family VARCHAR(50) DEFAULT 'Inter',
+      show_store_button BOOLEAN DEFAULT true,
+      show_booking_button BOOLEAN DEFAULT true,
+      store_button_text VARCHAR(100) DEFAULT 'Ver Menú y Productos',
+      booking_button_text VARCHAR(100) DEFAULT 'Agendar Cita en Línea',
+      features_json JSONB DEFAULT '[{"title":"Calidad Garantizada","desc":"Productos y servicios seleccionados con los más altos estándares."},{"title":"Atención Rápida","desc":"Respuestas y pedidos inmediatos con asistencia 24/7."},{"title":"Pagos Seguros","desc":"Aceptamos SINPE Móvil, transferencias y tarjetas."}]'::jsonb,
+      testimonials_json JSONB DEFAULT '[{"name":"Cliente Satisfecho","comment":"¡Excelente servicio y atención rápida! 100% recomendado.","rating":5}]'::jsonb,
+      contact_email VARCHAR(255),
+      contact_phone VARCHAR(50),
+      contact_address TEXT,
+      instagram_url VARCHAR(255),
+      facebook_url VARCHAR(255),
+      tiktok_url VARCHAR(255),
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
     ALTER TABLE appointments ADD COLUMN IF NOT EXISTS specialist_id UUID REFERENCES specialists(id) ON DELETE SET NULL;
 
+    CREATE INDEX IF NOT EXISTS idx_tenant_websites_tenant ON tenant_websites(tenant_id);
     CREATE INDEX IF NOT EXISTS idx_ai_usage_tenant_month ON tenant_ai_usage(tenant_id, month_year);
     CREATE INDEX IF NOT EXISTS idx_specialists_tenant ON specialists(tenant_id);
     CREATE INDEX IF NOT EXISTS idx_appointments_specialist ON appointments(specialist_id);

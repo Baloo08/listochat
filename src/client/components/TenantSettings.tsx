@@ -136,20 +136,21 @@ export default function TenantSettings() {
 
           {!quotaInfo.isUsingOwnKey ? (
             <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: '6px', color: '#1e3a8a' }}>
-                <span>Consumo mensual de tokens:</span>
-                <strong>{Number(quotaInfo.tokensUsed || 0).toLocaleString('es-CR')} / {Number(quotaInfo.limit || 25000).toLocaleString('es-CR')} tokens ({quotaInfo.percentageUsed}%)</strong>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginBottom: '4px' }}>
+                <span style={{ fontSize: '1.4rem', fontWeight: '800', color: '#1e3a8a' }}>
+                  {quotaInfo.requestsCount || 0}
+                </span>
+                <span style={{ fontSize: '0.9rem', fontWeight: '600', color: '#1e40af' }}>
+                  consultas, pedidos y asistencias atendidas este mes
+                </span>
               </div>
-              <div style={{ width: '100%', height: '8px', backgroundColor: '#dbeafe', borderRadius: '4px', overflow: 'hidden' }}>
-                <div style={{
-                  width: Math.min(100, quotaInfo.percentageUsed) + '%',
-                  height: '100%',
-                  backgroundColor: quotaInfo.percentageUsed > 90 ? '#ef4444' : quotaInfo.percentageUsed > 70 ? '#f59e0b' : '#2563eb',
-                  transition: 'width 0.3s'
-                }} />
-              </div>
-              <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '8px' }}>
-                Plan: <strong style={{ textTransform: 'uppercase' }}>{quotaInfo.plan}</strong> • Consultas atendidas este mes: <strong>{quotaInfo.requestsCount || 0}</strong>
+              <p style={{ margin: '0 0 8px 0', fontSize: '0.8rem', color: '#3b82f6', fontWeight: '500' }}>
+                ⏱️ ¡Betico IA te ha ahorrado aproximadamente <strong>{Math.max(0, Math.round(((quotaInfo.requestsCount || 0) * 4) / 60 * 10) / 10)} horas</strong> de atención manual a clientes!
+              </p>
+              <div style={{ fontSize: '0.75rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '12px', borderTop: '1px solid #dbeafe', paddingTop: '8px' }}>
+                <span>Plan: <strong style={{ textTransform: 'uppercase', color: '#1e40af' }}>{quotaInfo.plan}</strong></span>
+                <span>•</span>
+                <span>Atención automática 24/7 en WhatsApp <strong>Activa</strong></span>
               </div>
             </div>
           ) : (

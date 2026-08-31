@@ -6,6 +6,10 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { authenticateToken } from '../middleware/auth.js';
 import { tenantContext } from '../middleware/tenantContext.js';
 import { getProductsByTenant, getProductById, createProduct, updateProduct, deleteProduct } from '../db/products.repo.js';
+import { getTenantById } from '../db/tenant.repo.js';
+import { callAI, getMasterAIConfig, TenantAIConfig } from '../services/ai-provider.js';
+import { incrementTenantUsage } from '../db/ai-usage.repo.js';
+import { decrypt } from '../services/encryption.js';
 import { env } from '../config/env.js';
 import { query } from '../db/pool.js';
 
@@ -219,15 +223,32 @@ router.post('/generate-description', async (req, res) => {
       return;
     }
 
-    const apiKey = env.GEMINI_API_KEY;
-    const modelsToTry = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-3.7-flash', 'gemini-flash-latest'];
-    let aiText = '';
+    const tenant = await getTenantById(req.tenantId!);
+    let apiKey = '';
+    let isMarcaBlanca = false;
 
-    for (const modelName of modelsToTry) {
-      try {
-        const google = createGoogleGenerativeAI({ apiKey });
-        const model = google(modelName);
-        const prompt = `Eres un redactor profesional de e-commerce y marketing digital en Costa Rica y Latinoamérica.
+    if (tenant?.aiApiKeyEncrypted) {
+      try { apiKey = decrypt(tenant.aiApiKeyEncrypted); } catch (e) {}
+    }
+
+    let config: TenantAIConfig;
+    if (apiKey) {
+      config = {
+        provider: (tenant?.aiProvider as any) || 'gemini',
+        apiKey,
+        model: tenant?.aiModel || 'gemini-2.5-flash',
+        temperature: 0.7
+      };
+    } else {
+      isMarcaBlanca = true;
+      const masterConfig = await getMasterAIConfig();
+      config = {
+        ...masterConfig,
+        temperature: 0.7
+      };
+    }
+
+    const prompt = `Eres un redactor profesional de e-commerce y marketing digital en Costa Rica y Latinoamérica.
 Genera una descripción atractiva, persuasiva y profesional para el siguiente producto:
 
 - Nombre del producto: ${name}
@@ -240,23 +261,13 @@ Requisitos:
 3. Incluye 2 o 3 viñetas breves con los puntos clave destacados (ej: • Calidad garantizada).
 4. Devuelve únicamente el texto de la descripción listo para publicar.`;
 
-        const { text } = await generateText({
-          model,
-          prompt,
-          temperature: 0.7,
-        });
+    const aiResult = await callAI(config, prompt);
 
-        if (text && text.trim().length > 10) {
-          aiText = text.trim();
-          break;
-        }
-      } catch (err) {
-        // try next model
+    if (aiResult && aiResult.text) {
+      if (isMarcaBlanca && aiResult.tokensUsed > 0) {
+        await incrementTenantUsage(req.tenantId!, aiResult.tokensUsed);
       }
-    }
-
-    if (aiText) {
-      res.json({ description: aiText });
+      res.json({ description: aiResult.text });
       return;
     }
 

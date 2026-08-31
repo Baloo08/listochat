@@ -25,6 +25,8 @@ import BranchesManager from './components/BranchesManager';
 import LandingPageView from './components/LandingPageView';
 import PrivacyPolicyView from './components/PrivacyPolicyView';
 import TermsOfServiceView from './components/TermsOfServiceView';
+import WebsiteBuilder from './components/WebsiteBuilder';
+import WebsitePublicView from '../storefront/WebsitePublicView';
 import { io } from 'socket.io-client';
 import { playOrderNotificationSound, playBookingNotificationSound } from './utils/sound';
 
@@ -58,12 +60,18 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   TrendingUp,
-  Zap
+  Zap,
+  Globe
 } from 'lucide-react';
 
 export default function App() {
   // Public route checks
   const pathname = window.location.pathname;
+
+  if (pathname.startsWith('/sitio/') || pathname.startsWith('/web/')) {
+    const slug = pathname.replace('/sitio/', '').replace('/web/', '').split('/')[0];
+    return <WebsitePublicView slug={slug} />;
+  }
 
   if (pathname.startsWith('/tienda/')) {
     const slug = pathname.replace('/tienda/', '').split('/')[0];
@@ -302,9 +310,15 @@ export default function App() {
           badge: unreadOrdersCount > 0 ? unreadOrdersCount : undefined 
         },
         { id: 'productos', label: storeMode === 'restaurant' ? 'Menú / Platillos' : 'Catálogo Productos', icon: <Package size={18} /> },
-        { id: 'tienda', label: 'Tienda & Envíos', icon: <ShoppingBag size={18} /> }
+        { id: 'tienda', label: 'Tienda & Envíos', icon: <ShoppingBag size={18} /> },
+        { id: 'sitio', label: 'Mi Sitio Web', icon: <Globe size={18} /> }
       ]
-    }] : []),
+    }] : [{
+      title: 'PRESENCIA ONLINE',
+      items: [
+        { id: 'sitio', label: 'Mi Sitio Web', icon: <Globe size={18} /> }
+      ]
+    }]),
     ...(storeModules.bookingsEnabled !== false ? [{
       title: 'AGENDA & CITAS',
       items: [
@@ -369,6 +383,7 @@ export default function App() {
         case 'productos': return <ProductManager />;
         case 'ordenes': return <OrdersPanel />;
         case 'tienda': return <StoreSettings />;
+        case 'sitio': return <WebsiteBuilder />;
         case 'sucursales': return <BranchesManager />;
         case 'agente': return <AgentPromptStudio />;
         case 'whatsapp': return <EvolutionManager />;
