@@ -6,6 +6,7 @@ import { createInstance, connectInstance, disconnectInstance, getInstanceStatus,
 import { notifyNewTenantEnrollment, notifyPaymentProofUploaded, notifyPaymentApproved } from '../services/superadmin-notify.service.js';
 import { hashPassword } from '../db/users.repo.js';
 import { getAllTenantsMonthlyUsage } from '../db/ai-usage.repo.js';
+import { callAI, getMasterAIConfig } from '../services/ai-provider.js';
 
 const router = Router();
 
@@ -493,6 +494,156 @@ router.put('/tenants/:id/subscription', async (req, res) => {
     res.json({ success: true, message: 'Suscripción actualizada' });
   } catch (error) {
     res.status(500).json({ error: 'Error al actualizar suscripción' });
+  }
+});
+
+// TEST AI INFERENCE PLAYGROUND (SUPERADMIN)
+router.post('/test-ai', async (req, res) => {
+  const startTime = Date.now();
+  try {
+    const { prompt, provider, model, baseUrl } = req.body;
+    const master = await getMasterAIConfig();
+
+    const testConfig = {
+      provider: provider || master.provider,
+      apiKey: master.apiKey,
+      model: model || master.model,
+      temperature: 0.7,
+      baseUrl: baseUrl || master.baseUrl
+    };
+
+    const aiResult = await callAI(testConfig, prompt || 'Hola, ¿cómo funciona este modelo de IA?');
+    const latencyMs = Date.now() - startTime;
+
+    res.json({
+      success: true,
+      text: aiResult.text,
+      tokensUsed: aiResult.tokensUsed,
+      latencyMs,
+      config: {
+        provider: testConfig.provider,
+        model: testConfig.model,
+        baseUrl: testConfig.baseUrl
+      }
+    });
+  } catch (error: any) {
+    const latencyMs = Date.now() - startTime;
+    console.error('Error in Superadmin AI Playground:', error);
+    res.status(500).json({ error: error.message || 'Error en prueba de IA', latencyMs });
+  }
+});
+
+// CHECK LOCALAI ENGINE HEALTH / PING
+router.get('/ai-engine-status', async (req, res) => {
+  const startTime = Date.now();
+  try {
+    const dbRes = await query("SELECT value FROM platform_settings WHERE key = 'localai_url'");
+    const localaiUrl = dbRes.rows[0]?.value || 'http://localhost:8080/v1';
+
+    // Ping /models endpoint with 3s timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+    const pingUrl = localaiUrl.replace(/\/v1\/?$/, '') + '/v1/models';
+    const response = await fetch(pingUrl, { signal: controller.signal });
+    clearTimeout(timeoutId);
+
+    const latencyMs = Date.now() - startTime;
+
+    if (response.ok) {
+      const data: any = await response.json();
+      const models = Array.isArray(data.data) ? data.data.map((m: any) => m.id) : [];
+      res.json({
+        online: true,
+        url: localaiUrl,
+        latencyMs,
+        models,
+        statusText: 'Operativo & Respondiendo'
+      });
+    } else {
+      res.json({
+        online: false,
+        url: localaiUrl,
+        latencyMs,
+        statusText: 'Servidor respondió con código ' + response.status
+      });
+    }
+  } catch (e: any) {
+    const latencyMs = Date.now() - startTime;
+    res.json({
+      online: false,
+      latencyMs,
+      statusText: 'Servidor no accesible (' + (e.message || 'Timeout') + ')'
+    });
+  }
+});
+
+// OVERRIDE CUSTOM AI QUOTA FOR A TENANT
+router.put('/tenants/:id/ai-quota', async (req, res) => {
+  try {
+    const tenantId = req.params.id;
+    const { customTokensLimit } = req.body;
+
+    if (customTokensLimit !== undefined) {
+      await query(
+        "UPDATE tenants SET settings_json = jsonb_set(COALESCE(settings_json, '{}'::jsonb), '{customAiQuotaTokens}', $1::jsonb) WHERE id = $2",
+        [JSON.stringify(Number(customTokensLimit)), tenantId]
+      );
+    }
+
+    res.json({ success: true, message: 'Cuota personalizada actualizada con éxito' });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message || 'Error actualizando cuota' });
+  }
+});
+
+// GET AUDIT LOGS FOR SUPERADMIN
+router.get('/audit-logs', async (req, res) => {
+  try {
+    const result = await query(`
+      SELECT a.id, a.user_id as "userId", a.action, a.entity_type as "entityType", 
+             a.entity_id as "entityId", a.ip_address as "ipAddress", a.user_agent as "userAgent",
+             a.created_at as "createdAt", u.name as "userName", u.email as "userEmail", t.name as "tenantName"
+      FROM audit_logs a
+      LEFT JOIN users u ON u.id = a.user_id
+      LEFT JOIN tenants t ON t.id = a.tenant_id
+      ORDER BY a.created_at DESC
+      LIMIT 100
+    `);
+    res.json({ success: true, logs: result.rows });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message || 'Error al obtener logs de auditoría' });
+  }
+});
+
+// SYSTEM STATS & METRICS
+router.get('/system-stats', async (req, res) => {
+  try {
+    const mem = process.memoryUsage();
+    const uptimeSec = Math.floor(process.uptime());
+    const uptimeHours = (uptimeSec / 3600).toFixed(1);
+
+    const tenantsCount = await query("SELECT count(*) as total, count(*) filter (where active) as active FROM tenants WHERE slug != 'superadmin'");
+    const ordersCount = await query("SELECT count(*) as total FROM orders");
+    const appointmentsCount = await query("SELECT count(*) as total FROM appointments");
+    const chatsCount = await query("SELECT count(*) as total FROM chat_messages");
+
+    res.json({
+      success: true,
+      metrics: {
+        ramRss: (mem.rss / 1024 / 1024).toFixed(0) + ' MB',
+        ramHeapUsed: (mem.heapUsed / 1024 / 1024).toFixed(0) + ' MB',
+        uptime: uptimeHours + ' horas',
+        nodeVersion: process.version,
+        tenantsTotal: parseInt(tenantsCount.rows[0]?.total || '0', 10),
+        tenantsActive: parseInt(tenantsCount.rows[0]?.active || '0', 10),
+        ordersTotal: parseInt(ordersCount.rows[0]?.total || '0', 10),
+        appointmentsTotal: parseInt(appointmentsCount.rows[0]?.total || '0', 10),
+        chatsTotal: parseInt(chatsCount.rows[0]?.total || '0', 10)
+      }
+    });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message || 'Error al obtener métricas del sistema' });
   }
 });
 

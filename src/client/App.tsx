@@ -56,7 +56,9 @@ import {
   ChevronLeft,
   ChevronRight,
   PanelLeftClose,
-  PanelLeftOpen
+  PanelLeftOpen,
+  TrendingUp,
+  Zap
 } from 'lucide-react';
 
 export default function App() {
@@ -250,18 +252,31 @@ export default function App() {
 
   const superAdminNavGroups: NavGroup[] = [
     {
-      title: 'GESTIÓN SAAS',
+      title: 'GESTIÓN DE NEGOCIOS',
       items: [
-        { id: 'sa_tenants', label: 'Inquilinos & Accesos', icon: <Users size={18} /> },
-        { id: 'sa_financials', label: 'Finanzas del SaaS', icon: <DollarSign size={18} /> }
+        { id: 'sa_tenants', label: 'Inquilinos & Negocios', icon: <Building2 size={18} /> },
+        { id: 'sa_financials', label: 'Finanzas & Suscripciones', icon: <DollarSign size={18} /> }
       ]
     },
     {
-      title: 'INFRAESTRUCTURA & SISTEMA',
+      title: 'IA DE MARCA BLANCA',
       items: [
-        { id: 'sa_system', label: 'Servidor & Recursos', icon: <Server size={18} /> },
-        { id: 'sa_apis', label: 'APIs & Tráfico', icon: <Activity size={18} /> },
-        { id: 'sa_audit', label: 'Auditoría & Seguridad', icon: <ShieldCheck size={18} /> }
+        { id: 'sa_ai_engine', label: 'Motor LocalAI & Modelos', icon: <Bot size={18} /> },
+        { id: 'sa_ai_usage', label: 'Consumo & Cuotas', icon: <TrendingUp size={18} /> }
+      ]
+    },
+    {
+      title: 'WHATSAPP & COMUNICACIÓN',
+      items: [
+        { id: 'sa_bots', label: 'Bots de WhatsApp', icon: <MessageSquare size={18} /> }
+      ]
+    },
+    {
+      title: 'INFRAESTRUCTURA & SEGURIDAD',
+      items: [
+        { id: 'sa_system', label: 'Servidor & Despliegues', icon: <Server size={18} /> },
+        { id: 'sa_notifications', label: 'Alertas SuperAdmin', icon: <Bell size={18} /> },
+        { id: 'sa_audit', label: 'Auditoría & Accesos', icon: <ShieldCheck size={18} /> }
       ]
     }
   ];
@@ -322,11 +337,14 @@ export default function App() {
 
   const renderContent = () => {
     if (user.role === 'superadmin') {
-      const tabMap: Record<string, 'tenants' | 'system' | 'apis' | 'financials' | 'audit'> = {
+      const tabMap: Record<string, 'tenants' | 'financials' | 'ai_engine' | 'ai_usage' | 'bots' | 'system' | 'notifications' | 'audit'> = {
         sa_tenants: 'tenants',
         sa_financials: 'financials',
+        sa_ai_engine: 'ai_engine',
+        sa_ai_usage: 'ai_usage',
+        sa_bots: 'bots',
         sa_system: 'system',
-        sa_apis: 'apis',
+        sa_notifications: 'notifications',
         sa_audit: 'audit',
         tenants: 'tenants',
         dashboard: 'tenants'
