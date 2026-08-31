@@ -44,19 +44,17 @@ import {
   Bell,
   Users,
   Settings,
-  LogOut,
-  Building2,
   ShieldAlert,
-  ShieldCheck,
-  Server,
-  Activity,
-  DollarSign,
-  Send,
-  Volume2,
+  LogOut,
   ArrowLeft,
+  DollarSign,
+  Building2,
+  Server,
+  ShieldCheck,
+  Send,
+  Sparkles,
   Menu,
   X,
-  ChevronLeft,
   ChevronRight,
   PanelLeftClose,
   PanelLeftOpen,
@@ -114,6 +112,9 @@ export default function App() {
     return <TermsOfServiceView />;
   }
 
+  const [showLoginView, setShowLoginView] = useState<boolean>(
+    pathname === '/login' || pathname === '/superadmin' || pathname === '/admin' || pathname === '/app' || pathname === '/ingreso'
+  );
   const { isAuthenticated, user, loading, logout } = useAuth();
   const [currentPage, setCurrentPage] = useState<string>('dashboard');
   const [showTourModal, setShowTourModal] = useState<boolean>(() => {
@@ -219,36 +220,37 @@ export default function App() {
       localStorage.removeItem('superadmin_token');
       localStorage.removeItem('impersonated_tenant');
       localStorage.removeItem('impersonated_tenant_name');
-      window.location.href = '/app';
+      window.location.href = '/';
     }
   };
 
   if (loading) return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', fontFamily: 'system-ui, sans-serif' }}>Cargando Betico...</div>;
 
-  // 1. General Login Route (/login, /superadmin, /ingreso)
-  if (pathname === '/login' || pathname === '/superadmin' || pathname === '/ingreso') {
-    if (isAuthenticated && user) {
-      window.location.href = '/app';
-      return null;
+  if (!isAuthenticated || !user) {
+    if (showLoginView || pathname === '/login' || pathname === '/superadmin' || pathname === '/admin' || pathname === '/app' || pathname === '/ingreso') {
+      return (
+        <Login
+          onBack={() => {
+            setShowLoginView(false);
+            if (window.location.pathname !== '/') {
+              window.history.pushState({}, '', '/');
+            }
+          }}
+        />
+      );
     }
-    return <Login onBack={() => { window.location.href = '/'; }} onSuccess={() => { window.location.reload(); }} />;
-  }
-
-  // 2. Authenticated App Route (/app, /panel, /dashboard)
-  const isAppRoute = pathname.startsWith('/app') || pathname.startsWith('/panel') || pathname.startsWith('/dashboard');
-
-  if (isAppRoute) {
-    if (!isAuthenticated || !user) {
-      return <Login onBack={() => { window.location.href = '/'; }} />;
-    }
-    // Continue below to render the authenticated SaaS Layout
-  } else {
-    // 3. ROOT DOMAIN (https://betico.tech/) OR ANY OTHER PUBLIC PATH -> ALWAYS RENDER PUBLIC WEBSITE
     return (
       <LandingPageView
-        isLoggedIn={isAuthenticated}
-        onLoginClick={() => { window.location.href = '/login'; }}
-        onGoToDashboard={() => { window.location.href = '/app'; }}
+        onLoginClick={() => {
+          setShowLoginView(true);
+          if (window.location.pathname !== '/login') {
+            window.history.pushState({}, '', '/login');
+          }
+        }}
+        onGoToDashboard={() => {
+          setShowLoginView(true);
+        }}
+        isLoggedIn={false}
       />
     );
   }
@@ -358,7 +360,7 @@ export default function App() {
   };
 
   const renderContent = () => {
-    if (user.role === 'superadmin') {
+    if (user?.role === 'superadmin') {
       const tabMap: Record<string, 'tenants' | 'financials' | 'ai_engine' | 'ai_usage' | 'bots' | 'system' | 'notifications' | 'audit'> = {
         sa_tenants: 'tenants',
         sa_financials: 'financials',
@@ -517,18 +519,16 @@ export default function App() {
                       padding: isSidebarCollapsed ? '10px 0' : '9px 12px',
                       border: 'none',
                       borderRadius: 'var(--radius-md)',
-                      backgroundColor: isActive ? '#eff6ff' : 'transparent',
-                      color: isActive ? '#2563eb' : '#475569',
-                      textAlign: 'left',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s cubic-bezier(0.4, 0, 0.2, 1)',
+                      backgroundColor: isActive ? 'var(--primary-light)' : 'transparent',
+                      color: isActive ? 'var(--primary)' : 'var(--text)',
                       fontWeight: isActive ? '700' : '500',
+                      cursor: 'pointer',
                       fontSize: '0.86rem',
                       position: 'relative'
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: isSidebarCollapsed ? 0 : '10px', justifyContent: isSidebarCollapsed ? 'center' : 'flex-start' }}>
-                      <span style={{ color: isActive ? '#2563eb' : '#64748b', display: 'flex', alignItems: 'center' }}>
+                      <span style={{ color: isActive ? 'var(--primary)' : '#64748b', display: 'flex', alignItems: 'center' }}>
                         {item.icon}
                       </span>
                       {!isSidebarCollapsed && <span>{item.label}</span>}
@@ -576,7 +576,7 @@ export default function App() {
       </div>
 
       {/* Main Content Area */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: '100vh', width: '100%', overflow: 'hidden' }}>
         
         {/* Impersonation Banner */}
         {isImpersonating && (
