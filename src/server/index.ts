@@ -48,6 +48,7 @@ const __dirname = path.dirname(__filename);
 
 async function startServer() {
   const app = express();
+  app.set('trust proxy', 1); // Trust reverse proxy headers (Nginx/Cloudflare)
   const server = http.createServer(app);
 
   // Setup Real-time WebSockets
@@ -87,9 +88,9 @@ async function startServer() {
 
   // Rate limiters for protection against brute-force and DoS
   const authLimiter = rateLimit({
-    windowMs: 5 * 60 * 1000, // 5 minutes
-    max: 30, // 30 login attempts per 5 mins
-    message: { error: 'Demasiados intentos de acceso. Por favor intenta de nuevo en 5 minutos.' },
+    windowMs: 15 * 60 * 1000, // 15 minutes window
+    max: 20, // 20 attempts per 15 minutes per IP
+    message: { error: 'Demasiados intentos de acceso fallidos. Por favor espera 15 minutos.' },
     standardHeaders: true,
     legacyHeaders: false
   });
@@ -144,6 +145,7 @@ async function startServer() {
 
   // API Routes
   app.use('/api/auth/login', authLimiter);
+  app.use('/api/auth/register', authLimiter);
   app.use('/api/auth', authRoutes);
   app.use('/api/tenants', tenantRoutes);
   app.use('/api/users', usersRoutes);
