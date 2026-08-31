@@ -43,19 +43,21 @@ interface SuperAdminInstance {
 }
 
 interface SuperAdminPanelProps {
-  activeTabProp?: 'tenants' | 'financials' | 'ai_engine' | 'ai_usage' | 'bots' | 'system' | 'notifications' | 'audit';
+  activeTabProp?: 'tenants' | 'financials' | 'ai_engine' | 'ai_usage' | 'bots' | 'system' | 'notifications' | 'audit' | 'collections';
   onTabChangeProp?: (tab: string) => void;
   hideTabBar?: boolean;
 }
 
 export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChangeProp, hideTabBar = false }: SuperAdminPanelProps) {
   const [activeTab, setActiveTab] = useState<string>(activeTabProp || 'tenants');
+  const [selectedDossierTenantId, setSelectedDossierTenantId] = useState<string | null>(null);
 
   useEffect(() => {
     if (activeTabProp) {
       setActiveTab(activeTabProp);
     }
   }, [activeTabProp]);
+
   const api = useApi();
 
   // 1. TENANTS STATE
