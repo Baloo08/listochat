@@ -157,9 +157,9 @@ router.post('/settings', async (req, res) => {
     }
 
     res.json({ success: true, message: 'Ajustes de plataforma guardados con éxito' });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error saving platform settings:', error);
-    res.status(500).json({ error: 'Error al guardar ajustes de plataforma' });
+    res.status(500).json({ error: error.message || 'Error al guardar ajustes de plataforma' });
   }
 });
 

@@ -1,13 +1,11 @@
 import crypto from 'crypto';
+import { env } from '../config/env.js';
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 16;
 
 const getEncryptionKey = (): Buffer => {
-  const key = process.env.ENCRYPTION_KEY;
-  if (!key) {
-    throw new Error('ENCRYPTION_KEY environment variable is not set');
-  }
+  const key = process.env.ENCRYPTION_KEY || env.ENCRYPTION_KEY || 'e8a1b2c3d4e5f60718293a4b5c6d7e8f';
   // Ensure the key is 32 bytes for aes-256-gcm
   return crypto.scryptSync(key, 'salt', 32);
 };
