@@ -102,12 +102,56 @@ router.post('/', async (req, res) => {
 
 router.put('/:id', async (req, res) => {
   try {
-    const updated = await updateTenant(req.params.id, req.body);
+    const { id } = req.params;
+    const body = req.body || {};
+
+    const tenantUpdateData: any = {};
+    if (body.name !== undefined) tenantUpdateData.name = body.name;
+    if (body.slug !== undefined) tenantUpdateData.slug = body.slug.toLowerCase().trim();
+    if (body.plan !== undefined) tenantUpdateData.plan = body.plan;
+    if (body.customMonthlyPrice !== undefined) tenantUpdateData.customMonthlyPrice = Number(body.customMonthlyPrice) || 0;
+    if (body.billingCurrency !== undefined) tenantUpdateData.billingCurrency = body.billingCurrency;
+    if (body.phone !== undefined || body.whatsappNumber !== undefined) {
+      tenantUpdateData.whatsappNumber = body.phone || body.whatsappNumber;
+    }
+    if (body.active !== undefined) tenantUpdateData.active = Boolean(body.active);
+    
+    if (body.isTrial !== undefined) {
+      if (body.isTrial) {
+        tenantUpdateData.subscriptionStatus = 'trial';
+        const days = Number(body.trialDays) || 15;
+        tenantUpdateData.trialEndsAt = new Date(Date.now() + days * 86400000);
+      } else {
+        tenantUpdateData.subscriptionStatus = 'active';
+      }
+    }
+    if (body.subscriptionStatus !== undefined) {
+      tenantUpdateData.subscriptionStatus = body.subscriptionStatus;
+    }
+
+    const updated = await updateTenant(id, tenantUpdateData);
     if (!updated) {
       res.status(404).json({ error: 'Inquilino no encontrado' });
       return;
     }
-    await logAuditEvent(req.params.id, req.user!.userId, 'update_tenant', 'tenant', req.params.id, req.body, req.ip, req.headers['user-agent']);
+
+    // Also update or sync admin user (email, contact name) if provided
+    if (body.email || body.contactName) {
+      try {
+        const adminUser = await getAdminUserByTenant(id);
+        if (adminUser) {
+          const { updateUser } = await import('../db/users.repo.js');
+          await updateUser(adminUser.id, id, {
+            email: body.email || adminUser.email,
+            name: body.contactName || adminUser.name
+          });
+        }
+      } catch (userErr) {
+        console.warn('Could not update admin user during tenant edit:', userErr);
+      }
+    }
+
+    await logAuditEvent(id, req.user!.userId, 'update_tenant', 'tenant', id, body, req.ip, req.headers['user-agent']);
     res.json(updated);
   } catch (error) {
     console.error('Error al actualizar inquilino:', error);

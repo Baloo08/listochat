@@ -1,24 +1,31 @@
 import { query } from './pool.js';
 import { Tenant } from '../../shared/types.js';
 
-export async function getAllTenants(): Promise<Tenant[]> {
+export async function getAllTenants(): Promise<any[]> {
   const result = await query(`
     SELECT id, name, slug, custom_domain as "customDomain", 
            ai_provider as "aiProvider", ai_model as "aiModel", 
            evolution_instance as "evolutionInstance", whatsapp_number as "whatsappNumber",
-           plan, active, settings_json as "settingsJson", created_at as "createdAt"
+           plan, active, subscription_status as "subscriptionStatus",
+           billing_currency as "billingCurrency", custom_monthly_price as "customMonthlyPrice",
+           trial_ends_at as "trialEndsAt", next_billing_date as "nextBillingDate",
+           grace_period_ends_at as "gracePeriodEndsAt", settings_json as "settingsJson", 
+           created_at as "createdAt"
     FROM tenants 
     ORDER BY created_at DESC
   `);
   return result.rows;
 }
 
-export async function getTenantById(id: string): Promise<Tenant | null> {
+export async function getTenantById(id: string): Promise<any | null> {
   const result = await query(`
     SELECT id, name, slug, custom_domain as "customDomain", 
            ai_provider as "aiProvider", ai_api_key_encrypted as "aiApiKeyEncrypted",
            ai_model as "aiModel", evolution_instance as "evolutionInstance", 
            whatsapp_number as "whatsappNumber", plan, active, 
+           subscription_status as "subscriptionStatus", billing_currency as "billingCurrency", 
+           custom_monthly_price as "customMonthlyPrice", trial_ends_at as "trialEndsAt", 
+           next_billing_date as "nextBillingDate", grace_period_ends_at as "gracePeriodEndsAt",
            settings_json as "settingsJson", created_at as "createdAt"
     FROM tenants WHERE id = $1
   `, [id]);
@@ -32,6 +39,8 @@ export async function getTenantBySlug(slug: string): Promise<Tenant | null> {
            t.ai_provider as "aiProvider", t.ai_api_key_encrypted as "aiApiKeyEncrypted",
            t.ai_model as "aiModel", t.evolution_instance as "evolutionInstance", 
            t.whatsapp_number as "whatsappNumber", t.plan, t.active, 
+           t.subscription_status as "subscriptionStatus", t.billing_currency as "billingCurrency",
+           t.custom_monthly_price as "customMonthlyPrice", t.trial_ends_at as "trialEndsAt",
            t.settings_json as "settingsJson", t.created_at as "createdAt"
     FROM tenants t
     LEFT JOIN store_settings ss ON ss.tenant_id = t.id
@@ -83,16 +92,50 @@ export async function createTenant(data: Partial<Tenant>): Promise<Tenant> {
   return result.rows[0];
 }
 
-export async function updateTenant(id: string, data: Partial<Tenant>): Promise<Tenant | null> {
-  const keys = Object.keys(data).filter(k => k !== 'id' && k !== 'createdAt');
-  if (keys.length === 0) return getTenantById(id);
+export async function updateTenant(id: string, data: Record<string, any>): Promise<any | null> {
+  const allowedColumns: Record<string, string> = {
+    name: 'name',
+    slug: 'slug',
+    customDomain: 'custom_domain',
+    custom_domain: 'custom_domain',
+    aiProvider: 'ai_provider',
+    ai_provider: 'ai_provider',
+    aiApiKeyEncrypted: 'ai_api_key_encrypted',
+    ai_api_key_encrypted: 'ai_api_key_encrypted',
+    aiModel: 'ai_model',
+    ai_model: 'ai_model',
+    evolutionInstance: 'evolution_instance',
+    evolution_instance: 'evolution_instance',
+    whatsappNumber: 'whatsapp_number',
+    whatsapp_number: 'whatsapp_number',
+    phone: 'whatsapp_number',
+    plan: 'plan',
+    active: 'active',
+    settingsJson: 'settings_json',
+    settings_json: 'settings_json',
+    subscriptionStatus: 'subscription_status',
+    subscription_status: 'subscription_status',
+    billingCurrency: 'billing_currency',
+    billing_currency: 'billing_currency',
+    customMonthlyPrice: 'custom_monthly_price',
+    custom_monthly_price: 'custom_monthly_price',
+    trialEndsAt: 'trial_ends_at',
+    trial_ends_at: 'trial_ends_at',
+    nextBillingDate: 'next_billing_date',
+    next_billing_date: 'next_billing_date',
+    gracePeriodEndsAt: 'grace_period_ends_at',
+    grace_period_ends_at: 'grace_period_ends_at'
+  };
 
-  const setClause = keys.map((key, index) => {
-    const dbKey = key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
-    return `${dbKey} = $${index + 2}`;
+  const validEntries = Object.entries(data).filter(([k, v]) => allowedColumns[k] !== undefined && v !== undefined);
+  if (validEntries.length === 0) return getTenantById(id);
+
+  const setClause = validEntries.map(([key], index) => {
+    const dbColumn = allowedColumns[key];
+    return `${dbColumn} = $${index + 2}`;
   }).join(', ');
 
-  const values = keys.map(k => (data as any)[k]);
+  const values = validEntries.map(([, val]) => val);
 
   const result = await query(`
     UPDATE tenants SET ${setClause}
@@ -100,7 +143,9 @@ export async function updateTenant(id: string, data: Partial<Tenant>): Promise<T
     RETURNING id, name, slug, custom_domain as "customDomain", 
            ai_provider as "aiProvider", ai_model as "aiModel", 
            evolution_instance as "evolutionInstance", whatsapp_number as "whatsappNumber",
-           plan, active, settings_json as "settingsJson", created_at as "createdAt"
+           plan, active, subscription_status as "subscriptionStatus",
+           billing_currency as "billingCurrency", custom_monthly_price as "customMonthlyPrice",
+           trial_ends_at as "trialEndsAt", settings_json as "settingsJson", created_at as "createdAt"
   `, [id, ...values]);
 
   return result.rows[0] || null;
