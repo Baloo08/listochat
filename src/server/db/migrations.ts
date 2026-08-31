@@ -496,8 +496,8 @@ export async function runMigrations() {
 
   // Seed default platform settings for LocalAI & Deployments if empty
   const defaultPlatformSettings = [
-    { key: 'localai_url', value: process.env.LOCALAI_URL || 'http://localhost:8080/v1' },
-    { key: 'localai_model', value: 'llama-3.1-8b-instruct' },
+    { key: 'localai_url', value: process.env.LOCALAI_URL || 'https://beticoia-localai.qvtdko.easypanel.host/v1' },
+    { key: 'localai_model', value: 'gpt-4o' },
     { key: 'localai_enabled', value: 'true' },
     { key: 'master_ai_provider', value: 'gemini' },
     { key: 'master_ai_model', value: 'gemini-2.5-flash' },
@@ -512,9 +512,19 @@ export async function runMigrations() {
     await query(`
       INSERT INTO platform_settings (key, value)
       VALUES ($1, $2)
-      ON CONFLICT (key) DO NOTHING
+      ON CONFLICT (key) DO UPDATE SET value = CASE 
+        WHEN platform_settings.value = 'http://localhost:8080/v1' THEN EXCLUDED.value 
+        ELSE platform_settings.value 
+      END
     `, [s.key, s.value]);
   }
+
+  // Ensure localhost default is upgraded to Easypanel URL
+  await query(`
+    UPDATE platform_settings 
+    SET value = 'https://beticoia-localai.qvtdko.easypanel.host/v1' 
+    WHERE key = 'localai_url' AND (value = 'http://localhost:8080/v1' OR value IS NULL OR value = '')
+  `);
 
   console.log('Migrations completed successfully.');
 }

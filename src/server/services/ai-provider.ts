@@ -44,11 +44,12 @@ export function getDefaultModels(provider: string): string[] {
     case 'localai':
     case 'betico_ai':
       return [
+        'gpt-4o',
+        'gpt-4',
+        'minicpm-v-2_6-mmproj-f16.gguf',
         'llama-3.1-8b-instruct',
         'qwen2.5-7b-instruct',
-        'llama-3.2-3b-instruct',
-        'phi-3.5-mini',
-        'mistral-7b-instruct'
+        'llama-3.2-3b-instruct'
       ];
     default:
       return [];
@@ -67,18 +68,21 @@ export async function getMasterAIConfig(): Promise<TenantAIConfig> {
       }
     }
 
-    const provider = (settings.master_ai_provider as any) || 'gemini';
-    
-    if (provider === 'localai' || provider === 'betico_ai') {
+    const localaiEnabled = settings.localai_enabled !== 'false';
+    const localaiUrl = settings.localai_url || process.env.LOCALAI_URL || 'https://beticoia-localai.qvtdko.easypanel.host/v1';
+    const localaiModel = settings.localai_model || 'gpt-4o';
+
+    if (localaiEnabled) {
       return {
         provider: 'localai',
         apiKey: settings.localai_api_key || 'localai',
-        model: settings.localai_model || 'llama-3.1-8b-instruct',
+        model: localaiModel,
         temperature: 0.7,
-        baseUrl: settings.localai_url || process.env.LOCALAI_URL || 'http://localhost:8080/v1'
+        baseUrl: localaiUrl
       };
     }
 
+    const provider = (settings.master_ai_provider as any) || 'gemini';
     const apiKey = settings.master_ai_key || DEFAULT_GEMINI_KEY;
     const model = settings.master_ai_model || (provider === 'gemini' ? 'gemini-2.5-flash' : provider === 'openai' ? 'gpt-4o-mini' : 'claude-3-5-haiku-20241022');
 

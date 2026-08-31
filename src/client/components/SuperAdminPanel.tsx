@@ -78,8 +78,16 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
   const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
 
   // 2. AI ENGINE & PLAYGROUND STATE
-  const [localaiUrl, setLocalaiUrl] = useState('http://localhost:8080/v1');
-  const [localaiModel, setLocalaiModel] = useState('llama-3.1-8b-instruct');
+  const [localaiUrl, setLocalaiUrl] = useState('https://beticoia-localai.qvtdko.easypanel.host/v1');
+  const [localaiModel, setLocalaiModel] = useState('gpt-4o');
+  const [availableLocalModels, setAvailableLocalModels] = useState<string[]>([
+    'gpt-4o',
+    'gpt-4',
+    'minicpm-v-2_6-mmproj-f16.gguf',
+    'llama-3.1-8b-instruct',
+    'qwen2.5-7b-instruct',
+    'llama-3.2-3b-instruct'
+  ]);
   const [localaiApiKey, setLocalaiApiKey] = useState('');
   const [localaiEnabled, setLocalaiEnabled] = useState(true);
   const [masterAiProvider, setMasterAiProvider] = useState('gemini');
@@ -89,7 +97,7 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
   const [checkingAiEngine, setCheckingAiEngine] = useState(false);
   const [playgroundPrompt, setPlaygroundPrompt] = useState('Hola, ¿cuáles son tus funciones como asistente inteligente de Betico?');
   const [playgroundProvider, setPlaygroundProvider] = useState('localai');
-  const [playgroundModel, setPlaygroundModel] = useState('llama-3.1-8b-instruct');
+  const [playgroundModel, setPlaygroundModel] = useState('gpt-4o');
   const [playgroundResult, setPlaygroundResult] = useState<any>(null);
   const [testingPlayground, setTestingPlayground] = useState(false);
 
@@ -176,6 +184,9 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
       setCheckingAiEngine(true);
       const data = await api.get('/api/superadmin/platform/ai-engine-status');
       setAiEngineStatus(data);
+      if (data && Array.isArray(data.models) && data.models.length > 0) {
+        setAvailableLocalModels(data.models);
+      }
     } catch (e) {
       setAiEngineStatus({ online: false, statusText: 'Error conectando con el servidor' });
     } finally {
@@ -789,13 +800,17 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
                   <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '4px' }}>Modelo Principal</label>
                   <select
                     value={localaiModel}
-                    onChange={(e) => setLocalaiModel(e.target.value)}
+                    onChange={(e) => {
+                      setLocalaiModel(e.target.value);
+                      setPlaygroundModel(e.target.value);
+                    }}
                     style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
                   >
-                    <option value="llama-3.1-8b-instruct">Llama 3.1 8B Instruct (Recomendado)</option>
-                    <option value="qwen2.5-7b-instruct">Qwen 2.5 7B Instruct</option>
-                    <option value="llama-3.2-3b-instruct">Llama 3.2 3B Instruct (Ultra ligero)</option>
-                    <option value="mistral-7b-instruct">Mistral 7B Instruct</option>
+                    {availableLocalModels.map((m) => (
+                      <option key={m} value={m}>
+                        {m} {m === 'gpt-4o' ? '⚡ (Recomendado / Activo)' : ''}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
