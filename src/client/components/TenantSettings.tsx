@@ -70,11 +70,11 @@ export default function TenantSettings() {
     setLoading(true);
     try {
       if (mode === 'marcablanca') {
-        // Clear custom key and use platform Marca Blanca
+        // Clear custom key and use platform Marca Blanca (gpt-4)
         await api.post('/api/agent/prompt', {
           provider: 'localai',
           apiKey: '',
-          model: 'llama-3.1-8b-instruct',
+          model: 'gpt-4',
           temperature
         });
       } else {
@@ -97,15 +97,15 @@ export default function TenantSettings() {
   };
 
   return (
-    <div style={{ maxWidth: '800px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+    <div style={{ maxWidth: '1100px', display: 'flex', flexDirection: 'column', gap: '16px', paddingBottom: '24px' }}>
       
       {/* HEADER */}
-      <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '14px', border: '1px solid var(--border)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
-          <Bot size={26} color="var(--primary)" />
-          <h2 style={{ margin: 0, fontSize: '1.35rem', fontWeight: 'bold' }}>Motor de Inteligencia Artificial</h2>
+      <div style={{ backgroundColor: 'var(--surface)', padding: '18px 22px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+          <Bot size={24} color="var(--primary)" />
+          <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 'bold' }}>Motor de Inteligencia Artificial</h2>
         </div>
-        <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.88rem' }}>
+        <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.85rem' }}>
           Gestiona el motor neuronal que atiende a tus clientes por WhatsApp, genera descripciones de productos y asiste en la creación de prompts.
         </p>
       </div>
@@ -115,13 +115,13 @@ export default function TenantSettings() {
         <div style={{
           backgroundColor: quotaInfo.isUsingOwnKey ? '#f0fdf4' : '#eff6ff',
           border: quotaInfo.isUsingOwnKey ? '1px solid #bbf7d0' : '1px solid #bfdbfe',
-          borderRadius: '14px',
-          padding: '20px'
+          borderRadius: '12px',
+          padding: '16px 20px'
         }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               {quotaInfo.isUsingOwnKey ? <ShieldCheck size={20} color="#16a34a" /> : <Zap size={20} color="#2563eb" />}
-              <strong style={{ fontSize: '1rem', color: quotaInfo.isUsingOwnKey ? '#166534' : '#1e40af' }}>
+              <strong style={{ fontSize: '0.95rem', color: quotaInfo.isUsingOwnKey ? '#166534' : '#1e40af' }}>
                 {quotaInfo.isUsingOwnKey ? 'Modo Llave Privada Personalizada (BYOK)' : '⚡ IA Betico Marca Blanca (Incluida en tu Plan)'}
               </strong>
             </div>
@@ -161,13 +161,13 @@ export default function TenantSettings() {
       )}
 
       {/* MODE SELECTOR */}
-      <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '14px', border: '1px solid var(--border)' }}>
+      <div style={{ backgroundColor: 'var(--surface)', padding: '18px 22px', borderRadius: '12px', border: '1px solid var(--border)' }}>
         
-        <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '12px' }}>
+        <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '10px' }}>
           Selecciona cómo deseas conectar la Inteligencia Artificial:
         </label>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px', marginBottom: '24px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px', marginBottom: '16px' }}>
           
           {/* Marca Blanca Card */}
           <div

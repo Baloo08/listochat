@@ -142,9 +142,17 @@ export async function callAI(config: TenantAIConfig, prompt: string): Promise<{ 
   if (provider === 'localai' || provider === 'betico_ai') {
     console.warn('[AI-Provider] LocalAI unavailable or timed out. Engaging Master Gemini Failover...');
     try {
+      let masterKey = DEFAULT_GEMINI_KEY;
+      try {
+        const masterConf = await getMasterAIConfig();
+        if (masterConf.apiKey && masterConf.apiKey !== 'localai') {
+          masterKey = masterConf.apiKey;
+        }
+      } catch (e) {}
+
       return await executeProvider({
         provider: 'gemini',
-        apiKey: DEFAULT_GEMINI_KEY,
+        apiKey: masterKey || DEFAULT_GEMINI_KEY,
         model: 'gemini-2.5-flash',
         temperature: 0.7
       }, prompt);
@@ -184,9 +192,9 @@ async function executeProvider(config: TenantAIConfig, prompt: string) {
     throw new Error("Unsupported provider: " + config.provider);
   }
 
-  // 10s timeout guard for local inference
+  // 25s timeout guard for local CPU inference
   const timeoutPromise = new Promise<{ text: string, tokensUsed: number }>((_, reject) => {
-    setTimeout(() => reject(new Error('AI inference timeout after 10s')), 10000);
+    setTimeout(() => reject(new Error('AI inference timeout after 25s')), 25000);
   });
 
   const generatePromise = (async () => {
