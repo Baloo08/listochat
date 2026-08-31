@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { Bot, Mail, Lock, Eye, EyeOff, ArrowRight, AlertCircle, ShieldCheck } from 'lucide-react';
+import ForgotPasswordModal from './ForgotPasswordModal';
 
 interface LoginProps {
   onBack?: () => void;
@@ -10,6 +11,7 @@ export default function Login({ onBack }: LoginProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [showForgotModal, setShowForgotModal] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
@@ -161,6 +163,24 @@ export default function Login({ onBack }: LoginProps) {
             </div>
           </div>
 
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '-6px' }}>
+            <button
+              type="button"
+              onClick={() => setShowForgotModal(true)}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#16a34a',
+                fontSize: '0.8rem',
+                fontWeight: '600',
+                cursor: 'pointer',
+                padding: 0
+              }}
+            >
+              ¿Olvidaste tu contraseña?
+            </button>
+          </div>
+
           <button 
             type="submit" 
             disabled={loading}
@@ -173,7 +193,7 @@ export default function Login({ onBack }: LoginProps) {
               borderRadius: '8px', 
               fontWeight: 'bold',
               fontSize: '0.95rem',
-              marginTop: '6px',
+              marginTop: '4px',
               cursor: loading ? 'not-allowed' : 'pointer',
               display: 'flex',
               alignItems: 'center',
@@ -192,6 +212,12 @@ export default function Login({ onBack }: LoginProps) {
           <ShieldCheck size={16} color="#16a34a" />
           <span>Acceso Seguro Encriptado SSL & PBKDF2</span>
         </div>
+
+        <ForgotPasswordModal
+          isOpen={showForgotModal}
+          onClose={() => setShowForgotModal(false)}
+          initialIdentifier={email}
+        />
       </div>
     </div>
   );

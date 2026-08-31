@@ -184,3 +184,46 @@ export async function getBase64FromMediaMessage(instanceName: string, messageKey
     return { error: error.message || error };
   }
 }
+
+export async function fetchWhatsAppContacts(instanceName: string): Promise<Array<{ id: string; name?: string; pushName?: string; phone: string }>> {
+  try {
+    const endpoints = [
+      `${EVOLUTION_API_URL}/chat/findContacts/${instanceName}`,
+      `${EVOLUTION_API_URL}/contact/find/${instanceName}`
+    ];
+
+    for (const url of endpoints) {
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: getHeaders(),
+          body: JSON.stringify({})
+        });
+        if (response.ok) {
+          const list = await response.json();
+          const items = Array.isArray(list) ? list : (list.data || []);
+          if (items.length > 0) {
+            return items.map((c: any) => {
+              const jid = c.id || c.jid || c.remoteJid || '';
+              const phone = jid.replace(/@.+$/, '').replace(/\D/g, '');
+              const name = c.name || c.pushName || c.verifiedName || phone;
+              return {
+                id: jid,
+                name,
+                pushName: c.pushName || name,
+                phone
+              };
+            }).filter((c: any) => c.phone && c.phone.length >= 7);
+          }
+        }
+      } catch (e) {
+        // try next
+      }
+    }
+    return [];
+  } catch (err) {
+    console.error('Error fetching whatsapp contacts:', err);
+    return [];
+  }
+}
+

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Bot, Lock, Mail, Eye, EyeOff, ShieldCheck, ArrowRight, Store, AlertCircle, LogOut, CheckCircle, ExternalLink } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
+import ForgotPasswordModal from './ForgotPasswordModal';
 
 interface TenantInfo {
   id: string;
@@ -31,6 +32,7 @@ export default function TenantLoginView({ slug }: TenantLoginViewProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [showForgotModal, setShowForgotModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState(false);
@@ -322,6 +324,24 @@ export default function TenantLoginView({ slug }: TenantLoginViewProps) {
               </div>
             </div>
 
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '-6px' }}>
+              <button
+                type="button"
+                onClick={() => setShowForgotModal(true)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: primaryColor,
+                  fontSize: '0.8rem',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  padding: 0
+                }}
+              >
+                ¿Olvidaste tu contraseña?
+              </button>
+            </div>
+
             <button
               type="submit"
               disabled={submitting}
@@ -339,7 +359,7 @@ export default function TenantLoginView({ slug }: TenantLoginViewProps) {
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: '8px',
-                marginTop: '6px',
+                marginTop: '4px',
                 boxShadow: `0 4px 12px ${primaryColor}40`,
                 transition: 'all 0.2s ease'
               }}
@@ -366,6 +386,11 @@ export default function TenantLoginView({ slug }: TenantLoginViewProps) {
             </a>
           </div>
 
+          <ForgotPasswordModal
+            isOpen={showForgotModal}
+            onClose={() => setShowForgotModal(false)}
+            initialIdentifier={email}
+          />
         </div>
 
         {/* Betico Powered By */}

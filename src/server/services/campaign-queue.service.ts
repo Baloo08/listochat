@@ -125,16 +125,22 @@ async function processCampaignJob(job: CampaignJob) {
     if (!tenant || !tenant.evolutionInstance) return;
 
     // Fetch target customers
-    let custQuery = `SELECT id, name, phone FROM customers WHERE tenant_id = $1`;
-    const params: any[] = [tenantId];
-    if (campaign.target_segment === 'tag' && campaign.target_tag) {
-      custQuery += ` AND $2 = ANY(tags)`;
-      params.push(campaign.target_tag);
-    }
-    custQuery += ` ORDER BY last_interaction DESC`;
+    let customers: Array<{ id?: string; name: string; phone: string }> = [];
 
-    const customersRes = await query(custQuery, params);
-    const customers = customersRes.rows;
+    if (campaign.target_contacts && Array.isArray(campaign.target_contacts) && campaign.target_contacts.length > 0) {
+      customers = campaign.target_contacts;
+    } else {
+      let custQuery = `SELECT id, name, phone FROM customers WHERE tenant_id = $1`;
+      const params: any[] = [tenantId];
+      if (campaign.target_segment === 'tag' && campaign.target_tag) {
+        custQuery += ` AND $2 = ANY(tags)`;
+        params.push(campaign.target_tag);
+      }
+      custQuery += ` ORDER BY last_interaction DESC`;
+
+      const customersRes = await query(custQuery, params);
+      customers = customersRes.rows;
+    }
 
     let sentCount = Number(campaign.sent_count || 0);
     let failedCount = Number(campaign.failed_count || 0);
@@ -235,3 +241,27 @@ export async function recoverInterruptedCampaigns() {
     console.error('[CampaignQueue] Error recovering interrupted campaigns:', err);
   }
 }
+
+/**
+ * Periodically scans for scheduled campaigns and enqueues them.
+ */
+export function startScheduledCampaignScanner() {
+  console.log('[CampaignQueue] Starting scheduled campaign scanner (30s interval)...');
+  setInterval(async () => {
+    try {
+      const res = await query(`
+        SELECT id, tenant_id as "tenantId" 
+        FROM whatsapp_campaigns 
+        WHERE status = 'scheduled' AND scheduled_for IS NOT NULL AND scheduled_for <= CURRENT_TIMESTAMP
+      `);
+      for (const row of res.rows) {
+        console.log(`[CampaignQueue] Triggering scheduled campaign ${row.id}...`);
+        await query(`UPDATE whatsapp_campaigns SET status = 'sending' WHERE id = $1`, [row.id]);
+        await enqueueCampaign(row.id, row.tenantId);
+      }
+    } catch (err) {
+      console.error('[CampaignQueue] Error scanning scheduled campaigns:', err);
+    }
+  }, 30000);
+}
+

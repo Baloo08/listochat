@@ -72,6 +72,18 @@ router.post('/', async (req, res) => {
       userMessage = `📍 [Ubicación Compartida]: ${mapsUrl} (${loc.name || loc.address || 'Ubicación GPS'})`;
     }
 
+    // Check if incoming message belongs to a Superadmin Bot (Ventas o Soporte)
+    if ((instanceName === 'betico_ventas' || instanceName === 'betico_soporte') && !fromMe) {
+      const { processSuperadminWhatsAppMessage } = await import('../services/superadmin-bot.service.js');
+      await processSuperadminWhatsAppMessage({
+        instanceName,
+        remoteJid,
+        pushName,
+        userMessage
+      });
+      return;
+    }
+
     // Resolve tenant early
     let tenant = null;
     if (instanceName) {

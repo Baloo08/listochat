@@ -12,7 +12,8 @@ import { env } from './config/env.js';
 import { runMigrations } from './db/migrations.js';
 import { query } from './db/pool.js';
 import { startReminderScheduler } from './services/reminder.service.js';
-import { recoverInterruptedCampaigns } from './services/campaign-queue.service.js';
+import { recoverInterruptedCampaigns, startScheduledCampaignScanner } from './services/campaign-queue.service.js';
+import { startSubscriptionLifecycleWorker } from './services/subscription.service.js';
 
 // Route imports
 import authRoutes from './routes/auth.routes.js';
@@ -35,6 +36,7 @@ import webhookRoutes from './routes/webhook.routes.js';
 import calendarRoutes from './routes/calendar.routes.js';
 import driversRoutes from './routes/drivers.routes.js';
 import superadminMetricsRoutes from './routes/superadmin-metrics.routes.js';
+import superadminPlatformRoutes from './routes/superadmin-platform.routes.js';
 import campaignsRoutes from './routes/campaigns.routes.js';
 import branchesRoutes from './routes/branches.routes.js';
 
@@ -155,6 +157,7 @@ async function startServer() {
   app.use('/api/dashboard', dashboardRoutes);
   app.use('/api/audit-logs', auditRoutes);
   app.use('/api/superadmin', superadminMetricsRoutes);
+  app.use('/api/superadmin/platform', superadminPlatformRoutes);
   app.use('/api/upload', uploadRoutes);
   app.use('/api/campaigns', campaignsRoutes);
   app.use('/api/branches', branchesRoutes);
@@ -189,8 +192,11 @@ async function startServer() {
     console.log('Database migrations completed.');
     // Start automated appointment reminder background scheduler
     startReminderScheduler();
-    // Recover any active WhatsApp campaigns
+    // Recover any active WhatsApp campaigns & start scheduled scanner
     recoverInterruptedCampaigns();
+    startScheduledCampaignScanner();
+    // Start subscription lifecycle worker (trial / grace period / suspension)
+    startSubscriptionLifecycleWorker();
   } catch (err) {
     console.error('Failed to run database migrations:', err);
   }

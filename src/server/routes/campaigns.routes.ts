@@ -121,6 +121,25 @@ router.post('/customers/:id/tags', async (req, res) => {
 // ==========================================
 // WHATSAPP CAMPAIGNS (MASS BROADCASTS)
 // ==========================================
+// Fetch live contacts from tenant's WhatsApp instance
+router.get('/whatsapp-contacts', async (req, res) => {
+  try {
+    const tenantId = req.user!.tenantId;
+    const tenant = await getTenantById(tenantId);
+    if (!tenant || !tenant.evolutionInstance) {
+      res.json({ contacts: [] });
+      return;
+    }
+
+    const { fetchWhatsAppContacts } = await import('../services/evolution.js');
+    const contacts = await fetchWhatsAppContacts(tenant.evolutionInstance);
+    res.json({ contacts });
+  } catch (error) {
+    console.error('Error fetching whatsapp contacts for campaign:', error);
+    res.status(500).json({ error: 'Error al obtener contactos de WhatsApp' });
+  }
+});
+
 router.get('/', async (req, res) => {
   try {
     const tenantId = req.user!.tenantId;
@@ -128,7 +147,8 @@ router.get('/', async (req, res) => {
       SELECT id, name, message_template as "messageTemplate", media_url as "mediaUrl",
              target_segment as "targetSegment", target_tag as "targetTag",
              total_recipients as "totalRecipients", sent_count as "sentCount",
-             failed_count as "failedCount", status, created_at as "createdAt"
+             failed_count as "failedCount", status, scheduled_for as "scheduledFor",
+             target_contacts as "targetContacts", created_at as "createdAt"
       FROM whatsapp_campaigns
       WHERE tenant_id = $1
       ORDER BY created_at DESC
@@ -143,33 +163,55 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const tenantId = req.user!.tenantId;
-    const { name, messageTemplate, mediaUrl, targetSegment, targetTag } = req.body;
+    const { name, messageTemplate, mediaUrl, targetSegment, targetTag, scheduledFor, targetContacts } = req.body;
 
     if (!name || !messageTemplate) {
       res.status(400).json({ error: 'Nombre de campaña y mensaje son obligatorios' });
       return;
     }
 
-    // Determine target recipient count
-    let countQuery = `SELECT COUNT(*) as count FROM customers WHERE tenant_id = $1`;
-    const params: any[] = [tenantId];
+    let totalRecipients = 0;
+    if (targetContacts && Array.isArray(targetContacts) && targetContacts.length > 0) {
+      totalRecipients = targetContacts.length;
+    } else {
+      let countQuery = `SELECT COUNT(*) as count FROM customers WHERE tenant_id = $1`;
+      const params: any[] = [tenantId];
 
-    if (targetSegment === 'tag' && targetTag) {
-      countQuery += ` AND $2 = ANY(tags)`;
-      params.push(targetTag);
+      if (targetSegment === 'tag' && targetTag) {
+        countQuery += ` AND $2 = ANY(tags)`;
+        params.push(targetTag);
+      }
+
+      const countRes = await query(countQuery, params);
+      totalRecipients = parseInt(countRes.rows[0]?.count || '0', 10);
     }
 
-    const countRes = await query(countQuery, params);
-    const totalRecipients = parseInt(countRes.rows[0]?.count || '0', 10);
+    const isScheduled = scheduledFor && new Date(scheduledFor).getTime() > Date.now();
+    const initialStatus = isScheduled ? 'scheduled' : 'draft';
 
     const result = await query(`
-      INSERT INTO whatsapp_campaigns (tenant_id, name, message_template, media_url, target_segment, target_tag, total_recipients, status)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, 'draft')
+      INSERT INTO whatsapp_campaigns (
+        tenant_id, name, message_template, media_url, target_segment, target_tag, 
+        total_recipients, status, scheduled_for, target_contacts
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       RETURNING id, name, message_template as "messageTemplate", media_url as "mediaUrl",
                 target_segment as "targetSegment", target_tag as "targetTag",
                 total_recipients as "totalRecipients", sent_count as "sentCount",
-                failed_count as "failedCount", status, created_at as "createdAt"
-    `, [tenantId, name, messageTemplate, mediaUrl || null, targetSegment || 'all', targetTag || null, totalRecipients]);
+                failed_count as "failedCount", status, scheduled_for as "scheduledFor",
+                target_contacts as "targetContacts", created_at as "createdAt"
+    `, [
+      tenantId, 
+      name, 
+      messageTemplate, 
+      mediaUrl || null, 
+      targetSegment || 'all', 
+      targetTag || null, 
+      totalRecipients, 
+      initialStatus,
+      isScheduled ? new Date(scheduledFor) : null,
+      targetContacts ? JSON.stringify(targetContacts) : null
+    ]);
 
     res.status(201).json(result.rows[0]);
   } catch (error) {

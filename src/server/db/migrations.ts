@@ -366,6 +366,48 @@ export async function runMigrations() {
     ALTER TABLE appointments ADD COLUMN IF NOT EXISTS branch_id UUID REFERENCES branches(id) ON DELETE SET NULL;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS branch_id UUID REFERENCES branches(id) ON DELETE SET NULL;
 
+    CREATE TABLE IF NOT EXISTS platform_settings (
+      key VARCHAR(100) PRIMARY KEY,
+      value TEXT,
+      value_encrypted TEXT,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+      token_hash VARCHAR(255) NOT NULL,
+      otp_code VARCHAR(10) NOT NULL,
+      phone VARCHAR(50),
+      expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+      used BOOLEAN DEFAULT FALSE,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS superadmin_instances (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      instance_type VARCHAR(50) UNIQUE NOT NULL,
+      instance_name VARCHAR(100) NOT NULL,
+      phone_number VARCHAR(50),
+      status VARCHAR(50) DEFAULT 'disconnected',
+      qr_code TEXT,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS custom_monthly_price NUMERIC(10, 2) DEFAULT 29;
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_currency VARCHAR(10) DEFAULT 'CRC';
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS subscription_status VARCHAR(50) DEFAULT 'trial';
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMP WITH TIME ZONE DEFAULT (CURRENT_TIMESTAMP + INTERVAL '15 days');
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS next_billing_date TIMESTAMP WITH TIME ZONE DEFAULT (CURRENT_TIMESTAMP + INTERVAL '15 days');
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS grace_period_ends_at TIMESTAMP WITH TIME ZONE;
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS last_payment_proof TEXT;
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS last_payment_ref VARCHAR(255);
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS last_payment_amount NUMERIC(10, 2);
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS payment_notes TEXT;
+
+    ALTER TABLE whatsapp_campaigns ADD COLUMN IF NOT EXISTS scheduled_for TIMESTAMP WITH TIME ZONE;
+    ALTER TABLE whatsapp_campaigns ADD COLUMN IF NOT EXISTS target_contacts JSONB;
+
     CREATE INDEX IF NOT EXISTS idx_branches_tenant ON branches(tenant_id);
     CREATE INDEX IF NOT EXISTS idx_orders_branch ON orders(branch_id);
     CREATE INDEX IF NOT EXISTS idx_customers_tenant ON customers(tenant_id);
@@ -385,6 +427,8 @@ export async function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_orders_tenant_id ON orders(tenant_id);
     CREATE INDEX IF NOT EXISTS idx_carts_tenant_id ON carts(tenant_id);
     CREATE INDEX IF NOT EXISTS idx_store_settings_tenant_id ON store_settings(tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_password_reset_user ON password_reset_tokens(user_id);
+    CREATE INDEX IF NOT EXISTS idx_password_reset_otp ON password_reset_tokens(otp_code);
   `;
 
   await query(tables);

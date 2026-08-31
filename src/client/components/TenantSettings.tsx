@@ -13,17 +13,27 @@ export default function TenantSettings() {
   const api = useApi();
 
   const models: Record<string, string[]> = {
-    gemini: ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-3.7-flash', 'gemini-2.5-pro', 'gemini-flash-latest'],
-    openai: ['gpt-4o-mini', 'gpt-4o', 'gpt-4-turbo'],
-    anthropic: ['claude-3-5-haiku-20241022', 'claude-3-5-sonnet-20241022']
+    gemini: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.5-flash-lite', 'gemini-1.5-flash', 'gemini-1.5-pro'],
+    openai: ['gpt-4o-mini', 'gpt-4o', 'gpt-4-turbo', 'o1', 'o1-mini', 'o3-mini'],
+    anthropic: ['claude-3-7-sonnet', 'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022']
   };
+
+  const [isCustomModel, setIsCustomModel] = useState(false);
+  const [customModelName, setCustomModelName] = useState('');
 
   useEffect(() => {
     const fetchConfig = async () => {
       try {
         const data = await api.get('/api/agent/prompt');
         if (data) {
-          if (data.model) setModel(data.model);
+          if (data.model) {
+            setModel(data.model);
+            const known = Object.values(models).flat();
+            if (!known.includes(data.model)) {
+              setIsCustomModel(true);
+              setCustomModelName(data.model);
+            }
+          }
           if (data.temperature !== undefined) setTemperature(data.temperature);
         }
       } catch (err) {
@@ -36,8 +46,9 @@ export default function TenantSettings() {
   const handleSave = async () => {
     setLoading(true);
     try {
+      const finalModel = isCustomModel ? (customModelName.trim() || model) : model;
       await api.post('/api/agent/prompt', {
-        model,
+        model: finalModel,
         temperature,
         ...(apiKey ? { apiKey, provider } : {})
       });
@@ -51,14 +62,50 @@ export default function TenantSettings() {
   };
 
   return (
-    <div style={{ maxWidth: '700px', backgroundColor: 'var(--surface)', padding: '28px', borderRadius: '10px', border: '1px solid var(--border)', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+    <div style={{ maxWidth: '750px', backgroundColor: 'var(--surface)', padding: '28px', borderRadius: '12px', border: '1px solid var(--border)', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
         <Bot size={24} color="var(--primary)" />
-        <h3 style={{ margin: 0, fontSize: '1.3rem', fontWeight: 'bold' }}>Motor de Inteligencia Artificial (Betico AI)</h3>
+        <h3 style={{ margin: 0, fontSize: '1.3rem', fontWeight: 'bold' }}>Motor de Inteligencia Artificial</h3>
       </div>
-      <p style={{ margin: '0 0 20px 0', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-        Configura el modelo neuronal y las credenciales que utilizará Betico para atender a los clientes por WhatsApp y generar descripciones
+      <p style={{ margin: '0 0 20px 0', color: 'var(--text-muted)', fontSize: '0.88rem' }}>
+        Configura el proveedor y modelo de IA que atenderá a tus clientes por WhatsApp y generará descripciones para tus productos.
       </p>
+
+      {/* Guide card to obtain API keys */}
+      <div style={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '16px', marginBottom: '22px' }}>
+        <div style={{ fontSize: '0.88rem', fontWeight: 'bold', color: '#1e293b', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <Key size={16} color="var(--primary)" /> ¿Dónde conseguir tu API Key?
+        </div>
+        <p style={{ margin: '0 0 12px 0', fontSize: '0.82rem', color: '#64748b', lineHeight: '1.5' }}>
+          Para que tu asistente funcione de forma privada, necesitas tu propia llave de API. Puedes obtener una gratuita o de pago en estos enlaces oficiales:
+        </p>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <a
+            href="https://aistudio.google.com/"
+            target="_blank"
+            rel="noreferrer"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px', backgroundColor: '#e0f2fe', color: '#0369a1', borderRadius: '6px', textDecoration: 'none', fontSize: '0.8rem', fontWeight: '700' }}
+          >
+            🟢 Google AI Studio (Gemini Gratis) ↗
+          </a>
+          <a
+            href="https://platform.openai.com/api-keys"
+            target="_blank"
+            rel="noreferrer"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px', backgroundColor: '#f3e8ff', color: '#7e22ce', borderRadius: '6px', textDecoration: 'none', fontSize: '0.8rem', fontWeight: '700' }}
+          >
+            🟣 OpenAI Platform (ChatGPT) ↗
+          </a>
+          <a
+            href="https://console.anthropic.com/"
+            target="_blank"
+            rel="noreferrer"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px', backgroundColor: '#ffedd5', color: '#c2410c', borderRadius: '6px', textDecoration: 'none', fontSize: '0.8rem', fontWeight: '700' }}
+          >
+            🟠 Anthropic Console (Claude) ↗
+          </a>
+        </div>
+      </div>
 
       {savedSuccess && (
         <div style={{ padding: '12px 16px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534', borderRadius: '6px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.9rem', fontWeight: '600' }}>
@@ -75,42 +122,60 @@ export default function TenantSettings() {
               const p = e.target.value;
               setProvider(p);
               setModel(models[p][0]);
+              setIsCustomModel(false);
             }}
             style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid var(--border)', backgroundColor: 'white', fontSize: '0.9rem' }}
           >
-            <option value="gemini">Google Gemini (Recomendado - 2.5 Flash / Flash Lite)</option>
-            <option value="openai">OpenAI (GPT-4o Mini / GPT-4o)</option>
-            <option value="anthropic">Anthropic (Claude 3.5)</option>
+            <option value="gemini">Google Gemini (Recomendado - 2.5 Flash / Pro)</option>
+            <option value="openai">OpenAI (GPT-4o / GPT-4o Mini / o1 / o3-mini)</option>
+            <option value="anthropic">Anthropic (Claude 3.7 Sonnet / 3.5 Sonnet / 3.5 Haiku)</option>
           </select>
         </div>
 
         <div>
-          <label style={{ display: 'block', marginBottom: '6px', fontWeight: '600', fontSize: '0.85rem' }}>Modelo Neuronal</label>
-          <select 
-            value={model} 
-            onChange={(e) => setModel(e.target.value)}
-            style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid var(--border)', backgroundColor: 'white', fontSize: '0.9rem' }}
-          >
-            {models[provider]?.map(m => (
-              <option key={m} value={m}>{m} {m === 'gemini-2.5-flash' ? '⚡ (Más Rápido & Preciso)' : m === 'gemini-2.5-flash-lite' ? '🍃 (Ultra Ligero)' : ''}</option>
-            ))}
-          </select>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+            <label style={{ fontWeight: '600', fontSize: '0.85rem' }}>Modelo Neuronal</label>
+            <button
+              type="button"
+              onClick={() => setIsCustomModel(!isCustomModel)}
+              style={{ background: 'none', border: 'none', color: 'var(--primary)', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' }}
+            >
+              {isCustomModel ? '← Elegir de la lista' : '✍️ Escribir modelo personalizado'}
+            </button>
+          </div>
+
+          {isCustomModel ? (
+            <input
+              type="text"
+              value={customModelName}
+              onChange={(e) => setCustomModelName(e.target.value)}
+              placeholder="Ej: gemini-2.5-pro, gpt-4o, claude-3-7-sonnet..."
+              style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.9rem' }}
+            />
+          ) : (
+            <select 
+              value={model} 
+              onChange={(e) => setModel(e.target.value)}
+              style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid var(--border)', backgroundColor: 'white', fontSize: '0.9rem' }}
+            >
+              {models[provider]?.map(m => (
+                <option key={m} value={m}>{m} {m.includes('flash') || m.includes('mini') || m.includes('haiku') ? '⚡ (Rápido)' : '🧠 (Alta Precisión)'}</option>
+              ))}
+            </select>
+          )}
         </div>
 
         <div>
           <label style={{ display: 'block', marginBottom: '6px', fontWeight: '600', fontSize: '0.85rem' }}>
-            API Key Personalizada (Opcional)
+            API Key de {provider === 'gemini' ? 'Google Gemini' : provider === 'openai' ? 'OpenAI' : 'Anthropic'}
           </label>
           <input 
             type="password" 
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
             style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.9rem' }}
-            placeholder="Dejar en blanco para usar la clave por defecto de la plataforma"
+            placeholder="Pega aquí tu API Key privada"
           />
-          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
-            Si tienes tu propia API Key de Google AI Studio u OpenAI, puedes ingresarla aquí.
-          </span>
         </div>
 
         <div>

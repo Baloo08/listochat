@@ -3,6 +3,9 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createAnthropic } from '@ai-sdk/anthropic';
 
+import { query } from '../db/pool';
+import { decrypt } from './encryption';
+
 export interface TenantAIConfig {
   provider: 'gemini' | 'openai' | 'anthropic';
   apiKey: string;
@@ -10,24 +13,67 @@ export interface TenantAIConfig {
   temperature: number;
 }
 
-const DEFAULT_GEMINI_KEY = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || 'AQ.Ab8RN6IHcdDKDITkdIOjt8SznSc6lS_1grotOA6SQ6fjZnd2SQ';
+const DEFAULT_GEMINI_KEY = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || '';
 
 export function getDefaultModels(provider: 'gemini' | 'openai' | 'anthropic'): string[] {
   switch (provider) {
     case 'gemini':
       return [
         'gemini-2.5-flash',
-        'gemini-flash-latest',
-        'gemini-2.5-flash-lite',
         'gemini-2.5-pro',
-        'gemini-3.7-flash'
+        'gemini-2.5-flash-lite',
+        'gemini-1.5-flash',
+        'gemini-1.5-pro'
       ];
     case 'openai':
-      return ['gpt-4o-mini', 'gpt-4o', 'gpt-4-turbo', 'gpt-3.5-turbo'];
+      return [
+        'gpt-4o',
+        'gpt-4o-mini',
+        'gpt-4-turbo',
+        'o1',
+        'o1-mini',
+        'o3-mini'
+      ];
     case 'anthropic':
-      return ['claude-3-5-haiku-20241022', 'claude-3-5-sonnet-20241022', 'claude-3-haiku-20240307'];
+      return [
+        'claude-3-7-sonnet',
+        'claude-3-5-sonnet-20241022',
+        'claude-3-5-haiku-20241022'
+      ];
     default:
       return [];
+  }
+}
+
+export async function getMasterAIConfig(): Promise<TenantAIConfig> {
+  try {
+    const res = await query(`SELECT key, value, value_encrypted FROM platform_settings WHERE key IN ('master_ai_provider', 'master_ai_key', 'master_ai_model')`);
+    const settings: Record<string, string> = {};
+    for (const row of res.rows) {
+      if (row.value_encrypted) {
+        settings[row.key] = decrypt(row.value_encrypted);
+      } else {
+        settings[row.key] = row.value || '';
+      }
+    }
+
+    const provider = (settings.master_ai_provider as any) || 'gemini';
+    const apiKey = settings.master_ai_key || DEFAULT_GEMINI_KEY;
+    const model = settings.master_ai_model || (provider === 'gemini' ? 'gemini-2.5-flash' : provider === 'openai' ? 'gpt-4o-mini' : 'claude-3-5-haiku-20241022');
+
+    return {
+      provider,
+      apiKey,
+      model,
+      temperature: 0.7
+    };
+  } catch (e) {
+    return {
+      provider: 'gemini',
+      apiKey: DEFAULT_GEMINI_KEY,
+      model: 'gemini-2.5-flash',
+      temperature: 0.7
+    };
   }
 }
 

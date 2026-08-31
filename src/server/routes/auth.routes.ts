@@ -189,4 +189,179 @@ router.get('/me', authenticateToken, async (req: any, res) => {
   }
 });
 
+// ==========================================
+// PASSWORD RECOVERY VIA WHATSAPP (OTP)
+// ==========================================
+router.post('/forgot-password', async (req, res) => {
+  try {
+    const { identifier } = req.body;
+    if (!identifier || typeof identifier !== 'string') {
+      res.status(400).json({ error: 'Ingresa tu correo o número de teléfono registrado' });
+      return;
+    }
+
+    const cleanInput = identifier.trim();
+    const cleanPhone = cleanInput.replace(/\D/g, '');
+
+    const userRes = await (await import('../db/pool.js')).query(`
+      SELECT u.id, u.email, u.name, u.tenant_id as "tenantId", 
+             t.name as "tenantName", t.whatsapp_number as "whatsappNumber", t.evolution_instance as "evolutionInstance"
+      FROM users u
+      LEFT JOIN tenants t ON u.tenant_id = t.id
+      WHERE LOWER(u.email) = LOWER($1) 
+         OR (t.whatsapp_number IS NOT NULL AND ($2 != '' AND t.whatsapp_number LIKE '%' || $2 || '%'))
+      LIMIT 1
+    `, [cleanInput, cleanPhone]);
+
+    if (userRes.rows.length === 0) {
+      // Return safe message without exposing whether user exists
+      res.json({
+        success: true,
+        message: 'Si el correo o teléfono está registrado, recibirás un código de 6 dígitos por WhatsApp en breve.'
+      });
+      return;
+    }
+
+    const user = userRes.rows[0];
+    const targetPhone = (user.whatsappNumber || cleanPhone || '').replace(/\D/g, '');
+
+    if (!targetPhone || targetPhone.length < 8) {
+      res.status(400).json({ error: 'Tu cuenta no tiene un número de WhatsApp vinculado para recibir el código. Por favor contacta a soporte.' });
+      return;
+    }
+
+    // Generate cryptographically secure 6-digit OTP
+    const crypto = await import('crypto');
+    const otpCode = crypto.randomInt(100000, 999999).toString();
+    const tokenHash = crypto.createHash('sha256').update(otpCode + user.id).digest('hex');
+
+    // Invalidate previous unused tokens for this user
+    await (await import('../db/pool.js')).query(`
+      UPDATE password_reset_tokens SET used = true WHERE user_id = $1 AND used = false
+    `, [user.id]);
+
+    // Insert new OTP token (valid for 15 minutes)
+    await (await import('../db/pool.js')).query(`
+      INSERT INTO password_reset_tokens (user_id, token_hash, otp_code, phone, expires_at)
+      VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP + INTERVAL '15 minutes')
+    `, [user.id, tokenHash, otpCode, targetPhone]);
+
+    // Dispatch WhatsApp Message
+    const { sendMessage } = await import('../services/evolution.js');
+    const instanceToUse = user.evolutionInstance || 'betico_soporte' || 'betico_app';
+    const waText = `🔒 *[Seguridad Betico]* Hola *${user.name}*, recibimos una solicitud para restablecer la contraseña de tu cuenta en *${user.tenantName || 'Betico'}*.\n\nTu código de verificación es:\n👉 *${otpCode}*\n\n⏳ Este código vence en 15 minutos. Si no solicitaste este cambio, puedes ignorar este mensaje con seguridad.`;
+
+    try {
+      await sendMessage(instanceToUse, targetPhone, waText);
+    } catch (waErr) {
+      console.error('Error sending reset OTP via WhatsApp:', waErr);
+    }
+
+    const maskedPhone = '****' + targetPhone.slice(-4);
+    res.json({
+      success: true,
+      maskedPhone,
+      message: `Código enviado al WhatsApp terminado en ${maskedPhone}. Ingresa el código de 6 dígitos para continuar.`
+    });
+  } catch (error) {
+    console.error('Error in forgot-password:', error);
+    res.status(500).json({ error: 'Error del servidor al procesar la solicitud' });
+  }
+});
+
+router.post('/verify-reset-otp', async (req, res) => {
+  try {
+    const { identifier, otpCode } = req.body;
+    if (!identifier || !otpCode) {
+      res.status(400).json({ error: 'Identificador y código de 6 dígitos requeridos' });
+      return;
+    }
+
+    const cleanInput = identifier.trim();
+    const cleanPhone = cleanInput.replace(/\D/g, '');
+    const cleanOtp = (otpCode || '').toString().trim();
+
+    const result = await (await import('../db/pool.js')).query(`
+      SELECT prt.id, prt.user_id, prt.expires_at, prt.used
+      FROM password_reset_tokens prt
+      JOIN users u ON prt.user_id = u.id
+      LEFT JOIN tenants t ON u.tenant_id = t.id
+      WHERE prt.otp_code = $1 
+        AND prt.used = false 
+        AND prt.expires_at > CURRENT_TIMESTAMP
+        AND (LOWER(u.email) = LOWER($2) OR ($3 != '' AND t.whatsapp_number LIKE '%' || $3 || '%'))
+      ORDER BY prt.created_at DESC
+      LIMIT 1
+    `, [cleanOtp, cleanInput, cleanPhone]);
+
+    if (result.rows.length === 0) {
+      res.status(400).json({ error: 'El código ingresado es inválido o ha expirado. Solicita un nuevo código.' });
+      return;
+    }
+
+    res.json({ success: true, verified: true });
+  } catch (error) {
+    console.error('Error verifying reset OTP:', error);
+    res.status(500).json({ error: 'Error al verificar el código' });
+  }
+});
+
+router.post('/reset-password', async (req, res) => {
+  try {
+    const { identifier, otpCode, newPassword } = req.body;
+    if (!identifier || !otpCode || !newPassword) {
+      res.status(400).json({ error: 'Todos los campos son obligatorios' });
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      res.status(400).json({ error: 'La nueva contraseña debe tener al menos 6 caracteres' });
+      return;
+    }
+
+    const cleanInput = identifier.trim();
+    const cleanPhone = cleanInput.replace(/\D/g, '');
+    const cleanOtp = (otpCode || '').toString().trim();
+
+    const { query } = await import('../db/pool.js');
+    const { hashPassword } = await import('../db/users.repo.js');
+
+    const result = await query(`
+      SELECT prt.id as "tokenId", u.id as "userId", u.name, u.email
+      FROM password_reset_tokens prt
+      JOIN users u ON prt.user_id = u.id
+      LEFT JOIN tenants t ON u.tenant_id = t.id
+      WHERE prt.otp_code = $1 
+        AND prt.used = false 
+        AND prt.expires_at > CURRENT_TIMESTAMP
+        AND (LOWER(u.email) = LOWER($2) OR ($3 != '' AND t.whatsapp_number LIKE '%' || $3 || '%'))
+      ORDER BY prt.created_at DESC
+      LIMIT 1
+    `, [cleanOtp, cleanInput, cleanPhone]);
+
+    if (result.rows.length === 0) {
+      res.status(400).json({ error: 'Código inválido o expirado. Por favor inicia el proceso nuevamente.' });
+      return;
+    }
+
+    const { tokenId, userId } = result.rows[0];
+    const newHash = hashPassword(newPassword);
+
+    // Update password
+    await query(`
+      UPDATE users SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2
+    `, [newHash, userId]);
+
+    // Mark token as used
+    await query(`
+      UPDATE password_reset_tokens SET used = true WHERE id = $1
+    `, [tokenId]);
+
+    res.json({ success: true, message: '¡Tu contraseña ha sido restablecida exitosamente! Ya puedes iniciar sesión.' });
+  } catch (error) {
+    console.error('Error resetting password:', error);
+    res.status(500).json({ error: 'Error del servidor al restablecer contraseña' });
+  }
+});
+
 export default router;
