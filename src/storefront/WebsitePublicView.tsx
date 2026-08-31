@@ -13,11 +13,8 @@ import {
   MessageCircle,
   Instagram,
   Facebook,
-  ExternalLink,
   ChevronRight,
-  ShieldCheck,
-  Menu,
-  X
+  ShieldCheck
 } from 'lucide-react';
 
 interface WebsitePublicViewProps {
@@ -28,7 +25,6 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     loadPublicData();
@@ -37,7 +33,10 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
   const loadPublicData = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`/api/website/public/${slug}`);
+      let res = await fetch(`/api/website-public/${slug}`);
+      if (!res.ok) {
+        res = await fetch(`/api/website/public/${slug}`);
+      }
       const json = await res.json();
       if (!res.ok || !json.success) {
         throw new Error(json.error || 'Sitio web no encontrado');
@@ -102,7 +101,6 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
   const waUrl = cleanPhone ? `https://wa.me/${cleanPhone}?text=Hola%2C%20estoy%20visitando%20su%20sitio%20web%20y%20tengo%20una%20consulta` : '#';
 
   const scrollTo = (id: string) => {
-    setMobileMenuOpen(false);
     const el = document.getElementById(id);
     if (el) el.scrollIntoView({ behavior: 'smooth' });
   };
@@ -151,15 +149,19 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
           </div>
 
           {/* Desktop Nav Links */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }} className="desktop-links">
-            <a onClick={() => scrollTo('nosotros')} style={{ color: '#475569', fontWeight: '600', fontSize: '0.88rem', cursor: 'pointer' }}>Sobre Nosotros</a>
-            {featuredProducts && featuredProducts.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+            {website.showAboutSection !== false && (
+              <a onClick={() => scrollTo('nosotros')} style={{ color: '#475569', fontWeight: '600', fontSize: '0.88rem', cursor: 'pointer' }}>Sobre Nosotros</a>
+            )}
+            {website.showProductsSection !== false && featuredProducts && featuredProducts.length > 0 && (
               <a onClick={() => scrollTo('productos')} style={{ color: '#475569', fontWeight: '600', fontSize: '0.88rem', cursor: 'pointer' }}>Productos & Menú</a>
             )}
-            {featuredServices && featuredServices.length > 0 && (
+            {website.showServicesSection !== false && featuredServices && featuredServices.length > 0 && (
               <a onClick={() => scrollTo('servicios')} style={{ color: '#475569', fontWeight: '600', fontSize: '0.88rem', cursor: 'pointer' }}>Servicios</a>
             )}
-            <a onClick={() => scrollTo('contacto')} style={{ color: '#475569', fontWeight: '600', fontSize: '0.88rem', cursor: 'pointer' }}>Contacto</a>
+            {website.showContactSection !== false && (
+              <a onClick={() => scrollTo('contacto')} style={{ color: '#475569', fontWeight: '600', fontSize: '0.88rem', cursor: 'pointer' }}>Contacto</a>
+            )}
           </div>
 
           {/* Direct CTA Buttons */}
@@ -253,8 +255,7 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
                   padding: '14px 28px', borderRadius: '12px',
                   backgroundColor: primaryColor, color: 'white',
                   textDecoration: 'none', fontWeight: '800', fontSize: '1rem',
-                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.3)',
-                  transition: 'transform 0.2s'
+                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.3)'
                 }}
               >
                 <ShoppingBag size={20} />
@@ -302,7 +303,7 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
       </section>
 
       {/* 3. BENEFICIOS / PUNTOS CLAVE */}
-      {website.featuresJson && website.featuresJson.length > 0 && (
+      {website.showFeaturesSection !== false && website.featuresJson && website.featuresJson.length > 0 && (
         <section style={{ padding: '60px 20px', maxWidth: '1200px', margin: '0 auto' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
             {website.featuresJson.map((f: any, idx: number) => (
@@ -341,48 +342,50 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
       )}
 
       {/* 4. SOBRE NOSOTROS */}
-      <section id="nosotros" style={{ padding: '60px 20px', backgroundColor: '#ffffff', borderTop: '1px solid #e2e8f0', borderBottom: '1px solid #e2e8f0' }}>
-        <div style={{ maxWidth: '1100px', margin: '0 auto', display: 'grid', gridTemplateColumns: website.aboutImageUrl ? 'repeat(auto-fit, minmax(320px, 1fr))' : '1fr', gap: '40px', alignItems: 'center' }}>
-          
-          <div>
-            <div style={{
-              display: 'inline-flex', alignItems: 'center', gap: '6px',
-              color: primaryColor, fontWeight: '700', fontSize: '0.85rem', textTransform: 'uppercase', marginBottom: '8px'
-            }}>
-              🌟 Conócenos
-            </div>
-            <h2 style={{ fontSize: 'clamp(1.8rem, 3.5vw, 2.4rem)', fontWeight: '900', color: '#0f172a', margin: '0 0 16px 0', lineHeight: '1.2' }}>
-              {website.aboutTitle || 'Nuestra Historia & Compromiso'}
-            </h2>
-            <p style={{ color: '#475569', fontSize: '1rem', lineHeight: '1.7', margin: '0 0 24px 0', whiteSpace: 'pre-line' }}>
-              {website.aboutText || 'Somos un negocio apasionado por brindar el mejor servicio y productos de primera categoría.'}
-            </p>
-
-            <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#334155', fontWeight: '600', fontSize: '0.9rem' }}>
-                <ShieldCheck size={20} color={primaryColor} /> 100% Calidad Garantizada
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#334155', fontWeight: '600', fontSize: '0.9rem' }}>
-                <Clock size={20} color={primaryColor} /> Atención Inmediata
-              </div>
-            </div>
-          </div>
-
-          {website.aboutImageUrl && (
+      {website.showAboutSection !== false && (
+        <section id="nosotros" style={{ padding: '60px 20px', backgroundColor: '#ffffff', borderTop: '1px solid #e2e8f0', borderBottom: '1px solid #e2e8f0' }}>
+          <div style={{ maxWidth: '1100px', margin: '0 auto', display: 'grid', gridTemplateColumns: website.aboutImageUrl ? 'repeat(auto-fit, minmax(320px, 1fr))' : '1fr', gap: '40px', alignItems: 'center' }}>
+            
             <div>
-              <img
-                src={website.aboutImageUrl}
-                alt="Sobre Nosotros"
-                style={{ width: '100%', maxHeight: '380px', objectFit: 'cover', borderRadius: '20px', boxShadow: '0 20px 40px rgba(0,0,0,0.1)' }}
-              />
-            </div>
-          )}
+              <div style={{
+                display: 'inline-flex', alignItems: 'center', gap: '6px',
+                color: primaryColor, fontWeight: '700', fontSize: '0.85rem', textTransform: 'uppercase', marginBottom: '8px'
+              }}>
+                🌟 Conócenos
+              </div>
+              <h2 style={{ fontSize: 'clamp(1.8rem, 3.5vw, 2.4rem)', fontWeight: '900', color: '#0f172a', margin: '0 0 16px 0', lineHeight: '1.2' }}>
+                {website.aboutTitle || 'Nuestra Historia & Compromiso'}
+              </h2>
+              <p style={{ color: '#475569', fontSize: '1rem', lineHeight: '1.7', margin: '0 0 24px 0', whiteSpace: 'pre-line' }}>
+                {website.aboutText || 'Somos un negocio apasionado por brindar el mejor servicio y productos de primera categoría.'}
+              </p>
 
-        </div>
-      </section>
+              <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#334155', fontWeight: '600', fontSize: '0.9rem' }}>
+                  <ShieldCheck size={20} color={primaryColor} /> 100% Calidad Garantizada
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#334155', fontWeight: '600', fontSize: '0.9rem' }}>
+                  <Clock size={20} color={primaryColor} /> Atención Inmediata
+                </div>
+              </div>
+            </div>
+
+            {website.aboutImageUrl && (
+              <div>
+                <img
+                  src={website.aboutImageUrl}
+                  alt="Sobre Nosotros"
+                  style={{ width: '100%', maxHeight: '380px', objectFit: 'cover', borderRadius: '20px', boxShadow: '0 20px 40px rgba(0,0,0,0.1)' }}
+                />
+              </div>
+            )}
+
+          </div>
+        </section>
+      )}
 
       {/* 5. PRODUCTOS / MENÚ DESTACADO */}
-      {featuredProducts && featuredProducts.length > 0 && (
+      {website.showProductsSection !== false && featuredProducts && featuredProducts.length > 0 && (
         <section id="productos" style={{ padding: '70px 20px', maxWidth: '1200px', margin: '0 auto' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '30px', flexWrap: 'wrap', gap: '12px' }}>
             <div>
@@ -459,7 +462,7 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
       )}
 
       {/* 6. SERVICIOS DESTACADOS */}
-      {featuredServices && featuredServices.length > 0 && (
+      {website.showServicesSection !== false && featuredServices && featuredServices.length > 0 && (
         <section id="servicios" style={{ padding: '70px 20px', backgroundColor: '#ffffff', borderTop: '1px solid #e2e8f0', borderBottom: '1px solid #e2e8f0' }}>
           <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '30px', flexWrap: 'wrap', gap: '12px' }}>
@@ -525,7 +528,7 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
       )}
 
       {/* 7. TESTIMONIOS */}
-      {website.testimonialsJson && website.testimonialsJson.length > 0 && (
+      {website.showTestimonialsSection !== false && website.testimonialsJson && website.testimonialsJson.length > 0 && (
         <section id="testimonios" style={{ padding: '70px 20px', maxWidth: '1100px', margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: '36px' }}>
             <div style={{ color: accentColor, fontWeight: '700', fontSize: '0.85rem', textTransform: 'uppercase', marginBottom: '4px' }}>
@@ -564,73 +567,75 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
       )}
 
       {/* 8. CONTACTO & FOOTER */}
-      <footer id="contacto" style={{ backgroundColor: '#0f172a', color: '#ffffff', padding: '60px 20px 30px 20px' }}>
-        <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '40px', marginBottom: '40px' }}>
-          
-          <div>
-            <h3 style={{ fontSize: '1.2rem', fontWeight: '800', margin: '0 0 12px 0' }}>{tenant.name}</h3>
-            <p style={{ color: '#94a3b8', fontSize: '0.88rem', lineHeight: '1.6', margin: '0 0 20px 0' }}>
-              {website.subheadline || 'Gracias por visitar nuestro sitio web oficial. Estamos a tu servicio.'}
-            </p>
-            {/* Social icons */}
-            <div style={{ display: 'flex', gap: '12px' }}>
-              {website.instagramUrl && (
-                <a href={website.instagramUrl} target="_blank" rel="noreferrer" style={{ width: '36px', height: '36px', borderRadius: '8px', backgroundColor: '#1e293b', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
-                  <Instagram size={18} />
-                </a>
-              )}
-              {website.facebookUrl && (
-                <a href={website.facebookUrl} target="_blank" rel="noreferrer" style={{ width: '36px', height: '36px', borderRadius: '8px', backgroundColor: '#1e293b', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
-                  <Facebook size={18} />
-                </a>
-              )}
-              {cleanPhone && (
-                <a href={waUrl} target="_blank" rel="noreferrer" style={{ width: '36px', height: '36px', borderRadius: '8px', backgroundColor: '#25D366', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
-                  <MessageCircle size={18} />
-                </a>
-              )}
+      {website.showContactSection !== false && (
+        <footer id="contacto" style={{ backgroundColor: '#0f172a', color: '#ffffff', padding: '60px 20px 30px 20px' }}>
+          <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '40px', marginBottom: '40px' }}>
+            
+            <div>
+              <h3 style={{ fontSize: '1.2rem', fontWeight: '800', margin: '0 0 12px 0' }}>{tenant.name}</h3>
+              <p style={{ color: '#94a3b8', fontSize: '0.88rem', lineHeight: '1.6', margin: '0 0 20px 0' }}>
+                {website.subheadline || 'Gracias por visitar nuestro sitio web oficial. Estamos a tu servicio.'}
+              </p>
+              {/* Social icons */}
+              <div style={{ display: 'flex', gap: '12px' }}>
+                {website.instagramUrl && (
+                  <a href={website.instagramUrl} target="_blank" rel="noreferrer" style={{ width: '36px', height: '36px', borderRadius: '8px', backgroundColor: '#1e293b', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
+                    <Instagram size={18} />
+                  </a>
+                )}
+                {website.facebookUrl && (
+                  <a href={website.facebookUrl} target="_blank" rel="noreferrer" style={{ width: '36px', height: '36px', borderRadius: '8px', backgroundColor: '#1e293b', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
+                    <Facebook size={18} />
+                  </a>
+                )}
+                {cleanPhone && (
+                  <a href={waUrl} target="_blank" rel="noreferrer" style={{ width: '36px', height: '36px', borderRadius: '8px', backgroundColor: '#25D366', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
+                    <MessageCircle size={18} />
+                  </a>
+                )}
+              </div>
             </div>
+
+            <div>
+              <h4 style={{ fontSize: '1rem', fontWeight: '700', margin: '0 0 14px 0', color: accentColor }}>Enlaces Rápidos</h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.88rem' }}>
+                {website.showStoreButton && <a href={storeUrl} style={{ color: '#cbd5e1', textDecoration: 'none' }}>🛒 Tienda / Menú Online</a>}
+                {website.showBookingButton && <a href={bookingUrl} style={{ color: '#cbd5e1', textDecoration: 'none' }}>📅 Agendar Cita en Línea</a>}
+                {website.showAboutSection !== false && <a onClick={() => scrollTo('nosotros')} style={{ color: '#cbd5e1', cursor: 'pointer' }}>Sobre Nosotros</a>}
+              </div>
+            </div>
+
+            <div>
+              <h4 style={{ fontSize: '1rem', fontWeight: '700', margin: '0 0 14px 0', color: accentColor }}>Contacto Directo</h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.88rem', color: '#cbd5e1' }}>
+                {website.contactAddress && (
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                    <MapPin size={16} color={primaryColor} style={{ marginTop: '2px', flexShrink: 0 }} />
+                    <span>{website.contactAddress}</span>
+                  </div>
+                )}
+                {website.contactPhone && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Phone size={16} color={primaryColor} />
+                    <span>{website.contactPhone}</span>
+                  </div>
+                )}
+                {website.contactEmail && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Mail size={16} color={primaryColor} />
+                    <span>{website.contactEmail}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
           </div>
 
-          <div>
-            <h4 style={{ fontSize: '1rem', fontWeight: '700', margin: '0 0 14px 0', color: accentColor }}>Enlaces Rápidos</h4>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.88rem' }}>
-              {website.showStoreButton && <a href={storeUrl} style={{ color: '#cbd5e1', textDecoration: 'none' }}>🛒 Tienda / Menú Online</a>}
-              {website.showBookingButton && <a href={bookingUrl} style={{ color: '#cbd5e1', textDecoration: 'none' }}>📅 Agendar Cita en Línea</a>}
-              <a onClick={() => scrollTo('nosotros')} style={{ color: '#cbd5e1', cursor: 'pointer' }}>Sobre Nosotros</a>
-            </div>
+          <div style={{ borderTop: '1px solid #1e293b', paddingTop: '20px', textAlign: 'center', fontSize: '0.78rem', color: '#64748b' }}>
+            © {new Date().getFullYear()} {tenant.name}. Todos los derechos reservados. • Desarrollado con ⚡ <a href="/" style={{ color: '#38bdf8', textDecoration: 'none' }}>Betico</a>
           </div>
-
-          <div>
-            <h4 style={{ fontSize: '1rem', fontWeight: '700', margin: '0 0 14px 0', color: accentColor }}>Contacto Directo</h4>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.88rem', color: '#cbd5e1' }}>
-              {website.contactAddress && (
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-                  <MapPin size={16} color={primaryColor} style={{ marginTop: '2px', flexShrink: 0 }} />
-                  <span>{website.contactAddress}</span>
-                </div>
-              )}
-              {website.contactPhone && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Phone size={16} color={primaryColor} />
-                  <span>{website.contactPhone}</span>
-                </div>
-              )}
-              {website.contactEmail && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Mail size={16} color={primaryColor} />
-                  <span>{website.contactEmail}</span>
-                </div>
-              )}
-            </div>
-          </div>
-
-        </div>
-
-        <div style={{ borderTop: '1px solid #1e293b', paddingTop: '20px', textAlign: 'center', fontSize: '0.78rem', color: '#64748b' }}>
-          © {new Date().getFullYear()} {tenant.name}. Todos los derechos reservados. • Desarrollado con ⚡ <a href="/" style={{ color: '#38bdf8', textDecoration: 'none' }}>Betico</a>
-        </div>
-      </footer>
+        </footer>
+      )}
 
     </div>
   );

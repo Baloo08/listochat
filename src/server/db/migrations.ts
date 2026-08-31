@@ -455,10 +455,22 @@ export async function runMigrations() {
       contact_address TEXT,
       instagram_url VARCHAR(255),
       facebook_url VARCHAR(255),
-      tiktok_url VARCHAR(255),
+      show_about_section BOOLEAN DEFAULT true,
+      show_features_section BOOLEAN DEFAULT true,
+      show_products_section BOOLEAN DEFAULT true,
+      show_services_section BOOLEAN DEFAULT true,
+      show_testimonials_section BOOLEAN DEFAULT true,
+      show_contact_section BOOLEAN DEFAULT true,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
+
+    ALTER TABLE tenant_websites ADD COLUMN IF NOT EXISTS show_about_section BOOLEAN DEFAULT true;
+    ALTER TABLE tenant_websites ADD COLUMN IF NOT EXISTS show_features_section BOOLEAN DEFAULT true;
+    ALTER TABLE tenant_websites ADD COLUMN IF NOT EXISTS show_products_section BOOLEAN DEFAULT true;
+    ALTER TABLE tenant_websites ADD COLUMN IF NOT EXISTS show_services_section BOOLEAN DEFAULT true;
+    ALTER TABLE tenant_websites ADD COLUMN IF NOT EXISTS show_testimonials_section BOOLEAN DEFAULT true;
+    ALTER TABLE tenant_websites ADD COLUMN IF NOT EXISTS show_contact_section BOOLEAN DEFAULT true;
 
     ALTER TABLE appointments ADD COLUMN IF NOT EXISTS specialist_id UUID REFERENCES specialists(id) ON DELETE SET NULL;
 

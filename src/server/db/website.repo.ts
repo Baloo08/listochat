@@ -18,6 +18,12 @@ export interface TenantWebsiteConfig {
   showBookingButton: boolean;
   storeButtonText: string;
   bookingButtonText: string;
+  showAboutSection: boolean;
+  showFeaturesSection: boolean;
+  showProductsSection: boolean;
+  showServicesSection: boolean;
+  showTestimonialsSection: boolean;
+  showContactSection: boolean;
   featuresJson: { title: string; desc: string; icon?: string }[];
   testimonialsJson: { name: string; comment: string; rating?: number }[];
   contactEmail?: string;
@@ -51,6 +57,12 @@ export async function getWebsiteSettingsByTenant(tenantId: string): Promise<Tena
       showBookingButton: true,
       storeButtonText: 'Ver Menú y Productos',
       bookingButtonText: 'Agendar Cita en Línea',
+      showAboutSection: true,
+      showFeaturesSection: true,
+      showProductsSection: true,
+      showServicesSection: true,
+      showTestimonialsSection: true,
+      showContactSection: true,
       featuresJson: [
         { title: 'Calidad Garantizada', desc: 'Productos y servicios seleccionados con los más altos estándares.' },
         { title: 'Atención Rápida', desc: 'Respuestas y pedidos inmediatos con asistencia 24/7.' },
@@ -81,6 +93,12 @@ export async function getWebsiteSettingsByTenant(tenantId: string): Promise<Tena
     showBookingButton: r.show_booking_button !== false,
     storeButtonText: r.store_button_text || 'Ver Menú y Productos',
     bookingButtonText: r.booking_button_text || 'Agendar Cita en Línea',
+    showAboutSection: r.show_about_section !== false,
+    showFeaturesSection: r.show_features_section !== false,
+    showProductsSection: r.show_products_section !== false,
+    showServicesSection: r.show_services_section !== false,
+    showTestimonialsSection: r.show_testimonials_section !== false,
+    showContactSection: r.show_contact_section !== false,
     featuresJson: Array.isArray(r.features_json) ? r.features_json : [],
     testimonialsJson: Array.isArray(r.testimonials_json) ? r.testimonials_json : [],
     contactEmail: r.contact_email,
@@ -100,14 +118,18 @@ export async function saveWebsiteSettings(tenantId: string, data: Partial<Tenant
       tenant_id, website_enabled, headline, subheadline, about_title, about_text,
       about_image_url, banner_image_url, logo_url, primary_color, accent_color, font_family,
       show_store_button, show_booking_button, store_button_text, booking_button_text,
+      show_about_section, show_features_section, show_products_section,
+      show_services_section, show_testimonials_section, show_contact_section,
       features_json, testimonials_json, contact_email, contact_phone, contact_address,
       instagram_url, facebook_url, tiktok_url, updated_at
     ) VALUES (
       $1, $2, $3, $4, $5, $6,
       $7, $8, $9, $10, $11, $12,
       $13, $14, $15, $16,
-      $17, $18, $19, $20, $21,
-      $22, $23, $24, CURRENT_TIMESTAMP
+      $17, $18, $19,
+      $20, $21, $22,
+      $23, $24, $25, $26, $27,
+      $28, $29, $30, CURRENT_TIMESTAMP
     )
     ON CONFLICT (tenant_id) DO UPDATE SET
       website_enabled = EXCLUDED.website_enabled,
@@ -125,6 +147,12 @@ export async function saveWebsiteSettings(tenantId: string, data: Partial<Tenant
       show_booking_button = EXCLUDED.show_booking_button,
       store_button_text = EXCLUDED.store_button_text,
       booking_button_text = EXCLUDED.booking_button_text,
+      show_about_section = EXCLUDED.show_about_section,
+      show_features_section = EXCLUDED.show_features_section,
+      show_products_section = EXCLUDED.show_products_section,
+      show_services_section = EXCLUDED.show_services_section,
+      show_testimonials_section = EXCLUDED.show_testimonials_section,
+      show_contact_section = EXCLUDED.show_contact_section,
       features_json = EXCLUDED.features_json,
       testimonials_json = EXCLUDED.testimonials_json,
       contact_email = EXCLUDED.contact_email,
@@ -154,6 +182,12 @@ export async function saveWebsiteSettings(tenantId: string, data: Partial<Tenant
     data.showBookingButton !== false,
     data.storeButtonText || 'Ver Menú y Productos',
     data.bookingButtonText || 'Agendar Cita en Línea',
+    data.showAboutSection !== false,
+    data.showFeaturesSection !== false,
+    data.showProductsSection !== false,
+    data.showServicesSection !== false,
+    data.showTestimonialsSection !== false,
+    data.showContactSection !== false,
     JSON.stringify(data.featuresJson || []),
     JSON.stringify(data.testimonialsJson || []),
     data.contactEmail || null,

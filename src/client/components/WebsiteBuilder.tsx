@@ -23,7 +23,11 @@ import {
   Mail,
   MapPin,
   Instagram,
-  Facebook
+  Facebook,
+  ToggleLeft,
+  ToggleRight,
+  Package,
+  Wrench
 } from 'lucide-react';
 
 interface FeatureItem {
@@ -55,6 +59,12 @@ interface WebsiteConfig {
   showBookingButton: boolean;
   storeButtonText: string;
   bookingButtonText: string;
+  showAboutSection: boolean;
+  showFeaturesSection: boolean;
+  showProductsSection: boolean;
+  showServicesSection: boolean;
+  showTestimonialsSection: boolean;
+  showContactSection: boolean;
   featuresJson: FeatureItem[];
   testimonialsJson: TestimonialItem[];
   contactEmail?: string;
@@ -69,7 +79,7 @@ export default function WebsiteBuilder() {
   const api = useApi();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState<'branding' | 'hero' | 'about' | 'features' | 'testimonials' | 'contact' | 'preview'>('hero');
+  const [activeTab, setActiveTab] = useState<'hero' | 'branding' | 'about' | 'features' | 'products' | 'services' | 'testimonials' | 'contact' | 'preview'>('hero');
   const [copied, setCopied] = useState(false);
   const [tenantSlug, setTenantSlug] = useState('');
   const [previewDevice, setPreviewDevice] = useState<'desktop' | 'mobile'>('desktop');
@@ -91,6 +101,12 @@ export default function WebsiteBuilder() {
     showBookingButton: true,
     storeButtonText: 'Ver Menú y Productos',
     bookingButtonText: 'Agendar Cita en Línea',
+    showAboutSection: true,
+    showFeaturesSection: true,
+    showProductsSection: true,
+    showServicesSection: true,
+    showTestimonialsSection: true,
+    showContactSection: true,
     featuresJson: [
       { title: 'Calidad Garantizada', desc: 'Productos y servicios seleccionados con los más altos estándares.' },
       { title: 'Atención Rápida', desc: 'Respuestas y pedidos inmediatos con asistencia 24/7.' },
@@ -113,6 +129,12 @@ export default function WebsiteBuilder() {
         setFormData(prev => ({
           ...prev,
           ...res,
+          showAboutSection: res.showAboutSection !== false,
+          showFeaturesSection: res.showFeaturesSection !== false,
+          showProductsSection: res.showProductsSection !== false,
+          showServicesSection: res.showServicesSection !== false,
+          showTestimonialsSection: res.showTestimonialsSection !== false,
+          showContactSection: res.showContactSection !== false,
           featuresJson: Array.isArray(res.featuresJson) && res.featuresJson.length > 0 ? res.featuresJson : prev.featuresJson,
           testimonialsJson: Array.isArray(res.testimonialsJson) && res.testimonialsJson.length > 0 ? res.testimonialsJson : prev.testimonialsJson
         }));
@@ -217,6 +239,49 @@ export default function WebsiteBuilder() {
     }));
   };
 
+  // Section Toggle Component
+  const SectionToggle = ({ title, active, onToggle }: { title: string; active: boolean; onToggle: () => void }) => (
+    <div style={{
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      padding: '12px 16px',
+      backgroundColor: active ? '#f0fdf4' : '#f8fafc',
+      border: active ? '1px solid #bbf7d0' : '1px solid #e2e8f0',
+      borderRadius: '12px',
+      marginBottom: '16px'
+    }}>
+      <div>
+        <strong style={{ fontSize: '0.92rem', color: active ? '#166534' : '#64748b' }}>
+          {title}
+        </strong>
+        <p style={{ margin: 0, fontSize: '0.78rem', color: active ? '#15803d' : '#94a3b8' }}>
+          {active ? '🟢 Esta sección está visible en tu página web pública' : '⚪ Esta sección está oculta en tu página web pública'}
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={onToggle}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+          padding: '6px 14px',
+          borderRadius: '8px',
+          border: 'none',
+          backgroundColor: active ? '#16a34a' : '#cbd5e1',
+          color: 'white',
+          fontWeight: '700',
+          fontSize: '0.8rem',
+          cursor: 'pointer',
+          transition: 'background-color 0.2s'
+        }}
+      >
+        {active ? 'Activada' : 'Desactivada'}
+      </button>
+    </div>
+  );
+
   if (loading) {
     return (
       <div style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>
@@ -254,7 +319,7 @@ export default function WebsiteBuilder() {
             </h1>
           </div>
           <p style={{ margin: 0, color: '#64748b', fontSize: '0.85rem' }}>
-            Personaliza la página web institucional de tu negocio con enlaces directos a tu Menú/Tienda y Agenda de Citas.
+            Personaliza las secciones, activa o desactiva bloques y comparte tu enlace web oficial.
           </p>
         </div>
 
@@ -316,7 +381,9 @@ export default function WebsiteBuilder() {
           { id: 'hero', label: 'Portada (Hero)', icon: <Layout size={16} /> },
           { id: 'branding', label: 'Marca & Colores', icon: <Palette size={16} /> },
           { id: 'about', label: 'Sobre Nosotros', icon: <FileText size={16} /> },
-          { id: 'features', label: 'Beneficios / Puntos Clave', icon: <Sparkles size={16} /> },
+          { id: 'features', label: 'Beneficios', icon: <Sparkles size={16} /> },
+          { id: 'products', label: 'Menú & Productos', icon: <Package size={16} /> },
+          { id: 'services', label: 'Servicios', icon: <Wrench size={16} /> },
           { id: 'testimonials', label: 'Testimonios', icon: <MessageSquare size={16} /> },
           { id: 'contact', label: 'Contacto & Redes', icon: <Phone size={16} /> },
           { id: 'preview', label: 'Vista Previa en Vivo', icon: <Eye size={16} /> }
@@ -615,9 +682,11 @@ export default function WebsiteBuilder() {
         {/* 3. SOBRE NOSOTROS */}
         {activeTab === 'about' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '800px' }}>
-            <h3 style={{ margin: '0 0 10px 0', fontSize: '1.1rem', color: '#0f172a', fontWeight: '800' }}>
-              Sección "Sobre Nosotros"
-            </h3>
+            <SectionToggle
+              title='Sección "Sobre Nosotros"'
+              active={formData.showAboutSection}
+              onToggle={() => setFormData({ ...formData, showAboutSection: !formData.showAboutSection })}
+            />
 
             <div>
               <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
@@ -684,13 +753,19 @@ export default function WebsiteBuilder() {
         {/* 4. BENEFICIOS / FEATURES */}
         {activeTab === 'features' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '800px' }}>
+            <SectionToggle
+              title='Sección "Beneficios y Puntos Clave"'
+              active={formData.showFeaturesSection}
+              onToggle={() => setFormData({ ...formData, showFeaturesSection: !formData.showFeaturesSection })}
+            />
+
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <h3 style={{ margin: '0 0 4px 0', fontSize: '1.1rem', color: '#0f172a', fontWeight: '800' }}>
-                  Beneficios y Puntos Clave
+                  Tarjetas de Beneficios
                 </h3>
                 <p style={{ margin: 0, color: '#64748b', fontSize: '0.82rem' }}>
-                  Tarjetas destacadas que explican por qué tus clientes deben elegirte.
+                  Explica por qué tus clientes deben elegir tu negocio.
                 </p>
               </div>
               <button
@@ -743,16 +818,50 @@ export default function WebsiteBuilder() {
           </div>
         )}
 
-        {/* 5. TESTIMONIOS */}
+        {/* 5. PRODUCTOS & MENÚ */}
+        {activeTab === 'products' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '800px' }}>
+            <SectionToggle
+              title='Sección "Catálogo de Productos & Menú Destacado"'
+              active={formData.showProductsSection}
+              onToggle={() => setFormData({ ...formData, showProductsSection: !formData.showProductsSection })}
+            />
+            <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', color: '#475569', fontSize: '0.88rem' }}>
+              🛍️ Esta sección muestra automáticamente tus productos activos en la web. Puedes administrarlos en la pestaña <strong>Catálogo de Productos</strong>.
+            </div>
+          </div>
+        )}
+
+        {/* 6. SERVICIOS */}
+        {activeTab === 'services' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '800px' }}>
+            <SectionToggle
+              title='Sección "Servicios y Citas"'
+              active={formData.showServicesSection}
+              onToggle={() => setFormData({ ...formData, showServicesSection: !formData.showServicesSection })}
+            />
+            <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', color: '#475569', fontSize: '0.88rem' }}>
+              📅 Esta sección muestra automáticamente tus servicios para agendar en línea. Puedes administrarlos en la pestaña <strong>Servicios</strong>.
+            </div>
+          </div>
+        )}
+
+        {/* 7. TESTIMONIOS */}
         {activeTab === 'testimonials' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '800px' }}>
+            <SectionToggle
+              title='Sección "Testimonios y Opiniones de Clientes"'
+              active={formData.showTestimonialsSection}
+              onToggle={() => setFormData({ ...formData, showTestimonialsSection: !formData.showTestimonialsSection })}
+            />
+
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <h3 style={{ margin: '0 0 4px 0', fontSize: '1.1rem', color: '#0f172a', fontWeight: '800' }}>
-                  Opiniones y Testimonios de Clientes
+                  Opiniones de Clientes
                 </h3>
                 <p style={{ margin: 0, color: '#64748b', fontSize: '0.82rem' }}>
-                  Añade prueba social de clientes satisfechos para generar máxima confianza.
+                  Añade prueba social de clientes satisfechos.
                 </p>
               </div>
               <button
@@ -805,12 +914,14 @@ export default function WebsiteBuilder() {
           </div>
         )}
 
-        {/* 6. CONTACTO & REDES */}
+        {/* 8. CONTACTO & REDES */}
         {activeTab === 'contact' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '800px' }}>
-            <h3 style={{ margin: '0 0 10px 0', fontSize: '1.1rem', color: '#0f172a', fontWeight: '800' }}>
-              Datos de Contacto, Ubicación y Redes Sociales
-            </h3>
+            <SectionToggle
+              title='Sección "Contacto, Ubicación & Redes"'
+              active={formData.showContactSection}
+              onToggle={() => setFormData({ ...formData, showContactSection: !formData.showContactSection })}
+            />
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px' }}>
               <div>
@@ -903,7 +1014,7 @@ export default function WebsiteBuilder() {
           </div>
         )}
 
-        {/* 7. VISTA PREVIA EN VIVO */}
+        {/* 9. VISTA PREVIA EN VIVO */}
         {activeTab === 'preview' && (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
