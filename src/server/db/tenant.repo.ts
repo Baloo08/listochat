@@ -74,20 +74,29 @@ export async function getTenantByEvolutionInstance(instanceName: string): Promis
   return result.rows[0] || null;
 }
 
-export async function createTenant(data: Partial<Tenant>): Promise<Tenant> {
+export async function createTenant(data: Partial<Tenant> & Record<string, any>): Promise<any> {
+  const finalPrice = data.customMonthlyPrice !== undefined 
+    ? Number(data.customMonthlyPrice) 
+    : (data.plan === 'enterprise' ? 85000 : data.plan === 'aliado' ? 0 : data.plan === 'emprendedor' ? 35000 : 55000);
+
   const result = await query(`
     INSERT INTO tenants (
       name, slug, custom_domain, ai_provider, ai_api_key_encrypted, 
-      ai_model, evolution_instance, whatsapp_number, plan, active, settings_json
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      ai_model, evolution_instance, whatsapp_number, plan, active,
+      custom_monthly_price, billing_currency, subscription_status, trial_ends_at, settings_json
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
     RETURNING id, name, slug, custom_domain as "customDomain", 
            ai_provider as "aiProvider", ai_model as "aiModel", 
            evolution_instance as "evolutionInstance", whatsapp_number as "whatsappNumber",
-           plan, active, settings_json as "settingsJson", created_at as "createdAt"
+           plan, active, custom_monthly_price as "customMonthlyPrice", billing_currency as "billingCurrency",
+           subscription_status as "subscriptionStatus", trial_ends_at as "trialEndsAt",
+           settings_json as "settingsJson", created_at as "createdAt"
   `, [
     data.name, data.slug, data.customDomain, data.aiProvider || 'gemini', 
     data.aiApiKeyEncrypted, data.aiModel || 'gemini-2.5-flash', data.evolutionInstance, 
-    data.whatsappNumber, data.plan || 'starter', data.active !== false, data.settingsJson
+    data.whatsappNumber || data.phone || null, data.plan || 'pro', data.active !== false,
+    finalPrice, data.billingCurrency || 'CRC', data.subscriptionStatus || 'active',
+    data.trialEndsAt || null, data.settingsJson || null
   ]);
   return result.rows[0];
 }

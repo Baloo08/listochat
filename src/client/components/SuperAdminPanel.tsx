@@ -582,10 +582,26 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
                     <button
                       onClick={() => {
                         setEditingTenant(t);
+                        let defP = 55000;
+                        if (t.plan === 'enterprise') defP = 85000;
+                        else if (t.plan === 'aliado') defP = 0;
+                        else if (t.plan === 'emprendedor') defP = 35000;
+                        
+                        const actualPrice = (t.customMonthlyPrice !== undefined && t.customMonthlyPrice !== null && Number(t.customMonthlyPrice) !== 29)
+                          ? Number(t.customMonthlyPrice)
+                          : defP;
+
                         setFormData({
-                          name: t.name, slug: t.slug, contactName: '', email: t.adminEmail || '', phone: t.whatsappNumber || '',
-                          plan: t.plan || 'starter', customMonthlyPrice: t.customMonthlyPrice || 29, billingCurrency: t.billingCurrency || 'CRC',
-                          isTrial: t.subscriptionStatus === 'trial', trialDays: 15
+                          name: t.name || '', 
+                          slug: t.slug || '', 
+                          contactName: '', 
+                          email: (t.adminEmail && t.adminEmail !== 'Sin registrar') ? t.adminEmail : '', 
+                          phone: t.whatsappNumber || '',
+                          plan: t.plan || 'pro', 
+                          customMonthlyPrice: actualPrice, 
+                          billingCurrency: t.billingCurrency || 'CRC',
+                          isTrial: t.subscriptionStatus === 'trial', 
+                          trialDays: 15
                         });
                         setShowModal(true);
                       }}
@@ -658,10 +674,26 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
                           <button
                             onClick={() => {
                               setEditingTenant(t);
+                              let defP = 55000;
+                              if (t.plan === 'enterprise') defP = 85000;
+                              else if (t.plan === 'aliado') defP = 0;
+                              else if (t.plan === 'emprendedor') defP = 35000;
+                              
+                              const actualPrice = (t.customMonthlyPrice !== undefined && t.customMonthlyPrice !== null && Number(t.customMonthlyPrice) !== 29)
+                                ? Number(t.customMonthlyPrice)
+                                : defP;
+
                               setFormData({
-                                name: t.name, slug: t.slug, contactName: '', email: t.adminEmail || '', phone: t.whatsappNumber || '',
-                                plan: t.plan || 'starter', customMonthlyPrice: t.customMonthlyPrice || 29, billingCurrency: t.billingCurrency || 'CRC',
-                                isTrial: t.subscriptionStatus === 'trial', trialDays: 15
+                                name: t.name || '', 
+                                slug: t.slug || '', 
+                                contactName: '', 
+                                email: (t.adminEmail && t.adminEmail !== 'Sin registrar') ? t.adminEmail : '', 
+                                phone: t.whatsappNumber || '',
+                                plan: t.plan || 'pro', 
+                                customMonthlyPrice: actualPrice, 
+                                billingCurrency: t.billingCurrency || 'CRC',
+                                isTrial: t.subscriptionStatus === 'trial', 
+                                trialDays: 15
                               });
                               setShowModal(true);
                             }}

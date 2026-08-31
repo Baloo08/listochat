@@ -47,27 +47,50 @@ router.get('/:id', async (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const { name, slug, plan, adminEmail, adminPassword } = req.body;
-    if (!name || !slug) {
-      res.status(400).json({ error: 'Nombre y slug requeridos' });
+    const { 
+      name, slug, plan, email, adminEmail, phone, whatsappNumber, 
+      contactName, customMonthlyPrice, billingCurrency, isTrial, trialDays 
+    } = req.body;
+    
+    if (!name) {
+      res.status(400).json({ error: 'El nombre del negocio es requerido' });
       return;
     }
 
+    const cleanSlug = (slug || name.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-')).toLowerCase().trim();
+    const finalEmail = (email || adminEmail || '').toLowerCase().trim();
+    const finalPhone = (phone || whatsappNumber || '').trim();
+    const finalPlan = plan || 'pro';
+    
+    let defaultPrice = 55000;
+    if (finalPlan === 'enterprise') defaultPrice = 85000;
+    else if (finalPlan === 'aliado') defaultPrice = 0;
+    else if (finalPlan === 'emprendedor') defaultPrice = 35000;
+    else if (finalPlan === 'pro') defaultPrice = 55000;
+
+    const finalPrice = customMonthlyPrice !== undefined && customMonthlyPrice !== '' ? Number(customMonthlyPrice) : defaultPrice;
+    const tempPassword = 'admin' + Math.floor(1000 + Math.random() * 9000);
+
     const tenant = await createTenant({
-      name,
-      slug: slug.toLowerCase().trim(),
-      plan: plan || 'starter',
+      name: name.trim(),
+      slug: cleanSlug,
+      plan: finalPlan,
+      whatsappNumber: finalPhone || undefined,
+      customMonthlyPrice: finalPrice,
+      billingCurrency: billingCurrency || 'CRC',
+      subscriptionStatus: isTrial ? 'trial' : 'active',
+      trialEndsAt: isTrial ? new Date(Date.now() + (Number(trialDays) || 15) * 86400000) : null,
       aiModel: 'gemini-2.5-flash',
       aiProvider: 'gemini',
       active: true
     });
 
-    if (adminEmail && adminPassword) {
+    if (finalEmail) {
       await createUser({
         tenantId: tenant.id,
-        name: `${name} Admin`,
-        email: adminEmail,
-        password: adminPassword,
+        name: contactName ? contactName.trim() : `${name} Admin`,
+        email: finalEmail,
+        password: tempPassword,
         role: 'admin'
       });
     }
@@ -75,8 +98,8 @@ router.post('/', async (req, res) => {
     await saveAgentConfig(tenant.id, {
       systemPrompt: `Eres Betico, el Asistente Virtual Inteligente de ${name}. Atiende a los clientes con amabilidad, responde consultas y ayuda a agendar citas o tomar órdenes por WhatsApp.`,
       businessName: name,
-      currency: 'CRC',
-      notifyNumber: '',
+      currency: billingCurrency || 'CRC',
+      notifyNumber: finalPhone || '',
       model: 'gemini-2.5-flash',
       temperature: 0.7,
       autoReplyEnabled: false
@@ -84,16 +107,20 @@ router.post('/', async (req, res) => {
 
     await saveStoreSettings(tenant.id, {
       storeName: name,
-      storeSlug: slug.toLowerCase().trim(),
-      currency: 'CRC',
+      storeSlug: cleanSlug,
+      currency: billingCurrency || 'CRC',
       storeEnabled: true,
       storeMode: 'retail',
       storeModules: { storeEnabled: true, bookingsEnabled: true }
     });
 
-    await logAuditEvent(tenant.id, req.user!.userId, 'create_tenant', 'tenant', tenant.id, { name, slug, plan }, req.ip, req.headers['user-agent']);
+    await logAuditEvent(tenant.id, req.user!.userId, 'create_tenant', 'tenant', tenant.id, { name, slug: cleanSlug, plan: finalPlan, email: finalEmail, phone: finalPhone, customMonthlyPrice: finalPrice }, req.ip, req.headers['user-agent']);
 
-    res.status(201).json(tenant);
+    res.status(201).json({
+      ...tenant,
+      adminEmail: finalEmail || null,
+      tempPassword
+    });
   } catch (error) {
     console.error('Error al crear inquilino:', error);
     res.status(500).json({ error: 'Error al crear inquilino' });
