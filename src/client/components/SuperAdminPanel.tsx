@@ -448,6 +448,11 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
       )}
 
       {/* ========================================================================= */}
+      {/* VISTA COBRANZA & CUENTAS POR COBRAR */}
+      {/* ========================================================================= */}
+      {activeTab === 'collections' && <BillingCollectionsView />}
+
+      {/* ========================================================================= */}
       {/* VISTA 1: INQUILINOS & NEGOCIOS */}
       {/* ========================================================================= */}
       {activeTab === 'tenants' && (
