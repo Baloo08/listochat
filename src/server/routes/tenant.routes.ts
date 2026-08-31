@@ -276,4 +276,236 @@ router.post('/:id/impersonate', async (req, res) => {
   }
 });
 
+
+// 360° Client Dossier Endpoint
+router.get('/:id/dossier', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const tenant = await getTenantById(id);
+    if (!tenant) {
+      res.status(404).json({ error: 'Inquilino no encontrado' });
+      return;
+    }
+
+    const adminUser = await getAdminUserByTenant(id);
+    const { query } = await import('../db/pool.js');
+
+    // Current month-year string 'YYYY-MM'
+    const now = new Date();
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+    // Parallel metric queries
+    const [ordersRes, apptsRes, chatsRes, aiRes, paymentsRes] = await Promise.all([
+      query('SELECT COUNT(*) as count FROM orders WHERE tenant_id = $1', [id]),
+      query('SELECT COUNT(*) as count FROM appointments WHERE tenant_id = $1', [id]),
+      query('SELECT COUNT(*) as count FROM chat_messages WHERE tenant_id = $1', [id]),
+      query('SELECT tokens_used as "tokensUsed", requests_count as "requestsCount" FROM tenant_ai_usage WHERE tenant_id = $1 AND month_year = $2', [id, currentMonth]),
+      query('SELECT id, amount, currency, payment_method as "paymentMethod", reference, proof_url as "proofUrl", notes, status, created_at as "createdAt" FROM tenant_payments WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT 50', [id])
+    ]);
+
+    const ordersCount = parseInt(ordersRes.rows[0]?.count || '0', 10);
+    const appointmentsCount = parseInt(apptsRes.rows[0]?.count || '0', 10);
+    const chatsCount = parseInt(chatsRes.rows[0]?.count || '0', 10);
+    const aiUsage = aiRes.rows[0] || { tokensUsed: 0, requestsCount: 0 };
+    const payments = paymentsRes.rows || [];
+
+    res.json({
+      tenant: {
+        ...tenant,
+        adminEmail: adminUser?.email || null,
+        adminName: adminUser?.name || null,
+        adminPhone: tenant.whatsappNumber || null
+      },
+      metrics: {
+        ordersCount,
+        appointmentsCount,
+        chatsCount,
+        aiTokensUsed: parseInt(aiUsage.tokensUsed || '0', 10),
+        aiRequestsCount: parseInt(aiUsage.requestsCount || '0', 10)
+      },
+      payments,
+      internalNotes: tenant.internalNotes || tenant.settingsJson?.internalNotes || ''
+    });
+  } catch (error) {
+    console.error('Error fetching dossier:', error);
+    res.status(500).json({ error: 'Error al obtener expediente del cliente' });
+  }
+});
+
+// Record a Payment
+router.post('/:id/record-payment', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { amount, currency, paymentMethod, reference, proofUrl, notes, extendDays } = req.body;
+    const { query } = await import('../db/pool.js');
+
+    const tenant = await getTenantById(id);
+    if (!tenant) {
+      res.status(404).json({ error: 'Inquilino no encontrado' });
+      return;
+    }
+
+    const payAmount = Number(amount) || Number(tenant.customMonthlyPrice) || 55000;
+    const payCurrency = currency || tenant.billingCurrency || 'CRC';
+    const daysToExtend = Number(extendDays) || 30;
+
+    // 1. Insert into tenant_payments
+    await query(
+      `INSERT INTO tenant_payments (tenant_id, amount, currency, payment_method, reference, proof_url, notes, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'approved')`,
+      [id, payAmount, payCurrency, paymentMethod || 'sinpe', reference || '', proofUrl || null, notes || '']
+    );
+
+    // 2. Update tenant next_billing_date and set active
+    await query(
+      `UPDATE tenants SET 
+         subscription_status = 'active',
+         next_billing_date = COALESCE(GREATEST(next_billing_date, NOW()), NOW()) + ($1 || ' days')::INTERVAL,
+         last_payment_proof = $2,
+         last_payment_ref = $3,
+         last_payment_amount = $4,
+         payment_notes = $5
+       WHERE id = $6`,
+      [daysToExtend, proofUrl || null, reference || null, payAmount, notes || null, id]
+    );
+
+    await logAuditEvent(id, req.user!.userId, 'record_payment', 'financial', id, { amount: payAmount, reference, daysToExtend }, req.ip, req.headers['user-agent']);
+
+    const updated = await getTenantById(id);
+    res.json({ success: true, message: 'Pago registrado con éxito y suscripción extendida', tenant: updated });
+  } catch (error) {
+    console.error('Error recording payment:', error);
+    res.status(500).json({ error: 'Error al registrar pago' });
+  }
+});
+
+// Update Next Billing Date
+router.put('/:id/next-billing-date', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { nextBillingDate } = req.body;
+    if (!nextBillingDate) {
+      res.status(400).json({ error: 'Fecha requerida' });
+      return;
+    }
+
+    const { query } = await import('../db/pool.js');
+    await query('UPDATE tenants SET next_billing_date = $1 WHERE id = $2', [new Date(nextBillingDate), id]);
+    await logAuditEvent(id, req.user!.userId, 'update_billing_date', 'tenant', id, { nextBillingDate }, req.ip, req.headers['user-agent']);
+
+    res.json({ success: true, nextBillingDate });
+  } catch (error) {
+    console.error('Error updating billing date:', error);
+    res.status(500).json({ error: 'Error al actualizar fecha de cobro' });
+  }
+});
+
+// Update Internal Notes
+router.put('/:id/internal-notes', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { notes } = req.body;
+    const { query } = await import('../db/pool.js');
+    await query('UPDATE tenants SET internal_notes = $1 WHERE id = $2', [notes || '', id]);
+    res.json({ success: true, notes });
+  } catch (error) {
+    console.error('Error saving notes:', error);
+    res.status(500).json({ error: 'Error al guardar anotaciones' });
+  }
+});
+
+// Collections & Billing Overview Endpoint
+router.get('/billing/collections', async (req, res) => {
+  try {
+    const tenants = await getAllTenants();
+    const { query } = await import('../db/pool.js');
+
+    const now = new Date();
+    const in3Days = new Date(Date.now() + 3 * 86400000);
+    const in7Days = new Date(Date.now() + 7 * 86400000);
+
+    let totalDueCRC = 0;
+    let totalCollectedCRC = 0;
+    let countPaid = 0;
+    let countDueSoon = 0;
+    let countGrace = 0;
+    let countOverdue = 0;
+
+    const list = await Promise.all(tenants.map(async (t) => {
+      const admin = await getAdminUserByTenant(t.id);
+      const nextDate = t.nextBillingDate ? new Date(t.nextBillingDate) : (t.trialEndsAt ? new Date(t.trialEndsAt) : new Date(Date.now() + 15 * 86400000));
+      const price = Number(t.customMonthlyPrice) || (t.plan === 'enterprise' ? 85000 : t.plan === 'aliado' ? 0 : t.plan === 'emprendedor' ? 35000 : 55000);
+      
+      const diffMs = nextDate.getTime() - now.getTime();
+      const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+
+      let trafficLight = 'paid'; // green
+      let trafficLabel = 'Al Día';
+      let trafficColor = '#10b981'; // green
+
+      if (t.subscriptionStatus === 'suspended') {
+        trafficLight = 'overdue';
+        trafficLabel = 'Suspendido';
+        trafficColor = '#ef4444';
+        countOverdue++;
+      } else if (diffDays < -5) {
+        trafficLight = 'overdue';
+        trafficLabel = 'En Mora';
+        trafficColor = '#ef4444';
+        countOverdue++;
+      } else if (diffDays < 0) {
+        trafficLight = 'grace';
+        trafficLabel = 'En Gracia';
+        trafficColor = '#f97316';
+        countGrace++;
+      } else if (diffDays <= 3) {
+        trafficLight = 'due_soon';
+        trafficLabel = 'Cobro Próximo';
+        trafficColor = '#eab308';
+        countDueSoon++;
+      } else {
+        trafficLight = 'paid';
+        trafficLabel = 'Al Día';
+        trafficColor = '#10b981';
+        countPaid++;
+      }
+
+      totalDueCRC += price;
+
+      return {
+        id: t.id,
+        name: t.name,
+        slug: t.slug,
+        plan: t.plan,
+        adminEmail: admin?.email || 'Sin registrar',
+        phone: t.whatsappNumber || '',
+        monthlyPrice: price,
+        currency: t.billingCurrency || 'CRC',
+        nextBillingDate: nextDate.toISOString(),
+        diffDays,
+        trafficLight,
+        trafficLabel,
+        trafficColor,
+        subscriptionStatus: t.subscriptionStatus || 'active',
+        internalNotes: t.internalNotes || ''
+      };
+    }));
+
+    res.json({
+      summary: {
+        totalDueCRC,
+        countPaid,
+        countDueSoon,
+        countGrace,
+        countOverdue,
+        totalTenants: tenants.length
+      },
+      collections: list
+    });
+  } catch (error) {
+    console.error('Error getting collections:', error);
+    res.status(500).json({ error: 'Error al obtener cartera de cobros' });
+  }
+});
+
 export default router;

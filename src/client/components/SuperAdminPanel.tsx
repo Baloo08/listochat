@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import BillingCollectionsView from './BillingCollectionsView';
+import TenantDossierModal from './TenantDossierModal';
 import { useApi } from '../hooks/useApi';
 import { 
   Building2, Rocket, Server, Cpu, Database, HardDrive, DollarSign, TrendingUp, 
@@ -1624,6 +1626,15 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
       )}
 
       {/* ========================================================================= */}
+      {/* MODAL EXPEDIENTE 360° */}
+      {selectedDossierTenantId && (
+        <TenantDossierModal
+          tenantId={selectedDossierTenantId}
+          onClose={() => setSelectedDossierTenantId(null)}
+          onRefresh={loadTenants}
+        />
+      )}
+
       {/* MODAL: RESTABLECER CONTRASEÑA */}
       {/* ========================================================================= */}
       {resetModalTenant && (

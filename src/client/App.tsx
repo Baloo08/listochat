@@ -48,6 +48,7 @@ import {
   LogOut,
   ArrowLeft,
   DollarSign,
+  CreditCard,
   Building2,
   Server,
   ShieldCheck,
@@ -269,6 +270,7 @@ export default function App() {
       title: 'GESTIÓN DE NEGOCIOS',
       items: [
         { id: 'sa_tenants', label: 'Inquilinos & Negocios', icon: <Building2 size={18} /> },
+        { id: 'sa_collections', label: 'Cobranza & Semáforo', icon: <CreditCard size={18} /> },
         { id: 'sa_financials', label: 'Finanzas & Suscripciones', icon: <DollarSign size={18} /> }
       ]
     },
@@ -357,8 +359,10 @@ export default function App() {
 
   const renderContent = () => {
     if (user?.role === 'superadmin') {
-      const tabMap: Record<string, 'tenants' | 'financials' | 'ai_engine' | 'ai_usage' | 'bots' | 'system' | 'notifications' | 'audit'> = {
+      const tabMap: Record<string, 'tenants' | 'collections' | 'financials' | 'ai_engine' | 'ai_usage' | 'bots' | 'system' | 'notifications' | 'audit'> = {
         sa_tenants: 'tenants',
+        sa_collections: 'collections',
+        collections: 'collections',
         sa_financials: 'financials',
         sa_ai_engine: 'ai_engine',
         sa_ai_usage: 'ai_usage',
@@ -612,7 +616,8 @@ export default function App() {
             )}
             <h1 style={{ fontSize: '1.2rem', fontWeight: '800', letterSpacing: '-0.02em', margin: 0, color: 'var(--text)' }}>
               {
-                currentPage === 'sa_tenants' ? 'Inquilinos & Accesos' :
+                currentPage === 'sa_tenants' ? 'Inquilinos & Negocios' :
+                currentPage === 'sa_collections' ? 'Cobranza & Cuentas por Cobrar' :
                 currentPage === 'sa_financials' ? 'Finanzas del SaaS' :
                 currentPage === 'sa_system' ? 'Servidor & Recursos' :
                 currentPage === 'sa_apis' ? 'APIs & Tráfico' :

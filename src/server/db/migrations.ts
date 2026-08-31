@@ -394,6 +394,22 @@ export async function runMigrations() {
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
 
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS internal_notes TEXT;
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS notification_sent_at TIMESTAMP WITH TIME ZONE;
+    
+    CREATE TABLE IF NOT EXISTS tenant_payments (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+      amount NUMERIC(10, 2) NOT NULL,
+      currency VARCHAR(10) DEFAULT 'CRC',
+      payment_method VARCHAR(50) DEFAULT 'sinpe',
+      reference VARCHAR(255),
+      proof_url TEXT,
+      notes TEXT,
+      status VARCHAR(50) DEFAULT 'approved',
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
     ALTER TABLE tenants ADD COLUMN IF NOT EXISTS custom_monthly_price NUMERIC(10, 2) DEFAULT 29;
     ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_currency VARCHAR(10) DEFAULT 'CRC';
     ALTER TABLE tenants ADD COLUMN IF NOT EXISTS subscription_status VARCHAR(50) DEFAULT 'trial';
