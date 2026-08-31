@@ -17,6 +17,7 @@ import SuperAdminPanel from './components/SuperAdminPanel';
 import StorefrontView from '../storefront/StorefrontView';
 import PublicBookingView from '../storefront/PublicBookingView';
 import DriverPortal from './components/DriverPortal';
+import SpecialistPortal from './components/SpecialistPortal';
 import KDSFullscreen from './components/KDSFullscreen';
 import TenantLoginView from './components/TenantLoginView';
 import CampaignsManager from './components/CampaignsManager';
@@ -84,6 +85,10 @@ export default function App() {
 
   if (pathname.startsWith('/repartidor')) {
     return <DriverPortal />;
+  }
+
+  if (pathname.startsWith('/especialista') || pathname.startsWith('/colaborador')) {
+    return <SpecialistPortal />;
   }
 
   if (pathname.startsWith('/kds')) {

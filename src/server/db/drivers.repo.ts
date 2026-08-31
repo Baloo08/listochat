@@ -81,7 +81,7 @@ export async function deleteDriver(id: string, tenantId: string): Promise<boolea
   return (res.rowCount || 0) > 0;
 }
 
-export async function getActiveOrdersForDriver(driverId: string, tenantId?: string): Promise<Order[]> {
+export async function getActiveOrdersForDriver(driverId: string): Promise<Order[]> {
   const res = await query(`
     SELECT o.id, o.tenant_id as "tenantId", o.order_number as "orderNumber",
            o.customer_name as "customerName", o.customer_phone as "customerPhone",
@@ -92,9 +92,46 @@ export async function getActiveOrdersForDriver(driverId: string, tenantId?: stri
            o.driver_id as "driverId", o.waze_url as "wazeUrl", o.created_at as "createdAt"
     FROM orders o
     WHERE o.driver_id = $1
-      AND o.status NOT IN ('entregado', 'cancelled', 'cancelado')
+      AND o.status NOT IN ('delivered', 'entregado', 'cancelled', 'cancelado')
     ORDER BY o.created_at DESC
   `, [driverId]);
+
+  const orders: Order[] = [];
+  for (const row of res.rows) {
+    const itemsRes = await query(`
+      SELECT id, product_name as "productName", quantity, unit_price as "unitPrice", total_price as "totalPrice"
+      FROM order_items
+      WHERE order_id = $1
+    `, [row.id]);
+    orders.push({ ...row, items: itemsRes.rows });
+  }
+  return orders;
+}
+
+export async function getCompletedOrdersForDriver(driverId: string, fromDate?: string, toDate?: string): Promise<Order[]> {
+  let sql = `
+    SELECT o.id, o.tenant_id as "tenantId", o.order_number as "orderNumber",
+           o.customer_name as "customerName", o.customer_phone as "customerPhone",
+           o.customer_address as "customerAddress", o.customer_location as "customerLocation",
+           o.total, o.currency, o.status, o.payment_method as "paymentMethod",
+           o.payment_status as "paymentStatus", o.notes, o.delivery_method as "deliveryMethod",
+           o.consumption_mode as "consumptionMode", o.table_number as "tableNumber",
+           o.driver_id as "driverId", o.waze_url as "wazeUrl", o.created_at as "createdAt"
+    FROM orders o
+    WHERE o.driver_id = $1
+      AND o.status IN ('delivered', 'entregado')
+  `;
+  const params: any[] = [driverId];
+  if (fromDate) {
+    params.push(fromDate);
+    sql += ` AND o.created_at >= $${params.length}::timestamp`;
+  }
+  if (toDate) {
+    params.push(toDate);
+    sql += ` AND o.created_at <= $${params.length}::timestamp + interval '1 day'`;
+  }
+  sql += ` ORDER BY o.created_at DESC`;
+  const res = await query(sql, params);
 
   const orders: Order[] = [];
   for (const row of res.rows) {

@@ -573,6 +573,40 @@ export default function OrdersPanel() {
               </div>
             )}
 
+            {/* Driver Dispatch & Quick Assignment */}
+            <div style={{ backgroundColor: '#eff6ff', padding: '14px 16px', borderRadius: '10px', border: '1px solid #bfdbfe', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Bike size={18} color="#2563eb" />
+                <div>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#1e40af' }}>Asignar / Despachar Repartidor</div>
+                  <div style={{ fontSize: '0.75rem', color: '#3b82f6' }}>
+                    {selectedOrder.driverId ? `Asignado a: ${drivers.find(d => d.id === selectedOrder.driverId)?.name || 'Repartidor'}` : 'Sin asignar'}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <select
+                  value={dispatchingDriverId || selectedOrder.driverId || ''}
+                  onChange={(e) => setDispatchingDriverId(e.target.value)}
+                  style={{ padding: '7px 10px', borderRadius: '6px', border: '1px solid #93c5fd', backgroundColor: 'white', fontSize: '0.85rem', fontWeight: '600' }}
+                >
+                  <option value="">-- Seleccionar Repartidor --</option>
+                  {drivers.map(d => (
+                    <option key={d.id} value={d.id}>{d.name} ({d.vehicleType || 'Moto'})</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => handleDispatchToDriver(selectedOrder.id, dispatchingDriverId || selectedOrder.driverId || '')}
+                  disabled={dispatching || (!dispatchingDriverId && !selectedOrder.driverId)}
+                  style={{ padding: '7px 14px', backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                >
+                  <Send size={13} /> {dispatching ? 'Despachando...' : 'Despachar WhatsApp'}
+                </button>
+              </div>
+            </div>
+
             {/* Itemized Products */}
             <div style={{ marginBottom: '20px' }}>
               <h4 style={{ margin: '0 0 10px 0', fontSize: '0.95rem', fontWeight: 'bold' }}>Platillos / Productos:</h4>

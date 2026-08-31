@@ -251,6 +251,18 @@ router.post('/', async (req, res) => {
       status: 'received'
     });
 
+    if ((req as any).io) {
+      (req as any).io.to(`tenant_${tenant.id}`).emit('chat:message', {
+        id: msgId,
+        tenantId: tenant.id,
+        remoteJid,
+        pushName,
+        fromMe: false,
+        messageText: userMessage,
+        createdAt: new Date().toISOString()
+      });
+    }
+
     // Check if conversation is currently in Human Mode (AI paused)
     const session = await getChatSession(tenant.id, remoteJid);
     if (session?.isHumanMode) {
@@ -347,9 +359,10 @@ router.post('/', async (req, res) => {
     }
     console.log(`[Webhook] Message send status: success=${sendRes.success}`);
 
+    const aiMsgId = `ai_${Date.now()}`;
     // Save AI reply to database
     await saveChatMessage(tenant.id, {
-      id: `ai_${Date.now()}`,
+      id: aiMsgId,
       remoteJid,
       pushName: 'Asistente IA',
       fromMe: true,
@@ -357,6 +370,19 @@ router.post('/', async (req, res) => {
       aiResponse: aiResult.replyText,
       status: sendRes.success ? 'sent' : 'failed'
     });
+
+    if ((req as any).io) {
+      (req as any).io.to(`tenant_${tenant.id}`).emit('chat:message', {
+        id: aiMsgId,
+        tenantId: tenant.id,
+        remoteJid,
+        pushName: 'Asistente IA',
+        fromMe: true,
+        messageText: aiResult.replyText,
+        aiResponse: aiResult.replyText,
+        createdAt: new Date().toISOString()
+      });
+    }
 
     // Handle detected booking command
     if (aiResult.isBookingDetected && aiResult.bookingData) {

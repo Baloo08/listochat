@@ -408,6 +408,21 @@ export async function runMigrations() {
     ALTER TABLE whatsapp_campaigns ADD COLUMN IF NOT EXISTS scheduled_for TIMESTAMP WITH TIME ZONE;
     ALTER TABLE whatsapp_campaigns ADD COLUMN IF NOT EXISTS target_contacts JSONB;
 
+    CREATE TABLE IF NOT EXISTS specialists (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+      name VARCHAR(255) NOT NULL,
+      phone VARCHAR(50),
+      specialty VARCHAR(255),
+      access_pin VARCHAR(20) NOT NULL,
+      active BOOLEAN DEFAULT true,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
+    ALTER TABLE appointments ADD COLUMN IF NOT EXISTS specialist_id UUID REFERENCES specialists(id) ON DELETE SET NULL;
+
+    CREATE INDEX IF NOT EXISTS idx_specialists_tenant ON specialists(tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_appointments_specialist ON appointments(specialist_id);
     CREATE INDEX IF NOT EXISTS idx_branches_tenant ON branches(tenant_id);
     CREATE INDEX IF NOT EXISTS idx_orders_branch ON orders(branch_id);
     CREATE INDEX IF NOT EXISTS idx_customers_tenant ON customers(tenant_id);

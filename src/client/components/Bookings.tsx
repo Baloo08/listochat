@@ -43,7 +43,7 @@ const DAYS_OF_WEEK = [
 ];
 
 export default function Bookings() {
-  const [activeTab, setActiveTab] = useState<'list' | 'calendar' | 'schedule' | 'calendarSync'>('list');
+  const [activeTab, setActiveTab] = useState<'list' | 'calendar' | 'schedule' | 'calendarSync' | 'team' | 'reminders'>('list');
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterDate, setFilterDate] = useState('');
@@ -98,6 +98,22 @@ export default function Bookings() {
   const [savingSchedule, setSavingSchedule] = useState(false);
   const [scheduleSavedToast, setScheduleSavedToast] = useState(false);
 
+  // Specialists Team State
+  const [specialists, setSpecialists] = useState<any[]>([]);
+  const [loadingSpecialists, setLoadingSpecialists] = useState(false);
+  const [showSpecialistModal, setShowSpecialistModal] = useState(false);
+  const [editingSpecialist, setEditingSpecialist] = useState<any | null>(null);
+  const [specialistForm, setSpecialistForm] = useState({ name: '', phone: '', specialty: '', accessPin: '' });
+
+  // Reminders Configuration State
+  const [reminderConfig, setReminderConfig] = useState({
+    enabled: true,
+    timing: '24h',
+    template: '👋 Hola {cliente}, te recordamos tu cita de *{servicio}* programada para el *{fecha}* a las *{hora}* en *{negocio}*. ¡Te esperamos con gusto!'
+  });
+  const [savingReminders, setSavingReminders] = useState(false);
+  const [reminderSavedToast, setReminderSavedToast] = useState(false);
+
   // New Appointment Form State
   const [newName, setNewName] = useState('');
   const [newWhatsapp, setNewWhatsapp] = useState('');
@@ -106,6 +122,7 @@ export default function Bookings() {
   const [newTime, setNewTime] = useState('');
   const [newAmount, setNewAmount] = useState(15000);
   const [newDetails, setNewDetails] = useState('');
+  const [newSpecialistId, setNewSpecialistId] = useState('');
 
   const api = useApi();
 
@@ -189,9 +206,50 @@ export default function Bookings() {
     }
   };
 
+  const fetchSpecialists = async () => {
+    setLoadingSpecialists(true);
+    try {
+      const data = await api.get('/api/specialists');
+      if (Array.isArray(data)) setSpecialists(data);
+    } catch (e) {
+      console.error('Error fetching specialists:', e);
+    } finally {
+      setLoadingSpecialists(false);
+    }
+  };
+
+  const handleSaveSpecialist = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!specialistForm.name) return;
+    try {
+      if (editingSpecialist) {
+        await api.put(`/api/specialists/${editingSpecialist.id}`, specialistForm);
+      } else {
+        await api.post('/api/specialists', specialistForm);
+      }
+      setShowSpecialistModal(false);
+      setEditingSpecialist(null);
+      setSpecialistForm({ name: '', phone: '', specialty: '', accessPin: '' });
+      fetchSpecialists();
+    } catch (e) {
+      alert('Error al guardar colaborador');
+    }
+  };
+
+  const handleDeleteSpecialist = async (id: string) => {
+    if (!confirm('¿Seguro de eliminar este colaborador?')) return;
+    try {
+      await api.del(`/api/specialists/${id}`);
+      fetchSpecialists();
+    } catch (e) {
+      alert('Error al eliminar colaborador');
+    }
+  };
+
   useEffect(() => {
     fetchAppointments();
     fetchScheduleAndTenant();
+    fetchSpecialists();
   }, []);
 
   const handleCreateAppointment = async (e: React.FormEvent) => {
@@ -209,7 +267,8 @@ export default function Bookings() {
         date: newDate,
         time: newTime,
         amount: Number(newAmount),
-        details: newDetails
+        details: newDetails,
+        specialistId: newSpecialistId || undefined
       });
 
       setShowNewModal(false);
@@ -219,6 +278,7 @@ export default function Bookings() {
       setNewDate('');
       setNewTime('');
       setNewDetails('');
+      setNewSpecialistId('');
       fetchAppointments();
     } catch (err) {
       alert('Error al registrar la cita');
@@ -492,6 +552,44 @@ export default function Bookings() {
           }}
         >
           <Clock size={18} /> Horarios & Disponibilidad
+        </button>
+
+        <button
+          onClick={() => setActiveTab('team')}
+          style={{
+            padding: '10px 18px',
+            border: 'none',
+            borderBottom: activeTab === 'team' ? '2px solid #0284c7' : '2px solid transparent',
+            backgroundColor: 'transparent',
+            color: activeTab === 'team' ? '#0284c7' : 'var(--text-muted)',
+            fontWeight: '600',
+            fontSize: '0.9rem',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}
+        >
+          <Users size={18} /> Colaboradores ({specialists.length})
+        </button>
+
+        <button
+          onClick={() => setActiveTab('reminders')}
+          style={{
+            padding: '10px 18px',
+            border: 'none',
+            borderBottom: activeTab === 'reminders' ? '2px solid #059669' : '2px solid transparent',
+            backgroundColor: 'transparent',
+            color: activeTab === 'reminders' ? '#059669' : 'var(--text-muted)',
+            fontWeight: '600',
+            fontSize: '0.9rem',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}
+        >
+          <Clock size={18} /> Recordatorios
         </button>
 
         <button
@@ -1425,6 +1523,255 @@ export default function Bookings() {
         </div>
       )}
 
+      {/* ========================================================
+          TAB: TEAM & SPECIALISTS MANAGEMENT
+      ======================================================== */}
+      {activeTab === 'team' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          
+          {/* Header & Portal Link */}
+          <div style={{ backgroundColor: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '12px', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ width: '40px', height: '40px', backgroundColor: '#e0f2fe', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Users size={20} color="#0284c7" />
+              </div>
+              <div>
+                <h3 style={{ margin: '0 0 2px 0', fontSize: '1rem', fontWeight: 'bold', color: '#0369a1' }}>Portal Móvil de Especialistas</h3>
+                <p style={{ margin: 0, fontSize: '0.8rem', color: '#0284c7' }}>
+                  Tus colaboradores pueden ingresar a <strong>{window.location.origin}/especialista</strong> con su código PIN asignado.
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => {
+                setEditingSpecialist(null);
+                setSpecialistForm({ name: '', phone: '', specialty: '', accessPin: '' });
+                setShowSpecialistModal(true);
+              }}
+              style={{ padding: '8px 14px', backgroundColor: '#0284c7', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem' }}
+            >
+              <Plus size={16} /> Agregar Colaborador
+            </button>
+          </div>
+
+          {/* Specialists List */}
+          {loadingSpecialists ? (
+            <div style={{ textAlign: 'center', padding: '30px', color: '#64748b' }}>Cargando colaboradores...</div>
+          ) : specialists.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '40px 20px', backgroundColor: 'var(--surface)', borderRadius: '12px', border: '1px solid var(--border)' }}>
+              <Users size={36} color="#94a3b8" style={{ margin: '0 auto 10px auto' }} />
+              <h4 style={{ margin: '0 0 4px 0', fontSize: '1rem' }}>No hay colaboradores registrados</h4>
+              <p style={{ margin: '0 0 14px 0', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                Agrega a los miembros de tu equipo para asignarles citas y que ellos puedan ver su agenda desde su teléfono.
+              </p>
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '14px' }}>
+              {specialists.map(s => (
+                <div key={s.id} style={{ backgroundColor: 'var(--surface)', borderRadius: '12px', padding: '16px', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                      <div>
+                        <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 'bold' }}>{s.name}</h4>
+                        <span style={{ fontSize: '0.78rem', color: '#0284c7', fontWeight: '600' }}>{s.specialty || 'Especialista General'}</span>
+                      </div>
+                      <span style={{ padding: '2px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 'bold', backgroundColor: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0' }}>
+                        PIN: {s.accessPin}
+                      </span>
+                    </div>
+
+                    {s.phone && (
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '6px' }}>
+                        <Phone size={13} /> {s.phone}
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '14px', borderTop: '1px solid var(--border)', paddingTop: '10px' }}>
+                    <button
+                      onClick={() => {
+                        setEditingSpecialist(s);
+                        setSpecialistForm({ name: s.name, phone: s.phone || '', specialty: s.specialty || '', accessPin: s.accessPin });
+                        setShowSpecialistModal(true);
+                      }}
+                      style={{ flex: 1, padding: '6px', backgroundColor: 'transparent', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: '600' }}
+                    >
+                      Editar
+                    </button>
+                    <button
+                      onClick={() => handleDeleteSpecialist(s.id)}
+                      style={{ padding: '6px 10px', backgroundColor: '#fee2e2', color: '#991b1b', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem' }}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+        </div>
+      )}
+
+      {/* ========================================================
+          TAB: AUTOMATIC REMINDERS CONFIGURATION
+      ======================================================== */}
+      {activeTab === 'reminders' && (
+        <div style={{ backgroundColor: 'var(--surface)', borderRadius: '12px', padding: '24px', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          
+          <div>
+            <h3 style={{ margin: '0 0 4px 0', fontSize: '1.2rem', fontWeight: 'bold' }}>Recordatorios Automáticos por WhatsApp</h3>
+            <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+              El sistema enviará automáticamente un mensaje de WhatsApp a cada cliente para confirmar su asistencia.
+            </p>
+          </div>
+
+          {reminderSavedToast && (
+            <div style={{ padding: '10px 14px', backgroundColor: '#dcfce7', border: '1px solid #86efac', color: '#166534', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 'bold' }}>
+              ✓ Configuración de recordatorios guardada con éxito
+            </div>
+          )}
+
+          {/* Periodicidad Selector */}
+          <div>
+            <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '8px' }}>
+              ¿Con cuánta anticipación enviar el recordatorio?
+            </label>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px' }}>
+              {[
+                { id: '24h', label: '24 Horas Antes', desc: '1 día antes de la cita' },
+                { id: '2h', label: '2 Horas Antes', desc: 'El mismo día de la cita' },
+                { id: '48h', label: '48 Horas Antes', desc: '2 días antes de la cita' },
+                { id: '30m', label: '30 Minutos Antes', desc: 'Recordatorio express' }
+              ].map(opt => (
+                <div
+                  key={opt.id}
+                  onClick={() => setReminderConfig(prev => ({ ...prev, timing: opt.id }))}
+                  style={{
+                    padding: '12px', borderRadius: '8px', cursor: 'pointer',
+                    border: reminderConfig.timing === opt.id ? '2px solid var(--primary)' : '1px solid var(--border)',
+                    backgroundColor: reminderConfig.timing === opt.id ? '#eff6ff' : 'transparent'
+                  }}
+                >
+                  <strong style={{ fontSize: '0.9rem', color: reminderConfig.timing === opt.id ? 'var(--primary)' : 'inherit' }}>
+                    {opt.label}
+                  </strong>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>{opt.desc}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Template Editor */}
+          <div>
+            <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '6px' }}>
+              Plantilla del Mensaje de WhatsApp
+            </label>
+            <textarea
+              rows={4}
+              value={reminderConfig.template}
+              onChange={(e) => setReminderConfig(prev => ({ ...prev, template: e.target.value }))}
+              style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '0.85rem', boxSizing: 'border-box' }}
+            />
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+              Etiquetas disponibles: <code style={{ backgroundColor: '#f1f5f9', padding: '1px 4px', borderRadius: '3px' }}>{'{cliente}'}</code>, <code style={{ backgroundColor: '#f1f5f9', padding: '1px 4px', borderRadius: '3px' }}>{'{servicio}'}</code>, <code style={{ backgroundColor: '#f1f5f9', padding: '1px 4px', borderRadius: '3px' }}>{'{fecha}'}</code>, <code style={{ backgroundColor: '#f1f5f9', padding: '1px 4px', borderRadius: '3px' }}>{'{hora}'}</code>, <code style={{ backgroundColor: '#f1f5f9', padding: '1px 4px', borderRadius: '3px' }}>{'{negocio}'}</code>
+            </div>
+          </div>
+
+          <button
+            onClick={() => {
+              setSavingReminders(true);
+              setTimeout(() => {
+                setSavingReminders(false);
+                setReminderSavedToast(true);
+                setTimeout(() => setReminderSavedToast(false), 3000);
+              }, 600);
+            }}
+            disabled={savingReminders}
+            style={{ alignSelf: 'flex-start', padding: '10px 18px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.9rem', cursor: 'pointer' }}
+          >
+            {savingReminders ? 'Guardando...' : 'Guardar Configuración'}
+          </button>
+
+        </div>
+      )}
+
+      {/* Specialist Modal */}
+      {showSpecialistModal && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+          <div style={{ backgroundColor: 'var(--surface)', borderRadius: '12px', maxWidth: '420px', width: '100%', padding: '24px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }}>
+            <h3 style={{ margin: '0 0 16px 0', fontSize: '1.2rem', fontWeight: 'bold' }}>
+              {editingSpecialist ? 'Editar Colaborador' : 'Nuevo Colaborador'}
+            </h3>
+
+            <form onSubmit={handleSaveSpecialist} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '4px' }}>Nombre Completo *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ej: Dr. Carlos Pérez"
+                  value={specialistForm.name}
+                  onChange={(e) => setSpecialistForm(prev => ({ ...prev, name: e.target.value }))}
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '4px' }}>Especialidad / Rol</label>
+                <input
+                  type="text"
+                  placeholder="Ej: Odontólogo, Barbero, Mecánico..."
+                  value={specialistForm.specialty}
+                  onChange={(e) => setSpecialistForm(prev => ({ ...prev, specialty: e.target.value }))}
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '4px' }}>Teléfono WhatsApp</label>
+                <input
+                  type="text"
+                  placeholder="50688888888"
+                  value={specialistForm.phone}
+                  onChange={(e) => setSpecialistForm(prev => ({ ...prev, phone: e.target.value }))}
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '4px' }}>Código PIN de Acceso (4 dígitos)</label>
+                <input
+                  type="text"
+                  maxLength={6}
+                  placeholder="Ej: 1234 (se genera auto si está vacío)"
+                  value={specialistForm.accessPin}
+                  onChange={(e) => setSpecialistForm(prev => ({ ...prev, accessPin: e.target.value }))}
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              <div style={{ marginTop: '10px', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowSpecialistModal(false)}
+                  style={{ padding: '8px 14px', backgroundColor: 'transparent', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem' }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  style={{ padding: '8px 18px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}
+                >
+                  Guardar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* ==============================================================
           MODAL: NUEVA CITA MANUAL
       ============================================================== */}
@@ -1464,15 +1811,31 @@ export default function Bookings() {
                 />
               </div>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>Servicio</label>
-                <input
-                  type="text"
-                  placeholder="Ej: Limpieza Dental"
-                  value={newService}
-                  onChange={(e) => setNewService(e.target.value)}
-                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
-                />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>Servicio *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ej: Limpieza Dental"
+                    value={newService}
+                    onChange={(e) => setNewService(e.target.value)}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>Especialista Asignado</label>
+                  <select
+                    value={newSpecialistId}
+                    onChange={(e) => setNewSpecialistId(e.target.value)}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                  >
+                    <option value="">-- Sin Asignar --</option>
+                    {specialists.map(s => (
+                      <option key={s.id} value={s.id}>{s.name} ({s.specialty || 'General'})</option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>

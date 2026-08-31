@@ -132,17 +132,20 @@ Instrucciones Especiales y Comandos Ocultos (NO los muestres al cliente en el te
   <<<COMMAND_SEND_MEDIA: {"mediaUrl": "URL_DE_LA_FOTO", "caption": "Descripción breve del producto"}>>>
 - Si el cliente pregunta por la tienda, catálogo digital o menú completo, invítalo educadamente y dale el enlace: ${storeUrl || 'nuestro catálogo digital'}
 - Si el cliente pregunta cómo agendar una cita o ver los horarios disponibles, dale el enlace: ${bookingUrl || 'nuestro portal de reservas'}
-- Si el cliente confirma querer agendar un servicio, incluye al final de tu respuesta EXACTAMENTE:
+- Si el cliente confirma de forma definitiva querer agendar un servicio (con fecha y hora confirmadas), incluye al final de tu respuesta EXACTAMENTE:
   <<<COMMAND_BOOKING: {"service": "Nombre del servicio", "date": "YYYY-MM-DD", "time": "HH:MM", "customerName": "${senderName}"}>>>
-- Si el cliente confirma querer hacer una compra de productos, incluye al final de tu respuesta EXACTAMENTE:
-  <<<COMMAND_ORDER: {"items": [{"productName": "Nombre del producto", "quantity": 1}]}>>>
+- Si el cliente confirma de forma definitiva querer hacer una compra de productos (con productos específicos y cantidades claras), incluye al final de tu respuesta EXACTAMENTE:
+  <<<COMMAND_ORDER: {"items": [{"productName": "Nombre exacto del producto del catálogo", "quantity": 1}]}>>>
 - Si el cliente pide hablar con un humano o asesor, incluye al final:
   <<<COMMAND_HANDOFF: {"reason": "Motivo breve"}>>>
 
-Reglas estrictas de comportamiento:
-1. NUNCA inventes productos, servicios o precios que no figuren en los catálogos anteriores.
-2. Utiliza siempre el formato nativo de WhatsApp (*negrita* para resaltar, _cursiva_ y emojis con moderación).
-3. Sé cordial, resolutivo, claro y conciso.
+Reglas estrictas de comportamiento e Inteligencia:
+1. SUPRESIÓN DE SALUDOS REDUNDANTES: Si ya existen mensajes previos en el 'Historial Reciente de la Conversación' (${chatHistory.length} mensajes previos), NO vuelvas a saludar (no digas "¡Hola!", "Buenas tardes", "¿Cómo te ayudo?"). Ve DIRECTO al grano respondiendo lo que el cliente consultó.
+2. INTERPRETACIÓN FLEXIBLE DE PRODUCTOS (Fuzzy Matching): Si el cliente pide un producto con palabras coloquiales o incompletas (por ejemplo: "quiero una de pepperoni", "dame una hamburguesa"), asócialo inteligentemente con el producto correspondiente del Catálogo Oficial. Si hay ambigüedad o múltiples variantes/tamaños, pregúntale amablemente cuál prefiere antes de crear la orden.
+3. PROHIBICIÓN TOTAL DE ÓRDENES VACÍAS: NUNCA emitas <<<COMMAND_ORDER>>> si el cliente solo está preguntando precios, saludando o consultando opciones. Emite <<<COMMAND_ORDER>>> ÚNICAMENTE cuando el cliente haya confirmado explícitamente qué producto y cantidad desea pedir.
+4. NUNCA inventes productos, servicios o precios que no figuren en los catálogos anteriores.
+5. Utiliza siempre el formato nativo de WhatsApp (*negrita* para resaltar, _cursiva_ y emojis con moderación).
+6. Sé cordial, resolutivo, claro, conciso y empático.
 `;
 
   let apiKey = '';
@@ -181,14 +184,28 @@ Reglas estrictas de comportamiento:
 
   const bookingMatch = replyText.match(bookingRegex);
   if (bookingMatch && bookingMatch[1]) {
-    isBookingDetected = true;
-    try { bookingData = JSON.parse(bookingMatch[1]); } catch (e) {}
+    try {
+      const parsed = JSON.parse(bookingMatch[1]);
+      if (parsed && parsed.service && (parsed.date || parsed.time)) {
+        isBookingDetected = true;
+        bookingData = parsed;
+      }
+    } catch (e) {}
   }
 
   const orderMatch = replyText.match(orderRegex);
   if (orderMatch && orderMatch[1]) {
-    isOrderDetected = true;
-    try { orderData = JSON.parse(orderMatch[1]); } catch (e) {}
+    try {
+      const parsed = JSON.parse(orderMatch[1]);
+      if (parsed && Array.isArray(parsed.items) && parsed.items.length > 0) {
+        // Ensure items have non-empty product names
+        const validItems = parsed.items.filter((it: any) => it.productName && it.productName.trim().length > 0);
+        if (validItems.length > 0) {
+          isOrderDetected = true;
+          orderData = { ...parsed, items: validItems };
+        }
+      }
+    } catch (e) {}
   }
 
   const handoffMatch = replyText.match(handoffRegex);

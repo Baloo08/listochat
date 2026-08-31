@@ -5,6 +5,7 @@ import {
   Navigation, Package, User, Palette, Sliders, CheckCircle2, Building2 
 } from 'lucide-react';
 import { Product, StoreSettings, DeliveryConfig, CustomVariable, CustomVariableOption } from '../shared/types';
+import { getCRProvincias, getCRCantones, getCRDistritos } from '../shared/costaRicaDivisions';
 
 interface StorefrontProps {
   slug: string;
@@ -130,6 +131,11 @@ export default function StorefrontView({ slug }: StorefrontProps) {
   const [paymentMethod, setPaymentMethod] = useState<'sinpe' | 'cash' | 'transfer'>('sinpe');
   const [paymentReference, setPaymentReference] = useState('');
   const [orderNotes, setOrderNotes] = useState('');
+  const [selectedProvincia, setSelectedProvincia] = useState('');
+  const [selectedCanton, setSelectedCanton] = useState('');
+  const [selectedDistrito, setSelectedDistrito] = useState('');
+  const [exactAddress, setExactAddress] = useState('');
+  const [showMapPreview, setShowMapPreview] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderCompleted, setOrderCompleted] = useState<any | null>(null);
 
@@ -295,6 +301,16 @@ export default function StorefrontView({ slug }: StorefrontProps) {
         .filter(Boolean) as CartItem[]
     );
   };
+
+  useEffect(() => {
+    if (selectedProvincia) {
+      const parts = [selectedProvincia];
+      if (selectedCanton) parts.push(selectedCanton);
+      if (selectedDistrito) parts.push(selectedDistrito);
+      if (exactAddress) parts.push(exactAddress);
+      setCustomerAddress(parts.join(', '));
+    }
+  }, [selectedProvincia, selectedCanton, selectedDistrito, exactAddress]);
 
   const handleGetGpsLocation = () => {
     if (!navigator.geolocation) {
@@ -896,26 +912,140 @@ export default function StorefrontView({ slug }: StorefrontProps) {
 
                     {/* Delivery Address if Express or Correos */}
                     {(consumptionMode === 'delivery' || consumptionMode === 'correos_cr') && (
-                      <div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                          <label style={{ fontSize: '0.8rem', fontWeight: '600', color: titleColor }}>Dirección de Entrega *</label>
-                          <button
-                            type="button"
-                            onClick={handleGetGpsLocation}
-                            disabled={fetchingGps}
-                            style={{ border: 'none', background: 'none', color: primaryColor, fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '3px' }}
-                          >
-                            <Navigation size={12} /> {fetchingGps ? 'Obteniendo GPS...' : '📍 Usar mi GPS actual'}
-                          </button>
+                      <div style={{ backgroundColor: isDark ? '#1e293b' : '#f8fafc', padding: '14px', borderRadius: '10px', border: isDark ? '1px solid #334155' : '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <label style={{ fontSize: '0.85rem', fontWeight: 'bold', color: titleColor, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <MapPin size={15} color={primaryColor} /> 
+                            {consumptionMode === 'correos_cr' ? 'Dirección Oficial de Envío (Costa Rica)' : 'Ubicación y Dirección de Entrega'}
+                          </label>
+
+                          {consumptionMode === 'delivery' && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleGetGpsLocation();
+                                setShowMapPreview(true);
+                              }}
+                              disabled={fetchingGps}
+                              style={{ border: 'none', background: 'none', color: primaryColor, fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px', borderRadius: '6px', backgroundColor: `${primaryColor}15` }}
+                            >
+                              <Navigation size={13} /> {fetchingGps ? 'Obteniendo...' : '📍 Usar GPS'}
+                            </button>
+                          )}
                         </div>
-                        <textarea
-                          rows={2}
-                          required
-                          placeholder="Provincia, cantón, señas exactas..."
-                          value={customerAddress}
-                          onChange={(e) => setCustomerAddress(e.target.value)}
-                          style={{ width: '100%', padding: '9px 12px', borderRadius: '6px', border: isDark ? '1px solid #334155' : '1px solid #cbd5e1', backgroundColor: isDark ? '#1e293b' : 'white', color: isDark ? '#ffffff' : '#0f172a', fontSize: '0.85rem' }}
-                        />
+
+                        {/* 3-Tier Cascading Costa Rica Selectors */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                          {/* 1. Provincia */}
+                          <div>
+                            <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 'bold', color: bodyTextColor, marginBottom: '2px' }}>
+                              Provincia *
+                            </label>
+                            <select
+                              value={selectedProvincia}
+                              onChange={(e) => {
+                                setSelectedProvincia(e.target.value);
+                                setSelectedCanton('');
+                                setSelectedDistrito('');
+                              }}
+                              style={{ width: '100%', padding: '7px 8px', borderRadius: '6px', border: isDark ? '1px solid #475569' : '1px solid #cbd5e1', backgroundColor: isDark ? '#0f172a' : 'white', color: isDark ? '#ffffff' : '#0f172a', fontSize: '0.78rem' }}
+                            >
+                              <option value="">-- Seleccionar --</option>
+                              {getCRProvincias().map(p => (
+                                <option key={p} value={p}>{p}</option>
+                              ))}
+                            </select>
+                          </div>
+
+                          {/* 2. Cantón */}
+                          <div>
+                            <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 'bold', color: bodyTextColor, marginBottom: '2px' }}>
+                              Cantón *
+                            </label>
+                            <select
+                              value={selectedCanton}
+                              disabled={!selectedProvincia}
+                              onChange={(e) => {
+                                setSelectedCanton(e.target.value);
+                                setSelectedDistrito('');
+                              }}
+                              style={{ width: '100%', padding: '7px 8px', borderRadius: '6px', border: isDark ? '1px solid #475569' : '1px solid #cbd5e1', backgroundColor: isDark ? '#0f172a' : 'white', color: isDark ? '#ffffff' : '#0f172a', fontSize: '0.78rem', opacity: selectedProvincia ? 1 : 0.6 }}
+                            >
+                              <option value="">-- Seleccionar --</option>
+                              {selectedProvincia && getCRCantones(selectedProvincia).map(c => (
+                                <option key={c} value={c}>{c}</option>
+                              ))}
+                            </select>
+                          </div>
+
+                          {/* 3. Distrito */}
+                          <div>
+                            <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 'bold', color: bodyTextColor, marginBottom: '2px' }}>
+                              Distrito *
+                            </label>
+                            <select
+                              value={selectedDistrito}
+                              disabled={!selectedCanton}
+                              onChange={(e) => setSelectedDistrito(e.target.value)}
+                              style={{ width: '100%', padding: '7px 8px', borderRadius: '6px', border: isDark ? '1px solid #475569' : '1px solid #cbd5e1', backgroundColor: isDark ? '#0f172a' : 'white', color: isDark ? '#ffffff' : '#0f172a', fontSize: '0.78rem', opacity: selectedCanton ? 1 : 0.6 }}
+                            >
+                              <option value="">-- Seleccionar --</option>
+                              {selectedProvincia && selectedCanton && getCRDistritos(selectedProvincia, selectedCanton).map(d => (
+                                <option key={d} value={d}>{d}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* Señas Exactas */}
+                        <div>
+                          <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 'bold', color: bodyTextColor, marginBottom: '2px' }}>
+                            Señas Exactas de Entrega *
+                          </label>
+                          <textarea
+                            rows={2}
+                            required
+                            placeholder="Ej: 200 metros norte de la iglesia, casa de dos pisos portón negro..."
+                            value={exactAddress}
+                            onChange={(e) => setExactAddress(e.target.value)}
+                            style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: isDark ? '1px solid #475569' : '1px solid #cbd5e1', backgroundColor: isDark ? '#0f172a' : 'white', color: isDark ? '#ffffff' : '#0f172a', fontSize: '0.82rem', boxSizing: 'border-box' }}
+                          />
+                        </div>
+
+                        {/* Interactive Embedded GPS Map Preview */}
+                        {consumptionMode === 'delivery' && (
+                          <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                              <button
+                                type="button"
+                                onClick={() => setShowMapPreview(!showMapPreview)}
+                                style={{ border: 'none', background: 'none', color: primaryColor, fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', padding: 0 }}
+                              >
+                                <MapPin size={12} /> {showMapPreview ? 'Ocultar mapa' : '🗺️ Ver mapa de ubicación'}
+                              </button>
+                              {customerGps.lat && customerGps.lng && (
+                                <span style={{ fontSize: '0.7rem', color: '#16a34a', fontWeight: 'bold' }}>
+                                  ✓ GPS fijado ({customerGps.lat.toFixed(4)}, {customerGps.lng.toFixed(4)})
+                                </span>
+                              )}
+                            </div>
+
+                            {showMapPreview && (
+                              <div style={{ borderRadius: '8px', overflow: 'hidden', border: isDark ? '1px solid #475569' : '1px solid #cbd5e1', marginTop: '6px' }}>
+                                <iframe
+                                  title="Selector de Mapa"
+                                  width="100%"
+                                  height="170"
+                                  style={{ border: 0, display: 'block' }}
+                                  loading="lazy"
+                                  src={`https://maps.google.com/maps?q=${customerGps.lat || 9.9281},+${customerGps.lng || -84.0907}&z=15&output=embed`}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        )}
+
                       </div>
                     )}
 

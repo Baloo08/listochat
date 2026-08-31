@@ -39,6 +39,7 @@ import superadminMetricsRoutes from './routes/superadmin-metrics.routes.js';
 import superadminPlatformRoutes from './routes/superadmin-platform.routes.js';
 import campaignsRoutes from './routes/campaigns.routes.js';
 import branchesRoutes from './routes/branches.routes.js';
+import specialistsRoutes from './routes/specialists.routes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -161,6 +162,7 @@ async function startServer() {
   app.use('/api/upload', uploadRoutes);
   app.use('/api/campaigns', campaignsRoutes);
   app.use('/api/branches', branchesRoutes);
+  app.use('/api/specialists', specialistsRoutes);
   app.use('/api/storefront', publicLimiter, storefrontRoutes);
   app.use('/api/calendar', calendarRoutes);
   app.use('/api/webhook/evolution', webhookRoutes);

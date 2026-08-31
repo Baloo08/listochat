@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Bike, Navigation, MapPin, Phone, MessageSquare, CheckCircle, Package, RefreshCw, LogOut, AlertCircle, Clock, ShieldCheck, DollarSign, Eye, EyeOff, Lock } from 'lucide-react';
+import { Bike, Navigation, MapPin, Phone, MessageSquare, CheckCircle, Package, RefreshCw, LogOut, AlertCircle, Clock, ShieldCheck, DollarSign, Eye, EyeOff, Lock, Calendar, Filter } from 'lucide-react';
 import { Order } from '../../shared/types';
 
 export default function DriverPortal() {
@@ -11,6 +11,15 @@ export default function DriverPortal() {
   const [loginError, setLoginError] = useState('');
   const [deliveringId, setDeliveringId] = useState<string | null>(null);
   const [deliveredSuccess, setDeliveredSuccess] = useState<string | null>(null);
+
+  // Tabs & History State
+  const [activeTab, setActiveTab] = useState<'active' | 'history'>('active');
+  const [historyOrders, setHistoryOrders] = useState<Order[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [historyStats, setHistoryStats] = useState({ totalCount: 0, totalEarnings: 0 });
+  const [dateFilter, setDateFilter] = useState<'today' | 'week' | 'month' | 'custom'>('today');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
 
   // Check URL params for pin (?pin=1234) or saved localStorage PIN
   useEffect(() => {
@@ -73,6 +82,62 @@ export default function DriverPortal() {
     }
   };
 
+  const fetchHistoryOrders = async () => {
+    const p = pin || localStorage.getItem('driver_pin');
+    if (!p) return;
+
+    setLoadingHistory(true);
+    try {
+      let from = '';
+      let to = '';
+      const now = new Date();
+
+      if (dateFilter === 'today') {
+        from = now.toISOString().split('T')[0];
+        to = from;
+      } else if (dateFilter === 'week') {
+        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        from = weekAgo.toISOString().split('T')[0];
+        to = now.toISOString().split('T')[0];
+      } else if (dateFilter === 'month') {
+        const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        from = monthAgo.toISOString().split('T')[0];
+        to = now.toISOString().split('T')[0];
+      } else if (dateFilter === 'custom') {
+        from = customFrom;
+        to = customTo;
+      }
+
+      let url = `/api/drivers/portal/history?pin=${p}`;
+      if (from) url += `&fromDate=${from}`;
+      if (to) url += `&toDate=${to}`;
+
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        setHistoryOrders(data.orders || []);
+        setHistoryStats({
+          totalCount: data.totalCount || (data.orders || []).length,
+          totalEarnings: data.totalEarnings || 0
+        });
+      }
+    } catch (e) {
+      console.error('Error fetching driver history:', e);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  useEffect(() => {
+    if (driver) {
+      if (activeTab === 'active') {
+        fetchDriverOrders();
+      } else {
+        fetchHistoryOrders();
+      }
+    }
+  }, [driver, activeTab, dateFilter, customFrom, customTo]);
+
   const handleMarkDelivered = async (orderId: string) => {
     const p = pin || localStorage.getItem('driver_pin');
     if (!confirm('¿Confirmas que ya entregaste este pedido al cliente?')) return;
@@ -100,67 +165,73 @@ export default function DriverPortal() {
   const handleLogout = () => {
     localStorage.removeItem('driver_pin');
     setDriver(null);
-    setOrders([]);
     setPin('');
+    setOrders([]);
   };
 
-  // 1. PIN LOGIN SCREEN (Masked and strictly protected)
+  // PIN LOGIN FORM
   if (!driver) {
     return (
-      <div style={{ minHeight: '100vh', backgroundColor: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
-        <div style={{ backgroundColor: '#1e293b', borderRadius: '16px', border: '1px solid #334155', maxWidth: '380px', width: '100%', padding: '32px 24px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)', textAlign: 'center', color: 'white' }}>
-          
-          <div style={{ width: '64px', height: '64px', backgroundColor: '#0d9488', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px auto' }}>
-            <Bike size={32} color="white" />
+      <div style={{
+        display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh',
+        backgroundColor: '#0f172a', padding: '20px', fontFamily: 'system-ui, -apple-system, sans-serif'
+      }}>
+        <div style={{
+          backgroundColor: '#ffffff', borderRadius: '20px', padding: '36px 28px',
+          maxWidth: '400px', width: '100%', boxShadow: '0 20px 40px rgba(0,0,0,0.3)',
+          border: '1px solid #e2e8f0'
+        }}>
+          <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+            <div style={{
+              width: '64px', height: '64px', backgroundColor: '#f0fdf4',
+              borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              margin: '0 auto 12px auto', border: '1px solid #bbf7d0'
+            }}>
+              <Bike size={32} color="#16a34a" />
+            </div>
+            <h1 style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#0f172a', margin: '0 0 4px 0' }}>
+              Portal de Repartidor
+            </h1>
+            <p style={{ margin: 0, color: '#64748b', fontSize: '0.85rem' }}>
+              Ingresa tu código PIN de 4 dígitos para ver tus entregas
+            </p>
           </div>
 
-          <h2 style={{ margin: '0 0 6px 0', fontSize: '1.4rem', fontWeight: 'bold' }}>Portal de Entregas</h2>
-          <p style={{ margin: '0 0 24px 0', fontSize: '0.85rem', color: '#94a3b8' }}>
-            Ingresa tu código PIN único para ver tus pedidos asignados
-          </p>
-
           {loginError && (
-            <div style={{ padding: '10px 14px', backgroundColor: 'rgba(239, 68, 68, 0.15)', border: '1px solid #ef4444', borderRadius: '8px', color: '#fca5a5', fontSize: '0.85rem', marginBottom: '18px', display: 'flex', alignItems: 'center', gap: '8px', textAlign: 'left' }}>
-              <AlertCircle size={18} color="#ef4444" />
+            <div style={{
+              backgroundColor: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b',
+              padding: '10px 14px', borderRadius: '8px', marginBottom: '16px', fontSize: '0.85rem',
+              display: 'flex', alignItems: 'center', gap: '8px'
+            }}>
+              <AlertCircle size={16} />
               <span>{loginError}</span>
             </div>
           )}
 
-          <form onSubmit={(e) => { e.preventDefault(); handleLogin(); }} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <div style={{ textAlign: 'left' }}>
-              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', color: '#cbd5e1', marginBottom: '6px' }}>
-                Código PIN de Acceso
+          <form onSubmit={(e) => { e.preventDefault(); handleLogin(); }} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', color: '#334155', marginBottom: '4px' }}>
+                Código PIN Asignado
               </label>
-              
               <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                <div style={{ position: 'absolute', left: '12px', color: '#64748b' }}>
-                  <Lock size={18} />
-                </div>
+                <Lock size={18} color="#94a3b8" style={{ position: 'absolute', left: '12px' }} />
                 <input
                   type={showPin ? 'text' : 'password'}
-                  inputMode="numeric"
-                  maxLength={10}
+                  required
+                  maxLength={6}
                   placeholder="••••"
                   value={pin}
                   onChange={(e) => setPin(e.target.value)}
                   style={{
-                    width: '100%',
-                    padding: '12px 42px 12px 38px',
-                    borderRadius: '10px',
-                    border: '1px solid #475569',
-                    backgroundColor: '#0f172a',
-                    color: 'white',
-                    fontSize: '1.4rem',
-                    letterSpacing: showPin ? '2px' : '6px',
-                    textAlign: 'center',
-                    fontWeight: 'bold',
-                    outline: 'none'
+                    width: '100%', padding: '12px 40px 12px 38px', textAlign: 'center',
+                    letterSpacing: '6px', fontSize: '1.3rem', fontWeight: 'bold', borderRadius: '8px',
+                    border: '1px solid #cbd5e1', boxSizing: 'border-box'
                   }}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPin(!showPin)}
-                  style={{ position: 'absolute', right: '12px', background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '4px' }}
+                  style={{ position: 'absolute', right: '10px', background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8' }}
                 >
                   {showPin ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
@@ -171,309 +242,302 @@ export default function DriverPortal() {
               type="submit"
               disabled={loading}
               style={{
-                padding: '14px',
-                backgroundColor: '#0d9488',
-                color: 'white',
-                border: 'none',
-                borderRadius: '10px',
-                fontWeight: 'bold',
-                fontSize: '1rem',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px'
+                width: '100%', padding: '12px', backgroundColor: '#16a34a', color: 'white',
+                border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.95rem',
+                cursor: loading ? 'not-allowed' : 'pointer', marginTop: '6px'
               }}
             >
-              <ShieldCheck size={20} />
-              {loading ? 'Verificando...' : 'Acceder al Portal'}
+              {loading ? 'Verificando...' : 'Entrar a Mis Entregas'}
             </button>
           </form>
-
-          <div style={{ marginTop: '24px', fontSize: '0.75rem', color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
-            <Lock size={12} /> Acceso protegido y cifrado
-          </div>
         </div>
       </div>
     );
   }
 
-  // 2. ACTIVE DELIVERIES SCREEN
+  // ACTIVE PORTAL VIEW
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#f1f5f9', fontFamily: 'system-ui, -apple-system, sans-serif', paddingBottom: '40px' }}>
+    <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
       
-      {/* Header */}
-      <header style={{ backgroundColor: '#0f172a', color: 'white', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, zIndex: 30, boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div style={{ width: '36px', height: '36px', backgroundColor: '#0d9488', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Bike size={20} color="white" />
-          </div>
+      {/* Top Header */}
+      <header style={{ backgroundColor: '#ffffff', borderBottom: '1px solid #e2e8f0', padding: '14px 20px', position: 'sticky', top: 0, zIndex: 30 }}>
+        <div style={{ maxWidth: '800px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <div style={{ fontWeight: 'bold', fontSize: '0.95rem' }}>{driver.name}</div>
-            <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{driver.businessName || 'Comercio'}</div>
+            <div style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '600' }}>{driver.businessName}</div>
+            <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Bike size={18} color="#16a34a" /> {driver.name}
+              {driver.plateNumber && (
+                <span style={{ fontSize: '0.75rem', backgroundColor: '#f1f5f9', color: '#475569', padding: '2px 8px', borderRadius: '12px' }}>
+                  Placa: {driver.plateNumber}
+                </span>
+              )}
+            </div>
           </div>
-        </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <button
-            onClick={() => fetchDriverOrders()}
-            style={{ padding: '8px', backgroundColor: '#334155', border: 'none', borderRadius: '8px', color: 'white', cursor: 'pointer' }}
-            title="Actualizar pedidos"
-          >
-            <RefreshCw size={16} />
-          </button>
-          <button
-            onClick={handleLogout}
-            style={{ padding: '8px', backgroundColor: '#334155', border: 'none', borderRadius: '8px', color: '#fca5a5', cursor: 'pointer' }}
-            title="Cerrar sesión"
-          >
-            <LogOut size={16} />
-          </button>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              onClick={() => activeTab === 'active' ? fetchDriverOrders() : fetchHistoryOrders()}
+              style={{ padding: '7px 10px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer' }}
+              title="Refrescar"
+            >
+              <RefreshCw size={14} color="#475569" />
+            </button>
+            <button
+              onClick={handleLogout}
+              style={{
+                padding: '7px 12px', backgroundColor: '#fee2e2', border: 'none',
+                borderRadius: '8px', fontSize: '0.8rem', color: '#991b1b', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 'bold'
+              }}
+            >
+              <LogOut size={14} /> Salir
+            </button>
+          </div>
         </div>
       </header>
 
-      {/* Main Body */}
-      <main style={{ maxWidth: '640px', margin: '0 auto', padding: '16px' }}>
+      {/* Tabs */}
+      <div style={{ maxWidth: '800px', margin: '0 auto', padding: '16px 20px' }}>
         
         {deliveredSuccess && (
-          <div style={{ padding: '14px 18px', backgroundColor: '#dcfce7', border: '1px solid #86efac', color: '#166534', borderRadius: '12px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold', fontSize: '0.9rem' }}>
-            <CheckCircle size={20} color="#16a34a" />
-            <span>{deliveredSuccess}</span>
+          <div style={{ padding: '12px 16px', backgroundColor: '#dcfce7', border: '1px solid #86efac', color: '#166534', borderRadius: '8px', marginBottom: '16px', fontSize: '0.85rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <CheckCircle size={18} /> {deliveredSuccess}
           </div>
         )}
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-          <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'bold', color: '#1e293b' }}>
-            Tus Entregas Asignadas ({orders.length})
-          </h2>
-          <span style={{ fontSize: '0.8rem', color: '#64748b', backgroundColor: 'white', padding: '4px 10px', borderRadius: '20px', border: '1px solid #cbd5e1' }}>
-            Vehículo: {driver.vehicleType?.toUpperCase()} {driver.plateNumber ? `(${driver.plateNumber})` : ''}
-          </span>
+        <div style={{ display: 'flex', backgroundColor: '#e2e8f0', borderRadius: '10px', padding: '3px', marginBottom: '20px' }}>
+          <button
+            onClick={() => setActiveTab('active')}
+            style={{
+              flex: 1, padding: '9px', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.85rem',
+              cursor: 'pointer', backgroundColor: activeTab === 'active' ? '#ffffff' : 'transparent',
+              color: activeTab === 'active' ? '#16a34a' : '#64748b', boxShadow: activeTab === 'active' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+            }}
+          >
+            🛵 Pedidos Asignados ({orders.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('history')}
+            style={{
+              flex: 1, padding: '9px', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.85rem',
+              cursor: 'pointer', backgroundColor: activeTab === 'history' ? '#ffffff' : 'transparent',
+              color: activeTab === 'history' ? '#16a34a' : '#64748b', boxShadow: activeTab === 'history' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+            }}
+          >
+            📦 Historial de Entregas
+          </button>
         </div>
 
-        {orders.length === 0 ? (
-          <div style={{ backgroundColor: 'white', borderRadius: '16px', padding: '40px 20px', textAlign: 'center', border: '1px solid #e2e8f0', boxShadow: '0 2px 6px rgba(0,0,0,0.03)', marginTop: '20px' }}>
-            <div style={{ width: '60px', height: '60px', backgroundColor: '#ccfbf1', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px auto', color: '#0f766e' }}>
-              <CheckCircle size={32} />
-            </div>
-            <h3 style={{ margin: '0 0 6px 0', fontSize: '1.15rem', fontWeight: 'bold', color: '#1e293b' }}>¡Todo al día!</h3>
-            <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748b' }}>
-              No tienes entregas pendientes en este momento. Cuando la tienda te asigne un pedido, aparecerá aquí en tiempo real.
-            </p>
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {orders.map(order => {
-              const hasGps = Boolean(order.customerLocation?.lat && order.customerLocation?.lng);
-              const wazeLink = hasGps 
-                ? `https://waze.com/ul?ll=${order.customerLocation!.lat},${order.customerLocation!.lng}&navigate=yes`
-                : null;
-              const mapsLink = hasGps 
-                ? `https://maps.google.com/?q=${order.customerLocation!.lat},${order.customerLocation!.lng}`
-                : null;
-              const cleanCustomerPhone = (order.customerPhone || '').replace(/\D/g, '');
+        {/* TAB 1: ACTIVE ORDERS */}
+        {activeTab === 'active' && (
+          <div>
+            {orders.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '50px 20px', backgroundColor: '#ffffff', borderRadius: '14px', border: '1px solid #e2e8f0' }}>
+                <CheckCircle size={42} color="#10b981" style={{ margin: '0 auto 12px auto' }} />
+                <h3 style={{ margin: '0 0 6px 0', fontSize: '1.1rem', color: '#0f172a', fontWeight: 'bold' }}>
+                  ¡Todo al día!
+                </h3>
+                <p style={{ margin: 0, color: '#64748b', fontSize: '0.85rem' }}>
+                  No tienes entregas pendientes asignadas en este momento.
+                </p>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                {orders.map(o => {
+                  const cleanPhone = (o.customerPhone || '').replace(/\\D/g, '');
+                  const waUrl = `https://wa.me/${cleanPhone}?text=Hola%20${encodeURIComponent(o.customerName)},%20te%20escribe%20${encodeURIComponent(driver.name)}%20tu%20repartidor%20de%20${encodeURIComponent(driver.businessName)}%20con%20tu%20pedido%20%23${o.orderNumber}.`;
 
-              return (
-                <div
-                  key={order.id}
-                  style={{
-                    backgroundColor: 'white',
-                    borderRadius: '16px',
-                    padding: '20px',
-                    border: '2px solid #0d9488',
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.06)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '14px'
-                  }}
-                >
-                  {/* Card Header */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid #f1f5f9', paddingBottom: '12px' }}>
-                    <div>
-                      <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#0f766e', textTransform: 'uppercase', backgroundColor: '#ccfbf1', padding: '2px 8px', borderRadius: '4px' }}>
-                        ORDEN #{order.orderNumber}
-                      </span>
-                      <h3 style={{ margin: '6px 0 2px 0', fontSize: '1.2rem', fontWeight: 'bold', color: '#1e293b' }}>
-                        {order.customerName}
-                      </h3>
-                      {order.customerPhone && (
-                        <div style={{ fontSize: '0.85rem', color: '#64748b' }}>
-                          📞 {order.customerPhone}
+                  return (
+                    <div key={o.id} style={{
+                      backgroundColor: '#ffffff', borderRadius: '14px', padding: '18px',
+                      border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
+                        <div>
+                          <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#16a34a', backgroundColor: '#dcfce7', padding: '2px 8px', borderRadius: '4px' }}>
+                            Orden #{o.orderNumber}
+                          </span>
+                          <h4 style={{ margin: '6px 0 2px 0', fontSize: '1.1rem', fontWeight: 'bold', color: '#0f172a' }}>
+                            {o.customerName}
+                          </h4>
                         </div>
-                      )}
-                    </div>
-
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: '#0f766e' }}>
-                        ₡{Number(order.total).toLocaleString('es-CR')}
-                      </div>
-                      <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: order.paymentStatus === 'paid' ? '#15803d' : '#ea580c' }}>
-                        {order.paymentStatus === 'paid' ? '✅ Pagado (No cobrar)' : '💰 Cobrar al entregar'}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Customer Address & GPS */}
-                  <div style={{ backgroundColor: '#f8fafc', padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-                      <MapPin size={18} color="#0d9488" style={{ flexShrink: 0, marginTop: '2px' }} />
-                      <div>
-                        <strong style={{ fontSize: '0.85rem', color: '#1e293b' }}>Dirección de Entrega:</strong>
-                        <div style={{ fontSize: '0.85rem', color: '#475569', marginTop: '2px' }}>
-                          {order.customerAddress || (hasGps ? 'Ubicación GPS indicada' : 'Dirección no especificada')}
-                        </div>
-                        {order.notes && (
-                          <div style={{ fontSize: '0.8rem', color: '#ea580c', marginTop: '4px', fontWeight: '500' }}>
-                            📝 Nota: {order.notes}
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: '1.15rem', fontWeight: 'bold', color: '#0f172a' }}>
+                            ₡{Number(o.total || 0).toLocaleString('es-CR')}
                           </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Items list breakdown */}
-                  <div>
-                    <div style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase', marginBottom: '6px' }}>
-                      Productos a Entregar:
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      {(order.items || []).map((it, idx) => (
-                        <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#1e293b', padding: '4px 0', borderBottom: '1px dashed #f1f5f9' }}>
-                          <span><strong>{it.quantity}x</strong> {it.productName}</span>
-                          <span style={{ color: '#64748b' }}>₡{Number(it.totalPrice || 0).toLocaleString('es-CR')}</span>
+                          <span style={{ fontSize: '0.7rem', color: o.paymentStatus === 'paid' ? '#15803d' : '#b45309', fontWeight: 'bold' }}>
+                            {o.paymentStatus === 'paid' ? '🟢 Pagado' : '🟠 Cobrar al entregar'}
+                          </span>
                         </div>
-                      ))}
-                    </div>
-                  </div>
+                      </div>
 
-                  {/* Navigation Buttons: Waze & Google Maps */}
-                  {hasGps && (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                      {wazeLink && (
-                        <a
-                          href={wazeLink}
-                          target="_blank"
-                          rel="noreferrer"
-                          style={{
-                            padding: '12px',
-                            backgroundColor: '#33ccff',
-                            color: '#0f172a',
-                            borderRadius: '10px',
-                            textDecoration: 'none',
-                            fontWeight: 'bold',
-                            fontSize: '0.9rem',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '6px',
-                            boxShadow: '0 2px 4px rgba(51, 204, 255, 0.3)'
-                          }}
-                        >
-                          <Navigation size={18} /> Abrir en Waze
-                        </a>
+                      {/* Address & GPS */}
+                      <div style={{ backgroundColor: '#f8fafc', padding: '12px', borderRadius: '8px', marginBottom: '12px', border: '1px solid #f1f5f9' }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px', fontSize: '0.85rem', color: '#334155' }}>
+                          <MapPin size={16} color="#ef4444" style={{ flexShrink: 0, marginTop: '2px' }} />
+                          <div>
+                            <strong>Dirección:</strong> {o.customerAddress || 'Ubicación GPS'}
+                            {o.notes && <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '4px' }}>📝 Nota: {o.notes}</div>}
+                          </div>
+                        </div>
+
+                        {/* Navigation Links */}
+                        <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+                          {o.wazeUrl ? (
+                            <a
+                              href={o.wazeUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{
+                                flex: 1, padding: '7px', backgroundColor: '#33ccff', color: '#003366',
+                                borderRadius: '6px', textDecoration: 'none', fontWeight: 'bold', fontSize: '0.75rem',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px'
+                              }}
+                            >
+                              <Navigation size={13} /> Abrir en Waze
+                            </a>
+                          ) : null}
+
+                          <a
+                            href={waUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{
+                              flex: 1, padding: '7px', backgroundColor: '#25D366', color: 'white',
+                              borderRadius: '6px', textDecoration: 'none', fontWeight: 'bold', fontSize: '0.75rem',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px'
+                            }}
+                          >
+                            <MessageSquare size={13} /> WhatsApp
+                          </a>
+                        </div>
+                      </div>
+
+                      {/* Items */}
+                      {o.items && o.items.length > 0 && (
+                        <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '14px' }}>
+                          <span style={{ fontWeight: 'bold', color: '#334155' }}>Productos ({o.items.length}):</span>
+                          <ul style={{ margin: '4px 0 0 0', paddingLeft: '18px' }}>
+                            {o.items.map((it: any, idx: number) => (
+                              <li key={idx}>
+                                {it.quantity}x {it.productName}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
                       )}
 
-                      {mapsLink && (
-                        <a
-                          href={mapsLink}
-                          target="_blank"
-                          rel="noreferrer"
-                          style={{
-                            padding: '12px',
-                            backgroundColor: '#4285F4',
-                            color: 'white',
-                            borderRadius: '10px',
-                            textDecoration: 'none',
-                            fontWeight: 'bold',
-                            fontSize: '0.9rem',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '6px'
-                          }}
-                        >
-                          <MapPin size={18} /> Google Maps
-                        </a>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Contact Customer Buttons */}
-                  {cleanCustomerPhone && (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                      <a
-                        href={`tel:${cleanCustomerPhone}`}
+                      {/* Deliver Button */}
+                      <button
+                        onClick={() => handleMarkDelivered(o.id)}
+                        disabled={deliveringId === o.id}
                         style={{
-                          padding: '10px',
-                          backgroundColor: '#f1f5f9',
-                          color: '#1e293b',
-                          borderRadius: '8px',
-                          textDecoration: 'none',
-                          fontWeight: '600',
-                          fontSize: '0.85rem',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '6px',
-                          border: '1px solid #cbd5e1'
+                          width: '100%', padding: '11px', backgroundColor: '#16a34a', color: 'white',
+                          border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.9rem',
+                          cursor: deliveringId === o.id ? 'not-allowed' : 'pointer', display: 'flex',
+                          alignItems: 'center', justifyContent: 'center', gap: '6px'
                         }}
                       >
-                        <Phone size={15} /> Llamar Cliente
-                      </a>
+                        {deliveringId === o.id ? 'Confirmando...' : '✅ Marcar como Entregado'}
+                      </button>
 
-                      <a
-                        href={`https://wa.me/${cleanCustomerPhone.length === 8 ? '506' + cleanCustomerPhone : cleanCustomerPhone}?text=${encodeURIComponent(`Hola ${order.customerName}, soy tu repartidor de ${driver.businessName || 'la tienda'}. Voy con tu orden #ORD-${order.orderNumber}.`)}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{
-                          padding: '10px',
-                          backgroundColor: '#25D366',
-                          color: 'white',
-                          borderRadius: '8px',
-                          textDecoration: 'none',
-                          fontWeight: '600',
-                          fontSize: '0.85rem',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '6px'
-                        }}
-                      >
-                        <MessageSquare size={15} /> WhatsApp
-                      </a>
                     </div>
-                  )}
-
-                  {/* Primary Deliver Button */}
-                  <button
-                    onClick={() => handleMarkDelivered(order.id)}
-                    disabled={deliveringId === order.id}
-                    style={{
-                      marginTop: '4px',
-                      padding: '16px',
-                      backgroundColor: '#16a34a',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '12px',
-                      fontWeight: 'bold',
-                      fontSize: '1.05rem',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '8px',
-                      boxShadow: '0 4px 10px rgba(22, 163, 74, 0.3)'
-                    }}
-                  >
-                    <CheckCircle size={22} />
-                    {deliveringId === order.id ? 'Marcando...' : '✅ Marcar como Entregado'}
-                  </button>
-                </div>
-              );
-            })}
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
-      </main>
+
+        {/* TAB 2: HISTORY */}
+        {activeTab === 'history' && (
+          <div>
+            {/* Filter Bar */}
+            <div style={{ backgroundColor: '#ffffff', padding: '14px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '10px' }}>
+                {(['today', 'week', 'month', 'custom'] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    onClick={() => setDateFilter(mode)}
+                    style={{
+                      padding: '6px 12px', borderRadius: '6px', border: '1px solid #cbd5e1',
+                      fontSize: '0.78rem', fontWeight: 'bold', cursor: 'pointer',
+                      backgroundColor: dateFilter === mode ? '#16a34a' : '#f8fafc',
+                      color: dateFilter === mode ? '#ffffff' : '#475569'
+                    }}
+                  >
+                    {mode === 'today' ? 'Hoy' : mode === 'week' ? 'Esta Semana' : mode === 'month' ? 'Este Mes' : 'Rango'}
+                  </button>
+                ))}
+              </div>
+
+              {dateFilter === 'custom' && (
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '6px' }}>
+                  <input
+                    type="date"
+                    value={customFrom}
+                    onChange={(e) => setCustomFrom(e.target.value)}
+                    style={{ padding: '6px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.8rem' }}
+                  />
+                  <span>hasta</span>
+                  <input
+                    type="date"
+                    value={customTo}
+                    onChange={(e) => setCustomTo(e.target.value)}
+                    style={{ padding: '6px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.8rem' }}
+                  />
+                </div>
+              )}
+
+              {/* KPI Summary */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '12px', borderTop: '1px solid #f1f5f9', paddingTop: '10px' }}>
+                <div style={{ backgroundColor: '#f0fdf4', padding: '10px', borderRadius: '8px', border: '1px solid #bbf7d0' }}>
+                  <span style={{ fontSize: '0.72rem', color: '#166534', display: 'block' }}>Entregas Realizadas:</span>
+                  <strong style={{ fontSize: '1.2rem', color: '#166534' }}>{historyStats.totalCount}</strong>
+                </div>
+                <div style={{ backgroundColor: '#eff6ff', padding: '10px', borderRadius: '8px', border: '1px solid #bfdbfe' }}>
+                  <span style={{ fontSize: '0.72rem', color: '#1e40af', display: 'block' }}>Monto Total Entregado:</span>
+                  <strong style={{ fontSize: '1.2rem', color: '#1e40af' }}>₡{historyStats.totalEarnings.toLocaleString('es-CR')}</strong>
+                </div>
+              </div>
+            </div>
+
+            {/* List */}
+            {loadingHistory ? (
+              <div style={{ textAlign: 'center', padding: '30px', color: '#64748b' }}>Consultando historial...</div>
+            ) : historyOrders.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '40px', backgroundColor: '#ffffff', borderRadius: '12px', border: '1px solid #e2e8f0', color: '#64748b', fontSize: '0.85rem' }}>
+                No hay entregas completadas en el rango de fechas seleccionado.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {historyOrders.map(h => (
+                  <div key={h.id} style={{
+                    backgroundColor: '#ffffff', borderRadius: '10px', padding: '14px',
+                    border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                  }}>
+                    <div>
+                      <div style={{ fontWeight: 'bold', fontSize: '0.95rem', color: '#0f172a' }}>
+                        Orden #{h.orderNumber} • {h.customerName}
+                      </div>
+                      <div style={{ fontSize: '0.78rem', color: '#64748b' }}>{h.customerAddress || 'Entrega a domicilio'}</div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontWeight: 'bold', color: '#16a34a', fontSize: '0.95rem' }}>
+                        ₡{Number(h.total || 0).toLocaleString('es-CR')}
+                      </div>
+                      <span style={{ fontSize: '0.7rem', color: '#16a34a', backgroundColor: '#dcfce7', padding: '2px 6px', borderRadius: '4px' }}>
+                        Entregado
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+      </div>
     </div>
   );
 }

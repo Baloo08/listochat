@@ -244,6 +244,22 @@ Puedes ver nuestro catálogo completo aquí.`,
     }
   };
 
+  const handleImportContactsToCrm = async () => {
+    const contactsToImport = waContacts.filter(c => selectedWaPhones.size === 0 || selectedWaPhones.has(c.phone));
+    if (contactsToImport.length === 0) {
+      alert('No hay contactos seleccionados para importar');
+      return;
+    }
+    try {
+      const res = await api.post('/api/campaigns/import-to-crm', { contacts: contactsToImport });
+      alert(`¡${res.importedCount || contactsToImport.length} contactos importados exitosamente al CRM!`);
+      loadCustomers();
+      setShowContactImportModal(false);
+    } catch (e: any) {
+      alert('Error al importar contactos al CRM: ' + (e.message || 'Verifique'));
+    }
+  };
+
   const handleSaveReminders = async (e: React.FormEvent) => {
     e.preventDefault();
     setSavingReminders(true);
@@ -904,22 +920,32 @@ Puedes ver nuestro catálogo completo aquí.`,
               )}
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', flexWrap: 'wrap', gap: '8px' }}>
               <button
                 type="button"
-                onClick={() => setShowContactImportModal(false)}
-                style={{ padding: '8px 16px', backgroundColor: 'transparent', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer' }}
+                onClick={handleImportContactsToCrm}
+                style={{ padding: '8px 14px', backgroundColor: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' }}
               >
-                Cancelar
+                📥 Guardar {selectedWaPhones.size > 0 ? selectedWaPhones.size : 'Todos'} en CRM
               </button>
-              <button
-                type="button"
-                onClick={applySelectedContacts}
-                disabled={selectedWaPhones.size === 0}
-                style={{ padding: '8px 18px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
-              >
-                Usar {selectedWaPhones.size} Contactos
-              </button>
+
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowContactImportModal(false)}
+                  style={{ padding: '8px 16px', backgroundColor: 'transparent', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem' }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={applySelectedContacts}
+                  disabled={selectedWaPhones.size === 0}
+                  style={{ padding: '8px 18px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.85rem' }}
+                >
+                  Usar {selectedWaPhones.size} en Campaña
+                </button>
+              </div>
             </div>
 
           </div>

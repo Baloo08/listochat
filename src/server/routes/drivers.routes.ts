@@ -85,11 +85,44 @@ router.get('/portal/orders', async (req, res) => {
       return;
     }
 
-    const orders = await getActiveOrdersForDriver(driver.id, driver.tenantId);
+    const orders = await getActiveOrdersForDriver(driver.id);
     res.json({ orders, driverName: driver.name });
   } catch (error) {
     console.error('Driver portal orders error:', error);
     res.status(500).json({ error: 'Error obteniendo pedidos' });
+  }
+});
+
+// 2.1 Get completed orders history with date filters
+router.get('/portal/history', async (req, res) => {
+  try {
+    const pin = (req.headers['x-driver-pin'] || req.query.pin) as string;
+    const { fromDate, toDate } = req.query as { fromDate?: string; toDate?: string };
+
+    if (!pin) {
+      res.status(401).json({ error: 'PIN no provisto' });
+      return;
+    }
+
+    const driver = await getDriverByPin(pin);
+    if (!driver) {
+      res.status(401).json({ error: 'PIN inválido' });
+      return;
+    }
+
+    const { getCompletedOrdersForDriver } = await import('../db/drivers.repo.js');
+    const orders = await getCompletedOrdersForDriver(driver.id, fromDate, toDate);
+    const totalEarnings = orders.reduce((sum, o) => sum + Number(o.total || 0), 0);
+
+    res.json({
+      orders,
+      totalCount: orders.length,
+      totalEarnings,
+      driverName: driver.name
+    });
+  } catch (error) {
+    console.error('Driver portal history error:', error);
+    res.status(500).json({ error: 'Error al consultar historial de entregas' });
   }
 });
 

@@ -203,17 +203,34 @@ export async function fetchWhatsAppContacts(instanceName: string): Promise<Array
           const list = await response.json();
           const items = Array.isArray(list) ? list : (list.data || []);
           if (items.length > 0) {
-            return items.map((c: any) => {
-              const jid = c.id || c.jid || c.remoteJid || '';
-              const phone = jid.replace(/@.+$/, '').replace(/\D/g, '');
-              const name = c.name || c.pushName || c.verifiedName || phone;
-              return {
-                id: jid,
-                name,
-                pushName: c.pushName || name,
-                phone
-              };
-            }).filter((c: any) => c.phone && c.phone.length >= 7);
+            return items
+              .filter((c: any) => {
+                const jid = c.id || c.jid || c.remoteJid || '';
+                return !jid.includes('@g.us') && !jid.includes('@broadcast');
+              })
+              .map((c: any) => {
+                const jid = c.id || c.jid || c.remoteJid || '';
+                let rawPhone = (c.number || c.phone || '').replace(/\D/g, '');
+                
+                if (!rawPhone && jid && !jid.includes('@lid')) {
+                  rawPhone = jid.replace(/@.+$/, '').replace(/\D/g, '');
+                }
+
+                // If Costa Rica standard 8 digits
+                let cleanPhone = rawPhone;
+                if (cleanPhone.length === 8) {
+                  cleanPhone = '506' + cleanPhone;
+                }
+
+                const name = c.name || c.pushName || c.verifiedName || (cleanPhone ? `+${cleanPhone}` : 'Contacto WhatsApp');
+                return {
+                  id: jid || cleanPhone,
+                  name,
+                  pushName: c.pushName || name,
+                  phone: cleanPhone
+                };
+              })
+              .filter((c: any) => c.phone && c.phone.length >= 8 && c.phone.length <= 13);
           }
         }
       } catch (e) {

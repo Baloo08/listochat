@@ -140,6 +140,38 @@ router.get('/whatsapp-contacts', async (req, res) => {
   }
 });
 
+// Import WhatsApp contacts into CRM Customers table
+router.post('/import-to-crm', async (req, res) => {
+  try {
+    const tenantId = req.user!.tenantId;
+    const { contacts } = req.body;
+    if (!Array.isArray(contacts) || contacts.length === 0) {
+      res.status(400).json({ error: 'No se enviaron contactos para importar' });
+      return;
+    }
+
+    let count = 0;
+    for (const c of contacts) {
+      if (!c.phone) continue;
+      const cleanPhone = (c.phone || '').replace(/\D/g, '');
+      const name = c.name || c.pushName || `Cliente ${cleanPhone}`;
+      await query(`
+        INSERT INTO customers (tenant_id, name, phone, tags, last_interaction)
+        VALUES ($1, $2, $3, ARRAY['WhatsApp', 'Importado'], CURRENT_TIMESTAMP)
+        ON CONFLICT (tenant_id, phone) DO UPDATE
+        SET name = COALESCE(customers.name, EXCLUDED.name),
+            last_interaction = CURRENT_TIMESTAMP
+      `, [tenantId, name, cleanPhone]);
+      count++;
+    }
+
+    res.json({ success: true, importedCount: count });
+  } catch (error) {
+    console.error('Error importing contacts to CRM:', error);
+    res.status(500).json({ error: 'Error al importar contactos al CRM' });
+  }
+});
+
 router.get('/', async (req, res) => {
   try {
     const tenantId = req.user!.tenantId;
