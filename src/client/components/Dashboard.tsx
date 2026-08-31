@@ -71,7 +71,7 @@ export default function Dashboard() {
     },
     {
       label: 'Ventas del Mes (CRC)',
-      value: `₡${stats.revenue.toLocaleString()}`,
+      value: `₡${((stats?.revenue || 0)).toLocaleString()}`,
       icon: <DollarSign size={22} color="#ea580c" />,
       bg: 'linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%)',
       border: '#fed7aa',
@@ -135,7 +135,7 @@ export default function Dashboard() {
 
           {loading ? (
             <div style={{ padding: '30px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.9rem' }}>Cargando pedidos...</div>
-          ) : stats.recentOrders.length === 0 ? (
+          ) : (stats?.recentOrders || []).length === 0 ? (
             <div style={{ padding: '35px 20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.9rem', backgroundColor: 'var(--background)', borderRadius: 'var(--radius-md)', border: '1px dashed var(--border)' }}>
               <ShoppingBag size={30} color="#94a3b8" style={{ margin: '0 auto 8px auto' }} />
               <div style={{ fontWeight: '600', marginBottom: '2px' }}>Sin pedidos recientes</div>
@@ -143,7 +143,7 @@ export default function Dashboard() {
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {stats.recentOrders.map(order => (
+              {(stats?.recentOrders || []).map((order: any) => (
                 <div key={order.id} className="hover-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', borderRadius: 'var(--radius-md)', backgroundColor: 'var(--background)', border: '1px solid var(--border)' }}>
                   <div>
                     <div style={{ fontWeight: '700', fontSize: '0.92rem', color: 'var(--text)' }}>{order.customerName || 'Cliente'}</div>
@@ -183,7 +183,7 @@ export default function Dashboard() {
 
           {loading ? (
             <div style={{ padding: '30px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.9rem' }}>Cargando citas...</div>
-          ) : stats.recentAppointments.length === 0 ? (
+          ) : (stats?.recentAppointments || []).length === 0 ? (
             <div style={{ padding: '35px 20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.9rem', backgroundColor: 'var(--background)', borderRadius: 'var(--radius-md)', border: '1px dashed var(--border)' }}>
               <Calendar size={30} color="#94a3b8" style={{ margin: '0 auto 8px auto' }} />
               <div style={{ fontWeight: '600', marginBottom: '2px' }}>Sin citas agendadas</div>
@@ -191,7 +191,7 @@ export default function Dashboard() {
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {stats.recentAppointments.map(appt => (
+              {(stats?.recentAppointments || []).map((appt: any) => (
                 <div key={appt.id} className="hover-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', borderRadius: 'var(--radius-md)', backgroundColor: 'var(--background)', border: '1px solid var(--border)' }}>
                   <div>
                     <div style={{ fontWeight: '700', fontSize: '0.92rem', color: 'var(--text)' }}>{appt.name}</div>
