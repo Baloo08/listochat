@@ -12,7 +12,9 @@ import {
   ChevronRight,
   ShieldCheck,
   Award,
-  Truck
+  Truck,
+  Menu,
+  X
 } from 'lucide-react';
 import { WhatsAppIcon, InstagramIcon, FacebookIcon, TikTokIcon } from '../client/components/WebsiteBuilder';
 
@@ -23,6 +25,7 @@ interface WebsitePublicViewProps {
 export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -130,42 +133,71 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
       boxSizing: 'border-box'
     }}>
 
-      {/* 1. TOP NAVBAR (Usa Logo Principal Claro) */}
+      {/* 1. TOP NAVBAR (Responsivo: Solo logo en web, solo nombre + hamburguesa en móvil) */}
+      <style>{`
+        @media (max-width: 768px) {
+          .wpv-desktop-links { display: none !important; }
+          .wpv-desktop-cta { display: none !important; }
+          .wpv-mobile-hamburger { display: flex !important; }
+          .wpv-desktop-logo { display: none !important; }
+          .wpv-mobile-name { display: block !important; }
+        }
+        @media (min-width: 769px) {
+          .wpv-desktop-links { display: flex !important; }
+          .wpv-desktop-cta { display: flex !important; }
+          .wpv-mobile-hamburger { display: none !important; }
+          .wpv-desktop-logo { display: flex !important; }
+          .wpv-mobile-name { display: none !important; }
+        }
+      `}</style>
+
       <nav style={{
         position: 'sticky',
         top: 0,
-        zIndex: 50,
+        zIndex: 60,
         backdropFilter: 'blur(16px)',
-        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+        backgroundColor: 'rgba(255, 255, 255, 0.96)',
         borderBottom: '1px solid #e2e8f0',
-        padding: '12px 24px'
+        padding: '12px 20px'
       }}>
         <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           
-          {/* Logo & Name */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            {website.logoUrl ? (
-              <img
-                src={website.logoUrl}
-                alt={tenant.name}
-                style={{ height: '42px', maxWidth: '150px', objectFit: 'contain' }}
-              />
-            ) : (
-              <div style={{
-                width: '40px', height: '40px', borderRadius: '10px',
-                backgroundColor: primaryColor, color: 'white',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '1.2rem'
-              }}>
-                {tenant.name?.charAt(0) || 'B'}
-              </div>
-            )}
-            <span style={{ fontSize: '1.25rem', fontWeight: '900', color: '#0f172a', letterSpacing: '-0.5px' }}>
+          {/* BRAND AREA: EN MÓVIL SOLO NOMBRE; EN WEB SOLO LOGO (O NOMBRE SI NO HAY LOGO) */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            
+            {/* VISTA MÓVIL: SOLO NOMBRE */}
+            <div className="wpv-mobile-name" style={{ fontSize: '1.25rem', fontWeight: '900', color: '#0f172a', letterSpacing: '-0.5px' }}>
               {tenant.name}
-            </span>
+            </div>
+
+            {/* VISTA ESCRITORIO (WEB): SOLO LOGO O BADGE + NOMBRE SI NO HAY LOGO */}
+            <div className="wpv-desktop-logo" style={{ alignItems: 'center', gap: '12px' }}>
+              {website.logoUrl ? (
+                <img
+                  src={website.logoUrl}
+                  alt={tenant.name}
+                  style={{ height: '44px', maxWidth: '180px', objectFit: 'contain' }}
+                />
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div style={{
+                    width: '38px', height: '38px', borderRadius: '10px',
+                    backgroundColor: primaryColor, color: 'white',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '1.1rem'
+                  }}>
+                    {tenant.name?.charAt(0) || 'B'}
+                  </div>
+                  <span style={{ fontSize: '1.25rem', fontWeight: '900', color: '#0f172a', letterSpacing: '-0.5px' }}>
+                    {tenant.name}
+                  </span>
+                </div>
+              )}
+            </div>
+
           </div>
 
-          {/* Desktop Nav Links */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
+          {/* DESKTOP NAV LINKS (OCULTOS EN MÓVIL) */}
+          <div className="wpv-desktop-links" style={{ alignItems: 'center', gap: '24px' }}>
             {website.showAboutSection !== false && (
               <a onClick={() => scrollTo('nosotros')} style={{ color: '#475569', fontWeight: '600', fontSize: '0.88rem', cursor: 'pointer', transition: 'color 0.2s' }}>Sobre Nosotros</a>
             )}
@@ -180,8 +212,8 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
             )}
           </div>
 
-          {/* Direct CTA Buttons */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {/* DESKTOP CTA BUTTONS (OCULTOS EN MÓVIL) */}
+          <div className="wpv-desktop-cta" style={{ alignItems: 'center', gap: '10px' }}>
             {website.showStoreButton && (
               <a
                 href={storeUrl}
@@ -219,7 +251,133 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
             )}
           </div>
 
+          {/* BOTÓN HAMBURGUESA PARA MÓVIL */}
+          <button
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className="wpv-mobile-hamburger"
+            style={{
+              display: 'none',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '8px',
+              backgroundColor: '#f1f5f9',
+              border: '1px solid #cbd5e1',
+              borderRadius: '10px',
+              color: '#0f172a',
+              cursor: 'pointer'
+            }}
+            aria-label="Menú"
+          >
+            {mobileMenuOpen ? <X size={22} /> : <Menu size={22} />}
+          </button>
+
         </div>
+
+        {/* DESPLEGABLE DEL MENÚ HAMBURGUESA (MÓVIL) */}
+        {mobileMenuOpen && (
+          <div style={{
+            position: 'absolute',
+            top: '100%',
+            left: 0,
+            right: 0,
+            backgroundColor: '#ffffff',
+            borderBottom: '2px solid #e2e8f0',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
+            padding: '20px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '14px',
+            animation: 'fadeIn 0.2s ease-in-out'
+          }}>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {website.showAboutSection !== false && (
+                <a
+                  onClick={() => { scrollTo('nosotros'); setMobileMenuOpen(false); }}
+                  style={{ color: '#0f172a', fontWeight: '700', fontSize: '1rem', padding: '8px 0', borderBottom: '1px solid #f1f5f9', cursor: 'pointer' }}
+                >
+                  📌 Sobre Nosotros
+                </a>
+              )}
+              {website.showProductsSection !== false && featuredProducts && featuredProducts.length > 0 && (
+                <a
+                  onClick={() => { scrollTo('productos'); setMobileMenuOpen(false); }}
+                  style={{ color: '#0f172a', fontWeight: '700', fontSize: '1rem', padding: '8px 0', borderBottom: '1px solid #f1f5f9', cursor: 'pointer' }}
+                >
+                  🛍️ Productos & Menú
+                </a>
+              )}
+              {website.showServicesSection !== false && featuredServices && featuredServices.length > 0 && (
+                <a
+                  onClick={() => { scrollTo('servicios'); setMobileMenuOpen(false); }}
+                  style={{ color: '#0f172a', fontWeight: '700', fontSize: '1rem', padding: '8px 0', borderBottom: '1px solid #f1f5f9', cursor: 'pointer' }}
+                >
+                  💼 Servicios
+                </a>
+              )}
+              {website.showContactSection !== false && (
+                <a
+                  onClick={() => { scrollTo('contacto'); setMobileMenuOpen(false); }}
+                  style={{ color: '#0f172a', fontWeight: '700', fontSize: '1rem', padding: '8px 0', borderBottom: '1px solid #f1f5f9', cursor: 'pointer' }}
+                >
+                  📍 Contacto & Ubicación
+                </a>
+              )}
+            </div>
+
+            {/* BOTONES DE ACCIÓN MÓVIL */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', paddingTop: '10px' }}>
+              {website.showStoreButton && (
+                <a
+                  href={storeUrl}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                    padding: '12px', borderRadius: btnRadius,
+                    backgroundColor: primaryColor, color: 'white',
+                    textDecoration: 'none', fontWeight: '800', fontSize: '0.95rem'
+                  }}
+                >
+                  <ShoppingBag size={18} />
+                  <span>{website.storeButtonText || 'Ver Menú y Productos'}</span>
+                </a>
+              )}
+
+              {website.showBookingButton && (
+                <a
+                  href={bookingUrl}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                    padding: '12px', borderRadius: btnRadius,
+                    backgroundColor: '#ffffff', color: primaryColor,
+                    border: `1.5px solid ${primaryColor}`,
+                    textDecoration: 'none', fontWeight: '800', fontSize: '0.95rem'
+                  }}
+                >
+                  <Calendar size={18} />
+                  <span>{website.bookingButtonText || 'Agendar Cita en Línea'}</span>
+                </a>
+              )}
+
+              {website.showWhatsappButton !== false && cleanPhone && (
+                <a
+                  href={waUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                    padding: '12px', borderRadius: btnRadius,
+                    backgroundColor: '#10b981', color: 'white',
+                    textDecoration: 'none', fontWeight: '800', fontSize: '0.95rem'
+                  }}
+                >
+                  <WhatsAppIcon size={18} color="white" />
+                  <span>WhatsApp Directo</span>
+                </a>
+              )}
+            </div>
+
+          </div>
+        )}
       </nav>
 
       {/* 2. HERO / PORTADA */}
