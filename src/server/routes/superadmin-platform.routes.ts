@@ -536,15 +536,21 @@ router.post('/test-ai', async (req, res) => {
 // CHECK LOCALAI ENGINE HEALTH / PING
 router.get('/ai-engine-status', async (req, res) => {
   const startTime = Date.now();
+  let localaiUrl = (req.query.url as string || '').trim();
   try {
-    const dbRes = await query("SELECT value FROM platform_settings WHERE key = 'localai_url'");
-    const localaiUrl = dbRes.rows[0]?.value || 'http://localhost:8080/v1';
+    if (!localaiUrl) {
+      const dbRes = await query("SELECT value FROM platform_settings WHERE key = 'localai_url'");
+      localaiUrl = dbRes.rows[0]?.value || 'https://beticoia-localai.qvtdko.easypanel.host/v1';
+    }
 
-    // Ping /models endpoint with 3s timeout
+    // Clean URL
+    const baseUrl = localaiUrl.replace(/\/v1\/?$/, '').replace(/\/+$/, '');
+    const pingUrl = baseUrl + '/v1/models';
+
+    // Ping /models endpoint with 4s timeout
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3000);
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
 
-    const pingUrl = localaiUrl.replace(/\/v1\/?$/, '') + '/v1/models';
     const response = await fetch(pingUrl, { signal: controller.signal });
     clearTimeout(timeoutId);
 
@@ -572,6 +578,7 @@ router.get('/ai-engine-status', async (req, res) => {
     const latencyMs = Date.now() - startTime;
     res.json({
       online: false,
+      url: localaiUrl,
       latencyMs,
       statusText: 'Servidor no accesible (' + (e.message || 'Timeout') + ')'
     });

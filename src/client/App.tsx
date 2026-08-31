@@ -199,16 +199,18 @@ export default function App() {
     };
   }, [isAuthenticated, user]);
 
-  const isImpersonating = !!localStorage.getItem('original_token');
-  const impersonatedTenantName = localStorage.getItem('impersonated_tenant') || 'este negocio';
+  const isImpersonating = !!(localStorage.getItem('superadmin_token') || localStorage.getItem('original_token'));
+  const impersonatedTenantName = localStorage.getItem('impersonated_tenant_name') || localStorage.getItem('impersonated_tenant') || user?.tenantName || 'este negocio';
 
   const handleReturnToSuperadmin = () => {
-    const originalToken = localStorage.getItem('original_token');
+    const originalToken = localStorage.getItem('superadmin_token') || localStorage.getItem('original_token');
     if (originalToken) {
       localStorage.setItem('token', originalToken);
       localStorage.removeItem('original_token');
+      localStorage.removeItem('superadmin_token');
       localStorage.removeItem('impersonated_tenant');
-      window.location.reload();
+      localStorage.removeItem('impersonated_tenant_name');
+      window.location.href = '/';
     }
   };
 

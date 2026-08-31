@@ -182,7 +182,8 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
   const checkAiEngine = async () => {
     try {
       setCheckingAiEngine(true);
-      const data = await api.get('/api/superadmin/platform/ai-engine-status');
+      const targetUrl = (localaiUrl || '').trim();
+      const data = await api.get('/api/superadmin/platform/ai-engine-status?url=' + encodeURIComponent(targetUrl));
       setAiEngineStatus(data);
       if (data && Array.isArray(data.models) && data.models.length > 0) {
         setAvailableLocalModels(data.models);
@@ -378,13 +379,16 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
 
   const handleImpersonate = async (tenantId) => {
     try {
+      const currentToken = localStorage.getItem('token') || '';
       const res = await api.post('/api/tenants/' + tenantId + '/impersonate', {});
       if (res.token) {
-        localStorage.setItem('auth_token', res.token);
+        localStorage.setItem('superadmin_token', currentToken);
+        localStorage.setItem('impersonated_tenant_name', res.tenant?.name || 'Cliente');
+        localStorage.setItem('token', res.token);
         window.location.href = '/';
       }
     } catch (e) {
-      alert('Error al acceder al negocio');
+      alert('Error al acceder al negocio: ' + (e.message || 'Error'));
     }
   };
 
