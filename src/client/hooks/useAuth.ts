@@ -69,8 +69,12 @@ export function useAuth() {
           localStorage.setItem('last_tenant_slug', data.user.tenantSlug);
         }
         setToken(data.token);
-        // Seamless transition into the dashboard
-        window.location.href = '/';
+        setIsAuthenticated(true);
+        if (data.user) {
+          setUser(data.user);
+        }
+        // Navigate cleanly to /panel
+        window.location.href = '/panel';
         return true;
       }
       return false;
@@ -93,7 +97,7 @@ export function useAuth() {
     // If tenant admin logged out, redirect them back to their branded login portal
     if (lastSlug && !wasSuperAdmin && !window.location.pathname.startsWith('/acceso/')) {
       window.location.href = `/acceso/${lastSlug}`;
-    } else if (window.location.pathname !== '/' && !window.location.pathname.startsWith('/acceso/')) {
+    } else {
       window.location.href = '/';
     }
   };

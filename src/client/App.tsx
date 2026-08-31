@@ -112,9 +112,6 @@ export default function App() {
     return <TermsOfServiceView />;
   }
 
-  const [showLoginView, setShowLoginView] = useState<boolean>(
-    pathname === '/login' || pathname === '/superadmin' || pathname === '/admin' || pathname === '/app' || pathname === '/ingreso'
-  );
   const { isAuthenticated, user, loading, logout } = useAuth();
   const [currentPage, setCurrentPage] = useState<string>('dashboard');
   const [showTourModal, setShowTourModal] = useState<boolean>(() => {
@@ -220,37 +217,36 @@ export default function App() {
       localStorage.removeItem('superadmin_token');
       localStorage.removeItem('impersonated_tenant');
       localStorage.removeItem('impersonated_tenant_name');
-      window.location.href = '/';
+      window.location.href = '/panel';
     }
   };
 
   if (loading) return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', fontFamily: 'system-ui, sans-serif' }}>Cargando Betico...</div>;
 
-  if (!isAuthenticated || !user) {
-    if (showLoginView || pathname === '/login' || pathname === '/superadmin' || pathname === '/admin' || pathname === '/app' || pathname === '/ingreso') {
-      return (
-        <Login
-          onBack={() => {
-            setShowLoginView(false);
-            if (window.location.pathname !== '/') {
-              window.history.pushState({}, '', '/');
-            }
-          }}
-        />
-      );
+  // 1. General Login Route (/login, /superadmin, /ingreso)
+  if (pathname === '/login' || pathname === '/superadmin' || pathname === '/ingreso') {
+    if (isAuthenticated && user) {
+      window.location.href = '/panel';
+      return null;
     }
+    return <Login onBack={() => { window.location.href = '/'; }} />;
+  }
+
+  // 2. Dedicated Admin Panel Routes (/panel, /app, /dashboard)
+  const isPanelRoute = pathname.startsWith('/panel') || pathname.startsWith('/app') || pathname.startsWith('/dashboard');
+
+  if (isPanelRoute) {
+    if (!isAuthenticated || !user) {
+      return <Login onBack={() => { window.location.href = '/'; }} />;
+    }
+    // Continue below to render the full SaaS layout
+  } else {
+    // 3. Root "/" or any other path: ALWAYS render Public Website (Landing Page)
     return (
       <LandingPageView
-        onLoginClick={() => {
-          setShowLoginView(true);
-          if (window.location.pathname !== '/login') {
-            window.history.pushState({}, '', '/login');
-          }
-        }}
-        onGoToDashboard={() => {
-          setShowLoginView(true);
-        }}
-        isLoggedIn={false}
+        isLoggedIn={isAuthenticated}
+        onLoginClick={() => { window.location.href = '/login'; }}
+        onGoToDashboard={() => { window.location.href = '/panel'; }}
       />
     );
   }

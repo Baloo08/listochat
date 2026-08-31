@@ -60,7 +60,7 @@ export default function RegisterModal({ isOpen, onClose, initialPlan = 'pro' }: 
         }
         localStorage.setItem('betico_tour_active', 'true');
         // Seamless redirect to App dashboard with tutorial
-        window.location.href = '/?tour=true';
+        window.location.href = '/panel?tour=true';
       }
     } catch (err: any) {
       setError(err.message || 'Ocurrió un error al registrar tu negocio.');
