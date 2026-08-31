@@ -428,7 +428,7 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
   );
 
   return (
-    <div style={{ maxWidth: '1280px', margin: '0 auto', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+    <div style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
       
       {/* GLOBAL TOAST */}
       {platformSavedToast && (

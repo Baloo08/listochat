@@ -342,7 +342,7 @@ export default function WebsiteBuilder() {
   }
 
   return (
-    <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '16px' }}>
+    <div style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
       
       {/* Header Banner */}
       <div style={{

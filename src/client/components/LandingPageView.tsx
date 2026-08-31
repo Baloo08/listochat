@@ -30,8 +30,40 @@ import {
   ExternalLink,
   Store,
   Star,
-  Users
+  Users,
+  Globe,
+  Layers,
+  HelpCircle,
+  BarChart3,
+  BadgeCheck,
+  CheckCircle2,
+  Share2
 } from 'lucide-react';
+
+// Official Vector Brand SVGs
+const WhatsAppIcon = ({ size = 20, color = 'currentColor' }: { size?: number; color?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill={color}>
+    <path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.816 9.816 0 0 0 12.04 2zm.01 1.67c2.2 0 4.26.86 5.82 2.42a8.225 8.225 0 0 1 2.41 5.83c0 4.54-3.7 8.24-8.24 8.24-1.48 0-2.93-.4-4.2-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.196 8.196 0 0 1-1.26-4.38c0-4.54 3.7-8.24 8.24-8.24zm4.52 11.45c-.25-.12-1.47-.72-1.7-.81-.23-.08-.39-.12-.56.12-.17.25-.64.81-.79.97-.14.17-.29.19-.54.06-.25-.12-1.05-.39-2-1.23-.74-.66-1.24-1.47-1.39-1.72-.14-.25-.02-.38.11-.5.11-.11.25-.29.37-.43.12-.14.17-.25.25-.41.08-.17.04-.31-.02-.43s-.56-1.34-.76-1.84c-.2-.48-.41-.42-.56-.43h-.48c-.17 0-.43.06-.66.31-.22.25-.86.84-.86 2.05s.88 2.38 1 2.54c.12.17 1.73 2.64 4.19 3.7 2.46 1.06 2.46.71 2.9.66.44-.06 1.42-.58 1.62-1.14.2-.56.2-1.04.14-1.14-.06-.11-.22-.17-.47-.3z"/>
+  </svg>
+);
+
+const FacebookIcon = ({ size = 20, color = 'currentColor' }: { size?: number; color?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill={color}>
+    <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+  </svg>
+);
+
+const InstagramIcon = ({ size = 20, color = 'currentColor' }: { size?: number; color?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill={color}>
+    <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
+  </svg>
+);
+
+const TikTokIcon = ({ size = 20, color = 'currentColor' }: { size?: number; color?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill={color}>
+    <path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-1.01v8.83c0 1.34-.33 2.74-1.07 3.86-.88 1.35-2.29 2.37-3.87 2.8-1.57.43-3.3.31-4.79-.38-1.5-.68-2.75-1.89-3.48-3.38-.74-1.49-.86-3.27-.37-4.87.5-1.6 1.63-2.99 3.1-3.84 1.48-.86 3.28-1.12 4.95-.78v4.21c-.88-.28-1.88-.2-2.67.24-.78.44-1.32 1.25-1.44 2.14-.13.89.19 1.83.84 2.45.65.62 1.61.85 2.48.61.88-.24 1.59-.96 1.83-1.83.13-.48.18-.98.18-1.48V.02h.01z"/>
+  </svg>
+);
 
 interface LandingPageProps {
   onLoginClick: () => void;
@@ -70,34 +102,34 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
 
   const faqs = [
     {
+      q: '¿Cómo funciona el nuevo Creador de Sitios Web de Betico?',
+      a: 'Cada negocio tiene su propio creador visual en el panel donde puede personalizar la portada, colores corporativos, tipografía, logo blanco/oscuro y activar las secciones que necesite. Al guardar, se genera instantáneamente tu enlace web oficial (ej. betico.tech/sitio/tu-negocio) con tu tienda y botón de reservas incluidos.'
+    },
+    {
+      q: '¿Por qué Betico IA no requiere pagar tarifas extras en dólares?',
+      a: 'A diferencia de otras soluciones que te exigen comprar licencias de OpenAI o pagar $20/mes adicionales por usuario, Betico cuenta con su propio motor de Inteligencia Artificial integrado, seguro y optimizado para Costa Rica, sin cargos ocultos ni necesidad de tarjetas internacionales.'
+    },
+    {
       q: '¿Necesito cambiar mi número de WhatsApp actual?',
       a: 'No. Puedes conectar tu número de WhatsApp existente (personal o Business) simplemente escaneando un código QR desde la aplicación de WhatsApp en tu teléfono en menos de 1 minuto.'
     },
     {
       q: '¿Cómo funciona la verificación automática de SINPE Móvil?',
-      a: 'Cuando un cliente te envía una captura de su comprobante bancario por WhatsApp o en la tienda online, la Inteligencia Artificial con Visión analiza el comprobante en tiempo real, verifica el monto, la referencia y el teléfono de destino, y marca el pedido como pagado al instante sin que tengas que revisar tu app bancaria manualmente.'
+      a: 'Cuando un cliente envía una captura de su comprobante bancario por WhatsApp o en la tienda online, la Inteligencia Artificial con Visión analiza el comprobante en tiempo real, verifica el monto, la referencia y el teléfono de destino, y marca el pedido como pagado al instante sin que tengas que revisar tu app bancaria manualmente.'
     },
     {
       q: '¿El asistente entiende notas de voz y modismos costarricenses?',
-      a: 'Sí. Betico está entrenado con IA avanzada y reconoce notas de voz, audios rápidos y expresiones comunes de Costa Rica ("pura vida", "mae", "a nombre de", "sinpe", "para llevar", etc.).'
+      a: 'Sí. Betico IA reconoce notas de voz, audios rápidos y expresiones comunes de Costa Rica ("pura vida", "mae", "a nombre de", "sinpe", "para llevar", etc.) y responde en texto formateado en menos de 1.5 segundos.'
     },
     {
       q: '¿La tienda online y la agenda de citas tienen costo adicional?',
       a: 'No, vienen 100% incluidas en tu suscripción de Betico. Puedes activar tanto la tienda online para vender productos como la agenda de citas para servicios, con tu propio enlace personalizado y sin comisiones por venta.'
-    },
-    {
-      q: '¿Puedo personalizar los colores y logos con mi marca?',
-      a: 'Totalmente. Desde tu panel de control puedes subir tu logotipo, banner de portada, seleccionar tu paleta de colores corporativa y personalizar los mensajes de bienvenida y confirmación.'
-    },
-    {
-      q: '¿Puedo gestionar varias sucursales o locales?',
-      a: 'Sí. Betico incluye un módulo multi-sucursal completo con cálculo de entrega por GPS a la sede más cercana, pantallas de cocina (KDS) independientes por local y cuentas SINPE separadas por sede.'
     }
   ];
 
   return (
     <div style={{
-      backgroundColor: '#0b0f19',
+      backgroundColor: '#080d1a',
       color: '#f8fafc',
       minHeight: '100vh',
       width: '100%',
@@ -115,13 +147,13 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
         top: 0,
         zIndex: 50,
         backdropFilter: 'blur(16px)',
-        backgroundColor: 'rgba(11, 15, 25, 0.92)',
+        backgroundColor: 'rgba(8, 13, 26, 0.94)',
         borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-        padding: '12px 16px',
+        padding: '14px 20px',
         width: '100%',
         boxSizing: 'border-box'
       }}>
-        <div style={{ maxWidth: '1240px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ maxWidth: '1320px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           
           {/* Logo */}
           <div 
@@ -129,28 +161,28 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
             style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}
           >
             <div style={{
-              width: '38px', height: '38px',
+              width: '40px', height: '40px',
               borderRadius: '12px',
               background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              boxShadow: '0 4px 14px rgba(16, 185, 129, 0.35)'
+              boxShadow: '0 4px 16px rgba(16, 185, 129, 0.4)'
             }}>
-              <Bot size={22} color="white" />
+              <Bot size={24} color="white" />
             </div>
             <div>
-              <span style={{ fontSize: '1.25rem', fontWeight: '800', letterSpacing: '-0.5px', color: 'white' }}>
+              <span style={{ fontSize: '1.35rem', fontWeight: '900', letterSpacing: '-0.5px', color: 'white' }}>
                 Betico<span style={{ color: '#10b981' }}>.tech</span>
               </span>
             </div>
           </div>
 
-          {/* Desktop Nav Links (Visible only on desktop) */}
+          {/* Desktop Nav Links */}
           {!isMobile && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '20px', fontSize: '0.88rem', fontWeight: '600' }}>
-              <a onClick={() => scrollToSection('tienda')} style={{ color: '#cbd5e1', textDecoration: 'none', cursor: 'pointer' }}>Tienda Online</a>
-              <a onClick={() => scrollToSection('agenda')} style={{ color: '#cbd5e1', textDecoration: 'none', cursor: 'pointer' }}>Agenda & Citas</a>
-              <a onClick={() => scrollToSection('personalizacion')} style={{ color: '#cbd5e1', textDecoration: 'none', cursor: 'pointer' }}>Personalización</a>
-              <a onClick={() => scrollToSection('modulos')} style={{ color: '#cbd5e1', textDecoration: 'none', cursor: 'pointer' }}>Módulos & IA</a>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '22px', fontSize: '0.9rem', fontWeight: '600' }}>
+              <a onClick={() => scrollToSection('pilares')} style={{ color: '#cbd5e1', textDecoration: 'none', cursor: 'pointer', transition: 'color 0.2s' }}>4 Superpoderes</a>
+              <a onClick={() => scrollToSection('website-builder')} style={{ color: '#cbd5e1', textDecoration: 'none', cursor: 'pointer' }}>Sitio Web Oficial</a>
+              <a onClick={() => scrollToSection('betico-ia')} style={{ color: '#cbd5e1', textDecoration: 'none', cursor: 'pointer' }}>Betico IA Propia</a>
+              <a onClick={() => scrollToSection('tienda-agenda')} style={{ color: '#cbd5e1', textDecoration: 'none', cursor: 'pointer' }}>Tienda & Citas</a>
               <a onClick={() => scrollToSection('roi')} style={{ color: '#cbd5e1', textDecoration: 'none', cursor: 'pointer' }}>Calculadora</a>
               <a onClick={() => scrollToSection('planes')} style={{ color: '#cbd5e1', textDecoration: 'none', cursor: 'pointer' }}>Planes</a>
               <a onClick={() => scrollToSection('faq')} style={{ color: '#cbd5e1', textDecoration: 'none', cursor: 'pointer' }}>Preguntas</a>
@@ -163,35 +195,36 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
               <button
                 onClick={onGoToDashboard || (() => { window.location.href = '/app'; })}
                 style={{
-                  padding: '9px 18px',
+                  padding: '10px 20px',
                   background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
                   color: 'white',
                   border: 'none',
                   borderRadius: '10px',
                   fontWeight: '800',
-                  fontSize: '0.85rem',
+                  fontSize: '0.88rem',
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '6px',
-                  boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)'
+                  gap: '8px',
+                  boxShadow: '0 4px 16px rgba(16, 185, 129, 0.4)'
                 }}
               >
-                <Zap size={16} /> Ir a mi Panel
+                <Zap size={17} /> Ir a mi Panel
               </button>
             ) : (
               <>
                 <button
                   onClick={onLoginClick}
                   style={{
-                    padding: '8px 14px',
+                    padding: '9px 16px',
                     backgroundColor: 'transparent',
                     color: '#f8fafc',
                     border: '1px solid rgba(255, 255, 255, 0.2)',
-                    borderRadius: '8px',
+                    borderRadius: '9px',
                     fontWeight: '700',
-                    fontSize: '0.82rem',
-                    cursor: 'pointer'
+                    fontSize: '0.85rem',
+                    cursor: 'pointer',
+                    transition: 'background-color 0.2s'
                   }}
                 >
                   Iniciar Sesión
@@ -203,20 +236,20 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
                     target="_blank"
                     rel="noreferrer"
                     style={{
-                      padding: '8px 14px',
+                      padding: '9px 16px',
                       background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
                       color: 'white',
-                      borderRadius: '8px',
+                      borderRadius: '9px',
                       textDecoration: 'none',
-                      fontWeight: '700',
-                      fontSize: '0.82rem',
+                      fontWeight: '800',
+                      fontSize: '0.85rem',
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '6px',
+                      gap: '7px',
                       boxShadow: '0 4px 14px rgba(16, 185, 129, 0.35)'
                     }}
                   >
-                    <MessageSquare size={15} /> Demo
+                    <WhatsAppIcon size={16} color="white" /> Probar Demo
                   </a>
                 )}
               </>
@@ -249,41 +282,24 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
         {/* Mobile Dropdown Drawer */}
         {isMobile && mobileMenuOpen && (
           <div style={{
-            marginTop: '12px',
-            padding: '16px',
-            backgroundColor: '#131c2e',
-            borderRadius: '12px',
-            border: '1px solid rgba(255,255,255,0.1)',
+            marginTop: '14px',
+            padding: '18px',
+            backgroundColor: '#0f172a',
+            borderRadius: '14px',
+            border: '1px solid rgba(255,255,255,0.12)',
             display: 'flex',
             flexDirection: 'column',
-            gap: '12px',
+            gap: '14px',
             fontSize: '0.95rem',
             fontWeight: '600'
           }}>
-            <a onClick={() => scrollToSection('tienda')} style={{ color: '#f8fafc', padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>🛍️ Tienda Online & Menús</a>
-            <a onClick={() => scrollToSection('agenda')} style={{ color: '#f8fafc', padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>📅 Agenda & Citas 24/7</a>
-            <a onClick={() => scrollToSection('personalizacion')} style={{ color: '#f8fafc', padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>🎨 Personalización de Marca</a>
-            <a onClick={() => scrollToSection('modulos')} style={{ color: '#f8fafc', padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>⚙️ Módulos & IA</a>
-            <a onClick={() => scrollToSection('roi')} style={{ color: '#f8fafc', padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>💰 Calculadora de Ahorro</a>
-            <a onClick={() => scrollToSection('planes')} style={{ color: '#f8fafc', padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>🏷️ Planes & Precios</a>
-            <a onClick={() => scrollToSection('faq')} style={{ color: '#f8fafc', padding: '8px 0' }}>❓ Preguntas Frecuentes</a>
-            <a
-              href="https://wa.me/50688888888?text=Hola%20Betico%2C%20quiero%20solicitar%20una%20demostraci%C3%B3n"
-              target="_blank"
-              rel="noreferrer"
-              style={{
-                marginTop: '8px',
-                padding: '12px',
-                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                color: 'white',
-                borderRadius: '8px',
-                textAlign: 'center',
-                textDecoration: 'none',
-                fontWeight: 'bold'
-              }}
-            >
-              💬 Solicitar Demo por WhatsApp
-            </a>
+            <a onClick={() => scrollToSection('pilares')} style={{ color: '#f8fafc', padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>⚡ 4 Superpoderes de Betico</a>
+            <a onClick={() => scrollToSection('website-builder')} style={{ color: '#f8fafc', padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>🌐 Creador de Sitios Web</a>
+            <a onClick={() => scrollToSection('betico-ia')} style={{ color: '#f8fafc', padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>🤖 Motor de IA Propio</a>
+            <a onClick={() => scrollToSection('tienda-agenda')} style={{ color: '#f8fafc', padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>🛍️ Tienda & Agenda de Citas</a>
+            <a onClick={() => scrollToSection('roi')} style={{ color: '#f8fafc', padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>💰 Calculadora de Ahorro</a>
+            <a onClick={() => scrollToSection('planes')} style={{ color: '#f8fafc', padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>🏷️ Planes & Precios</a>
+            <a onClick={() => scrollToSection('faq')} style={{ color: '#f8fafc', padding: '6px 0' }}>❓ Preguntas Frecuentes</a>
           </div>
         )}
       </nav>
@@ -292,92 +308,90 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
           2. HERO SECTION
       ============================================================== */}
       <section style={{
-        padding: isMobile ? '50px 16px 40px 16px' : '80px 24px 60px 24px',
-        maxWidth: '1200px',
+        padding: isMobile ? '50px 16px 40px 16px' : '90px 24px 70px 24px',
+        maxWidth: '1280px',
         margin: '0 auto',
         textAlign: 'center',
         boxSizing: 'border-box'
       }}>
-        {/* Glow pill */}
+        {/* Glow Pill */}
         <div style={{
           display: 'inline-flex',
           alignItems: 'center',
           gap: '8px',
-          padding: '6px 16px',
+          padding: '8px 20px',
           backgroundColor: 'rgba(16, 185, 129, 0.12)',
-          border: '1px solid rgba(16, 185, 129, 0.35)',
+          border: '1px solid rgba(16, 185, 129, 0.4)',
           borderRadius: '9999px',
-          fontSize: isMobile ? '0.78rem' : '0.85rem',
-          fontWeight: '700',
+          fontSize: isMobile ? '0.8rem' : '0.9rem',
+          fontWeight: '800',
           color: '#34d399',
-          marginBottom: '20px',
-          maxWidth: '100%',
-          boxSizing: 'border-box'
+          marginBottom: '24px',
+          boxShadow: '0 0 20px rgba(16, 185, 129, 0.15)'
         }}>
-          <Zap size={16} />
+          <Zap size={17} />
           <span>⚡ Impulsado por Betico IA: Nuestro Motor de IA Propio y Seguro</span>
         </div>
 
         {/* Main Title */}
         <h1 style={{
-          fontSize: 'clamp(1.9rem, 6vw, 3.8rem)',
-          fontWeight: '800',
-          lineHeight: '1.15',
-          letterSpacing: '-1px',
-          margin: '0 0 16px 0',
+          fontSize: 'clamp(2.1rem, 6.5vw, 4.2rem)',
+          fontWeight: '900',
+          lineHeight: '1.12',
+          letterSpacing: '-1.5px',
+          margin: '0 0 20px 0',
           background: 'linear-gradient(180deg, #ffffff 0%, #cbd5e1 100%)',
           WebkitBackgroundClip: 'text',
-          WebkitTextFillColor: 'transparent',
-          wordBreak: 'break-word'
+          WebkitTextFillColor: 'transparent'
         }}>
-          Vende, Agenda y Cobra en Automático por WhatsApp
+          Tu Sitio Web Oficial, Tienda, Citas e IA en un Solo Lugar
         </h1>
 
         {/* Subtitle */}
         <p style={{
-          fontSize: 'clamp(0.95rem, 2.5vw, 1.25rem)',
+          fontSize: 'clamp(1rem, 2.6vw, 1.3rem)',
           color: '#94a3b8',
-          maxWidth: '820px',
-          margin: '0 auto 30px auto',
+          maxWidth: '860px',
+          margin: '0 auto 36px auto',
           lineHeight: '1.6',
-          padding: '0 8px'
+          padding: '0 10px'
         }}>
-          Atiende a tus clientes 24/7 sin esperas, recibe pedidos en tu propia <strong style={{ color: '#ffffff' }}>Tienda Online</strong>, llena tu <strong style={{ color: '#ffffff' }}>Agenda de Citas</strong> y confirma pagos de <strong style={{ color: '#34d399' }}>SINPE Móvil al instante</strong>.
+          Crea tu <strong style={{ color: '#ffffff' }}>Página Web Oficial</strong> en minutos, vende en tu <strong style={{ color: '#ffffff' }}>Tienda Digital</strong>, llena tu <strong style={{ color: '#ffffff' }}>Agenda de Citas</strong> y automatiza la atención 24/7 por WhatsApp con <strong style={{ color: '#34d399' }}>Betico IA</strong> y cobros SINPE verificados con visión.
         </p>
 
         {/* Action CTAs */}
-        <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '45px' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', gap: '14px', flexWrap: 'wrap', marginBottom: '50px' }}>
           <a
             href="https://wa.me/50688888888?text=Hola%20Betico%2C%20quiero%20ver%20la%20demostraci%C3%B3n%20en%20vivo"
             target="_blank"
             rel="noreferrer"
             style={{
-              padding: isMobile ? '12px 20px' : '15px 30px',
+              padding: isMobile ? '13px 22px' : '16px 34px',
               background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
               color: 'white',
               borderRadius: '12px',
               textDecoration: 'none',
               fontWeight: '800',
-              fontSize: isMobile ? '0.95rem' : '1.05rem',
+              fontSize: isMobile ? '0.98rem' : '1.08rem',
               display: 'flex',
               alignItems: 'center',
-              gap: '8px',
-              boxShadow: '0 6px 20px rgba(16, 185, 129, 0.4)'
+              gap: '10px',
+              boxShadow: '0 6px 24px rgba(16, 185, 129, 0.45)'
             }}
           >
-            <Zap size={18} /> Probar Demo en WhatsApp
+            <WhatsAppIcon size={20} color="white" /> Probar Demo en WhatsApp
           </a>
 
           <button
             onClick={onLoginClick}
             style={{
-              padding: isMobile ? '12px 20px' : '15px 30px',
+              padding: isMobile ? '13px 22px' : '16px 34px',
               backgroundColor: '#1e293b',
               color: 'white',
-              border: '1px solid rgba(255, 255, 255, 0.15)',
+              border: '1px solid rgba(255, 255, 255, 0.18)',
               borderRadius: '12px',
               fontWeight: '800',
-              fontSize: isMobile ? '0.95rem' : '1.05rem',
+              fontSize: isMobile ? '0.98rem' : '1.08rem',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
@@ -388,59 +402,60 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
           </button>
         </div>
 
-        {/* Live Simulation Card */}
+        {/* Live Simulation Showcase Box */}
         <div style={{
-          maxWidth: '850px',
+          maxWidth: '900px',
           margin: '0 auto',
-          backgroundColor: '#1e293b',
-          borderRadius: '20px',
-          border: '1px solid rgba(255, 255, 255, 0.1)',
-          padding: isMobile ? '16px' : '24px',
-          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)',
+          backgroundColor: '#0f172a',
+          borderRadius: '24px',
+          border: '1px solid rgba(255, 255, 255, 0.12)',
+          padding: isMobile ? '18px' : '28px',
+          boxShadow: '0 30px 60px -15px rgba(0, 0, 0, 0.8)',
           textAlign: 'left',
           boxSizing: 'border-box'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '12px', marginBottom: '14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '14px', marginBottom: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#ef4444' }} />
               <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#f59e0b' }} />
               <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#10b981' }} />
-              <span style={{ fontSize: isMobile ? '0.75rem' : '0.8rem', color: '#94a3b8', marginLeft: '6px', fontWeight: '600' }}>
-                Demostración • WhatsApp & SINPE
+              <span style={{ fontSize: isMobile ? '0.78rem' : '0.85rem', color: '#94a3b8', marginLeft: '8px', fontWeight: '700' }}>
+                Demostración en Tiempo Real • WhatsApp & SINPE Visión
               </span>
             </div>
-            <span style={{ fontSize: '0.72rem', backgroundColor: 'rgba(16, 185, 129, 0.15)', color: '#34d399', padding: '2px 8px', borderRadius: '9999px', fontWeight: 'bold' }}>
-              0.8s
+            <span style={{ fontSize: '0.75rem', backgroundColor: 'rgba(16, 185, 129, 0.18)', color: '#34d399', padding: '3px 10px', borderRadius: '9999px', fontWeight: '800' }}>
+              ⚡ 0.8s
             </span>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <div style={{ alignSelf: 'flex-start', maxWidth: isMobile ? '90%' : '75%', backgroundColor: '#334155', padding: '10px 14px', borderRadius: '14px 14px 14px 4px', fontSize: '0.88rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px', color: '#38bdf8', fontWeight: 'bold', fontSize: '0.8rem' }}>
-                <Volume2 size={15} />
-                <span>Nota de Voz del Cliente (0:08)</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div style={{ alignSelf: 'flex-start', maxWidth: isMobile ? '92%' : '78%', backgroundColor: '#1e293b', padding: '12px 16px', borderRadius: '16px 16px 16px 4px', fontSize: '0.9rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px', color: '#38bdf8', fontWeight: 'bold', fontSize: '0.82rem' }}>
+                <Volume2 size={16} />
+                <span>Nota de Voz del Cliente (0:07)</span>
               </div>
-              <div style={{ fontStyle: 'italic', color: '#cbd5e1', fontSize: '0.82rem' }}>
-                "Buenas mae! Tienen hamburguesa doble especial para mandar a Escazú?"
+              <div style={{ fontStyle: 'italic', color: '#cbd5e1', fontSize: '0.85rem' }}>
+                "Buenas! Quiero pedir una Hamburguesa Especial con papas y reservar cita para las 3:00pm"
               </div>
             </div>
 
-            <div style={{ alignSelf: 'flex-end', maxWidth: isMobile ? '92%' : '80%', backgroundColor: '#065f46', padding: '12px 16px', borderRadius: '14px 14px 4px 14px', fontSize: '0.88rem', color: '#ecfdf5' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px', fontWeight: 'bold', color: '#6ee7b7', fontSize: '0.82rem' }}>
-                <Bot size={15} /> Betico IA
+            <div style={{ alignSelf: 'flex-end', maxWidth: isMobile ? '94%' : '82%', backgroundColor: '#064e3b', padding: '14px 18px', borderRadius: '16px 16px 4px 16px', fontSize: '0.9rem', color: '#ecfdf5', border: '1px solid rgba(16,185,129,0.3)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px', fontWeight: '800', color: '#6ee7b7', fontSize: '0.85rem' }}>
+                <Bot size={16} /> Betico IA (Motor Propio)
               </div>
-              ¡Pura vida! Claro que sí, tenemos la <strong>Hamburguesa Doble Especial (₡6.500)</strong> disponible en Escazú 🍔.<br />
-              🛵 Envío Express a Escazú: <strong>₡1.500</strong>.<br />
-              ¿Deseas que te tome la orden de una vez o prefieres ver nuestro menú digital?
+              ¡Hola! Con gusto te tomo la orden 🍔:<br />
+              • 1x <strong>Hamburguesa Especial con papas</strong> (₡5.500)<br />
+              • Cita programada para hoy a las <strong>3:00 PM</strong> 📅.<br />
+              ¿Deseas pagar por SINPE Móvil o pasar a retirar al local?
             </div>
 
-            <div style={{ alignSelf: 'flex-end', maxWidth: isMobile ? '92%' : '80%', backgroundColor: '#064e3b', border: '1px solid #059669', padding: '12px 16px', borderRadius: '14px 14px 4px 14px', fontSize: '0.88rem', color: '#ecfdf5' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '800', color: '#a7f3d0', marginBottom: '4px', fontSize: '0.82rem' }}>
-                <ShieldCheck size={16} /> ✅ SINPE Móvil Verificado Automáticamente
+            <div style={{ alignSelf: 'flex-end', maxWidth: isMobile ? '94%' : '82%', backgroundColor: '#042f2e', border: '1px solid #059669', padding: '14px 18px', borderRadius: '16px 16px 4px 16px', fontSize: '0.9rem', color: '#ecfdf5' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '900', color: '#a7f3d0', marginBottom: '4px', fontSize: '0.85rem' }}>
+                <ShieldCheck size={18} /> ✅ Comprobante SINPE Móvil Validado con Visión
               </div>
-              <div style={{ fontSize: '0.82rem' }}>Monto detectado: <strong>₡8.000</strong> • Ref: <strong>#948201</strong></div>
-              <div style={{ fontSize: '0.75rem', color: '#6ee7b7', marginTop: '4px' }}>
-                ⚡ Comanda enviada a la pantalla de cocina (KDS) y motorizado asignado.
+              <div style={{ fontSize: '0.85rem' }}>Monto confirmado: <strong>₡5.500</strong> • Ref: <strong>#893012</strong></div>
+              <div style={{ fontSize: '0.78rem', color: '#6ee7b7', marginTop: '4px' }}>
+                ⚡ Pedido confirmado, comanda despachada a cocina y cita reservada en el calendario.
               </div>
             </div>
           </div>
@@ -448,243 +463,169 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
       </section>
 
       {/* ==============================================================
-          3. SPOTLIGHT SECTION 1: TIENDA ONLINE & MENÚS QR (#tienda)
+          3. LOS 4 GRANDES PILARES (SUPERPODERES)
       ============================================================== */}
-      <section id="tienda" style={{ padding: isMobile ? '60px 16px' : '90px 24px', backgroundColor: '#0e1626', borderTop: '1px solid rgba(255,255,255,0.06)', boxSizing: 'border-box' }}>
-        <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
+      <section id="pilares" style={{
+        padding: '80px 24px',
+        backgroundColor: '#0b1120',
+        borderTop: '1px solid rgba(255,255,255,0.06)',
+        borderBottom: '1px solid rgba(255,255,255,0.06)'
+      }}>
+        <div style={{ maxWidth: '1280px', margin: '0 auto' }}>
           
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(320px, 1fr))', gap: isMobile ? '30px' : '50px', alignItems: 'center' }}>
-            
-            {/* Text & Benefits */}
-            <div>
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '4px 12px', backgroundColor: 'rgba(56, 189, 248, 0.12)', color: '#38bdf8', borderRadius: '9999px', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '14px' }}>
-                <ShoppingBag size={14} /> E-COMMERCE & MENÚ DIGITAL
-              </div>
-
-              <h2 style={{ fontSize: 'clamp(1.6rem, 3.5vw, 2.5rem)', fontWeight: '800', lineHeight: '1.2', margin: '0 0 14px 0' }}>
-                Tu Propia Tienda Online sin Pagar Comisiones por Venta
-              </h2>
-
-              <p style={{ color: '#94a3b8', fontSize: '1rem', lineHeight: '1.6', margin: '0 0 24px 0' }}>
-                Dile adiós a las comisiones del 30% de las apps de delivery. Con Betico obtienes tu propio catálogo web y menú QR con tu marca, fotos en alta calidad y cobro directo.
-              </p>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-                  <div style={{ width: '26px', height: '26px', borderRadius: '8px', backgroundColor: 'rgba(16, 185, 129, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: '2px', flexShrink: 0 }}>
-                    <Check size={16} color="#10b981" />
-                  </div>
-                  <div>
-                    <h4 style={{ margin: '0 0 2px 0', fontSize: '0.95rem', fontWeight: '700' }}>Variantes y Opciones Personalizadas</h4>
-                    <p style={{ margin: 0, color: '#94a3b8', fontSize: '0.85rem' }}>Tallas, colores, sabores, ingredientes extra y control de inventario automático.</p>
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-                  <div style={{ width: '26px', height: '26px', borderRadius: '8px', backgroundColor: 'rgba(16, 185, 129, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: '2px', flexShrink: 0 }}>
-                    <Truck size={16} color="#10b981" />
-                  </div>
-                  <div>
-                    <h4 style={{ margin: '0 0 2px 0', fontSize: '0.95rem', fontWeight: '700' }}>Cálculo de Envíos Express (GPS) y Correos de CR</h4>
-                    <p style={{ margin: 0, color: '#94a3b8', fontSize: '0.85rem' }}>Tarifas exactas por distancia a la ubicación del cliente y enlace de ruta directo a Waze.</p>
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-                  <div style={{ width: '26px', height: '26px', borderRadius: '8px', backgroundColor: 'rgba(16, 185, 129, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: '2px', flexShrink: 0 }}>
-                    <CreditCard size={16} color="#10b981" />
-                  </div>
-                  <div>
-                    <h4 style={{ margin: '0 0 2px 0', fontSize: '0.95rem', fontWeight: '700' }}>Checkout Fluido por SINPE Móvil o WhatsApp</h4>
-                    <p style={{ margin: 0, color: '#94a3b8', fontSize: '0.85rem' }}>El cliente sube su comprobante y el sistema lo valida en 0 segundos.</p>
-                  </div>
-                </div>
-              </div>
+          <div style={{ textAlign: 'center', marginBottom: '50px' }}>
+            <div style={{ color: '#10b981', fontWeight: '800', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>
+              Plataforma Todo en Uno
             </div>
-
-            {/* Visual Mockup Card */}
-            <div style={{
-              backgroundColor: '#131c2e',
-              borderRadius: '20px',
-              border: '1px solid rgba(255,255,255,0.1)',
-              padding: isMobile ? '16px' : '24px',
-              boxShadow: '0 20px 40px rgba(0,0,0,0.5)',
-              boxSizing: 'border-box'
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '12px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Store size={18} color="#10b981" />
-                  <span style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Vista de tu Tienda Online</span>
-                </div>
-                <span style={{ fontSize: '0.72rem', backgroundColor: '#10b981', color: 'white', padding: '2px 8px', borderRadius: '9999px', fontWeight: 'bold' }}>
-                  tienda/tu-marca
-                </span>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '14px' }}>
-                <div style={{ backgroundColor: '#1e293b', borderRadius: '12px', padding: '10px', border: '1px solid rgba(255,255,255,0.06)' }}>
-                  <div style={{ height: '70px', backgroundColor: '#334155', borderRadius: '8px', marginBottom: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: '0.7rem' }}>
-                    📸 Foto
-                  </div>
-                  <div style={{ fontWeight: 'bold', fontSize: '0.8rem', marginBottom: '2px' }}>Hamburguesa Doble</div>
-                  <div style={{ color: '#34d399', fontWeight: '800', fontSize: '0.8rem' }}>₡6.500</div>
-                </div>
-
-                <div style={{ backgroundColor: '#1e293b', borderRadius: '12px', padding: '10px', border: '1px solid rgba(255,255,255,0.06)' }}>
-                  <div style={{ height: '70px', backgroundColor: '#334155', borderRadius: '8px', marginBottom: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: '0.7rem' }}>
-                    📸 Foto
-                  </div>
-                  <div style={{ fontWeight: 'bold', fontSize: '0.8rem', marginBottom: '2px' }}>Papas Rústicas</div>
-                  <div style={{ color: '#34d399', fontWeight: '800', fontSize: '0.8rem' }}>₡2.800</div>
-                </div>
-              </div>
-
-              <div style={{ backgroundColor: '#064e3b', border: '1px solid #059669', padding: '10px 14px', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ fontSize: '0.82rem', color: '#ecfdf5' }}>
-                  🛒 <strong>2 productos</strong>
-                </div>
-                <div style={{ fontWeight: '800', color: '#a7f3d0', fontSize: '0.9rem' }}>
-                  ₡9.300
-                </div>
-              </div>
-            </div>
-
-          </div>
-
-        </div>
-      </section>
-
-      {/* ==============================================================
-          4. SPOTLIGHT SECTION 2: AGENDA DE CITAS & RESERVAS (#agenda)
-      ============================================================== */}
-      <section id="agenda" style={{ padding: isMobile ? '60px 16px' : '90px 24px', maxWidth: '1200px', margin: '0 auto', boxSizing: 'border-box' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(320px, 1fr))', gap: isMobile ? '30px' : '50px', alignItems: 'center' }}>
-          
-          {/* Visual Mockup Card */}
-          <div style={{
-            backgroundColor: '#131c2e',
-            borderRadius: '20px',
-            border: '1px solid rgba(255,255,255,0.1)',
-            padding: isMobile ? '16px' : '24px',
-            boxShadow: '0 20px 40px rgba(0,0,0,0.5)',
-            order: isMobile ? 2 : 1,
-            boxSizing: 'border-box'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Calendar size={18} color="#a855f7" />
-                <span style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Portal de Reservas Online</span>
-              </div>
-              <span style={{ fontSize: '0.72rem', backgroundColor: '#a855f7', color: 'white', padding: '2px 8px', borderRadius: '9999px', fontWeight: 'bold' }}>
-                reservas/tu-marca
-              </span>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '14px' }}>
-              <div style={{ backgroundColor: '#1e293b', padding: '10px 12px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.82rem' }}>
-                <span>💇‍♂️ <strong>Servicio:</strong> Corte & Barba</span>
-                <span style={{ color: '#34d399', fontWeight: 'bold' }}>₡12.000</span>
-              </div>
-
-              <div style={{ backgroundColor: '#1e293b', padding: '10px 12px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.82rem' }}>
-                <span>📅 <strong>Fecha:</strong> Viernes 29 de Agosto</span>
-                <span style={{ color: '#a855f7', fontWeight: 'bold' }}>3:30 PM</span>
-              </div>
-            </div>
-
-            <div style={{ backgroundColor: 'rgba(168, 85, 247, 0.15)', border: '1px solid rgba(168, 85, 247, 0.3)', padding: '10px 12px', borderRadius: '10px', fontSize: '0.78rem', color: '#e9d5ff' }}>
-              🔔 <strong>Recordatorio Automático:</strong> WhatsApp enviado 2h antes para confirmar asistencia.
-            </div>
-          </div>
-
-          {/* Text & Benefits */}
-          <div style={{ order: isMobile ? 1 : 2 }}>
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '4px 12px', backgroundColor: 'rgba(168, 85, 247, 0.12)', color: '#c084fc', borderRadius: '9999px', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '14px' }}>
-              <Calendar size={14} /> AGENDA & CITAS EN LÍNEA 24/7
-            </div>
-
-            <h2 style={{ fontSize: 'clamp(1.6rem, 3.5vw, 2.5rem)', fontWeight: '800', lineHeight: '1.2', margin: '0 0 14px 0' }}>
-              Llena tu Agenda sin Pasar Horas Contestando Llamadas
+            <h2 style={{ fontSize: 'clamp(1.8rem, 4.5vw, 3rem)', fontWeight: '900', margin: '0 0 14px 0', letterSpacing: '-0.5px' }}>
+              Los 4 Pilares Fundamentales de Betico
             </h2>
-
-            <p style={{ color: '#94a3b8', fontSize: '1rem', lineHeight: '1.6', margin: '0 0 24px 0' }}>
-              Permite que tus clientes elijan servicio, especialista, fecha y hora disponible desde cualquier celular o directamente por WhatsApp, incluso de noche o fines de semana.
+            <p style={{ color: '#94a3b8', maxWidth: '700px', margin: '0 auto', fontSize: '1.05rem', lineHeight: '1.6' }}>
+              Todo lo que tu negocio necesita para operar, vender y fidelizar clientes sin pagar múltiples herramientas separadas.
             </p>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-                <div style={{ width: '26px', height: '26px', borderRadius: '8px', backgroundColor: 'rgba(168, 85, 247, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: '2px', flexShrink: 0 }}>
-                  <Check size={16} color="#c084fc" />
-                </div>
-                <div>
-                  <h4 style={{ margin: '0 0 2px 0', fontSize: '0.95rem', fontWeight: '700' }}>Cero Cancelaciones Olvidadas</h4>
-                  <p style={{ margin: 0, color: '#94a3b8', fontSize: '0.85rem' }}>Los recordatorios automáticos por WhatsApp reducen el ausentismo en más de un 80%.</p>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-                <div style={{ width: '26px', height: '26px', borderRadius: '8px', backgroundColor: 'rgba(168, 85, 247, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: '2px', flexShrink: 0 }}>
-                  <Check size={16} color="#c084fc" />
-                </div>
-                <div>
-                  <h4 style={{ margin: '0 0 2px 0', fontSize: '0.95rem', fontWeight: '700' }}>Ideal para Todo Tipo de Servicio</h4>
-                  <p style={{ margin: 0, color: '#94a3b8', fontSize: '0.85rem' }}>Salones de belleza, barberías, clínicas dentales, talleres mecánicos, consultorios y spas.</p>
-                </div>
-              </div>
-            </div>
           </div>
 
-        </div>
-      </section>
-
-      {/* ==============================================================
-          5. SPOTLIGHT SECTION 3: PERSONALIZACIÓN TOTAL (#personalizacion)
-      ============================================================== */}
-      <section id="personalizacion" style={{ padding: isMobile ? '60px 16px' : '90px 24px', backgroundColor: '#0e1626', borderTop: '1px solid rgba(255,255,255,0.06)', boxSizing: 'border-box' }}>
-        <div style={{ maxWidth: '1200px', margin: '0 auto', textAlign: 'center' }}>
-          
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '4px 12px', backgroundColor: 'rgba(236, 72, 153, 0.12)', color: '#f472b6', borderRadius: '9999px', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '14px' }}>
-            <Palette size={14} /> IDENTIDAD VISUAL
-          </div>
-
-          <h2 style={{ fontSize: 'clamp(1.6rem, 3.5vw, 2.5rem)', fontWeight: '800', margin: '0 0 12px 0' }}>
-            Tu Marca, Tus Colores, Tu Identidad
-          </h2>
-
-          <p style={{ color: '#94a3b8', fontSize: '1rem', maxWidth: '750px', margin: '0 auto 40px auto', padding: '0 8px' }}>
-            Betico no es una plataforma genérica. Cada negocio tiene su propia página con su logo, colores de marca, tipografías y banners que lucen espectaculares en celulares y computadoras.
-          </p>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '18px', textAlign: 'left' }}>
+          {/* 4 Pillars Grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', gap: '24px' }}>
             
-            <div style={{ backgroundColor: '#131c2e', padding: '24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
-              <div style={{ width: '40px', height: '40px', backgroundColor: 'rgba(236, 72, 153, 0.15)', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '14px' }}>
-                <Palette size={20} color="#f472b6" />
+            {/* Pilar 1: Creador de Sitios Web */}
+            <div id="website-builder" style={{
+              backgroundColor: '#111827',
+              borderRadius: '20px',
+              border: '1px solid rgba(59, 130, 246, 0.3)',
+              padding: '32px',
+              position: 'relative',
+              overflow: 'hidden',
+              boxShadow: '0 10px 30px rgba(0,0,0,0.3)'
+            }}>
+              <div style={{
+                position: 'absolute', top: '-40px', right: '-40px', width: '120px', height: '120px',
+                borderRadius: '50%', backgroundColor: 'rgba(59, 130, 246, 0.1)', filter: 'blur(30px)'
+              }} />
+              <div style={{
+                width: '52px', height: '52px', borderRadius: '14px',
+                backgroundColor: 'rgba(59, 130, 246, 0.15)', border: '1px solid rgba(59, 130, 246, 0.4)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '20px'
+              }}>
+                <Globe size={28} color="#3b82f6" />
               </div>
-              <h3 style={{ fontSize: '1.1rem', fontWeight: '700', margin: '0 0 6px 0' }}>Paleta de Colores de tu Marca</h3>
-              <p style={{ color: '#94a3b8', fontSize: '0.85rem', lineHeight: '1.6', margin: 0 }}>
-                Ajusta el color principal, secundario y fondos para que tu tienda y agenda coincidan exactamente con tus colores.
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: '800', backgroundColor: 'rgba(59, 130, 246, 0.2)', color: '#60a5fa', padding: '3px 8px', borderRadius: '6px' }}>PILAR 1</span>
+                <h3 style={{ fontSize: '1.45rem', fontWeight: '800', margin: 0, color: 'white' }}>Creador de Sitios Web Oficiales</h3>
+              </div>
+              <p style={{ color: '#94a3b8', fontSize: '0.95rem', lineHeight: '1.6', marginBottom: '20px' }}>
+                Diseña la página web oficial de tu negocio (<code style={{ color: '#60a5fa' }}>betico.tech/sitio/tu-marca</code>) en minutos. Elige estilo dividido o con imagen hover, sube tu logo para fondos claros y oscuros, define colores y activa los botones directos a tienda y reservas.
               </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.88rem', color: '#cbd5e1' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#3b82f6" /> Enlace web oficial listo para poner en tu biografía de Instagram o TikTok</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#3b82f6" /> Logo adaptable automático para fondos claros y footer oscuro</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#3b82f6" /> Control de visibilidad de secciones (Sobre Nosotros, Servicios, Reseñas)</div>
+              </div>
             </div>
 
-            <div style={{ backgroundColor: '#131c2e', padding: '24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
-              <div style={{ width: '40px', height: '40px', backgroundColor: 'rgba(16, 185, 129, 0.15)', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '14px' }}>
-                <Building2 size={20} color="#10b981" />
+            {/* Pilar 2: Betico IA Propia */}
+            <div id="betico-ia" style={{
+              backgroundColor: '#111827',
+              borderRadius: '20px',
+              border: '1px solid rgba(16, 185, 129, 0.4)',
+              padding: '32px',
+              position: 'relative',
+              overflow: 'hidden',
+              boxShadow: '0 10px 30px rgba(0,0,0,0.3)'
+            }}>
+              <div style={{
+                position: 'absolute', top: '-40px', right: '-40px', width: '120px', height: '120px',
+                borderRadius: '50%', backgroundColor: 'rgba(16, 185, 129, 0.15)', filter: 'blur(30px)'
+              }} />
+              <div style={{
+                width: '52px', height: '52px', borderRadius: '14px',
+                backgroundColor: 'rgba(16, 185, 129, 0.15)', border: '1px solid rgba(16, 185, 129, 0.4)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '20px'
+              }}>
+                <Zap size={28} color="#10b981" />
               </div>
-              <h3 style={{ fontSize: '1.1rem', fontWeight: '700', margin: '0 0 6px 0' }}>Portal de Acceso Exclusivo</h3>
-              <p style={{ color: '#94a3b8', fontSize: '0.85rem', lineHeight: '1.6', margin: 0 }}>
-                Tu equipo ingresa a través de tu propio portal seguro con tu logo (ej: <code style={{ color: '#34d399' }}>acceso/tu-marca</code>).
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: '800', backgroundColor: 'rgba(16, 185, 129, 0.2)', color: '#34d399', padding: '3px 8px', borderRadius: '6px' }}>PILAR 2</span>
+                <h3 style={{ fontSize: '1.45rem', fontWeight: '800', margin: 0, color: 'white' }}>Motor de IA Betico Propio</h3>
+              </div>
+              <p style={{ color: '#94a3b8', fontSize: '0.95rem', lineHeight: '1.6', marginBottom: '20px' }}>
+                <strong>💸 Cero Tarifas Ocultas en Dólares:</strong> Sin pagos extra de $20/mes ni requerimiento de tarjetas internacionales. Atención 24/7 sin límites de tokens, generación de descripciones de productos con IA y comprensión de notas de voz en menos de 1.5s.
               </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.88rem', color: '#cbd5e1' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#10b981" /> Entrenado con modismos costarricenses y respuestas ultra rápidas</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#10b981" /> Generación automática de títulos y descripciones atractivas para tu catálogo</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#10b981" /> Historial y métricas de asistencias brindadas sin cobros por tokens</div>
+              </div>
             </div>
 
-            <div style={{ backgroundColor: '#131c2e', padding: '24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
-              <div style={{ width: '40px', height: '40px', backgroundColor: 'rgba(56, 189, 248, 0.15)', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '14px' }}>
-                <Store size={20} color="#38bdf8" />
+            {/* Pilar 3: Tienda Digital & SINPE */}
+            <div id="tienda-agenda" style={{
+              backgroundColor: '#111827',
+              borderRadius: '20px',
+              border: '1px solid rgba(245, 158, 11, 0.3)',
+              padding: '32px',
+              position: 'relative',
+              overflow: 'hidden',
+              boxShadow: '0 10px 30px rgba(0,0,0,0.3)'
+            }}>
+              <div style={{
+                position: 'absolute', top: '-40px', right: '-40px', width: '120px', height: '120px',
+                borderRadius: '50%', backgroundColor: 'rgba(245, 158, 11, 0.1)', filter: 'blur(30px)'
+              }} />
+              <div style={{
+                width: '52px', height: '52px', borderRadius: '14px',
+                backgroundColor: 'rgba(245, 158, 11, 0.15)', border: '1px solid rgba(245, 158, 11, 0.4)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '20px'
+              }}>
+                <ShoppingBag size={28} color="#f59e0b" />
               </div>
-              <h3 style={{ fontSize: '1.1rem', fontWeight: '700', margin: '0 0 6px 0' }}>Modo Restaurante o Retail</h3>
-              <p style={{ color: '#94a3b8', fontSize: '0.85rem', lineHeight: '1.6', margin: 0 }}>
-                Cambia entre formato de restaurante (con pedidos QR a la mesa) o catálogo de retail (para tiendas de ropa, productos o servicios).
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: '800', backgroundColor: 'rgba(245, 158, 11, 0.2)', color: '#fbbf24', padding: '3px 8px', borderRadius: '6px' }}>PILAR 3</span>
+                <h3 style={{ fontSize: '1.45rem', fontWeight: '800', margin: 0, color: 'white' }}>Tienda Digital & Menú Online</h3>
+              </div>
+              <p style={{ color: '#94a3b8', fontSize: '0.95rem', lineHeight: '1.6', marginBottom: '20px' }}>
+                Catálogo interactivo con carrito de compras, cálculo de envío express o retiro en local y pedidos directo a WhatsApp. Validación automática de capturas SINPE Móvil mediante IA con Visión Artificial.
               </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.88rem', color: '#cbd5e1' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#f59e0b" /> Verificación instantánea de comprobantes bancarios sin abrir tu banco</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#f59e0b" /> Soporte para variantes de producto (tallas, sabores, extras)</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#f59e0b" /> Pantalla de Cocina (KDS) y portal de repartidores integrado</div>
+              </div>
+            </div>
+
+            {/* Pilar 4: Agenda y Citas 24/7 */}
+            <div style={{
+              backgroundColor: '#111827',
+              borderRadius: '20px',
+              border: '1px solid rgba(168, 85, 247, 0.3)',
+              padding: '32px',
+              position: 'relative',
+              overflow: 'hidden',
+              boxShadow: '0 10px 30px rgba(0,0,0,0.3)'
+            }}>
+              <div style={{
+                position: 'absolute', top: '-40px', right: '-40px', width: '120px', height: '120px',
+                borderRadius: '50%', backgroundColor: 'rgba(168, 85, 247, 0.1)', filter: 'blur(30px)'
+              }} />
+              <div style={{
+                width: '52px', height: '52px', borderRadius: '14px',
+                backgroundColor: 'rgba(168, 85, 247, 0.15)', border: '1px solid rgba(168, 85, 247, 0.4)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '20px'
+              }}>
+                <Calendar size={28} color="#a855f7" />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: '800', backgroundColor: 'rgba(168, 85, 247, 0.2)', color: '#c084fc', padding: '3px 8px', borderRadius: '6px' }}>PILAR 4</span>
+                <h3 style={{ fontSize: '1.45rem', fontWeight: '800', margin: 0, color: 'white' }}>Agenda de Citas & Reservas 24/7</h3>
+              </div>
+              <p style={{ color: '#94a3b8', fontSize: '0.95rem', lineHeight: '1.6', marginBottom: '20px' }}>
+                Permite a tus clientes agendar citas por WhatsApp o desde tu portal web de reservas. Asignación automática por especialista o colaborador, control de horarios y recordatorios automáticos para eliminar inasistencias.
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.88rem', color: '#cbd5e1' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#a855f7" /> Recordatorios automáticos por WhatsApp 24h y 2h antes de la cita</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#a855f7" /> Portal exclusivo para especialistas con su propia agenda de trabajo</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#a855f7" /> Cobro de anticipos o señas mediante SINPE Móvil</div>
+              </div>
             </div>
 
           </div>
@@ -693,278 +634,201 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
       </section>
 
       {/* ==============================================================
-          6. MÓDULOS DEL SISTEMA (#modulos)
+          4. CALCULADORA DE AHORRO (ROI)
       ============================================================== */}
-      <section id="modulos" style={{ padding: isMobile ? '60px 16px' : '90px 24px', maxWidth: '1200px', margin: '0 auto', boxSizing: 'border-box' }}>
+      <section id="roi" style={{ padding: '80px 24px', maxWidth: '1000px', margin: '0 auto', textAlign: 'center' }}>
+        <div style={{ color: '#10b981', fontWeight: '800', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>
+          Calcula tu Retorno de Inversión
+        </div>
+        <h2 style={{ fontSize: 'clamp(1.8rem, 4vw, 2.8rem)', fontWeight: '900', margin: '0 0 16px 0', letterSpacing: '-0.5px' }}>
+          ¿Cuánto Dinero y Horas Ahorrarás con Betico?
+        </h2>
+        <p style={{ color: '#94a3b8', fontSize: '1rem', maxWidth: '650px', margin: '0 auto 40px auto' }}>
+          Mueve los deslizadores según el volumen de mensajes y ticket promedio de tu negocio.
+        </p>
+
+        <div style={{
+          backgroundColor: '#0f172a',
+          borderRadius: '24px',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
+          padding: isMobile ? '20px' : '36px',
+          boxShadow: '0 20px 40px rgba(0,0,0,0.5)',
+          textAlign: 'left'
+        }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', gap: '30px', marginBottom: '36px' }}>
+            <div>
+              <label style={{ display: 'flex', justifyContent: 'space-between', fontWeight: '700', fontSize: '0.92rem', marginBottom: '10px' }}>
+                <span>Mensajes recibidos al día:</span>
+                <span style={{ color: '#34d399', fontWeight: '800' }}>{dailyMessages} msgs</span>
+              </label>
+              <input
+                type="range"
+                min="20"
+                max="600"
+                step="10"
+                value={dailyMessages}
+                onChange={(e) => setDailyMessages(Number(e.target.value))}
+                style={{ width: '100%', accentColor: '#10b981', cursor: 'pointer' }}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: 'flex', justifyContent: 'space-between', fontWeight: '700', fontSize: '0.92rem', marginBottom: '10px' }}>
+                <span>Ticket promedio de venta:</span>
+                <span style={{ color: '#34d399', fontWeight: '800' }}>₡{avgTicket.toLocaleString()}</span>
+              </label>
+              <input
+                type="range"
+                min="2000"
+                max="40000"
+                step="500"
+                value={avgTicket}
+                onChange={(e) => setAvgTicket(Number(e.target.value))}
+                style={{ width: '100%', accentColor: '#10b981', cursor: 'pointer' }}
+              />
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', gap: '20px' }}>
+            <div style={{ backgroundColor: '#1e293b', padding: '24px', borderRadius: '16px', border: '1px solid rgba(16,185,129,0.3)' }}>
+              <div style={{ fontSize: '0.85rem', color: '#94a3b8', fontWeight: '700', marginBottom: '4px' }}>TIEMPO DE ATENCIÓN AHORRADO</div>
+              <div style={{ fontSize: '2.4rem', fontWeight: '900', color: '#34d399' }}>{hoursSavedPerMonth} Horas<span style={{ fontSize: '1rem', color: '#94a3b8', fontWeight: 'normal' }}> / mes</span></div>
+              <div style={{ fontSize: '0.82rem', color: '#cbd5e1', marginTop: '6px' }}>Equivalente a más de 1 jornada laboral completa recuperada.</div>
+            </div>
+
+            <div style={{ backgroundColor: '#1e293b', padding: '24px', borderRadius: '16px', border: '1px solid rgba(59,130,246,0.3)' }}>
+              <div style={{ fontSize: '0.85rem', color: '#94a3b8', fontWeight: '700', marginBottom: '4px' }}>VENTAS ESTIMADAS RECUPERADAS</div>
+              <div style={{ fontSize: '2.4rem', fontWeight: '900', color: '#60a5fa' }}>₡{estimatedRecoveredSales.toLocaleString()}<span style={{ fontSize: '1rem', color: '#94a3b8', fontWeight: 'normal' }}> / mes</span></div>
+              <div style={{ fontSize: '0.82rem', color: '#cbd5e1', marginTop: '6px' }}>Por respuestas inmediatas en menos de 2 segundos en horario nocturno y festivo.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ==============================================================
+          5. PLANES & PRECIOS
+      ============================================================== */}
+      <section id="planes" style={{
+        padding: '80px 24px',
+        backgroundColor: '#0b1120',
+        borderTop: '1px solid rgba(255,255,255,0.06)',
+        borderBottom: '1px solid rgba(255,255,255,0.06)'
+      }}>
+        <div style={{ maxWidth: '1280px', margin: '0 auto', textAlign: 'center' }}>
+          <div style={{ color: '#10b981', fontWeight: '800', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>
+            Precios Transparentes en Colones
+          </div>
+          <h2 style={{ fontSize: 'clamp(1.8rem, 4.5vw, 3rem)', fontWeight: '900', margin: '0 0 14px 0', letterSpacing: '-0.5px' }}>
+            Planes Todo Incluido Sin Comisiones
+          </h2>
+          <p style={{ color: '#94a3b8', maxWidth: '650px', margin: '0 auto 50px auto', fontSize: '1.05rem' }}>
+            Paga en colones por SINPE Móvil o transferencia. Sin cobros sorpresa en dólares ni tarjetas de crédito extranjeras.
+          </p>
+
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '24px', alignItems: 'stretch' }}>
+            
+            {/* Plan Emprendedor */}
+            <div style={{ backgroundColor: '#111827', padding: '32px 26px', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', flexDirection: 'column', textAlign: 'left' }}>
+              <h3 style={{ fontSize: '1.25rem', fontWeight: '800', margin: '0 0 6px 0' }}>Plan Emprendedor</h3>
+              <p style={{ color: '#94a3b8', fontSize: '0.85rem', margin: '0 0 20px 0' }}>Para pequeños comercios y profesionales independientes.</p>
+              <div style={{ fontSize: '2.4rem', fontWeight: '900', color: 'white', marginBottom: '20px' }}>
+                ₡19.000 <span style={{ fontSize: '0.9rem', color: '#94a3b8', fontWeight: 'normal' }}>/ mes</span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.88rem', color: '#cbd5e1', marginBottom: '30px', flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#10b981" /> 1 Número de WhatsApp Conectado</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#10b981" /> Creador de Sitio Web Oficial</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#10b981" /> Tienda Online con Catálogo</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#10b981" /> Agenda de Citas 24/7</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#10b981" /> Verificación SINPE Móvil con Visión</div>
+              </div>
+              <a
+                href="https://wa.me/50688888888?text=Hola%20Betico%2C%20quiero%20el%20Plan%20Emprendedor"
+                target="_blank"
+                rel="noreferrer"
+                style={{ padding: '12px', backgroundColor: '#1e293b', color: 'white', borderRadius: '10px', textAlign: 'center', textDecoration: 'none', fontWeight: 'bold', fontSize: '0.9rem', border: '1px solid rgba(255,255,255,0.15)' }}
+              >
+                Elegir Plan Emprendedor
+              </a>
+            </div>
+
+            {/* Plan Pro (Destacado) */}
+            <div style={{ backgroundColor: '#111827', padding: '36px 28px', borderRadius: '22px', border: '2px solid #10b981', display: 'flex', flexDirection: 'column', textAlign: 'left', position: 'relative', boxShadow: '0 0 35px rgba(16, 185, 129, 0.2)' }}>
+              <div style={{ position: 'absolute', top: '-14px', left: '50%', transform: 'translateX(-50%)', backgroundColor: '#10b981', color: 'white', fontSize: '0.75rem', fontWeight: '900', padding: '4px 14px', borderRadius: '9999px', letterSpacing: '0.05em' }}>
+                MÁS POPULAR
+              </div>
+              <h3 style={{ fontSize: '1.35rem', fontWeight: '800', margin: '0 0 6px 0', color: 'white' }}>Plan Pro Comercial</h3>
+              <p style={{ color: '#94a3b8', fontSize: '0.85rem', margin: '0 0 20px 0' }}>Para negocios con alto volumen de ventas y citas.</p>
+              <div style={{ fontSize: '2.6rem', fontWeight: '900', color: '#34d399', marginBottom: '20px' }}>
+                ₡29.000 <span style={{ fontSize: '0.9rem', color: '#94a3b8', fontWeight: 'normal' }}>/ mes</span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.88rem', color: '#cbd5e1', marginBottom: '30px', flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#10b981" /> <strong>Todo lo del Plan Emprendedor</strong></div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#10b981" /> Motor Betico IA con Respuestas Ilimitadas</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#10b981" /> Reconocimiento de Notas de Voz</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#10b981" /> Campañas de Marketing & Difusión Masiva</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#10b981" /> Pantalla de Cocina (KDS) & Portal Repartidor</div>
+              </div>
+              <a
+                href="https://wa.me/50688888888?text=Hola%20Betico%2C%20quiero%20el%20Plan%20Pro%20Comercial"
+                target="_blank"
+                rel="noreferrer"
+                style={{ padding: '14px', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', color: 'white', borderRadius: '10px', textAlign: 'center', textDecoration: 'none', fontWeight: '800', fontSize: '0.95rem', boxShadow: '0 4px 16px rgba(16, 185, 129, 0.4)' }}
+              >
+                Comenzar con Plan Pro
+              </a>
+            </div>
+
+            {/* Plan Franquicia / Multi-Sucursal */}
+            <div style={{ backgroundColor: '#111827', padding: '32px 26px', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', flexDirection: 'column', textAlign: 'left' }}>
+              <h3 style={{ fontSize: '1.25rem', fontWeight: '800', margin: '0 0 6px 0' }}>Plan Multi-Sucursal</h3>
+              <p style={{ color: '#94a3b8', fontSize: '0.85rem', margin: '0 0 20px 0' }}>Cadenas, franquicias y múltiples sedes.</p>
+              <div style={{ fontSize: '2.4rem', fontWeight: '900', color: 'white', marginBottom: '20px' }}>
+                ₡49.000 <span style={{ fontSize: '0.9rem', color: '#94a3b8', fontWeight: 'normal' }}>/ mes</span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.88rem', color: '#cbd5e1', marginBottom: '30px', flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#10b981" /> <strong>Múltiples Sucursales o Sedes</strong></div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#10b981" /> Asignación Inteligente por GPS</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#10b981" /> Cuentas SINPE separadas por local</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#10b981" /> Acceso para múltiples administradores</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#10b981" /> Soporte prioritario por WhatsApp 24/7</div>
+              </div>
+              <a
+                href="https://wa.me/50688888888?text=Hola%20Betico%2C%20quiero%20el%20Plan%20Multi-Sucursal"
+                target="_blank"
+                rel="noreferrer"
+                style={{ padding: '12px', backgroundColor: '#1e293b', color: 'white', borderRadius: '10px', textAlign: 'center', textDecoration: 'none', fontWeight: 'bold', fontSize: '0.9rem', border: '1px solid rgba(255,255,255,0.15)' }}
+              >
+                Contactar Asesor
+              </a>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+      {/* ==============================================================
+          6. PREGUNTAS FRECUENTES (FAQ)
+      ============================================================== */}
+      <section id="faq" style={{ padding: '80px 24px', maxWidth: '900px', margin: '0 auto' }}>
         <div style={{ textAlign: 'center', marginBottom: '40px' }}>
-          <h2 style={{ fontSize: 'clamp(1.6rem, 3.5vw, 2.2rem)', fontWeight: '800', margin: '0 0 10px 0' }}>
-            Módulos Completos para Operar tu Negocio
+          <div style={{ color: '#10b981', fontWeight: '800', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>
+            Despeja tus Dudas
+          </div>
+          <h2 style={{ fontSize: 'clamp(1.8rem, 4vw, 2.8rem)', fontWeight: '900', margin: 0, letterSpacing: '-0.5px' }}>
+            Preguntas Frecuentes
           </h2>
-          <p style={{ color: '#94a3b8', fontSize: '0.95rem', margin: 0, padding: '0 8px' }}>
-            Herramientas integradas para multiplicar tus ventas y automatizar la operación diaria.
-          </p>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '18px' }}>
-          
-          <div style={{ backgroundColor: '#131c2e', padding: '24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
-            <div style={{ width: '42px', height: '42px', backgroundColor: 'rgba(56, 189, 248, 0.15)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '14px' }}>
-              <Headphones size={22} color="#38bdf8" />
-            </div>
-            <h3 style={{ fontSize: '1.15rem', fontWeight: '700', margin: '0 0 6px 0' }}>Notas de Voz & Asistente IA</h3>
-            <p style={{ color: '#94a3b8', fontSize: '0.85rem', lineHeight: '1.6', margin: 0 }}>
-              Tus clientes no tienen que escribir. Betico escucha notas de voz, extrae pedidos o reservas y responde con fluidez en lenguaje natural tico.
-            </p>
-          </div>
-
-          <div style={{ backgroundColor: '#131c2e', padding: '24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
-            <div style={{ width: '42px', height: '42px', backgroundColor: 'rgba(16, 185, 129, 0.15)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '14px' }}>
-              <Smartphone size={22} color="#10b981" />
-            </div>
-            <h3 style={{ fontSize: '1.15rem', fontWeight: '700', margin: '0 0 6px 0' }}>Validación Instantánea de SINPE Móvil</h3>
-            <p style={{ color: '#94a3b8', fontSize: '0.85rem', lineHeight: '1.6', margin: 0 }}>
-              Cero fraudes y cero esperas. El lector inteligente confirma transferencias bancarias en 0 segundos y emite campanadas a cocina.
-            </p>
-          </div>
-
-          <div style={{ backgroundColor: '#131c2e', padding: '24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
-            <div style={{ width: '42px', height: '42px', backgroundColor: 'rgba(245, 158, 11, 0.15)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '14px' }}>
-              <Utensils size={22} color="#f59e0b" />
-            </div>
-            <h3 style={{ fontSize: '1.15rem', fontWeight: '700', margin: '0 0 6px 0' }}>Pantallas de Cocina KDS en Vivo</h3>
-            <p style={{ color: '#94a3b8', fontSize: '0.85rem', lineHeight: '1.6', margin: 0 }}>
-              Reemplaza comandas de papel por pantallas táctiles con alertas sonoras en tiempo real, cronómetro de preparación y aviso al cliente.
-            </p>
-          </div>
-
-          <div style={{ backgroundColor: '#131c2e', padding: '24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
-            <div style={{ width: '42px', height: '42px', backgroundColor: 'rgba(168, 85, 247, 0.15)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '14px' }}>
-              <Building2 size={22} color="#c084fc" />
-            </div>
-            <h3 style={{ fontSize: '1.15rem', fontWeight: '700', margin: '0 0 6px 0' }}>Multi-Sucursal & Franquicias</h3>
-            <p style={{ color: '#94a3b8', fontSize: '0.85rem', lineHeight: '1.6', margin: 0 }}>
-              Administra todas tus sedes físicas de forma centralizada con inventario, cuentas SINPE y pantallas KDS independientes por local.
-            </p>
-          </div>
-
-          <div style={{ backgroundColor: '#131c2e', padding: '24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
-            <div style={{ width: '42px', height: '42px', backgroundColor: 'rgba(236, 72, 153, 0.15)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '14px' }}>
-              <MapPin size={22} color="#f472b6" />
-            </div>
-            <h3 style={{ fontSize: '1.15rem', fontWeight: '700', margin: '0 0 6px 0' }}>Envíos Express GPS & Correos CR</h3>
-            <p style={{ color: '#94a3b8', fontSize: '0.85rem', lineHeight: '1.6', margin: 0 }}>
-              Cálculo de costo de envío por distancia GPS exacta con navegación Waze para motorizados y tarifas automáticas de Correos de Costa Rica.
-            </p>
-          </div>
-
-          <div style={{ backgroundColor: '#131c2e', padding: '24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
-            <div style={{ width: '42px', height: '42px', backgroundColor: 'rgba(14, 165, 233, 0.15)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '14px' }}>
-              <Send size={22} color="#38bdf8" />
-            </div>
-            <h3 style={{ fontSize: '1.15rem', fontWeight: '700', margin: '0 0 6px 0' }}>Difusiones Masivas & Marketing</h3>
-            <p style={{ color: '#94a3b8', fontSize: '0.85rem', lineHeight: '1.6', margin: 0 }}>
-              Envía promociones, ofertas y novedades a tus clientes por WhatsApp con control de cadencia inteligente para proteger tu número.
-            </p>
-          </div>
-
-          <div style={{ backgroundColor: '#131c2e', padding: '24px', borderRadius: '16px', border: '1px solid rgba(16, 185, 129, 0.25)', boxShadow: '0 8px 24px rgba(16, 185, 129, 0.1)' }}>
-            <div style={{ width: '42px', height: '42px', backgroundColor: 'rgba(16, 185, 129, 0.15)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '14px' }}>
-              <Zap size={22} color="#34d399" />
-            </div>
-            <h3 style={{ fontSize: '1.15rem', fontWeight: '700', margin: '0 0 6px 0', color: '#ecfdf5' }}>💸 Cero Tarifas Ocultas en Dólares</h3>
-            <p style={{ color: '#94a3b8', fontSize: '0.85rem', lineHeight: '1.6', margin: 0 }}>
-              Sin pagos extra de $20/mes o más, ni requerimiento de tarjetas internacionales. Tu motor de IA Betico viene 100% incluido y listo para usar en colones.
-            </p>
-          </div>
-
-          <div style={{ backgroundColor: '#131c2e', padding: '24px', borderRadius: '16px', border: '1px solid rgba(56, 189, 248, 0.25)', boxShadow: '0 8px 24px rgba(56, 189, 248, 0.1)' }}>
-            <div style={{ width: '42px', height: '42px', backgroundColor: 'rgba(56, 189, 248, 0.15)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '14px' }}>
-              <Store size={22} color="#38bdf8" />
-            </div>
-            <h3 style={{ fontSize: '1.15rem', fontWeight: '700', margin: '0 0 6px 0', color: '#f0f9ff' }}>🌐 Creador de Sitios Web Incluido</h3>
-            <p style={{ color: '#94a3b8', fontSize: '0.85rem', lineHeight: '1.6', margin: 0 }}>
-              Crea la página web oficial de tu negocio con tu logo, colores, textos y enlaces directos para comprar en la tienda online o agendar citas en 1 clic.
-            </p>
-          </div>
-
-        </div>
-      </section>
-
-      {/* ==============================================================
-          7. CALCULADORA DE ROI & AHORRO (#roi)
-      ============================================================== */}
-      <section id="roi" style={{ padding: isMobile ? '60px 16px' : '90px 24px', backgroundColor: '#0f172a', borderTop: '1px solid rgba(255,255,255,0.05)', borderBottom: '1px solid rgba(255,255,255,0.05)', boxSizing: 'border-box' }}>
-        <div style={{ maxWidth: '900px', margin: '0 auto', textAlign: 'center' }}>
-          
-          <h2 style={{ fontSize: 'clamp(1.6rem, 3.5vw, 2.2rem)', fontWeight: '800', margin: '0 0 10px 0' }}>
-            Calcula Cuánto Ahorrarás con Betico
-          </h2>
-          <p style={{ color: '#94a3b8', fontSize: '0.95rem', margin: '0 0 35px 0', padding: '0 8px' }}>
-            Mide cuántas horas de trabajo manual y dinero recuperarás al automatizar tu WhatsApp.
-          </p>
-
-          <div style={{ backgroundColor: '#1e293b', padding: isMobile ? '20px 16px' : '36px', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.1)', textAlign: 'left', boxSizing: 'border-box' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(260px, 1fr))', gap: '24px', marginBottom: '28px' }}>
-              
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '0.85rem' }}>
-                  <label style={{ fontWeight: 'bold' }}>Mensajes diarios en WhatsApp:</label>
-                  <span style={{ color: '#34d399', fontWeight: '800' }}>{dailyMessages} msgs/día</span>
-                </div>
-                <input
-                  type="range"
-                  min="20"
-                  max="1000"
-                  step="10"
-                  value={dailyMessages}
-                  onChange={(e) => setDailyMessages(Number(e.target.value))}
-                  style={{ width: '100%', accentColor: '#10b981', cursor: 'pointer' }}
-                />
-              </div>
-
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '0.85rem' }}>
-                  <label style={{ fontWeight: 'bold' }}>Ticket promedio de venta:</label>
-                  <span style={{ color: '#34d399', fontWeight: '800' }}>₡{avgTicket.toLocaleString('es-CR')}</span>
-                </div>
-                <input
-                  type="range"
-                  min="2000"
-                  max="50000"
-                  step="1000"
-                  value={avgTicket}
-                  onChange={(e) => setAvgTicket(Number(e.target.value))}
-                  style={{ width: '100%', accentColor: '#10b981', cursor: 'pointer' }}
-                />
-              </div>
-
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '20px' }}>
-              
-              <div style={{ backgroundColor: '#0f172a', padding: '16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.06)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#94a3b8', fontSize: '0.82rem', marginBottom: '4px' }}>
-                  <Clock size={15} color="#38bdf8" /> Tiempo Ahorrado al Mes
-                </div>
-                <div style={{ fontSize: '1.6rem', fontWeight: '800', color: '#38bdf8' }}>
-                  {hoursSavedPerMonth} horas
-                </div>
-                <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '2px' }}>
-                  Equivalente a más de media jornada de trabajo
-                </div>
-              </div>
-
-              <div style={{ backgroundColor: '#0f172a', padding: '16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.06)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#94a3b8', fontSize: '0.82rem', marginBottom: '4px' }}>
-                  <TrendingUp size={15} color="#34d399" /> Ventas Recuperadas Estimadas
-                </div>
-                <div style={{ fontSize: '1.6rem', fontWeight: '800', color: '#34d399' }}>
-                  ₡{estimatedRecoveredSales.toLocaleString('es-CR')}
-                </div>
-                <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '2px' }}>
-                  Por responder inmediatamente las 24 horas del día
-                </div>
-              </div>
-
-            </div>
-          </div>
-
-        </div>
-      </section>
-
-      {/* ==============================================================
-          8. PLANES & PRECIOS (#planes)
-      ============================================================== */}
-      <section id="planes" style={{ padding: isMobile ? '60px 16px' : '90px 24px', maxWidth: '1200px', margin: '0 auto', boxSizing: 'border-box' }}>
-        <div style={{ textAlign: 'center', marginBottom: '40px' }}>
-          <h2 style={{ fontSize: 'clamp(1.6rem, 3.5vw, 2.2rem)', fontWeight: '800', margin: '0 0 10px 0' }}>
-            Planes Claros para Todo Tipo de Negocio
-          </h2>
-          <p style={{ color: '#94a3b8', fontSize: '0.95rem', margin: 0, padding: '0 8px' }}>
-            Sin contratos forzosos. Cancela o cambia de plan en cualquier momento.
-          </p>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
-          
-          <div style={{ backgroundColor: '#131c2e', padding: isMobile ? '24px' : '32px', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column' }}>
-            <h3 style={{ fontSize: '1.25rem', fontWeight: '700', margin: '0 0 4px 0' }}>Emprendedor</h3>
-            <p style={{ color: '#94a3b8', fontSize: '0.82rem', margin: '0 0 16px 0' }}>Para negocios que inician en WhatsApp</p>
-            <div style={{ fontSize: '2rem', fontWeight: '800', marginBottom: '20px' }}>
-              $29 <span style={{ fontSize: '0.85rem', color: '#94a3b8', fontWeight: 'normal' }}>/mes</span>
-            </div>
-            <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 24px 0', display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.85rem', color: '#cbd5e1', flex: 1 }}>
-              <li style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Check size={16} color="#10b981" /> 1 Número de WhatsApp Conectado</li>
-              <li style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Check size={16} color="#10b981" /> Asistente IA 24/7 (Texto)</li>
-              <li style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Check size={16} color="#10b981" /> <strong>Tienda Digital / Menú QR</strong></li>
-              <li style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Check size={16} color="#10b981" /> <strong>Agenda de Citas Básica</strong></li>
-            </ul>
-            <button onClick={onLoginClick} style={{ padding: '12px', backgroundColor: '#1e293b', color: 'white', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer' }}>
-              Elegir Emprendedor
-            </button>
-          </div>
-
-          <div style={{ backgroundColor: '#1e293b', padding: isMobile ? '24px' : '32px', borderRadius: '20px', border: '2px solid #10b981', position: 'relative', display: 'flex', flexDirection: 'column', boxShadow: '0 10px 30px -10px rgba(16, 185, 129, 0.3)' }}>
-            <div style={{ position: 'absolute', top: '-12px', left: '50%', transform: 'translateX(-50%)', backgroundColor: '#10b981', color: 'white', fontSize: '0.72rem', fontWeight: '800', padding: '4px 12px', borderRadius: '9999px' }}>
-              MÁS POPULAR
-            </div>
-            <h3 style={{ fontSize: '1.25rem', fontWeight: '700', margin: '0 0 4px 0' }}>Profesional</h3>
-            <p style={{ color: '#94a3b8', fontSize: '0.82rem', margin: '0 0 16px 0' }}>Para restaurantes, clínicas y tiendas activas</p>
-            <div style={{ fontSize: '2rem', fontWeight: '800', marginBottom: '20px' }}>
-              $59 <span style={{ fontSize: '0.85rem', color: '#94a3b8', fontWeight: 'normal' }}>/mes</span>
-            </div>
-            <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 24px 0', display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.85rem', color: '#cbd5e1', flex: 1 }}>
-              <li style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Check size={16} color="#10b981" /> <strong>Audios & Notas de Voz con IA</strong></li>
-              <li style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Check size={16} color="#10b981" /> <strong>Validación Automática de SINPE Móvil</strong></li>
-              <li style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Check size={16} color="#10b981" /> <strong>Tienda Online & Agenda Completa</strong></li>
-              <li style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Check size={16} color="#10b981" /> Pantalla de Cocina (KDS) en Vivo</li>
-              <li style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Check size={16} color="#10b981" /> Portal de Repartidores con Waze</li>
-              <li style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Check size={16} color="#10b981" /> Difusiones Masivas & Promociones</li>
-            </ul>
-            <button onClick={onLoginClick} style={{ padding: '12px', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)' }}>
-              Comenzar con Pro
-            </button>
-          </div>
-
-          <div style={{ backgroundColor: '#131c2e', padding: isMobile ? '24px' : '32px', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column' }}>
-            <h3 style={{ fontSize: '1.25rem', fontWeight: '700', margin: '0 0 4px 0' }}>Franquicias / Multi-Sede</h3>
-            <p style={{ color: '#94a3b8', fontSize: '0.82rem', margin: '0 0 16px 0' }}>Cadenas y negocios con múltiples locales</p>
-            <div style={{ fontSize: '2rem', fontWeight: '800', marginBottom: '20px' }}>
-              $119 <span style={{ fontSize: '0.85rem', color: '#94a3b8', fontWeight: 'normal' }}>/mes</span>
-            </div>
-            <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 24px 0', display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.85rem', color: '#cbd5e1', flex: 1 }}>
-              <li style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Check size={16} color="#10b981" /> <strong>Hasta 5 Sucursales Físicas</strong></li>
-              <li style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Check size={16} color="#10b981" /> Selector de Sede y KDS Aislado por Local</li>
-              <li style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Check size={16} color="#10b981" /> Todo lo incluido en el Plan Pro</li>
-              <li style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Check size={16} color="#10b981" /> Soporte Dedicado y Capacitación</li>
-            </ul>
-            <button onClick={onLoginClick} style={{ padding: '12px', backgroundColor: '#1e293b', color: 'white', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer' }}>
-              Solicitar Franquicias
-            </button>
-          </div>
-
-        </div>
-      </section>
-
-      {/* ==============================================================
-          9. PREGUNTAS FRECUENTES (#faq)
-      ============================================================== */}
-      <section id="faq" style={{ padding: isMobile ? '60px 16px' : '90px 24px', maxWidth: '850px', margin: '0 auto', boxSizing: 'border-box' }}>
-        <div style={{ textAlign: 'center', marginBottom: '35px' }}>
-          <h2 style={{ fontSize: 'clamp(1.6rem, 3.5vw, 2.2rem)', fontWeight: '800', margin: '0 0 10px 0' }}>Preguntas Frecuentes</h2>
-          <p style={{ color: '#94a3b8', fontSize: '0.95rem', margin: 0, padding: '0 8px' }}>Resolvemos tus dudas sobre cómo funciona Betico.</p>
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           {faqs.map((faq, idx) => {
             const isOpen = openFaq === idx;
             return (
               <div
                 key={idx}
                 style={{
-                  backgroundColor: '#1e293b',
-                  borderRadius: '12px',
-                  border: '1px solid rgba(255,255,255,0.08)',
+                  backgroundColor: '#0f172a',
+                  borderRadius: '14px',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
                   overflow: 'hidden'
                 }}
               >
@@ -972,24 +836,24 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
                   onClick={() => setOpenFaq(isOpen ? null : idx)}
                   style={{
                     width: '100%',
-                    padding: '16px 18px',
+                    padding: '18px 22px',
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
                     backgroundColor: 'transparent',
                     border: 'none',
-                    color: '#f8fafc',
-                    fontSize: '0.95rem',
+                    color: 'white',
                     fontWeight: '700',
+                    fontSize: '1rem',
                     textAlign: 'left',
                     cursor: 'pointer'
                   }}
                 >
-                  <span style={{ paddingRight: '8px' }}>{faq.q}</span>
-                  {isOpen ? <ChevronUp size={18} color="#10b981" /> : <ChevronDown size={18} color="#94a3b8" />}
+                  <span>{faq.q}</span>
+                  {isOpen ? <ChevronUp size={20} color="#10b981" /> : <ChevronDown size={20} color="#94a3b8" />}
                 </button>
                 {isOpen && (
-                  <div style={{ padding: '0 18px 16px 18px', color: '#94a3b8', fontSize: '0.88rem', lineHeight: '1.6' }}>
+                  <div style={{ padding: '0 22px 20px 22px', color: '#94a3b8', fontSize: '0.92rem', lineHeight: '1.6' }}>
                     {faq.a}
                   </div>
                 )}
@@ -1000,59 +864,86 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
       </section>
 
       {/* ==============================================================
-          10. FOOTER
+          7. FOOTER ELEGANTE (100% SVG OFICIALES)
       ============================================================== */}
       <footer style={{
-        backgroundColor: '#080c14',
-        borderTop: '1px solid rgba(255,255,255,0.08)',
-        padding: isMobile ? '40px 16px 24px 16px' : '50px 24px 30px 24px',
+        backgroundColor: '#050914',
+        borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+        padding: '60px 24px 30px 24px',
         color: '#94a3b8',
-        fontSize: '0.85rem',
-        width: '100%',
-        boxSizing: 'border-box'
+        fontSize: '0.88rem'
       }}>
-        <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '24px', marginBottom: '24px' }}>
+        <div style={{ maxWidth: '1280px', margin: '0 auto', display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '2fr 1fr 1fr 1.5fr', gap: '40px', marginBottom: '50px' }}>
           
-          <div style={{ maxWidth: '360px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'white', fontWeight: '800', fontSize: '1.15rem', marginBottom: '8px' }}>
-              <Bot size={20} color="#10b981" /> Betico.tech
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+              <div style={{
+                width: '36px', height: '36px',
+                borderRadius: '10px',
+                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center'
+              }}>
+                <Bot size={20} color="white" />
+              </div>
+              <span style={{ fontSize: '1.25rem', fontWeight: '900', color: 'white' }}>
+                Betico<span style={{ color: '#10b981' }}>.tech</span>
+              </span>
             </div>
-            <p style={{ margin: 0, lineHeight: '1.6', fontSize: '0.82rem' }}>
-              Plataforma integral con Inteligencia Artificial para ventas, tiendas online, citas y cobros automáticos por WhatsApp en Costa Rica.
+            <p style={{ lineHeight: '1.6', margin: '0 0 20px 0', maxWidth: '320px' }}>
+              La plataforma SaaS costarricense que une tu sitio web oficial, tienda digital, agenda de citas y motor de IA en WhatsApp.
             </p>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <a href="https://wa.me/50688888888" target="_blank" rel="noreferrer" style={{ width: '38px', height: '38px', borderRadius: '10px', backgroundColor: '#111827', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#cbd5e1', border: '1px solid rgba(255,255,255,0.08)' }}>
+                <WhatsAppIcon size={18} />
+              </a>
+              <a href="https://facebook.com" target="_blank" rel="noreferrer" style={{ width: '38px', height: '38px', borderRadius: '10px', backgroundColor: '#111827', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#cbd5e1', border: '1px solid rgba(255,255,255,0.08)' }}>
+                <FacebookIcon size={18} />
+              </a>
+              <a href="https://instagram.com" target="_blank" rel="noreferrer" style={{ width: '38px', height: '38px', borderRadius: '10px', backgroundColor: '#111827', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#cbd5e1', border: '1px solid rgba(255,255,255,0.08)' }}>
+                <InstagramIcon size={18} />
+              </a>
+              <a href="https://tiktok.com" target="_blank" rel="noreferrer" style={{ width: '38px', height: '38px', borderRadius: '10px', backgroundColor: '#111827', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#cbd5e1', border: '1px solid rgba(255,255,255,0.08)' }}>
+                <TikTokIcon size={18} />
+              </a>
+            </div>
           </div>
 
-          <div style={{ display: 'flex', gap: '40px', flexWrap: 'wrap' }}>
-            <div>
-              <div style={{ color: 'white', fontWeight: 'bold', marginBottom: '10px' }}>Plataforma</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <a onClick={() => scrollToSection('tienda')} style={{ color: '#94a3b8', textDecoration: 'none', cursor: 'pointer' }}>Tienda Online</a>
-                <a onClick={() => scrollToSection('agenda')} style={{ color: '#94a3b8', textDecoration: 'none', cursor: 'pointer' }}>Agenda & Citas</a>
-                <a onClick={() => scrollToSection('personalizacion')} style={{ color: '#94a3b8', textDecoration: 'none', cursor: 'pointer' }}>Personalización</a>
-                <a onClick={() => scrollToSection('modulos')} style={{ color: '#94a3b8', textDecoration: 'none', cursor: 'pointer' }}>Módulos & IA</a>
-                <a onClick={() => scrollToSection('planes')} style={{ color: '#94a3b8', textDecoration: 'none', cursor: 'pointer' }}>Planes & Precios</a>
-              </div>
+          <div>
+            <div style={{ color: 'white', fontWeight: '800', marginBottom: '16px' }}>4 Superpoderes</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <a onClick={() => scrollToSection('website-builder')} style={{ color: '#94a3b8', textDecoration: 'none', cursor: 'pointer' }}>Sitio Web Oficial</a>
+              <a onClick={() => scrollToSection('betico-ia')} style={{ color: '#94a3b8', textDecoration: 'none', cursor: 'pointer' }}>Motor Betico IA</a>
+              <a onClick={() => scrollToSection('tienda-agenda')} style={{ color: '#94a3b8', textDecoration: 'none', cursor: 'pointer' }}>Tienda Digital</a>
+              <a onClick={() => scrollToSection('tienda-agenda')} style={{ color: '#94a3b8', textDecoration: 'none', cursor: 'pointer' }}>Agenda de Citas</a>
             </div>
+          </div>
 
-            <div>
-              <div style={{ color: 'white', fontWeight: 'bold', marginBottom: '10px' }}>Legal & Acceso</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <a href="/politica-de-privacidad" style={{ color: '#94a3b8', textDecoration: 'none' }}>Política de Privacidad</a>
-                <a href="/terminos-y-condiciones" style={{ color: '#94a3b8', textDecoration: 'none' }}>Términos del Servicio</a>
-                <button onClick={onLoginClick} style={{ color: '#10b981', background: 'none', border: 'none', padding: 0, textAlign: 'left', cursor: 'pointer', fontWeight: 'bold' }}>
-                  Acceso al Panel
-                </button>
-              </div>
+          <div>
+            <div style={{ color: 'white', fontWeight: '800', marginBottom: '16px' }}>Legal & Soporte</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <a href="/politica-de-privacidad" style={{ color: '#94a3b8', textDecoration: 'none' }}>Política de Privacidad</a>
+              <a href="/terminos-y-condiciones" style={{ color: '#94a3b8', textDecoration: 'none' }}>Términos de Servicio</a>
+              <a href="/login" style={{ color: '#94a3b8', textDecoration: 'none' }}>Acceso al Panel</a>
+              <a onClick={() => scrollToSection('faq')} style={{ color: '#94a3b8', textDecoration: 'none', cursor: 'pointer' }}>Preguntas Frecuentes</a>
+            </div>
+          </div>
+
+          <div>
+            <div style={{ color: 'white', fontWeight: '800', marginBottom: '16px' }}>Atención & Contacto</div>
+            <p style={{ lineHeight: '1.6', margin: '0 0 14px 0' }}>
+              San José, Costa Rica 🇨🇷<br />
+              Soporte técnico directo vía WhatsApp y correo electrónico.
+            </p>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '6px 12px', borderRadius: '8px', backgroundColor: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', color: '#34d399', fontSize: '0.8rem', fontWeight: 'bold' }}>
+              <CheckCircle size={14} /> Sistema 100% Operativo
             </div>
           </div>
 
         </div>
 
-        <div style={{ maxWidth: '1200px', margin: '0 auto', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', fontSize: '0.8rem' }}>
-          <div>© 2026 Betico.tech. Todos los derechos reservados. San José, Costa Rica.</div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <Lock size={13} color="#10b981" /> Cifrado de nivel bancario AES-256
-          </div>
+        <div style={{ maxWidth: '1280px', margin: '0 auto', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+          <div>© {new Date().getFullYear()} Betico.tech. Todos los derechos reservados.</div>
+          <div style={{ color: '#64748b', fontSize: '0.8rem' }}>Desarrollado con orgullo en Costa Rica ⚡</div>
         </div>
       </footer>
 

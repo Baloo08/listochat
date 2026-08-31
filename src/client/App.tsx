@@ -683,7 +683,7 @@ export default function App() {
         </header>
 
         {/* Dynamic Page Content */}
-        <main style={{ flex: 1, padding: '28px', overflowY: 'auto' }}>
+        <main style={{ flex: 1, padding: '24px 32px', overflowY: 'auto', boxSizing: 'border-box', width: '100%', maxWidth: '100%' }}>
           {renderContent()}
         </main>
       </div>
