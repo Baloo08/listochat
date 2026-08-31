@@ -419,8 +419,20 @@ export async function runMigrations() {
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS tenant_ai_usage (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+      month_year VARCHAR(7) NOT NULL,
+      tokens_used BIGINT DEFAULT 0,
+      requests_count INT DEFAULT 0,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(tenant_id, month_year)
+    );
+
     ALTER TABLE appointments ADD COLUMN IF NOT EXISTS specialist_id UUID REFERENCES specialists(id) ON DELETE SET NULL;
 
+    CREATE INDEX IF NOT EXISTS idx_ai_usage_tenant_month ON tenant_ai_usage(tenant_id, month_year);
     CREATE INDEX IF NOT EXISTS idx_specialists_tenant ON specialists(tenant_id);
     CREATE INDEX IF NOT EXISTS idx_appointments_specialist ON appointments(specialist_id);
     CREATE INDEX IF NOT EXISTS idx_branches_tenant ON branches(tenant_id);
@@ -480,6 +492,28 @@ export async function runMigrations() {
       WHERE LOWER(email) = LOWER($2)
     `, [modernHash, superAdminEmail]);
     console.log('Superadmin user credentials synchronized.');
+  }
+
+  // Seed default platform settings for LocalAI & Deployments if empty
+  const defaultPlatformSettings = [
+    { key: 'localai_url', value: process.env.LOCALAI_URL || 'http://localhost:8080/v1' },
+    { key: 'localai_model', value: 'llama-3.1-8b-instruct' },
+    { key: 'localai_enabled', value: 'true' },
+    { key: 'master_ai_provider', value: 'gemini' },
+    { key: 'master_ai_model', value: 'gemini-2.5-flash' },
+    { key: 'quota_starter_tokens', value: '25000' },
+    { key: 'quota_pro_tokens', value: '100000' },
+    { key: 'quota_business_tokens', value: '300000' },
+    { key: 'deploy_webhook_app', value: 'http://2.25.103.200:3000/api/deploy/f5abd18bdaaff3ce20c24522c9c72beac7c756d9260d995b' },
+    { key: 'deploy_webhook_localai', value: 'http://2.25.103.200:3000/api/deploy/4317a4ff5a1ed51532fc824fb9547b6ae20847cd3ef8ea4e' }
+  ];
+
+  for (const s of defaultPlatformSettings) {
+    await query(`
+      INSERT INTO platform_settings (key, value)
+      VALUES ($1, $2)
+      ON CONFLICT (key) DO NOTHING
+    `, [s.key, s.value]);
   }
 
   console.log('Migrations completed successfully.');

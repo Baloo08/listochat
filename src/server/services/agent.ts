@@ -1,4 +1,4 @@
-import { callAI, TenantAIConfig } from './ai-provider.js';
+import { callAI, TenantAIConfig, getMasterAIConfig } from './ai-provider.js';
 import { decrypt } from './encryption.js';
 import { getAgentConfig } from '../db/agent-config.repo.js';
 import { getServicesByTenant } from '../db/services.repo.js';
@@ -6,6 +6,7 @@ import { getProductsByTenant } from '../db/products.repo.js';
 import { getTenantById } from '../db/tenant.repo.js';
 import { getStoreSettings } from '../db/store-settings.repo.js';
 import { getScheduleSettings } from '../db/schedule.repo.js';
+import { getTenantCurrentMonthUsage, incrementTenantUsage } from '../db/ai-usage.repo.js';
 
 export interface AgentProcessResult {
   replyText: string;
@@ -149,24 +150,51 @@ Reglas estrictas de comportamiento e Inteligencia:
 `;
 
   let apiKey = '';
+  let isMarcaBlanca = false;
+
   if (tenant?.aiApiKeyEncrypted) {
     try { apiKey = decrypt(tenant.aiApiKeyEncrypted); } catch (e) {}
   }
-  if (!apiKey) {
-    apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY || 'AQ.Ab8RN6IHcdDKDITkdIOjt8SznSc6lS_1grotOA6SQ6fjZnd2SQ';
+
+  let config: TenantAIConfig;
+
+  if (apiKey) {
+    // Tenant is using their own private API Key (BYOK)
+    config = {
+      provider: (tenant?.aiProvider as any) || 'gemini',
+      apiKey,
+      model: tenant?.aiModel || agentConfig?.model || 'gemini-2.5-flash',
+      temperature: agentConfig?.temperature || 0.7,
+    };
+  } else {
+    // Tenant is using Betico AI Marca Blanca (LocalAI / Master AI)
+    isMarcaBlanca = true;
+    const usage = await getTenantCurrentMonthUsage(tenantId);
+    if (usage.isExceeded) {
+      return {
+        replyText: 'Hola, el asistente virtual de este negocio ha completado su cuota mensual de atención automática. Un asesor humano te responderá en breve.',
+        isBookingDetected: false,
+        isOrderDetected: false,
+        isHandoffRequested: true,
+        handoffReason: 'Límite de cuota mensual de IA alcanzado',
+        tokensUsed: 0
+      };
+    }
+
+    const masterConfig = await getMasterAIConfig();
+    config = {
+      ...masterConfig,
+      temperature: agentConfig?.temperature || 0.7
+    };
   }
-
-  const model = tenant?.aiModel || agentConfig?.model || 'gemini-2.5-flash';
-
-  const config: TenantAIConfig = {
-    provider: (tenant?.aiProvider as any) || 'gemini',
-    apiKey,
-    model,
-    temperature: agentConfig?.temperature || 0.7,
-  };
 
   const aiResult = await callAI(config, prompt);
   let replyText = aiResult.text;
+
+  // Track token usage for Marca Blanca tenants
+  if (isMarcaBlanca && aiResult.tokensUsed > 0) {
+    await incrementTenantUsage(tenantId, aiResult.tokensUsed);
+  }
 
   let isBookingDetected = false;
   let bookingData;

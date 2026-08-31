@@ -5,6 +5,7 @@ import { encrypt, decrypt } from '../services/encryption.js';
 import { createInstance, connectInstance, disconnectInstance, getInstanceStatus, sendMessage } from '../services/evolution.js';
 import { notifyNewTenantEnrollment, notifyPaymentProofUploaded, notifyPaymentApproved } from '../services/superadmin-notify.service.js';
 import { hashPassword } from '../db/users.repo.js';
+import { getAllTenantsMonthlyUsage } from '../db/ai-usage.repo.js';
 
 const router = Router();
 
@@ -63,6 +64,7 @@ router.use(authenticateToken);
 router.use(requireSuperAdmin);
 
 // PLATFORM SETTINGS (AI MASTER KEY & NOTIFY PHONE)
+// PLATFORM SETTINGS (LOCALAI MARCA BLANCA, AI MASTER KEY, NOTIFY PHONE & DEPLOYMENTS)
 router.get('/settings', async (req, res) => {
   try {
     const result = await query(`SELECT key, value, value_encrypted FROM platform_settings`);
@@ -79,7 +81,16 @@ router.get('/settings', async (req, res) => {
       masterAiProvider: settings.master_ai_provider || 'gemini',
       masterAiKey: settings.master_ai_key ? '••••••••' + settings.master_ai_key.slice(-4) : '',
       masterAiModel: settings.master_ai_model || 'gemini-2.5-flash',
-      superadminNotifyPhone: settings.superadmin_notify_phone || ''
+      localaiUrl: settings.localai_url || 'http://localhost:8080/v1',
+      localaiModel: settings.localai_model || 'llama-3.1-8b-instruct',
+      localaiApiKey: settings.localai_api_key ? '••••••••' + settings.localai_api_key.slice(-4) : '',
+      localaiEnabled: settings.localai_enabled !== 'false',
+      quotaStarterTokens: parseInt(settings.quota_starter_tokens || '25000', 10),
+      quotaProTokens: parseInt(settings.quota_pro_tokens || '100000', 10),
+      quotaBusinessTokens: parseInt(settings.quota_business_tokens || '300000', 10),
+      superadminNotifyPhone: settings.superadmin_notify_phone || '',
+      deployWebhookApp: settings.deploy_webhook_app || 'http://2.25.103.200:3000/api/deploy/f5abd18bdaaff3ce20c24522c9c72beac7c756d9260d995b',
+      deployWebhookLocalai: settings.deploy_webhook_localai || 'http://2.25.103.200:3000/api/deploy/4317a4ff5a1ed51532fc824fb9547b6ae20847cd3ef8ea4e'
     });
   } catch (error) {
     console.error('Error fetching platform settings:', error);
@@ -89,21 +100,39 @@ router.get('/settings', async (req, res) => {
 
 router.post('/settings', async (req, res) => {
   try {
-    const { masterAiProvider, masterAiKey, masterAiModel, superadminNotifyPhone } = req.body;
+    const {
+      masterAiProvider,
+      masterAiKey,
+      masterAiModel,
+      localaiUrl,
+      localaiModel,
+      localaiApiKey,
+      localaiEnabled,
+      quotaStarterTokens,
+      quotaProTokens,
+      quotaBusinessTokens,
+      superadminNotifyPhone,
+      deployWebhookApp,
+      deployWebhookLocalai
+    } = req.body;
 
-    if (masterAiProvider) {
+    const upsertSetting = async (key: string, value: string) => {
       await query(`
-        INSERT INTO platform_settings (key, value) VALUES ('master_ai_provider', $1)
+        INSERT INTO platform_settings (key, value) VALUES ($1, $2)
         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = CURRENT_TIMESTAMP
-      `, [masterAiProvider]);
-    }
+      `, [key, value]);
+    };
 
-    if (masterAiModel) {
-      await query(`
-        INSERT INTO platform_settings (key, value) VALUES ('master_ai_model', $1)
-        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = CURRENT_TIMESTAMP
-      `, [masterAiModel]);
-    }
+    if (masterAiProvider) await upsertSetting('master_ai_provider', masterAiProvider);
+    if (masterAiModel) await upsertSetting('master_ai_model', masterAiModel);
+    if (localaiUrl) await upsertSetting('localai_url', localaiUrl.trim());
+    if (localaiModel) await upsertSetting('localai_model', localaiModel.trim());
+    if (localaiEnabled !== undefined) await upsertSetting('localai_enabled', String(localaiEnabled));
+    if (quotaStarterTokens !== undefined) await upsertSetting('quota_starter_tokens', String(quotaStarterTokens));
+    if (quotaProTokens !== undefined) await upsertSetting('quota_pro_tokens', String(quotaProTokens));
+    if (quotaBusinessTokens !== undefined) await upsertSetting('quota_business_tokens', String(quotaBusinessTokens));
+    if (deployWebhookApp) await upsertSetting('deploy_webhook_app', deployWebhookApp.trim());
+    if (deployWebhookLocalai) await upsertSetting('deploy_webhook_localai', deployWebhookLocalai.trim());
 
     if (masterAiKey && !masterAiKey.startsWith('••••••••')) {
       const encrypted = encrypt(masterAiKey.trim());
@@ -113,18 +142,71 @@ router.post('/settings', async (req, res) => {
       `, [encrypted]);
     }
 
+    if (localaiApiKey && !localaiApiKey.startsWith('••••••••')) {
+      const encrypted = encrypt(localaiApiKey.trim());
+      await query(`
+        INSERT INTO platform_settings (key, value_encrypted) VALUES ('localai_api_key', $1)
+        ON CONFLICT (key) DO UPDATE SET value_encrypted = EXCLUDED.value_encrypted, updated_at = CURRENT_TIMESTAMP
+      `, [encrypted]);
+    }
+
     if (superadminNotifyPhone !== undefined) {
       const cleanPhone = (superadminNotifyPhone || '').replace(/\D/g, '');
-      await query(`
-        INSERT INTO platform_settings (key, value) VALUES ('superadmin_notify_phone', $1)
-        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = CURRENT_TIMESTAMP
-      `, [cleanPhone]);
+      await upsertSetting('superadmin_notify_phone', cleanPhone);
     }
 
     res.json({ success: true, message: 'Ajustes de plataforma guardados con éxito' });
   } catch (error) {
     console.error('Error saving platform settings:', error);
     res.status(500).json({ error: 'Error al guardar ajustes de plataforma' });
+  }
+});
+
+// AI USAGE MONITORING FOR ALL TENANTS
+router.get('/ai-usage', async (req, res) => {
+  try {
+    const monthYear = (req.query.monthYear as string) || undefined;
+    const usage = await getAllTenantsMonthlyUsage(monthYear);
+    res.json({ success: true, usage });
+  } catch (error) {
+    console.error('Error fetching AI usage:', error);
+    res.status(500).json({ error: 'Error al obtener consumo de IA' });
+  }
+});
+
+// REMOTE AUTO-DEPLOY TRIGGER
+router.post('/deploy/:target', async (req, res) => {
+  try {
+    const target = req.params.target; // 'app' or 'localai'
+    const settingKey = target === 'localai' ? 'deploy_webhook_localai' : 'deploy_webhook_app';
+
+    const dbRes = await query(`SELECT value FROM platform_settings WHERE key = $1`, [settingKey]);
+    let deployUrl = dbRes.rows[0]?.value;
+
+    if (!deployUrl) {
+      deployUrl = target === 'localai'
+        ? 'http://2.25.103.200:3000/api/deploy/4317a4ff5a1ed51532fc824fb9547b6ae20847cd3ef8ea4e'
+        : 'http://2.25.103.200:3000/api/deploy/f5abd18bdaaff3ce20c24522c9c72beac7c756d9260d995b';
+    }
+
+    console.log(`[Deploy] Triggering webhook for ${target} at ${deployUrl}...`);
+    try {
+      const resp = await fetch(deployUrl, { method: 'POST' });
+      const respText = await resp.text();
+      res.json({ success: true, message: `Despliegue de ${target === 'localai' ? 'Local AI' : 'App Betico'} iniciado con éxito.`, detail: respText });
+    } catch (fetchErr: any) {
+      // If POST failed, try GET as fallback
+      try {
+        const resp2 = await fetch(deployUrl, { method: 'GET' });
+        const respText2 = await resp2.text();
+        res.json({ success: true, message: `Despliegue de ${target === 'localai' ? 'Local AI' : 'App Betico'} iniciado (GET).`, detail: respText2 });
+      } catch (getErr: any) {
+        res.status(502).json({ error: `No se pudo contactar el webhook de despliegue: ${getErr.message}` });
+      }
+    }
+  } catch (error: any) {
+    console.error('Error triggering deploy:', error);
+    res.status(500).json({ error: 'Error al ejecutar webhook de despliegue' });
   }
 });
 

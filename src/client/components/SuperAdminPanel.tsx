@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApi } from '../hooks/useApi';
 import { 
-  Building2, Server, Cpu, Database, HardDrive, DollarSign, TrendingUp, 
+  Building2, Rocket, Server, Cpu, Database, HardDrive, DollarSign, TrendingUp, 
   KeyRound, ExternalLink, ShieldCheck, ShieldAlert, Plus, Edit, Trash2, 
   Activity, Users, RefreshCw, Copy, Check, Lock, CheckCircle, AlertCircle,
   MessageSquare, Bot, ArrowRight, Clock, Award, Wallet, Percent, Layers,
@@ -56,6 +56,22 @@ export default function SuperAdminPanel({ activeTabProp, onTabChangeProp, hideTa
   const [masterAiProvider, setMasterAiProvider] = useState('gemini');
   const [masterAiKey, setMasterAiKey] = useState('');
   const [masterAiModel, setMasterAiModel] = useState('gemini-2.5-flash');
+  const [localaiUrl, setLocalaiUrl] = useState('http://localhost:8080/v1');
+  const [localaiModel, setLocalaiModel] = useState('llama-3.1-8b-instruct');
+  const [localaiApiKey, setLocalaiApiKey] = useState('');
+  const [localaiEnabled, setLocalaiEnabled] = useState(true);
+  const [quotaStarterTokens, setQuotaStarterTokens] = useState(25000);
+  const [quotaProTokens, setQuotaProTokens] = useState(100000);
+  const [quotaBusinessTokens, setQuotaBusinessTokens] = useState(300000);
+  const [deployWebhookApp, setDeployWebhookApp] = useState('http://2.25.103.200:3000/api/deploy/f5abd18bdaaff3ce20c24522c9c72beac7c756d9260d995b');
+  const [deployWebhookLocalai, setDeployWebhookLocalai] = useState('http://2.25.103.200:3000/api/deploy/4317a4ff5a1ed51532fc824fb9547b6ae20847cd3ef8ea4e');
+  const [deployingTarget, setDeployingTarget] = useState<string | null>(null);
+  const [deployMessage, setDeployMessage] = useState<string | null>(null);
+
+  // AI Usage State
+  const [aiUsageList, setAiUsageList] = useState<any[]>([]);
+  const [loadingAiUsage, setLoadingAiUsage] = useState(false);
+
   const [superadminNotifyPhone, setSuperadminNotifyPhone] = useState('');
   const [savingPlatform, setSavingPlatform] = useState(false);
   const [platformSavedToast, setPlatformSavedToast] = useState(false);
@@ -115,10 +131,50 @@ export default function SuperAdminPanel({ activeTabProp, onTabChangeProp, hideTa
         if (data.masterAiProvider) setMasterAiProvider(data.masterAiProvider);
         if (data.masterAiModel) setMasterAiModel(data.masterAiModel);
         if (data.masterAiKey) setMasterAiKey(data.masterAiKey);
+        if (data.localaiUrl) setLocalaiUrl(data.localaiUrl);
+        if (data.localaiModel) setLocalaiModel(data.localaiModel);
+        if (data.localaiApiKey) setLocalaiApiKey(data.localaiApiKey);
+        if (data.localaiEnabled !== undefined) setLocalaiEnabled(data.localaiEnabled);
+        if (data.quotaStarterTokens) setQuotaStarterTokens(data.quotaStarterTokens);
+        if (data.quotaProTokens) setQuotaProTokens(data.quotaProTokens);
+        if (data.quotaBusinessTokens) setQuotaBusinessTokens(data.quotaBusinessTokens);
+        if (data.deployWebhookApp) setDeployWebhookApp(data.deployWebhookApp);
+        if (data.deployWebhookLocalai) setDeployWebhookLocalai(data.deployWebhookLocalai);
         if (data.superadminNotifyPhone) setSuperadminNotifyPhone(data.superadminNotifyPhone);
       }
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const loadAiUsage = async () => {
+    try {
+      setLoadingAiUsage(true);
+      const res = await api.get('/api/superadmin/platform/ai-usage');
+      if (res && res.usage) {
+        setAiUsageList(res.usage);
+      }
+    } catch (e) {
+      console.error('Error loading AI usage:', e);
+    } finally {
+      setLoadingAiUsage(false);
+    }
+  };
+
+  const handleTriggerDeploy = async (target: 'app' | 'localai') => {
+    setDeployingTarget(target);
+    setDeployMessage(null);
+    try {
+      const res = await api.post(`/api/superadmin/platform/deploy/${target}`, {});
+      if (res && res.success) {
+        setDeployMessage(res.message || 'Despliegue iniciado con éxito.');
+      } else {
+        setDeployMessage('Error al iniciar despliegue: ' + (res?.error || 'Desconocido'));
+      }
+    } catch (e: any) {
+      setDeployMessage('Error al ejecutar webhook: ' + (e.message || 'Fallo de conexión'));
+    } finally {
+      setDeployingTarget(null);
     }
   };
 
@@ -143,7 +199,10 @@ export default function SuperAdminPanel({ activeTabProp, onTabChangeProp, hideTa
   useEffect(() => {
     if (activeTab === 'tenants') loadTenants();
     if (activeTab === 'bots') loadInstances();
-    if (activeTab === 'platform') loadPlatformSettings();
+    if (activeTab === 'platform') {
+      loadPlatformSettings();
+      loadAiUsage();
+    }
   }, [activeTab]);
 
   const handleSavePlatformSettings = async (e: React.FormEvent) => {
@@ -154,6 +213,15 @@ export default function SuperAdminPanel({ activeTabProp, onTabChangeProp, hideTa
         masterAiProvider,
         masterAiModel,
         masterAiKey,
+        localaiUrl,
+        localaiModel,
+        localaiApiKey,
+        localaiEnabled,
+        quotaStarterTokens,
+        quotaProTokens,
+        quotaBusinessTokens,
+        deployWebhookApp,
+        deployWebhookLocalai,
         superadminNotifyPhone
       });
       setPlatformSavedToast(true);
@@ -898,98 +966,338 @@ export default function SuperAdminPanel({ activeTabProp, onTabChangeProp, hideTa
         </div>
       )}
 
-      {/* TAB 3: PLATFORM AJUSTES & NOTIFICACIONES */}
+      {/* TAB 3: PLATFORM AJUSTES, IA MARCA BLANCA & DESPLIEGUES */}
       {activeTab === 'platform' && (
-        <div style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '14px', padding: '28px', maxWidth: '750px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
-            <Sliders size={24} color="var(--primary)" />
-            <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 'bold' }}>Ajustes Globales y Notificaciones de SuperAdmin</h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', maxWidth: '900px' }}>
+          
+          <div style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '14px', padding: '24px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+              <Sliders size={24} color="var(--primary)" />
+              <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 'bold' }}>Ajustes Globales, IA Marca Blanca & Despliegue</h3>
+            </div>
+            <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+              Configura tu motor LocalAI privado, límites de tokens por plan, llaves de respaldo y dispara despliegues en la VPS.
+            </p>
           </div>
-          <p style={{ margin: '0 0 24px 0', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-            Configura la Llave Maestra de IA de Betico y el número telefónico para recibir alertas en tiempo real de registros, comprobantes y morosidad.
-          </p>
 
           {platformSavedToast && (
-            <div style={{ padding: '12px 16px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534', borderRadius: '6px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.88rem', fontWeight: 'bold' }}>
-              <CheckCircle size={18} /> ¡Ajustes guardados con éxito!
+            <div style={{ padding: '12px 16px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.88rem', fontWeight: 'bold' }}>
+              <CheckCircle size={18} /> ¡Ajustes globales guardados con éxito!
             </div>
           )}
 
-          <form onSubmit={handleSavePlatformSettings} style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-            
-            {/* SuperAdmin Notification Phone */}
-            <div style={{ backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '10px', padding: '16px' }}>
-              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', color: '#1e3a8a', marginBottom: '4px' }}>
-                📱 Teléfono de WhatsApp para Notificaciones de SuperAdmin
-              </label>
-              <input
-                type="text"
-                placeholder="50688888888"
-                value={superadminNotifyPhone}
-                onChange={(e) => setSuperadminNotifyPhone(e.target.value)}
-                style={{ width: '100%', padding: '9px 12px', borderRadius: '6px', border: '1px solid #93c5fd', fontSize: '0.9rem' }}
-              />
-              <span style={{ fontSize: '0.75rem', color: '#1e40af', display: 'block', marginTop: '4px' }}>
-                El sistema enviará a este WhatsApp las alertas automáticas de nuevos negocios inscritos, comprobantes recibidos y cuentas suspendidas.
+          {/* SECTION: REMOTE AUTO-DEPLOY WEBHOOKS */}
+          <div style={{ backgroundColor: '#0f172a', color: 'white', borderRadius: '14px', padding: '22px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Rocket size={20} color="#38bdf8" />
+                <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 'bold', color: '#f8fafc' }}>Despliegue Instantáneo en Servidor VPS</h4>
+              </div>
+              <span style={{ fontSize: '0.72rem', backgroundColor: '#1e293b', padding: '4px 8px', borderRadius: '6px', color: '#94a3b8' }}>
+                Webhooks Remotos
               </span>
             </div>
 
-            {/* Master AI Provider */}
-            <div>
-              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '4px' }}>
-                Proveedor de IA Maestro de la Plataforma
-              </label>
-              <select
-                value={masterAiProvider}
-                onChange={(e) => {
-                  setMasterAiProvider(e.target.value);
-                  setMasterAiModel(e.target.value === 'gemini' ? 'gemini-2.5-flash' : e.target.value === 'openai' ? 'gpt-4o-mini' : 'claude-3-5-haiku-20241022');
+            <p style={{ margin: '0 0 16px 0', fontSize: '0.82rem', color: '#cbd5e1', lineHeight: '1.4' }}>
+              Dispara el ciclo de compilación, git pull y reinicio automático de tus contenedores directamente en tu VPS (2.25.103.200).
+            </p>
+
+            {deployMessage && (
+              <div style={{ padding: '10px 14px', backgroundColor: '#1e293b', border: '1px solid #38bdf8', borderRadius: '8px', marginBottom: '14px', fontSize: '0.82rem', color: '#38bdf8' }}>
+                {deployMessage}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => handleTriggerDeploy('app')}
+                disabled={deployingTarget === 'app'}
+                style={{
+                  padding: '10px 18px', backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '8px',
+                  fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px'
                 }}
-                style={{ width: '100%', padding: '9px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.9rem' }}
               >
-                <option value="gemini">Google Gemini (Recomendado - Multimodal Flash)</option>
-                <option value="openai">OpenAI (GPT-4o Mini / GPT-4o)</option>
-                <option value="anthropic">Anthropic (Claude 3.7 / 3.5)</option>
-              </select>
+                <RefreshCw size={15} /> {deployingTarget === 'app' ? 'Desplegando App...' : '🚀 Desplegar App Betico'}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleTriggerDeploy('localai')}
+                disabled={deployingTarget === 'localai'}
+                style={{
+                  padding: '10px 18px', backgroundColor: '#059669', color: 'white', border: 'none', borderRadius: '8px',
+                  fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px'
+                }}
+              >
+                <Bot size={15} /> {deployingTarget === 'localai' ? 'Desplegando LocalAI...' : '⚡ Desplegar Local AI'}
+              </button>
+            </div>
+          </div>
+
+          <form onSubmit={handleSavePlatformSettings} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            
+            {/* SECTION: LOCALAI / IA MARCA BLANCA */}
+            <div style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '14px', padding: '22px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
+                <Bot size={20} color="var(--primary)" />
+                <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 'bold' }}>Motor de IA de Marca Blanca (LocalAI / Privado)</h4>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 'bold', marginBottom: '4px' }}>
+                    URL del Servidor LocalAI / Endpoint OpenAI-Compatible *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={localaiUrl}
+                    onChange={(e) => setLocalaiUrl(e.target.value)}
+                    placeholder="http://localhost:8080/v1 o http://2.25.103.200:8080/v1"
+                    style={{ width: '100%', padding: '9px 12px', borderRadius: '6px', border: '1px solid var(--border)' }}
+                  />
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                    Endpoint donde está corriendo tu contenedor de LocalAI en la VPS.
+                  </span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 'bold', marginBottom: '4px' }}>
+                      Modelo Local Principal
+                    </label>
+                    <input
+                      type="text"
+                      value={localaiModel}
+                      onChange={(e) => setLocalaiModel(e.target.value)}
+                      placeholder="llama-3.1-8b-instruct, qwen2.5-7b, etc."
+                      style={{ width: '100%', padding: '9px 12px', borderRadius: '6px', border: '1px solid var(--border)' }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 'bold', marginBottom: '4px' }}>
+                      Llave de API de LocalAI (Opcional)
+                    </label>
+                    <input
+                      type="password"
+                      value={localaiApiKey}
+                      onChange={(e) => setLocalaiApiKey(e.target.value)}
+                      placeholder="•••••••• (Si configuraste token en LocalAI)"
+                      style={{ width: '100%', padding: '9px 12px', borderRadius: '6px', border: '1px solid var(--border)' }}
+                    />
+                  </div>
+                </div>
+
+              </div>
             </div>
 
-            <div>
-              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '4px' }}>
-                Modelo Neuronal Maestro
-              </label>
-              <input
-                type="text"
-                value={masterAiModel}
-                onChange={(e) => setMasterAiModel(e.target.value)}
-                placeholder="gemini-2.5-flash, gpt-4o-mini, etc."
-                style={{ width: '100%', padding: '9px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.9rem' }}
-              />
+            {/* SECTION: TOKEN QUOTA LIMITS PER PLAN */}
+            <div style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '14px', padding: '22px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
+                <ShieldAlert size={20} color="#ea580c" />
+                <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 'bold' }}>Límites y Cuotas Mensuales de Tokens por Plan</h4>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '4px' }}>
+                    Plan Starter (Tokens/mes)
+                  </label>
+                  <input
+                    type="number"
+                    value={quotaStarterTokens}
+                    onChange={(e) => setQuotaStarterTokens(Number(e.target.value))}
+                    style={{ width: '100%', padding: '9px 12px', borderRadius: '6px', border: '1px solid var(--border)' }}
+                  />
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Aprox. 800 mensajes</span>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '4px' }}>
+                    Plan Pro (Tokens/mes)
+                  </label>
+                  <input
+                    type="number"
+                    value={quotaProTokens}
+                    onChange={(e) => setQuotaProTokens(Number(e.target.value))}
+                    style={{ width: '100%', padding: '9px 12px', borderRadius: '6px', border: '1px solid var(--border)' }}
+                  />
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Aprox. 3,500 mensajes</span>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '4px' }}>
+                    Plan Business (Tokens/mes)
+                  </label>
+                  <input
+                    type="number"
+                    value={quotaBusinessTokens}
+                    onChange={(e) => setQuotaBusinessTokens(Number(e.target.value))}
+                    style={{ width: '100%', padding: '9px 12px', borderRadius: '6px', border: '1px solid var(--border)' }}
+                  />
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Aprox. 10,000 mensajes</span>
+                </div>
+              </div>
             </div>
 
-            <div>
-              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '4px' }}>
-                Llave de API Maestra (Cifrado AES-256)
-              </label>
-              <input
-                type="password"
-                value={masterAiKey}
-                onChange={(e) => setMasterAiKey(e.target.value)}
-                placeholder="Pega aquí la API Key maestra de la plataforma"
-                style={{ width: '100%', padding: '9px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.9rem' }}
-              />
+            {/* SECTION: BACKUP MASTER KEY & NOTIFICATIONS */}
+            <div style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '14px', padding: '22px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
+                <Key size={20} color="var(--primary)" />
+                <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 'bold' }}>Llave Maestra de Respaldo (Fallback Failover)</h4>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 'bold', marginBottom: '4px' }}>
+                      Proveedor de Respaldo
+                    </label>
+                    <select
+                      value={masterAiProvider}
+                      onChange={(e) => {
+                        setMasterAiProvider(e.target.value);
+                        setMasterAiModel(e.target.value === 'gemini' ? 'gemini-2.5-flash' : 'gpt-4o-mini');
+                      }}
+                      style={{ width: '100%', padding: '9px 12px', borderRadius: '6px', border: '1px solid var(--border)' }}
+                    >
+                      <option value="gemini">Google Gemini (Recomendado)</option>
+                      <option value="openai">OpenAI (ChatGPT)</option>
+                      <option value="anthropic">Anthropic (Claude)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 'bold', marginBottom: '4px' }}>
+                      Modelo de Respaldo
+                    </label>
+                    <input
+                      type="text"
+                      value={masterAiModel}
+                      onChange={(e) => setMasterAiModel(e.target.value)}
+                      style={{ width: '100%', padding: '9px 12px', borderRadius: '6px', border: '1px solid var(--border)' }}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 'bold', marginBottom: '4px' }}>
+                    API Key Maestra de Respaldo (AES-256)
+                  </label>
+                  <input
+                    type="password"
+                    value={masterAiKey}
+                    onChange={(e) => setMasterAiKey(e.target.value)}
+                    placeholder="Pega aquí tu llave de respaldo de Google AI Studio o OpenAI"
+                    style={{ width: '100%', padding: '9px 12px', borderRadius: '6px', border: '1px solid var(--border)' }}
+                  />
+                </div>
+
+                {/* SuperAdmin Notification Phone */}
+                <div style={{ backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '10px', padding: '14px' }}>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 'bold', color: '#1e3a8a', marginBottom: '4px' }}>
+                    📱 WhatsApp de Notificaciones de SuperAdmin
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="50688888888"
+                    value={superadminNotifyPhone}
+                    onChange={(e) => setSuperadminNotifyPhone(e.target.value)}
+                    style={{ width: '100%', padding: '9px 12px', borderRadius: '6px', border: '1px solid #93c5fd' }}
+                  />
+                </div>
+              </div>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
               <button
                 type="submit"
                 disabled={savingPlatform}
-                style={{ padding: '10px 22px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}
+                style={{ padding: '11px 24px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.9rem' }}
               >
-                {savingPlatform ? 'Guardando...' : 'Guardar Ajustes de Plataforma'}
+                {savingPlatform ? 'Guardando Ajustes...' : 'Guardar Todos los Ajustes'}
               </button>
             </div>
 
           </form>
+
+          {/* SECTION: AI USAGE PER TENANT TABLE */}
+          <div style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '14px', padding: '22px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <TrendingUp size={20} color="var(--primary)" />
+                <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 'bold' }}>Monitoreo de Consumo de IA por Inquilino (Mes Actual)</h4>
+              </div>
+              <button
+                type="button"
+                onClick={loadAiUsage}
+                style={{ padding: '5px 10px', border: '1px solid var(--border)', backgroundColor: 'transparent', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}
+              >
+                Refrescar
+              </button>
+            </div>
+
+            {loadingAiUsage ? (
+              <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)' }}>Cargando métricas de IA...</div>
+            ) : aiUsageList.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)' }}>No hay consumo registrado este mes aún.</div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                  <thead>
+                    <tr style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid var(--border)', textAlign: 'left', color: 'var(--text-muted)' }}>
+                      <th style={{ padding: '10px 12px' }}>Inquilino</th>
+                      <th style={{ padding: '10px 12px' }}>Plan</th>
+                      <th style={{ padding: '10px 12px' }}>Tokens Usados / Límite</th>
+                      <th style={{ padding: '10px 12px' }}>Consultas</th>
+                      <th style={{ padding: '10px 12px', textAlign: 'center' }}>Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {aiUsageList.map(u => (
+                      <tr key={u.tenantId} style={{ borderBottom: '1px solid var(--border)' }}>
+                        <td style={{ padding: '10px 12px' }}>
+                          <strong>{u.tenantName}</strong>
+                          <code style={{ fontSize: '0.72rem', display: 'block', color: 'var(--primary)' }}>{u.slug}</code>
+                        </td>
+                        <td style={{ padding: '10px 12px' }}>
+                          <span style={{ textTransform: 'uppercase', fontWeight: 'bold' }}>{u.plan}</span>
+                        </td>
+                        <td style={{ padding: '10px 12px' }}>
+                          <div>
+                            <strong>{Number(u.tokensUsed || 0).toLocaleString('es-CR')}</strong> / {Number(u.limit || 25000).toLocaleString('es-CR')} ({u.percentageUsed}%)
+                          </div>
+                          <div style={{ width: '120px', height: '6px', backgroundColor: '#e2e8f0', borderRadius: '3px', marginTop: '4px', overflow: 'hidden' }}>
+                            <div style={{
+                              width: Math.min(100, u.percentageUsed) + '%',
+                              height: '100%',
+                              backgroundColor: u.isExceeded ? '#ef4444' : u.percentageUsed > 70 ? '#f59e0b' : '#10b981'
+                            }} />
+                          </div>
+                        </td>
+                        <td style={{ padding: '10px 12px' }}>
+                          <strong>{u.requestsCount || 0}</strong>
+                        </td>
+                        <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                          <span style={{
+                            padding: '2px 8px', borderRadius: '10px', fontSize: '0.72rem', fontWeight: 'bold',
+                            backgroundColor: u.isExceeded ? '#fee2e2' : '#dcfce7',
+                            color: u.isExceeded ? '#991b1b' : '#15803d'
+                          }}>
+                            {u.isExceeded ? '🔴 Excedido' : '🟢 Al Día'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
         </div>
       )}
 

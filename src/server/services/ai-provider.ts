@@ -3,19 +3,20 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createAnthropic } from '@ai-sdk/anthropic';
 
-import { query } from '../db/pool';
-import { decrypt } from './encryption';
+import { query } from '../db/pool.js';
+import { decrypt } from './encryption.js';
 
 export interface TenantAIConfig {
-  provider: 'gemini' | 'openai' | 'anthropic';
+  provider: 'gemini' | 'openai' | 'anthropic' | 'localai' | 'betico_ai';
   apiKey: string;
   model: string;
   temperature: number;
+  baseUrl?: string;
 }
 
 const DEFAULT_GEMINI_KEY = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || '';
 
-export function getDefaultModels(provider: 'gemini' | 'openai' | 'anthropic'): string[] {
+export function getDefaultModels(provider: string): string[] {
   switch (provider) {
     case 'gemini':
       return [
@@ -40,6 +41,15 @@ export function getDefaultModels(provider: 'gemini' | 'openai' | 'anthropic'): s
         'claude-3-5-sonnet-20241022',
         'claude-3-5-haiku-20241022'
       ];
+    case 'localai':
+    case 'betico_ai':
+      return [
+        'llama-3.1-8b-instruct',
+        'qwen2.5-7b-instruct',
+        'llama-3.2-3b-instruct',
+        'phi-3.5-mini',
+        'mistral-7b-instruct'
+      ];
     default:
       return [];
   }
@@ -47,7 +57,7 @@ export function getDefaultModels(provider: 'gemini' | 'openai' | 'anthropic'): s
 
 export async function getMasterAIConfig(): Promise<TenantAIConfig> {
   try {
-    const res = await query(`SELECT key, value, value_encrypted FROM platform_settings WHERE key IN ('master_ai_provider', 'master_ai_key', 'master_ai_model')`);
+    const res = await query("SELECT key, value, value_encrypted FROM platform_settings WHERE key IN ('master_ai_provider', 'master_ai_key', 'master_ai_model', 'localai_url', 'localai_model', 'localai_api_key', 'localai_enabled')");
     const settings: Record<string, string> = {};
     for (const row of res.rows) {
       if (row.value_encrypted) {
@@ -58,6 +68,17 @@ export async function getMasterAIConfig(): Promise<TenantAIConfig> {
     }
 
     const provider = (settings.master_ai_provider as any) || 'gemini';
+    
+    if (provider === 'localai' || provider === 'betico_ai') {
+      return {
+        provider: 'localai',
+        apiKey: settings.localai_api_key || 'localai',
+        model: settings.localai_model || 'llama-3.1-8b-instruct',
+        temperature: 0.7,
+        baseUrl: settings.localai_url || process.env.LOCALAI_URL || 'http://localhost:8080/v1'
+      };
+    }
+
     const apiKey = settings.master_ai_key || DEFAULT_GEMINI_KEY;
     const model = settings.master_ai_model || (provider === 'gemini' ? 'gemini-2.5-flash' : provider === 'openai' ? 'gpt-4o-mini' : 'claude-3-5-haiku-20241022');
 
@@ -80,7 +101,7 @@ export async function getMasterAIConfig(): Promise<TenantAIConfig> {
 export async function callAI(config: TenantAIConfig, prompt: string): Promise<{ text: string, tokensUsed: number }> {
   const provider = config.provider || 'gemini';
   const apiKey = config.apiKey || (provider === 'gemini' ? DEFAULT_GEMINI_KEY : '');
-  const chosenModel = config.model || 'gemini-2.5-flash';
+  const chosenModel = config.model || (provider === 'localai' || provider === 'betico_ai' ? 'llama-3.1-8b-instruct' : 'gemini-2.5-flash');
   
   const defaultModels = getDefaultModels(provider);
   const fallbackModels = [chosenModel, ...defaultModels.filter(m => m !== chosenModel)];
@@ -93,11 +114,27 @@ export async function callAI(config: TenantAIConfig, prompt: string): Promise<{ 
         provider,
         apiKey,
         model: modelName,
-        temperature: config.temperature ?? 0.7
+        temperature: config.temperature ?? 0.7,
+        baseUrl: config.baseUrl
       }, prompt);
     } catch (error) {
       lastError = error;
-      console.error(`Error calling AI with model ${modelName}:`, error);
+      console.error("Error calling AI with model " + modelName + " (" + provider + "):", error);
+    }
+  }
+
+  // RESILIENT FAILOVER: If LocalAI failed, fallback to Master Gemini 2.5 Flash
+  if (provider === 'localai' || provider === 'betico_ai') {
+    console.warn('[AI-Provider] LocalAI unavailable. Engaging Master Gemini Failover...');
+    try {
+      return await executeProvider({
+        provider: 'gemini',
+        apiKey: DEFAULT_GEMINI_KEY,
+        model: 'gemini-2.5-flash',
+        temperature: 0.7
+      }, prompt);
+    } catch (geminiError) {
+      console.error('[AI-Provider] Master Gemini Failover also failed:', geminiError);
     }
   }
 
@@ -122,18 +159,32 @@ async function executeProvider(config: TenantAIConfig, prompt: string) {
   } else if (config.provider === 'anthropic') {
     const anthropic = createAnthropic({ apiKey: config.apiKey });
     model = anthropic(config.model || 'claude-3-5-haiku-20241022');
+  } else if (config.provider === 'localai' || config.provider === 'betico_ai') {
+    const localai = createOpenAI({
+      baseURL: config.baseUrl || process.env.LOCALAI_URL || 'http://localhost:8080/v1',
+      apiKey: config.apiKey || 'localai'
+    });
+    model = localai(config.model || 'llama-3.1-8b-instruct');
   } else {
-    throw new Error(`Unsupported provider: ${config.provider}`);
+    throw new Error("Unsupported provider: " + config.provider);
   }
 
-  const { text, usage } = await generateText({
-    model,
-    prompt,
-    temperature: config.temperature ?? 0.7,
+  // 12s timeout guard for local inference
+  const timeoutPromise = new Promise<{ text: string, tokensUsed: number }>((_, reject) => {
+    setTimeout(() => reject(new Error('AI inference timeout after 12s')), 12000);
   });
 
-  return {
-    text,
-    tokensUsed: usage?.totalTokens || 0,
-  };
+  const generatePromise = (async () => {
+    const { text, usage } = await generateText({
+      model,
+      prompt,
+      temperature: config.temperature ?? 0.7,
+    });
+    return {
+      text,
+      tokensUsed: usage?.totalTokens || Math.ceil((prompt.length + text.length) / 4),
+    };
+  })();
+
+  return await Promise.race([generatePromise, timeoutPromise]);
 }

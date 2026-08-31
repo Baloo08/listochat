@@ -45,4 +45,25 @@ router.post('/simulate', async (req, res) => {
   }
 });
 
+import { getTenantCurrentMonthUsage } from '../db/ai-usage.repo.js';
+import { getTenantById } from '../db/tenant.repo.js';
+
+router.get('/ai-quota', async (req, res) => {
+  try {
+    const usage = await getTenantCurrentMonthUsage(req.tenantId);
+    const tenant = await getTenantById(req.tenantId);
+    const isUsingOwnKey = !!tenant?.aiApiKeyEncrypted;
+
+    res.json({
+      success: true,
+      ...usage,
+      isUsingOwnKey,
+      provider: tenant?.aiProvider || 'localai'
+    });
+  } catch (error) {
+    console.error('Error fetching tenant AI quota:', error);
+    res.status(500).json({ error: 'Error al obtener cuota de IA' });
+  }
+});
+
 export default router;
