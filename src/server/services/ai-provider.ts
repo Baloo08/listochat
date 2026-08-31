@@ -5,6 +5,7 @@ import { createAnthropic } from '@ai-sdk/anthropic';
 
 import { query } from '../db/pool.js';
 import { decrypt } from './encryption.js';
+import { env } from '../config/env.js';
 
 export interface TenantAIConfig {
   provider: 'gemini' | 'openai' | 'anthropic' | 'localai' | 'betico_ai';
@@ -14,7 +15,7 @@ export interface TenantAIConfig {
   baseUrl?: string;
 }
 
-const DEFAULT_GEMINI_KEY = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || '';
+const DEFAULT_GEMINI_KEY = env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || 'AQ.Ab8RN6IHcdDKDITkdIOjt8SznSc6lS_1grotOA6SQ6fjZnd2SQ';
 
 export function getDefaultModels(provider: string): string[] {
   switch (provider) {

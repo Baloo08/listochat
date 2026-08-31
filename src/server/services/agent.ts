@@ -46,107 +46,112 @@ export async function processWhatsAppMessageWithAI(
   const storeUrl = tenant?.slug ? `${baseUrl}/tienda/${tenant.slug}` : '';
   const bookingUrl = tenant?.slug ? `${baseUrl}/reservas/${tenant.slug}` : '';
 
-  // Format Payment Methods Info
-  let paymentInfo = 'Métodos de Pago Disponibles:\n';
-  if (store?.acceptSinpe && store.sinpePhone) {
-    paymentInfo += `- SINPE Móvil: ${store.sinpePhone} (Titular: ${store.sinpeName || tenant?.name})\n`;
-  }
-  if (store?.acceptTransfer && store.bankAccountInfo) {
-    paymentInfo += `- Transferencia Bancaria: ${store.bankAccountInfo}\n`;
-  }
-  if (store?.acceptCashOnDelivery) {
-    paymentInfo += `- Efectivo / Contra entrega aceptado\n`;
-  }
-  if (store?.deliveryEnabled) {
-    paymentInfo += `- Envíos a domicilio: Tarifa estándar ₡${Number(store.deliveryFee || 0).toLocaleString('es-CR')}\n`;
-  }
-  if (store?.pickupEnabled) {
-    paymentInfo += `- Retiro en tienda/local disponible gratis\n`;
+  // 1. SMART INTENT DETECTION & KEYWORD MATCHING
+  const lowerMsg = userMessage.toLowerCase().trim();
+  const isPureGreeting = /^(hola|buenas|buenos dias|buenas tardes|buenas noches|hey|alo|hi|saludos|pura vida|hola que tal|hola como estas)[\s!.,?]*$/i.test(lowerMsg);
+  const asksForServices = /servicio|cita|reserva|agenda|agendar|horario|hora|fecha|disponib|turno|atencion/i.test(lowerMsg);
+  const asksForProducts = /precio|costo|cuanto|venden|catalogo|menu|producto|comprar|pedir|orden|foto|imagen|quiero|plato|comida|pizza|hamburguesa/i.test(lowerMsg);
+  const asksForPayments = /sinpe|transferencia|pago|pagar|cuenta|banco|efectivo|tarjeta|cuentas/i.test(lowerMsg);
+  const asksForLocation = /ubicacion|donde|direccion|llegar|local|tienda|sucursal|mapa/i.test(lowerMsg);
+
+  // 2. CONTEXT-AWARE PAYMENT INFO
+  let paymentInfo = '';
+  if (asksForPayments || asksForProducts || !isPureGreeting) {
+    paymentInfo = 'Métodos de Pago: ';
+    const methods: string[] = [];
+    if (store?.acceptSinpe && store.sinpePhone) methods.push(`SINPE Móvil: ${store.sinpePhone} (${store.sinpeName || tenant?.name})`);
+    if (store?.acceptTransfer && store.bankAccountInfo) methods.push(`Transferencia: ${store.bankAccountInfo}`);
+    if (store?.acceptCashOnDelivery) methods.push('Efectivo contra entrega');
+    if (store?.deliveryEnabled) methods.push(`Envío: ₡${Number(store.deliveryFee || 0).toLocaleString('es-CR')}`);
+    paymentInfo += methods.join(' | ') + '\n';
   }
 
-  // Format Schedule & Availability Info
-  let scheduleInfo = 'Horarios y Disponibilidad de Agenda:\n';
-  if (schedule?.jornadaConfig) {
-    const j = schedule.jornadaConfig;
-    scheduleInfo += `- Horario de atención: ${j.startHour || '08:00'} a ${j.endHour || '17:00'}\n`;
-    scheduleInfo += `- Duración estándar por cita: ${j.slotMinutes || 45} minutos\n`;
-    if (j.hasBreak) {
-      scheduleInfo += `- Horario de descanso/almuerzo: ${j.breakStart || '12:00'} a ${j.breakEnd || '13:00'}\n`;
+  // 3. CONTEXT-AWARE SCHEDULE INFO
+  let scheduleInfo = '';
+  if (asksForServices || asksForLocation || !isPureGreeting) {
+    if (schedule?.jornadaConfig) {
+      const j = schedule.jornadaConfig;
+      scheduleInfo = `Horario de Atención: ${j.startHour || '08:00'} a ${j.endHour || '17:00'} (Citas de ${j.slotMinutes || 45} min)\n`;
+    }
+    if (schedule?.vacationConfig?.enabled) {
+      const v = schedule.vacationConfig;
+      scheduleInfo += `⚠️ CIERRE TEMPORAL ACTIVO: del ${v.startDate} al ${v.endDate}. Mensaje: "${v.message}"\n`;
     }
   }
 
-  if (schedule?.vacationConfig?.enabled) {
-    const v = schedule.vacationConfig;
-    scheduleInfo += `\n⚠️ ATENCIÓN - MODO VACACIONES / CIERRE TEMPORAL ACTIVO:\n`;
-    scheduleInfo += `- Período de cierre: del ${v.startDate} al ${v.endDate}\n`;
-    scheduleInfo += `- Mensaje al cliente: "${v.message}"\n`;
-    scheduleInfo += `- Si el cliente solicita cita dentro de esas fechas, infórmale amablemente del cierre temporal.\n`;
-  }
-
-  if (schedule?.customFields && schedule.customFields.length > 0) {
-    scheduleInfo += `\nPreguntas específicas que debes hacer al cliente al agendar:\n`;
-    schedule.customFields.forEach((f: any) => {
-      scheduleInfo += `- ${f.label}${f.required ? ' (Requerido)' : ' (Opcional)'}\n`;
+  // 4. SMART FILTERING FOR SERVICES (Dense single-line format)
+  let relevantServicesText = '';
+  if (!isPureGreeting) {
+    const userWords = lowerMsg.split(/\s+/).filter(w => w.length > 2);
+    let matchedServices = services.filter(s => {
+      const sName = s.name.toLowerCase();
+      const sCat = (s.category || '').toLowerCase();
+      return userWords.some(w => sName.includes(w) || sCat.includes(w));
     });
+
+    if (matchedServices.length === 0) {
+      matchedServices = services.slice(0, 6); // Top 6 if generic query
+    }
+
+    if (matchedServices.length > 0) {
+      relevantServicesText = 'Servicios Disponibles:\n' + matchedServices.map(s => 
+        `• ${s.name}: ₡${Number(s.price || 0).toLocaleString('es-CR')} (${s.duration || `${s.estimatedMinutes || 45} min`})`
+      ).join('\n') + '\n';
+    }
   }
 
-  const formatProductWithPhoto = (p: any) => {
-    let photoUrl = '';
-    if (p.images && p.images.length > 0) {
-      const rawUrl = p.images[0].url;
-      photoUrl = rawUrl.startsWith('http') ? rawUrl : `${baseUrl}${rawUrl}`;
+  // 5. SMART FILTERING FOR PRODUCTS (Dense single-line format with Photo URL)
+  let relevantProductsText = '';
+  if (!isPureGreeting && products.length > 0) {
+    const userWords = lowerMsg.split(/\s+/).filter(w => w.length > 2);
+    let matchedProducts = products.filter(p => {
+      const pName = p.name.toLowerCase();
+      const pCat = (p.category || '').toLowerCase();
+      const pTags = Array.isArray(p.tags) ? p.tags.join(' ').toLowerCase() : '';
+      return userWords.some(w => pName.includes(w) || pCat.includes(w) || pTags.includes(w));
+    });
+
+    if (matchedProducts.length === 0) {
+      matchedProducts = products.slice(0, 6); // Top 6 if generic menu query
     }
-    return `• ${p.name}: ${p.description || ''} | Precio: ₡${Number(p.price || 0).toLocaleString('es-CR')} | Stock: ${p.stock ?? 'disponible'}${photoUrl ? ` | FotoURL: ${photoUrl}` : ''}`;
-  };
 
+    relevantProductsText = 'Catálogo de Productos:\n' + matchedProducts.map(p => {
+      let photoUrl = '';
+      if (p.images && p.images.length > 0) {
+        const rawUrl = p.images[0].url;
+        photoUrl = rawUrl.startsWith('http') ? rawUrl : `${baseUrl}${rawUrl}`;
+      }
+      return `• ${p.name}: ₡${Number(p.price || 0).toLocaleString('es-CR')} | Stock:${p.stock ?? 'disp'}${photoUrl ? ` | Foto:${photoUrl}` : ''}`;
+    }).join('\n') + '\n';
+  }
+
+  // 6. BUILD HIGH-DENSITY, LEAN PROMPT
   let prompt = `
-Eres el Asistente Virtual Oficial con Inteligencia Artificial de *${tenant?.name || 'nuestro negocio'}* en WhatsApp.
+Eres el Asistente Virtual Oficial con IA de *${tenant?.name || 'nuestro negocio'}* en WhatsApp.
+System Prompt: ${agentConfig?.systemPrompt || 'Atiende amablemente a los clientes, brinda información de servicios y ayuda a agendar citas o compras.'}
 
-Configuración e Instrucciones de Personalidad (System Prompt):
-${agentConfig?.systemPrompt || 'Atiende amablemente a los clientes, brinda información de servicios y ayuda a agendar citas o compras.'}
-
-Contexto Operativo y Enlaces Oficiales en Tiempo Real:
-- Fecha y hora actual en Costa Rica: ${crTime}
-- Nombre del cliente: ${senderName}
-- Teléfono del cliente: ${senderPhone}
-${bookingUrl ? `- Enlace directo del negocio para agendar citas en línea: ${bookingUrl}` : ''}
-${storeUrl ? `- Enlace directo a la tienda / menú en línea: ${storeUrl}` : ''}
-
-${scheduleInfo}
-
-${paymentInfo}
-
-Catálogo Oficial de Servicios Disponibles:
-${services.length > 0 ? services.map(s => `• ${s.name}: ${s.description || ''} | Precio: ₡${Number(s.price || 0).toLocaleString('es-CR')} | Duración: ${s.duration || `${s.estimatedMinutes || 45} min`}`).join('\n') : 'No hay servicios registrados actualmente.'}
-
-Catálogo Oficial de Productos Disponibles:
-${products.length > 0 ? products.map(p => formatProductWithPhoto(p)).join('\n') : 'No hay productos en inventario actualmente.'}
-
-Historial Reciente de la Conversación:
-${chatHistory.map(h => `${h.role === 'user' ? 'Cliente' : 'Asistente'}: ${h.content}`).join('\n')}
+Contexto:
+- Fecha/Hora (Costa Rica): ${crTime}
+- Cliente: ${senderName} (${senderPhone})
+${bookingUrl ? `- Enlace de Citas: ${bookingUrl}` : ''}
+${storeUrl ? `- Enlace de Tienda/Menú: ${storeUrl}` : ''}
+${scheduleInfo}${paymentInfo}${relevantServicesText}${relevantProductsText}
+Historial Reciente:
+${chatHistory.slice(-6).map(h => `${h.role === 'user' ? 'Cliente' : 'Asistente'}: ${h.content}`).join('\n')}
 
 Último mensaje recibido:
 Cliente: ${userMessage}
 
-Instrucciones Especiales y Comandos Ocultos (NO los muestres al cliente en el texto visible, inclúyelos en tu respuesta SOLAMENTE si se confirman los datos o se solicita una foto):
-- Si el cliente solicita ver una foto, imagen o cómo luce un producto y dicho producto tiene FotoURL en el catálogo, incluye al final de tu respuesta EXACTAMENTE:
-  <<<COMMAND_SEND_MEDIA: {"mediaUrl": "URL_DE_LA_FOTO", "caption": "Descripción breve del producto"}>>>
-- Si el cliente pregunta por la tienda, catálogo digital o menú completo, invítalo educadamente y dale el enlace: ${storeUrl || 'nuestro catálogo digital'}
-- Si el cliente pregunta cómo agendar una cita o ver los horarios disponibles, dale el enlace: ${bookingUrl || 'nuestro portal de reservas'}
-- Si el cliente confirma de forma definitiva querer agendar un servicio (con fecha y hora confirmadas), incluye al final de tu respuesta EXACTAMENTE:
-  <<<COMMAND_BOOKING: {"service": "Nombre del servicio", "date": "YYYY-MM-DD", "time": "HH:MM", "customerName": "${senderName}"}>>>
-- Si el cliente confirma de forma definitiva querer hacer una compra de productos (con productos específicos y cantidades claras), incluye al final de tu respuesta EXACTAMENTE:
-  <<<COMMAND_ORDER: {"items": [{"productName": "Nombre exacto del producto del catálogo", "quantity": 1}]}>>>
-- Si el cliente pide hablar con un humano o asesor, incluye al final:
-  <<<COMMAND_HANDOFF: {"reason": "Motivo breve"}>>>
+Instrucciones y Comandos (Inclúyelos al final de tu respuesta solo si se confirman):
+- Foto de producto: <<<COMMAND_SEND_MEDIA: {"mediaUrl": "URL_DE_FOTO", "caption": "Descripción"}>>>
+- Confirmar cita: <<<COMMAND_BOOKING: {"service": "Nombre servicio", "date": "YYYY-MM-DD", "time": "HH:MM", "customerName": "${senderName}"}>>>
+- Confirmar compra: <<<COMMAND_ORDER: {"items": [{"productName": "Nombre exacto", "quantity": 1}]}>>>
+- Transferir a humano: <<<COMMAND_HANDOFF: {"reason": "Motivo"}>>>
 
-Reglas estrictas de comportamiento e Inteligencia:
-1. SUPRESIÓN DE SALUDOS REDUNDANTES: Si ya existen mensajes previos en el 'Historial Reciente de la Conversación' (${chatHistory.length} mensajes previos), NO vuelvas a saludar (no digas "¡Hola!", "Buenas tardes", "¿Cómo te ayudo?"). Ve DIRECTO al grano respondiendo lo que el cliente consultó.
-2. INTERPRETACIÓN FLEXIBLE DE PRODUCTOS (Fuzzy Matching): Si el cliente pide un producto con palabras coloquiales o incompletas (por ejemplo: "quiero una de pepperoni", "dame una hamburguesa"), asócialo inteligentemente con el producto correspondiente del Catálogo Oficial. Si hay ambigüedad o múltiples variantes/tamaños, pregúntale amablemente cuál prefiere antes de crear la orden.
-3. PROHIBICIÓN TOTAL DE ÓRDENES VACÍAS: NUNCA emitas <<<COMMAND_ORDER>>> si el cliente solo está preguntando precios, saludando o consultando opciones. Emite <<<COMMAND_ORDER>>> ÚNICAMENTE cuando el cliente haya confirmado explícitamente qué producto y cantidad desea pedir.
-4. NUNCA inventes productos, servicios o precios que no figuren en los catálogos anteriores.
-5. Utiliza siempre el formato nativo de WhatsApp (*negrita* para resaltar, _cursiva_ y emojis con moderación).
-6. Sé cordial, resolutivo, claro, conciso y empático.
+Reglas:
+1. Sé conciso, directo, empático y usa formato de WhatsApp (*negrita* y emojis con moderación).
+2. Si ya hay mensajes previos en el historial, NO vuelvas a saludar; responde directo a la consulta.
+3. NUNCA inventes precios o productos fuera de los indicados arriba.
 `;
 
   let apiKey = '';
