@@ -461,6 +461,11 @@ export async function runMigrations() {
       show_services_section BOOLEAN DEFAULT true,
       show_testimonials_section BOOLEAN DEFAULT true,
       show_contact_section BOOLEAN DEFAULT true,
+      header_layout VARCHAR(50) DEFAULT 'split',
+      overlay_color VARCHAR(50) DEFAULT '#0f172a',
+      overlay_opacity INT DEFAULT 0,
+      show_whatsapp_button BOOLEAN DEFAULT true,
+      whatsapp_button_text VARCHAR(100) DEFAULT 'WhatsApp Directo',
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
@@ -471,6 +476,11 @@ export async function runMigrations() {
     ALTER TABLE tenant_websites ADD COLUMN IF NOT EXISTS show_services_section BOOLEAN DEFAULT true;
     ALTER TABLE tenant_websites ADD COLUMN IF NOT EXISTS show_testimonials_section BOOLEAN DEFAULT true;
     ALTER TABLE tenant_websites ADD COLUMN IF NOT EXISTS show_contact_section BOOLEAN DEFAULT true;
+    ALTER TABLE tenant_websites ADD COLUMN IF NOT EXISTS header_layout VARCHAR(50) DEFAULT 'split';
+    ALTER TABLE tenant_websites ADD COLUMN IF NOT EXISTS overlay_color VARCHAR(50) DEFAULT '#0f172a';
+    ALTER TABLE tenant_websites ADD COLUMN IF NOT EXISTS overlay_opacity INT DEFAULT 0;
+    ALTER TABLE tenant_websites ADD COLUMN IF NOT EXISTS show_whatsapp_button BOOLEAN DEFAULT true;
+    ALTER TABLE tenant_websites ADD COLUMN IF NOT EXISTS whatsapp_button_text VARCHAR(100) DEFAULT 'WhatsApp Directo';
 
     ALTER TABLE appointments ADD COLUMN IF NOT EXISTS specialist_id UUID REFERENCES specialists(id) ON DELETE SET NULL;
 

@@ -18,6 +18,11 @@ export interface TenantWebsiteConfig {
   showBookingButton: boolean;
   storeButtonText: string;
   bookingButtonText: string;
+  showWhatsappButton: boolean;
+  whatsappButtonText: string;
+  headerLayout: 'split' | 'overlay' | 'banner_top';
+  overlayColor: string;
+  overlayOpacity: number;
   showAboutSection: boolean;
   showFeaturesSection: boolean;
   showProductsSection: boolean;
@@ -57,6 +62,11 @@ export async function getWebsiteSettingsByTenant(tenantId: string): Promise<Tena
       showBookingButton: true,
       storeButtonText: 'Ver Menú y Productos',
       bookingButtonText: 'Agendar Cita en Línea',
+      showWhatsappButton: true,
+      whatsappButtonText: 'WhatsApp Directo',
+      headerLayout: 'split',
+      overlayColor: '#0f172a',
+      overlayOpacity: 0,
       showAboutSection: true,
       showFeaturesSection: true,
       showProductsSection: true,
@@ -93,6 +103,11 @@ export async function getWebsiteSettingsByTenant(tenantId: string): Promise<Tena
     showBookingButton: r.show_booking_button !== false,
     storeButtonText: r.store_button_text || 'Ver Menú y Productos',
     bookingButtonText: r.booking_button_text || 'Agendar Cita en Línea',
+    showWhatsappButton: r.show_whatsapp_button !== false,
+    whatsappButtonText: r.whatsapp_button_text || 'WhatsApp Directo',
+    headerLayout: r.header_layout || 'split',
+    overlayColor: r.overlay_color || '#0f172a',
+    overlayOpacity: r.overlay_opacity !== undefined ? Number(r.overlay_opacity) : 0,
     showAboutSection: r.show_about_section !== false,
     showFeaturesSection: r.show_features_section !== false,
     showProductsSection: r.show_products_section !== false,
@@ -118,6 +133,7 @@ export async function saveWebsiteSettings(tenantId: string, data: Partial<Tenant
       tenant_id, website_enabled, headline, subheadline, about_title, about_text,
       about_image_url, banner_image_url, logo_url, primary_color, accent_color, font_family,
       show_store_button, show_booking_button, store_button_text, booking_button_text,
+      show_whatsapp_button, whatsapp_button_text, header_layout, overlay_color, overlay_opacity,
       show_about_section, show_features_section, show_products_section,
       show_services_section, show_testimonials_section, show_contact_section,
       features_json, testimonials_json, contact_email, contact_phone, contact_address,
@@ -126,10 +142,11 @@ export async function saveWebsiteSettings(tenantId: string, data: Partial<Tenant
       $1, $2, $3, $4, $5, $6,
       $7, $8, $9, $10, $11, $12,
       $13, $14, $15, $16,
-      $17, $18, $19,
-      $20, $21, $22,
-      $23, $24, $25, $26, $27,
-      $28, $29, $30, CURRENT_TIMESTAMP
+      $17, $18, $19, $20, $21,
+      $22, $23, $24,
+      $25, $26, $27,
+      $28, $29, $30, $31, $32,
+      $33, $34, $35, CURRENT_TIMESTAMP
     )
     ON CONFLICT (tenant_id) DO UPDATE SET
       website_enabled = EXCLUDED.website_enabled,
@@ -147,6 +164,11 @@ export async function saveWebsiteSettings(tenantId: string, data: Partial<Tenant
       show_booking_button = EXCLUDED.show_booking_button,
       store_button_text = EXCLUDED.store_button_text,
       booking_button_text = EXCLUDED.booking_button_text,
+      show_whatsapp_button = EXCLUDED.show_whatsapp_button,
+      whatsapp_button_text = EXCLUDED.whatsapp_button_text,
+      header_layout = EXCLUDED.header_layout,
+      overlay_color = EXCLUDED.overlay_color,
+      overlay_opacity = EXCLUDED.overlay_opacity,
       show_about_section = EXCLUDED.show_about_section,
       show_features_section = EXCLUDED.show_features_section,
       show_products_section = EXCLUDED.show_products_section,
@@ -182,6 +204,11 @@ export async function saveWebsiteSettings(tenantId: string, data: Partial<Tenant
     data.showBookingButton !== false,
     data.storeButtonText || 'Ver Menú y Productos',
     data.bookingButtonText || 'Agendar Cita en Línea',
+    data.showWhatsappButton !== false,
+    data.whatsappButtonText || 'WhatsApp Directo',
+    data.headerLayout || 'split',
+    data.overlayColor || '#0f172a',
+    data.overlayOpacity !== undefined ? Number(data.overlayOpacity) : 0,
     data.showAboutSection !== false,
     data.showFeaturesSection !== false,
     data.showProductsSection !== false,

@@ -22,13 +22,39 @@ import {
   Phone,
   Mail,
   MapPin,
-  Instagram,
-  Facebook,
-  ToggleLeft,
-  ToggleRight,
   Package,
-  Wrench
+  Wrench,
+  Columns,
+  Image as ImageIcon,
+  Sliders,
+  ShieldCheck,
+  Clock
 } from 'lucide-react';
+
+// Official Brand SVG Icons (100% Vector, No Emojis)
+export const WhatsAppIcon = ({ size = 20, color = 'currentColor' }: { size?: number; color?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill={color}>
+    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+  </svg>
+);
+
+export const InstagramIcon = ({ size = 20, color = 'currentColor' }: { size?: number; color?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill={color}>
+    <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
+  </svg>
+);
+
+export const FacebookIcon = ({ size = 20, color = 'currentColor' }: { size?: number; color?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill={color}>
+    <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+  </svg>
+);
+
+export const TikTokIcon = ({ size = 20, color = 'currentColor' }: { size?: number; color?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill={color}>
+    <path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-1.01-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.63.41-1.11 1.04-1.36 1.75-.21.51-.24 1.07-.14 1.61.24 1.64 1.82 3.02 3.5 2.87 1.12-.01 2.19-.66 2.77-1.61.19-.33.4-.67.41-1.06.1-1.79.06-3.57.07-5.36.01-4.03-.01-8.05.02-12.07z"/>
+  </svg>
+);
 
 interface FeatureItem {
   title: string;
@@ -59,6 +85,11 @@ interface WebsiteConfig {
   showBookingButton: boolean;
   storeButtonText: string;
   bookingButtonText: string;
+  showWhatsappButton: boolean;
+  whatsappButtonText: string;
+  headerLayout: 'split' | 'overlay' | 'banner_top';
+  overlayColor: string;
+  overlayOpacity: number;
   showAboutSection: boolean;
   showFeaturesSection: boolean;
   showProductsSection: boolean;
@@ -101,6 +132,11 @@ export default function WebsiteBuilder() {
     showBookingButton: true,
     storeButtonText: 'Ver Menú y Productos',
     bookingButtonText: 'Agendar Cita en Línea',
+    showWhatsappButton: true,
+    whatsappButtonText: 'WhatsApp Directo',
+    headerLayout: 'split',
+    overlayColor: '#0f172a',
+    overlayOpacity: 0,
     showAboutSection: true,
     showFeaturesSection: true,
     showProductsSection: true,
@@ -129,6 +165,11 @@ export default function WebsiteBuilder() {
         setFormData(prev => ({
           ...prev,
           ...res,
+          showWhatsappButton: res.showWhatsappButton !== false,
+          whatsappButtonText: res.whatsappButtonText || 'WhatsApp Directo',
+          headerLayout: res.headerLayout || 'split',
+          overlayColor: res.overlayColor || '#0f172a',
+          overlayOpacity: res.overlayOpacity !== undefined ? Number(res.overlayOpacity) : 0,
           showAboutSection: res.showAboutSection !== false,
           showFeaturesSection: res.showFeaturesSection !== false,
           showProductsSection: res.showProductsSection !== false,
@@ -256,16 +297,13 @@ export default function WebsiteBuilder() {
           {title}
         </strong>
         <p style={{ margin: 0, fontSize: '0.78rem', color: active ? '#15803d' : '#94a3b8' }}>
-          {active ? '🟢 Esta sección está visible en tu página web pública' : '⚪ Esta sección está oculta en tu página web pública'}
+          {active ? 'Esta sección está activa y visible en tu web' : 'Esta sección está desactivada y oculta en tu web'}
         </p>
       </div>
       <button
         type="button"
         onClick={onToggle}
         style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '6px',
           padding: '6px 14px',
           borderRadius: '8px',
           border: 'none',
@@ -273,8 +311,7 @@ export default function WebsiteBuilder() {
           color: 'white',
           fontWeight: '700',
           fontSize: '0.8rem',
-          cursor: 'pointer',
-          transition: 'background-color 0.2s'
+          cursor: 'pointer'
         }}
       >
         {active ? 'Activada' : 'Desactivada'}
@@ -319,7 +356,7 @@ export default function WebsiteBuilder() {
             </h1>
           </div>
           <p style={{ margin: 0, color: '#64748b', fontSize: '0.85rem' }}>
-            Personaliza las secciones, activa o desactiva bloques y comparte tu enlace web oficial.
+            Configura el estilo de portada, activa/desactiva secciones y comparte tu enlace web oficial.
           </p>
         </div>
 
@@ -386,7 +423,7 @@ export default function WebsiteBuilder() {
           { id: 'services', label: 'Servicios', icon: <Wrench size={16} /> },
           { id: 'testimonials', label: 'Testimonios', icon: <MessageSquare size={16} /> },
           { id: 'contact', label: 'Contacto & Redes', icon: <Phone size={16} /> },
-          { id: 'preview', label: 'Vista Previa en Vivo', icon: <Eye size={16} /> }
+          { id: 'preview', label: 'Vista Previa', icon: <Eye size={16} /> }
         ].map(t => (
           <button
             key={t.id}
@@ -424,125 +461,121 @@ export default function WebsiteBuilder() {
 
         {/* 1. PORTADA / HERO */}
         {activeTab === 'hero' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '800px' }}>
-            <h3 style={{ margin: '0 0 10px 0', fontSize: '1.1rem', color: '#0f172a', fontWeight: '800' }}>
-              Portada Principal del Sitio Web
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '22px', maxWidth: '820px' }}>
+            <h3 style={{ margin: '0 0 4px 0', fontSize: '1.15rem', color: '#0f172a', fontWeight: '800' }}>
+              Diseño y Portada Principal
             </h3>
 
-            <div>
-              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
-                Título Principal (Headline)
-              </label>
-              <input
-                type="text"
-                value={formData.headline}
-                onChange={e => setFormData({ ...formData, headline: e.target.value })}
-                placeholder="Ej: Bienvenido a la mejor experiencia gastronómica de San José"
-                style={{
-                  width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1',
-                  fontSize: '0.9rem', boxSizing: 'border-box'
-                }}
-              />
-            </div>
-
-            <div>
-              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
-                Subtítulo o Descripción de Bienvenida
-              </label>
-              <textarea
-                rows={3}
-                value={formData.subheadline}
-                onChange={e => setFormData({ ...formData, subheadline: e.target.value })}
-                placeholder="Ej: Disfruta de deliciosos platillos preparados al momento, con pedidos rápidos por WhatsApp y entregas express."
-                style={{
-                  width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1',
-                  fontSize: '0.9rem', boxSizing: 'border-box', fontFamily: 'inherit'
-                }}
-              />
-            </div>
-
-            {/* BOTONES DE ACCIÓN PRINCIPALES */}
+            {/* ESTILO DE PORTADA / LAYOUT */}
             <div style={{ backgroundColor: '#f8fafc', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-              <h4 style={{ margin: '0 0 12px 0', fontSize: '0.95rem', fontWeight: '800', color: '#0f172a' }}>
-                🔘 Botones Principales de Llamado a la Acción (CTA)
-              </h4>
+              <label style={{ display: 'block', fontSize: '0.88rem', fontWeight: '800', color: '#0f172a', marginBottom: '10px' }}>
+                Estilo de Visualización de la Portada
+              </label>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px' }}>
                 
-                {/* Botón Tienda */}
-                <div style={{ backgroundColor: '#ffffff', padding: '14px', borderRadius: '10px', border: '1px solid #cbd5e1' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '700', fontSize: '0.88rem' }}>
-                      <ShoppingBag size={18} color="#2563eb" /> Botón de Tienda / Menú
-                    </div>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', cursor: 'pointer' }}>
-                      <input
-                        type="checkbox"
-                        checked={formData.showStoreButton}
-                        onChange={e => setFormData({ ...formData, showStoreButton: e.target.checked })}
-                      /> Activo
-                    </label>
+                {/* Opción 1: Split / Imagen separada */}
+                <div
+                  onClick={() => setFormData({ ...formData, headerLayout: 'split' })}
+                  style={{
+                    padding: '14px', borderRadius: '10px', cursor: 'pointer',
+                    border: formData.headerLayout === 'split' ? '2px solid #2563eb' : '1px solid #cbd5e1',
+                    backgroundColor: formData.headerLayout === 'split' ? '#eff6ff' : '#ffffff',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                    <Columns size={18} color={formData.headerLayout === 'split' ? '#2563eb' : '#64748b'} />
+                    <strong style={{ fontSize: '0.88rem', color: formData.headerLayout === 'split' ? '#1e40af' : '#334155' }}>
+                      Imagen a un lado (Recomendado)
+                    </strong>
                   </div>
-                  <input
-                    type="text"
-                    disabled={!formData.showStoreButton}
-                    value={formData.storeButtonText}
-                    onChange={e => setFormData({ ...formData, storeButtonText: e.target.value })}
-                    placeholder="Texto del botón (ej: Ver Menú y Productos)"
-                    style={{
-                      width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1',
-                      fontSize: '0.85rem', boxSizing: 'border-box'
-                    }}
-                  />
-                  <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '6px' }}>
-                    Vinculado automáticamente a: <code>/tienda/{tenantSlug}</code>
-                  </div>
+                  <p style={{ margin: 0, fontSize: '0.78rem', color: '#64748b' }}>
+                    El texto va a la izquierda y la imagen se aprecia completa a la derecha sin capas de color encima.
+                  </p>
                 </div>
 
-                {/* Botón Reservas */}
-                <div style={{ backgroundColor: '#ffffff', padding: '14px', borderRadius: '10px', border: '1px solid #cbd5e1' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '700', fontSize: '0.88rem' }}>
-                      <Calendar size={18} color="#a855f7" /> Botón de Citas / Agenda
-                    </div>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', cursor: 'pointer' }}>
-                      <input
-                        type="checkbox"
-                        checked={formData.showBookingButton}
-                        onChange={e => setFormData({ ...formData, showBookingButton: e.target.checked })}
-                      /> Activo
-                    </label>
+                {/* Opción 2: Overlay / Texto sobre imagen */}
+                <div
+                  onClick={() => setFormData({ ...formData, headerLayout: 'overlay' })}
+                  style={{
+                    padding: '14px', borderRadius: '10px', cursor: 'pointer',
+                    border: formData.headerLayout === 'overlay' ? '2px solid #2563eb' : '1px solid #cbd5e1',
+                    backgroundColor: formData.headerLayout === 'overlay' ? '#eff6ff' : '#ffffff',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                    <Sliders size={18} color={formData.headerLayout === 'overlay' ? '#2563eb' : '#64748b'} />
+                    <strong style={{ fontSize: '0.88rem', color: formData.headerLayout === 'overlay' ? '#1e40af' : '#334155' }}>
+                      Texto sobre Imagen (Cover)
+                    </strong>
                   </div>
-                  <input
-                    type="text"
-                    disabled={!formData.showBookingButton}
-                    value={formData.bookingButtonText}
-                    onChange={e => setFormData({ ...formData, bookingButtonText: e.target.value })}
-                    placeholder="Texto del botón (ej: Agendar Cita en Línea)"
-                    style={{
-                      width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1',
-                      fontSize: '0.85rem', boxSizing: 'border-box'
-                    }}
-                  />
-                  <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '6px' }}>
-                    Vinculado automáticamente a: <code>/reservas/{tenantSlug}</code>
-                  </div>
+                  <p style={{ margin: 0, fontSize: '0.78rem', color: '#64748b' }}>
+                    La imagen abarca todo el fondo con control de color y opacidad del filtro.
+                  </p>
                 </div>
 
               </div>
+
+              {/* CONTROLES DE OVERLAY SI ESTÁ EN MODO OVERLAY */}
+              {formData.headerLayout === 'overlay' && (
+                <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px solid #e2e8f0', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
+                      Color del Filtro / Capa
+                    </label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <input
+                        type="color"
+                        value={formData.overlayColor || '#0f172a'}
+                        onChange={e => setFormData({ ...formData, overlayColor: e.target.value })}
+                        style={{ width: '38px', height: '38px', border: 'none', borderRadius: '6px', cursor: 'pointer' }}
+                      />
+                      <input
+                        type="text"
+                        value={formData.overlayColor || '#0f172a'}
+                        onChange={e => setFormData({ ...formData, overlayColor: e.target.value })}
+                        style={{ width: '110px', padding: '6px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.82rem' }}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
+                      Opacidad del Filtro: <strong>{formData.overlayOpacity ?? 0}%</strong> {formData.overlayOpacity === 0 ? '(Sin plasta de color)' : ''}
+                    </label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="90"
+                      step="5"
+                      value={formData.overlayOpacity ?? 0}
+                      onChange={e => setFormData({ ...formData, overlayOpacity: Number(e.target.value) })}
+                      style={{ width: '100%', accentColor: '#2563eb', cursor: 'pointer' }}
+                    />
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: '#94a3b8' }}>
+                      <span>0% (Limpio)</span>
+                      <span>50%</span>
+                      <span>90% (Oscuro)</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
             </div>
 
-            {/* Banner de Fondo */}
+            {/* IMAGEN DE PORTADA */}
             <div>
               <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
-                Imagen de Portada / Banner (Opcional)
+                Imagen de Portada / Banner
               </label>
-              <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: '14px', alignItems: 'center' }}>
                 {formData.bannerImageUrl && (
                   <img
                     src={formData.bannerImageUrl}
                     alt="Banner"
-                    style={{ width: '120px', height: '60px', objectFit: 'cover', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+                    style={{ width: '130px', height: '70px', objectFit: 'cover', borderRadius: '8px', border: '1px solid #cbd5e1' }}
                   />
                 )}
                 <input
@@ -563,6 +596,113 @@ export default function WebsiteBuilder() {
                 >
                   <Upload size={15} /> Subir Imagen de Portada
                 </button>
+              </div>
+            </div>
+
+            {/* TEXTOS PRINCIPALES */}
+            <div>
+              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
+                Título Principal
+              </label>
+              <input
+                type="text"
+                value={formData.headline}
+                onChange={e => setFormData({ ...formData, headline: e.target.value })}
+                placeholder="Ej: El sabor auténtico de nuestro negocio"
+                style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.9rem', boxSizing: 'border-box' }}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
+                Subtítulo o Descripción de Bienvenida
+              </label>
+              <textarea
+                rows={3}
+                value={formData.subheadline}
+                onChange={e => setFormData({ ...formData, subheadline: e.target.value })}
+                placeholder="Ej: Calidad, confianza y la mejor atención personalizada directo a tu WhatsApp."
+                style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.9rem', boxSizing: 'border-box', fontFamily: 'inherit' }}
+              />
+            </div>
+
+            {/* BOTONES PRINCIPALES DE ACCIÓN */}
+            <div style={{ backgroundColor: '#f8fafc', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+              <h4 style={{ margin: '0 0 12px 0', fontSize: '0.95rem', fontWeight: '800', color: '#0f172a' }}>
+                Botones Principales de Llamado a la Acción (CTA)
+              </h4>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '14px' }}>
+                
+                {/* Botón Tienda */}
+                <div style={{ backgroundColor: '#ffffff', padding: '14px', borderRadius: '10px', border: '1px solid #cbd5e1' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '700', fontSize: '0.85rem' }}>
+                      <ShoppingBag size={16} color="#2563eb" /> Botón Tienda / Menú
+                    </div>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.78rem', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={formData.showStoreButton}
+                        onChange={e => setFormData({ ...formData, showStoreButton: e.target.checked })}
+                      /> Activo
+                    </label>
+                  </div>
+                  <input
+                    type="text"
+                    disabled={!formData.showStoreButton}
+                    value={formData.storeButtonText}
+                    onChange={e => setFormData({ ...formData, storeButtonText: e.target.value })}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.82rem', boxSizing: 'border-box' }}
+                  />
+                </div>
+
+                {/* Botón Reservas */}
+                <div style={{ backgroundColor: '#ffffff', padding: '14px', borderRadius: '10px', border: '1px solid #cbd5e1' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '700', fontSize: '0.85rem' }}>
+                      <Calendar size={16} color="#a855f7" /> Botón Citas / Agenda
+                    </div>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.78rem', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={formData.showBookingButton}
+                        onChange={e => setFormData({ ...formData, showBookingButton: e.target.checked })}
+                      /> Activo
+                    </label>
+                  </div>
+                  <input
+                    type="text"
+                    disabled={!formData.showBookingButton}
+                    value={formData.bookingButtonText}
+                    onChange={e => setFormData({ ...formData, bookingButtonText: e.target.value })}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.82rem', boxSizing: 'border-box' }}
+                  />
+                </div>
+
+                {/* Botón WhatsApp */}
+                <div style={{ backgroundColor: '#ffffff', padding: '14px', borderRadius: '10px', border: '1px solid #cbd5e1' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '700', fontSize: '0.85rem' }}>
+                      <WhatsAppIcon size={16} color="#16a34a" /> Botón WhatsApp
+                    </div>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.78rem', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={formData.showWhatsappButton}
+                        onChange={e => setFormData({ ...formData, showWhatsappButton: e.target.checked })}
+                      /> Activo
+                    </label>
+                  </div>
+                  <input
+                    type="text"
+                    disabled={!formData.showWhatsappButton}
+                    value={formData.whatsappButtonText}
+                    onChange={e => setFormData({ ...formData, whatsappButtonText: e.target.value })}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.82rem', boxSizing: 'border-box' }}
+                  />
+                </div>
+
               </div>
             </div>
 
@@ -827,7 +967,7 @@ export default function WebsiteBuilder() {
               onToggle={() => setFormData({ ...formData, showProductsSection: !formData.showProductsSection })}
             />
             <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', color: '#475569', fontSize: '0.88rem' }}>
-              🛍️ Esta sección muestra automáticamente tus productos activos en la web. Puedes administrarlos en la pestaña <strong>Catálogo de Productos</strong>.
+              Esta sección muestra automáticamente tus productos activos en la web. Puedes administrarlos en la pestaña <strong>Catálogo de Productos</strong>.
             </div>
           </div>
         )}
@@ -841,7 +981,7 @@ export default function WebsiteBuilder() {
               onToggle={() => setFormData({ ...formData, showServicesSection: !formData.showServicesSection })}
             />
             <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', color: '#475569', fontSize: '0.88rem' }}>
-              📅 Esta sección muestra automáticamente tus servicios para agendar en línea. Puedes administrarlos en la pestaña <strong>Servicios</strong>.
+              Esta sección muestra automáticamente tus servicios para agendar en línea. Puedes administrarlos en la pestaña <strong>Servicios</strong>.
             </div>
           </div>
         )}
@@ -882,7 +1022,7 @@ export default function WebsiteBuilder() {
               {formData.testimonialsJson.map((t, idx) => (
                 <div key={idx} style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <strong style={{ fontSize: '0.85rem', color: '#334155' }}>Testimonio #{idx + 1} ⭐⭐⭐⭐⭐</strong>
+                    <strong style={{ fontSize: '0.85rem', color: '#334155' }}>Testimonio #{idx + 1}</strong>
                     {formData.testimonialsJson.length > 1 && (
                       <button
                         type="button"
@@ -966,13 +1106,13 @@ export default function WebsiteBuilder() {
 
             <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
               <h4 style={{ margin: '0 0 12px 0', fontSize: '0.95rem', fontWeight: '700', color: '#0f172a' }}>
-                🔗 Enlaces a Redes Sociales
+                Enlaces a Redes Sociales Oficiales
               </h4>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '14px' }}>
                 <div>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', fontWeight: '600', color: '#334155', marginBottom: '6px' }}>
-                    <Instagram size={16} color="#e1306c" /> Instagram URL
+                    <InstagramIcon size={16} color="#e1306c" /> Instagram URL
                   </label>
                   <input
                     type="text"
@@ -985,7 +1125,7 @@ export default function WebsiteBuilder() {
 
                 <div>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', fontWeight: '600', color: '#334155', marginBottom: '6px' }}>
-                    <Facebook size={16} color="#1877f2" /> Facebook URL
+                    <FacebookIcon size={16} color="#1877f2" /> Facebook URL
                   </label>
                   <input
                     type="text"
@@ -998,7 +1138,7 @@ export default function WebsiteBuilder() {
 
                 <div>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', fontWeight: '600', color: '#334155', marginBottom: '6px' }}>
-                    🎵 TikTok URL
+                    <TikTokIcon size={16} color="#000000" /> TikTok URL
                   </label>
                   <input
                     type="text"
@@ -1014,7 +1154,7 @@ export default function WebsiteBuilder() {
           </div>
         )}
 
-        {/* 9. VISTA PREVIA EN VIVO */}
+        {/* 9. VISTA PREVIA */}
         {activeTab === 'preview' && (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
