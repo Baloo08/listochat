@@ -79,14 +79,13 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
 
   // 2. AI ENGINE & PLAYGROUND STATE
   const [localaiUrl, setLocalaiUrl] = useState('https://beticoia-localai.qvtdko.easypanel.host/v1');
-  const [localaiModel, setLocalaiModel] = useState('gpt-4o');
+  const [localaiModel, setLocalaiModel] = useState('gpt-4');
   const [availableLocalModels, setAvailableLocalModels] = useState<string[]>([
-    'gpt-4o',
     'gpt-4',
-    'minicpm-v-2_6-mmproj-f16.gguf',
-    'llama-3.1-8b-instruct',
-    'qwen2.5-7b-instruct',
-    'llama-3.2-3b-instruct'
+    'gpt-4o',
+    'whisper-1',
+    'stablediffusion',
+    'tts-1'
   ]);
   const [localaiApiKey, setLocalaiApiKey] = useState('');
   const [localaiEnabled, setLocalaiEnabled] = useState(true);
@@ -812,7 +811,7 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
                   >
                     {availableLocalModels.map((m) => (
                       <option key={m} value={m}>
-                        {m} {m === 'gpt-4o' ? '⚡ (Recomendado / Activo)' : ''}
+                        {m} {m === 'gpt-4' ? '⚡ (Hermes-3 3B - Chat Rápido / Activo)' : m === 'gpt-4o' ? '👁️ (MiniCPM - Visión & Texto)' : ''}
                       </option>
                     ))}
                   </select>

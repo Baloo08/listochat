@@ -44,12 +44,8 @@ export function getDefaultModels(provider: string): string[] {
     case 'localai':
     case 'betico_ai':
       return [
-        'gpt-4o',
         'gpt-4',
-        'minicpm-v-2_6-mmproj-f16.gguf',
-        'llama-3.1-8b-instruct',
-        'qwen2.5-7b-instruct',
-        'llama-3.2-3b-instruct'
+        'gpt-4o'
       ];
     default:
       return [];
@@ -70,7 +66,10 @@ export async function getMasterAIConfig(): Promise<TenantAIConfig> {
 
     const localaiEnabled = settings.localai_enabled !== 'false';
     const localaiUrl = settings.localai_url || process.env.LOCALAI_URL || 'https://beticoia-localai.qvtdko.easypanel.host/v1';
-    const localaiModel = settings.localai_model || 'gpt-4o';
+    let localaiModel = settings.localai_model || 'gpt-4';
+    if (!localaiModel || localaiModel.includes('llama') || localaiModel.includes('qwen') || localaiModel.includes('gemini')) {
+      localaiModel = 'gpt-4';
+    }
 
     if (localaiEnabled) {
       return {
@@ -105,7 +104,16 @@ export async function getMasterAIConfig(): Promise<TenantAIConfig> {
 export async function callAI(config: TenantAIConfig, prompt: string): Promise<{ text: string, tokensUsed: number }> {
   const provider = config.provider || 'gemini';
   const apiKey = config.apiKey || (provider === 'gemini' ? DEFAULT_GEMINI_KEY : '');
-  const chosenModel = config.model || (provider === 'localai' || provider === 'betico_ai' ? 'llama-3.1-8b-instruct' : 'gemini-2.5-flash');
+  
+  // Sanitize model name for LocalAI so it never calls non-existent files
+  let chosenModel = config.model;
+  if (provider === 'localai' || provider === 'betico_ai') {
+    if (!chosenModel || chosenModel.includes('llama') || chosenModel.includes('qwen') || chosenModel.includes('gemini') || chosenModel.includes('claude')) {
+      chosenModel = 'gpt-4';
+    }
+  } else if (!chosenModel) {
+    chosenModel = provider === 'openai' ? 'gpt-4o-mini' : provider === 'anthropic' ? 'claude-3-5-haiku-20241022' : 'gemini-2.5-flash';
+  }
   
   const defaultModels = getDefaultModels(provider);
   const fallbackModels = [chosenModel, ...defaultModels.filter(m => m !== chosenModel)];
@@ -123,13 +131,16 @@ export async function callAI(config: TenantAIConfig, prompt: string): Promise<{ 
       }, prompt);
     } catch (error) {
       lastError = error;
-      console.error("Error calling AI with model " + modelName + " (" + provider + "):", error);
+      console.error(`Error calling AI with model ${modelName} (${provider}):`, error);
+      if (provider === 'localai' || provider === 'betico_ai') {
+        break; // For LocalAI, jump immediately to Gemini failover instead of trying invalid models
+      }
     }
   }
 
   // RESILIENT FAILOVER: If LocalAI failed, fallback to Master Gemini 2.5 Flash
   if (provider === 'localai' || provider === 'betico_ai') {
-    console.warn('[AI-Provider] LocalAI unavailable. Engaging Master Gemini Failover...');
+    console.warn('[AI-Provider] LocalAI unavailable or timed out. Engaging Master Gemini Failover...');
     try {
       return await executeProvider({
         provider: 'gemini',
@@ -165,17 +176,17 @@ async function executeProvider(config: TenantAIConfig, prompt: string) {
     model = anthropic(config.model || 'claude-3-5-haiku-20241022');
   } else if (config.provider === 'localai' || config.provider === 'betico_ai') {
     const localai = createOpenAI({
-      baseURL: config.baseUrl || process.env.LOCALAI_URL || 'http://localhost:8080/v1',
+      baseURL: config.baseUrl || process.env.LOCALAI_URL || 'https://beticoia-localai.qvtdko.easypanel.host/v1',
       apiKey: config.apiKey || 'localai'
     });
-    model = localai(config.model || 'llama-3.1-8b-instruct');
+    model = localai(config.model || 'gpt-4');
   } else {
     throw new Error("Unsupported provider: " + config.provider);
   }
 
-  // 12s timeout guard for local inference
+  // 10s timeout guard for local inference
   const timeoutPromise = new Promise<{ text: string, tokensUsed: number }>((_, reject) => {
-    setTimeout(() => reject(new Error('AI inference timeout after 12s')), 12000);
+    setTimeout(() => reject(new Error('AI inference timeout after 10s')), 10000);
   });
 
   const generatePromise = (async () => {
