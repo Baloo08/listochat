@@ -1521,13 +1521,24 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
                   <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 'bold', marginBottom: '4px' }}>Plan</label>
                   <select
                     value={formData.plan}
-                    onChange={(e) => setFormData({ ...formData, plan: e.target.value })}
+                    onChange={(e) => {
+                      const newPlan = e.target.value;
+                      let defaultPrice = 55000;
+                      if (newPlan === 'enterprise') defaultPrice = 85000;
+                      if (newPlan === 'aliado') defaultPrice = 0;
+                      if (newPlan === 'emprendedor') defaultPrice = 35000;
+                      setFormData({
+                        ...formData,
+                        plan: newPlan,
+                        customMonthlyPrice: defaultPrice
+                      });
+                    }}
                     style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border)' }}
                   >
-                    <option value="starter">Starter (Básico)</option>
-                    <option value="pro">Pro (Recomendado)</option>
-                    <option value="business">Business (Corporativo)</option>
-                    <option value="enterprise">Enterprise (Ilimitado)</option>
+                    <option value="pro">Plan Betico Pro (₡55.000 / mes)</option>
+                    <option value="enterprise">Plan Betico Empresa (₡85.000 / mes - Multi-sucursal)</option>
+                    <option value="aliado">🌟 Plan Betico Aliado (₡0 / mes - Gratis de por Vida) [Oculto]</option>
+                    <option value="emprendedor">💎 Plan Betico Emprendedor (₡35.000 / mes - Tarifa Especial) [Oculto]</option>
                   </select>
                 </div>
 

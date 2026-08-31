@@ -2,7 +2,12 @@ import { Router } from 'express';
 import { generateToken, authenticateToken } from '../middleware/auth.js';
 import { getUserByEmail, getUserById, verifyPassword } from '../db/users.repo.js';
 import { getTenantById, getTenantBySlug } from '../db/tenant.repo.js';
-import { getStoreSettings } from '../db/store-settings.repo.js';
+import { getStoreSettings, saveStoreSettings } from '../db/store-settings.repo.js';
+import { createTenant } from '../db/tenant.repo.js';
+import { createUser } from '../db/users.repo.js';
+import { saveAgentConfig } from '../db/agent-config.repo.js';
+import { saveWebsiteSettings } from '../db/website.repo.js';
+import { query } from '../db/pool.js';
 import { logAuditEvent } from '../db/audit.repo.js';
 
 const router = Router();
@@ -74,6 +79,168 @@ router.get('/tenant-info/:slug', async (req, res) => {
   } catch (error) {
     console.error('Error al obtener info de tenant:', error);
     res.status(500).json({ error: 'Error del servidor' });
+  }
+});
+
+// Public Self-Serve Registration Endpoint with 15-Day Free Trial
+router.post('/register', async (req, res) => {
+  try {
+    const { businessName, ownerName, email, password, phone, plan } = req.body;
+
+    if (!businessName || !ownerName || !email || !password) {
+      res.status(400).json({ error: 'Por favor completa todos los campos requeridos.' });
+      return;
+    }
+
+    if (password.length < 6) {
+      res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres.' });
+      return;
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+
+    // Check if user already exists
+    const existingUser = await getUserByEmail(undefined, cleanEmail);
+    if (existingUser) {
+      res.status(400).json({ error: 'Ya existe una cuenta con este correo electrónico.' });
+      return;
+    }
+
+    // Generate unique slug from business name
+    let baseSlug = businessName
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'negocio';
+
+    let generatedSlug = baseSlug;
+    let counter = 1;
+    while (await getTenantBySlug(generatedSlug)) {
+      counter++;
+      generatedSlug = `${baseSlug}-${counter}`;
+    }
+
+    const selectedPlan = plan === 'enterprise' ? 'enterprise' : 'pro';
+    const monthlyPrice = selectedPlan === 'enterprise' ? 85000 : 55000;
+    const trialEndsAt = new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString();
+
+    // Create tenant with 15-day free trial
+    const tenant = await createTenant({
+      name: businessName.trim(),
+      slug: generatedSlug,
+      plan: selectedPlan,
+      aiModel: 'gemini-2.5-flash',
+      aiProvider: 'gemini',
+      whatsappNumber: phone ? phone.trim() : undefined,
+      active: true,
+      settingsJson: {
+        customMonthlyPrice: monthlyPrice,
+        billingCurrency: 'CRC',
+        subscriptionStatus: 'trial',
+        trialEndsAt: trialEndsAt
+      }
+    });
+
+    try {
+      await query(
+        `UPDATE tenants SET custom_monthly_price = $1, billing_currency = 'CRC', subscription_status = 'trial', trial_ends_at = NOW() + INTERVAL '15 days' WHERE id = $2`,
+        [monthlyPrice, tenant.id]
+      );
+    } catch (e) {
+      // Ignore if columns do not exist
+    }
+
+    // Create admin user
+    const user = await createUser({
+      tenantId: tenant.id,
+      name: ownerName.trim(),
+      email: cleanEmail,
+      password: password,
+      role: 'admin'
+    });
+
+    // Initialize default agent prompt
+    await saveAgentConfig(tenant.id, {
+      systemPrompt: `Eres Betico, el Asistente Virtual Inteligente de ${businessName}. Atiende a los clientes con amabilidad, responde consultas y ayuda a agendar citas o tomar órdenes por WhatsApp.`,
+      businessName: businessName.trim(),
+      currency: 'CRC',
+      notifyNumber: phone ? phone.trim() : '',
+      model: 'gemini-2.5-flash',
+      temperature: 0.7,
+      autoReplyEnabled: true
+    });
+
+    // Initialize default store settings
+    await saveStoreSettings(tenant.id, {
+      storeName: businessName.trim(),
+      storeSlug: generatedSlug,
+      currency: 'CRC',
+      storeEnabled: true,
+      storeMode: 'retail',
+      storeModules: { storeEnabled: true, bookingsEnabled: true }
+    });
+
+    // Initialize default website settings
+    await saveWebsiteSettings(tenant.id, {
+      websiteEnabled: true,
+      headline: `Bienvenidos a ${businessName}`,
+      subheadline: 'Calidad, confianza y la mejor atención personalizada directo a tu WhatsApp.',
+      aboutTitle: 'Conoce Nuestra Historia',
+      aboutText: `Somos ${businessName}, comprometidos con brindar el mejor servicio y productos de primera categoría. Nuestro compromiso es tu satisfacción total.`,
+      primaryColor: '#2563eb',
+      accentColor: '#10b981',
+      fontFamily: 'Inter',
+      headerLayout: 'split',
+      buttonStyle: 'rounded',
+      buttonHoverEffect: true,
+      showWhatsappButton: true,
+      showAboutSection: true,
+      showFeaturesSection: true,
+      showProductsSection: true,
+      showServicesSection: true,
+      showTestimonialsSection: true,
+      showContactSection: true,
+      contactEmail: cleanEmail,
+      contactPhone: phone ? phone.trim() : '',
+      featuresJson: [
+        { title: 'Atención 24/7 con IA', description: 'Respuestas automáticas e inmediatas a cualquier hora por WhatsApp.' },
+        { title: 'Calidad Garantizada', description: 'Cuidamos cada detalle para ofrecerte solo lo mejor.' },
+        { title: 'Facilidad de Pago', description: 'Aceptamos SINPE Móvil verificado y transferencias bancarias.' }
+      ],
+      testimonialsJson: [
+        { name: 'Cliente Satisfecho', role: 'Cliente Frecuente', comment: 'Excelente servicio y atención impecable. ¡100% recomendados!' }
+      ]
+    });
+
+    await logAuditEvent(tenant.id, user.id, 'register_tenant', 'auth', tenant.id, { businessName, email: cleanEmail, plan: selectedPlan }, req.ip, req.headers['user-agent']);
+
+    const token = generateToken(user.id, tenant.id, 'admin');
+
+    res.status(201).json({
+      success: true,
+      token,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: 'admin',
+        tenantId: tenant.id,
+        tenantName: tenant.name,
+        tenantSlug: tenant.slug
+      },
+      tenant: {
+        id: tenant.id,
+        name: tenant.name,
+        slug: tenant.slug,
+        plan: selectedPlan,
+        trialEndsAt: trialEndsAt
+      },
+      redirect: '/app?tour=true'
+    });
+  } catch (error) {
+    console.error('Error en auto-registro:', error);
+    res.status(500).json({ error: error.message || 'Error al procesar el registro.' });
   }
 });
 

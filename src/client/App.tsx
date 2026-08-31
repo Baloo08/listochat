@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from './hooks/useAuth';
 import Login from './components/Login';
+import GuidedTourModal from './components/GuidedTourModal';
 import Dashboard from './components/Dashboard';
 import ChatsInbox from './components/ChatsInbox';
 import Bookings from './components/Bookings';
@@ -115,6 +116,9 @@ export default function App() {
 
   const { isAuthenticated, user, loading, logout } = useAuth();
   const [currentPage, setCurrentPage] = useState<string>('dashboard');
+  const [showTourModal, setShowTourModal] = useState<boolean>(() => {
+    return window.location.search.includes('tour=true') || (!localStorage.getItem('betico_tour_dismissed') && localStorage.getItem('betico_tour_active') === 'true');
+  });
   const [unreadOrdersCount, setUnreadOrdersCount] = useState<number>(0);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
@@ -636,7 +640,27 @@ export default function App() {
             </h1>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <button
+              onClick={() => setShowTourModal(true)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '6px 12px',
+                backgroundColor: '#ecfdf5',
+                border: '1px solid #a7f3d0',
+                borderRadius: 'var(--radius-md)',
+                cursor: 'pointer',
+                color: '#047857',
+                fontSize: '0.82rem',
+                fontWeight: '700'
+              }}
+              title="Abrir Tutorial Guiado"
+            >
+              <Sparkles size={15} color="#059669" />
+              <span>Tutorial</span>
+            </button>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '5px 10px', borderRadius: 'var(--radius-md)', backgroundColor: 'var(--background)', border: '1px solid var(--border)' }}>
               <div style={{
                 width: '32px',
@@ -685,6 +709,17 @@ export default function App() {
         {/* Dynamic Page Content */}
         <main style={{ flex: 1, padding: '24px 32px', overflowY: 'auto', boxSizing: 'border-box', width: '100%', maxWidth: '100%' }}>
           {renderContent()}
+          <GuidedTourModal
+            isOpen={showTourModal}
+            onClose={() => setShowTourModal(false)}
+            onNavigateToTab={(tabId) => {
+              if (tabId === 'website_builder') {
+                setCurrentPage('tienda');
+              } else {
+                setCurrentPage(tabId);
+              }
+            }}
+          />
         </main>
       </div>
     </div>

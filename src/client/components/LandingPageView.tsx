@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import RegisterModal from './RegisterModal';
 import {
   Bot,
   MessageSquare,
@@ -73,6 +74,8 @@ interface LandingPageProps {
 
 export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashboard }: LandingPageProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [showRegisterModal, setShowRegisterModal] = useState(false);
+  const [selectedPlanForRegister, setSelectedPlanForRegister] = useState<'pro' | 'enterprise'>('pro');
   const [dailyMessages, setDailyMessages] = useState<number>(120);
   const [avgTicket, setAvgTicket] = useState<number>(8500);
   const [openFaq, setOpenFaq] = useState<number | null>(0);
@@ -361,6 +364,28 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
 
         {/* Action CTAs */}
         <div style={{ display: 'flex', justifyContent: 'center', gap: '14px', flexWrap: 'wrap', marginBottom: '50px' }}>
+          <button
+            onClick={() => {
+              setSelectedPlanForRegister('pro');
+              setShowRegisterModal(true);
+            }}
+            style={{
+              padding: isMobile ? '13px 22px' : '16px 34px',
+              background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '12px',
+              fontWeight: '800',
+              fontSize: isMobile ? '0.98rem' : '1.08rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              boxShadow: '0 6px 24px rgba(16, 185, 129, 0.45)'
+            }}
+          >
+            <Zap size={20} /> Comenzar Prueba Gratis (15 Días)
+          </button>
           <a
             href="https://wa.me/50688888888?text=Hola%20Betico%2C%20quiero%20ver%20la%20demostraci%C3%B3n%20en%20vivo"
             target="_blank"
@@ -549,10 +574,10 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
                 <h3 style={{ fontSize: '1.45rem', fontWeight: '800', margin: 0, color: 'white' }}>Motor de IA Betico Propio</h3>
               </div>
               <p style={{ color: '#94a3b8', fontSize: '0.95rem', lineHeight: '1.6', marginBottom: '20px' }}>
-                <strong>💸 Cero Tarifas Ocultas en Dólares:</strong> Sin pagos extra de $20/mes ni requerimiento de tarjetas internacionales. Atención 24/7 sin límites de tokens, generación de descripciones de productos con IA y comprensión de notas de voz en menos de 1.5s.
+                <strong>💸 Cero Tarifas Ocultas en Dólares:</strong> Sin pagos extra de $20/mes ni requerimiento de tarjetas internacionales. Contesta mensajes y notas de voz 24/7 en WhatsApp, genera descripciones para tu catálogo y atiende clientes sin límites de tokens ni cobros extras.
               </p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.88rem', color: '#cbd5e1' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#10b981" /> Entrenado con modismos costarricenses y respuestas ultra rápidas</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#10b981" /> Tus datos están seguros y no se usan para entrenar modelos de grandes empresas</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#10b981" /> Generación automática de títulos y descripciones atractivas para tu catálogo</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#10b981" /> Historial y métricas de asistencias brindadas sin cobros por tokens</div>
               </div>
@@ -706,7 +731,7 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
       </section>
 
       {/* ==============================================================
-          5. PLANES & PRECIOS
+          5. PLANES & PRECIOS (2 PLANES OFICIALES)
       ============================================================== */}
       <section id="planes" style={{
         padding: '80px 24px',
@@ -714,92 +739,141 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
         borderTop: '1px solid rgba(255,255,255,0.06)',
         borderBottom: '1px solid rgba(255,255,255,0.06)'
       }}>
-        <div style={{ maxWidth: '1280px', margin: '0 auto', textAlign: 'center' }}>
+        <div style={{ maxWidth: '1100px', margin: '0 auto', textAlign: 'center' }}>
           <div style={{ color: '#10b981', fontWeight: '800', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>
             Precios Transparentes en Colones
           </div>
           <h2 style={{ fontSize: 'clamp(1.8rem, 4.5vw, 3rem)', fontWeight: '900', margin: '0 0 14px 0', letterSpacing: '-0.5px' }}>
-            Planes Todo Incluido Sin Comisiones
+            Planes Todo Incluido con 15 Días de Prueba Gratis
           </h2>
-          <p style={{ color: '#94a3b8', maxWidth: '650px', margin: '0 auto 50px auto', fontSize: '1.05rem' }}>
-            Paga en colones por SINPE Móvil o transferencia. Sin cobros sorpresa en dólares ni tarjetas de crédito extranjeras.
+          <p style={{ color: '#94a3b8', maxWidth: '700px', margin: '0 auto 50px auto', fontSize: '1.05rem', lineHeight: '1.6' }}>
+            Comienza a operar hoy mismo sin tarjeta de crédito. Paga en colones por SINPE Móvil o transferencia. Sin cobros sorpresa en dólares.
           </p>
 
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '24px', alignItems: 'stretch' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', gap: '30px', alignItems: 'stretch' }}>
             
-            {/* Plan Emprendedor */}
-            <div style={{ backgroundColor: '#111827', padding: '32px 26px', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', flexDirection: 'column', textAlign: 'left' }}>
-              <h3 style={{ fontSize: '1.25rem', fontWeight: '800', margin: '0 0 6px 0' }}>Plan Emprendedor</h3>
-              <p style={{ color: '#94a3b8', fontSize: '0.85rem', margin: '0 0 20px 0' }}>Para pequeños comercios y profesionales independientes.</p>
-              <div style={{ fontSize: '2.4rem', fontWeight: '900', color: 'white', marginBottom: '20px' }}>
-                ₡19.000 <span style={{ fontSize: '0.9rem', color: '#94a3b8', fontWeight: 'normal' }}>/ mes</span>
+            {/* Plan Betico Pro (Destacado) */}
+            <div style={{
+              backgroundColor: '#111827',
+              padding: '38px 30px',
+              borderRadius: '24px',
+              border: '2px solid #10b981',
+              display: 'flex',
+              flexDirection: 'column',
+              textAlign: 'left',
+              position: 'relative',
+              boxShadow: '0 0 40px rgba(16, 185, 129, 0.22)'
+            }}>
+              <div style={{
+                position: 'absolute', top: '-14px', left: '50%', transform: 'translateX(-50%)',
+                backgroundColor: '#10b981', color: 'white', fontSize: '0.75rem', fontWeight: '900',
+                padding: '4px 16px', borderRadius: '9999px', letterSpacing: '0.06em'
+              }}>
+                15 DÍAS DE PRUEBA GRATIS
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.88rem', color: '#cbd5e1', marginBottom: '30px', flex: 1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#10b981" /> 1 Número de WhatsApp Conectado</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#10b981" /> Creador de Sitio Web Oficial</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#10b981" /> Tienda Online con Catálogo</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#10b981" /> Agenda de Citas 24/7</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#10b981" /> Verificación SINPE Móvil con Visión</div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+                <div>
+                  <h3 style={{ fontSize: '1.5rem', fontWeight: '900', margin: '0 0 4px 0', color: 'white' }}>Plan Betico Pro</h3>
+                  <p style={{ color: '#94a3b8', fontSize: '0.88rem', margin: 0 }}>Para todo comercio que busca vender y agendar en automático.</p>
+                </div>
               </div>
-              <a
-                href="https://wa.me/50688888888?text=Hola%20Betico%2C%20quiero%20el%20Plan%20Emprendedor"
-                target="_blank"
-                rel="noreferrer"
-                style={{ padding: '12px', backgroundColor: '#1e293b', color: 'white', borderRadius: '10px', textAlign: 'center', textDecoration: 'none', fontWeight: 'bold', fontSize: '0.9rem', border: '1px solid rgba(255,255,255,0.15)' }}
+
+              <div style={{ fontSize: '2.8rem', fontWeight: '900', color: '#34d399', margin: '16px 0' }}>
+                ₡55.000 <span style={{ fontSize: '0.95rem', color: '#94a3b8', fontWeight: 'normal' }}>/ mes</span>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '11px', fontSize: '0.9rem', color: '#cbd5e1', marginBottom: '32px', flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={17} color="#10b981" /> <strong>1 Número de WhatsApp Conectado</strong></div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={17} color="#10b981" /> <strong>Motor Betico IA Propio</strong> (Respuestas ilimitadas, cero cobro por tokens)</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={17} color="#10b981" /> <strong>Comprensión de Notas de Voz</strong> de WhatsApp</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={17} color="#10b981" /> <strong>Creador de Sitios Web Oficial</strong> (betico.tech/sitio/tu-marca)</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={17} color="#10b981" /> <strong>Tienda Online & Menú</strong> con pedidos a WhatsApp</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={17} color="#10b981" /> <strong>Agenda de Citas & Reservas 24/7</strong> con recordatorios</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={17} color="#10b981" /> <strong>Verificación SINPE Móvil con Visión Artificial</strong></div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={17} color="#10b981" /> <strong>Portal de Repartidores & Asignación por GPS</strong> (1 Local)</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={17} color="#10b981" /> <strong>Pantalla de Cocina (KDS) & Difusión Masiva CRM</strong></div>
+              </div>
+
+              <button
+                onClick={() => {
+                  setSelectedPlanForRegister('pro');
+                  setShowRegisterModal(true);
+                }}
+                style={{
+                  padding: '15px',
+                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '12px',
+                  fontWeight: '800',
+                  fontSize: '1rem',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 18px rgba(16, 185, 129, 0.45)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px'
+                }}
               >
-                Elegir Plan Emprendedor
-              </a>
+                <Zap size={18} /> Comenzar Prueba Gratis (15 Días)
+              </button>
             </div>
 
-            {/* Plan Pro (Destacado) */}
-            <div style={{ backgroundColor: '#111827', padding: '36px 28px', borderRadius: '22px', border: '2px solid #10b981', display: 'flex', flexDirection: 'column', textAlign: 'left', position: 'relative', boxShadow: '0 0 35px rgba(16, 185, 129, 0.2)' }}>
-              <div style={{ position: 'absolute', top: '-14px', left: '50%', transform: 'translateX(-50%)', backgroundColor: '#10b981', color: 'white', fontSize: '0.75rem', fontWeight: '900', padding: '4px 14px', borderRadius: '9999px', letterSpacing: '0.05em' }}>
-                MÁS POPULAR
+            {/* Plan Betico Empresa */}
+            <div style={{
+              backgroundColor: '#111827',
+              padding: '38px 30px',
+              borderRadius: '24px',
+              border: '1px solid rgba(255,255,255,0.12)',
+              display: 'flex',
+              flexDirection: 'column',
+              textAlign: 'left',
+              position: 'relative'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+                <div>
+                  <h3 style={{ fontSize: '1.5rem', fontWeight: '900', margin: '0 0 4px 0', color: 'white' }}>Plan Betico Empresa</h3>
+                  <p style={{ color: '#94a3b8', fontSize: '0.88rem', margin: 0 }}>Para franquicias, cadenas y negocios con múltiples sucursales.</p>
+                </div>
               </div>
-              <h3 style={{ fontSize: '1.35rem', fontWeight: '800', margin: '0 0 6px 0', color: 'white' }}>Plan Pro Comercial</h3>
-              <p style={{ color: '#94a3b8', fontSize: '0.85rem', margin: '0 0 20px 0' }}>Para negocios con alto volumen de ventas y citas.</p>
-              <div style={{ fontSize: '2.6rem', fontWeight: '900', color: '#34d399', marginBottom: '20px' }}>
-                ₡29.000 <span style={{ fontSize: '0.9rem', color: '#94a3b8', fontWeight: 'normal' }}>/ mes</span>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.88rem', color: '#cbd5e1', marginBottom: '30px', flex: 1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#10b981" /> <strong>Todo lo del Plan Emprendedor</strong></div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#10b981" /> Motor Betico IA con Respuestas Ilimitadas</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#10b981" /> Reconocimiento de Notas de Voz</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#10b981" /> Campañas de Marketing & Difusión Masiva</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#10b981" /> Pantalla de Cocina (KDS) & Portal Repartidor</div>
-              </div>
-              <a
-                href="https://wa.me/50688888888?text=Hola%20Betico%2C%20quiero%20el%20Plan%20Pro%20Comercial"
-                target="_blank"
-                rel="noreferrer"
-                style={{ padding: '14px', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', color: 'white', borderRadius: '10px', textAlign: 'center', textDecoration: 'none', fontWeight: '800', fontSize: '0.95rem', boxShadow: '0 4px 16px rgba(16, 185, 129, 0.4)' }}
-              >
-                Comenzar con Plan Pro
-              </a>
-            </div>
 
-            {/* Plan Franquicia / Multi-Sucursal */}
-            <div style={{ backgroundColor: '#111827', padding: '32px 26px', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', flexDirection: 'column', textAlign: 'left' }}>
-              <h3 style={{ fontSize: '1.25rem', fontWeight: '800', margin: '0 0 6px 0' }}>Plan Multi-Sucursal</h3>
-              <p style={{ color: '#94a3b8', fontSize: '0.85rem', margin: '0 0 20px 0' }}>Cadenas, franquicias y múltiples sedes.</p>
-              <div style={{ fontSize: '2.4rem', fontWeight: '900', color: 'white', marginBottom: '20px' }}>
-                ₡49.000 <span style={{ fontSize: '0.9rem', color: '#94a3b8', fontWeight: 'normal' }}>/ mes</span>
+              <div style={{ fontSize: '2.8rem', fontWeight: '900', color: 'white', margin: '16px 0' }}>
+                ₡85.000 <span style={{ fontSize: '0.95rem', color: '#94a3b8', fontWeight: 'normal' }}>/ mes</span>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.88rem', color: '#cbd5e1', marginBottom: '30px', flex: 1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#10b981" /> <strong>Múltiples Sucursales o Sedes</strong></div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#10b981" /> Asignación Inteligente por GPS</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#10b981" /> Cuentas SINPE separadas por local</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#10b981" /> Acceso para múltiples administradores</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#10b981" /> Soporte prioritario por WhatsApp 24/7</div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '11px', fontSize: '0.9rem', color: '#cbd5e1', marginBottom: '32px', flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={17} color="#3b82f6" /> <strong>Todo lo incluido en Plan Betico Pro</strong></div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={17} color="#3b82f6" /> <strong>Múltiples Sucursales o Sedes</strong></div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={17} color="#3b82f6" /> <strong>Enrutamiento Inteligente de Pedidos por GPS</strong></div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={17} color="#3b82f6" /> <strong>Pantallas KDS y Repartidores Independientes por Sede</strong></div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={17} color="#3b82f6" /> <strong>Cuentas SINPE y Bancos Separados por Local</strong></div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={17} color="#3b82f6" /> <strong>Acceso para Múltiples Administradores y Roles</strong></div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={17} color="#3b82f6" /> <strong>Soporte Prioritario VIP 24/7 por WhatsApp</strong></div>
               </div>
-              <a
-                href="https://wa.me/50688888888?text=Hola%20Betico%2C%20quiero%20el%20Plan%20Multi-Sucursal"
-                target="_blank"
-                rel="noreferrer"
-                style={{ padding: '12px', backgroundColor: '#1e293b', color: 'white', borderRadius: '10px', textAlign: 'center', textDecoration: 'none', fontWeight: 'bold', fontSize: '0.9rem', border: '1px solid rgba(255,255,255,0.15)' }}
+
+              <button
+                onClick={() => {
+                  setSelectedPlanForRegister('enterprise');
+                  setShowRegisterModal(true);
+                }}
+                style={{
+                  padding: '15px',
+                  backgroundColor: '#1e293b',
+                  color: 'white',
+                  border: '1px solid rgba(255,255,255,0.18)',
+                  borderRadius: '12px',
+                  fontWeight: '800',
+                  fontSize: '1rem',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px'
+                }}
               >
-                Contactar Asesor
-              </a>
+                Probar Plan Empresa Gratis <ArrowRight size={18} />
+              </button>
             </div>
 
           </div>
@@ -947,6 +1021,11 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
         </div>
       </footer>
 
+      <RegisterModal
+        isOpen={showRegisterModal}
+        onClose={() => setShowRegisterModal(false)}
+        initialPlan={selectedPlanForRegister}
+      />
     </div>
   );
 }
