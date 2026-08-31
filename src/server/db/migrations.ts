@@ -466,6 +466,10 @@ export async function runMigrations() {
       overlay_opacity INT DEFAULT 0,
       show_whatsapp_button BOOLEAN DEFAULT true,
       whatsapp_button_text VARCHAR(100) DEFAULT 'WhatsApp Directo',
+      logo_white_url TEXT,
+      button_style VARCHAR(50) DEFAULT 'rounded',
+      button_hover_effect BOOLEAN DEFAULT true,
+      button_text_color VARCHAR(50) DEFAULT '#ffffff',
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
@@ -481,6 +485,10 @@ export async function runMigrations() {
     ALTER TABLE tenant_websites ADD COLUMN IF NOT EXISTS overlay_opacity INT DEFAULT 0;
     ALTER TABLE tenant_websites ADD COLUMN IF NOT EXISTS show_whatsapp_button BOOLEAN DEFAULT true;
     ALTER TABLE tenant_websites ADD COLUMN IF NOT EXISTS whatsapp_button_text VARCHAR(100) DEFAULT 'WhatsApp Directo';
+    ALTER TABLE tenant_websites ADD COLUMN IF NOT EXISTS logo_white_url TEXT;
+    ALTER TABLE tenant_websites ADD COLUMN IF NOT EXISTS button_style VARCHAR(50) DEFAULT 'rounded';
+    ALTER TABLE tenant_websites ADD COLUMN IF NOT EXISTS button_hover_effect BOOLEAN DEFAULT true;
+    ALTER TABLE tenant_websites ADD COLUMN IF NOT EXISTS button_text_color VARCHAR(50) DEFAULT '#ffffff';
 
     ALTER TABLE appointments ADD COLUMN IF NOT EXISTS specialist_id UUID REFERENCES specialists(id) ON DELETE SET NULL;
 

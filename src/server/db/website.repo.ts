@@ -11,9 +11,13 @@ export interface TenantWebsiteConfig {
   aboutImageUrl?: string;
   bannerImageUrl?: string;
   logoUrl?: string;
+  logoWhiteUrl?: string;
   primaryColor: string;
   accentColor: string;
   fontFamily: string;
+  buttonStyle: 'rounded' | 'pill' | 'square';
+  buttonHoverEffect: boolean;
+  buttonTextColor: string;
   showStoreButton: boolean;
   showBookingButton: boolean;
   storeButtonText: string;
@@ -58,6 +62,9 @@ export async function getWebsiteSettingsByTenant(tenantId: string): Promise<Tena
       primaryColor: '#2563eb',
       accentColor: '#f59e0b',
       fontFamily: 'Inter',
+      buttonStyle: 'rounded',
+      buttonHoverEffect: true,
+      buttonTextColor: '#ffffff',
       showStoreButton: true,
       showBookingButton: true,
       storeButtonText: 'Ver Menú y Productos',
@@ -96,9 +103,13 @@ export async function getWebsiteSettingsByTenant(tenantId: string): Promise<Tena
     aboutImageUrl: r.about_image_url,
     bannerImageUrl: r.banner_image_url,
     logoUrl: r.logo_url,
+    logoWhiteUrl: r.logo_white_url,
     primaryColor: r.primary_color || '#2563eb',
     accentColor: r.accent_color || '#f59e0b',
     fontFamily: r.font_family || 'Inter',
+    buttonStyle: r.button_style || 'rounded',
+    buttonHoverEffect: r.button_hover_effect !== false,
+    buttonTextColor: r.button_text_color || '#ffffff',
     showStoreButton: r.show_store_button !== false,
     showBookingButton: r.show_booking_button !== false,
     storeButtonText: r.store_button_text || 'Ver Menú y Productos',
@@ -131,7 +142,8 @@ export async function saveWebsiteSettings(tenantId: string, data: Partial<Tenant
   const sql = `
     INSERT INTO tenant_websites (
       tenant_id, website_enabled, headline, subheadline, about_title, about_text,
-      about_image_url, banner_image_url, logo_url, primary_color, accent_color, font_family,
+      about_image_url, banner_image_url, logo_url, logo_white_url, primary_color, accent_color, font_family,
+      button_style, button_hover_effect, button_text_color,
       show_store_button, show_booking_button, store_button_text, booking_button_text,
       show_whatsapp_button, whatsapp_button_text, header_layout, overlay_color, overlay_opacity,
       show_about_section, show_features_section, show_products_section,
@@ -140,13 +152,14 @@ export async function saveWebsiteSettings(tenantId: string, data: Partial<Tenant
       instagram_url, facebook_url, tiktok_url, updated_at
     ) VALUES (
       $1, $2, $3, $4, $5, $6,
-      $7, $8, $9, $10, $11, $12,
-      $13, $14, $15, $16,
-      $17, $18, $19, $20, $21,
-      $22, $23, $24,
-      $25, $26, $27,
-      $28, $29, $30, $31, $32,
-      $33, $34, $35, CURRENT_TIMESTAMP
+      $7, $8, $9, $10, $11, $12, $13,
+      $14, $15, $16,
+      $17, $18, $19, $20,
+      $21, $22, $23, $24, $25,
+      $26, $27, $28,
+      $29, $30, $31,
+      $32, $33, $34, $35, $36,
+      $37, $38, $39, CURRENT_TIMESTAMP
     )
     ON CONFLICT (tenant_id) DO UPDATE SET
       website_enabled = EXCLUDED.website_enabled,
@@ -157,9 +170,13 @@ export async function saveWebsiteSettings(tenantId: string, data: Partial<Tenant
       about_image_url = EXCLUDED.about_image_url,
       banner_image_url = EXCLUDED.banner_image_url,
       logo_url = EXCLUDED.logo_url,
+      logo_white_url = EXCLUDED.logo_white_url,
       primary_color = EXCLUDED.primary_color,
       accent_color = EXCLUDED.accent_color,
       font_family = EXCLUDED.font_family,
+      button_style = EXCLUDED.button_style,
+      button_hover_effect = EXCLUDED.button_hover_effect,
+      button_text_color = EXCLUDED.button_text_color,
       show_store_button = EXCLUDED.show_store_button,
       show_booking_button = EXCLUDED.show_booking_button,
       store_button_text = EXCLUDED.store_button_text,
@@ -197,9 +214,13 @@ export async function saveWebsiteSettings(tenantId: string, data: Partial<Tenant
     data.aboutImageUrl || null,
     data.bannerImageUrl || null,
     data.logoUrl || null,
+    data.logoWhiteUrl || null,
     data.primaryColor || '#2563eb',
     data.accentColor || '#f59e0b',
     data.fontFamily || 'Inter',
+    data.buttonStyle || 'rounded',
+    data.buttonHoverEffect !== false,
+    data.buttonTextColor || '#ffffff',
     data.showStoreButton !== false,
     data.showBookingButton !== false,
     data.storeButtonText || 'Ver Menú y Productos',

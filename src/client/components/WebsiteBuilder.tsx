@@ -25,10 +25,12 @@ import {
   Package,
   Wrench,
   Columns,
-  Image as ImageIcon,
   Sliders,
   ShieldCheck,
-  Clock
+  Clock,
+  Square,
+  CircleDot,
+  MousePointer
 } from 'lucide-react';
 
 // Official Brand SVG Icons (100% Vector, No Emojis)
@@ -78,9 +80,13 @@ interface WebsiteConfig {
   aboutImageUrl?: string;
   bannerImageUrl?: string;
   logoUrl?: string;
+  logoWhiteUrl?: string;
   primaryColor: string;
   accentColor: string;
   fontFamily: string;
+  buttonStyle: 'rounded' | 'pill' | 'square';
+  buttonHoverEffect: boolean;
+  buttonTextColor: string;
   showStoreButton: boolean;
   showBookingButton: boolean;
   storeButtonText: string;
@@ -116,6 +122,7 @@ export default function WebsiteBuilder() {
   const [previewDevice, setPreviewDevice] = useState<'desktop' | 'mobile'>('desktop');
 
   const logoInputRef = useRef<HTMLInputElement>(null);
+  const logoWhiteInputRef = useRef<HTMLInputElement>(null);
   const bannerInputRef = useRef<HTMLInputElement>(null);
   const aboutImageInputRef = useRef<HTMLInputElement>(null);
 
@@ -128,6 +135,9 @@ export default function WebsiteBuilder() {
     primaryColor: '#2563eb',
     accentColor: '#f59e0b',
     fontFamily: 'Inter',
+    buttonStyle: 'rounded',
+    buttonHoverEffect: true,
+    buttonTextColor: '#ffffff',
     showStoreButton: true,
     showBookingButton: true,
     storeButtonText: 'Ver Menú y Productos',
@@ -165,6 +175,10 @@ export default function WebsiteBuilder() {
         setFormData(prev => ({
           ...prev,
           ...res,
+          logoWhiteUrl: res.logoWhiteUrl || '',
+          buttonStyle: res.buttonStyle || 'rounded',
+          buttonHoverEffect: res.buttonHoverEffect !== false,
+          buttonTextColor: res.buttonTextColor || '#ffffff',
           showWhatsappButton: res.showWhatsappButton !== false,
           whatsappButtonText: res.whatsappButtonText || 'WhatsApp Directo',
           headerLayout: res.headerLayout || 'split',
@@ -205,7 +219,7 @@ export default function WebsiteBuilder() {
     }
   };
 
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, fieldName: 'logoUrl' | 'bannerImageUrl' | 'aboutImageUrl') => {
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, fieldName: 'logoUrl' | 'logoWhiteUrl' | 'bannerImageUrl' | 'aboutImageUrl') => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -711,46 +725,185 @@ export default function WebsiteBuilder() {
 
         {/* 2. MARCA & COLORES */}
         {activeTab === 'branding' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '800px' }}>
-            <h3 style={{ margin: '0 0 10px 0', fontSize: '1.1rem', color: '#0f172a', fontWeight: '800' }}>
-              Identidad Visual y Marca
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', maxWidth: '820px' }}>
+            <h3 style={{ margin: '0 0 4px 0', fontSize: '1.15rem', color: '#0f172a', fontWeight: '800' }}>
+              Identidad Visual, Logotipos y Estilos
             </h3>
 
-            {/* LOGOTIPO */}
-            <div>
-              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
-                Logotipo del Negocio
-              </label>
-              <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                {formData.logoUrl ? (
-                  <img
-                    src={formData.logoUrl}
-                    alt="Logo"
-                    style={{ width: '60px', height: '60px', objectFit: 'contain', borderRadius: '10px', border: '1px solid #cbd5e1', padding: '4px' }}
-                  />
-                ) : (
-                  <div style={{ width: '60px', height: '60px', borderRadius: '10px', backgroundColor: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
-                    Logo
+            {/* SECCIÓN LOGOTIPOS (FONDO CLARO Y FONDO OSCURO) */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '16px' }}>
+              
+              {/* Logo Principal (Fondo Claro) */}
+              <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '700', color: '#334155', marginBottom: '8px' }}>
+                  Logotipo Principal (Navbar & Fondos Claros)
+                </label>
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                  {formData.logoUrl ? (
+                    <img
+                      src={formData.logoUrl}
+                      alt="Logo Principal"
+                      style={{ width: '64px', height: '64px', objectFit: 'contain', borderRadius: '10px', border: '1px solid #cbd5e1', padding: '4px', backgroundColor: '#ffffff' }}
+                    />
+                  ) : (
+                    <div style={{ width: '64px', height: '64px', borderRadius: '10px', backgroundColor: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontSize: '0.75rem', fontWeight: '600' }}>
+                      Logo Claro
+                    </div>
+                  )}
+                  <div>
+                    <input
+                      type="file"
+                      ref={logoInputRef}
+                      onChange={e => handleImageUpload(e, 'logoUrl')}
+                      style={{ display: 'none' }}
+                      accept="image/*"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => logoInputRef.current?.click()}
+                      style={{
+                        padding: '7px 12px', borderRadius: '8px', border: '1px solid #cbd5e1',
+                        backgroundColor: '#ffffff', fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px'
+                      }}
+                    >
+                      <Upload size={14} /> Subir Logo Principal
+                    </button>
+                    <span style={{ fontSize: '0.72rem', color: '#64748b' }}>PNG transparente recomendado</span>
                   </div>
-                )}
-                <input
-                  type="file"
-                  ref={logoInputRef}
-                  onChange={e => handleImageUpload(e, 'logoUrl')}
-                  style={{ display: 'none' }}
-                  accept="image/*"
-                />
-                <button
-                  type="button"
-                  onClick={() => logoInputRef.current?.click()}
-                  style={{
-                    padding: '8px 14px', borderRadius: '8px', border: '1px solid #cbd5e1',
-                    backgroundColor: '#f8fafc', fontSize: '0.82rem', fontWeight: '600', cursor: 'pointer',
-                    display: 'flex', alignItems: 'center', gap: '6px'
-                  }}
-                >
-                  <Upload size={15} /> Cambiar Logo
-                </button>
+                </div>
+              </div>
+
+              {/* Logo para Fondos Oscuros (Blanco / Transparente) */}
+              <div style={{ backgroundColor: '#0b1120', padding: '16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)', color: '#ffffff' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <label style={{ fontSize: '0.85rem', fontWeight: '700', color: '#ffffff' }}>
+                    Logo para Fondos Oscuros (Footer / Blanco)
+                  </label>
+                  {formData.logoWhiteUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, logoWhiteUrl: '' })}
+                      style={{ border: 'none', background: 'none', color: '#f87171', fontSize: '0.75rem', cursor: 'pointer' }}
+                    >
+                      Quitar
+                    </button>
+                  )}
+                </div>
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                  {formData.logoWhiteUrl ? (
+                    <img
+                      src={formData.logoWhiteUrl}
+                      alt="Logo Blanco"
+                      style={{ width: '64px', height: '64px', objectFit: 'contain', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.2)', padding: '4px', backgroundColor: '#1e293b' }}
+                    />
+                  ) : (
+                    <div style={{ width: '64px', height: '64px', borderRadius: '10px', backgroundColor: '#1e293b', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: '0.72rem', textAlign: 'center', padding: '4px' }}>
+                      Opcional Blanco
+                    </div>
+                  )}
+                  <div>
+                    <input
+                      type="file"
+                      ref={logoWhiteInputRef}
+                      onChange={e => handleImageUpload(e, 'logoWhiteUrl')}
+                      style={{ display: 'none' }}
+                      accept="image/*"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => logoWhiteInputRef.current?.click()}
+                      style={{
+                        padding: '7px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.2)',
+                        backgroundColor: '#1e293b', color: '#ffffff', fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px'
+                      }}
+                    >
+                      <Upload size={14} /> Subir Logo Blanco
+                    </button>
+                    <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>Usado en el footer oscuro</span>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            {/* SECCIÓN ESTILO Y EFECTO DE BOTONES */}
+            <div style={{ backgroundColor: '#f8fafc', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                <MousePointer size={18} color="#2563eb" />
+                <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: '800', color: '#0f172a' }}>
+                  Estilo y Comportamiento de los Botones
+                </h4>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
+                
+                {/* Forma del Botón */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', color: '#334155', marginBottom: '8px' }}>
+                    Forma de las Esquinas
+                  </label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    {[
+                      { id: 'rounded', label: 'Redondeado (10px)' },
+                      { id: 'pill', label: 'Cápsula (Pill)' },
+                      { id: 'square', label: 'Cuadrado (6px)' }
+                    ].map(b => (
+                      <button
+                        key={b.id}
+                        type="button"
+                        onClick={() => setFormData({ ...formData, buttonStyle: b.id as any })}
+                        style={{
+                          flex: 1, padding: '8px 6px',
+                          borderRadius: b.id === 'pill' ? '9999px' : b.id === 'square' ? '4px' : '8px',
+                          border: formData.buttonStyle === b.id ? '2px solid #2563eb' : '1px solid #cbd5e1',
+                          backgroundColor: formData.buttonStyle === b.id ? '#eff6ff' : '#ffffff',
+                          color: formData.buttonStyle === b.id ? '#1e40af' : '#475569',
+                          fontWeight: '700', fontSize: '0.78rem', cursor: 'pointer', textAlign: 'center'
+                        }}
+                      >
+                        {b.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Efecto Hover Animado */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', color: '#334155', marginBottom: '8px' }}>
+                    Micro-animación al pasar el mouse (Hover)
+                  </label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, buttonHoverEffect: true })}
+                      style={{
+                        flex: 1, padding: '8px 10px', borderRadius: '8px',
+                        border: formData.buttonHoverEffect !== false ? '2px solid #16a34a' : '1px solid #cbd5e1',
+                        backgroundColor: formData.buttonHoverEffect !== false ? '#f0fdf4' : '#ffffff',
+                        color: formData.buttonHoverEffect !== false ? '#166534' : '#475569',
+                        fontWeight: '700', fontSize: '0.8rem', cursor: 'pointer'
+                      }}
+                    >
+                      🟢 Con Efecto Hover
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, buttonHoverEffect: false })}
+                      style={{
+                        flex: 1, padding: '8px 10px', borderRadius: '8px',
+                        border: formData.buttonHoverEffect === false ? '2px solid #64748b' : '1px solid #cbd5e1',
+                        backgroundColor: formData.buttonHoverEffect === false ? '#f1f5f9' : '#ffffff',
+                        color: formData.buttonHoverEffect === false ? '#0f172a' : '#475569',
+                        fontWeight: '700', fontSize: '0.8rem', cursor: 'pointer'
+                      }}
+                    >
+                      ⚪ Estático (Plano)
+                    </button>
+                  </div>
+                </div>
+
               </div>
             </div>
 

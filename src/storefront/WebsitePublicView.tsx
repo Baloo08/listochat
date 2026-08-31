@@ -6,14 +6,12 @@ import {
   Mail,
   MapPin,
   Clock,
-  Sparkles,
   CheckCircle,
   Star,
   ArrowRight,
   ChevronRight,
   ShieldCheck,
   Award,
-  CreditCard,
   Truck
 } from 'lucide-react';
 import { WhatsAppIcon, InstagramIcon, FacebookIcon, TikTokIcon } from '../client/components/WebsiteBuilder';
@@ -96,6 +94,11 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
   const accentColor = website.accentColor || '#f59e0b';
   const fontFamily = website.fontFamily || 'Inter';
 
+  // Button Shape & Hover Styles
+  const buttonStyle = website.buttonStyle || 'rounded';
+  const buttonHoverEffect = website.buttonHoverEffect !== false;
+  const btnRadius = buttonStyle === 'pill' ? '9999px' : buttonStyle === 'square' ? '6px' : '10px';
+
   const storeUrl = `/tienda/${tenant.slug}`;
   const bookingUrl = `/reservas/${tenant.slug}`;
   const cleanPhone = (tenant.whatsappNumber || website.contactPhone || '').replace(/\D/g, '');
@@ -127,7 +130,7 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
       boxSizing: 'border-box'
     }}>
 
-      {/* 1. TOP NAVBAR */}
+      {/* 1. TOP NAVBAR (Usa Logo Principal Claro) */}
       <nav style={{
         position: 'sticky',
         top: 0,
@@ -182,12 +185,14 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
             {website.showStoreButton && (
               <a
                 href={storeUrl}
+                className={buttonHoverEffect ? 'btn-interactive' : ''}
                 style={{
                   display: 'inline-flex', alignItems: 'center', gap: '6px',
-                  padding: '9px 16px', borderRadius: '8px',
+                  padding: '9px 16px', borderRadius: btnRadius,
                   backgroundColor: primaryColor, color: 'white',
                   textDecoration: 'none', fontWeight: '700', fontSize: '0.85rem',
-                  boxShadow: `0 4px 12px ${primaryColor}35`
+                  boxShadow: `0 4px 12px ${primaryColor}35`,
+                  transition: 'all 0.2s ease'
                 }}
               >
                 <ShoppingBag size={16} />
@@ -198,12 +203,14 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
             {website.showBookingButton && (
               <a
                 href={bookingUrl}
+                className={buttonHoverEffect ? 'btn-interactive' : ''}
                 style={{
                   display: 'inline-flex', alignItems: 'center', gap: '6px',
-                  padding: '9px 16px', borderRadius: '8px',
+                  padding: '9px 16px', borderRadius: btnRadius,
                   backgroundColor: '#ffffff', color: primaryColor,
                   border: `1.5px solid ${primaryColor}`,
-                  textDecoration: 'none', fontWeight: '700', fontSize: '0.85rem'
+                  textDecoration: 'none', fontWeight: '700', fontSize: '0.85rem',
+                  transition: 'all 0.2s ease'
                 }}
               >
                 <Calendar size={16} />
@@ -260,12 +267,14 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
                 {website.showStoreButton && (
                   <a
                     href={storeUrl}
+                    className={buttonHoverEffect ? 'btn-interactive' : ''}
                     style={{
                       display: 'inline-flex', alignItems: 'center', gap: '8px',
-                      padding: '13px 24px', borderRadius: '10px',
+                      padding: '13px 24px', borderRadius: btnRadius,
                       backgroundColor: primaryColor, color: 'white',
                       textDecoration: 'none', fontWeight: '800', fontSize: '0.95rem',
-                      boxShadow: `0 6px 18px ${primaryColor}40`
+                      boxShadow: `0 6px 18px ${primaryColor}40`,
+                      transition: 'all 0.2s ease'
                     }}
                   >
                     <ShoppingBag size={18} />
@@ -277,12 +286,14 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
                 {website.showBookingButton && (
                   <a
                     href={bookingUrl}
+                    className={buttonHoverEffect ? 'btn-interactive' : ''}
                     style={{
                       display: 'inline-flex', alignItems: 'center', gap: '8px',
-                      padding: '13px 24px', borderRadius: '10px',
+                      padding: '13px 24px', borderRadius: btnRadius,
                       backgroundColor: '#ffffff', color: '#0f172a',
                       border: '1.5px solid #cbd5e1',
-                      textDecoration: 'none', fontWeight: '800', fontSize: '0.95rem'
+                      textDecoration: 'none', fontWeight: '800', fontSize: '0.95rem',
+                      transition: 'all 0.2s ease'
                     }}
                   >
                     <Calendar size={18} color={primaryColor} />
@@ -295,12 +306,14 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
                     href={waUrl}
                     target="_blank"
                     rel="noreferrer"
+                    className={buttonHoverEffect ? 'btn-interactive' : ''}
                     style={{
                       display: 'inline-flex', alignItems: 'center', gap: '8px',
-                      padding: '13px 22px', borderRadius: '10px',
+                      padding: '13px 22px', borderRadius: btnRadius,
                       backgroundColor: '#16a34a', color: 'white',
                       textDecoration: 'none', fontWeight: '800', fontSize: '0.95rem',
-                      boxShadow: '0 6px 18px rgba(22, 163, 74, 0.3)'
+                      boxShadow: '0 6px 18px rgba(22, 163, 74, 0.3)',
+                      transition: 'all 0.2s ease'
                     }}
                   >
                     <WhatsAppIcon size={18} color="white" />
@@ -370,12 +383,14 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
               {website.showStoreButton && (
                 <a
                   href={storeUrl}
+                  className={buttonHoverEffect ? 'btn-interactive' : ''}
                   style={{
                     display: 'inline-flex', alignItems: 'center', gap: '8px',
-                    padding: '14px 28px', borderRadius: '12px',
+                    padding: '14px 28px', borderRadius: btnRadius,
                     backgroundColor: primaryColor, color: 'white',
                     textDecoration: 'none', fontWeight: '800', fontSize: '1rem',
-                    boxShadow: '0 8px 24px rgba(0, 0, 0, 0.3)'
+                    boxShadow: '0 8px 24px rgba(0, 0, 0, 0.3)',
+                    transition: 'all 0.2s ease'
                   }}
                 >
                   <ShoppingBag size={20} />
@@ -387,12 +402,14 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
               {website.showBookingButton && (
                 <a
                   href={bookingUrl}
+                  className={buttonHoverEffect ? 'btn-interactive' : ''}
                   style={{
                     display: 'inline-flex', alignItems: 'center', gap: '8px',
-                    padding: '14px 28px', borderRadius: '12px',
+                    padding: '14px 28px', borderRadius: btnRadius,
                     backgroundColor: '#ffffff', color: '#0f172a',
                     textDecoration: 'none', fontWeight: '800', fontSize: '1rem',
-                    boxShadow: '0 8px 24px rgba(0, 0, 0, 0.2)'
+                    boxShadow: '0 8px 24px rgba(0, 0, 0, 0.2)',
+                    transition: 'all 0.2s ease'
                   }}
                 >
                   <Calendar size={20} color={primaryColor} />
@@ -405,12 +422,14 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
                   href={waUrl}
                   target="_blank"
                   rel="noreferrer"
+                  className={buttonHoverEffect ? 'btn-interactive' : ''}
                   style={{
                     display: 'inline-flex', alignItems: 'center', gap: '8px',
-                    padding: '14px 24px', borderRadius: '12px',
+                    padding: '14px 24px', borderRadius: btnRadius,
                     backgroundColor: '#16a34a', color: 'white',
                     textDecoration: 'none', fontWeight: '800', fontSize: '1rem',
-                    boxShadow: '0 8px 24px rgba(22, 163, 74, 0.3)'
+                    boxShadow: '0 8px 24px rgba(22, 163, 74, 0.3)',
+                    transition: 'all 0.2s ease'
                   }}
                 >
                   <WhatsAppIcon size={20} color="white" />
@@ -565,10 +584,12 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
                       </span>
                       <a
                         href={storeUrl}
+                        className={buttonHoverEffect ? 'btn-interactive' : ''}
                         style={{
-                          padding: '6px 14px', borderRadius: '8px',
+                          padding: '6px 14px', borderRadius: btnRadius,
                           backgroundColor: primaryColor, color: 'white',
-                          textDecoration: 'none', fontWeight: '700', fontSize: '0.8rem'
+                          textDecoration: 'none', fontWeight: '700', fontSize: '0.8rem',
+                          transition: 'all 0.2s ease'
                         }}
                       >
                         Pedir
@@ -632,11 +653,13 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
                   </div>
                   <a
                     href={bookingUrl}
+                    className={buttonHoverEffect ? 'btn-interactive' : ''}
                     style={{
-                      padding: '8px 16px', borderRadius: '8px',
+                      padding: '8px 16px', borderRadius: btnRadius,
                       backgroundColor: '#ffffff', color: primaryColor,
                       border: `1.5px solid ${primaryColor}`,
-                      textDecoration: 'none', fontWeight: '700', fontSize: '0.82rem'
+                      textDecoration: 'none', fontWeight: '700', fontSize: '0.82rem',
+                      transition: 'all 0.2s ease'
                     }}
                   >
                     Reservar
@@ -687,7 +710,7 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
         </section>
       )}
 
-      {/* 8. FOOTER ESTÉTICO Y ELEGANTE */}
+      {/* 8. FOOTER ESTÉTICO Y ELEGANTE (Usa Logo Blanco si existe) */}
       {website.showContactSection !== false && (
         <footer id="contacto" style={{
           backgroundColor: '#0b1120',
@@ -704,13 +727,17 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
             marginBottom: '50px'
           }}>
             
-            {/* Columna 1: Marca & Descripción */}
+            {/* Columna 1: Marca & Logo Blanco */}
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
-                {website.logoUrl ? (
-                  <img src={website.logoUrl} alt={tenant.name} style={{ height: '36px', maxWidth: '120px', objectFit: 'contain' }} />
+                {(website.logoWhiteUrl || website.logoUrl) ? (
+                  <img
+                    src={website.logoWhiteUrl || website.logoUrl}
+                    alt={tenant.name}
+                    style={{ height: '38px', maxWidth: '140px', objectFit: 'contain' }}
+                  />
                 ) : (
-                  <div style={{ width: '32px', height: '32px', borderRadius: '8px', backgroundColor: primaryColor, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>
+                  <div style={{ width: '34px', height: '34px', borderRadius: '8px', backgroundColor: primaryColor, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>
                     {tenant.name?.charAt(0) || 'B'}
                   </div>
                 )}
@@ -730,6 +757,7 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
                     target="_blank"
                     rel="noreferrer"
                     aria-label="Instagram"
+                    className="btn-interactive"
                     style={{
                       width: '38px', height: '38px', borderRadius: '10px',
                       backgroundColor: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
@@ -746,6 +774,7 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
                     target="_blank"
                     rel="noreferrer"
                     aria-label="Facebook"
+                    className="btn-interactive"
                     style={{
                       width: '38px', height: '38px', borderRadius: '10px',
                       backgroundColor: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
@@ -762,6 +791,7 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
                     target="_blank"
                     rel="noreferrer"
                     aria-label="TikTok"
+                    className="btn-interactive"
                     style={{
                       width: '38px', height: '38px', borderRadius: '10px',
                       backgroundColor: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
@@ -778,6 +808,7 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
                     target="_blank"
                     rel="noreferrer"
                     aria-label="WhatsApp"
+                    className="btn-interactive"
                     style={{
                       width: '38px', height: '38px', borderRadius: '10px',
                       backgroundColor: 'rgba(37, 211, 102, 0.15)', border: '1px solid rgba(37, 211, 102, 0.3)',
@@ -877,6 +908,20 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
           </div>
         </footer>
       )}
+
+      {/* Global Inline CSS for hover animations */}
+      <style>{`
+        .btn-interactive {
+          transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        }
+        .btn-interactive:hover {
+          transform: translateY(-2px) scale(1.02) !important;
+          filter: brightness(1.05);
+        }
+        .btn-interactive:active {
+          transform: translateY(0px) scale(0.98) !important;
+        }
+      `}</style>
 
     </div>
   );
