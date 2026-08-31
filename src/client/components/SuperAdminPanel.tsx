@@ -48,6 +48,12 @@ interface SuperAdminPanelProps {
 
 export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChangeProp, hideTabBar = false }: SuperAdminPanelProps) {
   const [activeTab, setActiveTab] = useState<string>(activeTabProp || 'tenants');
+
+  useEffect(() => {
+    if (activeTabProp) {
+      setActiveTab(activeTabProp);
+    }
+  }, [activeTabProp]);
   const api = useApi();
 
   // 1. TENANTS STATE

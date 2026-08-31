@@ -141,7 +141,7 @@ export default function App() {
   useEffect(() => {
     if (!isAuthenticated || !user) return;
 
-    if (user.role === 'superadmin') {
+    if (user?.role === 'superadmin') {
       if (currentPage === 'dashboard') {
         setCurrentPage('sa_tenants');
       }
@@ -239,8 +239,7 @@ export default function App() {
 
   if (isAppRoute) {
     if (!isAuthenticated || !user) {
-      window.location.href = '/login';
-      return null;
+      return <Login onBack={() => { window.location.href = '/'; }} />;
     }
     // Continue below to render the authenticated SaaS Layout
   } else {
@@ -351,7 +350,7 @@ export default function App() {
     }
   ];
 
-  const navGroups = user.role === 'superadmin' ? superAdminNavGroups : tenantNavGroups;
+  const navGroups = user?.role === 'superadmin' ? superAdminNavGroups : tenantNavGroups;
 
   const handleNavClick = (pageId: string) => {
     setCurrentPage(pageId);
@@ -675,11 +674,11 @@ export default function App() {
                 fontSize: '0.85rem',
                 boxShadow: 'var(--shadow-xs)'
               }}>
-                {user.name.charAt(0).toUpperCase()}
+                {(user?.name || user?.email || 'A').charAt(0).toUpperCase()}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <span style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--text)', lineHeight: '1.2' }}>{user.name}</span>
-                <span style={{ fontSize: '0.72rem', fontWeight: '600', color: 'var(--text-muted)' }}>{user.role === 'superadmin' ? 'SuperAdmin' : 'Administrador'}</span>
+                <span style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--text)', lineHeight: '1.2' }}>{user?.name || user?.email || 'Administrador'}</span>
+                <span style={{ fontSize: '0.72rem', fontWeight: '600', color: 'var(--text-muted)' }}>{user?.role === 'superadmin' ? 'SuperAdmin' : 'Administrador'}</span>
               </div>
             </div>
 
