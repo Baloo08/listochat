@@ -105,8 +105,13 @@ export async function getAdminUserByTenant(tenantId: string): Promise<User | nul
            avatar_url as "avatarUrl", provider, active, 
            created_at as "createdAt", updated_at as "updatedAt"
     FROM users 
-    WHERE tenant_id = $1 AND role = 'admin'
-    ORDER BY created_at ASC
+    WHERE tenant_id = $1
+    ORDER BY CASE 
+      WHEN role = 'admin' THEN 1 
+      WHEN role = 'tenant_admin' THEN 2 
+      WHEN role = 'owner' THEN 3 
+      ELSE 4 
+    END, created_at ASC
     LIMIT 1
   `, [tenantId]);
   return result.rows[0] || null;

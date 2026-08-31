@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { authenticateToken, requireSuperAdmin, generateToken } from '../middleware/auth.js';
 import { getAllTenants, getTenantById, createTenant, updateTenant, deleteTenant } from '../db/tenant.repo.js';
-import { createUser, getAdminUserByTenant, resetTenantAdminPassword } from '../db/users.repo.js';
+import { createUser, updateUser, getUsersByTenant, getAdminUserByTenant, resetTenantAdminPassword } from '../db/users.repo.js';
 import { saveAgentConfig } from '../db/agent-config.repo.js';
 import { saveStoreSettings } from '../db/store-settings.repo.js';
 import { logAuditEvent } from '../db/audit.repo.js';
@@ -135,24 +135,38 @@ router.put('/:id', async (req, res) => {
       return;
     }
 
-    // Also update or sync admin user (email, contact name) if provided
+    // Always update or create the tenant's admin user with the new email / contact name
     if (body.email || body.contactName) {
       try {
-        const adminUser = await getAdminUserByTenant(id);
+        let adminUser = await getAdminUserByTenant(id);
         if (adminUser) {
-          const { updateUser } = await import('../db/users.repo.js');
           await updateUser(adminUser.id, id, {
-            email: body.email || adminUser.email,
-            name: body.contactName || adminUser.name
+            email: body.email ? body.email.toLowerCase().trim() : adminUser.email,
+            name: body.contactName ? body.contactName.trim() : adminUser.name
+          });
+        } else if (body.email) {
+          await createUser({
+            tenantId: id,
+            name: body.contactName ? body.contactName.trim() : `${body.name || 'Admin'}`,
+            email: body.email.toLowerCase().trim(),
+            role: 'admin',
+            password: 'password123'
           });
         }
       } catch (userErr) {
-        console.warn('Could not update admin user during tenant edit:', userErr);
+        console.warn('Error updating admin user email/name:', userErr);
       }
     }
 
     await logAuditEvent(id, req.user!.userId, 'update_tenant', 'tenant', id, body, req.ip, req.headers['user-agent']);
-    res.json(updated);
+    
+    // Return updated tenant with fresh adminEmail
+    const freshAdmin = await getAdminUserByTenant(id);
+    res.json({
+      ...updated,
+      adminEmail: freshAdmin?.email || body.email || null,
+      adminId: freshAdmin?.id || null
+    });
   } catch (error) {
     console.error('Error al actualizar inquilino:', error);
     res.status(500).json({ error: 'Error al actualizar inquilino' });
