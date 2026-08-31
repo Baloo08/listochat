@@ -70,7 +70,7 @@ export function useAuth() {
         }
         setToken(data.token);
         // Force fast seamless transition to dashboard
-        window.location.href = '/';
+        window.location.href = '/app';
         return true;
       }
       return false;

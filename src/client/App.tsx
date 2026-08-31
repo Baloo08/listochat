@@ -113,9 +113,6 @@ export default function App() {
     return <TermsOfServiceView />;
   }
 
-  const [showLoginView, setShowLoginView] = useState<boolean>(
-    pathname === '/login' || pathname === '/superadmin' || pathname === '/admin'
-  );
   const { isAuthenticated, user, loading, logout } = useAuth();
   const [currentPage, setCurrentPage] = useState<string>('dashboard');
   const [unreadOrdersCount, setUnreadOrdersCount] = useState<number>(0);
@@ -218,31 +215,37 @@ export default function App() {
       localStorage.removeItem('superadmin_token');
       localStorage.removeItem('impersonated_tenant');
       localStorage.removeItem('impersonated_tenant_name');
-      window.location.href = '/';
+      window.location.href = '/app';
     }
   };
 
   if (loading) return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', fontFamily: 'system-ui, sans-serif' }}>Cargando Betico...</div>;
 
-  if (!isAuthenticated || !user) {
-    if (showLoginView || pathname === '/login') {
-      return (
-        <Login
-          onBack={() => {
-            setShowLoginView(false);
-            if (window.location.pathname === '/login') {
-              window.history.pushState({}, '', '/');
-            }
-          }}
-        />
-      );
+  // 1. General Login Route (/login, /superadmin, /ingreso)
+  if (pathname === '/login' || pathname === '/superadmin' || pathname === '/ingreso') {
+    if (isAuthenticated && user) {
+      window.location.href = '/app';
+      return null;
     }
+    return <Login onBack={() => { window.location.href = '/'; }} />;
+  }
+
+  // 2. Authenticated App Route (/app, /panel, /dashboard)
+  const isAppRoute = pathname.startsWith('/app') || pathname.startsWith('/panel') || pathname.startsWith('/dashboard');
+
+  if (isAppRoute) {
+    if (!isAuthenticated || !user) {
+      window.location.href = '/login';
+      return null;
+    }
+    // Continue below to render the authenticated SaaS Layout
+  } else {
+    // 3. ROOT DOMAIN (https://betico.tech/) OR ANY OTHER PUBLIC PATH -> ALWAYS RENDER PUBLIC WEBSITE
     return (
       <LandingPageView
-        onLoginClick={() => {
-          setShowLoginView(true);
-          window.history.pushState({}, '', '/login');
-        }}
+        isLoggedIn={isAuthenticated}
+        onLoginClick={() => { window.location.href = '/login'; }}
+        onGoToDashboard={() => { window.location.href = '/app'; }}
       />
     );
   }

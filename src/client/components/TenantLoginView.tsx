@@ -96,7 +96,7 @@ export default function TenantLoginView({ slug }: TenantLoginViewProps) {
         setSuccessMessage(true);
         // Refresh page to load tenant dashboard cleanly
         setTimeout(() => {
-          window.location.href = '/';
+          window.location.href = '/app';
         }, 600);
       }
     } catch (err: any) {

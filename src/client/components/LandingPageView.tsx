@@ -35,9 +35,11 @@ import {
 
 interface LandingPageProps {
   onLoginClick: () => void;
+  isLoggedIn?: boolean;
+  onGoToDashboard?: () => void;
 }
 
-export default function LandingPageView({ onLoginClick }: LandingPageProps) {
+export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashboard }: LandingPageProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [dailyMessages, setDailyMessages] = useState<number>(120);
   const [avgTicket, setAvgTicket] = useState<number>(8500);
@@ -156,44 +158,68 @@ export default function LandingPageView({ onLoginClick }: LandingPageProps) {
           )}
 
           {/* Action Buttons */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <button
-              onClick={onLoginClick}
-              style={{
-                padding: '8px 14px',
-                backgroundColor: 'transparent',
-                color: '#f8fafc',
-                border: '1px solid rgba(255, 255, 255, 0.2)',
-                borderRadius: '8px',
-                fontWeight: '700',
-                fontSize: '0.82rem',
-                cursor: 'pointer'
-              }}
-            >
-              Iniciar Sesión
-            </button>
-
-            {!isMobile && (
-              <a
-                href="https://wa.me/50688888888?text=Hola%20Betico%2C%20quiero%20solicitar%20una%20demostraci%C3%B3n%20para%20mi%20negocio"
-                target="_blank"
-                rel="noreferrer"
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            {isLoggedIn ? (
+              <button
+                onClick={onGoToDashboard || (() => { window.location.href = '/app'; })}
                 style={{
-                  padding: '8px 14px',
+                  padding: '9px 18px',
                   background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
                   color: 'white',
-                  borderRadius: '8px',
-                  textDecoration: 'none',
-                  fontWeight: '700',
-                  fontSize: '0.82rem',
+                  border: 'none',
+                  borderRadius: '10px',
+                  fontWeight: '800',
+                  fontSize: '0.85rem',
+                  cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '6px',
-                  boxShadow: '0 4px 14px rgba(16, 185, 129, 0.35)'
+                  boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)'
                 }}
               >
-                <MessageSquare size={15} /> Demo
-              </a>
+                <Zap size={16} /> Ir a mi Panel
+              </button>
+            ) : (
+              <>
+                <button
+                  onClick={onLoginClick}
+                  style={{
+                    padding: '8px 14px',
+                    backgroundColor: 'transparent',
+                    color: '#f8fafc',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    borderRadius: '8px',
+                    fontWeight: '700',
+                    fontSize: '0.82rem',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Iniciar Sesión
+                </button>
+
+                {!isMobile && (
+                  <a
+                    href="https://wa.me/50688888888?text=Hola%20Betico%2C%20quiero%20solicitar%20una%20demostraci%C3%B3n%20para%20mi%20negocio"
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{
+                      padding: '8px 14px',
+                      background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                      color: 'white',
+                      borderRadius: '8px',
+                      textDecoration: 'none',
+                      fontWeight: '700',
+                      fontSize: '0.82rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      boxShadow: '0 4px 14px rgba(16, 185, 129, 0.35)'
+                    }}
+                  >
+                    <MessageSquare size={15} /> Demo
+                  </a>
+                )}
+              </>
             )}
 
             {/* Mobile Hamburger Button */}
