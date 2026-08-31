@@ -5,9 +5,10 @@ import ForgotPasswordModal from './ForgotPasswordModal';
 
 interface LoginProps {
   onBack?: () => void;
+  onSuccess?: () => void;
 }
 
-export default function Login({ onBack }: LoginProps) {
+export default function Login({ onBack, onSuccess }: LoginProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -27,7 +28,10 @@ export default function Login({ onBack }: LoginProps) {
 
     setLoading(true);
     try {
-      await login(email, password);
+      const ok = await login(email, password);
+      if (ok && onSuccess) {
+        onSuccess();
+      }
     } catch (err: any) {
       setError(err.message || 'Credenciales inválidas. Por favor intenta de nuevo.');
       setLoading(false);

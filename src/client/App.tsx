@@ -231,7 +231,7 @@ export default function App() {
       window.location.href = '/app';
       return null;
     }
-    return <Login onBack={() => { window.location.href = '/'; }} />;
+    return <Login onBack={() => { window.location.href = '/'; }} onSuccess={() => { window.location.reload(); }} />;
   }
 
   // 2. Authenticated App Route (/app, /panel, /dashboard)

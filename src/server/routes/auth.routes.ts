@@ -43,8 +43,8 @@ function recordFailedAttempt(key: string) {
   const attempt = loginAttempts.get(key) || { count: 0, firstAttempt: now, blockedUntil: 0 };
   attempt.count += 1;
 
-  // If 5 failed attempts in 10 minutes, block for 5 minutes
-  if (attempt.count >= 5) {
+  // If 15 failed attempts in 10 minutes, block for 5 minutes
+  if (attempt.count >= 15) {
     attempt.blockedUntil = now + 5 * 60 * 1000;
   }
   loginAttempts.set(key, attempt);

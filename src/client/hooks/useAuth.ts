@@ -69,8 +69,13 @@ export function useAuth() {
           localStorage.setItem('last_tenant_slug', data.user.tenantSlug);
         }
         setToken(data.token);
-        // Force fast seamless transition to dashboard
-        window.location.href = '/app';
+        setIsAuthenticated(true);
+        if (data.user) {
+          setUser(data.user);
+        }
+        // Force immediate reload so all instances and components re-mount cleanly
+        window.location.replace('/app');
+        window.location.reload();
         return true;
       }
       return false;
