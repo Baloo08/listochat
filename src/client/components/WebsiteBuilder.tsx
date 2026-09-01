@@ -96,6 +96,12 @@ interface WebsiteConfig {
   headerLayout: 'split' | 'overlay' | 'banner_top';
   overlayColor: string;
   overlayOpacity: number;
+  navbarStyle?: 'glass' | 'floating' | 'solid' | 'gradient' | 'minimal';
+  navbarBgColor?: string;
+  navbarTextColor?: string;
+  navbarHoverColor?: string;
+  hoverEffectType?: 'lift' | 'glow' | 'scale' | 'border_highlight';
+  hoverGlowColor?: string;
   showAboutSection: boolean;
   showFeaturesSection: boolean;
   showProductsSection: boolean;
@@ -147,6 +153,12 @@ export default function WebsiteBuilder() {
     headerLayout: 'split',
     overlayColor: '#0f172a',
     overlayOpacity: 0,
+    navbarStyle: 'glass',
+    navbarBgColor: '#ffffff',
+    navbarTextColor: '#0f172a',
+    navbarHoverColor: '#2563eb',
+    hoverEffectType: 'lift',
+    hoverGlowColor: '#38bdf8',
     showAboutSection: true,
     showFeaturesSection: true,
     showProductsSection: true,
@@ -904,6 +916,177 @@ export default function WebsiteBuilder() {
                   </div>
                 </div>
 
+              </div>
+            </div>
+
+
+            {/* SECCIÓN BARRA DE NAVEGACIÓN (NAVBAR EFFECTS & COLORS) */}
+            <div style={{ backgroundColor: '#f8fafc', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
+                <Layout size={18} color="#2563eb" />
+                <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: '800', color: '#0f172a' }}>
+                  Efectos y Estilo de la Barra de Navegación (Navbar)
+                </h4>
+              </div>
+
+              {/* Selector de Estilo de Navbar */}
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', color: '#334155', marginBottom: '8px' }}>
+                  Estilo Visual del Navbar
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '8px' }}>
+                  {[
+                    { id: 'glass', label: '🫧 Cristal (Blur)' },
+                    { id: 'floating', label: '🛸 Flotante 3D' },
+                    { id: 'solid', label: '🎨 Color Sólido' },
+                    { id: 'gradient', label: '🌈 Degradado' },
+                    { id: 'minimal', label: '💎 Minimalista' }
+                  ].map(style => (
+                    <button
+                      key={style.id}
+                      type="button"
+                      onClick={() => setFormData({ ...formData, navbarStyle: style.id as any })}
+                      style={{
+                        padding: '10px 8px', borderRadius: '8px',
+                        border: (formData.navbarStyle || 'glass') === style.id ? '2px solid #2563eb' : '1px solid #cbd5e1',
+                        backgroundColor: (formData.navbarStyle || 'glass') === style.id ? '#eff6ff' : '#ffffff',
+                        color: (formData.navbarStyle || 'glass') === style.id ? '#1e40af' : '#475569',
+                        fontWeight: '700', fontSize: '0.78rem', cursor: 'pointer', textAlign: 'center'
+                      }}
+                    >
+                      {style.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Colores del Navbar */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '14px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
+                    Fondo del Navbar
+                  </label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <input
+                      type="color"
+                      value={formData.navbarBgColor || '#ffffff'}
+                      onChange={e => setFormData({ ...formData, navbarBgColor: e.target.value })}
+                      style={{ width: '36px', height: '36px', border: 'none', borderRadius: '6px', cursor: 'pointer' }}
+                    />
+                    <input
+                      type="text"
+                      value={formData.navbarBgColor || '#ffffff'}
+                      onChange={e => setFormData({ ...formData, navbarBgColor: e.target.value })}
+                      style={{ width: '100px', padding: '6px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.8rem' }}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
+                    Texto y Enlaces
+                  </label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <input
+                      type="color"
+                      value={formData.navbarTextColor || '#0f172a'}
+                      onChange={e => setFormData({ ...formData, navbarTextColor: e.target.value })}
+                      style={{ width: '36px', height: '36px', border: 'none', borderRadius: '6px', cursor: 'pointer' }}
+                    />
+                    <input
+                      type="text"
+                      value={formData.navbarTextColor || '#0f172a'}
+                      onChange={e => setFormData({ ...formData, navbarTextColor: e.target.value })}
+                      style={{ width: '100px', padding: '6px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.8rem' }}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
+                    Efecto Hover en Enlaces
+                  </label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <input
+                      type="color"
+                      value={formData.navbarHoverColor || formData.primaryColor || '#2563eb'}
+                      onChange={e => setFormData({ ...formData, navbarHoverColor: e.target.value })}
+                      style={{ width: '36px', height: '36px', border: 'none', borderRadius: '6px', cursor: 'pointer' }}
+                    />
+                    <input
+                      type="text"
+                      value={formData.navbarHoverColor || formData.primaryColor || '#2563eb'}
+                      onChange={e => setFormData({ ...formData, navbarHoverColor: e.target.value })}
+                      style={{ width: '100px', padding: '6px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.8rem' }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* SECCIÓN EFECTOS HOVER Y RESPLANDOR (HOVER EFFECTS) */}
+            <div style={{ backgroundColor: '#f8fafc', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
+                <Sparkles size={18} color="#a855f7" />
+                <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: '800', color: '#0f172a' }}>
+                  Efectos Hover Interactivos en Tarjetas y Botones
+                </h4>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
+                {/* Tipo de animación hover */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', color: '#334155', marginBottom: '8px' }}>
+                    Animación al pasar el mouse
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                    {[
+                      { id: 'lift', label: '🚀 Elevación 3D' },
+                      { id: 'glow', label: '✨ Resplandor Neón' },
+                      { id: 'scale', label: '🔍 Zoom Suave' },
+                      { id: 'border_highlight', label: '🌟 Borde Iluminado' }
+                    ].map(h => (
+                      <button
+                        key={h.id}
+                        type="button"
+                        onClick={() => setFormData({ ...formData, hoverEffectType: h.id as any })}
+                        style={{
+                          padding: '9px 8px', borderRadius: '8px',
+                          border: (formData.hoverEffectType || 'lift') === h.id ? '2px solid #a855f7' : '1px solid #cbd5e1',
+                          backgroundColor: (formData.hoverEffectType || 'lift') === h.id ? '#faf5ff' : '#ffffff',
+                          color: (formData.hoverEffectType || 'lift') === h.id ? '#7e22ce' : '#475569',
+                          fontWeight: '700', fontSize: '0.78rem', cursor: 'pointer', textAlign: 'center'
+                        }}
+                      >
+                        {h.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Color del Resplandor / Hover */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', color: '#334155', marginBottom: '8px' }}>
+                    Color del Efecto Hover / Resplandor
+                  </label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <input
+                      type="color"
+                      value={formData.hoverGlowColor || '#38bdf8'}
+                      onChange={e => setFormData({ ...formData, hoverGlowColor: e.target.value })}
+                      style={{ width: '40px', height: '40px', border: 'none', borderRadius: '8px', cursor: 'pointer' }}
+                    />
+                    <input
+                      type="text"
+                      value={formData.hoverGlowColor || '#38bdf8'}
+                      onChange={e => setFormData({ ...formData, hoverGlowColor: e.target.value })}
+                      style={{ width: '120px', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem' }}
+                    />
+                  </div>
+                  <p style={{ margin: '6px 0 0 0', fontSize: '0.72rem', color: '#64748b' }}>
+                    Define la luz o sombra que desprenden las tarjetas y botones al interactuar con ellos.
+                  </p>
+                </div>
               </div>
             </div>
 

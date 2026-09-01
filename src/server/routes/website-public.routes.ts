@@ -24,14 +24,16 @@ router.get('/:slug', async (req, res) => {
       getStoreSettings(tenant.id)
     ]);
 
-    const featuredServices = services.slice(0, 6).map(s => ({
+    const allServices = services.filter(s => s.active !== false).map(s => ({
       id: s.id,
       name: s.name,
       description: s.description,
       price: s.price,
-      duration: s.duration || s.estimatedMinutes ? `${s.estimatedMinutes || 45} min` : '45 min',
-      category: s.category
+      duration: s.duration || `${s.estimatedMinutes || 45} min`,
+      estimatedMinutes: s.estimatedMinutes || 45,
+      category: s.category || 'General'
     }));
+    const featuredServices = allServices;
 
     const featuredProducts = products.slice(0, 8).map(p => ({
       id: p.id,

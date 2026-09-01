@@ -26,6 +26,7 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [activeServiceCategory, setActiveServiceCategory] = useState<string>("all");
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -93,6 +94,16 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
   }
 
   const { tenant, website, store, featuredServices, featuredProducts } = data;
+  const formatServiceDuration = (mins: number) => {
+    if (mins >= 1440 || mins === 480) return '☀️ Día Completo';
+    if (mins >= 60) {
+      const h = Math.floor(mins / 60);
+      const m = mins % 60;
+      return `${h}h${m > 0 ? ' ' + m + 'm' : ''}`;
+    }
+    return `${mins} min`;
+  };
+
   const primaryColor = website.primaryColor || '#2563eb';
   const accentColor = website.accentColor || '#f59e0b';
   const fontFamily = website.fontFamily || 'Inter';
@@ -151,64 +162,71 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
         }
       `}</style>
 
+      {/* NAVBAR CON ESTILOS AVANZADOS Y LOGO VISIBLE EN MÓVIL Y ESCRITORIO */}
       <nav style={{
         position: 'sticky',
-        top: 0,
+        top: website.navbarStyle === 'floating' ? '12px' : 0,
         zIndex: 60,
-        backdropFilter: 'blur(16px)',
-        backgroundColor: 'rgba(255, 255, 255, 0.96)',
-        borderBottom: '1px solid #e2e8f0',
-        padding: '12px 20px'
+        margin: website.navbarStyle === 'floating' ? '0 16px' : '0',
+        borderRadius: website.navbarStyle === 'floating' ? '16px' : '0',
+        boxShadow: website.navbarStyle === 'floating' ? '0 12px 30px rgba(0, 0, 0, 0.12)' : website.navbarStyle === 'minimal' ? 'none' : '0 2px 10px rgba(0, 0, 0, 0.04)',
+        backdropFilter: website.navbarStyle === 'glass' ? 'blur(16px)' : 'none',
+        backgroundColor: website.navbarStyle === 'glass'
+          ? `${website.navbarBgColor || '#ffffff'}e6`
+          : website.navbarStyle === 'gradient'
+          ? `linear-gradient(135deg, ${website.navbarBgColor || primaryColor} 0%, ${primaryColor} 100%)`
+          : website.navbarStyle === 'minimal'
+          ? 'transparent'
+          : (website.navbarBgColor || '#ffffff'),
+        borderBottom: website.navbarStyle === 'floating' || website.navbarStyle === 'minimal' ? 'none' : '1px solid #e2e8f0',
+        border: website.navbarStyle === 'floating' ? '1px solid rgba(255,255,255,0.4)' : undefined,
+        padding: '12px 20px',
+        transition: 'all 0.3s ease'
       }}>
         <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           
-          {/* BRAND AREA: EN MÓVIL SOLO NOMBRE; EN WEB SOLO LOGO (O NOMBRE SI NO HAY LOGO) */}
+          {/* BRAND AREA: LOGO OFICIAL VISIBLE EN MÓVIL Y EN WEB */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            
-            {/* VISTA MÓVIL: SOLO NOMBRE */}
-            <div className="wpv-mobile-name" style={{ fontSize: '1.25rem', fontWeight: '900', color: '#0f172a', letterSpacing: '-0.5px' }}>
-              {tenant.name}
-            </div>
-
-            {/* VISTA ESCRITORIO (WEB): SOLO LOGO O BADGE + NOMBRE SI NO HAY LOGO */}
-            <div className="wpv-desktop-logo" style={{ alignItems: 'center', gap: '12px' }}>
-              {website.logoUrl ? (
-                <img
-                  src={website.logoUrl}
-                  alt={tenant.name}
-                  style={{ height: '44px', maxWidth: '180px', objectFit: 'contain' }}
-                />
-              ) : (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <div style={{
-                    width: '38px', height: '38px', borderRadius: '10px',
-                    backgroundColor: primaryColor, color: 'white',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '1.1rem'
-                  }}>
-                    {tenant.name?.charAt(0) || 'B'}
-                  </div>
-                  <span style={{ fontSize: '1.25rem', fontWeight: '900', color: '#0f172a', letterSpacing: '-0.5px' }}>
-                    {tenant.name}
-                  </span>
+            {website.logoUrl ? (
+              <img
+                src={website.logoUrl}
+                alt={tenant.name}
+                style={{
+                  height: '40px',
+                  maxWidth: '160px',
+                  objectFit: 'contain',
+                  display: 'block'
+                }}
+              />
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{
+                  width: '36px', height: '36px', borderRadius: '10px',
+                  backgroundColor: primaryColor, color: 'white',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '1.05rem'
+                }}>
+                  {tenant.name?.charAt(0) || 'B'}
                 </div>
-              )}
-            </div>
-
+                <span style={{ fontSize: '1.15rem', fontWeight: '900', color: website.navbarTextColor || '#0f172a', letterSpacing: '-0.5px' }}>
+                  {tenant.name}
+                </span>
+              </div>
+            )}
           </div>
 
-          {/* DESKTOP NAV LINKS (OCULTOS EN MÓVIL) */}
-          <div className="wpv-desktop-links" style={{ alignItems: 'center', gap: '24px' }}>
+          {/* DESKTOP NAV LINKS (OCULTOS EN MÓVIL) CON COLOR Y HOVER EFECTO */}
+          <div className="wpv-desktop-links" style={{ alignItems: 'center', gap: '16px' }}>
             {website.showAboutSection !== false && (
-              <a onClick={() => scrollTo('nosotros')} style={{ color: '#475569', fontWeight: '600', fontSize: '0.88rem', cursor: 'pointer', transition: 'color 0.2s' }}>Sobre Nosotros</a>
+              <a onClick={() => scrollTo('nosotros')} className="nav-link-item">Sobre Nosotros</a>
             )}
             {website.showProductsSection !== false && featuredProducts && featuredProducts.length > 0 && (
-              <a onClick={() => scrollTo('productos')} style={{ color: '#475569', fontWeight: '600', fontSize: '0.88rem', cursor: 'pointer', transition: 'color 0.2s' }}>Productos & Menú</a>
+              <a onClick={() => scrollTo('productos')} className="nav-link-item">Productos & Menú</a>
             )}
             {website.showServicesSection !== false && featuredServices && featuredServices.length > 0 && (
-              <a onClick={() => scrollTo('servicios')} style={{ color: '#475569', fontWeight: '600', fontSize: '0.88rem', cursor: 'pointer', transition: 'color 0.2s' }}>Servicios</a>
+              <a onClick={() => scrollTo('servicios')} className="nav-link-item">Servicios</a>
             )}
             {website.showContactSection !== false && (
-              <a onClick={() => scrollTo('contacto')} style={{ color: '#475569', fontWeight: '600', fontSize: '0.88rem', cursor: 'pointer', transition: 'color 0.2s' }}>Contacto</a>
+              <a onClick={() => scrollTo('contacto')} className="nav-link-item">Contacto</a>
             )}
           </div>
 
@@ -712,6 +730,7 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
               return (
                 <div
                   key={prod.id}
+                  className="hover-card-interactive"
                   style={{
                     backgroundColor: '#ffffff',
                     borderRadius: '16px',
@@ -761,73 +780,131 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
         </section>
       )}
 
-      {/* 6. SERVICIOS DESTACADOS */}
-      {website.showServicesSection !== false && featuredServices && featuredServices.length > 0 && (
-        <section id="servicios" style={{ padding: '70px 20px', backgroundColor: '#ffffff', borderTop: '1px solid #e2e8f0', borderBottom: '1px solid #e2e8f0' }}>
-          <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '30px', flexWrap: 'wrap', gap: '12px' }}>
-              <div>
-                <div style={{ color: primaryColor, fontWeight: '700', fontSize: '0.85rem', textTransform: 'uppercase', marginBottom: '4px' }}>
-                  Agenda en Línea
-                </div>
-                <h2 style={{ fontSize: 'clamp(1.8rem, 3vw, 2.2rem)', fontWeight: '900', color: '#0f172a', margin: 0 }}>
-                  Nuestros Servicios
-                </h2>
-              </div>
-              <a
-                href={bookingUrl}
-                style={{
-                  display: 'inline-flex', alignItems: 'center', gap: '6px',
-                  color: primaryColor, fontWeight: '700', fontSize: '0.95rem', textDecoration: 'none'
-                }}
-              >
-                <span>Agendar Cita en Línea</span>
-                <ChevronRight size={18} />
-              </a>
-            </div>
+      {/* 6. SERVICIOS COMPLETOS CON FILTRO DE CATEGORÍAS */}
+      {website.showServicesSection !== false && featuredServices && featuredServices.length > 0 && (() => {
+        const serviceCategories = ['all', ...Array.from(new Set(featuredServices.map((s: any) => s.category || 'General').filter(Boolean)))];
+        const displayedServices = activeServiceCategory === 'all'
+          ? featuredServices
+          : featuredServices.filter((s: any) => (s.category || 'General') === activeServiceCategory);
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '18px' }}>
-              {featuredServices.map((srv: any) => (
-                <div
-                  key={srv.id}
+        return (
+          <section id="servicios" style={{ padding: '70px 20px', backgroundColor: '#ffffff', borderTop: '1px solid #e2e8f0', borderBottom: '1px solid #e2e8f0' }}>
+            <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
+              
+              {/* Header Sección */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
+                <div>
+                  <div style={{ color: primaryColor, fontWeight: '700', fontSize: '0.85rem', textTransform: 'uppercase', marginBottom: '4px' }}>
+                    Agenda en Línea
+                  </div>
+                  <h2 style={{ fontSize: 'clamp(1.8rem, 3vw, 2.2rem)', fontWeight: '900', color: '#0f172a', margin: 0 }}>
+                    Nuestros Servicios ({displayedServices.length})
+                  </h2>
+                </div>
+                <a
+                  href={bookingUrl}
                   style={{
-                    backgroundColor: '#f8fafc',
-                    padding: '20px',
-                    borderRadius: '16px',
-                    border: '1px solid #e2e8f0',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center'
+                    display: 'inline-flex', alignItems: 'center', gap: '6px',
+                    color: primaryColor, fontWeight: '700', fontSize: '0.95rem', textDecoration: 'none'
                   }}
                 >
-                  <div>
-                    <h4 style={{ margin: '0 0 4px 0', fontSize: '1rem', fontWeight: '800', color: '#0f172a' }}>{srv.name}</h4>
-                    <span style={{ fontSize: '0.8rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <Clock size={14} /> {srv.duration}
-                    </span>
-                    <div style={{ marginTop: '8px', fontSize: '1.05rem', fontWeight: '900', color: primaryColor }}>
-                      ₡{Number(srv.price || 0).toLocaleString('es-CR')}
-                    </div>
-                  </div>
-                  <a
-                    href={bookingUrl}
-                    className={buttonHoverEffect ? 'btn-interactive' : ''}
+                  <span>Ver Calendario de Citas</span>
+                  <ChevronRight size={18} />
+                </a>
+              </div>
+
+              {/* Filtro de Categorías Interactivo */}
+              {serviceCategories.length > 2 && (
+                <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '12px', marginBottom: '20px', WebkitOverflowScrolling: 'touch' }}>
+                  {serviceCategories.map((cat: string) => {
+                    const isActive = activeServiceCategory === cat;
+                    return (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() => setActiveServiceCategory(cat)}
+                        style={{
+                          padding: '7px 16px',
+                          borderRadius: '20px',
+                          border: isActive ? `1.5px solid ${primaryColor}` : '1px solid #cbd5e1',
+                          backgroundColor: isActive ? `${primaryColor}15` : '#f8fafc',
+                          color: isActive ? primaryColor : '#475569',
+                          fontWeight: isActive ? '800' : '600',
+                          fontSize: '0.84rem',
+                          cursor: 'pointer',
+                          whiteSpace: 'nowrap',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        {cat === 'all' ? '✨ Todas las categorías' : cat}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Grid de Todos los Servicios */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '18px' }}>
+                {displayedServices.map((srv: any) => (
+                  <div
+                    key={srv.id}
+                    className="hover-card-interactive"
                     style={{
-                      padding: '8px 16px', borderRadius: btnRadius,
-                      backgroundColor: '#ffffff', color: primaryColor,
-                      border: `1.5px solid ${primaryColor}`,
-                      textDecoration: 'none', fontWeight: '700', fontSize: '0.82rem',
-                      transition: 'all 0.2s ease'
+                      backgroundColor: '#f8fafc',
+                      padding: '20px',
+                      borderRadius: '16px',
+                      border: '1px solid #e2e8f0',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      gap: '14px'
                     }}
                   >
-                    Reservar
-                  </a>
-                </div>
-              ))}
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                        <h4 style={{ margin: '0 0 4px 0', fontSize: '1.05rem', fontWeight: '800', color: '#0f172a' }}>{srv.name}</h4>
+                        <span style={{ fontSize: '0.72rem', backgroundColor: '#e2e8f0', color: '#475569', padding: '2px 8px', borderRadius: '12px', fontWeight: '600' }}>
+                          {srv.category || 'General'}
+                        </span>
+                      </div>
+                      
+                      {srv.description && (
+                        <p style={{ margin: '4px 0 8px 0', fontSize: '0.82rem', color: '#64748b', lineHeight: '1.4' }}>
+                          {srv.description}
+                        </p>
+                      )}
+
+                      <span style={{ fontSize: '0.8rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <Clock size={14} color="#64748b" /> {formatServiceDuration(srv.estimatedMinutes || 45)}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '10px', borderTop: '1px solid #e2e8f0' }}>
+                      <div style={{ fontSize: '1.15rem', fontWeight: '900', color: primaryColor }}>
+                        ₡{Number(srv.price || 0).toLocaleString('es-CR')}
+                      </div>
+                      <a
+                        href={bookingUrl}
+                        className={buttonHoverEffect ? 'btn-interactive' : ''}
+                        style={{
+                          padding: '8px 18px', borderRadius: btnRadius,
+                          backgroundColor: primaryColor, color: 'white',
+                          textDecoration: 'none', fontWeight: '800', fontSize: '0.85rem',
+                          boxShadow: `0 4px 12px ${primaryColor}30`,
+                          transition: 'all 0.2s ease'
+                        }}
+                      >
+                        Reservar
+                      </a>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
             </div>
-          </div>
-        </section>
-      )}
+          </section>
+        );
+      })()}
 
       {/* 7. TESTIMONIOS */}
       {website.showTestimonialsSection !== false && website.testimonialsJson && website.testimonialsJson.length > 0 && (
