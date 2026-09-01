@@ -9171,9 +9171,18 @@ async function startServer() {
   app.use("/api/webhook", webhook_routes_default);
   app.use("/webhook", webhook_routes_default);
   if (env.NODE_ENV === "production") {
+    app.use("/assets", express.static(path2.join(__dirname, "assets"), { maxAge: "1y", immutable: true }));
     app.use(express.static(__dirname));
     app.get("*", (req, res) => {
-      res.sendFile(path2.join(__dirname, "index.html"));
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
+      const indexPath = path2.join(__dirname, "index.html");
+      if (fs2.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+      } else {
+        res.sendFile(path2.join(process.cwd(), "dist", "index.html"));
+      }
     });
   } else {
     try {

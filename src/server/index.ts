@@ -178,9 +178,19 @@ async function startServer() {
 
   // Serve static assets in production, setup vite dev server in dev
   if (env.NODE_ENV === 'production') {
+    app.use('/assets', express.static(path.join(__dirname, 'assets'), { maxAge: '1y', immutable: true }));
     app.use(express.static(__dirname));
     app.get('*', (req, res) => {
-      res.sendFile(path.join(__dirname, 'index.html'));
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+      
+      const indexPath = path.join(__dirname, 'index.html');
+      if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+      } else {
+        res.sendFile(path.join(process.cwd(), 'dist', 'index.html'));
+      }
     });
   } else {
     try {
