@@ -131,7 +131,7 @@ ${agentConfig?.systemPrompt || 'Atiende amablemente a los clientes.'}
 
 Datos del negocio:
 ${crTime}
-${bookingUrl ? `Citas: ${bookingUrl}` : ''}${storeUrl ? ` | Tienda: ${storeUrl}` : ''}
+${(agentConfig?.showBookingLink !== false && bookingUrl) ? `Citas: ${bookingUrl}` : ''}${(agentConfig?.showStoreLink !== false && storeUrl) ? ` | Tienda: ${storeUrl}` : ''}
 ${scheduleInfo}${paymentInfo}${relevantServicesText}${relevantProductsText}
 Reglas: Usa *negrita* y emojis. No inventes precios. Responde conciso (1-2 párrafos). Si hay historial no repitas saludo. Para pagos SINPE/Transferencia da los datos y pide comprobante.
 

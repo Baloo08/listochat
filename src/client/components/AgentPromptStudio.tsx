@@ -10,7 +10,9 @@ export default function AgentPromptStudio() {
     systemPrompt: initialData?.systemPrompt || '',
     businessName: initialData?.businessName || '',
     currency: initialData?.currency || 'CRC',
-    notifyNumber: initialData?.notifyNumber || ''
+    notifyNumber: initialData?.notifyNumber || '',
+    showBookingLink: initialData ? (initialData.showBookingLink !== false) : true,
+    showStoreLink: initialData ? (initialData.showStoreLink !== false) : true,
   });
   const [simInput, setSimInput] = useState('');
   const [simOutput, setSimOutput] = useState('');
@@ -60,7 +62,9 @@ export default function AgentPromptStudio() {
             systemPrompt: data.systemPrompt || '',
             businessName: data.businessName || '',
             currency: data.currency || 'CRC',
-            notifyNumber: data.notifyNumber || ''
+            notifyNumber: data.notifyNumber || '',
+            showBookingLink: data.showBookingLink !== false,
+            showStoreLink: data.showStoreLink !== false,
           };
           setConfig(newConf);
           try { sessionStorage.setItem('betico_cached_agent_prompt', JSON.stringify(newConf)); } catch(e) {}
@@ -326,6 +330,43 @@ ${wizardAnswers.paymentMethods}
               placeholder="Escribe las instrucciones detalladas del agente aquí..."
               style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '0.85rem', lineHeight: '1.5', fontFamily: 'monospace' }}
             />
+          </div>
+
+          {/* Links Configuration */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid var(--border)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <strong style={{ fontSize: '0.9rem', color: '#1e293b', display: 'block' }}>Enlace de Reservas</strong>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Incluir en respuestas</span>
+                </div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.8rem', color: 'var(--primary)' }}>
+                  <input
+                    type="checkbox"
+                    checked={config.showBookingLink !== false}
+                    onChange={e => setConfig({ ...config, showBookingLink: e.target.checked })}
+                  />
+                  <span>{config.showBookingLink !== false ? 'Sí' : 'No'}</span>
+                </label>
+              </div>
+            </div>
+
+            <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid var(--border)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <strong style={{ fontSize: '0.9rem', color: '#1e293b', display: 'block' }}>Enlace de Tienda</strong>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Incluir en respuestas</span>
+                </div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.8rem', color: 'var(--primary)' }}>
+                  <input
+                    type="checkbox"
+                    checked={config.showStoreLink !== false}
+                    onChange={e => setConfig({ ...config, showStoreLink: e.target.checked })}
+                  />
+                  <span>{config.showStoreLink !== false ? 'Sí' : 'No'}</span>
+                </label>
+              </div>
+            </div>
           </div>
 
           {/* Human Handoff & Escalation Card */}

@@ -1,14 +1,11 @@
 import { Router } from 'express';
 import { getTenantByEvolutionInstance, getAllTenants } from '../db/tenant.repo.js';
-import { processWhatsAppMessageWithAI } from '../services/agent.js';
 import { sendMessage, sendMedia, getBase64FromMediaMessage } from '../services/evolution.js';
-import { createBookingFromCommand } from '../services/booking.service.js';
-import { createOrderFromWhatsApp } from '../services/order.service.js';
 import { saveChatMessage, getChatMessagesByTenant, getChatSession, setChatHumanMode } from '../db/chats.repo.js';
 import { getAgentConfig } from '../db/agent-config.repo.js';
 import { query } from '../db/pool.js';
-import { transcribeAudioWithGemini } from '../services/audio-transcriber.service.js';
-import { analyzeSinpeReceipt } from '../services/sinpe-verifier.service.js';
+import { transcribeAudio } from '../services/audio-transcriber.service.js';
+import { enqueueMessage } from '../db/message-queue.repo.js';
 
 const router = Router();
 
@@ -115,7 +112,7 @@ router.post('/', async (req, res) => {
       }
 
       if (base64Audio) {
-        const transcription = await transcribeAudioWithGemini(base64Audio, audioMime);
+        const transcription = await transcribeAudio(base64Audio, audioMime);
         if (transcription.success && transcription.text) {
           userMessage = transcription.text;
           isVoiceNote = true;
@@ -124,95 +121,58 @@ router.post('/', async (req, res) => {
       }
     }
 
-    // 3. Process Image Messages (SINPE Móvil receipt verification)
+    // 3. Process Image Messages — Manual Verification (no AI processing)
     const isImageMsg = data?.message?.imageMessage || data?.messageType === 'imageMessage';
     if (isImageMsg && !fromMe) {
-      console.log(`[Webhook] Detected Image from ${remoteJid}! Checking for pending order SINPE verification...`);
-      let base64Img = data?.base64 || data?.message?.base64;
-      const imgMime = data?.message?.imageMessage?.mimetype || 'image/jpeg';
+      console.log(`[Webhook] Detected Image from ${remoteJid}!`);
 
-      if (!base64Img) {
-        const mediaRes = await getBase64FromMediaMessage(targetInstance, key, data.message);
-        if (mediaRes.base64) {
-          base64Img = mediaRes.base64;
+      // Check if there's a pending order for this customer
+      const pendingOrderRes = await query(`
+        SELECT id, order_number as "orderNumber", total, customer_name as "customerName", status, payment_status as "paymentStatus"
+        FROM orders
+        WHERE tenant_id = $1 
+          AND (whatsapp_jid = $2 OR customer_phone LIKE $3)
+          AND payment_status IN ('pending', 'proof_sent')
+        ORDER BY created_at DESC
+        LIMIT 1
+      `, [tenant.id, remoteJid, `%${cleanPhone.slice(-8)}%`]);
+
+      if (pendingOrderRes.rows.length > 0) {
+        const pendingOrder = pendingOrderRes.rows[0];
+        console.log(`[Webhook] Found pending order #${pendingOrder.orderNumber} for ${cleanPhone}. Marking proof_sent for manual verification.`);
+
+        // Mark order as proof_sent (admin verifies manually from the chat card)
+        await query(`
+          UPDATE orders 
+          SET payment_status = 'proof_sent', updated_at = CURRENT_TIMESTAMP
+          WHERE id = $1 AND tenant_id = $2
+        `, [pendingOrder.id, tenant.id]);
+
+        // Emit WebSocket event so admin panel updates in real time
+        if ((req as any).io) {
+          (req as any).io.to(`tenant_${tenant.id}`).emit('order:updated', {
+            id: pendingOrder.id,
+            orderNumber: pendingOrder.orderNumber,
+            status: pendingOrder.status,
+            paymentStatus: 'proof_sent'
+          });
         }
-      }
 
-      if (base64Img) {
-        // Look up pending order for this customer
-        const pendingOrderRes = await query(`
-          SELECT id, order_number as "orderNumber", total, customer_name as "customerName", status, payment_status as "paymentStatus"
-          FROM orders
-          WHERE tenant_id = $1 
-            AND (whatsapp_jid = $2 OR customer_phone LIKE $3)
-            AND payment_status IN ('pending', 'proof_sent')
-          ORDER BY created_at DESC
-          LIMIT 1
-        `, [tenant.id, remoteJid, `%${cleanPhone.slice(-8)}%`]);
+        // Reply to customer
+        const receiptReply = `📩 *Comprobante Recibido*\n\nHemos recibido tu comprobante para el pedido *#${pendingOrder.orderNumber}* (₡${Number(pendingOrder.total).toLocaleString('es-CR')}). Nuestro equipo lo verificará y confirmaremos tu pedido en breve. ¡Gracias! ✅`;
+        await sendMessage(targetInstance, cleanPhone, receiptReply);
 
-        if (pendingOrderRes.rows.length > 0) {
-          const pendingOrder = pendingOrderRes.rows[0];
-          console.log(`[Webhook] Found pending order #${pendingOrder.orderNumber} (total: ₡${pendingOrder.total}) for ${cleanPhone}. Running SINPE verification...`);
+        await saveChatMessage(tenant.id, {
+          id: `sinpe_${Date.now()}`,
+          remoteJid,
+          pushName: 'Sistema Pagos',
+          fromMe: true,
+          messageText: receiptReply,
+          aiResponse: receiptReply,
+          status: 'sent'
+        });
 
-          const receiptAnalysis = await analyzeSinpeReceipt(base64Img, imgMime);
-          console.log('[Webhook] SINPE analysis result:', receiptAnalysis);
-
-          if (receiptAnalysis.isReceipt && receiptAnalysis.amount) {
-            const expectedTotal = Number(pendingOrder.total);
-            const paidAmount = receiptAnalysis.amount;
-
-            if (paidAmount >= expectedTotal * 0.95) {
-              // Payment verified! Update order to paid & confirmed
-              await query(`
-                UPDATE orders 
-                SET payment_status = 'paid', status = 'confirmed', payment_reference = $1, updated_at = CURRENT_TIMESTAMP
-                WHERE id = $2 AND tenant_id = $3
-              `, [receiptAnalysis.reference || `SINPE_${Date.now()}`, pendingOrder.id, tenant.id]);
-
-              // Emit real-time WebSocket event for KDS & Admin Dashboard
-              if ((req as any).io) {
-                (req as any).io.to(`tenant_${tenant.id}`).emit('order:updated', {
-                  id: pendingOrder.id,
-                  orderNumber: pendingOrder.orderNumber,
-                  status: 'confirmed',
-                  paymentStatus: 'paid',
-                  paymentReference: receiptAnalysis.reference
-                });
-              }
-
-              const confirmReply = `✅ *¡Pago SINPE Móvil Verificado con Éxito!*\n\nHemos validado tu comprobante por *₡${paidAmount.toLocaleString()}* ${receiptAnalysis.reference ? `(Ref: *${receiptAnalysis.reference}*)` : ''}.\n\nTu pedido *#${pendingOrder.orderNumber}* ha sido confirmado y enviado a preparación. 🍽️🚀\n\n¡Muchas gracias por tu compra!`;
-              await sendMessage(targetInstance, cleanPhone, confirmReply);
-
-              await saveChatMessage(tenant.id, {
-                id: `sinpe_${Date.now()}`,
-                remoteJid,
-                pushName: 'Sistema Pagos',
-                fromMe: true,
-                messageText: confirmReply,
-                aiResponse: confirmReply,
-                status: 'sent'
-              });
-
-              return;
-            } else {
-              // Amount is lower than order total
-              const partialReply = `⚠️ *Comprobante Recibido con Monto Menor*\n\nDetectamos una transferencia por *₡${paidAmount.toLocaleString()}*, pero el monto total de tu pedido *#${pendingOrder.orderNumber}* es de *₡${expectedTotal.toLocaleString()}*.\n\nPor favor realiza la transferencia por el saldo restante o escribe *humano* si necesitas ayuda con tu pago.`;
-              await sendMessage(targetInstance, cleanPhone, partialReply);
-
-              await saveChatMessage(tenant.id, {
-                id: `sinpe_partial_${Date.now()}`,
-                remoteJid,
-                pushName: 'Sistema Pagos',
-                fromMe: true,
-                messageText: partialReply,
-                aiResponse: partialReply,
-                status: 'sent'
-              });
-
-              return;
-            }
-          }
-        }
+        return;
       }
 
       if (!userMessage) {
@@ -286,27 +246,9 @@ router.post('/', async (req, res) => {
       return;
     }
 
-    // Fetch conversation history
-    const allChats = await getChatMessagesByTenant(tenant.id, 20);
-    const history = allChats
-      .filter((c: any) => (c.remoteJid || c.remote_jid) === remoteJid)
-      .map((c: any) => ({
-        role: (c.fromMe || c.from_me) ? 'assistant' : 'user',
-        content: c.messageText || c.message_text || c.aiResponse || c.ai_response || ''
-      }));
-
-    console.log(`[Webhook] Processing with AI for tenant '${tenant.name}'...`);
-    const aiResult = await processWhatsAppMessageWithAI(
-      tenant.id,
-      userMessage,
-      cleanPhone,
-      pushName,
-      history
-    );
-
-    // Handle Human Handoff (either keyword or AI COMMAND_HANDOFF)
-    if (handoffEnabled && (isKeywordTriggered || aiResult.isHandoffRequested)) {
-      console.log(`[Webhook] Human Handoff triggered for ${remoteJid}!`);
+    // Handle immediate Human Handoff keywords (before enqueueing)
+    if (handoffEnabled && isKeywordTriggered) {
+      console.log(`[Webhook] Human Handoff keyword triggered for ${remoteJid}!`);
       await setChatHumanMode(tenant.id, remoteJid, true);
 
       const customerHandoffReply = `👤 *Atención Personalizada:* Entendido *${pushName}*, te estamos comunicando con un asesor humano para atenderte directamente. En breve te responderá.`;
@@ -325,108 +267,21 @@ router.post('/', async (req, res) => {
       // Send alert notification to admin
       const adminPhone = (agentConfig?.handoffNotifyPhone || tenant.whatsappNumber || '').replace(/\D/g, '');
       if (adminPhone) {
-        const reason = aiResult.handoffReason || (isKeywordTriggered ? `El cliente escribió: "${userMessage}"` : 'El cliente solicita hablar con un asesor humano.');
-        const alertMsg = `🚨 *¡ATENCIÓN HUMANA REQUERIDA!*
-
-👤 *Cliente:* ${pushName} (${cleanPhone})
-📝 *Resumen / Motivo:* ${reason}
-
-👉 _La IA ha sido pausada automáticamente para este chat. Puedes responderle directamente desde WhatsApp o desde tu Panel de Betico._`;
-
-        try {
-          await sendMessage(targetInstance, adminPhone, alertMsg);
-        } catch (e) {
-          console.error('Error sending handoff alert to admin:', e);
-        }
+        const alertMsg = `🚨 *¡ATENCIÓN HUMANA REQUERIDA!*\n\n👤 *Cliente:* ${pushName} (${cleanPhone})\n📝 *Motivo:* El cliente escribió: "${userMessage}"\n\n👉 _La IA ha sido pausada. Responde desde WhatsApp o tu Panel de Betico._`;
+        try { await sendMessage(targetInstance, adminPhone, alertMsg); } catch (e) {}
       }
       return;
     }
 
-    if (!aiResult || !aiResult.replyText) {
-      console.warn('[Webhook] No AI reply generated');
-      return;
-    }
+    // ENQUEUE for async AI processing (worker handles everything)
+    console.log(`[Webhook] Enqueueing message for AI processing: tenant='${tenant.name}', from=${pushName}`);
+    await enqueueMessage(tenant.id, remoteJid, pushName, cleanPhone, userMessage, targetInstance, isVoiceNote);
 
-    console.log(`[Webhook] AI generated reply: "${aiResult.replyText.slice(0, 100)}..."`);
-
-    // Send reply back via Evolution API (image if media requested, or standard text)
-    let sendRes;
-    if (aiResult.isMediaDetected && aiResult.mediaData?.mediaUrl) {
-      console.log(`[Webhook] Sending product photo to customer: ${aiResult.mediaData.mediaUrl}`);
-      sendRes = await sendMedia(targetInstance, cleanPhone, aiResult.mediaData.mediaUrl, aiResult.replyText || aiResult.mediaData.caption);
-    } else {
-      sendRes = await sendMessage(targetInstance, cleanPhone, aiResult.replyText);
-    }
-    console.log(`[Webhook] Message send status: success=${sendRes.success}`);
-
-    const aiMsgId = `ai_${Date.now()}`;
-    // Save AI reply to database
-    await saveChatMessage(tenant.id, {
-      id: aiMsgId,
-      remoteJid,
-      pushName: 'Asistente IA',
-      fromMe: true,
-      messageText: aiResult.replyText,
-      aiResponse: aiResult.replyText,
-      status: sendRes.success ? 'sent' : 'failed'
-    });
-
+    // Emit queue event for admin panel
     if ((req as any).io) {
-      (req as any).io.to(`tenant_${tenant.id}`).emit('chat:message', {
-        id: aiMsgId,
-        tenantId: tenant.id,
-        remoteJid,
-        pushName: 'Asistente IA',
-        fromMe: true,
-        messageText: aiResult.replyText,
-        aiResponse: aiResult.replyText,
-        createdAt: new Date().toISOString()
-      });
+      (req as any).io.to(`tenant_${tenant.id}`).emit('queue:updated', { tenantId: tenant.id });
     }
 
-    // Handle detected booking command
-    if (aiResult.isBookingDetected && aiResult.bookingData) {
-      try {
-        await createBookingFromCommand(tenant.id, {
-          ...aiResult.bookingData,
-          customerPhone: aiResult.bookingData.customerPhone || cleanPhone,
-          customerName: aiResult.bookingData.customerName || pushName
-        });
-        await query(`
-          INSERT INTO notifications_log (id, tenant_id, recipient, message, trigger_type, status)
-          VALUES ($1, $2, $3, $4, 'booking_created', 'sent')
-        `, [
-          `notif_${Date.now()}`,
-          tenant.id,
-          cleanPhone,
-          `Nueva cita agendada por IA para ${pushName}`
-        ]);
-      } catch (err) {
-        console.error('[Webhook] Failed to process booking command:', err);
-      }
-    }
-
-    // Handle detected order command
-    if (aiResult.isOrderDetected && aiResult.orderData) {
-      try {
-        await createOrderFromWhatsApp(tenant.id, {
-          ...aiResult.orderData,
-          customerPhone: aiResult.orderData.customerPhone || cleanPhone,
-          customerName: aiResult.orderData.customerName || pushName
-        });
-        await query(`
-          INSERT INTO notifications_log (id, tenant_id, recipient, message, trigger_type, status)
-          VALUES ($1, $2, $3, $4, 'order_created', 'sent')
-        `, [
-          `notif_${Date.now()}`,
-          tenant.id,
-          cleanPhone,
-          `Nuevo pedido registrado por IA para ${pushName}`
-        ]);
-      } catch (err) {
-        console.error('[Webhook] Failed to process order command:', err);
-      }
-    }
   } catch (error) {
     console.error('[Webhook] Error processing incoming WhatsApp webhook:', error);
   }

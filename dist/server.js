@@ -2296,49 +2296,411 @@ function startSubscriptionLifecycleWorker() {
   }, 60 * 60 * 1e3);
 }
 
-// src/server/routes/auth.routes.ts
-import { Router } from "express";
-
-// src/server/middleware/auth.ts
-init_env();
-import jwt from "jsonwebtoken";
-function generateToken(userId, tenantId, role) {
-  return jwt.sign({ userId, tenantId, role }, env.JWT_SECRET, { expiresIn: "7d" });
+// src/server/db/message-queue.repo.ts
+init_pool();
+async function ensureQueueTable() {
+  const sql = `
+    CREATE TABLE IF NOT EXISTS message_queue (
+      id TEXT PRIMARY KEY DEFAULT 'mq_' || gen_random_uuid()::text,
+      tenant_id TEXT NOT NULL,
+      remote_jid TEXT NOT NULL,
+      push_name TEXT DEFAULT '',
+      clean_phone TEXT DEFAULT '',
+      user_message TEXT NOT NULL,
+      instance_name TEXT DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'pending',
+      is_voice_note BOOLEAN DEFAULT false,
+      priority INTEGER DEFAULT 0,
+      error_message TEXT,
+      ai_response TEXT,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+      processed_at TIMESTAMPTZ,
+      completed_at TIMESTAMPTZ
+    );
+    CREATE INDEX IF NOT EXISTS idx_mq_status ON message_queue(status, created_at);
+    CREATE INDEX IF NOT EXISTS idx_mq_tenant ON message_queue(tenant_id, status);
+  `;
+  await query(sql);
 }
-function authenticateToken(req, res, next) {
-  const authHeader = req.headers["authorization"];
-  const token = authHeader && authHeader.split(" ")[1];
-  if (!token) {
-    res.status(401).json({ error: "Unauthorized" });
-    return;
-  }
-  try {
-    const decoded = jwt.verify(token, env.JWT_SECRET);
-    req.user = decoded;
-    next();
-  } catch (err) {
-    res.status(403).json({ error: "Forbidden" });
-  }
+async function enqueueMessage(tenantId, remoteJid, pushName, cleanPhone, userMessage, instanceName, isVoiceNote = false) {
+  const sql = `
+    INSERT INTO message_queue 
+    (tenant_id, remote_jid, push_name, clean_phone, user_message, instance_name, status, is_voice_note)
+    VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7)
+    RETURNING *;
+  `;
+  const result = await query(sql, [tenantId, remoteJid, pushName, cleanPhone, userMessage, instanceName, isVoiceNote]);
+  return mapToQueueMessage(result.rows[0]);
 }
-function requireRole(...roles) {
-  return (req, res, next) => {
-    if (!req.user || !roles.includes(req.user.role)) {
-      res.status(403).json({ error: "Insufficient permissions" });
-      return;
-    }
-    next();
+async function takeNextPending() {
+  const sql = `
+    UPDATE message_queue SET status = 'processing', processed_at = CURRENT_TIMESTAMP
+    WHERE id = (
+      SELECT id FROM message_queue WHERE status = 'pending' ORDER BY created_at ASC LIMIT 1 FOR UPDATE SKIP LOCKED
+    )
+    RETURNING *;
+  `;
+  const result = await query(sql);
+  if (result.rows.length === 0) return null;
+  return mapToQueueMessage(result.rows[0]);
+}
+async function markDone(id, aiResponse) {
+  const sql = `
+    UPDATE message_queue 
+    SET status = 'done', completed_at = CURRENT_TIMESTAMP, ai_response = $1
+    WHERE id = $2;
+  `;
+  await query(sql, [aiResponse, id]);
+}
+async function markFailed(id, errorMessage) {
+  const sql = `
+    UPDATE message_queue 
+    SET status = 'failed', completed_at = CURRENT_TIMESTAMP, error_message = $1
+    WHERE id = $2;
+  `;
+  await query(sql, [errorMessage, id]);
+}
+async function getPendingByTenant(tenantId) {
+  const sql = `
+    SELECT * FROM message_queue 
+    WHERE tenant_id = $1 AND status IN ('pending', 'processing')
+    ORDER BY created_at ASC;
+  `;
+  const result = await query(sql, [tenantId]);
+  return result.rows.map(mapToQueueMessage);
+}
+async function getQueueStats(tenantId) {
+  let sql = `SELECT status, count(*) as count FROM message_queue `;
+  const params = [];
+  if (tenantId) {
+    sql += `WHERE tenant_id = $1 `;
+    params.push(tenantId);
+  }
+  sql += `GROUP BY status;`;
+  const result = await query(sql, params);
+  const stats = { pending: 0, processing: 0, done: 0, failed: 0 };
+  for (const row of result.rows) {
+    if (row.status === "pending") stats.pending = parseInt(row.count, 10);
+    if (row.status === "processing") stats.processing = parseInt(row.count, 10);
+    if (row.status === "done") stats.done = parseInt(row.count, 10);
+    if (row.status === "failed") stats.failed = parseInt(row.count, 10);
+  }
+  return stats;
+}
+function mapToQueueMessage(row) {
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    remoteJid: row.remote_jid,
+    pushName: row.push_name,
+    cleanPhone: row.clean_phone,
+    userMessage: row.user_message,
+    instanceName: row.instance_name,
+    status: row.status,
+    isVoiceNote: row.is_voice_note,
+    errorMessage: row.error_message,
+    aiResponse: row.ai_response,
+    createdAt: row.created_at,
+    processedAt: row.processed_at,
+    completedAt: row.completed_at
   };
 }
-function requireSuperAdmin(req, res, next) {
-  if (!req.user || req.user.role !== "superadmin") {
-    res.status(403).json({ error: "Superadmin access required" });
-    return;
+
+// src/server/services/agent.ts
+init_ai_provider();
+init_encryption();
+
+// src/server/db/agent-config.repo.ts
+init_pool();
+var defaultSystemPrompt = `You are an AI assistant. Help customers politely and concisely.`;
+async function getAgentConfig(tenantId) {
+  const result = await query(`
+    SELECT id, tenant_id as "tenantId", config_json as "configJson", updated_at as "updatedAt"
+    FROM agent_settings 
+    WHERE tenant_id = $1
+  `, [tenantId]);
+  if (result.rows.length === 0) {
+    return {
+      tenantId,
+      systemPrompt: defaultSystemPrompt,
+      model: "gemini-2.5-flash",
+      temperature: 0.7,
+      autoReplyEnabled: true,
+      humanHandoffEnabled: true,
+      handoffKeywords: ["humano", "asesor", "persona", "agente", "hablar con alguien", "queja", "reclamo", "urgente"],
+      showBookingLink: true,
+      showStoreLink: true
+    };
   }
-  next();
+  const data = result.rows[0].configJson || {};
+  return {
+    id: result.rows[0].id,
+    tenantId: result.rows[0].tenantId,
+    systemPrompt: data.systemPrompt || defaultSystemPrompt,
+    model: data.model || "gemini-2.5-flash",
+    temperature: data.temperature ?? 0.7,
+    autoReplyEnabled: data.autoReplyEnabled ?? true,
+    notifyNumber: data.notifyNumber,
+    businessName: data.businessName,
+    currency: data.currency,
+    humanHandoffEnabled: data.humanHandoffEnabled ?? true,
+    handoffKeywords: data.handoffKeywords || ["humano", "asesor", "persona", "agente", "hablar con alguien", "queja", "reclamo", "urgente"],
+    handoffNotifyPhone: data.handoffNotifyPhone || data.notifyNumber,
+    showBookingLink: data.showBookingLink ?? true,
+    showStoreLink: data.showStoreLink ?? true,
+    updatedAt: result.rows[0].updatedAt
+  };
+}
+async function saveAgentConfig(tenantId, config) {
+  const configJson = {
+    systemPrompt: config.systemPrompt,
+    model: config.model,
+    temperature: config.temperature,
+    autoReplyEnabled: config.autoReplyEnabled,
+    notifyNumber: config.notifyNumber,
+    businessName: config.businessName,
+    currency: config.currency,
+    humanHandoffEnabled: config.humanHandoffEnabled,
+    handoffKeywords: config.handoffKeywords,
+    handoffNotifyPhone: config.handoffNotifyPhone,
+    showBookingLink: config.showBookingLink,
+    showStoreLink: config.showStoreLink
+  };
+  const result = await query(`
+    INSERT INTO agent_settings (tenant_id, config_json, updated_at)
+    VALUES ($1, $2, CURRENT_TIMESTAMP)
+    ON CONFLICT (tenant_id) 
+    DO UPDATE SET config_json = EXCLUDED.config_json, updated_at = CURRENT_TIMESTAMP
+    RETURNING id, tenant_id as "tenantId", config_json as "configJson", updated_at as "updatedAt"
+  `, [tenantId, configJson]);
+  const data = result.rows[0].configJson;
+  return {
+    id: result.rows[0].id,
+    tenantId: result.rows[0].tenantId,
+    systemPrompt: data.systemPrompt,
+    model: data.model,
+    temperature: data.temperature,
+    autoReplyEnabled: data.autoReplyEnabled,
+    notifyNumber: data.notifyNumber,
+    businessName: data.businessName,
+    currency: data.currency,
+    humanHandoffEnabled: data.humanHandoffEnabled,
+    handoffKeywords: data.handoffKeywords,
+    handoffNotifyPhone: data.handoffNotifyPhone,
+    showBookingLink: data.showBookingLink ?? true,
+    showStoreLink: data.showStoreLink ?? true,
+    updatedAt: result.rows[0].updatedAt
+  };
 }
 
-// src/server/routes/auth.routes.ts
-init_users_repo();
+// src/server/db/services.repo.ts
+init_pool();
+async function getServicesByTenant(tenantId) {
+  const result = await query(`
+    SELECT id, tenant_id as "tenantId", name, description, price, 
+           price_display as "priceDisplay", duration, estimated_minutes as "estimatedMinutes",
+           category, parallel_slots as "parallelSlots", custom_variables as "customVariables",
+           notes, active, created_at as "createdAt"
+    FROM services 
+    WHERE tenant_id = $1
+    ORDER BY created_at DESC
+  `, [tenantId]);
+  return result.rows;
+}
+async function getServiceById(id, tenantId) {
+  const result = await query(`
+    SELECT id, tenant_id as "tenantId", name, description, price, 
+           price_display as "priceDisplay", duration, estimated_minutes as "estimatedMinutes",
+           category, parallel_slots as "parallelSlots", custom_variables as "customVariables",
+           notes, active, created_at as "createdAt"
+    FROM services 
+    WHERE id = $1 AND tenant_id = $2
+  `, [id, tenantId]);
+  return result.rows[0] || null;
+}
+async function createService(tenantId, data) {
+  const result = await query(`
+    INSERT INTO services (
+      tenant_id, name, description, price, price_display, duration, estimated_minutes, category, parallel_slots, custom_variables, notes, active
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    RETURNING id, tenant_id as "tenantId", name, description, price, 
+           price_display as "priceDisplay", duration, estimated_minutes as "estimatedMinutes",
+           category, parallel_slots as "parallelSlots", custom_variables as "customVariables",
+           notes, active, created_at as "createdAt"
+  `, [
+    tenantId,
+    data.name,
+    data.description,
+    data.price,
+    data.priceDisplay,
+    data.duration,
+    data.estimatedMinutes,
+    data.category,
+    data.parallelSlots || 1,
+    JSON.stringify(data.customVariables || []),
+    data.notes,
+    data.active !== false
+  ]);
+  return result.rows[0];
+}
+async function updateService(id, tenantId, data) {
+  const updates = [];
+  const params = [id, tenantId];
+  let paramIdx = 3;
+  const fields = ["name", "description", "price", "priceDisplay", "duration", "estimatedMinutes", "category", "parallelSlots", "customVariables", "notes", "active"];
+  for (const field of fields) {
+    if (data[field] !== void 0) {
+      const dbField = field.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+      updates.push(`${dbField} = $${paramIdx++}`);
+      const val = field === "customVariables" ? JSON.stringify(data[field]) : data[field];
+      params.push(val);
+    }
+  }
+  if (updates.length === 0) return getServiceById(id, tenantId);
+  const result = await query(`
+    UPDATE services SET ${updates.join(", ")}
+    WHERE id = $1 AND tenant_id = $2
+    RETURNING id, tenant_id as "tenantId", name, description, price, 
+           price_display as "priceDisplay", duration, estimated_minutes as "estimatedMinutes",
+           category, parallel_slots as "parallelSlots", custom_variables as "customVariables",
+           notes, active, created_at as "createdAt"
+  `, params);
+  return result.rows[0] || null;
+}
+async function deleteService(id, tenantId) {
+  const result = await query("DELETE FROM services WHERE id = $1 AND tenant_id = $2", [id, tenantId]);
+  return (result.rowCount ?? 0) > 0;
+}
+
+// src/server/db/products.repo.ts
+init_pool();
+async function getProductsByTenant(tenantId, activeOnly = false) {
+  let sql = `
+    SELECT p.id, p.tenant_id as "tenantId", p.name, p.slug, p.description, p.price, p.compare_at_price as "compareAtPrice",
+           p.currency, p.category, p.tags, p.stock, p.track_stock as "trackStock", p.sku, p.weight_grams as "weightGrams",
+           p.custom_variables as "customVariables", p.featured, p.active,
+           p.created_at as "createdAt", p.updated_at as "updatedAt",
+           COALESCE(
+             (SELECT json_agg(json_build_object('id', pi.id, 'url', pi.url, 'isPrimary', pi.is_primary) ORDER BY pi.sort_order ASC)
+              FROM product_images pi WHERE pi.product_id = p.id), '[]'::json
+           ) as images,
+           COALESCE(
+             (SELECT json_agg(json_build_object('id', pv.id, 'name', pv.name, 'priceOverride', pv.price_override, 'stock', pv.stock))
+              FROM product_variants pv WHERE pv.product_id = p.id), '[]'::json
+           ) as variants
+    FROM products p
+    WHERE p.tenant_id = $1
+  `;
+  const params = [tenantId];
+  if (activeOnly) {
+    sql += ` AND p.active = true`;
+  }
+  sql += ` ORDER BY p.sort_order ASC, p.created_at DESC`;
+  const result = await query(sql, params);
+  return result.rows;
+}
+async function getProductById(id, tenantId) {
+  const result = await query(`
+    SELECT id, tenant_id as "tenantId", name, slug, description, price, compare_at_price as "compareAtPrice",
+           currency, category, tags, stock, track_stock as "trackStock", p.weight_grams as "weightGrams", 
+           p.custom_variables as "customVariables", sku, featured, active,
+           created_at as "createdAt", updated_at as "updatedAt"
+    FROM products p
+    WHERE p.id = $1 AND p.tenant_id = $2
+  `, [id, tenantId]);
+  if (result.rows.length === 0) return null;
+  const product = result.rows[0];
+  const imgRes = await query(`
+    SELECT id, url, alt_text as "altText", sort_order as "sortOrder", is_primary as "isPrimary"
+    FROM product_images WHERE product_id = $1 ORDER BY sort_order ASC
+  `, [id]);
+  const varRes = await query(`
+    SELECT id, name, sku, price_override as "priceOverride", stock, attributes, active
+    FROM product_variants WHERE product_id = $1
+  `, [id]);
+  product.images = imgRes.rows;
+  product.variants = varRes.rows;
+  return product;
+}
+async function getProductBySlug(slug, tenantId) {
+  const result = await query(`
+    SELECT p.id, p.tenant_id as "tenantId", p.name, p.slug, p.description, p.price, p.compare_at_price as "compareAtPrice",
+           p.currency, p.category, p.tags, p.stock, p.track_stock as "trackStock", p.weight_grams as "weightGrams",
+           p.custom_variables as "customVariables", p.sku, p.featured, p.active,
+           p.created_at as "createdAt", p.updated_at as "updatedAt"
+    FROM products p
+    WHERE p.slug = $1 AND p.tenant_id = $2
+  `, [slug, tenantId]);
+  if (result.rows.length === 0) return null;
+  const product = result.rows[0];
+  const imgRes = await query(`
+    SELECT id, url, alt_text as "altText", sort_order as "sortOrder", is_primary as "isPrimary"
+    FROM product_images WHERE product_id = $1 ORDER BY sort_order ASC
+  `, [product.id]);
+  const varRes = await query(`
+    SELECT id, name, sku, price_override as "priceOverride", stock, attributes, active
+    FROM product_variants WHERE product_id = $1
+  `, [product.id]);
+  product.images = imgRes.rows;
+  product.variants = varRes.rows;
+  return product;
+}
+async function createProduct(tenantId, data) {
+  const result = await query(`
+    INSERT INTO products (
+      tenant_id, name, slug, description, price, compare_at_price, currency, 
+      category, tags, stock, track_stock, weight_grams, custom_variables, sku, featured, active
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+    RETURNING id, tenant_id as "tenantId", name, slug, description, price, compare_at_price as "compareAtPrice",
+           currency, category, tags, stock, track_stock as "trackStock", weight_grams as "weightGrams", 
+           custom_variables as "customVariables", sku, featured, active,
+           created_at as "createdAt", updated_at as "updatedAt"
+  `, [
+    tenantId,
+    data.name,
+    data.slug,
+    data.description,
+    data.price,
+    data.compareAtPrice,
+    data.currency || "CRC",
+    data.category,
+    data.tags,
+    data.stock || 0,
+    data.trackStock !== false,
+    data.weightGrams || 0,
+    JSON.stringify(data.customVariables || []),
+    data.sku,
+    data.featured || false,
+    data.active !== false
+  ]);
+  const product = result.rows[0];
+  product.images = [];
+  product.variants = [];
+  return product;
+}
+async function updateProduct(id, tenantId, data) {
+  const updates = [];
+  const params = [id, tenantId];
+  let paramIdx = 3;
+  const fields = ["name", "slug", "description", "price", "compareAtPrice", "currency", "category", "tags", "stock", "trackStock", "weightGrams", "customVariables", "sku", "featured", "active"];
+  for (const field of fields) {
+    if (data[field] !== void 0) {
+      const dbField = field.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+      updates.push(`${dbField} = $${paramIdx++}`);
+      const val = field === "customVariables" ? JSON.stringify(data[field]) : data[field];
+      params.push(val);
+    }
+  }
+  if (updates.length > 0) {
+    updates.push(`updated_at = CURRENT_TIMESTAMP`);
+    await query(`UPDATE products SET ${updates.join(", ")} WHERE id = $1 AND tenant_id = $2`, params);
+  }
+  return getProductById(id, tenantId);
+}
+async function deleteProduct(id, tenantId) {
+  const result = await query("DELETE FROM products WHERE id = $1 AND tenant_id = $2", [id, tenantId]);
+  return (result.rowCount || 0) > 0;
+}
 
 // src/server/db/store-settings.repo.ts
 init_pool();
@@ -2486,83 +2848,971 @@ async function upsertStoreSettings(tenantId, data) {
 }
 var saveStoreSettings = upsertStoreSettings;
 
-// src/server/routes/auth.routes.ts
-init_users_repo();
-
-// src/server/db/agent-config.repo.ts
+// src/server/db/schedule.repo.ts
 init_pool();
-var defaultSystemPrompt = `You are an AI assistant. Help customers politely and concisely.`;
-async function getAgentConfig(tenantId) {
+async function getScheduleSettings(tenantId) {
   const result = await query(`
-    SELECT id, tenant_id as "tenantId", config_json as "configJson", updated_at as "updatedAt"
-    FROM agent_settings 
+    SELECT id, tenant_id as "tenantId", schedule_mode as "scheduleMode", config_json as config, updated_at as "updatedAt"
+    FROM schedule_settings
     WHERE tenant_id = $1
   `, [tenantId]);
   if (result.rows.length === 0) {
     return {
       tenantId,
-      systemPrompt: defaultSystemPrompt,
-      model: "gemini-2.5-flash",
-      temperature: 0.7,
-      autoReplyEnabled: true,
-      humanHandoffEnabled: true,
-      handoffKeywords: ["humano", "asesor", "persona", "agente", "hablar con alguien", "queja", "reclamo", "urgente"]
+      scheduleMode: "jornada",
+      globalParallelSlots: 1,
+      jornadaConfig: {
+        startHour: "08:00",
+        endHour: "17:00",
+        slotMinutes: 45,
+        hasBreak: true,
+        breakStart: "12:00",
+        breakEnd: "13:00",
+        daysEnabled: [1, 2, 3, 4, 5, 6]
+        // Lunes a Sábado
+      },
+      customFields: [],
+      vacationConfig: {
+        enabled: false,
+        startDate: "",
+        endDate: "",
+        message: "Estaremos cerrados temporalmente por vacaciones. \xA1Pronto estaremos de vuelta!"
+      }
     };
   }
-  const data = result.rows[0].configJson || {};
+  const row = result.rows[0];
+  const config = row.config || {};
   return {
-    id: result.rows[0].id,
-    tenantId: result.rows[0].tenantId,
-    systemPrompt: data.systemPrompt || defaultSystemPrompt,
-    model: data.model || "gemini-2.5-flash",
-    temperature: data.temperature ?? 0.7,
-    autoReplyEnabled: data.autoReplyEnabled ?? true,
-    notifyNumber: data.notifyNumber,
-    businessName: data.businessName,
-    currency: data.currency,
-    humanHandoffEnabled: data.humanHandoffEnabled ?? true,
-    handoffKeywords: data.handoffKeywords || ["humano", "asesor", "persona", "agente", "hablar con alguien", "queja", "reclamo", "urgente"],
-    handoffNotifyPhone: data.handoffNotifyPhone || data.notifyNumber,
-    updatedAt: result.rows[0].updatedAt
+    id: row.id,
+    tenantId: row.tenantId,
+    scheduleMode: row.scheduleMode || "jornada",
+    globalParallelSlots: Math.max(1, Number(config.globalParallelSlots) || 1),
+    jornadaConfig: config.jornadaConfig,
+    fechasConfig: config.fechasConfig,
+    bloquesConfig: config.bloquesConfig,
+    customFields: Array.isArray(config.customFields) ? config.customFields : [],
+    vacationConfig: config.vacationConfig || {
+      enabled: false,
+      startDate: "",
+      endDate: "",
+      message: "Estaremos cerrados temporalmente por vacaciones. \xA1Pronto estaremos de vuelta!"
+    },
+    updatedAt: row.updatedAt
   };
 }
-async function saveAgentConfig(tenantId, config) {
+async function saveScheduleSettings(tenantId, data) {
   const configJson = {
-    systemPrompt: config.systemPrompt,
-    model: config.model,
-    temperature: config.temperature,
-    autoReplyEnabled: config.autoReplyEnabled,
-    notifyNumber: config.notifyNumber,
-    businessName: config.businessName,
-    currency: config.currency,
-    humanHandoffEnabled: config.humanHandoffEnabled,
-    handoffKeywords: config.handoffKeywords,
-    handoffNotifyPhone: config.handoffNotifyPhone
+    globalParallelSlots: Math.max(1, Number(data.globalParallelSlots) || 1),
+    jornadaConfig: data.jornadaConfig,
+    fechasConfig: data.fechasConfig,
+    bloquesConfig: data.bloquesConfig,
+    customFields: data.customFields,
+    vacationConfig: data.vacationConfig
   };
   const result = await query(`
-    INSERT INTO agent_settings (tenant_id, config_json, updated_at)
-    VALUES ($1, $2, CURRENT_TIMESTAMP)
-    ON CONFLICT (tenant_id) 
-    DO UPDATE SET config_json = EXCLUDED.config_json, updated_at = CURRENT_TIMESTAMP
-    RETURNING id, tenant_id as "tenantId", config_json as "configJson", updated_at as "updatedAt"
-  `, [tenantId, configJson]);
-  const data = result.rows[0].configJson;
+    INSERT INTO schedule_settings (tenant_id, schedule_mode, config_json, updated_at)
+    VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+    ON CONFLICT (tenant_id) DO UPDATE SET
+      schedule_mode = EXCLUDED.schedule_mode,
+      config_json = EXCLUDED.config_json,
+      updated_at = CURRENT_TIMESTAMP
+    RETURNING id, tenant_id as "tenantId", schedule_mode as "scheduleMode", config_json as config, updated_at as "updatedAt"
+  `, [tenantId, data.scheduleMode || "jornada", JSON.stringify(configJson)]);
+  const row = result.rows[0];
+  const config = row.config || {};
   return {
-    id: result.rows[0].id,
-    tenantId: result.rows[0].tenantId,
-    systemPrompt: data.systemPrompt,
-    model: data.model,
-    temperature: data.temperature,
-    autoReplyEnabled: data.autoReplyEnabled,
-    notifyNumber: data.notifyNumber,
-    businessName: data.businessName,
-    currency: data.currency,
-    humanHandoffEnabled: data.humanHandoffEnabled,
-    handoffKeywords: data.handoffKeywords,
-    handoffNotifyPhone: data.handoffNotifyPhone,
-    updatedAt: result.rows[0].updatedAt
+    id: row.id,
+    tenantId: row.tenantId,
+    scheduleMode: row.scheduleMode,
+    globalParallelSlots: Math.max(1, Number(config.globalParallelSlots) || 1),
+    jornadaConfig: config.jornadaConfig,
+    fechasConfig: config.fechasConfig,
+    bloquesConfig: config.bloquesConfig,
+    customFields: config.customFields,
+    vacationConfig: config.vacationConfig,
+    updatedAt: row.updatedAt
   };
 }
+
+// src/server/db/ai-usage.repo.ts
+init_pool();
+function getCurrentMonthYear() {
+  const now = /* @__PURE__ */ new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  return `${year}-${month}`;
+}
+async function getPlanQuota(planName) {
+  const normalizedPlan = (planName || "starter").toLowerCase();
+  const key = `quota_${normalizedPlan}_tokens`;
+  try {
+    const res = await query(`SELECT value FROM platform_settings WHERE key = $1`, [key]);
+    if (res.rows.length > 0 && res.rows[0].value) {
+      return parseInt(res.rows[0].value, 10);
+    }
+  } catch (e) {
+  }
+  if (normalizedPlan === "starter") return 25e3;
+  if (normalizedPlan === "pro") return 1e5;
+  if (normalizedPlan === "business" || normalizedPlan === "enterprise") return 3e5;
+  return 25e3;
+}
+async function getTenantCurrentMonthUsage(tenantId) {
+  const monthYear = getCurrentMonthYear();
+  const tenantRes = await query(`SELECT id, name, slug, plan FROM tenants WHERE id = $1`, [tenantId]);
+  const tenant = tenantRes.rows[0] || { id: tenantId, name: "Desconocido", slug: "", plan: "starter" };
+  const limit = await getPlanQuota(tenant.plan);
+  const usageRes = await query(`
+    SELECT tokens_used, requests_count
+    FROM tenant_ai_usage
+    WHERE tenant_id = $1 AND month_year = $2
+  `, [tenantId, monthYear]);
+  const tokensUsed = usageRes.rows.length > 0 ? parseInt(usageRes.rows[0].tokens_used || "0", 10) : 0;
+  const requestsCount = usageRes.rows.length > 0 ? parseInt(usageRes.rows[0].requests_count || "0", 10) : 0;
+  const percentageUsed = limit > 0 ? Math.min(100, Math.round(tokensUsed / limit * 100)) : 0;
+  const isExceeded = limit > 0 && tokensUsed >= limit;
+  return {
+    tenantId,
+    tenantName: tenant.name,
+    slug: tenant.slug,
+    plan: tenant.plan,
+    monthYear,
+    tokensUsed,
+    requestsCount,
+    limit,
+    percentageUsed,
+    isExceeded
+  };
+}
+async function incrementTenantUsage(tenantId, tokens) {
+  if (!tenantId || tokens <= 0) return;
+  const monthYear = getCurrentMonthYear();
+  try {
+    await query(`
+      INSERT INTO tenant_ai_usage (tenant_id, month_year, tokens_used, requests_count, updated_at)
+      VALUES ($1, $2, $3, 1, CURRENT_TIMESTAMP)
+      ON CONFLICT (tenant_id, month_year)
+      DO UPDATE SET
+        tokens_used = tenant_ai_usage.tokens_used + $3,
+        requests_count = tenant_ai_usage.requests_count + 1,
+        updated_at = CURRENT_TIMESTAMP
+    `, [tenantId, monthYear, tokens]);
+  } catch (err) {
+    console.error(`[AI-Usage] Error incrementing usage for tenant ${tenantId}:`, err);
+  }
+}
+async function getAllTenantsMonthlyUsage(monthYearParam) {
+  const monthYear = monthYearParam || getCurrentMonthYear();
+  const starterQuota = await getPlanQuota("starter");
+  const proQuota = await getPlanQuota("pro");
+  const businessQuota = await getPlanQuota("business");
+  const res = await query(`
+    SELECT 
+      t.id as tenant_id,
+      t.name as tenant_name,
+      t.slug,
+      t.plan,
+      COALESCE(u.tokens_used, 0) as tokens_used,
+      COALESCE(u.requests_count, 0) as requests_count
+    FROM tenants t
+    LEFT JOIN tenant_ai_usage u ON u.tenant_id = t.id AND u.month_year = $1
+    WHERE t.slug != 'superadmin'
+    ORDER BY tokens_used DESC, t.name ASC
+  `, [monthYear]);
+  return res.rows.map((r) => {
+    const plan = (r.plan || "starter").toLowerCase();
+    const limit = plan === "starter" ? starterQuota : plan === "pro" ? proQuota : businessQuota;
+    const tokensUsed = parseInt(r.tokens_used || "0", 10);
+    const requestsCount = parseInt(r.requests_count || "0", 10);
+    const percentageUsed = limit > 0 ? Math.min(100, Math.round(tokensUsed / limit * 100)) : 0;
+    const isExceeded = limit > 0 && tokensUsed >= limit;
+    return {
+      tenantId: r.tenant_id,
+      tenantName: r.tenant_name,
+      slug: r.slug,
+      plan: r.plan,
+      monthYear,
+      tokensUsed,
+      requestsCount,
+      limit,
+      percentageUsed,
+      isExceeded
+    };
+  });
+}
+
+// src/server/services/agent.ts
+async function processWhatsAppMessageWithAI(tenantId, userMessage, senderPhone, senderName, chatHistory) {
+  const tenant = await getTenantById(tenantId);
+  const agentConfig = await getAgentConfig(tenantId);
+  const services = await getServicesByTenant(tenantId);
+  const products = await getProductsByTenant(tenantId, true);
+  const store = await getStoreSettings(tenantId);
+  const schedule = await getScheduleSettings(tenantId);
+  const now = /* @__PURE__ */ new Date();
+  const crTime = new Intl.DateTimeFormat("es-CR", {
+    timeZone: "America/Costa_Rica",
+    dateStyle: "full",
+    timeStyle: "short"
+  }).format(now);
+  const baseUrl = process.env.APP_URL || "https://betico.tech";
+  const storeUrl = tenant?.slug ? `${baseUrl}/tienda/${tenant.slug}` : "";
+  const bookingUrl = tenant?.slug ? `${baseUrl}/reservas/${tenant.slug}` : "";
+  const lowerMsg = userMessage.toLowerCase().trim();
+  const isPureGreeting = /^(hola|buenas|buenos dias|buenas tardes|buenas noches|hey|alo|hi|saludos|pura vida|hola que tal|hola como estas)[s!.,?]*$/i.test(lowerMsg);
+  const asksForServices = /servicio|cita|reserva|agenda|agendar|horario|hora|fecha|disponib|turno|atencion|lavado|pulido|mantenimiento/i.test(lowerMsg);
+  const asksForProducts = /precio|costo|cuanto|venden|catalogo|menu|producto|comprar|pedir|orden|foto|imagen|quiero|plato|comida|pizza|hamburguesa|cera/i.test(lowerMsg);
+  const asksForPayments = /sinpe|transferencia|pago|pagar|cuenta|banco|efectivo|tarjeta|cuentas/i.test(lowerMsg);
+  const asksForLocation = /ubicacion|donde|direccion|llegar|local|tienda|sucursal|mapa/i.test(lowerMsg);
+  const asksForHuman = /humano|asesor|persona|agente|hablar con alguien|queja|reclamo|urgente/i.test(lowerMsg);
+  let paymentInfo = "";
+  if (asksForPayments || asksForProducts || !isPureGreeting) {
+    const methods = [];
+    if (store?.acceptSinpe && store.sinpePhone) methods.push(`SINPE M\xF3vil: ${store.sinpePhone} (${store.sinpeName || tenant?.name})`);
+    if (store?.acceptTransfer && store.bankAccountInfo) methods.push(`Transferencia: ${store.bankAccountInfo}`);
+    if (store?.acceptCashOnDelivery) methods.push("Efectivo contra entrega");
+    if (store?.deliveryEnabled) methods.push(`Env\xEDo: \u20A1${Number(store.deliveryFee || 0).toLocaleString("es-CR")}`);
+    if (methods.length > 0) paymentInfo = "\u{1F4B3} Pagos: " + methods.join(" | ") + "\n";
+  }
+  let scheduleInfo = "";
+  if (asksForServices || asksForLocation || !isPureGreeting) {
+    if (schedule?.jornadaConfig) {
+      const j = schedule.jornadaConfig;
+      scheduleInfo = `\u23F0 Horario: ${j.startHour || "08:00"} a ${j.endHour || "17:00"} (${j.slotMinutes || 45}m por cita)
+`;
+    }
+    if (schedule?.vacationConfig?.enabled) {
+      const v = schedule.vacationConfig;
+      scheduleInfo += `\u26A0\uFE0F Cierre temporal: ${v.startDate} al ${v.endDate} (${v.message})
+`;
+    }
+  }
+  let relevantServicesText = "";
+  if (!isPureGreeting && services.length > 0) {
+    const userWords = lowerMsg.split(/\s+/).filter((w) => w.length > 2);
+    let matchedServices = services.filter((s) => {
+      const sName = s.name.toLowerCase();
+      const sCat = (s.category || "").toLowerCase();
+      return userWords.some((w) => sName.includes(w) || sCat.includes(w));
+    });
+    if (matchedServices.length === 0) {
+      matchedServices = services.slice(0, 4);
+    }
+    if (matchedServices.length > 0) {
+      relevantServicesText = "\u{1F697} Servicios:\n" + matchedServices.map(
+        (s) => `\u2022 ${s.name}: \u20A1${Number(s.price || 0).toLocaleString("es-CR")} (${s.duration || `${s.estimatedMinutes || 45}m`})`
+      ).join("\n") + "\n";
+    }
+  }
+  let relevantProductsText = "";
+  if (!isPureGreeting && products.length > 0) {
+    const userWords = lowerMsg.split(/\s+/).filter((w) => w.length > 2);
+    let matchedProducts = products.filter((p) => {
+      const pName = p.name.toLowerCase();
+      const pCat = (p.category || "").toLowerCase();
+      const pTags = Array.isArray(p.tags) ? p.tags.join(" ").toLowerCase() : "";
+      return userWords.some((w) => pName.includes(w) || pCat.includes(w) || pTags.includes(w));
+    });
+    if (matchedProducts.length === 0) {
+      matchedProducts = products.slice(0, 4);
+    }
+    if (matchedProducts.length > 0) {
+      relevantProductsText = "\u{1F6CD}\uFE0F Productos:\n" + matchedProducts.map((p) => {
+        let photoUrl = "";
+        if (p.images && p.images.length > 0) {
+          const rawUrl = p.images[0].url;
+          photoUrl = rawUrl.startsWith("http") ? rawUrl : `${baseUrl}${rawUrl}`;
+        }
+        return `\u2022 ${p.name}: \u20A1${Number(p.price || 0).toLocaleString("es-CR")} (Stock: ${p.stock ?? "disp"})${photoUrl ? ` [Foto:${photoUrl}]` : ""}`;
+      }).join("\n") + "\n";
+    }
+  }
+  let prompt = `Asistente IA de *${tenant?.name || "nuestro negocio"}* en WhatsApp.
+${agentConfig?.systemPrompt || "Atiende amablemente a los clientes."}
+
+Datos del negocio:
+${crTime}
+${agentConfig?.showBookingLink !== false && bookingUrl ? `Citas: ${bookingUrl}` : ""}${agentConfig?.showStoreLink !== false && storeUrl ? ` | Tienda: ${storeUrl}` : ""}
+${scheduleInfo}${paymentInfo}${relevantServicesText}${relevantProductsText}
+Reglas: Usa *negrita* y emojis. No inventes precios. Responde conciso (1-2 p\xE1rrafos). Si hay historial no repitas saludo. Para pagos SINPE/Transferencia da los datos y pide comprobante.
+
+Acciones confirmadas (a\xF1ade al final SOLO si el cliente confirma):
+Cita: <<<COMMAND_BOOKING: {"service":"nombre","date":"YYYY-MM-DD","time":"HH:MM","customerName":"${senderName}"}>>>
+Compra: <<<COMMAND_ORDER: {"items":[{"productName":"nombre","quantity":1}]}>>>
+Foto: <<<COMMAND_SEND_MEDIA: {"mediaUrl":"URL","caption":"desc"}>>>
+Humano: <<<COMMAND_HANDOFF: {"reason":"motivo"}>>>
+
+${chatHistory.slice(-3).map((h) => `${h.role === "user" ? "Cliente" : "Asistente"}: ${h.content}`).join("\n")}
+
+Cliente (${senderName}): ${userMessage}
+`;
+  let apiKey = "";
+  let isMarcaBlanca = false;
+  if (tenant?.aiApiKeyEncrypted) {
+    try {
+      apiKey = decrypt(tenant.aiApiKeyEncrypted);
+    } catch (e) {
+    }
+  }
+  let config;
+  if (apiKey) {
+    config = {
+      provider: tenant?.aiProvider || "gemini",
+      apiKey,
+      model: tenant?.aiModel || agentConfig?.model || "gemini-2.5-flash",
+      temperature: agentConfig?.temperature || 0.7
+    };
+  } else {
+    isMarcaBlanca = true;
+    const usage = await getTenantCurrentMonthUsage(tenantId);
+    if (usage.isExceeded) {
+      return {
+        replyText: "Hola, el asistente virtual de este negocio ha completado su cuota mensual de atenci\xF3n autom\xE1tica. Un asesor humano te responder\xE1 en breve.",
+        isBookingDetected: false,
+        isOrderDetected: false,
+        isHandoffRequested: true,
+        handoffReason: "L\xEDmite de cuota mensual de IA alcanzado",
+        tokensUsed: 0
+      };
+    }
+    const masterConfig = await getMasterAIConfig();
+    config = {
+      ...masterConfig,
+      temperature: agentConfig?.temperature || 0.7
+    };
+  }
+  const aiResult = await callAI(config, prompt);
+  let replyText = aiResult.text;
+  if (isMarcaBlanca && aiResult.tokensUsed > 0) {
+    await incrementTenantUsage(tenantId, aiResult.tokensUsed);
+  }
+  let isBookingDetected = false;
+  let bookingData;
+  let isOrderDetected = false;
+  let orderData;
+  let isHandoffRequested = false;
+  let handoffReason;
+  let isMediaDetected = false;
+  let mediaData;
+  const bookingRegex = /<<<COMMAND_BOOKING:\s*({.*?})>>>/s;
+  const orderRegex = /<<<COMMAND_ORDER:\s*({.*?})>>>/s;
+  const handoffRegex = /<<<COMMAND_HANDOFF:\s*({.*?})>>>/s;
+  const mediaRegex = /<<<COMMAND_SEND_MEDIA:\s*({.*?})>>>/s;
+  const bookingMatch = replyText.match(bookingRegex);
+  if (bookingMatch && bookingMatch[1]) {
+    try {
+      const parsed = JSON.parse(bookingMatch[1]);
+      if (parsed && parsed.service && (parsed.date || parsed.time)) {
+        isBookingDetected = true;
+        bookingData = parsed;
+      }
+    } catch (e) {
+    }
+  }
+  const orderMatch = replyText.match(orderRegex);
+  if (orderMatch && orderMatch[1]) {
+    try {
+      const parsed = JSON.parse(orderMatch[1]);
+      if (parsed && Array.isArray(parsed.items) && parsed.items.length > 0) {
+        const validItems = parsed.items.filter((it) => it.productName && it.productName.trim().length > 0);
+        if (validItems.length > 0) {
+          isOrderDetected = true;
+          orderData = { ...parsed, items: validItems };
+        }
+      }
+    } catch (e) {
+    }
+  }
+  const handoffMatch = replyText.match(handoffRegex);
+  if (handoffMatch && handoffMatch[1]) {
+    isHandoffRequested = true;
+    try {
+      handoffReason = JSON.parse(handoffMatch[1]).reason;
+    } catch (e) {
+    }
+  }
+  const mediaMatch = replyText.match(mediaRegex);
+  if (mediaMatch && mediaMatch[1]) {
+    isMediaDetected = true;
+    try {
+      mediaData = JSON.parse(mediaMatch[1]);
+    } catch (e) {
+    }
+  }
+  replyText = replyText.replace(bookingRegex, "").replace(orderRegex, "").replace(handoffRegex, "").replace(mediaRegex, "").replace(/\*\*/g, "*").trim();
+  return {
+    replyText,
+    isBookingDetected,
+    bookingData,
+    isOrderDetected,
+    orderData,
+    isHandoffRequested,
+    handoffReason,
+    isMediaDetected,
+    mediaData,
+    tokensUsed: aiResult.tokensUsed
+  };
+}
+
+// src/server/db/chats.repo.ts
+init_pool();
+async function getChatsByTenant(tenantId, limit = 1e3) {
+  const result = await query(`
+    SELECT id, tenant_id as "tenantId", remote_jid as "remoteJid", push_name as "pushName",
+           from_me as "fromMe", message_text as "messageText", ai_response as "aiResponse",
+           status, created_at as "createdAt"
+    FROM chat_messages 
+    WHERE tenant_id = $1
+    ORDER BY created_at DESC
+    LIMIT $2
+  `, [tenantId, limit]);
+  return result.rows;
+}
+async function createChatMessage(tenantIdOrData, optionalData) {
+  let tenantId;
+  let data;
+  if (typeof tenantIdOrData === "string") {
+    tenantId = tenantIdOrData;
+    data = optionalData || {};
+  } else {
+    data = tenantIdOrData || {};
+    tenantId = data.tenantId || "";
+  }
+  const msgId = data.id || `msg_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const remoteJid = data.remoteJid || "";
+  const pushName = data.pushName || null;
+  const fromMe = data.fromMe || false;
+  const messageText = data.messageText || "";
+  const aiResponse = typeof data.aiResponse === "boolean" ? data.aiResponse ? messageText : "" : data.aiResponse || null;
+  const status = data.status || "received";
+  const result = await query(`
+    INSERT INTO chat_messages (
+      id, tenant_id, remote_jid, push_name, from_me, message_text, ai_response, status
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    ON CONFLICT (id) DO UPDATE SET
+      message_text = EXCLUDED.message_text,
+      status = EXCLUDED.status
+    RETURNING id, tenant_id as "tenantId", remote_jid as "remoteJid", push_name as "pushName",
+           from_me as "fromMe", message_text as "messageText", ai_response as "aiResponse",
+           status, created_at as "createdAt"
+  `, [
+    msgId,
+    tenantId,
+    remoteJid,
+    pushName,
+    fromMe,
+    messageText,
+    aiResponse ? true : false,
+    status
+  ]);
+  if (remoteJid) {
+    try {
+      await query(`
+        INSERT INTO chat_sessions (tenant_id, remote_jid, updated_at)
+        VALUES ($1, $2, CURRENT_TIMESTAMP)
+        ON CONFLICT (tenant_id, remote_jid) DO UPDATE SET updated_at = CURRENT_TIMESTAMP
+      `, [tenantId, remoteJid]);
+    } catch (e) {
+    }
+  }
+  return result.rows[0];
+}
+async function getChatSession(tenantId, remoteJid) {
+  const result = await query(`
+    SELECT is_human_mode as "isHumanMode", unread, notes
+    FROM chat_sessions
+    WHERE tenant_id = $1 AND remote_jid = $2
+  `, [tenantId, remoteJid]);
+  return result.rows[0] || { isHumanMode: false, unread: false, notes: "" };
+}
+async function getAllChatSessions(tenantId) {
+  const result = await query(`
+    SELECT remote_jid as "remoteJid", is_human_mode as "isHumanMode", unread, notes
+    FROM chat_sessions
+    WHERE tenant_id = $1
+  `, [tenantId]);
+  const map = {};
+  result.rows.forEach((r) => {
+    map[r.remoteJid] = {
+      isHumanMode: r.isHumanMode || false,
+      unread: r.unread || false,
+      notes: r.notes || ""
+    };
+  });
+  return map;
+}
+async function setChatHumanMode(tenantId, remoteJid, isHumanMode) {
+  await query(`
+    INSERT INTO chat_sessions (tenant_id, remote_jid, is_human_mode, updated_at)
+    VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+    ON CONFLICT (tenant_id, remote_jid) DO UPDATE SET
+      is_human_mode = EXCLUDED.is_human_mode,
+      updated_at = CURRENT_TIMESTAMP
+  `, [tenantId, remoteJid, isHumanMode]);
+}
+var getChatMessagesByTenant = getChatsByTenant;
+var saveChatMessage = createChatMessage;
+
+// src/server/db/appointments.repo.ts
+init_pool();
+async function getAppointmentsByTenant(tenantId) {
+  const result = await query(`
+    SELECT id, tenant_id as "tenantId", name, whatsapp, service, 
+           date, time, amount, status, details, vehicle_model as "vehicleModel",
+           selected_variables as "selectedVariables",
+           created_at as "createdAt"
+    FROM appointments 
+    WHERE tenant_id = $1
+    ORDER BY date DESC, time DESC
+  `, [tenantId]);
+  return result.rows;
+}
+async function getAppointmentById(id, tenantId) {
+  const result = await query(`
+    SELECT id, tenant_id as "tenantId", name, whatsapp, service, 
+           date, time, amount, status, details, vehicle_model as "vehicleModel",
+           selected_variables as "selectedVariables",
+           created_at as "createdAt"
+    FROM appointments 
+    WHERE id = $1 AND tenant_id = $2
+  `, [id, tenantId]);
+  return result.rows[0] || null;
+}
+async function createAppointment(tenantId, data) {
+  const result = await query(`
+    INSERT INTO appointments (
+      tenant_id, name, whatsapp, service, date, time, amount, status, details, vehicle_model, selected_variables
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    RETURNING id, tenant_id as "tenantId", name, whatsapp, service, 
+           date, time, amount, status, details, vehicle_model as "vehicleModel",
+           selected_variables as "selectedVariables",
+           created_at as "createdAt"
+  `, [
+    tenantId,
+    data.name,
+    data.whatsapp,
+    data.service,
+    data.date,
+    data.time,
+    data.amount,
+    data.status || "pending",
+    data.details,
+    data.vehicleModel,
+    data.selectedVariables ? JSON.stringify(data.selectedVariables) : null
+  ]);
+  return result.rows[0];
+}
+async function updateAppointment(id, tenantId, data) {
+  const updates = [];
+  const params = [id, tenantId];
+  let paramIdx = 3;
+  const fields = ["name", "whatsapp", "service", "date", "time", "amount", "status", "details", "vehicleModel", "selectedVariables"];
+  for (const field of fields) {
+    if (data[field] !== void 0) {
+      const dbField = field.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+      updates.push(`${dbField} = $${paramIdx++}`);
+      const val = field === "selectedVariables" ? JSON.stringify(data[field]) : data[field];
+      params.push(val);
+    }
+  }
+  if (updates.length === 0) return getAppointmentById(id, tenantId);
+  const result = await query(`
+    UPDATE appointments SET ${updates.join(", ")}
+    WHERE id = $1 AND tenant_id = $2
+    RETURNING id, tenant_id as "tenantId", name, whatsapp, service, 
+           date, time, amount, status, details, vehicle_model as "vehicleModel",
+           selected_variables as "selectedVariables",
+           created_at as "createdAt"
+  `, params);
+  return result.rows[0] || null;
+}
+async function updateAppointmentStatus(id, tenantId, status) {
+  return updateAppointment(id, tenantId, { status });
+}
+async function deleteAppointment(id, tenantId) {
+  const result = await query("DELETE FROM appointments WHERE id = $1 AND tenant_id = $2", [id, tenantId]);
+  return (result.rowCount ?? 0) > 0;
+}
+
+// src/server/services/booking.service.ts
+async function createBookingFromCommand(tenantId, bookingData) {
+  try {
+    const services = await getServicesByTenant(tenantId);
+    const matchedService = services.find(
+      (s) => s.name.toLowerCase().includes((bookingData.service || "").toLowerCase())
+    ) || services[0];
+    const price = matchedService ? matchedService.price : 0;
+    const appointment = await createAppointment(tenantId, {
+      name: bookingData.customerName || "Cliente WhatsApp",
+      whatsapp: bookingData.customerPhone || "",
+      service: matchedService ? matchedService.name : bookingData.service || "Servicio General",
+      date: bookingData.date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0],
+      time: bookingData.time || "10:00 AM",
+      amount: Number(price),
+      details: bookingData.vehicleInfo || "",
+      status: "pending"
+    });
+    return appointment;
+  } catch (error) {
+    console.error("Error creating booking from command:", error);
+    throw error;
+  }
+}
+
+// src/server/db/orders.repo.ts
+init_pool();
+async function getOrdersByTenant(tenantId) {
+  const result = await query(`
+    SELECT o.id, o.tenant_id as "tenantId", o.order_number as "orderNumber", o.customer_name as "customerName",
+           o.customer_phone as "customerPhone", o.customer_email as "customerEmail", o.customer_address as "customerAddress",
+           o.whatsapp_jid as "whatsappJid", o.source, o.subtotal, o.delivery_fee as "deliveryFee", o.discount, o.total,
+           o.currency, o.status, o.payment_method as "paymentMethod", o.payment_status as "paymentStatus",
+           o.payment_reference as "paymentReference", o.payment_proof_url as "paymentProofUrl", o.payment_proof_status as "paymentProofStatus", o.notes, o.delivery_method as "deliveryMethod",
+           o.consumption_mode as "consumptionMode", o.table_number as "tableNumber", o.customer_location as "customerLocation",
+           o.chat_message_id as "chatMessageId", o.driver_id as "driverId", o.waze_url as "wazeUrl",
+           o.branch_id as "branchId", b.name as "branchName",
+           o.created_at as "createdAt", o.updated_at as "updatedAt",
+           COALESCE(
+             (
+               SELECT json_agg(
+                 json_build_object(
+                   'id', oi.id,
+                   'productId', oi.product_id,
+                   'variantId', oi.variant_id,
+                   'productName', oi.product_name,
+                   'variantName', oi.variant_name,
+                   'selectedVariables', oi.selected_variables,
+                   'quantity', oi.quantity,
+                   'unitPrice', oi.unit_price,
+                   'totalPrice', oi.total_price
+                 )
+               )
+               FROM order_items oi
+               WHERE oi.order_id = o.id
+             ),
+             '[]'::json
+           ) as items
+    FROM orders o
+    LEFT JOIN branches b ON o.branch_id = b.id
+    WHERE o.tenant_id = $1
+    ORDER BY o.created_at DESC
+  `, [tenantId]);
+  return result.rows;
+}
+async function getOrderById(id, tenantId) {
+  const result = await query(`
+    SELECT id, tenant_id as "tenantId", order_number as "orderNumber", customer_name as "customerName",
+           customer_phone as "customerPhone", customer_email as "customerEmail", customer_address as "customerAddress",
+           whatsapp_jid as "whatsappJid", source, subtotal, delivery_fee as "deliveryFee", discount, total,
+           currency, status, payment_method as "paymentMethod", payment_status as "paymentStatus",
+           payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl", payment_proof_status as "paymentProofStatus", notes, delivery_method as "deliveryMethod",
+           consumption_mode as "consumptionMode", table_number as "tableNumber", customer_location as "customerLocation",
+           chat_message_id as "chatMessageId", driver_id as "driverId", waze_url as "wazeUrl",
+           created_at as "createdAt", updated_at as "updatedAt"
+    FROM orders 
+    WHERE id = $1
+  `, [id]);
+  if (result.rows.length === 0) return null;
+  const order = result.rows[0];
+  const itemsRes = await query(`
+    SELECT id, product_id as "productId", variant_id as "variantId", product_name as "productName",
+           variant_name as "variantName", selected_variables as "selectedVariables",
+           quantity, unit_price as "unitPrice", total_price as "totalPrice"
+    FROM order_items WHERE order_id = $1
+  `, [id]);
+  order.items = itemsRes.rows;
+  return order;
+}
+async function createOrder(tenantId, data, items) {
+  const result = await query(`
+    INSERT INTO orders (
+      tenant_id, customer_name, customer_phone, customer_email, customer_address, whatsapp_jid,
+      source, subtotal, delivery_fee, discount, total, currency, status, payment_method, 
+      payment_status, payment_reference, payment_proof_url, payment_proof_status, notes, delivery_method, consumption_mode, table_number, customer_location
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+    RETURNING id
+  `, [
+    tenantId,
+    data.customerName,
+    data.customerPhone,
+    data.customerEmail,
+    data.customerAddress,
+    data.whatsappJid,
+    data.source || "store",
+    data.subtotal,
+    data.deliveryFee || 0,
+    data.discount || 0,
+    data.total,
+    data.currency || "CRC",
+    data.status || "pedido_recibido",
+    data.paymentMethod,
+    data.paymentStatus || "pending",
+    data.paymentReference || null,
+    data.paymentProofUrl || null,
+    data.paymentProofStatus || (data.paymentProofUrl ? "received" : "pending"),
+    data.notes || null,
+    data.deliveryMethod || "pickup",
+    data.consumptionMode || null,
+    data.tableNumber || null,
+    data.customerLocation ? JSON.stringify(data.customerLocation) : null
+  ]);
+  const orderId = result.rows[0].id;
+  const orderItems = items || data.items || [];
+  if (orderItems && orderItems.length > 0) {
+    for (const item of orderItems) {
+      await query(`
+        INSERT INTO order_items (
+          order_id, product_id, variant_id, tenant_id, product_name, variant_name, selected_variables, quantity, unit_price, total_price
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      `, [
+        orderId,
+        item.productId || null,
+        item.variantId || null,
+        tenantId,
+        item.productName,
+        item.variantName || null,
+        item.selectedVariables ? JSON.stringify(item.selectedVariables) : null,
+        item.quantity,
+        item.unitPrice,
+        Number(item.unitPrice) * Number(item.quantity)
+      ]);
+    }
+  }
+  return getOrderById(orderId, tenantId);
+}
+async function updateOrder(id, tenantId, data) {
+  const updates = [];
+  const params = [id, tenantId];
+  let paramIdx = 3;
+  const fields = [
+    "status",
+    "paymentStatus",
+    "paymentReference",
+    "notes",
+    "driverId",
+    "wazeUrl",
+    "consumptionMode",
+    "tableNumber",
+    "deliveryMethod",
+    "deliveryFee",
+    "total",
+    "customerAddress"
+  ];
+  for (const field of fields) {
+    if (data[field] !== void 0) {
+      const dbField = field.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+      if (field === "customerLocation") {
+        updates.push(`${dbField} = $${paramIdx++}::jsonb`);
+        params.push(JSON.stringify(data[field]));
+      } else {
+        updates.push(`${dbField} = $${paramIdx++}`);
+        params.push(data[field]);
+      }
+    }
+  }
+  if (updates.length > 0) {
+    updates.push(`updated_at = CURRENT_TIMESTAMP`);
+    await query(`UPDATE orders SET ${updates.join(", ")} WHERE id = $1 AND (tenant_id = $2 OR tenant_id IS NOT NULL)`, params);
+  }
+  return getOrderById(id, tenantId);
+}
+async function updateOrderStatus(id, tenantId, status) {
+  return updateOrder(id, tenantId, { status });
+}
+async function confirmPayment(id, tenantId, paymentReference) {
+  return updateOrder(id, tenantId, { paymentStatus: "paid", paymentReference: paymentReference || "Confirmado manual" });
+}
+
+// src/server/services/order.service.ts
+async function createOrderFromWhatsApp(tenantId, orderData) {
+  try {
+    const allProducts = await getProductsByTenant(tenantId, true);
+    const items = [];
+    let subtotal = 0;
+    for (const item of orderData.items || []) {
+      const product = allProducts.find(
+        (p) => p.name.toLowerCase().includes((item.productName || "").toLowerCase())
+      );
+      const unitPrice = product ? Number(product.price) : item.unitPrice || 0;
+      const qty = item.quantity || 1;
+      const totalPrice = unitPrice * qty;
+      subtotal += totalPrice;
+      items.push({
+        productId: product?.id || null,
+        productName: product?.name || item.productName || "Producto",
+        quantity: qty,
+        unitPrice,
+        totalPrice
+      });
+      if (product && product.trackStock) {
+        await updateProduct(product.id, tenantId, {
+          stock: Math.max(0, (product.stock || 0) - qty)
+        });
+      }
+    }
+    const order = await createOrder(
+      tenantId,
+      {
+        customerName: orderData.customerName || "Cliente WhatsApp",
+        customerPhone: orderData.customerPhone || "",
+        source: "whatsapp",
+        subtotal,
+        total: subtotal,
+        currency: "CRC",
+        status: "pending",
+        paymentMethod: orderData.paymentMethod || "sinpe",
+        paymentStatus: "pending"
+      },
+      items
+    );
+    return order;
+  } catch (error) {
+    console.error("Error creating order from WhatsApp:", error);
+    throw error;
+  }
+}
+
+// src/server/services/message-queue.service.ts
+init_evolution();
+var io = null;
+var isProcessing = false;
+function startQueueWorker(socketIo) {
+  io = socketIo;
+  console.log("[Queue] Worker started. Polling every 2 seconds...");
+  setInterval(processNextInQueue, 2e3);
+}
+async function processNextInQueue() {
+  if (isProcessing) return;
+  isProcessing = true;
+  try {
+    const msg = await takeNextPending();
+    if (!msg) {
+      isProcessing = false;
+      return;
+    }
+    console.log(`[Queue] Processing message from ${msg.pushName} (${msg.cleanPhone}): "${msg.userMessage.slice(0, 50)}..."`);
+    const session = await getChatSession(msg.tenantId, msg.remoteJid);
+    if (session?.isHumanMode) {
+      console.log(`[Queue] Chat ${msg.remoteJid} is in HUMAN MODE. Skipping.`);
+      await markDone(msg.id, "HUMAN_MODE_SKIP");
+      isProcessing = false;
+      return;
+    }
+    const agentConfig = await getAgentConfig(msg.tenantId);
+    if (agentConfig?.aiChatbotEnabled === false) {
+      await markDone(msg.id, "AI_DISABLED");
+      isProcessing = false;
+      return;
+    }
+    const allChats = await getChatMessagesByTenant(msg.tenantId, 20);
+    const history = allChats.filter((c) => (c.remoteJid || c.remote_jid) === msg.remoteJid).map((c) => ({
+      role: c.fromMe || c.from_me ? "assistant" : "user",
+      content: c.messageText || c.message_text || c.aiResponse || c.ai_response || ""
+    }));
+    const aiResult = await processWhatsAppMessageWithAI(
+      msg.tenantId,
+      msg.userMessage,
+      msg.cleanPhone,
+      msg.pushName,
+      history
+    );
+    const handoffEnabled = agentConfig?.humanHandoffEnabled !== false;
+    const defaultKeywords = ["humano", "asesor", "persona", "agente", "hablar con alguien", "queja", "reclamo", "urgente"];
+    const keywords = agentConfig?.handoffKeywords || defaultKeywords;
+    const isKeywordTriggered = handoffEnabled && keywords.some((k) => msg.userMessage.toLowerCase().includes(k.toLowerCase().trim()));
+    if (handoffEnabled && (isKeywordTriggered || aiResult.isHandoffRequested)) {
+      await setChatHumanMode(msg.tenantId, msg.remoteJid, true);
+      const customerHandoffReply = `\u{1F464} *Atenci\xF3n Personalizada:* Entendido *${msg.pushName}*, te estamos comunicando con un asesor humano para atenderte directamente. En breve te responder\xE1.`;
+      await sendMessage(msg.instanceName, msg.cleanPhone, customerHandoffReply);
+      await saveChatMessage(msg.tenantId, { id: `ai_${Date.now()}`, remoteJid: msg.remoteJid, pushName: "Asistente IA", fromMe: true, messageText: customerHandoffReply, aiResponse: customerHandoffReply, status: "sent" });
+      await markDone(msg.id, customerHandoffReply);
+      if (io) io.to(`tenant_${msg.tenantId}`).emit("chat:message", { id: `ai_${Date.now()}`, tenantId: msg.tenantId, remoteJid: msg.remoteJid, pushName: "Asistente IA", fromMe: true, messageText: customerHandoffReply, createdAt: (/* @__PURE__ */ new Date()).toISOString() });
+      isProcessing = false;
+      return;
+    }
+    if (!aiResult || !aiResult.replyText) {
+      await markFailed(msg.id, "No AI reply generated");
+      isProcessing = false;
+      return;
+    }
+    let sendRes;
+    if (aiResult.isMediaDetected && aiResult.mediaData?.mediaUrl) {
+      sendRes = await sendMedia(msg.instanceName, msg.cleanPhone, aiResult.mediaData.mediaUrl, aiResult.replyText || aiResult.mediaData.caption || "");
+    } else {
+      sendRes = await sendMessage(msg.instanceName, msg.cleanPhone, aiResult.replyText);
+    }
+    const aiMsgId = `ai_${Date.now()}`;
+    await saveChatMessage(msg.tenantId, { id: aiMsgId, remoteJid: msg.remoteJid, pushName: "Asistente IA", fromMe: true, messageText: aiResult.replyText, aiResponse: aiResult.replyText, status: sendRes.success ? "sent" : "failed" });
+    if (io) {
+      io.to(`tenant_${msg.tenantId}`).emit("chat:message", { id: aiMsgId, tenantId: msg.tenantId, remoteJid: msg.remoteJid, pushName: "Asistente IA", fromMe: true, messageText: aiResult.replyText, createdAt: (/* @__PURE__ */ new Date()).toISOString() });
+    }
+    if (aiResult.isBookingDetected && aiResult.bookingData) {
+      try {
+        await createBookingFromCommand(msg.tenantId, { ...aiResult.bookingData, customerPhone: aiResult.bookingData.customerPhone || msg.cleanPhone, customerName: aiResult.bookingData.customerName || msg.pushName });
+      } catch (err) {
+        console.error("[Queue] Failed to process booking:", err);
+      }
+    }
+    if (aiResult.isOrderDetected && aiResult.orderData) {
+      try {
+        await createOrderFromWhatsApp(msg.tenantId, { ...aiResult.orderData, customerPhone: aiResult.orderData.customerPhone || msg.cleanPhone, customerName: aiResult.orderData.customerName || msg.pushName });
+      } catch (err) {
+        console.error("[Queue] Failed to process order:", err);
+      }
+    }
+    await markDone(msg.id, aiResult.replyText);
+    console.log(`[Queue] \u2705 Processed message for ${msg.pushName} in queue`);
+  } catch (error) {
+    console.error("[Queue] Error processing message:", error);
+  } finally {
+    isProcessing = false;
+  }
+}
+
+// src/server/routes/auth.routes.ts
+import { Router } from "express";
+
+// src/server/middleware/auth.ts
+init_env();
+import jwt from "jsonwebtoken";
+function generateToken(userId, tenantId, role) {
+  return jwt.sign({ userId, tenantId, role }, env.JWT_SECRET, { expiresIn: "7d" });
+}
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers["authorization"];
+  const token = authHeader && authHeader.split(" ")[1];
+  if (!token) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  try {
+    const decoded = jwt.verify(token, env.JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch (err) {
+    res.status(403).json({ error: "Forbidden" });
+  }
+}
+function requireRole(...roles) {
+  return (req, res, next) => {
+    if (!req.user || !roles.includes(req.user.role)) {
+      res.status(403).json({ error: "Insufficient permissions" });
+      return;
+    }
+    next();
+  };
+}
+function requireSuperAdmin(req, res, next) {
+  if (!req.user || req.user.role !== "superadmin") {
+    res.status(403).json({ error: "Superadmin access required" });
+    return;
+  }
+  next();
+}
+
+// src/server/routes/auth.routes.ts
+init_users_repo();
+init_users_repo();
 
 // src/server/db/website.repo.ts
 init_pool();
@@ -3771,87 +5021,6 @@ var users_routes_default = router3;
 
 // src/server/routes/services.routes.ts
 import { Router as Router4 } from "express";
-
-// src/server/db/services.repo.ts
-init_pool();
-async function getServicesByTenant(tenantId) {
-  const result = await query(`
-    SELECT id, tenant_id as "tenantId", name, description, price, 
-           price_display as "priceDisplay", duration, estimated_minutes as "estimatedMinutes",
-           category, parallel_slots as "parallelSlots", custom_variables as "customVariables",
-           notes, active, created_at as "createdAt"
-    FROM services 
-    WHERE tenant_id = $1
-    ORDER BY created_at DESC
-  `, [tenantId]);
-  return result.rows;
-}
-async function getServiceById(id, tenantId) {
-  const result = await query(`
-    SELECT id, tenant_id as "tenantId", name, description, price, 
-           price_display as "priceDisplay", duration, estimated_minutes as "estimatedMinutes",
-           category, parallel_slots as "parallelSlots", custom_variables as "customVariables",
-           notes, active, created_at as "createdAt"
-    FROM services 
-    WHERE id = $1 AND tenant_id = $2
-  `, [id, tenantId]);
-  return result.rows[0] || null;
-}
-async function createService(tenantId, data) {
-  const result = await query(`
-    INSERT INTO services (
-      tenant_id, name, description, price, price_display, duration, estimated_minutes, category, parallel_slots, custom_variables, notes, active
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-    RETURNING id, tenant_id as "tenantId", name, description, price, 
-           price_display as "priceDisplay", duration, estimated_minutes as "estimatedMinutes",
-           category, parallel_slots as "parallelSlots", custom_variables as "customVariables",
-           notes, active, created_at as "createdAt"
-  `, [
-    tenantId,
-    data.name,
-    data.description,
-    data.price,
-    data.priceDisplay,
-    data.duration,
-    data.estimatedMinutes,
-    data.category,
-    data.parallelSlots || 1,
-    JSON.stringify(data.customVariables || []),
-    data.notes,
-    data.active !== false
-  ]);
-  return result.rows[0];
-}
-async function updateService(id, tenantId, data) {
-  const updates = [];
-  const params = [id, tenantId];
-  let paramIdx = 3;
-  const fields = ["name", "description", "price", "priceDisplay", "duration", "estimatedMinutes", "category", "parallelSlots", "customVariables", "notes", "active"];
-  for (const field of fields) {
-    if (data[field] !== void 0) {
-      const dbField = field.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
-      updates.push(`${dbField} = $${paramIdx++}`);
-      const val = field === "customVariables" ? JSON.stringify(data[field]) : data[field];
-      params.push(val);
-    }
-  }
-  if (updates.length === 0) return getServiceById(id, tenantId);
-  const result = await query(`
-    UPDATE services SET ${updates.join(", ")}
-    WHERE id = $1 AND tenant_id = $2
-    RETURNING id, tenant_id as "tenantId", name, description, price, 
-           price_display as "priceDisplay", duration, estimated_minutes as "estimatedMinutes",
-           category, parallel_slots as "parallelSlots", custom_variables as "customVariables",
-           notes, active, created_at as "createdAt"
-  `, params);
-  return result.rows[0] || null;
-}
-async function deleteService(id, tenantId) {
-  const result = await query("DELETE FROM services WHERE id = $1 AND tenant_id = $2", [id, tenantId]);
-  return (result.rowCount ?? 0) > 0;
-}
-
-// src/server/routes/services.routes.ts
 var router4 = Router4();
 router4.use(authenticateToken);
 router4.use(tenantContext);
@@ -3895,175 +5064,6 @@ var services_routes_default = router4;
 
 // src/server/routes/appointments.routes.ts
 import { Router as Router5 } from "express";
-
-// src/server/db/appointments.repo.ts
-init_pool();
-async function getAppointmentsByTenant(tenantId) {
-  const result = await query(`
-    SELECT id, tenant_id as "tenantId", name, whatsapp, service, 
-           date, time, amount, status, details, vehicle_model as "vehicleModel",
-           selected_variables as "selectedVariables",
-           created_at as "createdAt"
-    FROM appointments 
-    WHERE tenant_id = $1
-    ORDER BY date DESC, time DESC
-  `, [tenantId]);
-  return result.rows;
-}
-async function getAppointmentById(id, tenantId) {
-  const result = await query(`
-    SELECT id, tenant_id as "tenantId", name, whatsapp, service, 
-           date, time, amount, status, details, vehicle_model as "vehicleModel",
-           selected_variables as "selectedVariables",
-           created_at as "createdAt"
-    FROM appointments 
-    WHERE id = $1 AND tenant_id = $2
-  `, [id, tenantId]);
-  return result.rows[0] || null;
-}
-async function createAppointment(tenantId, data) {
-  const result = await query(`
-    INSERT INTO appointments (
-      tenant_id, name, whatsapp, service, date, time, amount, status, details, vehicle_model, selected_variables
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-    RETURNING id, tenant_id as "tenantId", name, whatsapp, service, 
-           date, time, amount, status, details, vehicle_model as "vehicleModel",
-           selected_variables as "selectedVariables",
-           created_at as "createdAt"
-  `, [
-    tenantId,
-    data.name,
-    data.whatsapp,
-    data.service,
-    data.date,
-    data.time,
-    data.amount,
-    data.status || "pending",
-    data.details,
-    data.vehicleModel,
-    data.selectedVariables ? JSON.stringify(data.selectedVariables) : null
-  ]);
-  return result.rows[0];
-}
-async function updateAppointment(id, tenantId, data) {
-  const updates = [];
-  const params = [id, tenantId];
-  let paramIdx = 3;
-  const fields = ["name", "whatsapp", "service", "date", "time", "amount", "status", "details", "vehicleModel", "selectedVariables"];
-  for (const field of fields) {
-    if (data[field] !== void 0) {
-      const dbField = field.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
-      updates.push(`${dbField} = $${paramIdx++}`);
-      const val = field === "selectedVariables" ? JSON.stringify(data[field]) : data[field];
-      params.push(val);
-    }
-  }
-  if (updates.length === 0) return getAppointmentById(id, tenantId);
-  const result = await query(`
-    UPDATE appointments SET ${updates.join(", ")}
-    WHERE id = $1 AND tenant_id = $2
-    RETURNING id, tenant_id as "tenantId", name, whatsapp, service, 
-           date, time, amount, status, details, vehicle_model as "vehicleModel",
-           selected_variables as "selectedVariables",
-           created_at as "createdAt"
-  `, params);
-  return result.rows[0] || null;
-}
-async function updateAppointmentStatus(id, tenantId, status) {
-  return updateAppointment(id, tenantId, { status });
-}
-async function deleteAppointment(id, tenantId) {
-  const result = await query("DELETE FROM appointments WHERE id = $1 AND tenant_id = $2", [id, tenantId]);
-  return (result.rowCount ?? 0) > 0;
-}
-
-// src/server/db/schedule.repo.ts
-init_pool();
-async function getScheduleSettings(tenantId) {
-  const result = await query(`
-    SELECT id, tenant_id as "tenantId", schedule_mode as "scheduleMode", config_json as config, updated_at as "updatedAt"
-    FROM schedule_settings
-    WHERE tenant_id = $1
-  `, [tenantId]);
-  if (result.rows.length === 0) {
-    return {
-      tenantId,
-      scheduleMode: "jornada",
-      globalParallelSlots: 1,
-      jornadaConfig: {
-        startHour: "08:00",
-        endHour: "17:00",
-        slotMinutes: 45,
-        hasBreak: true,
-        breakStart: "12:00",
-        breakEnd: "13:00",
-        daysEnabled: [1, 2, 3, 4, 5, 6]
-        // Lunes a Sábado
-      },
-      customFields: [],
-      vacationConfig: {
-        enabled: false,
-        startDate: "",
-        endDate: "",
-        message: "Estaremos cerrados temporalmente por vacaciones. \xA1Pronto estaremos de vuelta!"
-      }
-    };
-  }
-  const row = result.rows[0];
-  const config = row.config || {};
-  return {
-    id: row.id,
-    tenantId: row.tenantId,
-    scheduleMode: row.scheduleMode || "jornada",
-    globalParallelSlots: Math.max(1, Number(config.globalParallelSlots) || 1),
-    jornadaConfig: config.jornadaConfig,
-    fechasConfig: config.fechasConfig,
-    bloquesConfig: config.bloquesConfig,
-    customFields: Array.isArray(config.customFields) ? config.customFields : [],
-    vacationConfig: config.vacationConfig || {
-      enabled: false,
-      startDate: "",
-      endDate: "",
-      message: "Estaremos cerrados temporalmente por vacaciones. \xA1Pronto estaremos de vuelta!"
-    },
-    updatedAt: row.updatedAt
-  };
-}
-async function saveScheduleSettings(tenantId, data) {
-  const configJson = {
-    globalParallelSlots: Math.max(1, Number(data.globalParallelSlots) || 1),
-    jornadaConfig: data.jornadaConfig,
-    fechasConfig: data.fechasConfig,
-    bloquesConfig: data.bloquesConfig,
-    customFields: data.customFields,
-    vacationConfig: data.vacationConfig
-  };
-  const result = await query(`
-    INSERT INTO schedule_settings (tenant_id, schedule_mode, config_json, updated_at)
-    VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
-    ON CONFLICT (tenant_id) DO UPDATE SET
-      schedule_mode = EXCLUDED.schedule_mode,
-      config_json = EXCLUDED.config_json,
-      updated_at = CURRENT_TIMESTAMP
-    RETURNING id, tenant_id as "tenantId", schedule_mode as "scheduleMode", config_json as config, updated_at as "updatedAt"
-  `, [tenantId, data.scheduleMode || "jornada", JSON.stringify(configJson)]);
-  const row = result.rows[0];
-  const config = row.config || {};
-  return {
-    id: row.id,
-    tenantId: row.tenantId,
-    scheduleMode: row.scheduleMode,
-    globalParallelSlots: Math.max(1, Number(config.globalParallelSlots) || 1),
-    jornadaConfig: config.jornadaConfig,
-    fechasConfig: config.fechasConfig,
-    bloquesConfig: config.bloquesConfig,
-    customFields: config.customFields,
-    vacationConfig: config.vacationConfig,
-    updatedAt: row.updatedAt
-  };
-}
-
-// src/server/routes/appointments.routes.ts
 init_evolution();
 init_pool();
 var router5 = Router5();
@@ -4373,107 +5373,6 @@ var appointments_routes_default = router5;
 
 // src/server/routes/chats.routes.ts
 import { Router as Router6 } from "express";
-
-// src/server/db/chats.repo.ts
-init_pool();
-async function getChatsByTenant(tenantId, limit = 1e3) {
-  const result = await query(`
-    SELECT id, tenant_id as "tenantId", remote_jid as "remoteJid", push_name as "pushName",
-           from_me as "fromMe", message_text as "messageText", ai_response as "aiResponse",
-           status, created_at as "createdAt"
-    FROM chat_messages 
-    WHERE tenant_id = $1
-    ORDER BY created_at DESC
-    LIMIT $2
-  `, [tenantId, limit]);
-  return result.rows;
-}
-async function createChatMessage(tenantIdOrData, optionalData) {
-  let tenantId;
-  let data;
-  if (typeof tenantIdOrData === "string") {
-    tenantId = tenantIdOrData;
-    data = optionalData || {};
-  } else {
-    data = tenantIdOrData || {};
-    tenantId = data.tenantId || "";
-  }
-  const msgId = data.id || `msg_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-  const remoteJid = data.remoteJid || "";
-  const pushName = data.pushName || null;
-  const fromMe = data.fromMe || false;
-  const messageText = data.messageText || "";
-  const aiResponse = typeof data.aiResponse === "boolean" ? data.aiResponse ? messageText : "" : data.aiResponse || null;
-  const status = data.status || "received";
-  const result = await query(`
-    INSERT INTO chat_messages (
-      id, tenant_id, remote_jid, push_name, from_me, message_text, ai_response, status
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-    ON CONFLICT (id) DO UPDATE SET
-      message_text = EXCLUDED.message_text,
-      status = EXCLUDED.status
-    RETURNING id, tenant_id as "tenantId", remote_jid as "remoteJid", push_name as "pushName",
-           from_me as "fromMe", message_text as "messageText", ai_response as "aiResponse",
-           status, created_at as "createdAt"
-  `, [
-    msgId,
-    tenantId,
-    remoteJid,
-    pushName,
-    fromMe,
-    messageText,
-    aiResponse ? true : false,
-    status
-  ]);
-  if (remoteJid) {
-    try {
-      await query(`
-        INSERT INTO chat_sessions (tenant_id, remote_jid, updated_at)
-        VALUES ($1, $2, CURRENT_TIMESTAMP)
-        ON CONFLICT (tenant_id, remote_jid) DO UPDATE SET updated_at = CURRENT_TIMESTAMP
-      `, [tenantId, remoteJid]);
-    } catch (e) {
-    }
-  }
-  return result.rows[0];
-}
-async function getChatSession(tenantId, remoteJid) {
-  const result = await query(`
-    SELECT is_human_mode as "isHumanMode", unread, notes
-    FROM chat_sessions
-    WHERE tenant_id = $1 AND remote_jid = $2
-  `, [tenantId, remoteJid]);
-  return result.rows[0] || { isHumanMode: false, unread: false, notes: "" };
-}
-async function getAllChatSessions(tenantId) {
-  const result = await query(`
-    SELECT remote_jid as "remoteJid", is_human_mode as "isHumanMode", unread, notes
-    FROM chat_sessions
-    WHERE tenant_id = $1
-  `, [tenantId]);
-  const map = {};
-  result.rows.forEach((r) => {
-    map[r.remoteJid] = {
-      isHumanMode: r.isHumanMode || false,
-      unread: r.unread || false,
-      notes: r.notes || ""
-    };
-  });
-  return map;
-}
-async function setChatHumanMode(tenantId, remoteJid, isHumanMode) {
-  await query(`
-    INSERT INTO chat_sessions (tenant_id, remote_jid, is_human_mode, updated_at)
-    VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
-    ON CONFLICT (tenant_id, remote_jid) DO UPDATE SET
-      is_human_mode = EXCLUDED.is_human_mode,
-      updated_at = CURRENT_TIMESTAMP
-  `, [tenantId, remoteJid, isHumanMode]);
-}
-var getChatMessagesByTenant = getChatsByTenant;
-var saveChatMessage = createChatMessage;
-
-// src/server/routes/chats.routes.ts
 init_evolution();
 init_pool();
 var router6 = Router6();
@@ -4558,462 +5457,6 @@ var chats_routes_default = router6;
 
 // src/server/routes/agent.routes.ts
 import { Router as Router7 } from "express";
-
-// src/server/services/agent.ts
-init_ai_provider();
-init_encryption();
-
-// src/server/db/products.repo.ts
-init_pool();
-async function getProductsByTenant(tenantId, activeOnly = false) {
-  let sql = `
-    SELECT p.id, p.tenant_id as "tenantId", p.name, p.slug, p.description, p.price, p.compare_at_price as "compareAtPrice",
-           p.currency, p.category, p.tags, p.stock, p.track_stock as "trackStock", p.sku, p.weight_grams as "weightGrams",
-           p.custom_variables as "customVariables", p.featured, p.active,
-           p.created_at as "createdAt", p.updated_at as "updatedAt",
-           COALESCE(
-             (SELECT json_agg(json_build_object('id', pi.id, 'url', pi.url, 'isPrimary', pi.is_primary) ORDER BY pi.sort_order ASC)
-              FROM product_images pi WHERE pi.product_id = p.id), '[]'::json
-           ) as images,
-           COALESCE(
-             (SELECT json_agg(json_build_object('id', pv.id, 'name', pv.name, 'priceOverride', pv.price_override, 'stock', pv.stock))
-              FROM product_variants pv WHERE pv.product_id = p.id), '[]'::json
-           ) as variants
-    FROM products p
-    WHERE p.tenant_id = $1
-  `;
-  const params = [tenantId];
-  if (activeOnly) {
-    sql += ` AND p.active = true`;
-  }
-  sql += ` ORDER BY p.sort_order ASC, p.created_at DESC`;
-  const result = await query(sql, params);
-  return result.rows;
-}
-async function getProductById(id, tenantId) {
-  const result = await query(`
-    SELECT id, tenant_id as "tenantId", name, slug, description, price, compare_at_price as "compareAtPrice",
-           currency, category, tags, stock, track_stock as "trackStock", p.weight_grams as "weightGrams", 
-           p.custom_variables as "customVariables", sku, featured, active,
-           created_at as "createdAt", updated_at as "updatedAt"
-    FROM products p
-    WHERE p.id = $1 AND p.tenant_id = $2
-  `, [id, tenantId]);
-  if (result.rows.length === 0) return null;
-  const product = result.rows[0];
-  const imgRes = await query(`
-    SELECT id, url, alt_text as "altText", sort_order as "sortOrder", is_primary as "isPrimary"
-    FROM product_images WHERE product_id = $1 ORDER BY sort_order ASC
-  `, [id]);
-  const varRes = await query(`
-    SELECT id, name, sku, price_override as "priceOverride", stock, attributes, active
-    FROM product_variants WHERE product_id = $1
-  `, [id]);
-  product.images = imgRes.rows;
-  product.variants = varRes.rows;
-  return product;
-}
-async function getProductBySlug(slug, tenantId) {
-  const result = await query(`
-    SELECT p.id, p.tenant_id as "tenantId", p.name, p.slug, p.description, p.price, p.compare_at_price as "compareAtPrice",
-           p.currency, p.category, p.tags, p.stock, p.track_stock as "trackStock", p.weight_grams as "weightGrams",
-           p.custom_variables as "customVariables", p.sku, p.featured, p.active,
-           p.created_at as "createdAt", p.updated_at as "updatedAt"
-    FROM products p
-    WHERE p.slug = $1 AND p.tenant_id = $2
-  `, [slug, tenantId]);
-  if (result.rows.length === 0) return null;
-  const product = result.rows[0];
-  const imgRes = await query(`
-    SELECT id, url, alt_text as "altText", sort_order as "sortOrder", is_primary as "isPrimary"
-    FROM product_images WHERE product_id = $1 ORDER BY sort_order ASC
-  `, [product.id]);
-  const varRes = await query(`
-    SELECT id, name, sku, price_override as "priceOverride", stock, attributes, active
-    FROM product_variants WHERE product_id = $1
-  `, [product.id]);
-  product.images = imgRes.rows;
-  product.variants = varRes.rows;
-  return product;
-}
-async function createProduct(tenantId, data) {
-  const result = await query(`
-    INSERT INTO products (
-      tenant_id, name, slug, description, price, compare_at_price, currency, 
-      category, tags, stock, track_stock, weight_grams, custom_variables, sku, featured, active
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-    RETURNING id, tenant_id as "tenantId", name, slug, description, price, compare_at_price as "compareAtPrice",
-           currency, category, tags, stock, track_stock as "trackStock", weight_grams as "weightGrams", 
-           custom_variables as "customVariables", sku, featured, active,
-           created_at as "createdAt", updated_at as "updatedAt"
-  `, [
-    tenantId,
-    data.name,
-    data.slug,
-    data.description,
-    data.price,
-    data.compareAtPrice,
-    data.currency || "CRC",
-    data.category,
-    data.tags,
-    data.stock || 0,
-    data.trackStock !== false,
-    data.weightGrams || 0,
-    JSON.stringify(data.customVariables || []),
-    data.sku,
-    data.featured || false,
-    data.active !== false
-  ]);
-  const product = result.rows[0];
-  product.images = [];
-  product.variants = [];
-  return product;
-}
-async function updateProduct(id, tenantId, data) {
-  const updates = [];
-  const params = [id, tenantId];
-  let paramIdx = 3;
-  const fields = ["name", "slug", "description", "price", "compareAtPrice", "currency", "category", "tags", "stock", "trackStock", "weightGrams", "customVariables", "sku", "featured", "active"];
-  for (const field of fields) {
-    if (data[field] !== void 0) {
-      const dbField = field.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
-      updates.push(`${dbField} = $${paramIdx++}`);
-      const val = field === "customVariables" ? JSON.stringify(data[field]) : data[field];
-      params.push(val);
-    }
-  }
-  if (updates.length > 0) {
-    updates.push(`updated_at = CURRENT_TIMESTAMP`);
-    await query(`UPDATE products SET ${updates.join(", ")} WHERE id = $1 AND tenant_id = $2`, params);
-  }
-  return getProductById(id, tenantId);
-}
-async function deleteProduct(id, tenantId) {
-  const result = await query("DELETE FROM products WHERE id = $1 AND tenant_id = $2", [id, tenantId]);
-  return (result.rowCount || 0) > 0;
-}
-
-// src/server/db/ai-usage.repo.ts
-init_pool();
-function getCurrentMonthYear() {
-  const now = /* @__PURE__ */ new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  return `${year}-${month}`;
-}
-async function getPlanQuota(planName) {
-  const normalizedPlan = (planName || "starter").toLowerCase();
-  const key = `quota_${normalizedPlan}_tokens`;
-  try {
-    const res = await query(`SELECT value FROM platform_settings WHERE key = $1`, [key]);
-    if (res.rows.length > 0 && res.rows[0].value) {
-      return parseInt(res.rows[0].value, 10);
-    }
-  } catch (e) {
-  }
-  if (normalizedPlan === "starter") return 25e3;
-  if (normalizedPlan === "pro") return 1e5;
-  if (normalizedPlan === "business" || normalizedPlan === "enterprise") return 3e5;
-  return 25e3;
-}
-async function getTenantCurrentMonthUsage(tenantId) {
-  const monthYear = getCurrentMonthYear();
-  const tenantRes = await query(`SELECT id, name, slug, plan FROM tenants WHERE id = $1`, [tenantId]);
-  const tenant = tenantRes.rows[0] || { id: tenantId, name: "Desconocido", slug: "", plan: "starter" };
-  const limit = await getPlanQuota(tenant.plan);
-  const usageRes = await query(`
-    SELECT tokens_used, requests_count
-    FROM tenant_ai_usage
-    WHERE tenant_id = $1 AND month_year = $2
-  `, [tenantId, monthYear]);
-  const tokensUsed = usageRes.rows.length > 0 ? parseInt(usageRes.rows[0].tokens_used || "0", 10) : 0;
-  const requestsCount = usageRes.rows.length > 0 ? parseInt(usageRes.rows[0].requests_count || "0", 10) : 0;
-  const percentageUsed = limit > 0 ? Math.min(100, Math.round(tokensUsed / limit * 100)) : 0;
-  const isExceeded = limit > 0 && tokensUsed >= limit;
-  return {
-    tenantId,
-    tenantName: tenant.name,
-    slug: tenant.slug,
-    plan: tenant.plan,
-    monthYear,
-    tokensUsed,
-    requestsCount,
-    limit,
-    percentageUsed,
-    isExceeded
-  };
-}
-async function incrementTenantUsage(tenantId, tokens) {
-  if (!tenantId || tokens <= 0) return;
-  const monthYear = getCurrentMonthYear();
-  try {
-    await query(`
-      INSERT INTO tenant_ai_usage (tenant_id, month_year, tokens_used, requests_count, updated_at)
-      VALUES ($1, $2, $3, 1, CURRENT_TIMESTAMP)
-      ON CONFLICT (tenant_id, month_year)
-      DO UPDATE SET
-        tokens_used = tenant_ai_usage.tokens_used + $3,
-        requests_count = tenant_ai_usage.requests_count + 1,
-        updated_at = CURRENT_TIMESTAMP
-    `, [tenantId, monthYear, tokens]);
-  } catch (err) {
-    console.error(`[AI-Usage] Error incrementing usage for tenant ${tenantId}:`, err);
-  }
-}
-async function getAllTenantsMonthlyUsage(monthYearParam) {
-  const monthYear = monthYearParam || getCurrentMonthYear();
-  const starterQuota = await getPlanQuota("starter");
-  const proQuota = await getPlanQuota("pro");
-  const businessQuota = await getPlanQuota("business");
-  const res = await query(`
-    SELECT 
-      t.id as tenant_id,
-      t.name as tenant_name,
-      t.slug,
-      t.plan,
-      COALESCE(u.tokens_used, 0) as tokens_used,
-      COALESCE(u.requests_count, 0) as requests_count
-    FROM tenants t
-    LEFT JOIN tenant_ai_usage u ON u.tenant_id = t.id AND u.month_year = $1
-    WHERE t.slug != 'superadmin'
-    ORDER BY tokens_used DESC, t.name ASC
-  `, [monthYear]);
-  return res.rows.map((r) => {
-    const plan = (r.plan || "starter").toLowerCase();
-    const limit = plan === "starter" ? starterQuota : plan === "pro" ? proQuota : businessQuota;
-    const tokensUsed = parseInt(r.tokens_used || "0", 10);
-    const requestsCount = parseInt(r.requests_count || "0", 10);
-    const percentageUsed = limit > 0 ? Math.min(100, Math.round(tokensUsed / limit * 100)) : 0;
-    const isExceeded = limit > 0 && tokensUsed >= limit;
-    return {
-      tenantId: r.tenant_id,
-      tenantName: r.tenant_name,
-      slug: r.slug,
-      plan: r.plan,
-      monthYear,
-      tokensUsed,
-      requestsCount,
-      limit,
-      percentageUsed,
-      isExceeded
-    };
-  });
-}
-
-// src/server/services/agent.ts
-async function processWhatsAppMessageWithAI(tenantId, userMessage, senderPhone, senderName, chatHistory) {
-  const tenant = await getTenantById(tenantId);
-  const agentConfig = await getAgentConfig(tenantId);
-  const services = await getServicesByTenant(tenantId);
-  const products = await getProductsByTenant(tenantId, true);
-  const store = await getStoreSettings(tenantId);
-  const schedule = await getScheduleSettings(tenantId);
-  const now = /* @__PURE__ */ new Date();
-  const crTime = new Intl.DateTimeFormat("es-CR", {
-    timeZone: "America/Costa_Rica",
-    dateStyle: "full",
-    timeStyle: "short"
-  }).format(now);
-  const baseUrl = process.env.APP_URL || "https://betico.tech";
-  const storeUrl = tenant?.slug ? `${baseUrl}/tienda/${tenant.slug}` : "";
-  const bookingUrl = tenant?.slug ? `${baseUrl}/reservas/${tenant.slug}` : "";
-  const lowerMsg = userMessage.toLowerCase().trim();
-  const isPureGreeting = /^(hola|buenas|buenos dias|buenas tardes|buenas noches|hey|alo|hi|saludos|pura vida|hola que tal|hola como estas)[s!.,?]*$/i.test(lowerMsg);
-  const asksForServices = /servicio|cita|reserva|agenda|agendar|horario|hora|fecha|disponib|turno|atencion|lavado|pulido|mantenimiento/i.test(lowerMsg);
-  const asksForProducts = /precio|costo|cuanto|venden|catalogo|menu|producto|comprar|pedir|orden|foto|imagen|quiero|plato|comida|pizza|hamburguesa|cera/i.test(lowerMsg);
-  const asksForPayments = /sinpe|transferencia|pago|pagar|cuenta|banco|efectivo|tarjeta|cuentas/i.test(lowerMsg);
-  const asksForLocation = /ubicacion|donde|direccion|llegar|local|tienda|sucursal|mapa/i.test(lowerMsg);
-  const asksForHuman = /humano|asesor|persona|agente|hablar con alguien|queja|reclamo|urgente/i.test(lowerMsg);
-  let paymentInfo = "";
-  if (asksForPayments || asksForProducts || !isPureGreeting) {
-    const methods = [];
-    if (store?.acceptSinpe && store.sinpePhone) methods.push(`SINPE M\xF3vil: ${store.sinpePhone} (${store.sinpeName || tenant?.name})`);
-    if (store?.acceptTransfer && store.bankAccountInfo) methods.push(`Transferencia: ${store.bankAccountInfo}`);
-    if (store?.acceptCashOnDelivery) methods.push("Efectivo contra entrega");
-    if (store?.deliveryEnabled) methods.push(`Env\xEDo: \u20A1${Number(store.deliveryFee || 0).toLocaleString("es-CR")}`);
-    if (methods.length > 0) paymentInfo = "\u{1F4B3} Pagos: " + methods.join(" | ") + "\n";
-  }
-  let scheduleInfo = "";
-  if (asksForServices || asksForLocation || !isPureGreeting) {
-    if (schedule?.jornadaConfig) {
-      const j = schedule.jornadaConfig;
-      scheduleInfo = `\u23F0 Horario: ${j.startHour || "08:00"} a ${j.endHour || "17:00"} (${j.slotMinutes || 45}m por cita)
-`;
-    }
-    if (schedule?.vacationConfig?.enabled) {
-      const v = schedule.vacationConfig;
-      scheduleInfo += `\u26A0\uFE0F Cierre temporal: ${v.startDate} al ${v.endDate} (${v.message})
-`;
-    }
-  }
-  let relevantServicesText = "";
-  if (!isPureGreeting && services.length > 0) {
-    const userWords = lowerMsg.split(/\s+/).filter((w) => w.length > 2);
-    let matchedServices = services.filter((s) => {
-      const sName = s.name.toLowerCase();
-      const sCat = (s.category || "").toLowerCase();
-      return userWords.some((w) => sName.includes(w) || sCat.includes(w));
-    });
-    if (matchedServices.length === 0) {
-      matchedServices = services.slice(0, 4);
-    }
-    if (matchedServices.length > 0) {
-      relevantServicesText = "\u{1F697} Servicios:\n" + matchedServices.map(
-        (s) => `\u2022 ${s.name}: \u20A1${Number(s.price || 0).toLocaleString("es-CR")} (${s.duration || `${s.estimatedMinutes || 45}m`})`
-      ).join("\n") + "\n";
-    }
-  }
-  let relevantProductsText = "";
-  if (!isPureGreeting && products.length > 0) {
-    const userWords = lowerMsg.split(/\s+/).filter((w) => w.length > 2);
-    let matchedProducts = products.filter((p) => {
-      const pName = p.name.toLowerCase();
-      const pCat = (p.category || "").toLowerCase();
-      const pTags = Array.isArray(p.tags) ? p.tags.join(" ").toLowerCase() : "";
-      return userWords.some((w) => pName.includes(w) || pCat.includes(w) || pTags.includes(w));
-    });
-    if (matchedProducts.length === 0) {
-      matchedProducts = products.slice(0, 4);
-    }
-    if (matchedProducts.length > 0) {
-      relevantProductsText = "\u{1F6CD}\uFE0F Productos:\n" + matchedProducts.map((p) => {
-        let photoUrl = "";
-        if (p.images && p.images.length > 0) {
-          const rawUrl = p.images[0].url;
-          photoUrl = rawUrl.startsWith("http") ? rawUrl : `${baseUrl}${rawUrl}`;
-        }
-        return `\u2022 ${p.name}: \u20A1${Number(p.price || 0).toLocaleString("es-CR")} (Stock: ${p.stock ?? "disp"})${photoUrl ? ` [Foto:${photoUrl}]` : ""}`;
-      }).join("\n") + "\n";
-    }
-  }
-  let prompt = `Asistente IA de *${tenant?.name || "nuestro negocio"}* en WhatsApp.
-${agentConfig?.systemPrompt || "Atiende amablemente a los clientes."}
-
-Datos del negocio:
-${crTime}
-${bookingUrl ? `Citas: ${bookingUrl}` : ""}${storeUrl ? ` | Tienda: ${storeUrl}` : ""}
-${scheduleInfo}${paymentInfo}${relevantServicesText}${relevantProductsText}
-Reglas: Usa *negrita* y emojis. No inventes precios. Responde conciso (1-2 p\xE1rrafos). Si hay historial no repitas saludo. Para pagos SINPE/Transferencia da los datos y pide comprobante.
-
-Acciones confirmadas (a\xF1ade al final SOLO si el cliente confirma):
-Cita: <<<COMMAND_BOOKING: {"service":"nombre","date":"YYYY-MM-DD","time":"HH:MM","customerName":"${senderName}"}>>>
-Compra: <<<COMMAND_ORDER: {"items":[{"productName":"nombre","quantity":1}]}>>>
-Foto: <<<COMMAND_SEND_MEDIA: {"mediaUrl":"URL","caption":"desc"}>>>
-Humano: <<<COMMAND_HANDOFF: {"reason":"motivo"}>>>
-
-${chatHistory.slice(-3).map((h) => `${h.role === "user" ? "Cliente" : "Asistente"}: ${h.content}`).join("\n")}
-
-Cliente (${senderName}): ${userMessage}
-`;
-  let apiKey = "";
-  let isMarcaBlanca = false;
-  if (tenant?.aiApiKeyEncrypted) {
-    try {
-      apiKey = decrypt(tenant.aiApiKeyEncrypted);
-    } catch (e) {
-    }
-  }
-  let config;
-  if (apiKey) {
-    config = {
-      provider: tenant?.aiProvider || "gemini",
-      apiKey,
-      model: tenant?.aiModel || agentConfig?.model || "gemini-2.5-flash",
-      temperature: agentConfig?.temperature || 0.7
-    };
-  } else {
-    isMarcaBlanca = true;
-    const usage = await getTenantCurrentMonthUsage(tenantId);
-    if (usage.isExceeded) {
-      return {
-        replyText: "Hola, el asistente virtual de este negocio ha completado su cuota mensual de atenci\xF3n autom\xE1tica. Un asesor humano te responder\xE1 en breve.",
-        isBookingDetected: false,
-        isOrderDetected: false,
-        isHandoffRequested: true,
-        handoffReason: "L\xEDmite de cuota mensual de IA alcanzado",
-        tokensUsed: 0
-      };
-    }
-    const masterConfig = await getMasterAIConfig();
-    config = {
-      ...masterConfig,
-      temperature: agentConfig?.temperature || 0.7
-    };
-  }
-  const aiResult = await callAI(config, prompt);
-  let replyText = aiResult.text;
-  if (isMarcaBlanca && aiResult.tokensUsed > 0) {
-    await incrementTenantUsage(tenantId, aiResult.tokensUsed);
-  }
-  let isBookingDetected = false;
-  let bookingData;
-  let isOrderDetected = false;
-  let orderData;
-  let isHandoffRequested = false;
-  let handoffReason;
-  let isMediaDetected = false;
-  let mediaData;
-  const bookingRegex = /<<<COMMAND_BOOKING:\s*({.*?})>>>/s;
-  const orderRegex = /<<<COMMAND_ORDER:\s*({.*?})>>>/s;
-  const handoffRegex = /<<<COMMAND_HANDOFF:\s*({.*?})>>>/s;
-  const mediaRegex = /<<<COMMAND_SEND_MEDIA:\s*({.*?})>>>/s;
-  const bookingMatch = replyText.match(bookingRegex);
-  if (bookingMatch && bookingMatch[1]) {
-    try {
-      const parsed = JSON.parse(bookingMatch[1]);
-      if (parsed && parsed.service && (parsed.date || parsed.time)) {
-        isBookingDetected = true;
-        bookingData = parsed;
-      }
-    } catch (e) {
-    }
-  }
-  const orderMatch = replyText.match(orderRegex);
-  if (orderMatch && orderMatch[1]) {
-    try {
-      const parsed = JSON.parse(orderMatch[1]);
-      if (parsed && Array.isArray(parsed.items) && parsed.items.length > 0) {
-        const validItems = parsed.items.filter((it) => it.productName && it.productName.trim().length > 0);
-        if (validItems.length > 0) {
-          isOrderDetected = true;
-          orderData = { ...parsed, items: validItems };
-        }
-      }
-    } catch (e) {
-    }
-  }
-  const handoffMatch = replyText.match(handoffRegex);
-  if (handoffMatch && handoffMatch[1]) {
-    isHandoffRequested = true;
-    try {
-      handoffReason = JSON.parse(handoffMatch[1]).reason;
-    } catch (e) {
-    }
-  }
-  const mediaMatch = replyText.match(mediaRegex);
-  if (mediaMatch && mediaMatch[1]) {
-    isMediaDetected = true;
-    try {
-      mediaData = JSON.parse(mediaMatch[1]);
-    } catch (e) {
-    }
-  }
-  replyText = replyText.replace(bookingRegex, "").replace(orderRegex, "").replace(handoffRegex, "").replace(mediaRegex, "").replace(/\*\*/g, "*").trim();
-  return {
-    replyText,
-    isBookingDetected,
-    bookingData,
-    isOrderDetected,
-    orderData,
-    isHandoffRequested,
-    handoffReason,
-    isMediaDetected,
-    mediaData,
-    tokensUsed: aiResult.tokensUsed
-  };
-}
-
-// src/server/routes/agent.routes.ts
 var router7 = Router7();
 router7.use(authenticateToken);
 router7.use(tenantContext);
@@ -5568,172 +6011,6 @@ var products_routes_default = router11;
 
 // src/server/routes/orders.routes.ts
 import { Router as Router12 } from "express";
-
-// src/server/db/orders.repo.ts
-init_pool();
-async function getOrdersByTenant(tenantId) {
-  const result = await query(`
-    SELECT o.id, o.tenant_id as "tenantId", o.order_number as "orderNumber", o.customer_name as "customerName",
-           o.customer_phone as "customerPhone", o.customer_email as "customerEmail", o.customer_address as "customerAddress",
-           o.whatsapp_jid as "whatsappJid", o.source, o.subtotal, o.delivery_fee as "deliveryFee", o.discount, o.total,
-           o.currency, o.status, o.payment_method as "paymentMethod", o.payment_status as "paymentStatus",
-           o.payment_reference as "paymentReference", o.payment_proof_url as "paymentProofUrl", o.payment_proof_status as "paymentProofStatus", o.notes, o.delivery_method as "deliveryMethod",
-           o.consumption_mode as "consumptionMode", o.table_number as "tableNumber", o.customer_location as "customerLocation",
-           o.chat_message_id as "chatMessageId", o.driver_id as "driverId", o.waze_url as "wazeUrl",
-           o.branch_id as "branchId", b.name as "branchName",
-           o.created_at as "createdAt", o.updated_at as "updatedAt",
-           COALESCE(
-             (
-               SELECT json_agg(
-                 json_build_object(
-                   'id', oi.id,
-                   'productId', oi.product_id,
-                   'variantId', oi.variant_id,
-                   'productName', oi.product_name,
-                   'variantName', oi.variant_name,
-                   'selectedVariables', oi.selected_variables,
-                   'quantity', oi.quantity,
-                   'unitPrice', oi.unit_price,
-                   'totalPrice', oi.total_price
-                 )
-               )
-               FROM order_items oi
-               WHERE oi.order_id = o.id
-             ),
-             '[]'::json
-           ) as items
-    FROM orders o
-    LEFT JOIN branches b ON o.branch_id = b.id
-    WHERE o.tenant_id = $1
-    ORDER BY o.created_at DESC
-  `, [tenantId]);
-  return result.rows;
-}
-async function getOrderById(id, tenantId) {
-  const result = await query(`
-    SELECT id, tenant_id as "tenantId", order_number as "orderNumber", customer_name as "customerName",
-           customer_phone as "customerPhone", customer_email as "customerEmail", customer_address as "customerAddress",
-           whatsapp_jid as "whatsappJid", source, subtotal, delivery_fee as "deliveryFee", discount, total,
-           currency, status, payment_method as "paymentMethod", payment_status as "paymentStatus",
-           payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl", payment_proof_status as "paymentProofStatus", notes, delivery_method as "deliveryMethod",
-           consumption_mode as "consumptionMode", table_number as "tableNumber", customer_location as "customerLocation",
-           chat_message_id as "chatMessageId", driver_id as "driverId", waze_url as "wazeUrl",
-           created_at as "createdAt", updated_at as "updatedAt"
-    FROM orders 
-    WHERE id = $1
-  `, [id]);
-  if (result.rows.length === 0) return null;
-  const order = result.rows[0];
-  const itemsRes = await query(`
-    SELECT id, product_id as "productId", variant_id as "variantId", product_name as "productName",
-           variant_name as "variantName", selected_variables as "selectedVariables",
-           quantity, unit_price as "unitPrice", total_price as "totalPrice"
-    FROM order_items WHERE order_id = $1
-  `, [id]);
-  order.items = itemsRes.rows;
-  return order;
-}
-async function createOrder(tenantId, data, items) {
-  const result = await query(`
-    INSERT INTO orders (
-      tenant_id, customer_name, customer_phone, customer_email, customer_address, whatsapp_jid,
-      source, subtotal, delivery_fee, discount, total, currency, status, payment_method, 
-      payment_status, payment_reference, payment_proof_url, payment_proof_status, notes, delivery_method, consumption_mode, table_number, customer_location
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
-    RETURNING id
-  `, [
-    tenantId,
-    data.customerName,
-    data.customerPhone,
-    data.customerEmail,
-    data.customerAddress,
-    data.whatsappJid,
-    data.source || "store",
-    data.subtotal,
-    data.deliveryFee || 0,
-    data.discount || 0,
-    data.total,
-    data.currency || "CRC",
-    data.status || "pedido_recibido",
-    data.paymentMethod,
-    data.paymentStatus || "pending",
-    data.paymentReference || null,
-    data.paymentProofUrl || null,
-    data.paymentProofStatus || (data.paymentProofUrl ? "received" : "pending"),
-    data.notes || null,
-    data.deliveryMethod || "pickup",
-    data.consumptionMode || null,
-    data.tableNumber || null,
-    data.customerLocation ? JSON.stringify(data.customerLocation) : null
-  ]);
-  const orderId = result.rows[0].id;
-  const orderItems = items || data.items || [];
-  if (orderItems && orderItems.length > 0) {
-    for (const item of orderItems) {
-      await query(`
-        INSERT INTO order_items (
-          order_id, product_id, variant_id, tenant_id, product_name, variant_name, selected_variables, quantity, unit_price, total_price
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-      `, [
-        orderId,
-        item.productId || null,
-        item.variantId || null,
-        tenantId,
-        item.productName,
-        item.variantName || null,
-        item.selectedVariables ? JSON.stringify(item.selectedVariables) : null,
-        item.quantity,
-        item.unitPrice,
-        Number(item.unitPrice) * Number(item.quantity)
-      ]);
-    }
-  }
-  return getOrderById(orderId, tenantId);
-}
-async function updateOrder(id, tenantId, data) {
-  const updates = [];
-  const params = [id, tenantId];
-  let paramIdx = 3;
-  const fields = [
-    "status",
-    "paymentStatus",
-    "paymentReference",
-    "notes",
-    "driverId",
-    "wazeUrl",
-    "consumptionMode",
-    "tableNumber",
-    "deliveryMethod",
-    "deliveryFee",
-    "total",
-    "customerAddress"
-  ];
-  for (const field of fields) {
-    if (data[field] !== void 0) {
-      const dbField = field.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
-      if (field === "customerLocation") {
-        updates.push(`${dbField} = $${paramIdx++}::jsonb`);
-        params.push(JSON.stringify(data[field]));
-      } else {
-        updates.push(`${dbField} = $${paramIdx++}`);
-        params.push(data[field]);
-      }
-    }
-  }
-  if (updates.length > 0) {
-    updates.push(`updated_at = CURRENT_TIMESTAMP`);
-    await query(`UPDATE orders SET ${updates.join(", ")} WHERE id = $1 AND (tenant_id = $2 OR tenant_id IS NOT NULL)`, params);
-  }
-  return getOrderById(id, tenantId);
-}
-async function updateOrderStatus(id, tenantId, status) {
-  return updateOrder(id, tenantId, { status });
-}
-async function confirmPayment(id, tenantId, paymentReference) {
-  return updateOrder(id, tenantId, { paymentStatus: "paid", paymentReference: paymentReference || "Confirmado manual" });
-}
-
-// src/server/routes/orders.routes.ts
 init_evolution();
 init_pool();
 var router12 = Router12();
@@ -6419,82 +6696,6 @@ var storefront_routes_default = router16;
 // src/server/routes/webhook.routes.ts
 import { Router as Router17 } from "express";
 init_evolution();
-
-// src/server/services/booking.service.ts
-async function createBookingFromCommand(tenantId, bookingData) {
-  try {
-    const services = await getServicesByTenant(tenantId);
-    const matchedService = services.find(
-      (s) => s.name.toLowerCase().includes((bookingData.service || "").toLowerCase())
-    ) || services[0];
-    const price = matchedService ? matchedService.price : 0;
-    const appointment = await createAppointment(tenantId, {
-      name: bookingData.customerName || "Cliente WhatsApp",
-      whatsapp: bookingData.customerPhone || "",
-      service: matchedService ? matchedService.name : bookingData.service || "Servicio General",
-      date: bookingData.date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0],
-      time: bookingData.time || "10:00 AM",
-      amount: Number(price),
-      details: bookingData.vehicleInfo || "",
-      status: "pending"
-    });
-    return appointment;
-  } catch (error) {
-    console.error("Error creating booking from command:", error);
-    throw error;
-  }
-}
-
-// src/server/services/order.service.ts
-async function createOrderFromWhatsApp(tenantId, orderData) {
-  try {
-    const allProducts = await getProductsByTenant(tenantId, true);
-    const items = [];
-    let subtotal = 0;
-    for (const item of orderData.items || []) {
-      const product = allProducts.find(
-        (p) => p.name.toLowerCase().includes((item.productName || "").toLowerCase())
-      );
-      const unitPrice = product ? Number(product.price) : item.unitPrice || 0;
-      const qty = item.quantity || 1;
-      const totalPrice = unitPrice * qty;
-      subtotal += totalPrice;
-      items.push({
-        productId: product?.id || null,
-        productName: product?.name || item.productName || "Producto",
-        quantity: qty,
-        unitPrice,
-        totalPrice
-      });
-      if (product && product.trackStock) {
-        await updateProduct(product.id, tenantId, {
-          stock: Math.max(0, (product.stock || 0) - qty)
-        });
-      }
-    }
-    const order = await createOrder(
-      tenantId,
-      {
-        customerName: orderData.customerName || "Cliente WhatsApp",
-        customerPhone: orderData.customerPhone || "",
-        source: "whatsapp",
-        subtotal,
-        total: subtotal,
-        currency: "CRC",
-        status: "pending",
-        paymentMethod: orderData.paymentMethod || "sinpe",
-        paymentStatus: "pending"
-      },
-      items
-    );
-    return order;
-  } catch (error) {
-    console.error("Error creating order from WhatsApp:", error);
-    throw error;
-  }
-}
-
-// src/server/routes/webhook.routes.ts
 init_pool();
 
 // src/server/services/audio-transcriber.service.ts
@@ -6557,133 +6758,43 @@ async function transcribeAudioWithGemini(base64Audio, mimetype = "audio/ogg", ap
     return { success: false, text: "", error: error.message || "Error desconocido" };
   }
 }
-
-// src/server/services/sinpe-verifier.service.ts
-init_env();
-var DEFAULT_GEMINI_KEY3 = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || env.GEMINI_API_KEY || "AQ.Ab8RN6IHcdDKDITkdIOjt8SznSc6lS_1grotOA6SQ6fjZnd2SQ";
-async function analyzeSinpeReceipt(base64Image, mimetype = "image/jpeg", apiKey) {
+async function transcribeAudioWithWhisper(base64Audio, mimetype = "audio/ogg") {
   try {
-    const cleanBase64 = base64Image.replace(/^data:image\/[a-z0-9]+;base64,/, "").trim();
-    if (!cleanBase64) {
-      return {
-        isReceipt: false,
-        amount: null,
-        reference: null,
-        destinationPhone: null,
-        destinationName: null,
-        date: null,
-        bank: null,
-        confidence: 0,
-        error: "Imagen base64 vac\xEDa"
-      };
-    }
-    const key = apiKey || DEFAULT_GEMINI_KEY3;
-    const cleanMime = (mimetype || "image/jpeg").split(";")[0].trim();
-    const prompt = `Eres un auditor financiero especializado en validar comprobantes de transferencias bancarias y SINPE M\xF3vil en Costa Rica y Centroam\xE9rica (BAC Credomatic, Banco Nacional BNCR, Banco de Costa Rica BCR, Promerica, Scotiabank, Lafise, Davivienda, Coopeande, etc.).
-
-Analiza la imagen adjunta con atenci\xF3n y responde \xDANICAMENTE con un objeto JSON estricto con esta estructura:
-{
-  "isReceipt": boolean,
-  "amount": number o null,
-  "reference": string o null,
-  "destinationPhone": string o null,
-  "destinationName": string o null,
-  "date": string o null,
-  "bank": string o null,
-  "confidence": number
-}
-
-Reglas estrictas:
-1. "isReceipt": true SOLO si la imagen es claramente una captura de pantalla, comprobante o notificaci\xF3n de transferencia bancaria / SINPE M\xF3vil exitosa. Si es una foto de producto, selfie, meme o paisaje, pon false.
-2. "amount": Extrae el monto num\xE9rico transferido en colones costarricenses (CRC) o d\xF3lares (ej: si dice \u20A15.000,00 o 5,000 colones, pon 5000). Si no est\xE1 claro, pon null.
-3. "reference": Extrae el n\xFAmero de comprobante, referencia bancaria, autorizaci\xF3n o n\xFAmero de transacci\xF3n.
-4. "destinationPhone": Extrae el n\xFAmero de tel\xE9fono receptor de SINPE si est\xE1 visible (ej: "88889999").
-5. "confidence": N\xFAmero entre 0.0 y 1.0 indicando tu nivel de seguridad en la lectura.
-6. Responde SOLAMENTE el JSON v\xE1lido, sin bloques markdown adicionales.`;
-    const models = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-flash-latest"];
-    for (const modelName of models) {
-      try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${key}`;
-        const response = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [
-              {
-                parts: [
-                  {
-                    inlineData: {
-                      mimeType: cleanMime,
-                      data: cleanBase64
-                    }
-                  },
-                  {
-                    text: prompt
-                  }
-                ]
-              }
-            ],
-            generationConfig: {
-              temperature: 0.1,
-              responseMimeType: "application/json"
-            }
-          })
-        });
-        if (response.ok) {
-          const data = await response.json();
-          const jsonText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
-          if (jsonText) {
-            try {
-              const parsed = JSON.parse(jsonText);
-              console.log("[SinpeVerifier] Successfully parsed receipt:", parsed);
-              return {
-                isReceipt: Boolean(parsed.isReceipt),
-                amount: parsed.amount ? Number(parsed.amount) : null,
-                reference: parsed.reference ? String(parsed.reference) : null,
-                destinationPhone: parsed.destinationPhone ? String(parsed.destinationPhone) : null,
-                destinationName: parsed.destinationName ? String(parsed.destinationName) : null,
-                date: parsed.date ? String(parsed.date) : null,
-                bank: parsed.bank ? String(parsed.bank) : null,
-                confidence: typeof parsed.confidence === "number" ? parsed.confidence : 0.8,
-                rawText: jsonText
-              };
-            } catch (pErr) {
-              console.warn("[SinpeVerifier] Error parsing Gemini JSON response:", jsonText);
-            }
-          }
-        } else {
-          const errText = await response.text();
-          console.warn(`[SinpeVerifier] Model ${modelName} returned status ${response.status}: ${errText}`);
-        }
-      } catch (err) {
-        console.warn(`[SinpeVerifier] Error with model ${modelName}:`, err.message);
+    const LOCALAI_URL = process.env.LOCALAI_URL || "https://beticoia-localai.qvtdko.easypanel.host/v1";
+    const cleanBase64 = base64Audio.replace(/^data:audio\/[a-z0-9]+;base64,/, "").trim();
+    if (!cleanBase64) return { success: false, text: "", error: "Audio base64 vac\xEDo" };
+    const audioBuffer = Buffer.from(cleanBase64, "base64");
+    const ext = mimetype.includes("ogg") ? "ogg" : mimetype.includes("mp3") ? "mp3" : mimetype.includes("mp4") ? "mp4" : "ogg";
+    const blob = new Blob([audioBuffer], { type: mimetype });
+    const formData = new FormData();
+    formData.append("file", blob, `audio.${ext}`);
+    formData.append("model", "whisper-1");
+    formData.append("language", "es");
+    const response = await fetch(`${LOCALAI_URL}/audio/transcriptions`, {
+      method: "POST",
+      headers: { "Authorization": "Bearer localai" },
+      body: formData
+    });
+    if (response.ok) {
+      const data = await response.json();
+      const text = data.text?.trim() || "";
+      if (text) {
+        console.log(`[AudioTranscriber] Whisper transcribed: "${text}"`);
+        return { success: true, text };
       }
     }
-    return {
-      isReceipt: false,
-      amount: null,
-      reference: null,
-      destinationPhone: null,
-      destinationName: null,
-      date: null,
-      bank: null,
-      confidence: 0,
-      error: "No se pudo procesar la imagen con los modelos disponibles"
-    };
+    console.warn(`[AudioTranscriber] Whisper failed (${response.status}), falling back to Gemini...`);
+    return { success: false, text: "", error: `Whisper returned ${response.status}` };
   } catch (error) {
-    console.error("[SinpeVerifier] Fatal error verifying SINPE:", error);
-    return {
-      isReceipt: false,
-      amount: null,
-      reference: null,
-      destinationPhone: null,
-      destinationName: null,
-      date: null,
-      bank: null,
-      confidence: 0,
-      error: error.message || "Error desconocido"
-    };
+    console.warn("[AudioTranscriber] Whisper error, falling back to Gemini:", error.message);
+    return { success: false, text: "", error: error.message };
   }
+}
+async function transcribeAudio(base64Audio, mimetype = "audio/ogg", apiKey) {
+  const whisperResult = await transcribeAudioWithWhisper(base64Audio, mimetype);
+  if (whisperResult.success) return whisperResult;
+  console.log("[AudioTranscriber] Falling back to Gemini for transcription...");
+  return transcribeAudioWithGemini(base64Audio, mimetype, apiKey);
 }
 
 // src/server/routes/webhook.routes.ts
@@ -6757,7 +6868,7 @@ router17.post("/", async (req, res) => {
         }
       }
       if (base64Audio) {
-        const transcription = await transcribeAudioWithGemini(base64Audio, audioMime);
+        const transcription = await transcribeAudio(base64Audio, audioMime);
         if (transcription.success && transcription.text) {
           userMessage = transcription.text;
           isVoiceNote = true;
@@ -6767,86 +6878,46 @@ router17.post("/", async (req, res) => {
     }
     const isImageMsg = data?.message?.imageMessage || data?.messageType === "imageMessage";
     if (isImageMsg && !fromMe) {
-      console.log(`[Webhook] Detected Image from ${remoteJid}! Checking for pending order SINPE verification...`);
-      let base64Img = data?.base64 || data?.message?.base64;
-      const imgMime = data?.message?.imageMessage?.mimetype || "image/jpeg";
-      if (!base64Img) {
-        const mediaRes = await getBase64FromMediaMessage(targetInstance, key, data.message);
-        if (mediaRes.base64) {
-          base64Img = mediaRes.base64;
+      console.log(`[Webhook] Detected Image from ${remoteJid}!`);
+      const pendingOrderRes = await query(`
+        SELECT id, order_number as "orderNumber", total, customer_name as "customerName", status, payment_status as "paymentStatus"
+        FROM orders
+        WHERE tenant_id = $1 
+          AND (whatsapp_jid = $2 OR customer_phone LIKE $3)
+          AND payment_status IN ('pending', 'proof_sent')
+        ORDER BY created_at DESC
+        LIMIT 1
+      `, [tenant.id, remoteJid, `%${cleanPhone.slice(-8)}%`]);
+      if (pendingOrderRes.rows.length > 0) {
+        const pendingOrder = pendingOrderRes.rows[0];
+        console.log(`[Webhook] Found pending order #${pendingOrder.orderNumber} for ${cleanPhone}. Marking proof_sent for manual verification.`);
+        await query(`
+          UPDATE orders 
+          SET payment_status = 'proof_sent', updated_at = CURRENT_TIMESTAMP
+          WHERE id = $1 AND tenant_id = $2
+        `, [pendingOrder.id, tenant.id]);
+        if (req.io) {
+          req.io.to(`tenant_${tenant.id}`).emit("order:updated", {
+            id: pendingOrder.id,
+            orderNumber: pendingOrder.orderNumber,
+            status: pendingOrder.status,
+            paymentStatus: "proof_sent"
+          });
         }
-      }
-      if (base64Img) {
-        const pendingOrderRes = await query(`
-          SELECT id, order_number as "orderNumber", total, customer_name as "customerName", status, payment_status as "paymentStatus"
-          FROM orders
-          WHERE tenant_id = $1 
-            AND (whatsapp_jid = $2 OR customer_phone LIKE $3)
-            AND payment_status IN ('pending', 'proof_sent')
-          ORDER BY created_at DESC
-          LIMIT 1
-        `, [tenant.id, remoteJid, `%${cleanPhone.slice(-8)}%`]);
-        if (pendingOrderRes.rows.length > 0) {
-          const pendingOrder = pendingOrderRes.rows[0];
-          console.log(`[Webhook] Found pending order #${pendingOrder.orderNumber} (total: \u20A1${pendingOrder.total}) for ${cleanPhone}. Running SINPE verification...`);
-          const receiptAnalysis = await analyzeSinpeReceipt(base64Img, imgMime);
-          console.log("[Webhook] SINPE analysis result:", receiptAnalysis);
-          if (receiptAnalysis.isReceipt && receiptAnalysis.amount) {
-            const expectedTotal = Number(pendingOrder.total);
-            const paidAmount = receiptAnalysis.amount;
-            if (paidAmount >= expectedTotal * 0.95) {
-              await query(`
-                UPDATE orders 
-                SET payment_status = 'paid', status = 'confirmed', payment_reference = $1, updated_at = CURRENT_TIMESTAMP
-                WHERE id = $2 AND tenant_id = $3
-              `, [receiptAnalysis.reference || `SINPE_${Date.now()}`, pendingOrder.id, tenant.id]);
-              if (req.io) {
-                req.io.to(`tenant_${tenant.id}`).emit("order:updated", {
-                  id: pendingOrder.id,
-                  orderNumber: pendingOrder.orderNumber,
-                  status: "confirmed",
-                  paymentStatus: "paid",
-                  paymentReference: receiptAnalysis.reference
-                });
-              }
-              const confirmReply = `\u2705 *\xA1Pago SINPE M\xF3vil Verificado con \xC9xito!*
+        const receiptReply = `\u{1F4E9} *Comprobante Recibido*
 
-Hemos validado tu comprobante por *\u20A1${paidAmount.toLocaleString()}* ${receiptAnalysis.reference ? `(Ref: *${receiptAnalysis.reference}*)` : ""}.
-
-Tu pedido *#${pendingOrder.orderNumber}* ha sido confirmado y enviado a preparaci\xF3n. \u{1F37D}\uFE0F\u{1F680}
-
-\xA1Muchas gracias por tu compra!`;
-              await sendMessage(targetInstance, cleanPhone, confirmReply);
-              await saveChatMessage(tenant.id, {
-                id: `sinpe_${Date.now()}`,
-                remoteJid,
-                pushName: "Sistema Pagos",
-                fromMe: true,
-                messageText: confirmReply,
-                aiResponse: confirmReply,
-                status: "sent"
-              });
-              return;
-            } else {
-              const partialReply = `\u26A0\uFE0F *Comprobante Recibido con Monto Menor*
-
-Detectamos una transferencia por *\u20A1${paidAmount.toLocaleString()}*, pero el monto total de tu pedido *#${pendingOrder.orderNumber}* es de *\u20A1${expectedTotal.toLocaleString()}*.
-
-Por favor realiza la transferencia por el saldo restante o escribe *humano* si necesitas ayuda con tu pago.`;
-              await sendMessage(targetInstance, cleanPhone, partialReply);
-              await saveChatMessage(tenant.id, {
-                id: `sinpe_partial_${Date.now()}`,
-                remoteJid,
-                pushName: "Sistema Pagos",
-                fromMe: true,
-                messageText: partialReply,
-                aiResponse: partialReply,
-                status: "sent"
-              });
-              return;
-            }
-          }
-        }
+Hemos recibido tu comprobante para el pedido *#${pendingOrder.orderNumber}* (\u20A1${Number(pendingOrder.total).toLocaleString("es-CR")}). Nuestro equipo lo verificar\xE1 y confirmaremos tu pedido en breve. \xA1Gracias! \u2705`;
+        await sendMessage(targetInstance, cleanPhone, receiptReply);
+        await saveChatMessage(tenant.id, {
+          id: `sinpe_${Date.now()}`,
+          remoteJid,
+          pushName: "Sistema Pagos",
+          fromMe: true,
+          messageText: receiptReply,
+          aiResponse: receiptReply,
+          status: "sent"
+        });
+        return;
       }
       if (!userMessage) {
         userMessage = data?.message?.imageMessage?.caption || "Foto enviada por el cliente";
@@ -6902,21 +6973,8 @@ Por favor realiza la transferencia por el saldo restante o escribe *humano* si n
       console.log(`[Webhook] AI Chatbot is DISABLED for tenant '${tenant.name}'. Operating in Notifications-Only mode.`);
       return;
     }
-    const allChats = await getChatMessagesByTenant(tenant.id, 20);
-    const history = allChats.filter((c) => (c.remoteJid || c.remote_jid) === remoteJid).map((c) => ({
-      role: c.fromMe || c.from_me ? "assistant" : "user",
-      content: c.messageText || c.message_text || c.aiResponse || c.ai_response || ""
-    }));
-    console.log(`[Webhook] Processing with AI for tenant '${tenant.name}'...`);
-    const aiResult = await processWhatsAppMessageWithAI(
-      tenant.id,
-      userMessage,
-      cleanPhone,
-      pushName,
-      history
-    );
-    if (handoffEnabled && (isKeywordTriggered || aiResult.isHandoffRequested)) {
-      console.log(`[Webhook] Human Handoff triggered for ${remoteJid}!`);
+    if (handoffEnabled && isKeywordTriggered) {
+      console.log(`[Webhook] Human Handoff keyword triggered for ${remoteJid}!`);
       await setChatHumanMode(tenant.id, remoteJid, true);
       const customerHandoffReply = `\u{1F464} *Atenci\xF3n Personalizada:* Entendido *${pushName}*, te estamos comunicando con un asesor humano para atenderte directamente. En breve te responder\xE1.`;
       await sendMessage(targetInstance, cleanPhone, customerHandoffReply);
@@ -6931,95 +6989,23 @@ Por favor realiza la transferencia por el saldo restante o escribe *humano* si n
       });
       const adminPhone = (agentConfig?.handoffNotifyPhone || tenant.whatsappNumber || "").replace(/\D/g, "");
       if (adminPhone) {
-        const reason = aiResult.handoffReason || (isKeywordTriggered ? `El cliente escribi\xF3: "${userMessage}"` : "El cliente solicita hablar con un asesor humano.");
         const alertMsg = `\u{1F6A8} *\xA1ATENCI\xD3N HUMANA REQUERIDA!*
 
 \u{1F464} *Cliente:* ${pushName} (${cleanPhone})
-\u{1F4DD} *Resumen / Motivo:* ${reason}
+\u{1F4DD} *Motivo:* El cliente escribi\xF3: "${userMessage}"
 
-\u{1F449} _La IA ha sido pausada autom\xE1ticamente para este chat. Puedes responderle directamente desde WhatsApp o desde tu Panel de Betico._`;
+\u{1F449} _La IA ha sido pausada. Responde desde WhatsApp o tu Panel de Betico._`;
         try {
           await sendMessage(targetInstance, adminPhone, alertMsg);
         } catch (e) {
-          console.error("Error sending handoff alert to admin:", e);
         }
       }
       return;
     }
-    if (!aiResult || !aiResult.replyText) {
-      console.warn("[Webhook] No AI reply generated");
-      return;
-    }
-    console.log(`[Webhook] AI generated reply: "${aiResult.replyText.slice(0, 100)}..."`);
-    let sendRes;
-    if (aiResult.isMediaDetected && aiResult.mediaData?.mediaUrl) {
-      console.log(`[Webhook] Sending product photo to customer: ${aiResult.mediaData.mediaUrl}`);
-      sendRes = await sendMedia(targetInstance, cleanPhone, aiResult.mediaData.mediaUrl, aiResult.replyText || aiResult.mediaData.caption);
-    } else {
-      sendRes = await sendMessage(targetInstance, cleanPhone, aiResult.replyText);
-    }
-    console.log(`[Webhook] Message send status: success=${sendRes.success}`);
-    const aiMsgId = `ai_${Date.now()}`;
-    await saveChatMessage(tenant.id, {
-      id: aiMsgId,
-      remoteJid,
-      pushName: "Asistente IA",
-      fromMe: true,
-      messageText: aiResult.replyText,
-      aiResponse: aiResult.replyText,
-      status: sendRes.success ? "sent" : "failed"
-    });
+    console.log(`[Webhook] Enqueueing message for AI processing: tenant='${tenant.name}', from=${pushName}`);
+    await enqueueMessage(tenant.id, remoteJid, pushName, cleanPhone, userMessage, targetInstance, isVoiceNote);
     if (req.io) {
-      req.io.to(`tenant_${tenant.id}`).emit("chat:message", {
-        id: aiMsgId,
-        tenantId: tenant.id,
-        remoteJid,
-        pushName: "Asistente IA",
-        fromMe: true,
-        messageText: aiResult.replyText,
-        aiResponse: aiResult.replyText,
-        createdAt: (/* @__PURE__ */ new Date()).toISOString()
-      });
-    }
-    if (aiResult.isBookingDetected && aiResult.bookingData) {
-      try {
-        await createBookingFromCommand(tenant.id, {
-          ...aiResult.bookingData,
-          customerPhone: aiResult.bookingData.customerPhone || cleanPhone,
-          customerName: aiResult.bookingData.customerName || pushName
-        });
-        await query(`
-          INSERT INTO notifications_log (id, tenant_id, recipient, message, trigger_type, status)
-          VALUES ($1, $2, $3, $4, 'booking_created', 'sent')
-        `, [
-          `notif_${Date.now()}`,
-          tenant.id,
-          cleanPhone,
-          `Nueva cita agendada por IA para ${pushName}`
-        ]);
-      } catch (err) {
-        console.error("[Webhook] Failed to process booking command:", err);
-      }
-    }
-    if (aiResult.isOrderDetected && aiResult.orderData) {
-      try {
-        await createOrderFromWhatsApp(tenant.id, {
-          ...aiResult.orderData,
-          customerPhone: aiResult.orderData.customerPhone || cleanPhone,
-          customerName: aiResult.orderData.customerName || pushName
-        });
-        await query(`
-          INSERT INTO notifications_log (id, tenant_id, recipient, message, trigger_type, status)
-          VALUES ($1, $2, $3, $4, 'order_created', 'sent')
-        `, [
-          `notif_${Date.now()}`,
-          tenant.id,
-          cleanPhone,
-          `Nuevo pedido registrado por IA para ${pushName}`
-        ]);
-      } catch (err) {
-        console.error("[Webhook] Failed to process order command:", err);
-      }
+      req.io.to(`tenant_${tenant.id}`).emit("queue:updated", { tenantId: tenant.id });
     }
   } catch (error) {
     console.error("[Webhook] Error processing incoming WhatsApp webhook:", error);
@@ -9066,6 +9052,32 @@ router26.get("/:slug", async (req, res) => {
 });
 var website_public_routes_default = router26;
 
+// src/server/routes/queue.routes.ts
+import { Router as Router27 } from "express";
+var router27 = Router27();
+router27.get("/pending", async (req, res) => {
+  try {
+    const tenantId = req.tenantId || req.query.tenantId;
+    if (!tenantId) return res.status(400).json({ error: "tenantId required" });
+    const messages = await getPendingByTenant(tenantId);
+    res.json(messages);
+  } catch (error) {
+    console.error("[QueueRoute] Error pending:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+router27.get("/stats", async (req, res) => {
+  try {
+    const tenantId = req.tenantId || req.query.tenantId;
+    const stats = await getQueueStats(tenantId || void 0);
+    res.json(stats);
+  } catch (error) {
+    console.error("[QueueRoute] Error stats:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+var queue_routes_default = router27;
+
 // src/server/index.ts
 var __filename = fileURLToPath(import.meta.url);
 var __dirname = path2.dirname(__filename);
@@ -9073,10 +9085,10 @@ async function startServer() {
   const app = express();
   app.set("trust proxy", 1);
   const server = http.createServer(app);
-  const io = new SocketIOServer(server, {
+  const io2 = new SocketIOServer(server, {
     cors: { origin: "*", methods: ["GET", "POST"] }
   });
-  io.on("connection", (socket) => {
+  io2.on("connection", (socket) => {
     socket.on("join_tenant", (tenantId) => {
       if (tenantId) {
         socket.join(`tenant_${tenantId}`);
@@ -9084,7 +9096,7 @@ async function startServer() {
     });
   });
   app.use((req, res, next) => {
-    req.io = io;
+    req.io = io2;
     next();
   });
   const uploadPath = env.UPLOAD_DIR || path2.join(process.cwd(), "uploads");
@@ -9177,6 +9189,7 @@ async function startServer() {
   app.use("/api/webhook/evolution", webhook_routes_default);
   app.use("/api/webhook", webhook_routes_default);
   app.use("/webhook", webhook_routes_default);
+  app.use("/api/queue", queue_routes_default);
   if (env.NODE_ENV === "production") {
     app.use("/assets", express.static(path2.join(__dirname, "assets"), { maxAge: "1y", immutable: true }));
     app.use(express.static(__dirname));
@@ -9228,10 +9241,12 @@ async function startServer() {
   try {
     await runMigrations();
     console.log("Database migrations completed.");
+    await ensureQueueTable();
     startReminderScheduler();
     recoverInterruptedCampaigns();
     startScheduledCampaignScanner();
     startSubscriptionLifecycleWorker();
+    startQueueWorker(io2);
   } catch (err) {
     console.error("Failed to run database migrations:", err);
   }

@@ -14,6 +14,8 @@ import { query } from './db/pool.js';
 import { startReminderScheduler } from './services/reminder.service.js';
 import { recoverInterruptedCampaigns, startScheduledCampaignScanner } from './services/campaign-queue.service.js';
 import { startSubscriptionLifecycleWorker } from './services/subscription.service.js';
+import { startQueueWorker } from './services/message-queue.service.js';
+import { ensureQueueTable } from './db/message-queue.repo.js';
 
 // Route imports
 import authRoutes from './routes/auth.routes.js';
@@ -42,6 +44,7 @@ import branchesRoutes from './routes/branches.routes.js';
 import specialistsRoutes from './routes/specialists.routes.js';
 import websiteRoutes from './routes/website.routes.js';
 import websitePublicRoutes from './routes/website-public.routes.js';
+import queueRoutes from './routes/queue.routes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -175,6 +178,7 @@ async function startServer() {
   app.use('/api/webhook/evolution', webhookRoutes);
   app.use('/api/webhook', webhookRoutes);
   app.use('/webhook', webhookRoutes);
+  app.use('/api/queue', queueRoutes);
 
   // Serve static assets in production, setup vite dev server in dev
   if (env.NODE_ENV === 'production') {
@@ -235,6 +239,8 @@ async function startServer() {
   try {
     await runMigrations();
     console.log('Database migrations completed.');
+    // Ensure message queue table exists
+    await ensureQueueTable();
     // Start automated appointment reminder background scheduler
     startReminderScheduler();
     // Recover any active WhatsApp campaigns & start scheduled scanner
@@ -242,6 +248,8 @@ async function startServer() {
     startScheduledCampaignScanner();
     // Start subscription lifecycle worker (trial / grace period / suspension)
     startSubscriptionLifecycleWorker();
+    // Start AI message queue worker
+    startQueueWorker(io);
   } catch (err) {
     console.error('Failed to run database migrations:', err);
   }

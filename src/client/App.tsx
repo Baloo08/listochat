@@ -10,6 +10,7 @@ import ProductManager from './components/ProductManager';
 import OrdersPanel from './components/OrdersPanel';
 import StoreSettings from './components/StoreSettings';
 import AgentPromptStudio from './components/AgentPromptStudio';
+import MessageQueuePanel from './components/MessageQueuePanel';
 import EvolutionManager from './components/EvolutionManager';
 import NotificationsCenter from './components/NotificationsCenter';
 import UsersManagement from './components/UsersManagement';
@@ -61,7 +62,8 @@ import {
   PanelLeftOpen,
   TrendingUp,
   Zap,
-  Globe
+  Globe,
+  Clock
 } from 'lucide-react';
 
 
@@ -365,6 +367,7 @@ export default function App() {
       items: [
         { id: 'dashboard', label: 'Dashboard', icon: <Home size={18} /> },
         { id: 'chats', label: 'Chats en Vivo', icon: <MessageSquare size={18} /> },
+        { id: 'queue', label: 'Mensajes por contestar', icon: <Clock size={18} /> },
         { id: 'whatsapp', label: 'Conexión WhatsApp', icon: <Phone size={18} /> }
       ]
     },
@@ -448,6 +451,7 @@ export default function App() {
       switch (currentPage) {
         case 'dashboard': return <Dashboard />;
         case 'chats': return <ChatsInbox />;
+        case 'queue': return <MessageQueuePanel />;
         case 'campaigns': return <CampaignsManager />;
         case 'reservas': return <Bookings />;
         case 'servicios': return <ServicesManager />;

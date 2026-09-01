@@ -18,7 +18,9 @@ export async function getAgentConfig(tenantId: string): Promise<AgentPromptConfi
       temperature: 0.7,
       autoReplyEnabled: true,
       humanHandoffEnabled: true,
-      handoffKeywords: ['humano', 'asesor', 'persona', 'agente', 'hablar con alguien', 'queja', 'reclamo', 'urgente']
+      handoffKeywords: ['humano', 'asesor', 'persona', 'agente', 'hablar con alguien', 'queja', 'reclamo', 'urgente'],
+      showBookingLink: true,
+      showStoreLink: true
     };
   }
 
@@ -36,6 +38,8 @@ export async function getAgentConfig(tenantId: string): Promise<AgentPromptConfi
     humanHandoffEnabled: data.humanHandoffEnabled ?? true,
     handoffKeywords: data.handoffKeywords || ['humano', 'asesor', 'persona', 'agente', 'hablar con alguien', 'queja', 'reclamo', 'urgente'],
     handoffNotifyPhone: data.handoffNotifyPhone || data.notifyNumber,
+    showBookingLink: data.showBookingLink ?? true,
+    showStoreLink: data.showStoreLink ?? true,
     updatedAt: result.rows[0].updatedAt
   };
 }
@@ -51,7 +55,9 @@ export async function saveAgentConfig(tenantId: string, config: Partial<AgentPro
     currency: config.currency,
     humanHandoffEnabled: config.humanHandoffEnabled,
     handoffKeywords: config.handoffKeywords,
-    handoffNotifyPhone: config.handoffNotifyPhone
+    handoffNotifyPhone: config.handoffNotifyPhone,
+    showBookingLink: config.showBookingLink,
+    showStoreLink: config.showStoreLink
   };
 
   const result = await query(`
@@ -76,6 +82,8 @@ export async function saveAgentConfig(tenantId: string, config: Partial<AgentPro
     humanHandoffEnabled: data.humanHandoffEnabled,
     handoffKeywords: data.handoffKeywords,
     handoffNotifyPhone: data.handoffNotifyPhone,
+    showBookingLink: data.showBookingLink ?? true,
+    showStoreLink: data.showStoreLink ?? true,
     updatedAt: result.rows[0].updatedAt
   };
 }
