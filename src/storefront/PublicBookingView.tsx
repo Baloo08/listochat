@@ -171,8 +171,28 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
 
   const primaryColor = businessInfo?.theme?.primaryColor || '#16a34a';
   const bgColor = businessInfo?.theme?.backgroundColor || '#f8fafc';
-  const cardBg = businessInfo?.theme?.cardBackgroundColor || '#ffffff';
+  const rawCardBg = businessInfo?.theme?.cardBackgroundColor || '#ffffff';
   const fontFamily = businessInfo?.theme?.fontFamily || 'Inter, sans-serif';
+  const userTitleColor = businessInfo?.theme?.titleColor;
+  const userBodyTextColor = businessInfo?.theme?.bodyTextColor;
+
+  // Intelligent Luminance Calculation
+  const getLuminance = (hex: string) => {
+    const clean = (hex || '#ffffff').replace('#', '');
+    const r = parseInt(clean.substring(0, 2), 16) || 0;
+    const g = parseInt(clean.substring(2, 4), 16) || 0;
+    const b = parseInt(clean.substring(4, 6), 16) || 0;
+    return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  };
+
+  const bgLuminance = getLuminance(bgColor);
+  const isDarkBg = bgLuminance < 0.45;
+
+  // PRIORIDAD ABSOLUTA AL USUARIO: Si definió colores explícitos, se usan 100%. Si no, fallback de contraste inteligente.
+  const titleColor = userTitleColor || (isDarkBg ? '#ffffff' : '#0f172a');
+  const textColor = userBodyTextColor || (isDarkBg ? '#cbd5e1' : '#475569');
+  const cardBg = (rawCardBg === '#ffffff' && isDarkBg) ? '#1e293b' : rawCardBg;
+  const cardBorderColor = isDarkBg ? 'rgba(255, 255, 255, 0.12)' : '#e2e8f0';
   const cardRadius = businessInfo?.theme?.cardRadius === 'pill' ? '20px' : businessInfo?.theme?.cardRadius === 'square' ? '4px' : '12px';
   const cardShadow = businessInfo?.theme?.cardShadow === 'lg' ? '0 10px 15px -3px rgba(0,0,0,0.1)' : businessInfo?.theme?.cardShadow === 'sm' ? '0 1px 3px rgba(0,0,0,0.05)' : '0 4px 6px -1px rgba(0,0,0,0.07)';
 
@@ -254,7 +274,7 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
   const customFields: BookingField[] = businessInfo.customFields || [];
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: bgColor, fontFamily, color: '#1e293b', paddingBottom: '60px' }}>
+    <div style={{ minHeight: '100vh', backgroundColor: bgColor, fontFamily, color: textColor, paddingBottom: '60px' }}>
       
       {/* Optional Top Banner */}
       {businessInfo.bannerUrl && (
@@ -268,7 +288,7 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
       <div style={{ maxWidth: '640px', margin: '0 auto', padding: '24px 16px' }}>
         
         {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px', backgroundColor: cardBg, borderRadius: cardRadius, padding: '20px', border: '1px solid #e2e8f0', boxShadow: cardShadow }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px', backgroundColor: cardBg, borderRadius: cardRadius, padding: '20px', border: `1px solid ${cardBorderColor}`, boxShadow: cardShadow }}>
           {businessInfo.logoUrl ? (
             <img src={businessInfo.logoUrl} alt="Logo" style={{ width: '60px', height: '60px', borderRadius: '12px', objectFit: 'cover' }} />
           ) : (
@@ -284,11 +304,11 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
         </div>
 
         {/* Step 1: Select Service (Multi-servicio con suma de tiempos y precios) */}
-        <div style={{ backgroundColor: cardBg, borderRadius: cardRadius, padding: '24px', border: '1px solid #e2e8f0', marginBottom: '20px', boxShadow: cardShadow }}>
+        <div style={{ backgroundColor: cardBg, borderRadius: cardRadius, padding: '24px', border: `1px solid ${cardBorderColor}`, marginBottom: '20px', boxShadow: cardShadow }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{ width: '26px', height: '26px', backgroundColor: primaryColor, color: 'white', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.85rem', fontWeight: 'bold' }}>1</span>
-              <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 'bold' }}>Selecciona tus Servicios</h3>
+              <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 'bold', color: titleColor }}>Selecciona tus Servicios</h3>
             </div>
             <span style={{ fontSize: '0.78rem', color: '#64748b', backgroundColor: '#f1f5f9', padding: '3px 8px', borderRadius: '6px' }}>
               Puedes elegir 1 o varios

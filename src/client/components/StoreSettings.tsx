@@ -1841,6 +1841,47 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
                 </div>
               </div>
 
+
+              {/* Alerta Asesora de Contraste en Tienda / Reservas */}
+              {(() => {
+                const getLum = (hex: string) => {
+                  const c = (hex || '#ffffff').replace('#', '');
+                  const r = parseInt(c.substring(0, 2), 16) || 0;
+                  const g = parseInt(c.substring(2, 4), 16) || 0;
+                  const b = parseInt(c.substring(4, 6), 16) || 0;
+                  return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+                };
+                const bgL = getLum(backgroundColor || '#f8fafc');
+                const titleL = getLum(titleColor || '#0f172a');
+                const isLowContrast = Math.abs(bgL - titleL) < 0.35;
+
+                if (isLowContrast) {
+                  return (
+                    <div style={{ padding: '12px 14px', backgroundColor: '#fffbeb', borderRadius: '8px', border: '1px solid #fde68a', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                      <div style={{ fontSize: '0.8rem', color: '#92400e', lineHeight: '1.4' }}>
+                        <strong>⚠️ Aviso de Contraste:</strong> El color del título y el fondo tienen tonos similares. Puedes mantener tus colores personalizados o presionar el botón para optimizarlos.
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const isBgDark = bgL < 0.5;
+                          setTitleColor(isBgDark ? '#ffffff' : '#0f172a');
+                          setBodyTextColor(isBgDark ? '#cbd5e1' : '#64748b');
+                          setCardBackgroundColor(isBgDark ? '#1e293b' : '#ffffff');
+                        }}
+                        style={{
+                          padding: '6px 12px', backgroundColor: '#d97706', color: 'white',
+                          border: 'none', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer'
+                        }}
+                      >
+                        🪄 Ajustar Contraste Óptimo
+                      </button>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+
               {/* 3. Typography Selector */}
               <div>
                 <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '6px' }}>Familia Tipográfica (Fuente)</label>

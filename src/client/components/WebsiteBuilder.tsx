@@ -81,6 +81,7 @@ interface WebsiteConfig {
   bannerImageUrl?: string;
   logoUrl?: string;
   logoWhiteUrl?: string;
+  backgroundColor?: string;
   primaryColor: string;
   accentColor: string;
   fontFamily: string;
@@ -140,6 +141,7 @@ export default function WebsiteBuilder() {
     subheadline: 'Calidad, confianza y la mejor atención personalizada directo a tu WhatsApp.',
     aboutTitle: 'Conoce Nuestra Historia',
     aboutText: 'Somos un negocio apasionado por brindar el mejor servicio y productos de primera categoría. Nuestro compromiso es tu satisfacción total.',
+    backgroundColor: '#ffffff',
     primaryColor: '#2563eb',
     accentColor: '#f59e0b',
     fontFamily: 'Inter',
@@ -1092,6 +1094,105 @@ export default function WebsiteBuilder() {
                   </p>
                 </div>
               </div>
+            </div>
+
+
+            {/* SECCIÓN COLOR DE FONDO GENERAL DEL SITIO WEB */}
+            <div style={{ backgroundColor: '#f8fafc', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '700', color: '#0f172a', marginBottom: '8px' }}>
+                Color de Fondo General del Sitio Web
+              </label>
+
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                {[
+                  { name: 'Blanco Puro', hex: '#ffffff' },
+                  { name: 'Gris Suave', hex: '#f8fafc' },
+                  { name: 'Pizarra Oscura', hex: '#0f172a' },
+                  { name: 'Azul Noche', hex: '#0b1329' },
+                  { name: 'Grafito', hex: '#18181b' },
+                  { name: 'Crema Cálido', hex: '#fafaf9' }
+                ].map(c => (
+                  <button
+                    key={c.hex}
+                    type="button"
+                    onClick={() => {
+                      setFormData({
+                        ...formData,
+                        backgroundColor: c.hex,
+                        navbarBgColor: c.hex === '#0f172a' || c.hex === '#0b1329' || c.hex === '#18181b' ? c.hex : formData.navbarBgColor,
+                        navbarTextColor: c.hex === '#0f172a' || c.hex === '#0b1329' || c.hex === '#18181b' ? '#ffffff' : formData.navbarTextColor
+                      });
+                    }}
+                    style={{
+                      padding: '7px 12px', borderRadius: '8px',
+                      border: (formData.backgroundColor || '#ffffff') === c.hex ? '2px solid #2563eb' : '1px solid #cbd5e1',
+                      backgroundColor: c.hex,
+                      color: (c.hex === '#0f172a' || c.hex === '#0b1329' || c.hex === '#18181b') ? '#ffffff' : '#0f172a',
+                      cursor: 'pointer', fontSize: '0.78rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px'
+                    }}
+                  >
+                    <span style={{ width: '10px', height: '10px', borderRadius: '50%', border: '1px solid #94a3b8', backgroundColor: c.hex }} />
+                    {c.name}
+                  </button>
+                ))}
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <input
+                  type="color"
+                  value={formData.backgroundColor || '#ffffff'}
+                  onChange={e => setFormData({ ...formData, backgroundColor: e.target.value })}
+                  style={{ width: '40px', height: '40px', border: 'none', borderRadius: '8px', cursor: 'pointer' }}
+                />
+                <input
+                  type="text"
+                  value={formData.backgroundColor || '#ffffff'}
+                  onChange={e => setFormData({ ...formData, backgroundColor: e.target.value })}
+                  style={{ width: '120px', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem' }}
+                />
+              </div>
+
+              {/* Alerta Asesora de Contraste (Informativa, Respeta la Personalización) */}
+              {(() => {
+                const getLum = (hex: string) => {
+                  const c = (hex || '#ffffff').replace('#', '');
+                  const r = parseInt(c.substring(0, 2), 16) || 0;
+                  const g = parseInt(c.substring(2, 4), 16) || 0;
+                  const b = parseInt(c.substring(4, 6), 16) || 0;
+                  return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+                };
+                const bgL = getLum(formData.backgroundColor || '#ffffff');
+                const textL = getLum(formData.navbarTextColor || '#0f172a');
+                const isLowContrast = Math.abs(bgL - textL) < 0.35;
+
+                if (isLowContrast) {
+                  return (
+                    <div style={{ marginTop: '12px', padding: '12px 14px', backgroundColor: '#fffbeb', borderRadius: '8px', border: '1px solid #fde68a', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                      <div style={{ fontSize: '0.8rem', color: '#92400e', lineHeight: '1.4' }}>
+                        <strong>⚠️ Sugerencia de Contraste:</strong> La combinación de fondo y color de texto actual podría tener baja visibilidad. Puedes pulsar el botón para optimizarla o conservar tus colores elegidos.
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const isBgDark = bgL < 0.5;
+                          setFormData({
+                            ...formData,
+                            navbarTextColor: isBgDark ? '#ffffff' : '#0f172a',
+                            buttonTextColor: '#ffffff'
+                          });
+                        }}
+                        style={{
+                          padding: '6px 12px', backgroundColor: '#d97706', color: 'white',
+                          border: 'none', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer'
+                        }}
+                      >
+                        🪄 Ajustar Contraste Óptimo
+                      </button>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
             </div>
 
             {/* PALETA DE COLORES */}
