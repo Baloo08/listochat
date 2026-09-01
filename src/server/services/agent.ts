@@ -125,17 +125,25 @@ export async function processWhatsAppMessageWithAI(
       }).join('\n') + '\n';
     }
   }
-  // 3. BUILD OPTIMIZED SINGLE PROMPT (compressed for fast CPU inference)
-  let prompt = `Asistente IA de *${tenant?.name || 'nuestro negocio'}* en WhatsApp.
+  // 3. BUILD OPTIMIZED SINGLE PROMPT (with strong guardrails for 8B model)
+  let prompt = `Eres el asistente virtual de *${tenant?.name || 'nuestro negocio'}* en WhatsApp.
+IDIOMA: Responde SIEMPRE en español de Costa Rica. NUNCA en otro idioma.
 ${agentConfig?.systemPrompt || 'Atiende amablemente a los clientes.'}
 
 Datos del negocio:
 ${crTime}
-${(agentConfig?.showBookingLink !== false && bookingUrl) ? `Citas: ${bookingUrl}` : ''}${(agentConfig?.showStoreLink !== false && storeUrl) ? ` | Tienda: ${storeUrl}` : ''}
+${(agentConfig?.showBookingLink !== false && bookingUrl) ? `Reservas online: ${bookingUrl}` : ''}${(agentConfig?.showStoreLink !== false && storeUrl) ? ` | Tienda online: ${storeUrl}` : ''}
 ${scheduleInfo}${paymentInfo}${relevantServicesText}${relevantProductsText}
-Reglas: Usa *negrita* y emojis. No inventes precios. Responde conciso (1-2 párrafos). Si hay historial no repitas saludo. Para pagos SINPE/Transferencia da los datos y pide comprobante.
+REGLAS OBLIGATORIAS:
+1. Responde SOLO en español. Nunca portugués, inglés ni otro idioma.
+2. Usa el nombre EXACTO del cliente como aparece abajo. No lo modifiques ni abrevies.
+3. Usa *negrita* y emojis para dar calidez. Sé conciso (1-2 párrafos máximo).
+4. Solo menciona servicios, productos y precios que aparezcan arriba en "Datos del negocio". Si no aparece, di "consultaré con el equipo".
+5. NUNCA inventes URLs, links, procesos, pasos ni información que no esté en los datos.
+6. Si hay historial de conversación, no repitas el saludo. Continúa la conversación naturalmente.
+7. Para pagos SINPE/Transferencia, da los datos de pago del negocio y pide el comprobante.
 
-Acciones confirmadas (añade al final SOLO si el cliente confirma):
+Acciones (añade al final SOLO cuando el cliente confirme explícitamente):
 Cita: <<<COMMAND_BOOKING: {"service":"nombre","date":"YYYY-MM-DD","time":"HH:MM","customerName":"${senderName}"}>>>
 Compra: <<<COMMAND_ORDER: {"items":[{"productName":"nombre","quantity":1}]}>>>
 Foto: <<<COMMAND_SEND_MEDIA: {"mediaUrl":"URL","caption":"desc"}>>>
@@ -144,7 +152,7 @@ Humano: <<<COMMAND_HANDOFF: {"reason":"motivo"}>>>
 ${chatHistory.slice(-3).map(h => `${h.role === 'user' ? 'Cliente' : 'Asistente'}: ${h.content}`).join('\n')}
 
 Cliente (${senderName}): ${userMessage}
-`;
+Asistente:`;
 
   let apiKey = '';
   let isMarcaBlanca = false;

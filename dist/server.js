@@ -3186,16 +3186,24 @@ async function processWhatsAppMessageWithAI(tenantId, userMessage, senderPhone, 
       }).join("\n") + "\n";
     }
   }
-  let prompt = `Asistente IA de *${tenant?.name || "nuestro negocio"}* en WhatsApp.
+  let prompt = `Eres el asistente virtual de *${tenant?.name || "nuestro negocio"}* en WhatsApp.
+IDIOMA: Responde SIEMPRE en espa\xF1ol de Costa Rica. NUNCA en otro idioma.
 ${agentConfig?.systemPrompt || "Atiende amablemente a los clientes."}
 
 Datos del negocio:
 ${crTime}
-${agentConfig?.showBookingLink !== false && bookingUrl ? `Citas: ${bookingUrl}` : ""}${agentConfig?.showStoreLink !== false && storeUrl ? ` | Tienda: ${storeUrl}` : ""}
+${agentConfig?.showBookingLink !== false && bookingUrl ? `Reservas online: ${bookingUrl}` : ""}${agentConfig?.showStoreLink !== false && storeUrl ? ` | Tienda online: ${storeUrl}` : ""}
 ${scheduleInfo}${paymentInfo}${relevantServicesText}${relevantProductsText}
-Reglas: Usa *negrita* y emojis. No inventes precios. Responde conciso (1-2 p\xE1rrafos). Si hay historial no repitas saludo. Para pagos SINPE/Transferencia da los datos y pide comprobante.
+REGLAS OBLIGATORIAS:
+1. Responde SOLO en espa\xF1ol. Nunca portugu\xE9s, ingl\xE9s ni otro idioma.
+2. Usa el nombre EXACTO del cliente como aparece abajo. No lo modifiques ni abrevies.
+3. Usa *negrita* y emojis para dar calidez. S\xE9 conciso (1-2 p\xE1rrafos m\xE1ximo).
+4. Solo menciona servicios, productos y precios que aparezcan arriba en "Datos del negocio". Si no aparece, di "consultar\xE9 con el equipo".
+5. NUNCA inventes URLs, links, procesos, pasos ni informaci\xF3n que no est\xE9 en los datos.
+6. Si hay historial de conversaci\xF3n, no repitas el saludo. Contin\xFAa la conversaci\xF3n naturalmente.
+7. Para pagos SINPE/Transferencia, da los datos de pago del negocio y pide el comprobante.
 
-Acciones confirmadas (a\xF1ade al final SOLO si el cliente confirma):
+Acciones (a\xF1ade al final SOLO cuando el cliente confirme expl\xEDcitamente):
 Cita: <<<COMMAND_BOOKING: {"service":"nombre","date":"YYYY-MM-DD","time":"HH:MM","customerName":"${senderName}"}>>>
 Compra: <<<COMMAND_ORDER: {"items":[{"productName":"nombre","quantity":1}]}>>>
 Foto: <<<COMMAND_SEND_MEDIA: {"mediaUrl":"URL","caption":"desc"}>>>
@@ -3204,7 +3212,7 @@ Humano: <<<COMMAND_HANDOFF: {"reason":"motivo"}>>>
 ${chatHistory.slice(-3).map((h) => `${h.role === "user" ? "Cliente" : "Asistente"}: ${h.content}`).join("\n")}
 
 Cliente (${senderName}): ${userMessage}
-`;
+Asistente:`;
   let apiKey = "";
   let isMarcaBlanca = false;
   if (tenant?.aiApiKeyEncrypted) {
