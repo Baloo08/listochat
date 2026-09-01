@@ -8,10 +8,7 @@ export async function getScheduleSettings(tenantId: string): Promise<ScheduleSet
     WHERE tenant_id = $1
   `, [tenantId]);
 
-  const defaultCustomFields = [
-    { id: 'vehicleModel', label: 'Detalle o Vehículo (Opcional)', placeholder: 'Ej: Toyota RAV4 2022 o Consulta General', type: 'text' as const, required: false },
-    { id: 'details', label: 'Notas o Comentarios Adicionales', placeholder: 'Cualquier indicación especial para tu cita...', type: 'textarea' as const, required: false }
-  ];
+  const defaultCustomFields: any[] = [];
 
   if (result.rows.length === 0) {
     // Default schedule configuration
@@ -27,7 +24,7 @@ export async function getScheduleSettings(tenantId: string): Promise<ScheduleSet
         breakEnd: '13:00',
         daysEnabled: [1, 2, 3, 4, 5, 6] // Lunes a Sábado
       },
-      customFields: defaultCustomFields,
+      customFields: [],
       vacationConfig: {
         enabled: false,
         startDate: '',
@@ -46,7 +43,7 @@ export async function getScheduleSettings(tenantId: string): Promise<ScheduleSet
     jornadaConfig: config.jornadaConfig,
     fechasConfig: config.fechasConfig,
     bloquesConfig: config.bloquesConfig,
-    customFields: Array.isArray(config.customFields) ? config.customFields : defaultCustomFields,
+    customFields: Array.isArray(config.customFields) ? config.customFields : [],
     vacationConfig: config.vacationConfig || {
       enabled: false,
       startDate: '',
