@@ -40,10 +40,14 @@ export default function MessageQueuePanel() {
       ]);
       
       if (pendingRes) {
-        setMessages(pendingRes.messages || []);
+        setMessages(Array.isArray(pendingRes) ? pendingRes : pendingRes.messages || []);
       }
       if (statsRes) {
-        setStats(statsRes || { pendingCount: 0, processingCount: 0, doneTodayCount: 0 });
+        setStats({
+          pendingCount: statsRes.pending || 0,
+          processingCount: statsRes.processing || 0,
+          doneTodayCount: statsRes.done || 0
+        });
       }
     } catch (err) {
       console.error('Error loading queue data:', err);
