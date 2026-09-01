@@ -101,51 +101,14 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
   const totalBookingPrice = selectedServices.reduce((acc, s) => acc + Number(s.price || 0), 0);
   const totalBookingMinutes = selectedServices.reduce((acc, s) => acc + Number(s.estimatedMinutes || 45), 0);
 
-  const handleSelectService = (svc: any) => {
-    setSelectedService(svc);
-    const initialVars: Record<string, any> = {};
-    if (svc.customVariables && Array.isArray(svc.customVariables)) {
-      svc.customVariables.forEach((group: any) => {
-        if (group.options && group.options.length > 0) {
-          initialVars[group.name] = group.options[0].name;
-        }
-      });
-    }
-    setServiceVariables(initialVars);
-  };
-
-  const calculateEffectivePrice = (svc: any, vars: Record<string, any>) => {
-    let p = Number(svc?.price || 0);
-    if (!svc?.customVariables || !Array.isArray(svc.customVariables)) return p;
-    for (const group of svc.customVariables) {
-      const val = vars[group.name];
-      if (!val) continue;
-      const opt = group.options?.find((o: any) => o.name === val);
-      if (opt && opt.priceDelta) p += Number(opt.priceDelta);
-    }
-    return p;
-  };
-
-  const calculateEffectiveMinutes = (svc: any, vars: Record<string, any>) => {
-    let m = Number(svc?.estimatedMinutes || 45);
-    if (!svc?.customVariables || !Array.isArray(svc.customVariables)) return m;
-    for (const group of svc.customVariables) {
-      const val = vars[group.name];
-      if (!val) continue;
-      const opt = group.options?.find((o: any) => o.name === val);
-      if (opt && opt.durationMinutesDelta) m += Number(opt.durationMinutesDelta);
-    }
-    return m;
-  };
-
   const handleCustomAnswerChange = (fieldLabel: string, val: string) => {
     setCustomAnswers(prev => ({ ...prev, [fieldLabel]: val }));
   };
 
   const handleBook = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedService || !selectedDate || !selectedTime || !customerName || !customerPhone) {
-      alert('Por favor completa todos los campos requeridos');
+    if (selectedServices.length === 0 || !selectedDate || !selectedTime || !customerName || !customerPhone) {
+      alert('Por favor selecciona al menos un servicio, fecha, horario y completa tus datos');
       return;
     }
 
@@ -160,8 +123,6 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
 
     setSubmitting(true);
     try {
-      const effectiveAmount = calculateEffectivePrice(selectedService, serviceVariables);
-
       const res = await fetch(`/api/appointments/public/${slug}/book`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -170,7 +131,7 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
           serviceId: selectedServices[0]?.id || null,
           date: selectedDate,
           time: selectedTime,
-          amount: effectiveAmount,
+          amount: totalBookingPrice,
           customerName,
           customerPhone,
           selectedVariables: serviceVariables,
@@ -186,7 +147,7 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
       const data = await res.json();
       setBookingSuccess(data);
     } catch (err: any) {
-      alert('Error: ' + err.message);
+      alert(err.message || 'Error al procesar la reserva. Intenta de nuevo.');
     } finally {
       setSubmitting(false);
     }
@@ -306,24 +267,28 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
           </div>
         </div>
 
-        {/* Step 1: Select Service */}
+        {/* Step 1: Select Service (Multi-servicio con suma de tiempos y precios) */}
         <div style={{ backgroundColor: cardBg, borderRadius: cardRadius, padding: '24px', border: '1px solid #e2e8f0', marginBottom: '20px', boxShadow: cardShadow }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
-            <span style={{ width: '26px', height: '26px', backgroundColor: primaryColor, color: 'white', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.85rem', fontWeight: 'bold' }}>1</span>
-            <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 'bold' }}>Selecciona el Servicio</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ width: '26px', height: '26px', backgroundColor: primaryColor, color: 'white', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.85rem', fontWeight: 'bold' }}>1</span>
+              <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 'bold' }}>Selecciona tus Servicios</h3>
+            </div>
+            <span style={{ fontSize: '0.78rem', color: '#64748b', backgroundColor: '#f1f5f9', padding: '3px 8px', borderRadius: '6px' }}>
+              Puedes elegir 1 o varios
+            </span>
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {services.map(svc => {
-              const isSelected = selectedService?.id === svc.id;
-              const hasVars = svc.customVariables && svc.customVariables.length > 0;
-              const price = isSelected ? calculateEffectivePrice(svc, serviceVariables) : Number(svc.price || 0);
-              const minutes = isSelected ? calculateEffectiveMinutes(svc, serviceVariables) : (svc.estimatedMinutes || 45);
+              const isSelected = selectedServices.some(s => s.id === svc.id);
+              const price = Number(svc.price || 0);
+              const minutes = Number(svc.estimatedMinutes || 45);
 
               return (
                 <div
                   key={svc.id}
-                  onClick={() => handleSelectService(svc)}
+                  onClick={() => handleToggleService(svc)}
                   style={{
                     padding: '16px',
                     borderRadius: '10px',
@@ -332,63 +297,59 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
                     cursor: 'pointer',
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: '10px',
+                    gap: '8px',
                     transition: 'all 0.15s ease'
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <div style={{ fontWeight: 'bold', fontSize: '1rem', color: isSelected ? primaryColor : '#1e293b' }}>{svc.name}</div>
-                      {svc.description && <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px' }}>{svc.description}</div>}
-                      <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '4px' }}>⏱️ {minutes} minutos</div>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                      <div style={{
+                        width: '20px', height: '20px', borderRadius: '6px',
+                        border: isSelected ? `2px solid ${primaryColor}` : '2px solid #cbd5e1',
+                        backgroundColor: isSelected ? primaryColor : 'transparent',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        color: 'white', fontSize: '0.75rem', fontWeight: 'bold', marginTop: '2px'
+                      }}>
+                        {isSelected ? '✓' : ''}
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 'bold', fontSize: '1rem', color: isSelected ? primaryColor : '#1e293b' }}>
+                          {svc.name}
+                        </div>
+                        {svc.description && <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px' }}>{svc.description}</div>}
+                        <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '4px' }}>⏱️ {minutes} minutos</div>
+                      </div>
                     </div>
+
                     <div style={{ fontWeight: 'bold', fontSize: '1.1rem', color: primaryColor }}>
                       ₡{price.toLocaleString('es-CR')}
                     </div>
                   </div>
-
-                  {/* Variables selection if active service is selected */}
-                  {isSelected && hasVars && (
-                    <div style={{ paddingTop: '10px', borderTop: '1px dashed #cbd5e1', display: 'flex', flexDirection: 'column', gap: '10px' }} onClick={e => e.stopPropagation()}>
-                      {svc.customVariables.map((group: any) => (
-                        <div key={group.id}>
-                          <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', color: '#475569', marginBottom: '6px' }}>
-                            {group.name}:
-                          </label>
-                          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                            {group.options.map((opt: any) => {
-                              const isOptSelected = serviceVariables[group.name] === opt.name;
-                              return (
-                                <button
-                                  key={opt.id}
-                                  type="button"
-                                  onClick={() => setServiceVariables(prev => ({ ...prev, [group.name]: opt.name }))}
-                                  style={{
-                                    padding: '6px 12px', borderRadius: '6px',
-                                    border: isOptSelected ? `2px solid ${primaryColor}` : '1px solid #cbd5e1',
-                                    backgroundColor: isOptSelected ? primaryColor : 'white',
-                                    color: isOptSelected ? 'white' : '#1e293b',
-                                    fontWeight: isOptSelected ? 'bold' : 'normal',
-                                    fontSize: '0.8rem', cursor: 'pointer'
-                                  }}
-                                >
-                                  {opt.name} {opt.priceDelta ? `(+₡${opt.priceDelta.toLocaleString('es-CR')})` : ''} {opt.durationMinutesDelta ? `(+${opt.durationMinutesDelta} min)` : ''}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </div>
               );
             })}
           </div>
+
+          {/* Combined Selection Summary Bar */}
+          {selectedServices.length > 0 && (
+            <div style={{ marginTop: '16px', padding: '14px', backgroundColor: '#eff6ff', borderRadius: '10px', border: '1px solid #bfdbfe', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+              <div>
+                <strong style={{ fontSize: '0.88rem', color: '#1e40af' }}>
+                  {selectedServices.length} {selectedServices.length === 1 ? 'servicio seleccionado' : 'servicios seleccionados'}:
+                </strong>
+                <div style={{ fontSize: '0.78rem', color: '#3b82f6', marginTop: '2px' }}>
+                  ⏱️ Duración total: <strong>{totalBookingMinutes} minutos</strong>
+                </div>
+              </div>
+              <div style={{ fontSize: '1.15rem', fontWeight: '800', color: primaryColor }}>
+                Total: ₡{totalBookingPrice.toLocaleString('es-CR')}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Step 2: Date and Time Slot */}
-        {selectedService && (
+        {selectedServices.length > 0 && (
           <div style={{ backgroundColor: cardBg, borderRadius: cardRadius, padding: '24px', border: '1px solid #e2e8f0', marginBottom: '20px', boxShadow: cardShadow }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
               <span style={{ width: '26px', height: '26px', backgroundColor: primaryColor, color: 'white', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.85rem', fontWeight: 'bold' }}>2</span>
@@ -465,7 +426,7 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
         )}
 
         {/* Step 3: Customer Information & Custom Questions */}
-        {selectedService && selectedTime && (
+        {selectedServices.length > 0 && selectedTime && (
           <form onSubmit={handleBook} style={{ backgroundColor: cardBg, borderRadius: cardRadius, padding: '24px', border: '1px solid #e2e8f0', boxShadow: cardShadow }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
               <span style={{ width: '26px', height: '26px', backgroundColor: primaryColor, color: 'white', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.85rem', fontWeight: 'bold' }}>3</span>
@@ -553,7 +514,7 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
                     boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)'
                   }}
                 >
-                  {submitting ? 'Agendando cita...' : `Confirmar Cita • ₡${calculateEffectivePrice(selectedService, serviceVariables).toLocaleString('es-CR')}`}
+                  {submitting ? 'Agendando cita...' : `Confirmar Cita • ₡${totalBookingPrice.toLocaleString('es-CR')}`}
                 </button>
               </div>
 
