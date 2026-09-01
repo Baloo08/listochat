@@ -419,7 +419,47 @@ export default function App() {
   const sidebarWidth = isSidebarCollapsed ? '72px' : '260px';
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: 'var(--background)', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+    <div style={{ display: 'flex', minHeight: '100dvh', backgroundColor: 'var(--background)', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+
+      {/* Responsive Mobile Styles for iOS / Android */}
+      <style>{`
+        .app-mobile-menu-btn {
+          display: none !important;
+        }
+        .app-mobile-bottom-nav {
+          display: none !important;
+        }
+        @media (max-width: 900px) {
+          .app-mobile-menu-btn {
+            display: inline-flex !important;
+          }
+          .app-mobile-bottom-nav {
+            display: flex !important;
+          }
+          .app-top-header {
+            padding: 0 12px !important;
+            height: 56px !important;
+          }
+          .app-header-title {
+            font-size: 1.05rem !important;
+          }
+          .app-main-sidebar {
+            position: fixed !important;
+            top: 0 !important;
+            bottom: 0 !important;
+            left: 0 !important;
+            height: 100vh !important;
+            height: 100dvh !important;
+            z-index: 99999 !important;
+            width: 290px !important;
+            max-width: 85vw !important;
+            background-color: var(--surface) !important;
+            box-shadow: 4px 0 25px rgba(0,0,0,0.3) !important;
+            -webkit-overflow-scrolling: touch !important;
+          }
+        }
+      `}</style>
+
       
       {/* Mobile Overlay Backdrop */}
       {mobileMenuOpen && (
@@ -627,29 +667,28 @@ export default function App() {
           padding: '0 24px',
           boxShadow: 'var(--shadow-xs)'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            {isMobile && (
-              <button
-                type="button"
-                onClick={() => setMobileMenuOpen(true)}
-                className="app-mobile-menu-btn"
-                style={{
-                  border: '1px solid var(--border)',
-                  background: '#f8fafc',
-                  cursor: 'pointer',
-                  color: 'var(--text)',
-                  padding: '8px',
-                  borderRadius: '8px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
-                }}
-                aria-label="Abrir menú de navegación"
-              >
-                <Menu size={22} color="var(--primary)" />
-              </button>
-            )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            {/* Botón de Menú Hamburguesa para Móvil / iPhone */}
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen(true)}
+              className="app-mobile-menu-btn"
+              style={{
+                border: '1.5px solid var(--primary)',
+                background: '#eff6ff',
+                cursor: 'pointer',
+                padding: '7px 10px',
+                borderRadius: '8px',
+                alignItems: 'center',
+                gap: '6px',
+                boxShadow: '0 2px 5px rgba(37,99,235,0.15)',
+                touchAction: 'manipulation'
+              }}
+              aria-label="Abrir menú de navegación"
+            >
+              <Menu size={20} color="var(--primary)" />
+              <span style={{ fontSize: '0.82rem', fontWeight: '800', color: 'var(--primary)' }}>Menú</span>
+            </button>
             <h1 className="app-header-title" style={{ fontSize: '1.2rem', fontWeight: '800', letterSpacing: '-0.02em', margin: 0, color: 'var(--text)' }}>
               {
                 currentPage === 'sa_tenants' ? 'Inquilinos & Negocios' :
@@ -757,6 +796,103 @@ export default function App() {
             }}
           />
         </main>
+        
+        {/* iOS / Mobile Bottom Navigation Bar */}
+        <div
+          className="app-mobile-bottom-nav"
+          style={{
+            position: 'fixed',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: '60px',
+            backgroundColor: 'var(--surface)',
+            borderTop: '1px solid var(--border)',
+            zIndex: 9000,
+            justifyContent: 'space-around',
+            alignItems: 'center',
+            boxShadow: '0 -2px 10px rgba(0,0,0,0.05)',
+            paddingBottom: 'env(safe-area-inset-bottom, 0px)'
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => handleNavClick(user?.role === 'superadmin' ? 'sa_tenants' : 'dashboard')}
+            style={{
+              flex: 1, border: 'none', background: 'none', cursor: 'pointer',
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px',
+              color: (currentPage === 'dashboard' || currentPage === 'sa_tenants') ? 'var(--primary)' : 'var(--text-muted)'
+            }}
+          >
+            <Home size={20} />
+            <span style={{ fontSize: '0.68rem', fontWeight: (currentPage === 'dashboard' || currentPage === 'sa_tenants') ? '800' : '600' }}>Inicio</span>
+          </button>
+
+          {user?.role !== 'superadmin' && (
+            <button
+              type="button"
+              onClick={() => handleNavClick('chats')}
+              style={{
+                flex: 1, border: 'none', background: 'none', cursor: 'pointer',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px',
+                color: currentPage === 'chats' ? 'var(--primary)' : 'var(--text-muted)'
+              }}
+            >
+              <MessageSquare size={20} />
+              <span style={{ fontSize: '0.68rem', fontWeight: currentPage === 'chats' ? '800' : '600' }}>Chats</span>
+            </button>
+          )}
+
+          {user?.role !== 'superadmin' && (
+            <button
+              type="button"
+              onClick={() => handleNavClick('ordenes')}
+              style={{
+                flex: 1, border: 'none', background: 'none', cursor: 'pointer',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px',
+                color: currentPage === 'ordenes' ? 'var(--primary)' : 'var(--text-muted)',
+                position: 'relative'
+              }}
+            >
+              <ClipboardList size={20} />
+              {unreadOrdersCount > 0 && (
+                <span style={{ position: 'absolute', top: '-2px', right: '25%', width: '16px', height: '16px', borderRadius: '50%', backgroundColor: '#ef4444', color: 'white', fontSize: '0.65rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {unreadOrdersCount}
+                </span>
+              )}
+              <span style={{ fontSize: '0.68rem', fontWeight: currentPage === 'ordenes' ? '800' : '600' }}>Pedidos</span>
+            </button>
+          )}
+
+          {user?.role !== 'superadmin' && (
+            <button
+              type="button"
+              onClick={() => handleNavClick('reservas')}
+              style={{
+                flex: 1, border: 'none', background: 'none', cursor: 'pointer',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px',
+                color: currentPage === 'reservas' ? 'var(--primary)' : 'var(--text-muted)'
+              }}
+            >
+              <Calendar size={20} />
+              <span style={{ fontSize: '0.68rem', fontWeight: currentPage === 'reservas' ? '800' : '600' }}>Reservas</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen(true)}
+            style={{
+              flex: 1, border: 'none', background: 'none', cursor: 'pointer',
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px',
+              color: mobileMenuOpen ? 'var(--primary)' : 'var(--text-muted)'
+            }}
+          >
+            <Menu size={20} />
+            <span style={{ fontSize: '0.68rem', fontWeight: '700' }}>Más</span>
+          </button>
+        </div>
+
       </div>
     </div>
   );
