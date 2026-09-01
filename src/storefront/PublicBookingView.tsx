@@ -120,11 +120,13 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
     const svcVars = serviceVariables[svc.id] || {};
     if (svc.customVariables && Array.isArray(svc.customVariables)) {
       svc.customVariables.forEach((v: any) => {
-        const selectedOptLabel = svcVars[v.name];
-        if (selectedOptLabel && Array.isArray(v.options)) {
-          const opt = v.options.find((o: any) => o.label === selectedOptLabel);
-          if (opt && opt.priceModifier) {
-            base += Number(opt.priceModifier);
+        const defaultOptName = v.options?.[0]?.name || v.options?.[0]?.label || '';
+        const selectedOptName = svcVars[v.name] || defaultOptName;
+        if (selectedOptName && Array.isArray(v.options)) {
+          const opt = v.options.find((o: any) => (o.name || o.label) === selectedOptName);
+          if (opt) {
+            const priceMod = Number(opt.priceDelta ?? opt.priceModifier ?? 0);
+            base += priceMod;
           }
         }
       });
@@ -137,11 +139,13 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
     const svcVars = serviceVariables[svc.id] || {};
     if (svc.customVariables && Array.isArray(svc.customVariables)) {
       svc.customVariables.forEach((v: any) => {
-        const selectedOptLabel = svcVars[v.name];
-        if (selectedOptLabel && Array.isArray(v.options)) {
-          const opt = v.options.find((o: any) => o.label === selectedOptLabel);
-          if (opt && opt.timeModifierMinutes) {
-            mins += Number(opt.timeModifierMinutes);
+        const defaultOptName = v.options?.[0]?.name || v.options?.[0]?.label || '';
+        const selectedOptName = svcVars[v.name] || defaultOptName;
+        if (selectedOptName && Array.isArray(v.options)) {
+          const opt = v.options.find((o: any) => (o.name || o.label) === selectedOptName);
+          if (opt) {
+            const timeMod = Number(opt.durationMinutesDelta ?? opt.timeModifierMinutes ?? opt.durationModifier ?? 0);
+            mins += timeMod;
           }
         }
       });
@@ -489,18 +493,20 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
                       </div>
 
                       {svc.customVariables.map((v: any, vIdx: number) => {
-                        const currentVal = svcSelectedVars[v.name] || (v.options?.[0]?.label || '');
+                        const defaultOptName = v.options?.[0]?.name || v.options?.[0]?.label || '';
+                        const currentVal = svcSelectedVars[v.name] || defaultOptName;
                         return (
                           <div key={vIdx} style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                            <label style={{ fontSize: '0.75rem', fontWeight: 'bold', color: textColor }}>
+                            <label style={{ fontSize: '0.78rem', fontWeight: 'bold', color: isDarkBg ? '#e2e8f0' : '#334155' }}>
                               {v.name} {v.required && <span style={{ color: '#ef4444' }}>*</span>}:
                             </label>
 
-                            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                               {(v.options || []).map((opt: any, oIdx: number) => {
-                                const isOptSelected = currentVal === opt.label;
-                                const priceMod = Number(opt.priceModifier || 0);
-                                const timeMod = Number(opt.timeModifierMinutes || 0);
+                                const optName = opt.name || opt.label || `Opción ${oIdx + 1}`;
+                                const isOptSelected = currentVal === optName;
+                                const priceMod = Number(opt.priceDelta ?? opt.priceModifier ?? 0);
+                                const timeMod = Number(opt.durationMinutesDelta ?? opt.timeModifierMinutes ?? opt.durationModifier ?? 0);
 
                                 return (
                                   <button
@@ -508,31 +514,32 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
                                     type="button"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      handleSelectServiceVariable(svc.id, v.name, opt.label);
+                                      handleSelectServiceVariable(svc.id, v.name, optName);
                                     }}
                                     style={{
-                                      padding: '6px 12px',
-                                      borderRadius: '6px',
-                                      border: isOptSelected ? `2px solid ${primaryColor}` : (isDarkBg ? '1px solid #334155' : '1px solid #cbd5e1'),
-                                      backgroundColor: isOptSelected ? `${primaryColor}15` : (isDarkBg ? '#1e293b' : '#ffffff'),
-                                      color: isOptSelected ? primaryColor : titleColor,
+                                      padding: '7px 14px',
+                                      borderRadius: '8px',
+                                      border: isOptSelected ? `2px solid ${primaryColor}` : (isDarkBg ? '1px solid #475569' : '1px solid #cbd5e1'),
+                                      backgroundColor: isOptSelected ? (isDarkBg ? `${primaryColor}30` : `${primaryColor}15`) : (isDarkBg ? '#1e293b' : '#ffffff'),
+                                      color: isOptSelected ? (isDarkBg ? '#ffffff' : primaryColor) : (isDarkBg ? '#f8fafc' : '#1e293b'),
                                       fontWeight: isOptSelected ? '800' : '600',
-                                      fontSize: '0.78rem',
+                                      fontSize: '0.82rem',
                                       cursor: 'pointer',
                                       display: 'inline-flex',
                                       alignItems: 'center',
-                                      gap: '4px',
+                                      gap: '6px',
+                                      boxShadow: isOptSelected ? `0 0 0 1px ${primaryColor}` : '0 1px 2px rgba(0,0,0,0.05)',
                                       transition: 'all 0.15s ease'
                                     }}
                                   >
-                                    <span>{opt.label}</span>
+                                    <span>{optName}</span>
                                     {priceMod !== 0 && (
-                                      <span style={{ fontSize: '0.7rem', color: priceMod > 0 ? '#16a34a' : '#ef4444', fontWeight: 'bold' }}>
+                                      <span style={{ fontSize: '0.74rem', color: priceMod > 0 ? '#16a34a' : '#ef4444', fontWeight: 'bold' }}>
                                         ({priceMod > 0 ? `+₡${priceMod.toLocaleString('es-CR')}` : `-₡${Math.abs(priceMod).toLocaleString('es-CR')}`})
                                       </span>
                                     )}
                                     {timeMod !== 0 && (
-                                      <span style={{ fontSize: '0.7rem', color: '#64748b' }}>
+                                      <span style={{ fontSize: '0.72rem', color: isDarkBg ? '#94a3b8' : '#64748b' }}>
                                         ({timeMod > 0 ? `+${timeMod}m` : `${timeMod}m`})
                                       </span>
                                     )}

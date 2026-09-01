@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApi } from '../hooks/useApi';
-import { MessageSquare, Send, User, Bot, Search, Phone, RefreshCw, ExternalLink, ShieldAlert, UserCheck, CheckCircle2, Clock, MapPin, Sparkles } from 'lucide-react';
+import { ArrowLeft, MessageSquare, Send, User, Bot, Search, Phone, RefreshCw, ExternalLink, ShieldAlert, UserCheck, CheckCircle2, Clock, MapPin, Sparkles } from 'lucide-react';
 import { ChatMessage } from '../../shared/types';
 
 interface Conversation {
@@ -23,6 +23,13 @@ export default function ChatsInbox() {
   const [search, setSearch] = useState('');
   const [filterTab, setFilterTab] = useState<'all' | 'human' | 'ai'>('all');
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [isMobile, setIsMobile] = useState<boolean>(typeof window !== 'undefined' ? window.innerWidth <= 768 : false);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const prevJidRef = useRef<string | null>(null);
@@ -86,7 +93,7 @@ export default function ChatsInbox() {
 
         setConversations(convList);
 
-        if (!selectedJid && convList.length > 0) {
+        if (!selectedJid && convList.length > 0 && typeof window !== 'undefined' && window.innerWidth > 768) {
           setSelectedJid(convList[0].remoteJid);
         }
       }
@@ -232,10 +239,28 @@ export default function ChatsInbox() {
       </div>
 
       {/* Main Inbox Container */}
-      <div style={{ flex: 1, backgroundColor: 'var(--surface)', borderRadius: '12px', border: '1px solid var(--border)', display: 'grid', gridTemplateColumns: '360px 1fr', overflow: 'hidden', minHeight: 0 }}>
+      <div style={{
+        flex: 1,
+        backgroundColor: 'var(--surface)',
+        borderRadius: '12px',
+        border: '1px solid var(--border)',
+        display: isMobile ? 'flex' : 'grid',
+        gridTemplateColumns: isMobile ? undefined : '360px 1fr',
+        overflow: 'hidden',
+        minHeight: 0,
+        height: 'calc(100vh - 140px)'
+      }}>
         
-        {/* Left Column: Contact List */}
-        <div style={{ borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: '#ffffff', overflow: 'hidden' }}>
+        {/* Left Column: Contact List (Hidden on mobile when chat is active) */}
+        <div style={{
+          borderRight: isMobile ? 'none' : '1px solid var(--border)',
+          display: isMobile && selectedJid ? 'none' : 'flex',
+          flexDirection: 'column',
+          height: '100%',
+          width: isMobile ? '100%' : undefined,
+          backgroundColor: '#ffffff',
+          overflow: 'hidden'
+        }}>
           
           {/* Search Box */}
           <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
@@ -362,17 +387,63 @@ export default function ChatsInbox() {
 
         {/* Right Column: Active Chat Thread View */}
         {selectedConv ? (
-          <div style={{ display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: '#efeae2', overflow: 'hidden' }}>
+          <div style={{
+            display: isMobile && !selectedJid ? 'none' : 'flex',
+            flexDirection: 'column',
+            height: '100%',
+            width: isMobile ? '100%' : undefined,
+            flex: 1,
+            backgroundColor: '#efeae2',
+            overflow: 'hidden'
+          }}>
             
             {/* Chat Top Bar */}
-            <div style={{ padding: '12px 18px', backgroundColor: '#ffffff', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <div style={{ width: '42px', height: '42px', backgroundColor: selectedConv.isHumanMode ? '#fef3c7' : '#dcfce7', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', color: selectedConv.isHumanMode ? '#b45309' : '#15803d' }}>
+            <div style={{
+              padding: isMobile ? '10px 12px' : '12px 18px',
+              backgroundColor: '#ffffff',
+              borderBottom: '1px solid var(--border)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: '8px',
+              flexWrap: 'wrap'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
+                {/* Back Button on Mobile */}
+                {isMobile && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedJid(null)}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '6px 10px',
+                      backgroundColor: '#f1f5f9',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      color: '#334155',
+                      fontWeight: 'bold',
+                      fontSize: '0.8rem',
+                      gap: '4px',
+                      flexShrink: 0
+                    }}
+                    title="Volver a la lista de chats"
+                  >
+                    <ArrowLeft size={16} />
+                    <span>Atrás</span>
+                  </button>
+                )}
+
+                <div style={{ width: '38px', height: '38px', backgroundColor: selectedConv.isHumanMode ? '#fef3c7' : '#dcfce7', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', color: selectedConv.isHumanMode ? '#b45309' : '#15803d', flexShrink: 0 }}>
                   {selectedConv.pushName.slice(0, 2).toUpperCase()}
                 </div>
-                <div>
-                  <div style={{ fontWeight: 'bold', fontSize: '1rem', color: '#1e293b' }}>{selectedConv.pushName}</div>
-                  <div style={{ fontSize: '0.8rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontWeight: 'bold', fontSize: isMobile ? '0.92rem' : '1rem', color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {selectedConv.pushName}
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '4px' }}>
                     <span>+{selectedConv.cleanPhone}</span>
                     <a
                       href={`https://wa.me/${selectedConv.cleanPhone}`}
@@ -380,41 +451,45 @@ export default function ChatsInbox() {
                       rel="noreferrer"
                       style={{ color: '#16a34a', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '2px', fontWeight: 'bold' }}
                     >
-                      <ExternalLink size={12} /> Abrir WhatsApp Web
+                      <ExternalLink size={11} /> WhatsApp
                     </a>
                   </div>
                 </div>
               </div>
 
               {/* Mode Toggle Button with Lucide Icons */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ flexShrink: 0 }}>
                 <button
+                  type="button"
                   onClick={() => handleToggleHumanMode(selectedConv.remoteJid, selectedConv.isHumanMode)}
                   style={{
-                    padding: '8px 16px',
+                    padding: isMobile ? '6px 10px' : '8px 16px',
                     borderRadius: '20px',
                     borderWidth: '1px',
                     borderStyle: 'solid',
                     borderColor: selectedConv.isHumanMode ? '#fecaca' : '#bbf7d0',
                     cursor: 'pointer',
                     fontWeight: 'bold',
-                    fontSize: '0.85rem',
-                    display: 'flex',
+                    fontSize: isMobile ? '0.75rem' : '0.85rem',
+                    display: 'inline-flex',
                     alignItems: 'center',
-                    gap: '6px',
+                    gap: '5px',
                     backgroundColor: selectedConv.isHumanMode ? '#fef2f2' : '#f0fdf4',
                     color: selectedConv.isHumanMode ? '#dc2626' : '#16a34a',
-                    boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                    boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                    touchAction: 'manipulation'
                   }}
                   title="Presiona para pausar o activar la IA para este cliente"
                 >
                   {selectedConv.isHumanMode ? (
                     <>
-                      <UserCheck size={16} /> Modo Humano Activo — Toca para Reactivar IA
+                      <UserCheck size={isMobile ? 14 : 16} />
+                      <span>{isMobile ? '👤 Humano (Toca: IA)' : 'Modo Humano Activo — Toca para Reactivar IA'}</span>
                     </>
                   ) : (
                     <>
-                      <Bot size={16} /> IA Activa — Toca para Pausar IA (Modo Humano)
+                      <Bot size={isMobile ? 14 : 16} />
+                      <span>{isMobile ? '🤖 IA Activa (Pausar)' : 'IA Activa — Toca para Pausar IA (Modo Humano)'}</span>
                     </>
                   )}
                 </button>
