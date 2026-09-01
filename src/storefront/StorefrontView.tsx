@@ -447,9 +447,39 @@ export default function StorefrontView({ slug }: StorefrontProps) {
   const bgColor = store?.storeTheme?.backgroundColor || '#f8fafc';
   const cardBg = store?.storeTheme?.cardBackgroundColor || '#ffffff';
   const fontFamily = store?.storeTheme?.fontFamily || 'Inter, sans-serif';
-  const isDark = hexIsDark(bgColor);
-  const titleColor = store?.storeTheme?.titleColor || (isDark ? '#ffffff' : '#0f172a');
-  const bodyTextColor = store?.storeTheme?.bodyTextColor || (isDark ? '#94a3b8' : '#64748b');
+  // Normalización Universal de Códigos Hexadecimales
+  const normalizeHex = (hex?: string): string => {
+    if (!hex) return '#ffffff';
+    let c = hex.replace('#', '').trim();
+    if (c.length === 3) {
+      c = c.split('').map(x => x + x).join('');
+    }
+    return '#' + (c.padEnd(6, '0').substring(0, 6));
+  };
+
+  const getLuminance = (hex?: string) => {
+    const norm = normalizeHex(hex).replace('#', '');
+    const r = parseInt(norm.substring(0, 2), 16) || 0;
+    const g = parseInt(norm.substring(2, 4), 16) || 0;
+    const b = parseInt(norm.substring(4, 6), 16) || 0;
+    return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  };
+
+  const bgLuminance = getLuminance(bgColor);
+  const isDark = bgLuminance < 0.45;
+
+  const rawTitleColor = store?.storeTheme?.titleColor;
+  const rawBodyColor = store?.storeTheme?.bodyTextColor;
+  const isLegacyDarkTitle = rawTitleColor === '#0f172a' || rawTitleColor === '#1e293b' || rawTitleColor === '#000000' || rawTitleColor === '#111827';
+
+  // Si el fondo es oscuro y el título no fue cambiado o quedó en el valor residual negro, se ilumina a #ffffff
+  const titleColor = (isDark && (!rawTitleColor || isLegacyDarkTitle))
+    ? '#ffffff'
+    : (rawTitleColor || (isDark ? '#ffffff' : '#0f172a'));
+
+  const bodyTextColor = (isDark && (!rawBodyColor || rawBodyColor === '#64748b' || rawBodyColor === '#475569'))
+    ? '#cbd5e1'
+    : (rawBodyColor || (isDark ? '#cbd5e1' : '#64748b'));
   const titleFontWeight = store?.storeTheme?.titleFontWeight || 'bold';
   const bodyFontWeight = store?.storeTheme?.bodyFontWeight || 'normal';
   const cardRadius = store?.storeTheme?.cardRadius === 'pill' ? '20px' : store?.storeTheme?.cardRadius === 'square' ? '4px' : '12px';

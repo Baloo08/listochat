@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Calendar,
+  Calendar, Palette, Sliders, Upload, Image, RefreshCw,
   CalendarDays,
   Clock,
   Plus,
@@ -97,6 +97,33 @@ export default function Bookings() {
 
   const [savingSchedule, setSavingSchedule] = useState(false);
   const [scheduleSavedToast, setScheduleSavedToast] = useState(false);
+
+  // Booking Theme Customization State
+  const [bookingTheme, setBookingTheme] = useState<{
+    primaryColor: string;
+    backgroundColor: string;
+    cardBackgroundColor: string;
+    titleColor: string;
+    bodyTextColor: string;
+    fontFamily: string;
+    cardRadius: string;
+    cardShadow: string;
+    logoUrl?: string;
+    bannerUrl?: string;
+  }>({
+    primaryColor: '#16a34a',
+    backgroundColor: '#f8fafc',
+    cardBackgroundColor: '#ffffff',
+    titleColor: '#0f172a',
+    bodyTextColor: '#64748b',
+    fontFamily: 'Inter',
+    cardRadius: 'md',
+    cardShadow: 'md'
+  });
+  const [savingTheme, setSavingTheme] = useState(false);
+  const [themeSavedToast, setThemeSavedToast] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [uploadingBanner, setUploadingBanner] = useState(false);
 
   // Specialists Team State
   const [specialists, setSpecialists] = useState<any[]>([]);
@@ -200,6 +227,21 @@ export default function Bookings() {
       const tenantRes = await api.get('/api/auth/me');
       if (tenantRes?.tenantSlug) {
         setTenantSlug(tenantRes.tenantSlug);
+      }
+
+      // Fetch Store/Booking Theme
+      try {
+        const storeData = await api.get('/api/store');
+        if (storeData?.storeTheme) {
+          setBookingTheme(prev => ({
+            ...prev,
+            ...storeData.storeTheme,
+            logoUrl: storeData.storeLogoUrl || storeData.storeTheme.logoUrl,
+            bannerUrl: storeData.storeBannerUrl || storeData.storeTheme.bannerUrl
+          }));
+        }
+      } catch (e) {
+        // theme fallback
       }
     } catch (err) {
       console.error('Error fetching schedule:', err);
@@ -417,6 +459,56 @@ export default function Bookings() {
 
   const removeCustomField = (id: string) => {
     setCustomFields(prev => (prev || []).filter(f => f.id !== id));
+  };
+
+
+  const handleSaveBookingTheme = async () => {
+    setSavingTheme(true);
+    try {
+      const storeData = await api.get('/api/store');
+      await api.post('/api/store', {
+        ...storeData,
+        storeLogoUrl: bookingTheme.logoUrl || storeData?.storeLogoUrl,
+        storeBannerUrl: bookingTheme.bannerUrl || storeData?.storeBannerUrl,
+        storeTheme: {
+          ...(storeData?.storeTheme || {}),
+          ...bookingTheme
+        }
+      });
+      setThemeSavedToast(true);
+      setTimeout(() => setThemeSavedToast(false), 3000);
+    } catch (e) {
+      alert('Error al guardar diseño de reservas');
+    } finally {
+      setSavingTheme(false);
+    }
+  };
+
+  const handleBookingFileUpload = async (file: File, type: 'logo' | 'banner') => {
+    const token = localStorage.getItem('token');
+    const formData = new FormData();
+    formData.append('file', file);
+    if (type === 'logo') setUploadingLogo(true);
+    else setUploadingBanner(true);
+
+    try {
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData
+      });
+      if (!res.ok) throw new Error('Error al subir imagen');
+      const data = await res.json();
+      setBookingTheme(prev => ({
+        ...prev,
+        [type === 'logo' ? 'logoUrl' : 'bannerUrl']: data.url
+      }));
+    } catch (err) {
+      alert('Error al subir imagen: ' + err);
+    } finally {
+      if (type === 'logo') setUploadingLogo(false);
+      else setUploadingBanner(false);
+    }
   };
 
   const publicBookingUrl = `${window.location.origin}/reservas/${tenantSlug}`;

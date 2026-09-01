@@ -176,23 +176,41 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
   const userTitleColor = businessInfo?.theme?.titleColor;
   const userBodyTextColor = businessInfo?.theme?.bodyTextColor;
 
-  // Intelligent Luminance Calculation
-  const getLuminance = (hex: string) => {
-    const clean = (hex || '#ffffff').replace('#', '');
-    const r = parseInt(clean.substring(0, 2), 16) || 0;
-    const g = parseInt(clean.substring(2, 4), 16) || 0;
-    const b = parseInt(clean.substring(4, 6), 16) || 0;
+  // Normalización Universal de Códigos Hexadecimales (3 y 6 dígitos)
+  const normalizeHex = (hex?: string): string => {
+    if (!hex) return '#ffffff';
+    let c = hex.replace('#', '').trim();
+    if (c.length === 3) {
+      c = c.split('').map(x => x + x).join('');
+    }
+    return '#' + (c.padEnd(6, '0').substring(0, 6));
+  };
+
+  const getLuminance = (hex?: string) => {
+    const norm = normalizeHex(hex).replace('#', '');
+    const r = parseInt(norm.substring(0, 2), 16) || 0;
+    const g = parseInt(norm.substring(2, 4), 16) || 0;
+    const b = parseInt(norm.substring(4, 6), 16) || 0;
     return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
   };
 
   const bgLuminance = getLuminance(bgColor);
   const isDarkBg = bgLuminance < 0.45;
 
-  // PRIORIDAD ABSOLUTA AL USUARIO: Si definió colores explícitos, se usan 100%. Si no, fallback de contraste inteligente.
-  const titleColor = userTitleColor || (isDarkBg ? '#ffffff' : '#0f172a');
-  const textColor = userBodyTextColor || (isDarkBg ? '#cbd5e1' : '#475569');
+  // Si el usuario eligió un color de título explícito, verificamos si es el negro por defecto residual (#0f172a, #1e293b, #000000)
+  const isLegacyDarkTitle = userTitleColor === '#0f172a' || userTitleColor === '#1e293b' || userTitleColor === '#000000' || userTitleColor === '#111827';
+  
+  // Título: Si el fondo es oscuro y el título no fue cambiado de su valor por defecto negro, se vuelve blanco #ffffff. Si eligió un color personalizado (ej. dorado, cian, etc.), se respeta al 100%!
+  const titleColor = (isDarkBg && (!userTitleColor || isLegacyDarkTitle))
+    ? '#ffffff'
+    : (userTitleColor || (isDarkBg ? '#ffffff' : '#0f172a'));
+
+  const textColor = (isDarkBg && (!userBodyTextColor || userBodyTextColor === '#64748b' || userBodyTextColor === '#475569'))
+    ? '#cbd5e1'
+    : (userBodyTextColor || (isDarkBg ? '#cbd5e1' : '#475569'));
+
   const cardBg = (rawCardBg === '#ffffff' && isDarkBg) ? '#1e293b' : rawCardBg;
-  const cardBorderColor = isDarkBg ? 'rgba(255, 255, 255, 0.12)' : '#e2e8f0';
+  const cardBorderColor = isDarkBg ? 'rgba(255, 255, 255, 0.14)' : '#e2e8f0';
   const cardRadius = businessInfo?.theme?.cardRadius === 'pill' ? '20px' : businessInfo?.theme?.cardRadius === 'square' ? '4px' : '12px';
   const cardShadow = businessInfo?.theme?.cardShadow === 'lg' ? '0 10px 15px -3px rgba(0,0,0,0.1)' : businessInfo?.theme?.cardShadow === 'sm' ? '0 1px 3px rgba(0,0,0,0.05)' : '0 4px 6px -1px rgba(0,0,0,0.07)';
 
