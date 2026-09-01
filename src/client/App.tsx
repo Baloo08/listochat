@@ -53,7 +53,7 @@ import {
   Server,
   ShieldCheck,
   Send,
-  Sparkles,
+  Sparkles, HelpCircle,
   Menu,
   X,
   ChevronRight,
@@ -455,78 +455,193 @@ export default function App() {
   const sidebarWidth = isSidebarCollapsed ? '72px' : '260px';
 
   return (
-    <div style={{ display: 'flex', minHeight: '100dvh', backgroundColor: 'var(--background)', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+    <div style={{ display: 'flex', minHeight: '100dvh', backgroundColor: 'var(--background)', fontFamily: 'system-ui, -apple-system, sans-serif', width: '100%', overflowX: 'hidden' }}>
 
-      {/* Responsive Mobile Styles for iOS / Android */}
+      {/* Global CSS for Mobile vs Desktop */}
       <style>{`
-        .app-mobile-menu-btn {
-          display: none !important;
+        .desktop-only-sidebar {
+          display: flex !important;
         }
-        .app-mobile-bottom-nav {
+        .mobile-bottom-nav {
           display: none !important;
         }
         @media (max-width: 900px) {
-          .app-mobile-menu-btn {
-            display: inline-flex !important;
+          .desktop-only-sidebar {
+            display: none !important;
           }
-          .app-mobile-bottom-nav {
+          .mobile-bottom-nav {
             display: flex !important;
           }
           .app-top-header {
             padding: 0 12px !important;
             height: 56px !important;
           }
-          .app-header-title {
-            font-size: 1.05rem !important;
+          .app-header-title-text {
+            font-size: 1.0rem !important;
+            max-width: 140px !important;
           }
-          .app-main-sidebar {
-            position: fixed !important;
-            top: 0 !important;
-            bottom: 0 !important;
-            left: 0 !important;
-            height: 100vh !important;
-            height: 100dvh !important;
-            z-index: 99999 !important;
-            width: 290px !important;
-            max-width: 85vw !important;
-            background-color: var(--surface) !important;
-            box-shadow: 4px 0 25px rgba(0,0,0,0.3) !important;
-            -webkit-overflow-scrolling: touch !important;
+          .app-user-info-text {
+            display: none !important;
+          }
+          .app-logout-btn-text {
+            display: none !important;
           }
         }
       `}</style>
 
-      
-      {/* Mobile Overlay Backdrop */}
+      {/* 1. DEDICATED MOBILE SLIDE-OVER DRAWER (When mobileMenuOpen is TRUE) */}
       {mobileMenuOpen && (
-        <div
-          onClick={() => setMobileMenuOpen(false)}
-          style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 45 }}
-        />
+        <div style={{ position: 'fixed', inset: 0, zIndex: 999999, display: 'flex' }}>
+          {/* Backdrop */}
+          <div
+            onClick={() => setMobileMenuOpen(false)}
+            style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(3px)', transition: 'opacity 0.2s ease' }}
+          />
+
+          {/* Drawer Content */}
+          <div
+            style={{
+              position: 'relative',
+              width: '290px',
+              maxWidth: '85vw',
+              height: '100dvh',
+              backgroundColor: 'var(--surface)',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: '4px 0 30px rgba(0,0,0,0.4)',
+              zIndex: 1000000,
+              overflowY: 'auto',
+              WebkitOverflowScrolling: 'touch'
+            }}
+          >
+            {/* Drawer Header */}
+            <div style={{ padding: '16px 18px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--background)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Bot size={24} color="var(--primary)" />
+                <div>
+                  <div style={{ fontSize: '1.15rem', fontWeight: '800', color: 'var(--primary)', lineHeight: '1.2' }}>Betico</div>
+                  <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: '600' }}>WhatsApp AI SaaS</div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setMobileMenuOpen(false)}
+                style={{
+                  border: 'none',
+                  backgroundColor: '#fee2e2',
+                  color: '#dc2626',
+                  width: '34px',
+                  height: '34px',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontWeight: 'bold'
+                }}
+                aria-label="Cerrar menú"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Drawer Navigation Links */}
+            <nav style={{ flex: 1, padding: '14px 0', overflowY: 'auto' }}>
+              {navGroups.map((group, gIdx) => (
+                <div key={gIdx} style={{ marginBottom: '16px' }}>
+                  <div style={{ padding: '4px 18px 6px 18px', fontSize: '0.68rem', fontWeight: '800', color: '#94a3b8', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                    {group.title}
+                  </div>
+
+                  {group.items.map(item => {
+                    const isActive = currentPage === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => handleNavClick(item.id)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          width: 'calc(100% - 20px)',
+                          margin: '3px 10px',
+                          padding: '10px 14px',
+                          borderRadius: '8px',
+                          border: isActive ? '1px solid var(--primary)' : '1px solid transparent',
+                          backgroundColor: isActive ? 'var(--primary-light)' : 'transparent',
+                          color: isActive ? 'var(--primary)' : 'var(--text)',
+                          fontWeight: isActive ? '800' : '600',
+                          cursor: 'pointer',
+                          fontSize: '0.9rem',
+                          textAlign: 'left'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <span style={{ color: isActive ? 'var(--primary)' : '#64748b', display: 'flex', alignItems: 'center' }}>
+                            {item.icon}
+                          </span>
+                          <span>{item.label}</span>
+                        </div>
+
+                        {item.badge && (
+                          <span style={{ backgroundColor: '#ef4444', color: 'white', fontSize: '0.72rem', fontWeight: '800', padding: '2px 8px', borderRadius: '12px' }}>
+                            {item.badge}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+            </nav>
+
+            {/* Drawer Footer with Logout */}
+            <div style={{ padding: '14px 18px', borderTop: '1px solid var(--border)', backgroundColor: 'var(--background)' }}>
+              <button
+                type="button"
+                onClick={logout}
+                style={{
+                  width: '100%',
+                  padding: '10px',
+                  backgroundColor: '#fee2e2',
+                  color: '#b91c1c',
+                  border: '1px solid #fca5a5',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontWeight: 'bold',
+                  fontSize: '0.85rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px'
+                }}
+              >
+                <LogOut size={16} /> Cerrar Sesión
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
-      {/* Sidebar (Collapsible for Desktop, Slide-over Drawer for Mobile) */}
+      {/* 2. DESKTOP PERMANENT SIDEBAR */}
       <div
-        className="app-main-sidebar"
+        className="desktop-only-sidebar"
         style={{
-          width: isMobile ? '280px' : sidebarWidth,
+          width: sidebarWidth,
           backgroundColor: 'var(--surface)',
           borderRight: '1px solid var(--border)',
-          display: 'flex',
           flexDirection: 'column',
-          position: isMobile ? 'fixed' : 'relative',
-          top: 0,
-          bottom: 0,
-          left: 0,
+          position: 'relative',
           height: '100vh',
-          zIndex: 9999,
-          transform: isMobile ? (mobileMenuOpen ? 'translateX(0)' : 'translateX(-100%)') : 'translateX(0)',
-          transition: 'width 0.2s ease, transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+          zIndex: 50,
+          transition: 'width 0.2s ease',
           overflow: 'hidden',
-          boxShadow: isMobile && mobileMenuOpen ? '4px 0 25px rgba(0,0,0,0.3)' : 'none'
+          flexShrink: 0
         }}
       >
-        {/* Sidebar Header */}
+        {/* Desktop Sidebar Header */}
         <div style={{
           padding: isSidebarCollapsed ? '12px 6px' : '14px 16px',
           borderBottom: '1px solid var(--border)',
@@ -547,48 +662,30 @@ export default function App() {
           ) : (
             <button
               onClick={toggleSidebar}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                border: 'none',
-                background: 'none',
-                cursor: 'pointer',
-                padding: '4px'
-              }}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', background: 'none', cursor: 'pointer', padding: '4px' }}
               title="Expandir barra lateral"
             >
               <Bot size={26} color="var(--primary)" />
             </button>
           )}
 
-          {!isMobile ? (
-            <button
-              onClick={toggleSidebar}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: '6px',
-                backgroundColor: '#f8fafc',
-                border: '1px solid var(--border)',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                color: 'var(--text-muted)'
-              }}
-              title={isSidebarCollapsed ? "Expandir barra lateral" : "Colapsar menú"}
-            >
-              {isSidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setMobileMenuOpen(false)}
-              style={{ border: 'none', background: '#f1f5f9', cursor: 'pointer', color: '#0f172a', padding: '6px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-            >
-              <X size={22} />
-            </button>
-          )}
+          <button
+            onClick={toggleSidebar}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '6px',
+              backgroundColor: '#f8fafc',
+              border: '1px solid var(--border)',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              color: 'var(--text-muted)'
+            }}
+            title={isSidebarCollapsed ? "Expandir barra lateral" : "Colapsar menú"}
+          >
+            {isSidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+          </button>
         </div>
 
         {/* Grouped Sidebar Navigation */}
@@ -615,8 +712,8 @@ export default function App() {
                       width: isSidebarCollapsed ? 'calc(100% - 16px)' : 'calc(100% - 20px)',
                       margin: isSidebarCollapsed ? '3px 8px' : '2px 10px',
                       padding: isSidebarCollapsed ? '10px 0' : '9px 12px',
-                      border: 'none',
                       borderRadius: 'var(--radius-md)',
+                      border: 'none',
                       backgroundColor: isActive ? 'var(--primary-light)' : 'transparent',
                       color: isActive ? 'var(--primary)' : 'var(--text)',
                       fontWeight: isActive ? '700' : '500',
@@ -632,12 +729,9 @@ export default function App() {
                       {!isSidebarCollapsed && <span>{item.label}</span>}
                     </div>
                     {item.badge && !isSidebarCollapsed && (
-                      <span style={{ backgroundColor: '#ef4444', color: 'white', fontSize: '0.7rem', fontWeight: '800', padding: '2px 7px', borderRadius: 'var(--radius-full)', boxShadow: '0 0 6px rgba(239, 68, 68, 0.4)' }}>
+                      <span style={{ backgroundColor: '#ef4444', color: 'white', fontSize: '0.7rem', fontWeight: '800', padding: '2px 7px', borderRadius: 'var(--radius-full)' }}>
                         {item.badge}
                       </span>
-                    )}
-                    {item.badge && isSidebarCollapsed && (
-                      <span style={{ position: 'absolute', top: '6px', right: '10px', width: '8px', height: '8px', backgroundColor: '#ef4444', borderRadius: '50%', boxShadow: '0 0 6px rgba(239, 68, 68, 0.5)' }} />
                     )}
                   </button>
                 );
@@ -645,197 +739,191 @@ export default function App() {
             </div>
           ))}
         </nav>
-
-        {/* Sidebar Collapse Toggle Button at Bottom */}
-        {window.innerWidth >= 768 && (
-          <div style={{ padding: '12px 14px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: isSidebarCollapsed ? 'center' : 'flex-end' }}>
-            <button
-              onClick={toggleSidebar}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                padding: '8px 12px',
-                backgroundColor: 'var(--background)',
-                border: '1px solid var(--border)',
-                borderRadius: 'var(--radius-md)',
-                cursor: 'pointer',
-                fontSize: '0.8rem',
-                fontWeight: '600',
-                color: 'var(--text-muted)'
-              }}
-              title={isSidebarCollapsed ? "Expandir barra lateral" : "Colapsar a solo íconos"}
-            >
-              {isSidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
-              {!isSidebarCollapsed && <span>Colapsar Menú</span>}
-            </button>
-          </div>
-        )}
       </div>
 
-      {/* Main Content Area */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: '100vh', width: '100%', overflow: 'hidden' }}>
+      {/* 3. MAIN CONTENT AREA */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: '100dvh', width: '100%', overflowX: 'hidden' }}>
         
         {/* Impersonation Banner */}
         {isImpersonating && (
-          <div style={{ backgroundColor: '#fef3c7', color: '#92400e', padding: '10px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #fde68a', fontSize: '0.85rem', fontWeight: '500' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <ShieldAlert size={18} color="#d97706" />
-              <span>Estás viendo el portal como administrador de <strong>{impersonatedTenantName}</strong>.</span>
+          <div style={{ backgroundColor: '#fef3c7', color: '#92400e', padding: '8px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #fde68a', fontSize: '0.82rem', fontWeight: '500' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <ShieldAlert size={16} color="#d97706" />
+              <span>Viendo portal de <strong>{impersonatedTenantName}</strong>.</span>
             </div>
             <button
               onClick={handleReturnToSuperadmin}
-              style={{ padding: '5px 14px', backgroundColor: '#d97706', color: 'white', border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}
+              style={{ padding: '4px 10px', backgroundColor: '#d97706', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}
             >
-              <ArrowLeft size={14} /> Volver a SuperAdmin
+              Volver
             </button>
           </div>
         )}
 
-        {/* Top Header */}
+        {/* TOP HEADER BAR */}
         <header className="app-top-header" style={{
-          height: '64px',
+          height: '62px',
           backgroundColor: 'var(--surface)',
           borderBottom: '1px solid var(--border)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '0 24px',
-          boxShadow: 'var(--shadow-xs)'
+          padding: '0 20px',
+          boxShadow: 'var(--shadow-xs)',
+          gap: '8px',
+          boxSizing: 'border-box'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            {/* Botón de Menú Hamburguesa para Móvil / iPhone */}
+          {/* Left Side: Prominent Menu Button + Title */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+            {/* BOTÓN DE MENÚ (Visible en todas las plataformas) */}
             <button
               type="button"
               onClick={() => setMobileMenuOpen(true)}
-              className="app-mobile-menu-btn"
               style={{
-                border: '1.5px solid var(--primary)',
-                background: '#eff6ff',
-                cursor: 'pointer',
-                padding: '7px 10px',
-                borderRadius: '8px',
+                display: 'inline-flex',
                 alignItems: 'center',
+                justifyContent: 'center',
+                padding: '7px 12px',
+                backgroundColor: 'var(--primary)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
                 gap: '6px',
-                boxShadow: '0 2px 5px rgba(37,99,235,0.15)',
+                fontWeight: '800',
+                fontSize: '0.85rem',
+                flexShrink: 0,
+                boxShadow: '0 2px 6px rgba(37,99,235,0.25)',
                 touchAction: 'manipulation'
               }}
-              aria-label="Abrir menú de navegación"
+              title="Abrir menú de secciones"
             >
-              <Menu size={20} color="var(--primary)" />
-              <span style={{ fontSize: '0.82rem', fontWeight: '800', color: 'var(--primary)' }}>Menú</span>
+              <Menu size={18} color="white" />
+              <span>Menú</span>
             </button>
-            <h1 className="app-header-title" style={{ fontSize: '1.2rem', fontWeight: '800', letterSpacing: '-0.02em', margin: 0, color: 'var(--text)' }}>
+
+            <h1 className="app-header-title-text" style={{
+              fontSize: '1.15rem',
+              fontWeight: '800',
+              letterSpacing: '-0.02em',
+              margin: 0,
+              color: 'var(--text)',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis'
+            }}>
               {
                 currentPage === 'sa_tenants' ? 'Inquilinos & Negocios' :
-                currentPage === 'sa_collections' ? 'Cobranza & Cuentas por Cobrar' :
+                currentPage === 'sa_collections' ? 'Cobranza & Cuentas' :
                 currentPage === 'sa_financials' ? 'Finanzas del SaaS' :
                 currentPage === 'sa_system' ? 'Servidor & Recursos' :
                 currentPage === 'sa_apis' ? 'APIs & Tráfico' :
                 currentPage === 'sa_audit' ? 'Auditoría & Seguridad' :
-                currentPage === 'ordenes' ? (storeMode === 'restaurant' ? 'Comandas & Pedidos' : 'Órdenes de Compra') :
+                currentPage === 'ordenes' ? (storeMode === 'restaurant' ? 'Comandas' : 'Pedidos') :
                 currentPage === 'dashboard' ? 'Dashboard' :
-                currentPage === 'chats' ? 'Bandeja de WhatsApp' :
-                currentPage === 'campaigns' ? 'Marketing, Difusión & CRM' :
-                currentPage === 'whatsapp' ? 'Conexión WhatsApp' :
-                currentPage === 'productos' ? (storeMode === 'restaurant' ? 'Menú / Platillos' : 'Catálogo de Productos') :
-                currentPage === 'tienda' ? 'Personalización de Tienda' :
-                currentPage === 'reservas' ? 'Agenda de Citas' :
-                currentPage === 'servicios' ? 'Catálogo de Servicios' :
-                currentPage === 'agente' ? 'Estudio Agente IA' :
-                currentPage === 'notificaciones' ? 'Historial de Notificaciones' :
-                currentPage === 'usuarios' ? 'Gestión de Equipo' :
-                currentPage === 'configuracion' ? 'Configuración General' :
+                currentPage === 'chats' ? 'Chats en Vivo' :
+                currentPage === 'campaigns' ? 'Difusión & CRM' :
+                currentPage === 'whatsapp' ? 'WhatsApp' :
+                currentPage === 'productos' ? (storeMode === 'restaurant' ? 'Menú / Platillos' : 'Productos') :
+                currentPage === 'tienda' ? 'Tienda & Envíos' :
+                currentPage === 'sitio' ? 'Mi Sitio Web' :
+                currentPage === 'reservas' ? 'Reservas & Agenda' :
+                currentPage === 'servicios' ? 'Servicios' :
+                currentPage === 'agente' ? 'Agente IA' :
+                currentPage === 'notificaciones' ? 'Notificaciones' :
+                currentPage === 'sucursales' ? 'Sucursales' :
+                currentPage === 'usuarios' ? 'Usuarios' :
+                currentPage === 'configuracion' ? 'Configuración' :
                 currentPage
               }
             </h1>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {/* Right Side: Tutorial (?) + User + Logout */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+            {/* Tutorial Question Mark Icon Button */}
             <button
+              type="button"
               onClick={() => setShowTourModal(true)}
               style={{
-                display: 'flex',
+                display: 'inline-flex',
                 alignItems: 'center',
-                gap: '6px',
-                padding: '6px 12px',
+                justifyContent: 'center',
+                width: '36px',
+                height: '36px',
                 backgroundColor: '#ecfdf5',
                 border: '1px solid #a7f3d0',
-                borderRadius: 'var(--radius-md)',
+                borderRadius: '50%',
                 cursor: 'pointer',
                 color: '#047857',
-                fontSize: '0.82rem',
-                fontWeight: '700'
+                flexShrink: 0
               }}
-              title="Abrir Tutorial Guiado"
+              title="Tutorial y Ayuda de Betico"
+              aria-label="Tutorial"
             >
-              <Sparkles size={15} color="#059669" />
-              <span>Tutorial</span>
+              <HelpCircle size={20} color="#059669" />
             </button>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '5px 10px', borderRadius: 'var(--radius-md)', backgroundColor: 'var(--background)', border: '1px solid var(--border)' }}>
+
+            {/* User Avatar & Info */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 8px', borderRadius: '8px', backgroundColor: 'var(--background)', border: '1px solid var(--border)' }}>
               <div style={{
-                width: '32px',
-                height: '32px',
-                borderRadius: 'var(--radius-full)',
+                width: '28px',
+                height: '28px',
+                borderRadius: '50%',
                 backgroundColor: 'var(--primary)',
                 color: 'white',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 fontWeight: '800',
-                fontSize: '0.85rem',
-                boxShadow: 'var(--shadow-xs)'
+                fontSize: '0.8rem',
+                flexShrink: 0
               }}>
                 {(user?.name || user?.email || 'A').charAt(0).toUpperCase()}
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <span className="app-user-name-text" style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--text)', lineHeight: '1.2' }}>{user?.name || user?.email || 'Administrador'}</span>
-                <span className="app-user-role-text" style={{ fontSize: '0.72rem', fontWeight: '600', color: 'var(--text-muted)' }}>{user?.role === 'superadmin' ? 'SuperAdmin' : 'Administrador'}</span>
+              <div className="app-user-info-text" style={{ display: 'flex', flexDirection: 'column' }}>
+                <span style={{ fontSize: '0.8rem', fontWeight: '700', color: 'var(--text)', lineHeight: '1.1', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {user?.name || user?.email || 'Admin'}
+                </span>
               </div>
             </div>
 
+            {/* Logout Button */}
             <button
+              type="button"
               onClick={logout}
               style={{
-                display: 'flex',
+                display: 'inline-flex',
                 alignItems: 'center',
-                gap: '6px',
-                padding: '7px 12px',
+                gap: '4px',
+                padding: '6px 10px',
                 backgroundColor: 'transparent',
                 border: '1px solid var(--border)',
-                borderRadius: 'var(--radius-md)',
+                borderRadius: '8px',
                 cursor: 'pointer',
                 color: 'var(--text-muted)',
-                fontSize: '0.85rem',
-                fontWeight: '600'
+                fontSize: '0.8rem',
+                fontWeight: '600',
+                flexShrink: 0
               }}
               title="Cerrar sesión"
             >
               <LogOut size={16} />
-              <span>Salir</span>
+              <span className="app-logout-btn-text">Salir</span>
             </button>
           </div>
         </header>
 
-        {/* Dynamic Page Content */}
-        <main className="app-main-content" style={{ flex: 1, padding: '24px 32px', overflowY: 'auto', boxSizing: 'border-box', width: '100%', maxWidth: '100%' }}>
-          {renderContent()}
-          <GuidedTourModal
-            isOpen={showTourModal}
-            onClose={() => setShowTourModal(false)}
-            onNavigateToTab={(tabId) => {
-              if (tabId === 'website_builder') {
-                setCurrentPage('tienda');
-              } else {
-                setCurrentPage(tabId);
-              }
-            }}
-          />
+        {/* PAGE CONTENT CONTAINER */}
+        <main style={{ flex: 1, padding: '20px 16px 80px 16px', overflowY: 'auto' }}>
+          <TabErrorBoundary key={currentPage}>
+            {renderContent()}
+          </TabErrorBoundary>
         </main>
-        
-        {/* iOS / Mobile Bottom Navigation Bar */}
+
+        {/* 4. MOBILE BOTTOM NAVIGATION BAR */}
         <div
-          className="app-mobile-bottom-nav"
+          className="mobile-bottom-nav"
           style={{
             position: 'fixed',
             bottom: 0,
@@ -847,7 +935,7 @@ export default function App() {
             zIndex: 9000,
             justifyContent: 'space-around',
             alignItems: 'center',
-            boxShadow: '0 -2px 10px rgba(0,0,0,0.05)',
+            boxShadow: '0 -2px 10px rgba(0,0,0,0.06)',
             paddingBottom: 'env(safe-area-inset-bottom, 0px)'
           }}
         >
@@ -925,11 +1013,21 @@ export default function App() {
             }}
           >
             <Menu size={20} />
-            <span style={{ fontSize: '0.68rem', fontWeight: '700' }}>Más</span>
+            <span style={{ fontSize: '0.68rem', fontWeight: '700' }}>Menú</span>
           </button>
         </div>
 
       </div>
+
+      {/* Guided Tour Modal */}
+      {showTourModal && (
+        <GuidedTourModal
+          isOpen={showTourModal}
+          onClose={() => setShowTourModal(false)}
+          onNavigateToTab={(tabId) => handleNavClick(tabId)}
+        />
+      )}
+
     </div>
   );
 }
