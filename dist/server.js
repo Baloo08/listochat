@@ -1740,6 +1740,65 @@ async function runMigrations() {
     SET value = 'https://beticoia-localai.qvtdko.easypanel.host/v1' 
     WHERE key = 'localai_url' AND (value = 'http://localhost:8080/v1' OR value IS NULL OR value = '')
   `);
+  await query(`
+    CREATE TABLE IF NOT EXISTS courts (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      name VARCHAR(255) NOT NULL DEFAULT 'Cancha 1',
+      sport_type VARCHAR(100) NOT NULL DEFAULT 'futbol',
+      custom_sport_type VARCHAR(100),
+      description TEXT,
+      surface VARCHAR(100),
+      is_indoor BOOLEAN DEFAULT false,
+      has_lighting BOOLEAN DEFAULT false,
+      base_price NUMERIC(10,2) NOT NULL DEFAULT 0,
+      price_display VARCHAR(100),
+      duration_minutes INT NOT NULL DEFAULT 60,
+      team_size INT DEFAULT 5,
+      max_extra_players INT DEFAULT 2,
+      extra_player_fee NUMERIC(10,2) DEFAULT 0,
+      active BOOLEAN DEFAULT true,
+      sort_order INT DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS court_bookings (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      court_id UUID NOT NULL REFERENCES courts(id) ON DELETE CASCADE,
+      date DATE NOT NULL,
+      time TIME NOT NULL,
+      duration_minutes INT NOT NULL DEFAULT 60,
+      booking_mode VARCHAR(20) NOT NULL DEFAULT 'full',
+      match_status VARCHAR(20) DEFAULT 'confirmed',
+      match_expiry_hours NUMERIC(4,1) DEFAULT 1,
+      team_a_name VARCHAR(255) DEFAULT 'Equipo A',
+      team_a_captain VARCHAR(255) NOT NULL,
+      team_a_phone VARCHAR(50) NOT NULL,
+      team_a_players INT DEFAULT 5,
+      team_a_extra_players INT DEFAULT 0,
+      team_a_paid BOOLEAN DEFAULT false,
+      team_b_name VARCHAR(255),
+      team_b_captain VARCHAR(255),
+      team_b_phone VARCHAR(50),
+      team_b_players INT DEFAULT 5,
+      team_b_extra_players INT DEFAULT 0,
+      team_b_paid BOOLEAN DEFAULT false,
+      total_price NUMERIC(10,2) NOT NULL DEFAULT 0,
+      price_per_team NUMERIC(10,2),
+      payment_mode VARCHAR(20) DEFAULT 'both',
+      sport_type VARCHAR(100),
+      skill_level VARCHAR(50),
+      notes TEXT,
+      status VARCHAR(50) DEFAULT 'confirmed',
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_courts_tenant ON courts(tenant_id, active);
+    CREATE INDEX IF NOT EXISTS idx_cb_tenant_date ON court_bookings(tenant_id, date, time);
+    CREATE INDEX IF NOT EXISTS idx_cb_open_matches ON court_bookings(match_status, date) WHERE match_status = 'open';
+  `);
   console.log("Migrations completed successfully.");
 }
 
@@ -9078,6 +9137,537 @@ router27.get("/stats", async (req, res) => {
 });
 var queue_routes_default = router27;
 
+// src/server/routes/courts.routes.ts
+import { Router as Router28 } from "express";
+
+// src/server/db/courts.repo.ts
+init_pool();
+function mapCourtRow(row) {
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    name: row.name,
+    sportType: row.sport_type,
+    customSportType: row.custom_sport_type,
+    description: row.description,
+    surface: row.surface,
+    isIndoor: row.is_indoor,
+    hasLighting: row.has_lighting,
+    basePrice: Number(row.base_price),
+    priceDisplay: row.price_display,
+    durationMinutes: row.duration_minutes,
+    teamSize: row.team_size,
+    maxExtraPlayers: row.max_extra_players,
+    extraPlayerFee: Number(row.extra_player_fee),
+    active: row.active,
+    sortOrder: row.sort_order,
+    createdAt: row.created_at
+  };
+}
+function mapBookingRow(row) {
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    courtId: row.court_id,
+    courtName: row.court_name || row.name,
+    // in case of join
+    date: row.date,
+    time: row.time,
+    durationMinutes: row.duration_minutes,
+    bookingMode: row.booking_mode,
+    matchStatus: row.match_status,
+    matchExpiryHours: Number(row.match_expiry_hours),
+    teamAName: row.team_a_name,
+    teamACaptain: row.team_a_captain,
+    teamAPhone: row.team_a_phone,
+    teamAPlayers: row.team_a_players,
+    teamAExtraPlayers: row.team_a_extra_players,
+    teamAPaid: row.team_a_paid,
+    teamBName: row.team_b_name,
+    teamBCaptain: row.team_b_captain,
+    teamBPhone: row.team_b_phone,
+    teamBPlayers: row.team_b_players,
+    teamBExtraPlayers: row.team_b_extra_players,
+    teamBPaid: row.team_b_paid,
+    totalPrice: Number(row.total_price),
+    pricePerTeam: row.price_per_team ? Number(row.price_per_team) : void 0,
+    paymentMode: row.payment_mode,
+    sportType: row.sport_type,
+    skillLevel: row.skill_level,
+    notes: row.notes,
+    status: row.status,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+async function getCourtsByTenant(tenantId) {
+  const res = await query(`SELECT * FROM courts WHERE tenant_id = $1 ORDER BY sort_order, name`, [tenantId]);
+  return res.rows.map(mapCourtRow);
+}
+async function getCourtById(id, tenantId) {
+  const res = await query(`SELECT * FROM courts WHERE id = $1 AND tenant_id = $2`, [id, tenantId]);
+  return res.rows[0] ? mapCourtRow(res.rows[0]) : null;
+}
+async function createCourt(tenantId, data) {
+  const res = await query(`
+    INSERT INTO courts (
+      tenant_id, name, sport_type, custom_sport_type, description, surface, 
+      is_indoor, has_lighting, base_price, price_display, duration_minutes, 
+      team_size, max_extra_players, extra_player_fee, active, sort_order
+    ) VALUES (
+      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
+    ) RETURNING *
+  `, [
+    tenantId,
+    data.name,
+    data.sportType,
+    data.customSportType,
+    data.description,
+    data.surface,
+    data.isIndoor,
+    data.hasLighting,
+    data.basePrice,
+    data.priceDisplay,
+    data.durationMinutes,
+    data.teamSize,
+    data.maxExtraPlayers,
+    data.extraPlayerFee,
+    data.active !== false,
+    data.sortOrder || 0
+  ]);
+  return mapCourtRow(res.rows[0]);
+}
+async function updateCourt(id, tenantId, data) {
+  const allowed = {
+    name: "name",
+    sportType: "sport_type",
+    customSportType: "custom_sport_type",
+    description: "description",
+    surface: "surface",
+    isIndoor: "is_indoor",
+    hasLighting: "has_lighting",
+    basePrice: "base_price",
+    priceDisplay: "price_display",
+    durationMinutes: "duration_minutes",
+    teamSize: "team_size",
+    maxExtraPlayers: "max_extra_players",
+    extraPlayerFee: "extra_player_fee",
+    active: "active",
+    sortOrder: "sort_order"
+  };
+  const entries = Object.entries(data).filter(([k, v]) => allowed[k] !== void 0 && v !== void 0);
+  if (entries.length === 0) return getCourtById(id, tenantId);
+  const setClause = entries.map(([k], i) => `${allowed[k]} = $${i + 3}`).join(", ");
+  const values = entries.map((e) => e[1]);
+  const res = await query(`
+    UPDATE courts SET ${setClause} WHERE id = $1 AND tenant_id = $2 RETURNING *
+  `, [id, tenantId, ...values]);
+  return res.rows[0] ? mapCourtRow(res.rows[0]) : null;
+}
+async function deleteCourt(id, tenantId) {
+  const res = await query(`DELETE FROM courts WHERE id = $1 AND tenant_id = $2`, [id, tenantId]);
+  return (res.rowCount || 0) > 0;
+}
+async function getBookingsByTenant(tenantId, date) {
+  let q = `
+    SELECT cb.*, c.name as court_name 
+    FROM court_bookings cb
+    JOIN courts c ON c.id = cb.court_id
+    WHERE cb.tenant_id = $1
+  `;
+  const params = [tenantId];
+  if (date) {
+    q += ` AND cb.date = $2`;
+    params.push(date);
+  }
+  q += ` ORDER BY cb.date DESC, cb.time DESC`;
+  const res = await query(q, params);
+  return res.rows.map(mapBookingRow);
+}
+async function getBookingById(id, tenantId) {
+  const res = await query(`
+    SELECT cb.*, c.name as court_name 
+    FROM court_bookings cb
+    JOIN courts c ON c.id = cb.court_id
+    WHERE cb.id = $1 AND cb.tenant_id = $2
+  `, [id, tenantId]);
+  return res.rows[0] ? mapBookingRow(res.rows[0]) : null;
+}
+async function createBooking(tenantId, data) {
+  const res = await query(`
+    INSERT INTO court_bookings (
+      tenant_id, court_id, date, time, duration_minutes, booking_mode,
+      match_status, match_expiry_hours, team_a_name, team_a_captain,
+      team_a_phone, team_a_players, team_a_extra_players, team_a_paid,
+      team_b_name, team_b_captain, team_b_phone, team_b_players,
+      team_b_extra_players, team_b_paid, total_price, price_per_team,
+      payment_mode, sport_type, skill_level, notes, status
+    ) VALUES (
+      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
+      $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27
+    ) RETURNING *
+  `, [
+    tenantId,
+    data.courtId,
+    data.date,
+    data.time,
+    data.durationMinutes || 60,
+    data.bookingMode || "full",
+    data.matchStatus || "confirmed",
+    data.matchExpiryHours || 1,
+    data.teamAName || "Equipo A",
+    data.teamACaptain,
+    data.teamAPhone,
+    data.teamAPlayers || 5,
+    data.teamAExtraPlayers || 0,
+    data.teamAPaid || false,
+    data.teamBName,
+    data.teamBCaptain,
+    data.teamBPhone,
+    data.teamBPlayers || 5,
+    data.teamBExtraPlayers || 0,
+    data.teamBPaid || false,
+    data.totalPrice || 0,
+    data.pricePerTeam,
+    data.paymentMode || "both",
+    data.sportType,
+    data.skillLevel,
+    data.notes,
+    data.status || "confirmed"
+  ]);
+  return mapBookingRow(res.rows[0]);
+}
+async function updateBooking(id, tenantId, data) {
+  const allowed = {
+    date: "date",
+    time: "time",
+    durationMinutes: "duration_minutes",
+    bookingMode: "booking_mode",
+    matchStatus: "match_status",
+    matchExpiryHours: "match_expiry_hours",
+    teamAName: "team_a_name",
+    teamACaptain: "team_a_captain",
+    teamAPhone: "team_a_phone",
+    teamAPlayers: "team_a_players",
+    teamAExtraPlayers: "team_a_extra_players",
+    teamAPaid: "team_a_paid",
+    teamBName: "team_b_name",
+    teamBCaptain: "team_b_captain",
+    teamBPhone: "team_b_phone",
+    teamBPlayers: "team_b_players",
+    teamBExtraPlayers: "team_b_extra_players",
+    teamBPaid: "team_b_paid",
+    totalPrice: "total_price",
+    pricePerTeam: "price_per_team",
+    paymentMode: "payment_mode",
+    sportType: "sport_type",
+    skillLevel: "skill_level",
+    notes: "notes",
+    status: "status"
+  };
+  const entries = Object.entries(data).filter(([k, v]) => allowed[k] !== void 0 && v !== void 0);
+  if (entries.length === 0) return getBookingById(id, tenantId);
+  const setClause = entries.map(([k], i) => `${allowed[k]} = $${i + 3}`).join(", ");
+  const values = entries.map((e) => e[1]);
+  const res = await query(`
+    UPDATE court_bookings SET ${setClause}, updated_at = CURRENT_TIMESTAMP 
+    WHERE id = $1 AND tenant_id = $2 RETURNING *
+  `, [id, tenantId, ...values]);
+  return res.rows[0] ? mapBookingRow(res.rows[0]) : null;
+}
+async function cancelBooking(id, tenantId) {
+  const res = await query(`
+    UPDATE court_bookings SET status = 'cancelled', match_status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+    WHERE id = $1 AND tenant_id = $2 RETURNING *
+  `, [id, tenantId]);
+  return res.rows[0] ? mapBookingRow(res.rows[0]) : null;
+}
+async function getOpenMatches(tenantId) {
+  const res = await query(`
+    SELECT cb.*, c.name as court_name 
+    FROM court_bookings cb
+    JOIN courts c ON c.id = cb.court_id
+    WHERE cb.tenant_id = $1 AND cb.match_status = 'open' AND cb.date >= CURRENT_DATE
+    ORDER BY cb.date, cb.time
+  `, [tenantId]);
+  return res.rows.map(mapBookingRow);
+}
+async function joinMatch(id, teamBData) {
+  const res = await query(`
+    UPDATE court_bookings 
+    SET team_b_name = $1, team_b_captain = $2, team_b_phone = $3,
+        team_b_players = $4, team_b_extra_players = $5,
+        match_status = 'matched', updated_at = CURRENT_TIMESTAMP
+    WHERE id = $6 RETURNING *
+  `, [
+    teamBData.teamBName || "Equipo B",
+    teamBData.teamBCaptain,
+    teamBData.teamBPhone,
+    teamBData.teamBPlayers || 5,
+    teamBData.teamBExtraPlayers || 0,
+    id
+  ]);
+  return res.rows[0] ? mapBookingRow(res.rows[0]) : null;
+}
+async function getAvailableSlots(tenantId, courtId, date) {
+  const tRes = await query("SELECT settings_json FROM tenants WHERE id = $1", [tenantId]);
+  const settingsJson = tRes.rows[0]?.settings_json || {};
+  const scheduleSettings = settingsJson.scheduleSettings || { startHour: 8, endHour: 22, slotMinutes: 60 };
+  const startHour = Number(scheduleSettings.startHour) || 8;
+  const endHour = Number(scheduleSettings.endHour) || 22;
+  const slotMinutes = Number(scheduleSettings.slotMinutes) || 60;
+  const slots = [];
+  let currentMinutes = startHour * 60;
+  const endMinutes = endHour * 60;
+  while (currentMinutes < endMinutes) {
+    const h = Math.floor(currentMinutes / 60);
+    const m = currentMinutes % 60;
+    const timeStr = `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:00`;
+    slots.push(timeStr);
+    currentMinutes += slotMinutes;
+  }
+  const bookingsRes = await query(`
+    SELECT time 
+    FROM court_bookings 
+    WHERE tenant_id = $1 AND court_id = $2 AND date = $3 AND status != 'cancelled'
+  `, [tenantId, courtId, date]);
+  const bookedTimes = bookingsRes.rows.map((r) => {
+    return typeof r.time === "string" ? r.time : r.time.toString();
+  });
+  return slots.filter((slot) => !bookedTimes.includes(slot));
+}
+
+// src/server/routes/courts.routes.ts
+init_evolution();
+init_pool();
+var router28 = Router28();
+router28.get("/public/:slug/courts", async (req, res) => {
+  try {
+    const tenant = await getTenantBySlug(req.params.slug);
+    if (!tenant) return res.status(404).json({ error: "Negocio no encontrado" });
+    const courts = await getCourtsByTenant(tenant.id);
+    res.json(courts.filter((c) => c.active));
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error al obtener canchas" });
+  }
+});
+router28.get("/public/:slug/available-slots", async (req, res) => {
+  try {
+    const { courtId, date } = req.query;
+    if (!courtId || !date) return res.status(400).json({ error: "Faltan par\xE1metros courtId o date" });
+    const tenant = await getTenantBySlug(req.params.slug);
+    if (!tenant) return res.status(404).json({ error: "Negocio no encontrado" });
+    const slots = await getAvailableSlots(tenant.id, String(courtId), String(date));
+    res.json({ availableSlots: slots });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error al obtener espacios" });
+  }
+});
+router28.post("/public/:slug/book", async (req, res) => {
+  try {
+    const tenant = await getTenantBySlug(req.params.slug);
+    if (!tenant) return res.status(404).json({ error: "Negocio no encontrado" });
+    const data = req.body;
+    const booking = await createBooking(tenant.id, data);
+    if (req.io) {
+      req.io.to(`tenant_${tenant.id}`).emit("courtBooking:created", booking);
+    }
+    if (tenant.evolutionInstance && booking.teamAPhone) {
+      const cleanPhone = booking.teamAPhone.replace(/\D/g, "");
+      const dParts = booking.date.split("-");
+      const formattedDate = dParts.length === 3 ? `${dParts[2]}/${dParts[1]}/${dParts[0]}` : booking.date;
+      const msg = `\u{1F3BE} *\xA1Reserva Confirmada!*
+
+Hola ${booking.teamACaptain},
+Tu reserva ha sido confirmada.
+
+\u{1F4C5} Fecha: ${formattedDate}
+\u23F0 Hora: ${booking.time.substring(0, 5)}
+\u26BD Cancha: ${booking.courtName || "Reservada"}
+\u{1F4B8} Total a pagar: \u20A1${booking.totalPrice}
+
+\xA1Te esperamos!`;
+      await sendMessage(tenant.evolutionInstance, `${cleanPhone}@s.whatsapp.net`, msg).catch(console.error);
+    }
+    res.status(201).json(booking);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error al crear reserva" });
+  }
+});
+router28.get("/public/:slug/open-matches", async (req, res) => {
+  try {
+    const tenant = await getTenantBySlug(req.params.slug);
+    if (!tenant) return res.status(404).json({ error: "Negocio no encontrado" });
+    const matches = await getOpenMatches(tenant.id);
+    res.json(matches);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error al obtener retadores" });
+  }
+});
+router28.post("/public/:slug/join-match/:bookingId", async (req, res) => {
+  try {
+    const tenant = await getTenantBySlug(req.params.slug);
+    if (!tenant) return res.status(404).json({ error: "Negocio no encontrado" });
+    const { bookingId } = req.params;
+    const booking = await joinMatch(bookingId, req.body);
+    if (!booking) return res.status(404).json({ error: "Match no encontrado" });
+    if (req.io) {
+      req.io.to(`tenant_${tenant.id}`).emit("courtBooking:matched", booking);
+    }
+    if (tenant.evolutionInstance) {
+      const msgA = `\u{1F525} *\xA1Reto Aceptado!*
+
+El equipo *${booking.teamBName}* ha aceptado tu reto.
+Capit\xE1n: ${booking.teamBCaptain}
+Tel: ${booking.teamBPhone}
+
+\xA1Prep\xE1rense para el partido!`;
+      const msgB = `\u{1F525} *\xA1Te has unido al partido!*
+
+Te has unido al partido contra *${booking.teamAName}*.
+Capit\xE1n rival: ${booking.teamACaptain}
+
+\xA1Nos vemos en la cancha!`;
+      const cleanA = booking.teamAPhone.replace(/\D/g, "");
+      const cleanB = booking.teamBPhone?.replace(/\D/g, "");
+      if (cleanA) await sendMessage(tenant.evolutionInstance, `${cleanA}@s.whatsapp.net`, msgA).catch(console.error);
+      if (cleanB) await sendMessage(tenant.evolutionInstance, `${cleanB}@s.whatsapp.net`, msgB).catch(console.error);
+    }
+    res.json(booking);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error al unirse al partido" });
+  }
+});
+router28.use(authenticateToken);
+router28.use(tenantContext);
+router28.get("/", async (req, res) => {
+  try {
+    const courts = await getCourtsByTenant(req.tenantId);
+    res.json(courts);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error al obtener canchas" });
+  }
+});
+router28.post("/", async (req, res) => {
+  try {
+    const court = await createCourt(req.tenantId, req.body);
+    res.status(201).json(court);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error al crear cancha" });
+  }
+});
+router28.put("/:id", async (req, res) => {
+  try {
+    const court = await updateCourt(req.params.id, req.tenantId, req.body);
+    res.json(court);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error al actualizar cancha" });
+  }
+});
+router28.delete("/:id", async (req, res) => {
+  try {
+    await deleteCourt(req.params.id, req.tenantId);
+    res.json({ success: true });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error al eliminar cancha" });
+  }
+});
+router28.get("/bookings", async (req, res) => {
+  try {
+    const date = req.query.date;
+    const bookings = await getBookingsByTenant(req.tenantId, date);
+    res.json(bookings);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error al obtener reservas" });
+  }
+});
+router28.get("/bookings/:id", async (req, res) => {
+  try {
+    const booking = await getBookingById(req.params.id, req.tenantId);
+    if (!booking) return res.status(404).json({ error: "Reserva no encontrada" });
+    res.json(booking);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error al obtener reserva" });
+  }
+});
+router28.post("/bookings", async (req, res) => {
+  try {
+    const booking = await createBooking(req.tenantId, req.body);
+    if (req.io) {
+      req.io.to(`tenant_${req.tenantId}`).emit("courtBooking:created", booking);
+    }
+    const tRes = await query("SELECT evolution_instance FROM tenants WHERE id = $1", [req.tenantId]);
+    const evolutionInstance = tRes.rows[0]?.evolution_instance;
+    if (evolutionInstance && booking.teamAPhone) {
+      const cleanPhone = booking.teamAPhone.replace(/\D/g, "");
+      const msg = `\u{1F3BE} *\xA1Reserva Confirmada!*
+
+Hola ${booking.teamACaptain},
+Tu reserva ha sido confirmada manualmente.
+
+\u26BD Cancha: ${booking.courtName || "Reservada"}
+\u{1F4C5} Fecha: ${booking.date}
+\u23F0 Hora: ${booking.time.substring(0, 5)}
+\u{1F4B8} Total: \u20A1${booking.totalPrice}
+
+\xA1Gracias por preferirnos!`;
+      await sendMessage(evolutionInstance, `${cleanPhone}@s.whatsapp.net`, msg).catch(console.error);
+    }
+    res.status(201).json(booking);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error al crear reserva" });
+  }
+});
+router28.put("/bookings/:id", async (req, res) => {
+  try {
+    const booking = await updateBooking(req.params.id, req.tenantId, req.body);
+    res.json(booking);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error al actualizar reserva" });
+  }
+});
+router28.delete("/bookings/:id", async (req, res) => {
+  try {
+    const booking = await cancelBooking(req.params.id, req.tenantId);
+    res.json(booking);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error al cancelar reserva" });
+  }
+});
+router28.put("/bookings/:id/confirm-payment-a", async (req, res) => {
+  try {
+    const booking = await updateBooking(req.params.id, req.tenantId, { teamAPaid: true });
+    res.json(booking);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error al confirmar pago A" });
+  }
+});
+router28.put("/bookings/:id/confirm-payment-b", async (req, res) => {
+  try {
+    const booking = await updateBooking(req.params.id, req.tenantId, { teamBPaid: true });
+    res.json(booking);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error al confirmar pago B" });
+  }
+});
+var courts_routes_default = router28;
+
 // src/server/index.ts
 var __filename = fileURLToPath(import.meta.url);
 var __dirname = path2.dirname(__filename);
@@ -9190,6 +9780,7 @@ async function startServer() {
   app.use("/api/webhook", webhook_routes_default);
   app.use("/webhook", webhook_routes_default);
   app.use("/api/queue", queue_routes_default);
+  app.use("/api/courts", courts_routes_default);
   if (env.NODE_ENV === "production") {
     app.use("/assets", express.static(path2.join(__dirname, "assets"), { maxAge: "1y", immutable: true }));
     app.use(express.static(__dirname));

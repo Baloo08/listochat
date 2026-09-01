@@ -227,6 +227,7 @@ export interface StoreScheduleConfig {
 export interface StoreModulesConfig {
   storeEnabled: boolean;
   bookingsEnabled: boolean;
+  courtsEnabled?: boolean;
 }
 
 export interface StoreSettings {
@@ -391,4 +392,72 @@ export interface Customer {
   totalSpent: number;
   lastInteraction?: string;
   createdAt: string;
+}
+
+// ===================== COURTS MODULE =====================
+
+export type SportType = 'futbol' | 'padel' | 'tenis' | 'otro';
+export type BookingMode = 'full' | 'seek_match';
+export type MatchStatus = 'open' | 'matched' | 'expired' | 'confirmed' | 'cancelled';
+
+export interface Court {
+  id: string;
+  tenantId: string;
+  name: string;
+  sportType: SportType;
+  customSportType?: string;
+  description?: string;
+  surface?: string;
+  isIndoor: boolean;
+  hasLighting: boolean;
+  basePrice: number;
+  priceDisplay?: string;
+  durationMinutes: number;
+  teamSize: number;
+  maxExtraPlayers: number;
+  extraPlayerFee: number;
+  active: boolean;
+  sortOrder: number;
+  createdAt?: string;
+}
+
+export interface CourtBooking {
+  id: string;
+  tenantId: string;
+  courtId: string;
+  courtName?: string;
+  date: string;
+  time: string;
+  durationMinutes: number;
+  bookingMode: BookingMode;
+  matchStatus: MatchStatus;
+  matchExpiryHours: number;
+  teamAName: string;
+  teamACaptain: string;
+  teamAPhone: string;
+  teamAPlayers: number;
+  teamAExtraPlayers: number;
+  teamAPaid: boolean;
+  teamBName?: string;
+  teamBCaptain?: string;
+  teamBPhone?: string;
+  teamBPlayers: number;
+  teamBExtraPlayers: number;
+  teamBPaid: boolean;
+  totalPrice: number;
+  pricePerTeam?: number;
+  paymentMode: 'online' | 'on_site' | 'both';
+  sportType: string;
+  skillLevel?: string;
+  notes?: string;
+  status: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface CourtsConfig {
+  paymentMode: 'online' | 'on_site' | 'both';
+  matchExpiryHours: number;
+  allowSeekMatch: boolean;
+  sportTypes: string[];
 }

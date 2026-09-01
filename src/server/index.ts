@@ -45,6 +45,7 @@ import specialistsRoutes from './routes/specialists.routes.js';
 import websiteRoutes from './routes/website.routes.js';
 import websitePublicRoutes from './routes/website-public.routes.js';
 import queueRoutes from './routes/queue.routes.js';
+import courtsRoutes from './routes/courts.routes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -179,6 +180,7 @@ async function startServer() {
   app.use('/api/webhook', webhookRoutes);
   app.use('/webhook', webhookRoutes);
   app.use('/api/queue', queueRoutes);
+  app.use('/api/courts', courtsRoutes);
 
   // Serve static assets in production, setup vite dev server in dev
   if (env.NODE_ENV === 'production') {

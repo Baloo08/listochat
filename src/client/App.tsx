@@ -18,6 +18,8 @@ import TenantSettings from './components/TenantSettings';
 import SuperAdminPanel from './components/SuperAdminPanel';
 import StorefrontView from '../storefront/StorefrontView';
 import PublicBookingView from '../storefront/PublicBookingView';
+import CourtBookingPublic from './components/CourtBookingPublic';
+import CourtsManager from './components/CourtsManager';
 import DriverPortal from './components/DriverPortal';
 import SpecialistPortal from './components/SpecialistPortal';
 import KDSFullscreen from './components/KDSFullscreen';
@@ -63,7 +65,8 @@ import {
   TrendingUp,
   Zap,
   Globe,
-  Clock
+  Clock,
+  Trophy
 } from 'lucide-react';
 
 
@@ -118,6 +121,11 @@ export default function App() {
   if (pathname.startsWith('/reservas/')) {
     const slug = pathname.replace('/reservas/', '').split('/')[0];
     return <PublicBookingView slug={slug} />;
+  }
+
+  if (pathname.startsWith('/canchas/')) {
+    const slug = pathname.replace('/canchas/', '').split('/')[0];
+    return <CourtBookingPublic slug={slug} />;
   }
 
   if (pathname.startsWith('/acceso/')) {
@@ -186,9 +194,10 @@ export default function App() {
 
   // Tenant customization
   const [storeMode, setStoreMode] = useState<'retail' | 'restaurant'>('retail');
-  const [storeModules, setStoreModules] = useState<{ storeEnabled: boolean; bookingsEnabled: boolean }>({
+  const [storeModules, setStoreModules] = useState<{ storeEnabled: boolean; bookingsEnabled: boolean; courtsEnabled?: boolean }>({
     storeEnabled: true,
-    bookingsEnabled: true
+    bookingsEnabled: true,
+    courtsEnabled: false
   });
 
   const toggleSidebar = () => {
@@ -219,7 +228,8 @@ export default function App() {
             if (data.storeModules) {
               setStoreModules({
                 storeEnabled: data.storeModules.storeEnabled !== false,
-                bookingsEnabled: data.storeModules.bookingsEnabled !== false
+                bookingsEnabled: data.storeModules.bookingsEnabled !== false,
+                courtsEnabled: data.storeModules.courtsEnabled === true
               });
             }
           }
@@ -397,6 +407,12 @@ export default function App() {
         { id: 'servicios', label: 'Servicios', icon: <Wrench size={18} /> }
       ]
     }] : []),
+    ...(storeModules.courtsEnabled ? [{
+      title: 'CANCHAS & DEPORTES',
+      items: [
+        { id: 'canchas', label: 'Gestión de Canchas', icon: <Trophy size={18} /> }
+      ]
+    }] : []),
     {
       title: 'MARKETING & DIFUSIÓN',
       items: [
@@ -454,6 +470,7 @@ export default function App() {
         case 'queue': return <MessageQueuePanel />;
         case 'campaigns': return <CampaignsManager />;
         case 'reservas': return <Bookings />;
+        case 'canchas': return <CourtsManager />;
         case 'servicios': return <ServicesManager />;
         case 'productos': return <ProductManager />;
         case 'ordenes': return <OrdersPanel />;

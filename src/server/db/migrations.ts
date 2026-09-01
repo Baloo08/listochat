@@ -603,5 +603,65 @@ export async function runMigrations() {
     WHERE key = 'localai_url' AND (value = 'http://localhost:8080/v1' OR value IS NULL OR value = '')
   `);
 
+  await query(`
+    CREATE TABLE IF NOT EXISTS courts (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      name VARCHAR(255) NOT NULL DEFAULT 'Cancha 1',
+      sport_type VARCHAR(100) NOT NULL DEFAULT 'futbol',
+      custom_sport_type VARCHAR(100),
+      description TEXT,
+      surface VARCHAR(100),
+      is_indoor BOOLEAN DEFAULT false,
+      has_lighting BOOLEAN DEFAULT false,
+      base_price NUMERIC(10,2) NOT NULL DEFAULT 0,
+      price_display VARCHAR(100),
+      duration_minutes INT NOT NULL DEFAULT 60,
+      team_size INT DEFAULT 5,
+      max_extra_players INT DEFAULT 2,
+      extra_player_fee NUMERIC(10,2) DEFAULT 0,
+      active BOOLEAN DEFAULT true,
+      sort_order INT DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS court_bookings (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      court_id UUID NOT NULL REFERENCES courts(id) ON DELETE CASCADE,
+      date DATE NOT NULL,
+      time TIME NOT NULL,
+      duration_minutes INT NOT NULL DEFAULT 60,
+      booking_mode VARCHAR(20) NOT NULL DEFAULT 'full',
+      match_status VARCHAR(20) DEFAULT 'confirmed',
+      match_expiry_hours NUMERIC(4,1) DEFAULT 1,
+      team_a_name VARCHAR(255) DEFAULT 'Equipo A',
+      team_a_captain VARCHAR(255) NOT NULL,
+      team_a_phone VARCHAR(50) NOT NULL,
+      team_a_players INT DEFAULT 5,
+      team_a_extra_players INT DEFAULT 0,
+      team_a_paid BOOLEAN DEFAULT false,
+      team_b_name VARCHAR(255),
+      team_b_captain VARCHAR(255),
+      team_b_phone VARCHAR(50),
+      team_b_players INT DEFAULT 5,
+      team_b_extra_players INT DEFAULT 0,
+      team_b_paid BOOLEAN DEFAULT false,
+      total_price NUMERIC(10,2) NOT NULL DEFAULT 0,
+      price_per_team NUMERIC(10,2),
+      payment_mode VARCHAR(20) DEFAULT 'both',
+      sport_type VARCHAR(100),
+      skill_level VARCHAR(50),
+      notes TEXT,
+      status VARCHAR(50) DEFAULT 'confirmed',
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_courts_tenant ON courts(tenant_id, active);
+    CREATE INDEX IF NOT EXISTS idx_cb_tenant_date ON court_bookings(tenant_id, date, time);
+    CREATE INDEX IF NOT EXISTS idx_cb_open_matches ON court_bookings(match_status, date) WHERE match_status = 'open';
+  `);
+
   console.log('Migrations completed successfully.');
 }
