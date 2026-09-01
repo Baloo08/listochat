@@ -8,13 +8,12 @@ export async function getScheduleSettings(tenantId: string): Promise<ScheduleSet
     WHERE tenant_id = $1
   `, [tenantId]);
 
-  const defaultCustomFields: any[] = [];
-
   if (result.rows.length === 0) {
     // Default schedule configuration
     return {
       tenantId,
       scheduleMode: 'jornada',
+      globalParallelSlots: 1,
       jornadaConfig: {
         startHour: '08:00',
         endHour: '17:00',
@@ -40,6 +39,7 @@ export async function getScheduleSettings(tenantId: string): Promise<ScheduleSet
     id: row.id,
     tenantId: row.tenantId,
     scheduleMode: row.scheduleMode || 'jornada',
+    globalParallelSlots: Math.max(1, Number(config.globalParallelSlots) || 1),
     jornadaConfig: config.jornadaConfig,
     fechasConfig: config.fechasConfig,
     bloquesConfig: config.bloquesConfig,
@@ -56,6 +56,7 @@ export async function getScheduleSettings(tenantId: string): Promise<ScheduleSet
 
 export async function saveScheduleSettings(tenantId: string, data: Partial<ScheduleSettings>): Promise<ScheduleSettings> {
   const configJson = {
+    globalParallelSlots: Math.max(1, Number(data.globalParallelSlots) || 1),
     jornadaConfig: data.jornadaConfig,
     fechasConfig: data.fechasConfig,
     bloquesConfig: data.bloquesConfig,
@@ -79,6 +80,7 @@ export async function saveScheduleSettings(tenantId: string, data: Partial<Sched
     id: row.id,
     tenantId: row.tenantId,
     scheduleMode: row.scheduleMode,
+    globalParallelSlots: Math.max(1, Number(config.globalParallelSlots) || 1),
     jornadaConfig: config.jornadaConfig,
     fechasConfig: config.fechasConfig,
     bloquesConfig: config.bloquesConfig,
