@@ -6066,21 +6066,6 @@ import { v4 as uuidv4 } from "uuid";
 init_env();
 init_pool();
 var router15 = Router15();
-router15.post("/public-proof", upload2.single("file"), async (req, res) => {
-  if (!req.file) {
-    res.status(400).json({ error: "No se recibi\xF3 archivo de comprobante" });
-    return;
-  }
-  await persistFileToDatabase(
-    req.file.filename,
-    req.file.mimetype || "image/jpeg",
-    req.file.path,
-    req.file.size
-  );
-  const url = `/uploads/${req.file.filename}`;
-  res.json({ url, filename: req.file.filename, size: req.file.size });
-});
-router15.use(authenticateToken);
 var uploadDir = env.UPLOAD_DIR || path.join(process.cwd(), "uploads");
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
@@ -6111,21 +6096,19 @@ async function persistFileToDatabase(filename, mimetype, filePath, size) {
   try {
     if (fs.existsSync(filePath)) {
       const fileBuffer = fs.readFileSync(filePath);
-      const base64Data = fileBuffer.toString("base64");
       await query(`
-        INSERT INTO uploaded_files (filename, mime_type, data_base64, size)
+        INSERT INTO uploaded_assets (filename, mimetype, data, size_bytes)
         VALUES ($1, $2, $3, $4)
-        ON CONFLICT (filename) DO UPDATE 
-        SET mime_type = $2, data_base64 = $3, size = $4, created_at = CURRENT_TIMESTAMP
-      `, [filename, mimetype, base64Data, size]);
+        ON CONFLICT (filename) DO UPDATE SET data = EXCLUDED.data, size_bytes = EXCLUDED.size_bytes
+      `, [filename, mimetype, fileBuffer, size]);
     }
   } catch (err) {
-    console.error("Error persisting upload to database:", err);
+    console.error("[Upload DB Sync] Failed to persist file to PostgreSQL:", err);
   }
 }
-router15.post("/", upload2.single("file"), async (req, res) => {
+router15.post("/public-proof", upload2.single("file"), async (req, res) => {
   if (!req.file) {
-    res.status(400).json({ error: "No se recibi\xF3 archivo" });
+    res.status(400).json({ error: "No se recibi\xF3 archivo de comprobante" });
     return;
   }
   await persistFileToDatabase(
@@ -6135,29 +6118,58 @@ router15.post("/", upload2.single("file"), async (req, res) => {
     req.file.size
   );
   const url = `/uploads/${req.file.filename}`;
-  res.json({ url, filename: req.file.filename, originalName: req.file.originalname, size: req.file.size });
+  res.json({ url, filename: req.file.filename, size: req.file.size });
+});
+router15.use(authenticateToken);
+router15.post("/", upload2.single("file"), async (req, res) => {
+  try {
+    if (!req.file) {
+      res.status(400).json({ error: "No se subi\xF3 ning\xFAn archivo" });
+      return;
+    }
+    await persistFileToDatabase(
+      req.file.filename,
+      req.file.mimetype,
+      req.file.path,
+      req.file.size
+    );
+    const url = `/uploads/${req.file.filename}`;
+    res.json({
+      url,
+      filename: req.file.filename,
+      size: req.file.size,
+      mimetype: req.file.mimetype
+    });
+  } catch (error) {
+    console.error("Error uploading file:", error);
+    res.status(500).json({ error: "Error al subir el archivo" });
+  }
 });
 router15.post("/multiple", upload2.array("files", 10), async (req, res) => {
-  const files = req.files;
-  if (!files || files.length === 0) {
-    res.status(400).json({ error: "No se recibieron archivos" });
-    return;
+  try {
+    const files = req.files;
+    if (!files || files.length === 0) {
+      res.status(400).json({ error: "No se subieron archivos" });
+      return;
+    }
+    for (const f of files) {
+      await persistFileToDatabase(
+        f.filename,
+        f.mimetype,
+        f.path,
+        f.size
+      );
+    }
+    const urls = files.map((f) => ({
+      url: `/uploads/${f.filename}`,
+      filename: f.filename,
+      size: f.size
+    }));
+    res.json(urls);
+  } catch (error) {
+    console.error("Error uploading files:", error);
+    res.status(500).json({ error: "Error al subir los archivos" });
   }
-  for (const f of files) {
-    await persistFileToDatabase(
-      f.filename,
-      f.mimetype || "image/jpeg",
-      f.path,
-      f.size
-    );
-  }
-  const urls = files.map((f) => ({
-    url: `/uploads/${f.filename}`,
-    filename: f.filename,
-    originalName: f.originalname,
-    size: f.size
-  }));
-  res.json(urls);
 });
 var upload_routes_default = router15;
 
