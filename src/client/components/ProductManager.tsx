@@ -507,20 +507,35 @@ export default function ProductManager() {
                       </span>
                     </td>
                     <td style={{ padding: '12px 16px', textAlign: 'right' }}>
-                      <button 
-                        onClick={() => handleOpenEdit(product)}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', marginRight: '10px' }}
-                        title="Editar producto"
-                      >
-                        <Edit size={17} />
-                      </button>
-                      <button 
-                        onClick={() => handleDeleteProduct(product.id, product.name)}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)' }}
-                        title="Eliminar producto"
-                      >
-                        <Trash2 size={17} />
-                      </button>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                        <button
+                          type="button"
+                          onClick={() => handleDuplicateProduct(product)}
+                          style={{
+                            padding: '5px 10px', backgroundColor: '#ecfdf5', color: '#047857',
+                            border: '1px solid #a7f3d0', borderRadius: '6px', cursor: 'pointer',
+                            display: 'inline-flex', alignItems: 'center', gap: '4px',
+                            fontSize: '0.78rem', fontWeight: '700'
+                          }}
+                          title="Duplicar este producto para crear uno nuevo similar"
+                        >
+                          <Copy size={13} /> Duplicar
+                        </button>
+                        <button 
+                          onClick={() => handleOpenEdit(product)}
+                          style={{ padding: '5px 8px', backgroundColor: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: '6px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.78rem', fontWeight: '700' }}
+                          title="Editar producto"
+                        >
+                          <Edit size={13} /> Editar
+                        </button>
+                        <button 
+                          onClick={() => handleDeleteProduct(product.id, product.name)}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)' }}
+                          title="Eliminar producto"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );

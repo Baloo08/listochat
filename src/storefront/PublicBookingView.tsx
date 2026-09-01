@@ -220,7 +220,7 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
   }
 
   if (bookingSuccess) {
-    const finalPrice = calculateEffectivePrice(selectedService, serviceVariables);
+    const serviceNames = selectedServices.map(s => s.name).join(' + ') || 'Servicio Agendado';
     return (
       <div style={{ minHeight: '100vh', backgroundColor: bgColor, padding: '40px 20px', fontFamily }}>
         <div style={{ maxWidth: '520px', margin: '0 auto', backgroundColor: cardBg, borderRadius: cardRadius, padding: '35px', textAlign: 'center', boxShadow: cardShadow, border: '1px solid #e2e8f0' }}>
@@ -235,19 +235,20 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
           </p>
 
           <div style={{ backgroundColor: '#f8fafc', borderRadius: '12px', padding: '20px', textAlign: 'left', marginBottom: '25px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.9rem' }}>
-            <div><strong>Servicio:</strong> {selectedService?.name}</div>
+            <div><strong>Servicios:</strong> {serviceNames}</div>
+            <div><strong>Duración estimada:</strong> {totalBookingMinutes} minutos</div>
             {Object.keys(serviceVariables).length > 0 && (
               <div><strong>Opciones:</strong> {Object.entries(serviceVariables).map(([k, v]) => `${k}: ${v}`).join(' • ')}</div>
             )}
             <div><strong>Fecha:</strong> {selectedDate}</div>
             <div><strong>Hora:</strong> {selectedTime}</div>
             <div><strong>Cliente:</strong> {customerName} ({customerPhone})</div>
-            {finalPrice > 0 && <div><strong>Monto estimado:</strong> ₡{finalPrice.toLocaleString('es-CR')}</div>}
+            {totalBookingPrice > 0 && <div><strong>Monto estimado:</strong> ₡{totalBookingPrice.toLocaleString('es-CR')}</div>}
           </div>
 
           {businessInfo.whatsappNumber && (
             <a
-              href={`https://wa.me/${businessInfo.whatsappNumber.replace(/\D/g, '')}?text=${encodeURIComponent(`Hola, acabo de agendar una cita para ${selectedService?.name} el ${selectedDate} a las ${selectedTime}. Mi nombre es ${customerName}.`)}`}
+              href={`https://wa.me/${businessInfo.whatsappNumber.replace(/\D/g, '')}?text=${encodeURIComponent(`Hola, acabo de agendar una cita para ${serviceNames} el ${selectedDate} a las ${selectedTime}. Mi nombre es ${customerName}.`)}`}
               target="_blank"
               rel="noreferrer"
               style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', width: '100%', padding: '14px', backgroundColor: '#25d366', color: 'white', borderRadius: '8px', textDecoration: 'none', fontWeight: '600', marginBottom: '15px' }}
@@ -259,7 +260,7 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
           <button
             onClick={() => {
               setBookingSuccess(null);
-              setSelectedService(null);
+              setSelectedServices([]);
               setSelectedTime(null);
               setServiceVariables({});
               setCustomAnswers({});
