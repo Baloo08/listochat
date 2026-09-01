@@ -104,6 +104,16 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
     ? services
     : services.filter(s => (s.category || 'General') === activeCategory);
 
+  const formatServiceDuration = (mins: number) => {
+    if (mins >= 1440 || mins === 480) return '☀️ Día Completo';
+    if (mins >= 60) {
+      const h = Math.floor(mins / 60);
+      const m = mins % 60;
+      return `${h} hora${h > 1 ? 's' : ''}${m > 0 ? ` ${m} min` : ''}`;
+    }
+    return `${mins} minutos`;
+  };
+
   const totalBookingPrice = selectedServices.reduce((acc, s) => acc + Number(s.price || 0), 0);
   const totalBookingMinutes = selectedServices.reduce((acc, s) => acc + Number(s.estimatedMinutes || 45), 0);
 
@@ -203,7 +213,7 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
 
           <div style={{ backgroundColor: '#f8fafc', borderRadius: '12px', padding: '20px', textAlign: 'left', marginBottom: '25px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.9rem' }}>
             <div><strong>Servicios:</strong> {serviceNames}</div>
-            <div><strong>Duración estimada:</strong> {totalBookingMinutes} minutos</div>
+            <div><strong>Duración estimada:</strong> {formatServiceDuration(totalBookingMinutes)}</div>
             {Object.keys(serviceVariables).length > 0 && (
               <div><strong>Opciones:</strong> {Object.entries(serviceVariables).map(([k, v]) => `${k}: ${v}`).join(' • ')}</div>
             )}
@@ -353,7 +363,7 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
                           {svc.name}
                         </div>
                         {svc.description && <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px' }}>{svc.description}</div>}
-                        <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '4px' }}>⏱️ {minutes} minutos</div>
+                        <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '4px' }}>⏱️ {formatServiceDuration(minutes)}</div>
                       </div>
                     </div>
 
@@ -374,7 +384,7 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
                   {selectedServices.length} {selectedServices.length === 1 ? 'servicio seleccionado' : 'servicios seleccionados'}:
                 </strong>
                 <div style={{ fontSize: '0.78rem', color: '#3b82f6', marginTop: '2px' }}>
-                  ⏱️ Duración total: <strong>{totalBookingMinutes} minutos</strong>
+                  ⏱️ Duración total: <strong>{formatServiceDuration(totalBookingMinutes)}</strong>
                 </div>
               </div>
               <div style={{ fontSize: '1.15rem', fontWeight: '800', color: primaryColor }}>

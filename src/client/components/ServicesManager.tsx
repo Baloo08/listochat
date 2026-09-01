@@ -19,11 +19,25 @@ export default function ServicesManager() {
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState<number>(15000);
   const [duration, setDuration] = useState('45 min');
+  const [durationType, setDurationType] = useState<'preset' | 'custom' | 'full_day'>('preset');
+  const [customHours, setCustomHours] = useState<number>(1);
+  const [customMins, setCustomMins] = useState<number>(0);
+
   const [estimatedMinutes, setEstimatedMinutes] = useState<number>(45);
   const [category, setCategory] = useState('General');
   const [parallelSlots, setParallelSlots] = useState<number>(1);
   const [active, setActive] = useState(true);
   const [customVariables, setCustomVariables] = useState<CustomVariable[]>([]);
+
+  const formatDurationDisplay = (mins: number) => {
+    if (mins >= 1440 || mins === 480) return '☀️ Día Completo';
+    if (mins >= 60) {
+      const h = Math.floor(mins / 60);
+      const m = mins % 60;
+      return `${h}h${m > 0 ? ' ' + m + 'm' : ''}`;
+    }
+    return `${mins} min`;
+  };
 
   const api = useApi();
 
@@ -49,6 +63,9 @@ export default function ServicesManager() {
     setPrice(15000);
     setDuration('45 min');
     setEstimatedMinutes(45);
+    setDurationType('preset');
+    setCustomHours(1);
+    setCustomMins(0);
     setCategory('General');
     setParallelSlots(1);
     setActive(true);
@@ -63,6 +80,17 @@ export default function ServicesManager() {
     setPrice(Number(svc.price) || 0);
     setDuration(svc.duration || '45 min');
     setEstimatedMinutes(Number(svc.estimatedMinutes) || 45);
+    const mins = Number(svc.estimatedMinutes) || 45;
+    if (mins >= 1440 || mins === 480 || svc.duration === 'Día Completo') {
+      setDurationType('full_day');
+      setEstimatedMinutes(1440);
+    } else if ([15, 30, 45, 60, 90, 120, 180, 240, 300, 360, 480].includes(mins)) {
+      setDurationType('preset');
+    } else {
+      setDurationType('custom');
+      setCustomHours(Math.floor(mins / 60));
+      setCustomMins(mins % 60);
+    }
     setCategory(svc.category || 'General');
     setParallelSlots(svc.parallelSlots || 1);
     setActive(true);
@@ -368,7 +396,7 @@ export default function ServicesManager() {
                       </span>
                     </td>
                     <td style={{ padding: '14px 16px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                      ⏱️ {service.duration || `${service.estimatedMinutes || 45} min`}
+                      {formatDurationDisplay(service.estimatedMinutes || 45)}
                     </td>
                     <td style={{ padding: '14px 16px', fontWeight: 'bold', color: 'var(--primary)', fontSize: '0.95rem' }}>
                       ₡{Number(service.price || 0).toLocaleString('es-CR')}
@@ -497,24 +525,94 @@ export default function ServicesManager() {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '4px' }}>Duración Base Estimada</label>
+                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', marginBottom: '4px' }}>Duración Base Estimada *</label>
                   <select
-                    value={estimatedMinutes}
+                    value={durationType === 'custom' ? 'custom' : durationType === 'full_day' ? 'full_day' : estimatedMinutes}
                     onChange={(e) => {
-                      const mins = Number(e.target.value);
-                      setEstimatedMinutes(mins);
-                      setDuration(`${mins} min`);
+                      const val = e.target.value;
+                      if (val === 'custom') {
+                        setDurationType('custom');
+                        const total = (customHours * 60) + customMins;
+                        setEstimatedMinutes(total || 60);
+                        setDuration(formatDurationDisplay(total || 60));
+                      } else if (val === 'full_day') {
+                        setDurationType('full_day');
+                        setEstimatedMinutes(1440);
+                        setDuration('Día Completo');
+                      } else {
+                        setDurationType('preset');
+                        const mins = Number(val);
+                        setEstimatedMinutes(mins);
+                        setDuration(formatDurationDisplay(mins));
+                      }
                     }}
-                    style={{ width: '100%', padding: '9px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem', backgroundColor: 'white' }}
+                    style={{ width: '100%', padding: '9px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem', backgroundColor: 'white', fontWeight: '600' }}
                   >
-                    <option value={15}>15 minutos</option>
-                    <option value={30}>30 minutos</option>
-                    <option value={45}>45 minutos</option>
-                    <option value={60}>1 hora (60 min)</option>
-                    <option value={90}>1 hora 30 min (90 min)</option>
-                    <option value={120}>2 horas (120 min)</option>
-                    <option value={180}>3 horas (180 min)</option>
+                    <optgroup label="Minutos y Horas">
+                      <option value={15}>15 minutos</option>
+                      <option value={30}>30 minutos</option>
+                      <option value={45}>45 minutos</option>
+                      <option value={60}>1 hora (60 min)</option>
+                      <option value={90}>1 hora 30 min (90 min)</option>
+                      <option value={120}>2 horas (120 min)</option>
+                      <option value={180}>3 horas (180 min)</option>
+                      <option value={240}>4 horas (240 min)</option>
+                      <option value={300}>5 horas (300 min)</option>
+                      <option value={360}>6 horas (360 min)</option>
+                      <option value={480}>8 horas (Jornada Laboral)</option>
+                    </optgroup>
+                    <optgroup label="Jornadas Especiales">
+                      <option value="full_day">☀️ Día Completo (Bloqueo Total)</option>
+                      <option value="custom">⚡ Personalizado (Horas y Minutos libres)</option>
+                    </optgroup>
                   </select>
+
+                  {/* Campos para Horas y Minutos Personalizados */}
+                  {durationType === 'custom' && (
+                    <div style={{ display: 'flex', gap: '8px', marginTop: '8px', padding: '8px', backgroundColor: '#f0fdf4', borderRadius: '6px', border: '1px solid #bbf7d0' }}>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#166534', display: 'block' }}>Horas:</label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="72"
+                          value={customHours}
+                          onChange={(e) => {
+                            const h = Math.max(0, Number(e.target.value));
+                            setCustomHours(h);
+                            const total = (h * 60) + customMins;
+                            setEstimatedMinutes(total);
+                            setDuration(formatDurationDisplay(total));
+                          }}
+                          style={{ width: '100%', padding: '5px 8px', borderRadius: '4px', border: '1px solid #cbd5e1', fontSize: '0.8rem' }}
+                        />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#166534', display: 'block' }}>Minutos:</label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="59"
+                          step="5"
+                          value={customMins}
+                          onChange={(e) => {
+                            const m = Math.max(0, Number(e.target.value));
+                            setCustomMins(m);
+                            const total = (customHours * 60) + m;
+                            setEstimatedMinutes(total);
+                            setDuration(formatDurationDisplay(total));
+                          }}
+                          style={{ width: '100%', padding: '5px 8px', borderRadius: '4px', border: '1px solid #cbd5e1', fontSize: '0.8rem' }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {durationType === 'full_day' && (
+                    <div style={{ marginTop: '6px', fontSize: '0.75rem', color: '#b45309', backgroundColor: '#fef3c7', padding: '4px 8px', borderRadius: '4px' }}>
+                      ☀️ Este servicio ocupará la jornada completa del día seleccionado.
+                    </div>
+                  )}
                 </div>
 
                 <div>
