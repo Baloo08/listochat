@@ -41,11 +41,16 @@ export default function ChatsInbox() {
         const map = new Map<string, Conversation>();
 
         messages.forEach(m => {
+          const cleanPhone = (m.remoteJid || '').replace(/@.+$/, '').replace(/\D/g, '');
+          const formattedPhone = cleanPhone ? `+${cleanPhone}` : 'Cliente';
+
           if (!map.has(m.remoteJid)) {
-            const cleanPhone = (m.remoteJid || '').replace(/@.+$/, '').replace(/\D/g, '');
+            const isBot = m.fromMe || m.pushName === 'Asistente IA' || m.pushName === 'Bot' || m.pushName === 'Sistema';
+            const initialName = (!isBot && m.pushName && m.pushName.trim() !== '') ? m.pushName.trim() : formattedPhone;
+
             map.set(m.remoteJid, {
               remoteJid: m.remoteJid,
-              pushName: m.pushName || cleanPhone || 'Cliente',
+              pushName: initialName,
               cleanPhone,
               lastMessage: m.messageText,
               lastTimestamp: String(m.createdAt || ''),
@@ -53,7 +58,12 @@ export default function ChatsInbox() {
               messages: []
             });
           }
+
           const conv = map.get(m.remoteJid)!;
+          // When a real customer message is encountered with a valid name, prioritize it
+          if (!m.fromMe && m.pushName && m.pushName.trim() !== '' && m.pushName !== 'Asistente IA' && m.pushName !== 'Bot' && m.pushName !== 'Sistema') {
+            conv.pushName = m.pushName.trim();
+          }
           conv.messages.push(m);
         });
 
@@ -63,6 +73,10 @@ export default function ChatsInbox() {
             const last = conv.messages[conv.messages.length - 1];
             conv.lastMessage = last.messageText;
             conv.lastTimestamp = String(last.createdAt || '');
+          }
+          // Safeguard: Ensure pushName is never 'Asistente IA' or 'Bot'
+          if (!conv.pushName || conv.pushName === 'Asistente IA' || conv.pushName === 'Bot' || conv.pushName === 'Sistema') {
+            conv.pushName = conv.cleanPhone ? `+${conv.cleanPhone}` : 'Cliente';
           }
           conv.isHumanMode = sessions[conv.remoteJid]?.isHumanMode || false;
         });
