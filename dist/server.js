@@ -821,7 +821,7 @@ async function executeProvider(config, prompt) {
     throw new Error("Unsupported provider: " + config.provider);
   }
   const timeoutPromise = new Promise((_, reject) => {
-    setTimeout(() => reject(new Error("AI inference timeout after 60s")), 6e4);
+    setTimeout(() => reject(new Error("AI inference timeout after 120s")), 12e4);
   });
   const t0 = Date.now();
   const generatePromise = (async () => {
@@ -4886,36 +4886,24 @@ async function processWhatsAppMessageWithAI(tenantId, userMessage, senderPhone, 
       }).join("\n") + "\n";
     }
   }
-  let prompt = `Eres el Asistente Virtual Oficial con IA de *${tenant?.name || "nuestro negocio"}* en WhatsApp.
+  let prompt = `Asistente IA de *${tenant?.name || "nuestro negocio"}* en WhatsApp.
+${agentConfig?.systemPrompt || "Atiende amablemente a los clientes."}
 
-=== INSTRUCCIONES MAESTRAS DEL NEGOCIO (M\xC1XIMA PRIORIDAD) ===
-${agentConfig?.systemPrompt || "Atiende amablemente a los clientes, brinda informaci\xF3n de servicios y ayuda a agendar citas o compras."}
-==============================================================
+Datos del negocio:
+${crTime}
+${bookingUrl ? `Citas: ${bookingUrl}` : ""}${storeUrl ? ` | Tienda: ${storeUrl}` : ""}
+${scheduleInfo}${paymentInfo}${relevantServicesText}${relevantProductsText}
+Reglas: Usa *negrita* y emojis. No inventes precios. Responde conciso (1-2 p\xE1rrafos). Si hay historial no repitas saludo. Para pagos SINPE/Transferencia da los datos y pide comprobante.
 
-=== FUENTE DE VERDAD OFICIAL (CAT\xC1LOGO, HORARIOS Y PAGOS) ===
-- Fecha/Hora (Costa Rica): ${crTime}
-${bookingUrl ? `- Enlace de Citas: ${bookingUrl}` : ""}
-${storeUrl ? `- Enlace de Tienda: ${storeUrl}` : ""}
-${scheduleInfo}${paymentInfo}${relevantServicesText}${relevantProductsText}=============================================================
+Acciones confirmadas (a\xF1ade al final SOLO si el cliente confirma):
+Cita: <<<COMMAND_BOOKING: {"service":"nombre","date":"YYYY-MM-DD","time":"HH:MM","customerName":"${senderName}"}>>>
+Compra: <<<COMMAND_ORDER: {"items":[{"productName":"nombre","quantity":1}]}>>>
+Foto: <<<COMMAND_SEND_MEDIA: {"mediaUrl":"URL","caption":"desc"}>>>
+Humano: <<<COMMAND_HANDOFF: {"reason":"motivo"}>>>
 
-REGLAS DE ATENCI\xD3N:
-1. Adopta fielmente la personalidad y tono de las INSTRUCCIONES MAESTRAS.
-2. Usa \xDANICAMENTE los datos del cat\xE1logo oficial. NUNCA inventes precios ni productos fuera de lista.
-3. Formato WhatsApp: Usa *negrita* para resaltar nombres/precios y emojis amigables.
-4. Respuestas concisas (1 a 2 p\xE1rrafos). Si hay historial previo, no repitas el saludo de bienvenida.
-5. Si el cliente pide pagar con SINPE o Transferencia, dale los datos y p\xEDdele enviar el comprobante a este chat.
+${chatHistory.slice(-3).map((h) => `${h.role === "user" ? "Cliente" : "Asistente"}: ${h.content}`).join("\n")}
 
-COMANDOS DE ACCI\xD3N (A\xF1ade al final de tu respuesta solo si se confirma la acci\xF3n):
-- Confirmar Cita: <<<COMMAND_BOOKING: {"service": "Nombre exacto", "date": "YYYY-MM-DD", "time": "HH:MM", "customerName": "${senderName}"}>>>
-- Confirmar Compra: <<<COMMAND_ORDER: {"items": [{"productName": "Nombre exacto", "quantity": 1}]}>>>
-- Enviar Foto: <<<COMMAND_SEND_MEDIA: {"mediaUrl": "URL", "caption": "Descripci\xF3n"}>>>
-- Pasar a Humano: <<<COMMAND_HANDOFF: {"reason": "Motivo"}>>>
-
-Historial Reciente:
-${chatHistory.slice(-4).map((h) => `${h.role === "user" ? "Cliente" : "Asistente"}: ${h.content}`).join("\n")}
-
-\xDAltimo mensaje recibido:
-Cliente (${senderName} / ${senderPhone}): ${userMessage}
+Cliente (${senderName}): ${userMessage}
 `;
   let apiKey = "";
   let isMarcaBlanca = false;

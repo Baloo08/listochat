@@ -193,9 +193,9 @@ async function executeProvider(config: TenantAIConfig, prompt: string) {
     throw new Error("Unsupported provider: " + config.provider);
   }
 
-  // 60s timeout guard for local CPU inference (production prompts take 25-45s on CPU)
+  // 120s timeout — user prefers slow AI response over generic fallback
   const timeoutPromise = new Promise<{ text: string, tokensUsed: number }>((_, reject) => {
-    setTimeout(() => reject(new Error('AI inference timeout after 60s')), 60000);
+    setTimeout(() => reject(new Error('AI inference timeout after 120s')), 120000);
   });
 
   const t0 = Date.now();
