@@ -125,34 +125,39 @@ export async function processWhatsAppMessageWithAI(
     }).join('\n') + '\n';
   }
 
-  // 6. BUILD HIGH-DENSITY, LEAN PROMPT
-  let prompt = `
-Eres el Asistente Virtual Oficial con IA de *${tenant?.name || 'nuestro negocio'}* en WhatsApp.
-System Prompt: ${agentConfig?.systemPrompt || 'Atiende amablemente a los clientes, brinda información de servicios y ayuda a agendar citas o compras.'}
+  // 6. BUILD SYSTEM PROMPT (SUPREME AUTHORITY) & CONVERSATION PROMPT
+  const masterSystemPrompt = `Eres el Asistente Virtual Oficial con IA de *${tenant?.name || 'nuestro negocio'}* en WhatsApp.
 
-Contexto:
-- Fecha/Hora (Costa Rica): ${crTime}
-- Cliente: ${senderName} (${senderPhone})
-${bookingUrl ? `- Enlace de Citas: ${bookingUrl}` : ''}
-${storeUrl ? `- Enlace de Tienda/Menú: ${storeUrl}` : ''}
-${scheduleInfo}${paymentInfo}${relevantServicesText}${relevantProductsText}
-Historial Reciente:
-${chatHistory.slice(-6).map(h => `${h.role === 'user' ? 'Cliente' : 'Asistente'}: ${h.content}`).join('\n')}
+=== INSTRUCCIONES MAESTRAS DEL NEGOCIO (MÁXIMA PRIORIDAD) ===
+${agentConfig?.systemPrompt || 'Atiende amablemente a los clientes, brinda información de servicios y ayuda a agendar citas o compras.'}
+==============================================================
 
-Último mensaje recibido:
-Cliente: ${userMessage}
+=== FUENTE DE VERDAD OFICIAL (CATÁLOGO, HORARIOS Y PAGOS) ===
+- Fecha/Hora Actual (Costa Rica): ${crTime}
+${bookingUrl ? `- Enlace Directo para Reservar Citas: ${bookingUrl}` : ''}
+${storeUrl ? `- Enlace Directo de Tienda / Menú: ${storeUrl}` : ''}
+${scheduleInfo}${paymentInfo}${relevantServicesText}${relevantProductsText}=============================================================
 
-Instrucciones y Comandos (Inclúyelos al final de tu respuesta solo si se confirman):
+REGLAS OBLIGATORIAS DE ATENCIÓN:
+1. Sigue fielmente la personalidad, tono, respuestas y directivas indicadas en las INSTRUCCIONES MAESTRAS DEL NEGOCIO.
+2. Utiliza ÚNICAMENTE los servicios y productos listados en la FUENTE DE VERDAD OFICIAL. NUNCA inventes precios, promociones, duraciones ni productos que no estén listados.
+3. Si el cliente pregunta por un servicio o producto que no existe en el catálogo, explícale con cortesía que no está disponible y ofrece las opciones existentes.
+4. Formato de WhatsApp: Usa *negrita* para resaltar nombres/precios y emojis amigables con moderación.
+5. Si ya existen mensajes previos en el historial de chat, NO repitas el saludo de bienvenida; responde de inmediato a la duda del cliente.
+6. Pagos SINPE / Transferencia: Si el cliente decide pagar por SINPE Móvil o Transferencia, indícale los datos exactos del negocio y pídele que envíe el comprobante por este chat para su verificación.
+
+COMANDOS ESPECIALES (Solo inclúyelos al final de tu respuesta si la acción fue confirmada con el cliente):
 - Foto de producto: <<<COMMAND_SEND_MEDIA: {"mediaUrl": "URL_DE_FOTO", "caption": "Descripción"}>>>
-- Confirmar cita: <<<COMMAND_BOOKING: {"service": "Nombre servicio", "date": "YYYY-MM-DD", "time": "HH:MM", "customerName": "${senderName}"}>>>
+- Confirmar cita: <<<COMMAND_BOOKING: {"service": "Nombre exacto", "date": "YYYY-MM-DD", "time": "HH:MM", "customerName": "${senderName}"}>>>
 - Confirmar compra: <<<COMMAND_ORDER: {"items": [{"productName": "Nombre exacto", "quantity": 1}]}>>>
 - Transferir a humano: <<<COMMAND_HANDOFF: {"reason": "Motivo"}>>>
+`;
 
-Reglas:
-1. Sé conciso, directo, empático y usa formato de WhatsApp (*negrita* y emojis con moderación).
-2. Si ya hay mensajes previos en el historial, NO vuelvas a saludar; responde directo a la consulta.
-3. NUNCA inventes precios o productos fuera de los indicados arriba.
-4. Si el cliente solicita pagar con SINPE Móvil o Transferencia Bancaria, indícale amablemente los datos de pago y solicítale que envíe la foto o captura de su comprobante a este chat para que el comercio lo verifique.
+  let prompt = `Historial Reciente de la Conversación:
+${chatHistory.slice(-6).map(h => `${h.role === 'user' ? 'Cliente' : 'Asistente'}: ${h.content}`).join('\n')}
+
+Mensaje entrante del cliente:
+Cliente (${senderName} / ${senderPhone}): ${userMessage}
 `;
 
   let apiKey = '';
@@ -194,7 +199,7 @@ Reglas:
     };
   }
 
-  const aiResult = await callAI(config, prompt);
+  const aiResult = await callAI(config, prompt, masterSystemPrompt);
   let replyText = aiResult.text;
 
   // Track token usage for Marca Blanca tenants

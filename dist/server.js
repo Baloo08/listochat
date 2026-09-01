@@ -741,7 +741,7 @@ async function getMasterAIConfig() {
     };
   }
 }
-async function callAI(config, prompt) {
+async function callAI(config, prompt, systemPrompt) {
   const provider = config.provider || "gemini";
   const apiKey = config.apiKey || (provider === "gemini" ? DEFAULT_GEMINI_KEY : "");
   let chosenModel = config.model;
@@ -763,7 +763,7 @@ async function callAI(config, prompt) {
         model: modelName,
         temperature: config.temperature ?? 0.7,
         baseUrl: config.baseUrl
-      }, prompt);
+      }, prompt, systemPrompt);
     } catch (error) {
       lastError = error;
       console.error(`Error calling AI with model ${modelName} (${provider}):`, error);
@@ -788,7 +788,7 @@ async function callAI(config, prompt) {
         apiKey: masterKey || DEFAULT_GEMINI_KEY,
         model: "gemini-2.5-flash",
         temperature: 0.7
-      }, prompt);
+      }, prompt, systemPrompt);
     } catch (geminiError) {
       console.error("[AI-Provider] Master Gemini Failover also failed:", geminiError);
     }
@@ -799,7 +799,7 @@ async function callAI(config, prompt) {
     tokensUsed: 0
   };
 }
-async function executeProvider(config, prompt) {
+async function executeProvider(config, prompt, systemPrompt) {
   let model;
   if (config.provider === "gemini") {
     const key = config.apiKey || DEFAULT_GEMINI_KEY;
@@ -826,6 +826,7 @@ async function executeProvider(config, prompt) {
   const generatePromise = (async () => {
     const { text, usage } = await generateText({
       model,
+      system: systemPrompt || void 0,
       prompt,
       temperature: config.temperature ?? 0.7
     });
@@ -4882,33 +4883,37 @@ async function processWhatsAppMessageWithAI(tenantId, userMessage, senderPhone, 
       return `\u2022 ${p.name}: \u20A1${Number(p.price || 0).toLocaleString("es-CR")} | Stock:${p.stock ?? "disp"}${photoUrl ? ` | Foto:${photoUrl}` : ""}`;
     }).join("\n") + "\n";
   }
-  let prompt = `
-Eres el Asistente Virtual Oficial con IA de *${tenant?.name || "nuestro negocio"}* en WhatsApp.
-System Prompt: ${agentConfig?.systemPrompt || "Atiende amablemente a los clientes, brinda informaci\xF3n de servicios y ayuda a agendar citas o compras."}
+  const masterSystemPrompt = `Eres el Asistente Virtual Oficial con IA de *${tenant?.name || "nuestro negocio"}* en WhatsApp.
 
-Contexto:
-- Fecha/Hora (Costa Rica): ${crTime}
-- Cliente: ${senderName} (${senderPhone})
-${bookingUrl ? `- Enlace de Citas: ${bookingUrl}` : ""}
-${storeUrl ? `- Enlace de Tienda/Men\xFA: ${storeUrl}` : ""}
-${scheduleInfo}${paymentInfo}${relevantServicesText}${relevantProductsText}
-Historial Reciente:
-${chatHistory.slice(-6).map((h) => `${h.role === "user" ? "Cliente" : "Asistente"}: ${h.content}`).join("\n")}
+=== INSTRUCCIONES MAESTRAS DEL NEGOCIO (M\xC1XIMA PRIORIDAD) ===
+${agentConfig?.systemPrompt || "Atiende amablemente a los clientes, brinda informaci\xF3n de servicios y ayuda a agendar citas o compras."}
+==============================================================
 
-\xDAltimo mensaje recibido:
-Cliente: ${userMessage}
+=== FUENTE DE VERDAD OFICIAL (CAT\xC1LOGO, HORARIOS Y PAGOS) ===
+- Fecha/Hora Actual (Costa Rica): ${crTime}
+${bookingUrl ? `- Enlace Directo para Reservar Citas: ${bookingUrl}` : ""}
+${storeUrl ? `- Enlace Directo de Tienda / Men\xFA: ${storeUrl}` : ""}
+${scheduleInfo}${paymentInfo}${relevantServicesText}${relevantProductsText}=============================================================
 
-Instrucciones y Comandos (Incl\xFAyelos al final de tu respuesta solo si se confirman):
+REGLAS OBLIGATORIAS DE ATENCI\xD3N:
+1. Sigue fielmente la personalidad, tono, respuestas y directivas indicadas en las INSTRUCCIONES MAESTRAS DEL NEGOCIO.
+2. Utiliza \xDANICAMENTE los servicios y productos listados en la FUENTE DE VERDAD OFICIAL. NUNCA inventes precios, promociones, duraciones ni productos que no est\xE9n listados.
+3. Si el cliente pregunta por un servicio o producto que no existe en el cat\xE1logo, expl\xEDcale con cortes\xEDa que no est\xE1 disponible y ofrece las opciones existentes.
+4. Formato de WhatsApp: Usa *negrita* para resaltar nombres/precios y emojis amigables con moderaci\xF3n.
+5. Si ya existen mensajes previos en el historial de chat, NO repitas el saludo de bienvenida; responde de inmediato a la duda del cliente.
+6. Pagos SINPE / Transferencia: Si el cliente decide pagar por SINPE M\xF3vil o Transferencia, ind\xEDcale los datos exactos del negocio y p\xEDdele que env\xEDe el comprobante por este chat para su verificaci\xF3n.
+
+COMANDOS ESPECIALES (Solo incl\xFAyelos al final de tu respuesta si la acci\xF3n fue confirmada con el cliente):
 - Foto de producto: <<<COMMAND_SEND_MEDIA: {"mediaUrl": "URL_DE_FOTO", "caption": "Descripci\xF3n"}>>>
-- Confirmar cita: <<<COMMAND_BOOKING: {"service": "Nombre servicio", "date": "YYYY-MM-DD", "time": "HH:MM", "customerName": "${senderName}"}>>>
+- Confirmar cita: <<<COMMAND_BOOKING: {"service": "Nombre exacto", "date": "YYYY-MM-DD", "time": "HH:MM", "customerName": "${senderName}"}>>>
 - Confirmar compra: <<<COMMAND_ORDER: {"items": [{"productName": "Nombre exacto", "quantity": 1}]}>>>
 - Transferir a humano: <<<COMMAND_HANDOFF: {"reason": "Motivo"}>>>
+`;
+  let prompt = `Historial Reciente de la Conversaci\xF3n:
+${chatHistory.slice(-6).map((h) => `${h.role === "user" ? "Cliente" : "Asistente"}: ${h.content}`).join("\n")}
 
-Reglas:
-1. S\xE9 conciso, directo, emp\xE1tico y usa formato de WhatsApp (*negrita* y emojis con moderaci\xF3n).
-2. Si ya hay mensajes previos en el historial, NO vuelvas a saludar; responde directo a la consulta.
-3. NUNCA inventes precios o productos fuera de los indicados arriba.
-4. Si el cliente solicita pagar con SINPE M\xF3vil o Transferencia Bancaria, ind\xEDcale amablemente los datos de pago y solic\xEDtale que env\xEDe la foto o captura de su comprobante a este chat para que el comercio lo verifique.
+Mensaje entrante del cliente:
+Cliente (${senderName} / ${senderPhone}): ${userMessage}
 `;
   let apiKey = "";
   let isMarcaBlanca = false;
@@ -4945,7 +4950,7 @@ Reglas:
       temperature: agentConfig?.temperature || 0.7
     };
   }
-  const aiResult = await callAI(config, prompt);
+  const aiResult = await callAI(config, prompt, masterSystemPrompt);
   let replyText = aiResult.text;
   if (isMarcaBlanca && aiResult.tokensUsed > 0) {
     await incrementTenantUsage(tenantId, aiResult.tokensUsed);

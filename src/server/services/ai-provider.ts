@@ -102,7 +102,7 @@ export async function getMasterAIConfig(): Promise<TenantAIConfig> {
   }
 }
 
-export async function callAI(config: TenantAIConfig, prompt: string): Promise<{ text: string, tokensUsed: number }> {
+export async function callAI(config: TenantAIConfig, prompt: string, systemPrompt?: string): Promise<{ text: string, tokensUsed: number }> {
   const provider = config.provider || 'gemini';
   const apiKey = config.apiKey || (provider === 'gemini' ? DEFAULT_GEMINI_KEY : '');
   
@@ -129,7 +129,7 @@ export async function callAI(config: TenantAIConfig, prompt: string): Promise<{ 
         model: modelName,
         temperature: config.temperature ?? 0.7,
         baseUrl: config.baseUrl
-      }, prompt);
+      }, prompt, systemPrompt);
     } catch (error) {
       lastError = error;
       console.error(`Error calling AI with model ${modelName} (${provider}):`, error);
@@ -156,7 +156,7 @@ export async function callAI(config: TenantAIConfig, prompt: string): Promise<{ 
         apiKey: masterKey || DEFAULT_GEMINI_KEY,
         model: 'gemini-2.5-flash',
         temperature: 0.7
-      }, prompt);
+      }, prompt, systemPrompt);
     } catch (geminiError) {
       console.error('[AI-Provider] Master Gemini Failover also failed:', geminiError);
     }
@@ -170,7 +170,7 @@ export async function callAI(config: TenantAIConfig, prompt: string): Promise<{ 
   };
 }
 
-async function executeProvider(config: TenantAIConfig, prompt: string) {
+async function executeProvider(config: TenantAIConfig, prompt: string, systemPrompt?: string) {
   let model;
   
   if (config.provider === 'gemini') {
@@ -201,6 +201,7 @@ async function executeProvider(config: TenantAIConfig, prompt: string) {
   const generatePromise = (async () => {
     const { text, usage } = await generateText({
       model,
+      system: systemPrompt || undefined,
       prompt,
       temperature: config.temperature ?? 0.7,
     });

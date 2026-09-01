@@ -2,16 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { Bot, Save, Play, Sparkles, Wand2, CheckCircle, HelpCircle, X, ArrowRight, ArrowLeft } from 'lucide-react';
 
 export default function AgentPromptStudio() {
+  const cachedPrompt = typeof window !== 'undefined' ? sessionStorage.getItem('betico_cached_agent_prompt') : null;
+  const initialData = cachedPrompt ? (()=>{ try { return JSON.parse(cachedPrompt); } catch(e){ return null; } })() : null;
+
   const [config, setConfig] = useState({
-    aiChatbotEnabled: true,
-    systemPrompt: '',
-    businessName: '',
-    currency: 'CRC',
-    notifyNumber: ''
+    aiChatbotEnabled: initialData ? (initialData.aiChatbotEnabled !== false) : true,
+    systemPrompt: initialData?.systemPrompt || '',
+    businessName: initialData?.businessName || '',
+    currency: initialData?.currency || 'CRC',
+    notifyNumber: initialData?.notifyNumber || ''
   });
   const [simInput, setSimInput] = useState('');
   const [simOutput, setSimOutput] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialData);
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
@@ -46,30 +49,33 @@ export default function AgentPromptStudio() {
 
   const fetchPrompt = async () => {
     try {
-      const res = await fetch('/api/agent/prompt', { headers: getHeaders() });
+      const promptPromise = fetch('/api/agent/prompt', { headers: getHeaders() });
+      
+      const res = await promptPromise;
       if (res.ok) {
         const data = await res.json();
         if (data) {
-          setConfig({
+          const newConf = {
             aiChatbotEnabled: data.aiChatbotEnabled !== false,
             systemPrompt: data.systemPrompt || '',
             businessName: data.businessName || '',
             currency: data.currency || 'CRC',
             notifyNumber: data.notifyNumber || ''
-          });
+          };
+          setConfig(newConf);
+          try { sessionStorage.setItem('betico_cached_agent_prompt', JSON.stringify(newConf)); } catch(e) {}
           if (data.businessName) {
             setWizardAnswers(prev => ({ ...prev, businessName: data.businessName }));
           }
         }
       }
+      setLoading(false);
 
-      // Also pre-fetch store and schedule settings to pre-fill wizard with existing business info
-      try {
-        const storeRes = await fetch('/api/store', { headers: getHeaders() });
-        const scheduleRes = await fetch('/api/appointments/schedule', { headers: getHeaders() });
-        const store = storeRes.ok ? await storeRes.json() : null;
-        const sch = scheduleRes.ok ? await scheduleRes.json() : null;
-
+      // Fetch auxiliary settings asynchronously in parallel without blocking prompt render
+      Promise.all([
+        fetch('/api/store', { headers: getHeaders() }).then(r => r.ok ? r.json() : null).catch(() => null),
+        fetch('/api/appointments/schedule', { headers: getHeaders() }).then(r => r.ok ? r.json() : null).catch(() => null)
+      ]).then(([store, sch]) => {
         if (store || sch) {
           setWizardAnswers(prev => {
             let pm = prev.paymentMethods;
@@ -94,12 +100,9 @@ export default function AgentPromptStudio() {
             };
           });
         }
-      } catch (e) {
-        // ignore
-      }
+      });
     } catch (error) {
       console.error('Error fetching prompt:', error);
-    } finally {
       setLoading(false);
     }
   };
