@@ -11,7 +11,27 @@ export async function getOrdersByTenant(tenantId: string): Promise<Order[]> {
            o.consumption_mode as "consumptionMode", o.table_number as "tableNumber", o.customer_location as "customerLocation",
            o.chat_message_id as "chatMessageId", o.driver_id as "driverId", o.waze_url as "wazeUrl",
            o.branch_id as "branchId", b.name as "branchName",
-           o.created_at as "createdAt", o.updated_at as "updatedAt"
+           o.created_at as "createdAt", o.updated_at as "updatedAt",
+           COALESCE(
+             (
+               SELECT json_agg(
+                 json_build_object(
+                   'id', oi.id,
+                   'productId', oi.product_id,
+                   'variantId', oi.variant_id,
+                   'productName', oi.product_name,
+                   'variantName', oi.variant_name,
+                   'selectedVariables', oi.selected_variables,
+                   'quantity', oi.quantity,
+                   'unitPrice', oi.unit_price,
+                   'totalPrice', oi.total_price
+                 )
+               )
+               FROM order_items oi
+               WHERE oi.order_id = o.id
+             ),
+             '[]'::json
+           ) as items
     FROM orders o
     LEFT JOIN branches b ON o.branch_id = b.id
     WHERE o.tenant_id = $1

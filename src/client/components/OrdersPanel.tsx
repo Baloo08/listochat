@@ -326,13 +326,34 @@ export default function OrdersPanel() {
                             )}
                           </div>
 
-                          {/* Items summary */}
-                          <div style={{ fontSize: '0.75rem', color: '#64748b', borderTop: '1px dashed #f1f5f9', paddingTop: '6px' }}>
-                            {(order.items || []).map((it, idx) => (
-                              <div key={idx} style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                <span>{it.quantity}x {it.productName}</span>
+                          {/* Items summary con diseño destacado para KDS y tarjetas */}
+                          <div style={{ backgroundColor: '#f8fafc', padding: '8px 10px', borderRadius: '8px', border: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            {(!order.items || order.items.length === 0) ? (
+                              <div style={{ fontSize: '0.72rem', color: '#94a3b8', fontStyle: 'italic' }}>Sin detalles registrados</div>
+                            ) : (
+                              order.items.map((it, idx) => (
+                                <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem', color: '#1e293b' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <span style={{ backgroundColor: '#2563eb', color: 'white', fontWeight: '800', fontSize: '0.7rem', padding: '1px 5px', borderRadius: '4px' }}>
+                                      {it.quantity}x
+                                    </span>
+                                    <span style={{ fontWeight: '600' }}>{it.productName}</span>
+                                    {it.variantName && (
+                                      <span style={{ fontSize: '0.7rem', color: '#64748b' }}>({it.variantName})</span>
+                                    )}
+                                  </div>
+                                  <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#475569' }}>
+                                    ₡{Number(it.totalPrice || it.unitPrice * it.quantity).toLocaleString('es-CR')}
+                                  </span>
+                                </div>
+                              ))
+                            )}
+
+                            {order.notes && (
+                              <div style={{ marginTop: '4px', paddingTop: '4px', borderTop: '1px dashed #e2e8f0', fontSize: '0.72rem', color: '#ea580c', fontWeight: '600' }}>
+                                📝 Nota: {order.notes}
                               </div>
-                            ))}
+                            )}
                           </div>
 
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--primary)', paddingTop: '4px' }}>
@@ -609,30 +630,68 @@ export default function OrdersPanel() {
 
             {/* Itemized Products */}
             <div style={{ marginBottom: '20px' }}>
-              <h4 style={{ margin: '0 0 10px 0', fontSize: '0.95rem', fontWeight: 'bold' }}>Platillos / Productos:</h4>
-              <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden' }}>
+              <h4 style={{ margin: '0 0 10px 0', fontSize: '0.95rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Utensils size={16} color="var(--primary)" /> Platillos / Productos del Pedido:
+              </h4>
+              <div style={{ border: '1px solid #e2e8f0', borderRadius: '10px', overflow: 'hidden' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
                   <thead>
-                    <tr style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
-                      <th style={{ padding: '8px 12px' }}>Producto</th>
-                      <th style={{ padding: '8px 12px', textAlign: 'center' }}>Cant.</th>
-                      <th style={{ padding: '8px 12px', textAlign: 'right' }}>Total</th>
+                    <tr style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid #e2e8f0', textAlign: 'left', color: '#475569' }}>
+                      <th style={{ padding: '10px 14px' }}>Producto / Detalle</th>
+                      <th style={{ padding: '10px 14px', textAlign: 'center' }}>Cant.</th>
+                      <th style={{ padding: '10px 14px', textAlign: 'right' }}>Precio Unit.</th>
+                      <th style={{ padding: '10px 14px', textAlign: 'right' }}>Total</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {(selectedOrder.items || []).map((item, idx) => (
-                      <tr key={idx} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                        <td style={{ padding: '8px 12px' }}>{item.productName}</td>
-                        <td style={{ padding: '8px 12px', textAlign: 'center' }}>{item.quantity}</td>
-                        <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: '600' }}>₡{Number(item.totalPrice).toLocaleString('es-CR')}</td>
+                    {(!selectedOrder.items || selectedOrder.items.length === 0) ? (
+                      <tr>
+                        <td colSpan={4} style={{ padding: '16px', textAlign: 'center', color: '#94a3b8', fontStyle: 'italic' }}>
+                          No hay productos detallados registrados en este pedido.
+                        </td>
                       </tr>
-                    ))}
+                    ) : (
+                      selectedOrder.items.map((item, idx) => (
+                        <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                          <td style={{ padding: '10px 14px' }}>
+                            <div style={{ fontWeight: 'bold', color: '#1e293b' }}>{item.productName}</div>
+                            {item.variantName && (
+                              <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Opción: {item.variantName}</div>
+                            )}
+                          </td>
+                          <td style={{ padding: '10px 14px', textAlign: 'center' }}>
+                            <span style={{ backgroundColor: '#eff6ff', color: '#1d4ed8', fontWeight: 'bold', padding: '2px 8px', borderRadius: '6px' }}>
+                              {item.quantity}
+                            </span>
+                          </td>
+                          <td style={{ padding: '10px 14px', textAlign: 'right', color: '#64748b' }}>
+                            ₡{Number(item.unitPrice).toLocaleString('es-CR')}
+                          </td>
+                          <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 'bold', color: '#1e293b' }}>
+                            ₡{Number(item.totalPrice || item.unitPrice * item.quantity).toLocaleString('es-CR')}
+                          </td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
 
-              <div style={{ marginTop: '10px', textAlign: 'right', fontSize: '1.1rem', fontWeight: 'bold', color: 'var(--primary)' }}>
-                Total: ₡{Number(selectedOrder.total).toLocaleString('es-CR')}
+              {/* Order Breakdown */}
+              <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-end', fontSize: '0.85rem' }}>
+                {Number(selectedOrder.deliveryFee) > 0 && (
+                  <div style={{ color: '#64748b' }}>
+                    Envío Express: ₡{Number(selectedOrder.deliveryFee).toLocaleString('es-CR')}
+                  </div>
+                )}
+                {Number(selectedOrder.discount) > 0 && (
+                  <div style={{ color: '#16a34a' }}>
+                    Descuento: -₡{Number(selectedOrder.discount).toLocaleString('es-CR')}
+                  </div>
+                )}
+                <div style={{ fontSize: '1.2rem', fontWeight: '800', color: 'var(--primary)', borderTop: '1px solid #e2e8f0', paddingTop: '6px' }}>
+                  Total a Pagar: ₡{Number(selectedOrder.total).toLocaleString('es-CR')}
+                </div>
               </div>
             </div>
 
