@@ -14,6 +14,7 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
 
   // Booking Flow Steps
   const [selectedServices, setSelectedServices] = useState<any[]>([]);
+  const [activeCategory, setActiveCategory] = useState<string>("all");
   const [serviceVariables, setServiceVariables] = useState<Record<string, any>>({});
   const [selectedDate, setSelectedDate] = useState<string>(() => {
     const today = new Date();
@@ -97,6 +98,11 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
       }
     });
   };
+
+  const categories = ['all', ...Array.from(new Set(services.map((s: any) => s.category || 'General').filter(Boolean)))];
+  const filteredServices = activeCategory === 'all'
+    ? services
+    : services.filter(s => (s.category || 'General') === activeCategory);
 
   const totalBookingPrice = selectedServices.reduce((acc, s) => acc + Number(s.price || 0), 0);
   const totalBookingMinutes = selectedServices.reduce((acc, s) => acc + Number(s.estimatedMinutes || 45), 0);
@@ -269,7 +275,7 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
 
         {/* Step 1: Select Service (Multi-servicio con suma de tiempos y precios) */}
         <div style={{ backgroundColor: cardBg, borderRadius: cardRadius, padding: '24px', border: '1px solid #e2e8f0', marginBottom: '20px', boxShadow: cardShadow }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{ width: '26px', height: '26px', backgroundColor: primaryColor, color: 'white', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.85rem', fontWeight: 'bold' }}>1</span>
               <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 'bold' }}>Selecciona tus Servicios</h3>
@@ -279,8 +285,38 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
             </span>
           </div>
 
+          {/* Filtro por Categorías con opción 'Todas' */}
+          {categories.length > 2 && (
+            <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '10px', marginBottom: '12px', WebkitOverflowScrolling: 'touch' }}>
+              {categories.map((cat: string) => {
+                const isActive = activeCategory === cat;
+                return (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setActiveCategory(cat)}
+                    style={{
+                      padding: '6px 14px',
+                      borderRadius: '20px',
+                      border: isActive ? `1.5px solid ${primaryColor}` : '1px solid #cbd5e1',
+                      backgroundColor: isActive ? `${primaryColor}15` : 'white',
+                      color: isActive ? primaryColor : '#475569',
+                      fontWeight: isActive ? '800' : '600',
+                      fontSize: '0.82rem',
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    {cat === 'all' ? '✨ Todas las categorías' : cat}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {services.map(svc => {
+            {filteredServices.map(svc => {
               const isSelected = selectedServices.some(s => s.id === svc.id);
               const price = Number(svc.price || 0);
               const minutes = Number(svc.estimatedMinutes || 45);
