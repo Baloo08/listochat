@@ -56,7 +56,7 @@ export default function GuidedTourModal({ isOpen, onClose, onNavigateToTab }: Gu
       subtitle: 'Crea tu página web en minutos con tu enlace oficial',
       description: 'Desde "Sitio Web Oficial" puedes subir tu logotipo para fondos claros y oscuros, elegir tus colores corporativos, estilo de portada y activar los botones directos de tienda y citas.',
       icon: <Globe size={32} color="#3b82f6" />,
-      targetTab: 'website_builder',
+      targetTab: 'sitio',
       actionLabel: 'Ir a Creador de Sitios Web'
     },
     {

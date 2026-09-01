@@ -64,6 +64,41 @@ import {
   Globe
 } from 'lucide-react';
 
+
+// Safe Error Boundary to prevent white screen / crash on unexpected runtime errors
+class TabErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; error: any }> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error: any, errorInfo: any) {
+    console.error('Betico Tab Error caught:', error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: '30px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: '12px', maxWidth: '600px', margin: '40px auto', textAlign: 'center' }}>
+          <h3 style={{ color: '#991b1b', margin: '0 0 10px 0', fontSize: '1.2rem' }}>Ocurrió un inconveniente al cargar esta sección</h3>
+          <p style={{ color: '#7f1d1d', fontSize: '0.85rem', marginBottom: '20px' }}>
+            {this.state.error?.message || 'Error de referencia inesperado'}
+          </p>
+          <button
+            type="button"
+            onClick={() => this.setState({ hasError: false, error: null })}
+            style={{ padding: '8px 18px', backgroundColor: '#dc2626', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.9rem' }}
+          >
+            Reintentar carga
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function App() {
   // Public route checks
   const pathname = window.location.pathname;
@@ -366,7 +401,8 @@ export default function App() {
   const navGroups = user?.role === 'superadmin' ? superAdminNavGroups : tenantNavGroups;
 
   const handleNavClick = (pageId: string) => {
-    setCurrentPage(pageId);
+    let target = pageId === 'website_builder' ? 'sitio' : pageId;
+    setCurrentPage(target);
     setMobileMenuOpen(false);
   };
 

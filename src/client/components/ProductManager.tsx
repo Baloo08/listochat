@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useApi } from '../hooks/useApi';
 import { 
   Edit, Trash2, Plus, Image as ImageIcon, Sparkles, FileSpreadsheet, 
-  Upload, Download, Search, Check, AlertCircle, X, Palette, Sliders, Layers, Tag
+  Upload, Download, Search, Check, AlertCircle, X, Palette, Sliders, Layers, Tag, Copy
 } from 'lucide-react';
 import { CustomVariable, CustomVariableOption } from '../../shared/types';
 
@@ -173,6 +173,26 @@ export default function ProductManager() {
       featured: false,
       images: [],
       customVariables: []
+    });
+    setShowModal(true);
+  };
+
+
+  const handleDuplicateProduct = (product: Product) => {
+    setEditingProduct(null);
+    setFormData({
+      name: `${product.name} (Copia)`,
+      description: product.description || '',
+      price: String(product.price),
+      compareAtPrice: product.compareAtPrice ? String(product.compareAtPrice) : '',
+      category: product.category || '',
+      sku: product.sku ? `${product.sku}-COP` : '',
+      stock: String(product.stock || 10),
+      weightGrams: String(product.weightGrams || 250),
+      active: true,
+      featured: false,
+      images: (product.images || []).map(img => img.url),
+      customVariables: product.customVariables || []
     });
     setShowModal(true);
   };
