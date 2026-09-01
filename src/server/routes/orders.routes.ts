@@ -109,6 +109,50 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+
+router.put('/:id/proof-status', async (req, res) => {
+  try {
+    const { proofStatus } = req.body;
+    if (!proofStatus || !['pending', 'received', 'verified'].includes(proofStatus)) {
+      res.status(400).json({ error: 'Estado de comprobante inválido (pending, received, verified)' });
+      return;
+    }
+
+    const order = await getOrderById(req.params.id, req.tenantId);
+    if (!order) {
+      res.status(404).json({ error: 'Orden no encontrada' });
+      return;
+    }
+
+    let paymentStatus = order.paymentStatus;
+    if (proofStatus === 'verified') {
+      paymentStatus = 'paid';
+    } else if (proofStatus === 'received') {
+      paymentStatus = 'proof_sent';
+    }
+
+    await query(`
+      UPDATE orders 
+      SET payment_proof_status = $1, payment_status = $2, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $3 AND (tenant_id = $4 OR $5 = 'superadmin')
+    `, [proofStatus, paymentStatus, req.params.id, req.tenantId, (req as any).user?.role || 'user']);
+
+    // Emit real-time update
+    if ((req as any).io) {
+      (req as any).io.to(`tenant_${order.tenantId}`).emit('order:updated', {
+        id: req.params.id,
+        paymentProofStatus: proofStatus,
+        paymentStatus
+      });
+    }
+
+    res.json({ success: true, proofStatus, paymentStatus });
+  } catch (error) {
+    console.error('Error updating proof status:', error);
+    res.status(500).json({ error: 'Error al actualizar estado de comprobante' });
+  }
+});
+
 router.put('/:id/status', async (req, res) => {
   try {
     const { status, notifyCustomer = true, customMessage } = req.body;

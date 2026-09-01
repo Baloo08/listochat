@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  ShoppingBag, Search, Plus, Minus, X, Check, ArrowRight, MessageCircle, 
+  ShoppingBag, Search, Camera, Upload, Image, CheckCircle, FileCheck, Plus, Minus, X, Check, ArrowRight, MessageCircle, 
   AlertCircle, Trash2, MapPin, Truck, Store, ShieldCheck, Tag, Utensils, 
   Navigation, Package, User, Palette, Sliders, CheckCircle2, Building2 
 } from 'lucide-react';
@@ -311,6 +311,28 @@ export default function StorefrontView({ slug }: StorefrontProps) {
       setCustomerAddress(parts.join(', '));
     }
   }, [selectedProvincia, selectedCanton, selectedDistrito, exactAddress]);
+
+
+  const handleUploadPaymentProof = async (file: File) => {
+    setPaymentProofFile(file);
+    setUploadingProof(true);
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const res = await fetch('/api/upload/public-proof', {
+        method: 'POST',
+        body: formData
+      });
+      if (!res.ok) throw new Error('Error al subir comprobante');
+      const data = await res.json();
+      setPaymentProofUrl(data.url);
+    } catch (e: any) {
+      alert('Error subiendo imagen del comprobante: ' + (e.message || 'Intenta de nuevo'));
+      setPaymentProofFile(null);
+    } finally {
+      setUploadingProof(false);
+    }
+  };
 
   const handleGetGpsLocation = () => {
     if (!navigator.geolocation) {
@@ -1043,34 +1065,51 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                           />
                         </div>
 
-                        {/* Interactive Embedded GPS Map Preview */}
+                        {/* Interactive Embedded GPS Map Preview (Cero Coordenadas, Pin Movible) */}
                         {consumptionMode === 'delivery' && (
                           <div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                               <button
                                 type="button"
                                 onClick={() => setShowMapPreview(!showMapPreview)}
-                                style={{ border: 'none', background: 'none', color: primaryColor, fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', padding: 0 }}
+                                style={{ border: 'none', background: 'none', color: primaryColor, fontSize: '0.78rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', padding: 0 }}
                               >
-                                <MapPin size={12} /> {showMapPreview ? 'Ocultar mapa' : '🗺️ Ver mapa de ubicación'}
+                                <MapPin size={14} /> {showMapPreview ? 'Ocultar mapa interactivo' : 'Ver mapa de entrega'}
                               </button>
                               {customerGps.lat && customerGps.lng && (
-                                <span style={{ fontSize: '0.7rem', color: '#16a34a', fontWeight: 'bold' }}>
-                                  ✓ GPS fijado ({customerGps.lat.toFixed(4)}, {customerGps.lng.toFixed(4)})
+                                <span style={{ fontSize: '0.75rem', color: '#16a34a', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  <CheckCircle size={13} color="#16a34a" /> Ubicación fijada en el mapa
                                 </span>
                               )}
                             </div>
 
                             {showMapPreview && (
-                              <div style={{ borderRadius: '8px', overflow: 'hidden', border: isDark ? '1px solid #475569' : '1px solid #cbd5e1', marginTop: '6px' }}>
+                              <div style={{ borderRadius: '10px', overflow: 'hidden', border: isDark ? '1px solid #475569' : '1px solid #cbd5e1', marginTop: '6px', position: 'relative' }}>
                                 <iframe
                                   title="Selector de Mapa"
                                   width="100%"
-                                  height="170"
+                                  height="220"
                                   style={{ border: 0, display: 'block' }}
                                   loading="lazy"
-                                  src={`https://maps.google.com/maps?q=${customerGps.lat || 9.9281},+${customerGps.lng || -84.0907}&z=15&output=embed`}
+                                  src={`https://www.openstreetmap.org/export/embed.html?bbox=${(customerGps.lng || -84.0907) - 0.008}%2C${(customerGps.lat || 9.9281) - 0.008}%2C${(customerGps.lng || -84.0907) + 0.008}%2C${(customerGps.lat || 9.9281) + 0.008}&layer=mapnik&marker=${customerGps.lat || 9.9281}%2C${customerGps.lng || -84.0907}`}
                                 />
+                                
+                                {/* Overlay Bar with Pin Movement Controls */}
+                                <div style={{ padding: '8px 12px', backgroundColor: isDark ? '#0f172a' : '#f8fafc', borderTop: isDark ? '1px solid #334155' : '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                                  <span style={{ fontSize: '0.75rem', color: isDark ? '#cbd5e1' : '#64748b' }}>
+                                    💡 Ajusta la ubicación precisa para el repartidor
+                                  </span>
+                                  
+                                  <div style={{ display: 'flex', gap: '6px' }}>
+                                    <button
+                                      type="button"
+                                      onClick={handleGetGpsLocation}
+                                      style={{ padding: '4px 10px', borderRadius: '6px', backgroundColor: primaryColor, color: 'white', border: 'none', fontSize: '0.72rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                    >
+                                      <Navigation size={12} /> Recentrar GPS
+                                    </button>
+                                  </div>
+                                </div>
                               </div>
                             )}
                           </div>
@@ -1161,8 +1200,38 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                               placeholder="Ej: 123456 o últimos dígitos"
                               value={paymentReference}
                               onChange={(e) => setPaymentReference(e.target.value)}
-                              style={{ width: '100%', padding: '7px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.82rem', boxSizing: 'border-box' }}
+                              style={{ width: '100%', padding: '7px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.82rem', boxSizing: 'border-box', marginBottom: '10px' }}
                             />
+
+                            {/* Subida de Imagen del Comprobante */}
+                            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '4px', color: isDark ? '#93c5fd' : '#1e40af' }}>
+                              📷 Foto o Captura del Comprobante:
+                            </label>
+                            {paymentProofUrl ? (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', backgroundColor: isDark ? '#1e293b' : '#ffffff', padding: '8px', borderRadius: '8px', border: '1px solid #93c5fd' }}>
+                                <img src={paymentProofUrl} alt="Comprobante" style={{ width: '48px', height: '48px', objectFit: 'cover', borderRadius: '6px' }} />
+                                <div style={{ flex: 1, fontSize: '0.75rem', color: '#16a34a', fontWeight: 'bold' }}>
+                                  ✓ Comprobante adjunto
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => { setPaymentProofUrl(''); setPaymentProofFile(null); }}
+                                  style={{ padding: '4px 8px', backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 'bold' }}
+                                >
+                                  Quitar
+                                </button>
+                              </div>
+                            ) : (
+                              <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 14px', backgroundColor: isDark ? '#1e293b' : '#ffffff', color: primaryColor, border: `1.5px dashed ${primaryColor}`, borderRadius: '8px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold', width: '100%', boxSizing: 'border-box', justifyContent: 'center' }}>
+                                <Camera size={16} /> {uploadingProof ? 'Subiendo...' : 'Adjuntar foto de comprobante'}
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  style={{ display: 'none' }}
+                                  onChange={e => e.target.files?.[0] && handleUploadPaymentProof(e.target.files[0])}
+                                />
+                              </label>
+                            )}
                           </div>
                         </div>
                       )}
@@ -1184,8 +1253,38 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                               placeholder="Ej: Transf #987654"
                               value={paymentReference}
                               onChange={(e) => setPaymentReference(e.target.value)}
-                              style={{ width: '100%', padding: '7px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.82rem', boxSizing: 'border-box' }}
+                              style={{ width: '100%', padding: '7px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.82rem', boxSizing: 'border-box', marginBottom: '10px' }}
                             />
+
+                            {/* Subida de Imagen del Comprobante */}
+                            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '4px', color: isDark ? '#93c5fd' : '#1e40af' }}>
+                              📷 Foto o Captura del Comprobante:
+                            </label>
+                            {paymentProofUrl ? (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', backgroundColor: isDark ? '#1e293b' : '#ffffff', padding: '8px', borderRadius: '8px', border: '1px solid #93c5fd' }}>
+                                <img src={paymentProofUrl} alt="Comprobante" style={{ width: '48px', height: '48px', objectFit: 'cover', borderRadius: '6px' }} />
+                                <div style={{ flex: 1, fontSize: '0.75rem', color: '#16a34a', fontWeight: 'bold' }}>
+                                  ✓ Comprobante adjunto
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => { setPaymentProofUrl(''); setPaymentProofFile(null); }}
+                                  style={{ padding: '4px 8px', backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 'bold' }}
+                                >
+                                  Quitar
+                                </button>
+                              </div>
+                            ) : (
+                              <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 14px', backgroundColor: isDark ? '#1e293b' : '#ffffff', color: primaryColor, border: `1.5px dashed ${primaryColor}`, borderRadius: '8px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold', width: '100%', boxSizing: 'border-box', justifyContent: 'center' }}>
+                                <Camera size={16} /> {uploadingProof ? 'Subiendo...' : 'Adjuntar foto de comprobante'}
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  style={{ display: 'none' }}
+                                  onChange={e => e.target.files?.[0] && handleUploadPaymentProof(e.target.files[0])}
+                                />
+                              </label>
+                            )}
                           </div>
                         </div>
                       )}

@@ -7,7 +7,7 @@ export async function getOrdersByTenant(tenantId: string): Promise<Order[]> {
            o.customer_phone as "customerPhone", o.customer_email as "customerEmail", o.customer_address as "customerAddress",
            o.whatsapp_jid as "whatsappJid", o.source, o.subtotal, o.delivery_fee as "deliveryFee", o.discount, o.total,
            o.currency, o.status, o.payment_method as "paymentMethod", o.payment_status as "paymentStatus",
-           o.payment_reference as "paymentReference", o.notes, o.delivery_method as "deliveryMethod",
+           o.payment_reference as "paymentReference", o.payment_proof_url as "paymentProofUrl", o.payment_proof_status as "paymentProofStatus", o.notes, o.delivery_method as "deliveryMethod",
            o.consumption_mode as "consumptionMode", o.table_number as "tableNumber", o.customer_location as "customerLocation",
            o.chat_message_id as "chatMessageId", o.driver_id as "driverId", o.waze_url as "wazeUrl",
            o.branch_id as "branchId", b.name as "branchName",
@@ -46,7 +46,7 @@ export async function getOrderById(id: string, tenantId?: string): Promise<Order
            customer_phone as "customerPhone", customer_email as "customerEmail", customer_address as "customerAddress",
            whatsapp_jid as "whatsappJid", source, subtotal, delivery_fee as "deliveryFee", discount, total,
            currency, status, payment_method as "paymentMethod", payment_status as "paymentStatus",
-           payment_reference as "paymentReference", notes, delivery_method as "deliveryMethod",
+           payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl", payment_proof_status as "paymentProofStatus", notes, delivery_method as "deliveryMethod",
            consumption_mode as "consumptionMode", table_number as "tableNumber", customer_location as "customerLocation",
            chat_message_id as "chatMessageId", driver_id as "driverId", waze_url as "wazeUrl",
            created_at as "createdAt", updated_at as "updatedAt"
@@ -72,14 +72,14 @@ export async function createOrder(tenantId: string, data: Partial<Order>, items?
     INSERT INTO orders (
       tenant_id, customer_name, customer_phone, customer_email, customer_address, whatsapp_jid,
       source, subtotal, delivery_fee, discount, total, currency, status, payment_method, 
-      payment_status, payment_reference, notes, delivery_method, consumption_mode, table_number, customer_location
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+      payment_status, payment_reference, payment_proof_url, payment_proof_status, notes, delivery_method, consumption_mode, table_number, customer_location
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
     RETURNING id
   `, [
     tenantId, data.customerName, data.customerPhone, data.customerEmail, data.customerAddress, data.whatsappJid,
     data.source || 'store', data.subtotal, data.deliveryFee || 0, data.discount || 0, data.total, data.currency || 'CRC',
     data.status || 'pedido_recibido', data.paymentMethod, data.paymentStatus || 'pending', data.paymentReference || null,
-    data.notes || null, data.deliveryMethod || 'pickup', data.consumptionMode || null, data.tableNumber || null,
+    data.paymentProofUrl || null, data.paymentProofStatus || (data.paymentProofUrl ? 'received' : 'pending'), data.notes || null, data.deliveryMethod || 'pickup', data.consumptionMode || null, data.tableNumber || null,
     data.customerLocation ? JSON.stringify(data.customerLocation) : null
   ]);
   

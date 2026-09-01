@@ -120,6 +120,7 @@ router.post('/:slug/checkout', async (req, res) => {
       items = [],
       paymentMethod = 'sinpe',
       paymentReference,
+      paymentProofUrl,
       deliveryMethod = 'pickup',
       notes
     } = req.body;
@@ -163,8 +164,10 @@ router.post('/:slug/checkout', async (req, res) => {
         deliveryFee,
         total,
         paymentMethod,
-        paymentStatus: paymentReference ? 'proof_sent' : 'pending',
+        paymentStatus: (paymentProofUrl || paymentReference) ? 'proof_sent' : 'pending',
         paymentReference: paymentReference || null,
+        paymentProofUrl: paymentProofUrl || null,
+        paymentProofStatus: paymentProofUrl ? 'received' : 'pending',
         deliveryMethod: isDelivery ? 'delivery' : 'pickup',
         notes: notes || null,
         status: 'pedido_recibido' as any
@@ -226,7 +229,7 @@ ${deliveryFee > 0 ? `🛵 *Envío Express:* ₡${deliveryFee.toLocaleString('es-
 ${modeText}
 
 💳 *Método de Pago:* ${paymentMethod === 'sinpe' ? 'SINPE Móvil' : paymentMethod === 'transfer' ? 'Transferencia Bancaria' : 'Efectivo / Pago al recibir'}
-${paymentReference ? `📄 *Comprobante:* ${paymentReference}\n` : ''}
+${paymentReference ? `📄 *Referencia:* ${paymentReference}\n` : ''}${paymentProofUrl ? '📸 *Comprobante Adjunto:* Recibido ✓\n' : ((paymentMethod === 'sinpe' || paymentMethod === 'transfer') ? '\n📸 *IMPORTANTE:* Por favor envía la foto o captura de tu comprobante a este chat para verificar tu pago y proceder con la preparación de tu orden.\n' : '')}
 👉 En breve confirmaremos el inicio de preparación. ¡Muchas gracias por tu preferencia!`;
 
       customerMsg = customerMsg

@@ -341,6 +341,8 @@ export interface Order {
   paymentMethod: PaymentMethod;
   paymentStatus: PaymentStatus;
   paymentReference?: string;
+  paymentProofUrl?: string;
+  paymentProofStatus?: 'pending' | 'received' | 'verified';
   notes?: string;
   deliveryMethod: DeliveryMethod;
   consumptionMode?: 'dine_in' | 'pickup' | 'delivery' | 'correos_cr';

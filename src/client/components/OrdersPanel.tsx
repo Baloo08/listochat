@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ShoppingCart, Clock, CheckCircle, Truck, Package, XCircle, Eye, MessageCircle, AlertCircle, RefreshCw, Send, Check, Utensils, LayoutGrid, List, Navigation, Bike, MapPin, User, Phone, Store, Maximize, ExternalLink, Building2 } from 'lucide-react';
+import { ShoppingCart, Camera, Image, CheckCircle2, Clock, CheckCircle, Truck, Package, XCircle, Eye, MessageCircle, AlertCircle, RefreshCw, Send, Check, Utensils, LayoutGrid, List, Navigation, Bike, MapPin, User, Phone, Store, Maximize, ExternalLink, Building2 } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
 import { Order, OrderStatus, DeliveryDriver } from '../../shared/types';
 
@@ -14,6 +14,8 @@ export default function OrdersPanel() {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [notifyCustomer, setNotifyCustomer] = useState(true);
   const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [lightboxImageUrl, setLightboxImageUrl] = useState<string | null>(null);
+  const [updatingProofId, setUpdatingProofId] = useState<string | null>(null);
   const [dispatchingDriverId, setDispatchingDriverId] = useState<string>('');
   const [dispatching, setDispatching] = useState(false);
 
@@ -55,6 +57,26 @@ export default function OrdersPanel() {
     const timer = setInterval(fetchOrders, 6000);
     return () => clearInterval(timer);
   }, []);
+
+
+  const handleProofStatusChange = async (orderId: string, proofStatus: 'pending' | 'received' | 'verified') => {
+    setUpdatingProofId(orderId);
+    try {
+      await api.put(`/api/orders/${orderId}/proof-status`, { proofStatus });
+      await fetchOrders();
+      if (selectedOrder && selectedOrder.id === orderId) {
+        setSelectedOrder(prev => prev ? {
+          ...prev,
+          paymentProofStatus: proofStatus,
+          paymentStatus: proofStatus === 'verified' ? 'paid' : proofStatus === 'received' ? 'proof_sent' : 'pending'
+        } : null);
+      }
+    } catch (e: any) {
+      alert('Error al actualizar estado del comprobante: ' + (e.message || 'Verifique'));
+    } finally {
+      setUpdatingProofId(null);
+    }
+  };
 
   const handleStatusChange = async (orderId: string, newStatus: OrderStatus) => {
     setUpdatingStatus(true);
@@ -742,6 +764,44 @@ export default function OrdersPanel() {
           </div>
         </div>
       )}
+
+      {/* LIGHTBOX MODAL: FULL SIZE RECEIPT IMAGE */}
+      {lightboxImageUrl && (
+        <div
+          onClick={() => setLightboxImageUrl(null)}
+          style={{
+            position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)',
+            zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: '20px', cursor: 'pointer'
+          }}
+        >
+          <div style={{ position: 'relative', maxWidth: '90vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', alignItems: 'center' }} onClick={e => e.stopPropagation()}>
+            <img
+              src={lightboxImageUrl}
+              alt="Comprobante de Pago Completo"
+              style={{ maxWidth: '100%', maxHeight: '80vh', objectFit: 'contain', borderRadius: '10px', boxShadow: '0 10px 25px rgba(0,0,0,0.5)' }}
+            />
+            <div style={{ display: 'flex', gap: '12px', marginTop: '14px' }}>
+              <a
+                href={lightboxImageUrl}
+                target="_blank"
+                rel="noreferrer"
+                style={{ padding: '8px 16px', backgroundColor: '#2563eb', color: 'white', borderRadius: '8px', textDecoration: 'none', fontWeight: 'bold', fontSize: '0.85rem' }}
+              >
+                Abrir en pestaña nueva ↗
+              </a>
+              <button
+                type="button"
+                onClick={() => setLightboxImageUrl(null)}
+                style={{ padding: '8px 16px', backgroundColor: '#334155', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}
+              >
+                Cerrar Visor
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

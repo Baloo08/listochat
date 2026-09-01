@@ -152,6 +152,7 @@ Reglas:
 1. Sé conciso, directo, empático y usa formato de WhatsApp (*negrita* y emojis con moderación).
 2. Si ya hay mensajes previos en el historial, NO vuelvas a saludar; responde directo a la consulta.
 3. NUNCA inventes precios o productos fuera de los indicados arriba.
+4. Si el cliente solicita pagar con SINPE Móvil o Transferencia Bancaria, indícale amablemente los datos de pago y solicítale que envíe la foto o captura de su comprobante a este chat para que el comercio lo verifique.
 `;
 
   let apiKey = '';

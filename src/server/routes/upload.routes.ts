@@ -8,6 +8,25 @@ import { env } from '../config/env.js';
 import { query } from '../db/pool.js';
 
 const router = Router();
+
+// Public upload endpoint for customer payment proof screenshots
+router.post('/public-proof', upload.single('file'), async (req, res) => {
+  if (!req.file) {
+    res.status(400).json({ error: 'No se recibió archivo de comprobante' });
+    return;
+  }
+
+  await persistFileToDatabase(
+    req.file.filename,
+    req.file.mimetype || 'image/jpeg',
+    req.file.path,
+    req.file.size
+  );
+
+  const url = `/uploads/${req.file.filename}`;
+  res.json({ url, filename: req.file.filename, size: req.file.size });
+});
+
 router.use(authenticateToken);
 
 const uploadDir = env.UPLOAD_DIR || path.join(process.cwd(), 'uploads');
