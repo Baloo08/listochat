@@ -741,7 +741,7 @@ async function getMasterAIConfig() {
     };
   }
 }
-async function callAI(config, prompt, systemPrompt) {
+async function callAI(config, prompt) {
   const provider = config.provider || "gemini";
   const apiKey = config.apiKey || (provider === "gemini" ? DEFAULT_GEMINI_KEY : "");
   let chosenModel = config.model;
@@ -763,7 +763,7 @@ async function callAI(config, prompt, systemPrompt) {
         model: modelName,
         temperature: config.temperature ?? 0.7,
         baseUrl: config.baseUrl
-      }, prompt, systemPrompt);
+      }, prompt);
     } catch (error) {
       lastError = error;
       console.error(`Error calling AI with model ${modelName} (${provider}):`, error);
@@ -788,7 +788,7 @@ async function callAI(config, prompt, systemPrompt) {
         apiKey: masterKey || DEFAULT_GEMINI_KEY,
         model: "gemini-2.5-flash",
         temperature: 0.7
-      }, prompt, systemPrompt);
+      }, prompt);
     } catch (geminiError) {
       console.error("[AI-Provider] Master Gemini Failover also failed:", geminiError);
     }
@@ -799,7 +799,7 @@ async function callAI(config, prompt, systemPrompt) {
     tokensUsed: 0
   };
 }
-async function executeProvider(config, prompt, systemPrompt) {
+async function executeProvider(config, prompt) {
   let model;
   if (config.provider === "gemini") {
     const key = config.apiKey || DEFAULT_GEMINI_KEY;
@@ -826,10 +826,8 @@ async function executeProvider(config, prompt, systemPrompt) {
   const generatePromise = (async () => {
     const { text, usage } = await generateText({
       model,
-      system: systemPrompt || void 0,
       prompt,
-      temperature: config.temperature ?? 0.2,
-      maxTokens: 160
+      temperature: config.temperature ?? 0.7
     });
     return {
       text,
@@ -4886,7 +4884,7 @@ async function processWhatsAppMessageWithAI(tenantId, userMessage, senderPhone, 
       }).join("\n") + "\n";
     }
   }
-  const masterSystemPrompt = `Eres el Asistente Virtual Oficial con IA de *${tenant?.name || "nuestro negocio"}* en WhatsApp.
+  let prompt = `Eres el Asistente Virtual Oficial con IA de *${tenant?.name || "nuestro negocio"}* en WhatsApp.
 
 === INSTRUCCIONES MAESTRAS DEL NEGOCIO (M\xC1XIMA PRIORIDAD) ===
 ${agentConfig?.systemPrompt || "Atiende amablemente a los clientes, brinda informaci\xF3n de servicios y ayuda a agendar citas o compras."}
@@ -4910,10 +4908,11 @@ COMANDOS DE ACCI\xD3N (A\xF1ade al final de tu respuesta solo si se confirma la 
 - Confirmar Compra: <<<COMMAND_ORDER: {"items": [{"productName": "Nombre exacto", "quantity": 1}]}>>>
 - Enviar Foto: <<<COMMAND_SEND_MEDIA: {"mediaUrl": "URL", "caption": "Descripci\xF3n"}>>>
 - Pasar a Humano: <<<COMMAND_HANDOFF: {"reason": "Motivo"}>>>
-`;
-  let prompt = `Historial Reciente:
+
+Historial Reciente:
 ${chatHistory.slice(-4).map((h) => `${h.role === "user" ? "Cliente" : "Asistente"}: ${h.content}`).join("\n")}
 
+\xDAltimo mensaje recibido:
 Cliente (${senderName} / ${senderPhone}): ${userMessage}
 `;
   let apiKey = "";
@@ -4930,7 +4929,7 @@ Cliente (${senderName} / ${senderPhone}): ${userMessage}
       provider: tenant?.aiProvider || "gemini",
       apiKey,
       model: tenant?.aiModel || agentConfig?.model || "gemini-2.5-flash",
-      temperature: agentConfig?.temperature || 0.2
+      temperature: agentConfig?.temperature || 0.7
     };
   } else {
     isMarcaBlanca = true;
@@ -4948,10 +4947,10 @@ Cliente (${senderName} / ${senderPhone}): ${userMessage}
     const masterConfig = await getMasterAIConfig();
     config = {
       ...masterConfig,
-      temperature: agentConfig?.temperature || 0.2
+      temperature: agentConfig?.temperature || 0.7
     };
   }
-  const aiResult = await callAI(config, prompt, masterSystemPrompt);
+  const aiResult = await callAI(config, prompt);
   let replyText = aiResult.text;
   if (isMarcaBlanca && aiResult.tokensUsed > 0) {
     await incrementTenantUsage(tenantId, aiResult.tokensUsed);

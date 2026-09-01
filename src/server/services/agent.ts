@@ -126,8 +126,8 @@ export async function processWhatsAppMessageWithAI(
     }
   }
 
-  // 3. MASTER SYSTEM PROMPT (SUPREME AUTHORITY + ENRICHED RAG)
-  const masterSystemPrompt = `Eres el Asistente Virtual Oficial con IA de *${tenant?.name || 'nuestro negocio'}* en WhatsApp.
+  // 3. BUILD SINGLE COMBINED PROMPT (format that works reliably with LocalAI)
+  let prompt = `Eres el Asistente Virtual Oficial con IA de *${tenant?.name || 'nuestro negocio'}* en WhatsApp.
 
 === INSTRUCCIONES MAESTRAS DEL NEGOCIO (MÁXIMA PRIORIDAD) ===
 ${agentConfig?.systemPrompt || 'Atiende amablemente a los clientes, brinda información de servicios y ayuda a agendar citas o compras.'}
@@ -151,11 +151,11 @@ COMANDOS DE ACCIÓN (Añade al final de tu respuesta solo si se confirma la acci
 - Confirmar Compra: <<<COMMAND_ORDER: {"items": [{"productName": "Nombre exacto", "quantity": 1}]}>>>
 - Enviar Foto: <<<COMMAND_SEND_MEDIA: {"mediaUrl": "URL", "caption": "Descripción"}>>>
 - Pasar a Humano: <<<COMMAND_HANDOFF: {"reason": "Motivo"}>>>
-`;
 
-  let prompt = `Historial Reciente:
+Historial Reciente:
 ${chatHistory.slice(-4).map(h => `${h.role === 'user' ? 'Cliente' : 'Asistente'}: ${h.content}`).join('\n')}
 
+Último mensaje recibido:
 Cliente (${senderName} / ${senderPhone}): ${userMessage}
 `;
 
@@ -173,7 +173,7 @@ Cliente (${senderName} / ${senderPhone}): ${userMessage}
       provider: (tenant?.aiProvider as any) || 'gemini',
       apiKey,
       model: tenant?.aiModel || agentConfig?.model || 'gemini-2.5-flash',
-      temperature: agentConfig?.temperature || 0.2,
+      temperature: agentConfig?.temperature || 0.7,
     };
   } else {
     isMarcaBlanca = true;
@@ -192,11 +192,11 @@ Cliente (${senderName} / ${senderPhone}): ${userMessage}
     const masterConfig = await getMasterAIConfig();
     config = {
       ...masterConfig,
-      temperature: agentConfig?.temperature || 0.2
+      temperature: agentConfig?.temperature || 0.7
     };
   }
 
-  const aiResult = await callAI(config, prompt, masterSystemPrompt);
+  const aiResult = await callAI(config, prompt);
   let replyText = aiResult.text;
 
   // Track token usage for Marca Blanca tenants
