@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, Search, CheckCircle, AlertCircle, Wrench, Clock, DollarSign, Tag, X, Sliders, Layers } from 'lucide-react';
+import { Plus, Edit2, Trash2, Search, CheckCircle, AlertCircle, Wrench, Clock, DollarSign, Tag, X, Sliders, Layers, Copy, Bookmark, Sparkles } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
 import { Service, CustomVariable, CustomVariableOption } from '../../shared/types';
 
@@ -56,6 +56,20 @@ export default function ServicesManager() {
     setIsModalOpen(true);
   };
 
+  const handleDuplicateService = (svc: Service) => {
+    setEditingService(null);
+    setName((svc.name || '') + ' (Copia)');
+    setDescription(svc.description || '');
+    setPrice(Number(svc.price) || 0);
+    setDuration(svc.duration || '45 min');
+    setEstimatedMinutes(Number(svc.estimatedMinutes) || 45);
+    setCategory(svc.category || 'General');
+    setParallelSlots(svc.parallelSlots || 1);
+    setActive(true);
+    setCustomVariables(svc.customVariables ? JSON.parse(JSON.stringify(svc.customVariables)) : []);
+    setIsModalOpen(true);
+  };
+
   const handleOpenEditModal = (svc: Service) => {
     setEditingService(svc);
     setName(svc.name || '');
@@ -69,6 +83,77 @@ export default function ServicesManager() {
     setCustomVariables(svc.customVariables || []);
     setIsModalOpen(true);
   };
+
+
+  // Pre-configured and Custom Saved Presets
+  const SERVICE_PRESETS: Record<string, CustomVariable> = {
+    vehiculo: {
+      id: 'var_vehiculo',
+      name: 'Tipo de Vehículo',
+      type: 'select',
+      required: true,
+      options: [
+        { id: 'opt_sedan', name: 'Sedán / Compacto', priceDelta: 0, durationMinutesDelta: 0 },
+        { id: 'opt_suv', name: 'SUV / Crossover (+₡3.000)', priceDelta: 3000, durationMinutesDelta: 15 },
+        { id: 'opt_4x4', name: '4x4 / Pick-Up (+₡5.000)', priceDelta: 5000, durationMinutesDelta: 25 },
+        { id: 'opt_moto', name: 'Motocicleta (-₡2.000)', priceDelta: -2000, durationMinutesDelta: -15 }
+      ]
+    },
+    cabello: {
+      id: 'var_cabello',
+      name: 'Largo de Cabello',
+      type: 'select',
+      required: true,
+      options: [
+        { id: 'opt_corto', name: 'Cabello Corto', priceDelta: 0, durationMinutesDelta: 0 },
+        { id: 'opt_medio', name: 'Cabello Medio (+₡2.500)', priceDelta: 2500, durationMinutesDelta: 15 },
+        { id: 'opt_largo', name: 'Cabello Largo (+₡5.000)', priceDelta: 5000, durationMinutesDelta: 30 },
+        { id: 'opt_xl', name: 'Extra Largo (+₡8.000)', priceDelta: 8000, durationMinutesDelta: 45 }
+      ]
+    },
+    tratamiento: {
+      id: 'var_tratamiento',
+      name: 'Nivel de Servicio / Tratamiento',
+      type: 'select',
+      required: false,
+      options: [
+        { id: 'opt_basico', name: 'Básico / Estándar', priceDelta: 0, durationMinutesDelta: 0 },
+        { id: 'opt_premium', name: 'Tratamiento Premium (+₡5.000)', priceDelta: 5000, durationMinutesDelta: 20 },
+        { id: 'opt_vip', name: 'Experiencia VIP / Completa (+₡10.000)', priceDelta: 10000, durationMinutesDelta: 35 }
+      ]
+    }
+  };
+
+  const handleApplyPreset = (presetKey: string) => {
+    let preset: CustomVariable | null = null;
+    if (SERVICE_PRESETS[presetKey]) {
+      preset = JSON.parse(JSON.stringify(SERVICE_PRESETS[presetKey]));
+    } else {
+      const saved = localStorage.getItem('betico_saved_service_presets');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed[presetKey]) preset = JSON.parse(JSON.stringify(parsed[presetKey]));
+      }
+    }
+
+    if (preset) {
+      preset.id = 'var_' + Date.now();
+      preset.options = preset.options.map((o: any, idx: number) => ({ ...o, id: 'opt_' + Date.now() + '_' + idx }));
+      setCustomVariables(prev => [...prev, preset!]);
+    }
+  };
+
+  const handleSaveAsPreset = (group: CustomVariable) => {
+    const presetName = prompt('Nombre para guardar esta plantilla de variante:', group.name);
+    if (!presetName) return;
+    const saved = localStorage.getItem('betico_saved_service_presets') || '{}';
+    const parsed = JSON.parse(saved);
+    const key = 'custom_' + Date.now();
+    parsed[key] = { ...group, name: presetName };
+    localStorage.setItem('betico_saved_service_presets', JSON.stringify(parsed));
+    alert('¡Plantilla "' + presetName + '" guardada en tus variantes personalizadas!');
+  };
+
 
   // Variable Helpers
   const addVariableGroup = () => {

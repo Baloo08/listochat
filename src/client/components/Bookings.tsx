@@ -285,6 +285,19 @@ export default function Bookings() {
     }
   };
 
+  const handleCompleteAppointment = async (id: string) => {
+    try {
+      await api.put(`/api/appointments/${id}/status`, { status: 'completed', notifyCustomer: true });
+      alert('¡Cita marcada como completada! Se envió la notificación de agradecimiento por WhatsApp y el espacio ha sido liberado.');
+      fetchAppointments();
+      if (selectedAppointment && selectedAppointment.id === id) {
+        setSelectedAppointment({ ...selectedAppointment, status: 'completed' as any });
+      }
+    } catch (err: any) {
+      alert('Error al completar la cita: ' + (err.message || 'Verifique'));
+    }
+  };
+
   const handleStatusChange = async (id: string, newStatus: string) => {
     try {
       await api.put(`/api/appointments/${id}`, { status: newStatus });

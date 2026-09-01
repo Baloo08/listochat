@@ -13,7 +13,7 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
   const [error, setError] = useState<string | null>(null);
 
   // Booking Flow Steps
-  const [selectedService, setSelectedService] = useState<any>(null);
+  const [selectedServices, setSelectedServices] = useState<any[]>([]);
   const [serviceVariables, setServiceVariables] = useState<Record<string, any>>({});
   const [selectedDate, setSelectedDate] = useState<string>(() => {
     const today = new Date();
@@ -87,6 +87,20 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
     fetchSlots();
   }, [selectedDate, slug]);
 
+  const handleToggleService = (svc: any) => {
+    setSelectedServices(prev => {
+      const exists = prev.some(s => s.id === svc.id);
+      if (exists) {
+        return prev.filter(s => s.id !== svc.id);
+      } else {
+        return [...prev, svc];
+      }
+    });
+  };
+
+  const totalBookingPrice = selectedServices.reduce((acc, s) => acc + Number(s.price || 0), 0);
+  const totalBookingMinutes = selectedServices.reduce((acc, s) => acc + Number(s.estimatedMinutes || 45), 0);
+
   const handleSelectService = (svc: any) => {
     setSelectedService(svc);
     const initialVars: Record<string, any> = {};
@@ -152,8 +166,8 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          serviceName: selectedService.name,
-          serviceId: selectedService.id,
+          serviceName: selectedServices.map(s => s.name).join(' + '),
+          serviceId: selectedServices[0]?.id || null,
           date: selectedDate,
           time: selectedTime,
           amount: effectiveAmount,
