@@ -120,7 +120,17 @@ export default function App() {
 
   if (pathname.startsWith('/acceso/')) {
     const slug = pathname.replace('/acceso/', '').split('/')[0];
-    return <TenantLoginView slug={slug} />;
+    if (slug) {
+      return <TenantLoginView slug={slug} />;
+    }
+  }
+
+  if (pathname === '/acceso' || pathname === '/acceso/') {
+    const lastSlug = localStorage.getItem('last_tenant_slug');
+    if (lastSlug) {
+      return <TenantLoginView slug={lastSlug} />;
+    }
+    return <Login onBack={() => { window.location.href = '/'; }} />;
   }
 
   if (pathname.startsWith('/admin/') || pathname.startsWith('/portal/')) {
@@ -272,11 +282,15 @@ export default function App() {
 
   if (loading) return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', fontFamily: 'system-ui, sans-serif' }}>Cargando Betico...</div>;
 
-  // 1. General Login Route (/login, /superadmin, /ingreso)
-  if (pathname === '/login' || pathname === '/superadmin' || pathname === '/ingreso') {
+  // 1. General Login Route (/login, /superadmin, /ingreso, /acceso)
+  if (pathname === '/login' || pathname === '/superadmin' || pathname === '/ingreso' || pathname === '/acceso' || pathname === '/acceso/') {
     if (isAuthenticated && user) {
       window.location.href = '/panel';
       return null;
+    }
+    const lastSlug = localStorage.getItem('last_tenant_slug');
+    if (pathname.includes('acceso') && lastSlug) {
+      return <TenantLoginView slug={lastSlug} />;
     }
     return <Login onBack={() => { window.location.href = '/'; }} />;
   }
