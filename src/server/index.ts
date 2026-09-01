@@ -185,12 +185,38 @@ async function startServer() {
       res.setHeader('Pragma', 'no-cache');
       res.setHeader('Expires', '0');
       
-      const indexPath = path.join(__dirname, 'index.html');
+      const distDir = path.join(__dirname);
+      const assetsDir = path.join(distDir, 'assets');
+      
+      let html = '';
+      const indexPath = path.join(distDir, 'index.html');
       if (fs.existsSync(indexPath)) {
-        res.sendFile(indexPath);
+        html = fs.readFileSync(indexPath, 'utf8');
       } else {
-        res.sendFile(path.join(process.cwd(), 'dist', 'index.html'));
+        const fallbackPath = path.join(process.cwd(), 'dist', 'index.html');
+        if (fs.existsSync(fallbackPath)) {
+          html = fs.readFileSync(fallbackPath, 'utf8');
+        } else {
+          html = '<!DOCTYPE html><html><head><meta charset="utf-8"/></head><body><div id="root"></div></body></html>';
+        }
       }
+
+      // Dynamically find the absolute newest JS bundle in assets/
+      if (fs.existsSync(assetsDir)) {
+        try {
+          const jsFiles = fs.readdirSync(assetsDir).filter(f => f.startsWith('index-') && f.endsWith('.js'));
+          if (jsFiles.length > 0) {
+            jsFiles.sort((a, b) => fs.statSync(path.join(assetsDir, b)).mtimeMs - fs.statSync(path.join(assetsDir, a)).mtimeMs);
+            const latestJs = jsFiles[0];
+            html = html.replace(/src="\/assets\/index-[A-Za-z0-9_-]+\.js"/g, `src="/assets/${latestJs}"`);
+          }
+        } catch (e) {
+          console.error('Error scanning assets dir:', e);
+        }
+      }
+
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.send(html);
     });
   } else {
     try {

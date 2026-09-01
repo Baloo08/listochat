@@ -9177,12 +9177,34 @@ async function startServer() {
       res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0");
       res.setHeader("Pragma", "no-cache");
       res.setHeader("Expires", "0");
-      const indexPath = path2.join(__dirname, "index.html");
+      const distDir = path2.join(__dirname);
+      const assetsDir = path2.join(distDir, "assets");
+      let html = "";
+      const indexPath = path2.join(distDir, "index.html");
       if (fs2.existsSync(indexPath)) {
-        res.sendFile(indexPath);
+        html = fs2.readFileSync(indexPath, "utf8");
       } else {
-        res.sendFile(path2.join(process.cwd(), "dist", "index.html"));
+        const fallbackPath = path2.join(process.cwd(), "dist", "index.html");
+        if (fs2.existsSync(fallbackPath)) {
+          html = fs2.readFileSync(fallbackPath, "utf8");
+        } else {
+          html = '<!DOCTYPE html><html><head><meta charset="utf-8"/></head><body><div id="root"></div></body></html>';
+        }
       }
+      if (fs2.existsSync(assetsDir)) {
+        try {
+          const jsFiles = fs2.readdirSync(assetsDir).filter((f) => f.startsWith("index-") && f.endsWith(".js"));
+          if (jsFiles.length > 0) {
+            jsFiles.sort((a, b) => fs2.statSync(path2.join(assetsDir, b)).mtimeMs - fs2.statSync(path2.join(assetsDir, a)).mtimeMs);
+            const latestJs = jsFiles[0];
+            html = html.replace(/src="\/assets\/index-[A-Za-z0-9_-]+\.js"/g, `src="/assets/${latestJs}"`);
+          }
+        } catch (e) {
+          console.error("Error scanning assets dir:", e);
+        }
+      }
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.send(html);
     });
   } else {
     try {
