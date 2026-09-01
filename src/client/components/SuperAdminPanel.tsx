@@ -790,7 +790,7 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Bot size={26} color="var(--primary)" />
-              <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 'bold' }}>Motor LocalAI & Modelos</h1>
+              <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 'bold' }}>Motor Betico IA & Modelos</h1>
             </div>
             <p style={{ margin: '4px 0 0 0', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
               Centro neurálgico de tu Inteligencia Artificial privada. Configura modelos, prueba inferencia y monitorea el estado del servidor.
@@ -809,7 +809,7 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
               </div>
               <div>
                 <strong style={{ fontSize: '1.05rem', color: aiEngineStatus?.online ? '#166534' : '#991b1b' }}>
-                  {aiEngineStatus?.online ? '🟢 Servidor LocalAI Operativo & Respondiendo' : '🔴 Servidor LocalAI Fuera de Línea'}
+                  {aiEngineStatus?.online ? '🟢 Servidor Betico IA Operativo & Respondiendo' : '🔴 Servidor Betico IA Fuera de Línea'}
                 </strong>
                 <div style={{ fontSize: '0.8rem', color: aiEngineStatus?.online ? '#15803d' : '#b91c1c', marginTop: '2px' }}>
                   Endpoint: <code>{localaiUrl}</code> {aiEngineStatus?.latencyMs ? '• Latencia Ping: ' + aiEngineStatus.latencyMs + 'ms' : ''}
@@ -832,7 +832,7 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
             {/* LocalAI Config */}
             <div style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '14px', padding: '22px' }}>
               <h3 style={{ margin: '0 0 14px 0', fontSize: '1.05rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Server size={18} color="var(--primary)" /> Configuración de LocalAI
+                <Server size={18} color="var(--primary)" /> Configuración de Betico IA
               </h3>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -865,7 +865,7 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '4px' }}>API Key LocalAI (Opcional)</label>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '4px' }}>API Key Betico IA (Opcional)</label>
                   <input
                     type="password"
                     placeholder="••••••••"

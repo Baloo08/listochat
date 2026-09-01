@@ -277,9 +277,9 @@ export default function App() {
       ]
     },
     {
-      title: 'IA DE MARCA BLANCA',
+      title: 'BETICO IA & MODELOS',
       items: [
-        { id: 'sa_ai_engine', label: 'Motor LocalAI & Modelos', icon: <Bot size={18} /> },
+        { id: 'sa_ai_engine', label: 'Motor Betico IA & Modelos', icon: <Bot size={18} /> },
         { id: 'sa_ai_usage', label: 'Consumo & Cuotas', icon: <TrendingUp size={18} /> }
       ]
     },
@@ -597,7 +597,7 @@ export default function App() {
         )}
 
         {/* Top Header */}
-        <header style={{
+        <header className="app-top-header" style={{
           height: '64px',
           backgroundColor: 'var(--surface)',
           borderBottom: '1px solid var(--border)',
@@ -611,12 +611,14 @@ export default function App() {
             {window.innerWidth < 768 && (
               <button
                 onClick={() => setMobileMenuOpen(true)}
-                style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text)', padding: '6px' }}
+                className="app-mobile-menu-btn"
+                style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text)', padding: '6px', display: 'none', alignItems: 'center', justifyContent: 'center' }}
+                aria-label="Abrir menú"
               >
                 <Menu size={22} />
               </button>
             )}
-            <h1 style={{ fontSize: '1.2rem', fontWeight: '800', letterSpacing: '-0.02em', margin: 0, color: 'var(--text)' }}>
+            <h1 className="app-header-title" style={{ fontSize: '1.2rem', fontWeight: '800', letterSpacing: '-0.02em', margin: 0, color: 'var(--text)' }}>
               {
                 currentPage === 'sa_tenants' ? 'Inquilinos & Negocios' :
                 currentPage === 'sa_collections' ? 'Cobranza & Cuentas por Cobrar' :
@@ -680,8 +682,8 @@ export default function App() {
                 {(user?.name || user?.email || 'A').charAt(0).toUpperCase()}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <span style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--text)', lineHeight: '1.2' }}>{user?.name || user?.email || 'Administrador'}</span>
-                <span style={{ fontSize: '0.72rem', fontWeight: '600', color: 'var(--text-muted)' }}>{user?.role === 'superadmin' ? 'SuperAdmin' : 'Administrador'}</span>
+                <span className="app-user-name-text" style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--text)', lineHeight: '1.2' }}>{user?.name || user?.email || 'Administrador'}</span>
+                <span className="app-user-role-text" style={{ fontSize: '0.72rem', fontWeight: '600', color: 'var(--text-muted)' }}>{user?.role === 'superadmin' ? 'SuperAdmin' : 'Administrador'}</span>
               </div>
             </div>
 
@@ -709,7 +711,7 @@ export default function App() {
         </header>
 
         {/* Dynamic Page Content */}
-        <main style={{ flex: 1, padding: '24px 32px', overflowY: 'auto', boxSizing: 'border-box', width: '100%', maxWidth: '100%' }}>
+        <main className="app-main-content" style={{ flex: 1, padding: '24px 32px', overflowY: 'auto', boxSizing: 'border-box', width: '100%', maxWidth: '100%' }}>
           {renderContent()}
           <GuidedTourModal
             isOpen={showTourModal}
