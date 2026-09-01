@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Clock, User, Phone, CheckCircle, Sparkles, MessageCircle, AlertCircle, Palmtree, MapPin, Sliders } from 'lucide-react';
+import { Calendar, Clock, User, Phone, CheckCircle, Sparkles, Sliders, Check, ChevronDown, MessageCircle, AlertCircle, Palmtree, MapPin, Sliders } from 'lucide-react';
 import { BookingField } from '../shared/types';
 
 interface PublicBookingViewProps {
@@ -114,8 +114,56 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
     return `${mins} minutos`;
   };
 
-  const totalBookingPrice = selectedServices.reduce((acc, s) => acc + Number(s.price || 0), 0);
-  const totalBookingMinutes = selectedServices.reduce((acc, s) => acc + Number(s.estimatedMinutes || 45), 0);
+  // Calculate total price and minutes including selected service variables / variants
+  const getServiceCalculatedPrice = (svc: any) => {
+    let base = Number(svc.price || 0);
+    const svcVars = serviceVariables[svc.id] || {};
+    if (svc.customVariables && Array.isArray(svc.customVariables)) {
+      svc.customVariables.forEach((v: any) => {
+        const selectedOptLabel = svcVars[v.name];
+        if (selectedOptLabel && Array.isArray(v.options)) {
+          const opt = v.options.find((o: any) => o.label === selectedOptLabel);
+          if (opt && opt.priceModifier) {
+            base += Number(opt.priceModifier);
+          }
+        }
+      });
+    }
+    return Math.max(0, base);
+  };
+
+  const getServiceCalculatedMinutes = (svc: any) => {
+    let mins = Number(svc.estimatedMinutes || 45);
+    const svcVars = serviceVariables[svc.id] || {};
+    if (svc.customVariables && Array.isArray(svc.customVariables)) {
+      svc.customVariables.forEach((v: any) => {
+        const selectedOptLabel = svcVars[v.name];
+        if (selectedOptLabel && Array.isArray(v.options)) {
+          const opt = v.options.find((o: any) => o.label === selectedOptLabel);
+          if (opt && opt.timeModifierMinutes) {
+            mins += Number(opt.timeModifierMinutes);
+          }
+        }
+      });
+    }
+    return Math.max(15, mins);
+  };
+
+  const totalBookingPrice = selectedServices.reduce((acc, s) => acc + getServiceCalculatedPrice(s), 0);
+  const totalBookingMinutes = selectedServices.reduce((acc, s) => acc + getServiceCalculatedMinutes(s), 0);
+
+  const handleSelectServiceVariable = (serviceId: string, varName: string, optionLabel: string) => {
+    setServiceVariables(prev => {
+      const currentSvcVars = prev[serviceId] || {};
+      return {
+        ...prev,
+        [serviceId]: {
+          ...currentSvcVars,
+          [varName]: optionLabel
+        }
+      };
+    });
+  };
 
   const handleCustomAnswerChange = (fieldLabel: string, val: string) => {
     setCustomAnswers(prev => ({ ...prev, [fieldLabel]: val }));
@@ -253,7 +301,16 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
             <div><strong>Servicios:</strong> {serviceNames}</div>
             <div><strong>Duración estimada:</strong> {formatServiceDuration(totalBookingMinutes)}</div>
             {Object.keys(serviceVariables).length > 0 && (
-              <div><strong>Opciones:</strong> {Object.entries(serviceVariables).map(([k, v]) => `${k}: ${v}`).join(' • ')}</div>
+              <div>
+                <strong>Opciones seleccionadas:</strong>
+                <div style={{ marginTop: '3px', fontSize: '0.85rem', color: '#475569' }}>
+                  {Object.entries(serviceVariables).map(([svcId, vars]: [string, any]) => {
+                    const svc = selectedServices.find(s => s.id === svcId);
+                    const varTexts = Object.entries(vars).map(([k, v]) => `${k}: ${v}`).join(', ');
+                    return varTexts ? `• ${svc?.name || 'Servicio'}: ${varTexts}` : null;
+                  }).filter(Boolean).join(' | ')}
+                </div>
+              </div>
             )}
             <div><strong>Fecha:</strong> {selectedDate}</div>
             <div><strong>Hora:</strong> {selectedTime}</div>
@@ -369,46 +426,125 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
               const price = Number(svc.price || 0);
               const minutes = Number(svc.estimatedMinutes || 45);
 
+              const calculatedSvcPrice = getServiceCalculatedPrice(svc);
+              const calculatedSvcMins = getServiceCalculatedMinutes(svc);
+              const hasVariables = svc.customVariables && Array.isArray(svc.customVariables) && svc.customVariables.length > 0;
+              const svcSelectedVars = serviceVariables[svc.id] || {};
+
               return (
                 <div
                   key={svc.id}
-                  onClick={() => handleToggleService(svc)}
                   style={{
                     padding: '16px',
-                    borderRadius: '10px',
+                    borderRadius: '12px',
                     border: `2px solid ${isSelected ? primaryColor : '#e2e8f0'}`,
-                    backgroundColor: isSelected ? `${primaryColor}0a` : 'white',
-                    cursor: 'pointer',
+                    backgroundColor: isSelected ? (isDarkBg ? '#1e293b' : `${primaryColor}08`) : cardBg,
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: '8px',
-                    transition: 'all 0.15s ease'
+                    gap: '12px',
+                    transition: 'all 0.15s ease',
+                    boxShadow: isSelected ? `0 4px 14px ${primaryColor}20` : 'none'
                   }}
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div
+                    onClick={() => handleToggleService(svc)}
+                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', cursor: 'pointer' }}
+                  >
                     <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
                       <div style={{
-                        width: '20px', height: '20px', borderRadius: '6px',
+                        width: '22px', height: '22px', borderRadius: '6px',
                         border: isSelected ? `2px solid ${primaryColor}` : '2px solid #cbd5e1',
                         backgroundColor: isSelected ? primaryColor : 'transparent',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        color: 'white', fontSize: '0.75rem', fontWeight: 'bold', marginTop: '2px'
+                        color: 'white', fontSize: '0.8rem', fontWeight: 'bold', marginTop: '2px', flexShrink: 0
                       }}>
                         {isSelected ? '✓' : ''}
                       </div>
                       <div>
-                        <div style={{ fontWeight: 'bold', fontSize: '1rem', color: isSelected ? primaryColor : '#1e293b' }}>
+                        <div style={{ fontWeight: 'bold', fontSize: '1.05rem', color: isSelected ? primaryColor : titleColor }}>
                           {svc.name}
                         </div>
-                        {svc.description && <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px' }}>{svc.description}</div>}
-                        <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '4px' }}>⏱️ {formatServiceDuration(minutes)}</div>
+                        {svc.description && <div style={{ fontSize: '0.82rem', color: textColor, marginTop: '2px' }}>{svc.description}</div>}
+                        <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span>⏱️ {formatServiceDuration(calculatedSvcMins)}</span>
+                          {hasVariables && (
+                            <span style={{ backgroundColor: '#f1f5f9', color: '#475569', padding: '1px 6px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold' }}>
+                              Opciones disponibles
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
 
-                    <div style={{ fontWeight: 'bold', fontSize: '1.1rem', color: primaryColor }}>
-                      ₡{price.toLocaleString('es-CR')}
+                    <div style={{ fontWeight: '900', fontSize: '1.15rem', color: primaryColor, textAlign: 'right' }}>
+                      ₡{calculatedSvcPrice.toLocaleString('es-CR')}
                     </div>
                   </div>
+
+                  {/* SELECTOR DE VARIANTES / OPCIONES DEL SERVICIO */}
+                  {isSelected && hasVariables && (
+                    <div style={{ marginTop: '4px', padding: '12px 14px', backgroundColor: isDarkBg ? '#0f172a' : '#f8fafc', borderRadius: '8px', border: isDarkBg ? '1px solid #334155' : '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div style={{ fontSize: '0.78rem', fontWeight: 'bold', color: titleColor, display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <Sliders size={13} color={primaryColor} /> Personaliza tu servicio:
+                      </div>
+
+                      {svc.customVariables.map((v: any, vIdx: number) => {
+                        const currentVal = svcSelectedVars[v.name] || (v.options?.[0]?.label || '');
+                        return (
+                          <div key={vIdx} style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            <label style={{ fontSize: '0.75rem', fontWeight: 'bold', color: textColor }}>
+                              {v.name} {v.required && <span style={{ color: '#ef4444' }}>*</span>}:
+                            </label>
+
+                            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                              {(v.options || []).map((opt: any, oIdx: number) => {
+                                const isOptSelected = currentVal === opt.label;
+                                const priceMod = Number(opt.priceModifier || 0);
+                                const timeMod = Number(opt.timeModifierMinutes || 0);
+
+                                return (
+                                  <button
+                                    key={oIdx}
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleSelectServiceVariable(svc.id, v.name, opt.label);
+                                    }}
+                                    style={{
+                                      padding: '6px 12px',
+                                      borderRadius: '6px',
+                                      border: isOptSelected ? `2px solid ${primaryColor}` : (isDarkBg ? '1px solid #334155' : '1px solid #cbd5e1'),
+                                      backgroundColor: isOptSelected ? `${primaryColor}15` : (isDarkBg ? '#1e293b' : '#ffffff'),
+                                      color: isOptSelected ? primaryColor : titleColor,
+                                      fontWeight: isOptSelected ? '800' : '600',
+                                      fontSize: '0.78rem',
+                                      cursor: 'pointer',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
+                                      transition: 'all 0.15s ease'
+                                    }}
+                                  >
+                                    <span>{opt.label}</span>
+                                    {priceMod !== 0 && (
+                                      <span style={{ fontSize: '0.7rem', color: priceMod > 0 ? '#16a34a' : '#ef4444', fontWeight: 'bold' }}>
+                                        ({priceMod > 0 ? `+₡${priceMod.toLocaleString('es-CR')}` : `-₡${Math.abs(priceMod).toLocaleString('es-CR')}`})
+                                      </span>
+                                    )}
+                                    {timeMod !== 0 && (
+                                      <span style={{ fontSize: '0.7rem', color: '#64748b' }}>
+                                        ({timeMod > 0 ? `+${timeMod}m` : `${timeMod}m`})
+                                      </span>
+                                    )}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               );
             })}

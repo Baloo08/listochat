@@ -122,9 +122,20 @@ export default function App() {
   });
   const [unreadOrdersCount, setUnreadOrdersCount] = useState<number>(0);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState<boolean>(() => typeof window !== 'undefined' && window.innerWidth < 768);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
     return localStorage.getItem('sidebar_collapsed') === 'true';
   });
+
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+      if (!mobile) setMobileMenuOpen(false);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Tenant customization
   const [storeMode, setStoreMode] = useState<'retail' | 'restaurant'>('retail');
@@ -418,22 +429,27 @@ export default function App() {
         />
       )}
 
-      {/* Sidebar (Collapsible for Desktop, Slide-over for Mobile) */}
-      <div style={{
-        width: sidebarWidth,
-        backgroundColor: 'var(--surface)',
-        borderRight: '1px solid var(--border)',
-        display: 'flex',
-        flexDirection: 'column',
-        position: window.innerWidth < 768 ? 'fixed' : 'relative',
-        top: 0,
-        bottom: 0,
-        left: 0,
-        zIndex: 50,
-        transform: window.innerWidth < 768 && !mobileMenuOpen ? 'translateX(-100%)' : 'translateX(0)',
-        transition: 'width 0.2s ease, transform 0.25s ease',
-        overflow: 'hidden'
-      }}>
+      {/* Sidebar (Collapsible for Desktop, Slide-over Drawer for Mobile) */}
+      <div
+        className="app-main-sidebar"
+        style={{
+          width: isMobile ? '280px' : sidebarWidth,
+          backgroundColor: 'var(--surface)',
+          borderRight: '1px solid var(--border)',
+          display: 'flex',
+          flexDirection: 'column',
+          position: isMobile ? 'fixed' : 'relative',
+          top: 0,
+          bottom: 0,
+          left: 0,
+          height: '100vh',
+          zIndex: 9999,
+          transform: isMobile ? (mobileMenuOpen ? 'translateX(0)' : 'translateX(-100%)') : 'translateX(0)',
+          transition: 'width 0.2s ease, transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+          overflow: 'hidden',
+          boxShadow: isMobile && mobileMenuOpen ? '4px 0 25px rgba(0,0,0,0.3)' : 'none'
+        }}
+      >
         {/* Sidebar Header */}
         <div style={{
           padding: isSidebarCollapsed ? '12px 6px' : '14px 16px',
@@ -470,7 +486,7 @@ export default function App() {
             </button>
           )}
 
-          {window.innerWidth >= 768 ? (
+          {!isMobile ? (
             <button
               onClick={toggleSidebar}
               style={{
@@ -489,8 +505,12 @@ export default function App() {
               {isSidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
             </button>
           ) : (
-            <button onClick={() => setMobileMenuOpen(false)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#64748b' }}>
-              <X size={20} />
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen(false)}
+              style={{ border: 'none', background: '#f1f5f9', cursor: 'pointer', color: '#0f172a', padding: '6px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            >
+              <X size={22} />
             </button>
           )}
         </div>
@@ -607,15 +627,27 @@ export default function App() {
           padding: '0 24px',
           boxShadow: 'var(--shadow-xs)'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-            {window.innerWidth < 768 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            {isMobile && (
               <button
+                type="button"
                 onClick={() => setMobileMenuOpen(true)}
                 className="app-mobile-menu-btn"
-                style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text)', padding: '6px', display: 'none', alignItems: 'center', justifyContent: 'center' }}
-                aria-label="Abrir menú"
+                style={{
+                  border: '1px solid var(--border)',
+                  background: '#f8fafc',
+                  cursor: 'pointer',
+                  color: 'var(--text)',
+                  padding: '8px',
+                  borderRadius: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                }}
+                aria-label="Abrir menú de navegación"
               >
-                <Menu size={22} />
+                <Menu size={22} color="var(--primary)" />
               </button>
             )}
             <h1 className="app-header-title" style={{ fontSize: '1.2rem', fontWeight: '800', letterSpacing: '-0.02em', margin: 0, color: 'var(--text)' }}>
