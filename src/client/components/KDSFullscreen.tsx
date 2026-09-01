@@ -271,8 +271,23 @@ export default function KDSFullscreen() {
                         {/* Order Header */}
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                           <div>
-                            <div style={{ fontSize: '1rem', fontWeight: 'bold', color: '#38bdf8' }}>
-                              #ORD-{order.orderNumber}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                              <div style={{ fontSize: '1rem', fontWeight: 'bold', color: '#38bdf8' }}>
+                                #ORD-{order.orderNumber}
+                              </div>
+                              {order.paymentMethod === 'sinpe' ? (
+                                <span style={{ fontSize: '0.68rem', padding: '1px 5px', backgroundColor: 'rgba(56, 189, 248, 0.2)', color: '#38bdf8', borderRadius: '4px', fontWeight: 'bold' }}>
+                                  📱 SINPE {order.paymentStatus === 'proof_sent' ? '✓' : ''}
+                                </span>
+                              ) : order.paymentMethod === 'transfer' ? (
+                                <span style={{ fontSize: '0.68rem', padding: '1px 5px', backgroundColor: 'rgba(168, 85, 247, 0.2)', color: '#c084fc', borderRadius: '4px', fontWeight: 'bold' }}>
+                                  🏦 Transf.
+                                </span>
+                              ) : (
+                                <span style={{ fontSize: '0.68rem', padding: '1px 5px', backgroundColor: 'rgba(234, 179, 8, 0.2)', color: '#facc15', borderRadius: '4px', fontWeight: 'bold' }}>
+                                  💵 Cobrar Contra Entrega
+                                </span>
+                              )}
                             </div>
                             <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#f1f5f9', marginTop: '2px' }}>
                               {order.customerName}

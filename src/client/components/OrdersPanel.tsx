@@ -299,8 +299,23 @@ export default function OrdersPanel() {
                         >
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                             <div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                                 <strong style={{ fontSize: '0.95rem', color: '#1e293b' }}>#ORD-{order.orderNumber}</strong>
+                                
+                                {/* Payment Method Badge */}
+                                {order.paymentMethod === 'sinpe' ? (
+                                  <span style={{ fontSize: '0.68rem', padding: '1px 6px', backgroundColor: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: '4px', fontWeight: 'bold' }}>
+                                    📱 SINPE {order.paymentStatus === 'proof_sent' ? '✓ Comp.' : ''}
+                                  </span>
+                                ) : order.paymentMethod === 'transfer' ? (
+                                  <span style={{ fontSize: '0.68rem', padding: '1px 6px', backgroundColor: '#faf5ff', color: '#7e22ce', border: '1px solid #e9d5ff', borderRadius: '4px', fontWeight: 'bold' }}>
+                                    🏦 Transf.
+                                  </span>
+                                ) : (
+                                  <span style={{ fontSize: '0.68rem', padding: '1px 6px', backgroundColor: '#fefce8', color: '#a16207', border: '1px solid #fef08a', borderRadius: '4px', fontWeight: 'bold' }}>
+                                    💵 Contra Entrega
+                                  </span>
+                                )}
                                 {(order as any).branchName && (
                                   <span style={{ fontSize: '0.68rem', padding: '1px 6px', backgroundColor: '#f3e8ff', color: '#6b21a8', borderRadius: '4px', fontWeight: 'bold' }}>
                                     {(order as any).branchName}

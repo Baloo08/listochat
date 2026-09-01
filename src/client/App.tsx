@@ -94,11 +94,13 @@ export default function App() {
   }
 
   if (pathname.startsWith('/repartidor')) {
-    return <DriverPortal />;
+    const slug = pathname.replace('/repartidor/', '').replace('/repartidor', '').split('/')[0];
+    return <DriverPortal tenantSlug={slug || undefined} />;
   }
 
   if (pathname.startsWith('/especialista') || pathname.startsWith('/colaborador')) {
-    return <SpecialistPortal />;
+    const slug = pathname.replace('/especialista/', '').replace('/especialista', '').replace('/colaborador/', '').replace('/colaborador', '').split('/')[0];
+    return <SpecialistPortal tenantSlug={slug || undefined} />;
   }
 
   if (pathname.startsWith('/kds')) {

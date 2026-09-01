@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Bike, Navigation, MapPin, Phone, MessageSquare, CheckCircle, Package, RefreshCw, LogOut, AlertCircle, Clock, ShieldCheck, DollarSign, Eye, EyeOff, Lock, Calendar, Filter } from 'lucide-react';
 import { Order } from '../../shared/types';
 
-export default function DriverPortal() {
+export default function DriverPortal({ tenantSlug }: { tenantSlug?: string }) {
   const [pin, setPin] = useState('');
   const [showPin, setShowPin] = useState(false);
   const [driver, setDriver] = useState<any | null>(null);

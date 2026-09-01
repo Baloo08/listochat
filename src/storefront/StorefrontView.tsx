@@ -1049,6 +1049,125 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                       </div>
                     )}
 
+                    {/* PAYMENT METHOD SELECTOR (Habilitados según la configuración del comercio) */}
+                    <div style={{ backgroundColor: isDark ? '#1e293b' : '#f8fafc', padding: '14px', borderRadius: '10px', border: isDark ? '1px solid #334155' : '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <label style={{ fontSize: '0.85rem', fontWeight: 'bold', color: titleColor, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        💳 Selecciona tu Forma de Pago *
+                      </label>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '8px' }}>
+                        {store.acceptSinpe !== false && (
+                          <button
+                            type="button"
+                            onClick={() => setPaymentMethod('sinpe')}
+                            style={{
+                              padding: '10px 8px', borderRadius: '8px',
+                              border: paymentMethod === 'sinpe' ? `2px solid ${primaryColor}` : (isDark ? '1px solid #475569' : '1px solid #cbd5e1'),
+                              backgroundColor: paymentMethod === 'sinpe' ? `${primaryColor}15` : (isDark ? '#0f172a' : '#ffffff'),
+                              color: paymentMethod === 'sinpe' ? primaryColor : titleColor,
+                              fontWeight: paymentMethod === 'sinpe' ? '800' : '600',
+                              fontSize: '0.82rem', cursor: 'pointer', textAlign: 'center', transition: 'all 0.15s'
+                            }}
+                          >
+                            📱 SINPE Móvil
+                          </button>
+                        )}
+
+                        {store.acceptTransfer !== false && (
+                          <button
+                            type="button"
+                            onClick={() => setPaymentMethod('transfer')}
+                            style={{
+                              padding: '10px 8px', borderRadius: '8px',
+                              border: paymentMethod === 'transfer' ? `2px solid ${primaryColor}` : (isDark ? '1px solid #475569' : '1px solid #cbd5e1'),
+                              backgroundColor: paymentMethod === 'transfer' ? `${primaryColor}15` : (isDark ? '#0f172a' : '#ffffff'),
+                              color: paymentMethod === 'transfer' ? primaryColor : titleColor,
+                              fontWeight: paymentMethod === 'transfer' ? '800' : '600',
+                              fontSize: '0.82rem', cursor: 'pointer', textAlign: 'center', transition: 'all 0.15s'
+                            }}
+                          >
+                            🏦 Transferencia
+                          </button>
+                        )}
+
+                        {store.acceptCashOnDelivery !== false && (
+                          <button
+                            type="button"
+                            onClick={() => setPaymentMethod('cash')}
+                            style={{
+                              padding: '10px 8px', borderRadius: '8px',
+                              border: paymentMethod === 'cash' ? `2px solid ${primaryColor}` : (isDark ? '1px solid #475569' : '1px solid #cbd5e1'),
+                              backgroundColor: paymentMethod === 'cash' ? `${primaryColor}15` : (isDark ? '#0f172a' : '#ffffff'),
+                              color: paymentMethod === 'cash' ? primaryColor : titleColor,
+                              fontWeight: paymentMethod === 'cash' ? '800' : '600',
+                              fontSize: '0.82rem', cursor: 'pointer', textAlign: 'center', transition: 'all 0.15s'
+                            }}
+                          >
+                            💵 Contra Entrega
+                          </button>
+                        )}
+                      </div>
+
+                      {/* DETALLE SEGÚN MÉTODO DE PAGO */}
+                      {paymentMethod === 'sinpe' && (
+                        <div style={{ backgroundColor: isDark ? '#0f172a' : '#eff6ff', padding: '10px 12px', borderRadius: '8px', border: isDark ? '1px solid #1e3a8a' : '1px solid #bfdbfe', fontSize: '0.82rem' }}>
+                          <div style={{ fontWeight: 'bold', color: isDark ? '#93c5fd' : '#1e40af', marginBottom: '4px' }}>
+                            Datos para SINPE Móvil:
+                          </div>
+                          <div style={{ color: titleColor }}>
+                            📱 Teléfono: <strong>{store.sinpePhone || store.whatsappNumber || 'Consultar por WhatsApp'}</strong>
+                          </div>
+                          {store.sinpeName && (
+                            <div style={{ color: titleColor, marginTop: '2px' }}>
+                              👤 Titular: <strong>{store.sinpeName}</strong>
+                            </div>
+                          )}
+                          <div style={{ marginTop: '8px' }}>
+                            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '3px', color: isDark ? '#93c5fd' : '#1e40af' }}>
+                              Número de Comprobante / Referencia (Opcional):
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="Ej: 123456 o últimos dígitos"
+                              value={paymentReference}
+                              onChange={(e) => setPaymentReference(e.target.value)}
+                              style={{ width: '100%', padding: '7px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.82rem', boxSizing: 'border-box' }}
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {paymentMethod === 'transfer' && (
+                        <div style={{ backgroundColor: isDark ? '#0f172a' : '#eff6ff', padding: '10px 12px', borderRadius: '8px', border: isDark ? '1px solid #1e3a8a' : '1px solid #bfdbfe', fontSize: '0.82rem' }}>
+                          <div style={{ fontWeight: 'bold', color: isDark ? '#93c5fd' : '#1e40af', marginBottom: '4px' }}>
+                            Cuentas Bancarias:
+                          </div>
+                          <div style={{ color: titleColor, whiteSpace: 'pre-line' }}>
+                            {store.bankAccountInfo || 'Consultar IBAN y banco por WhatsApp'}
+                          </div>
+                          <div style={{ marginTop: '8px' }}>
+                            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '3px', color: isDark ? '#93c5fd' : '#1e40af' }}>
+                              Número de Transferencia / Referencia:
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="Ej: Transf #987654"
+                              value={paymentReference}
+                              onChange={(e) => setPaymentReference(e.target.value)}
+                              style={{ width: '100%', padding: '7px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.82rem', boxSizing: 'border-box' }}
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {paymentMethod === 'cash' && (
+                        <div style={{ backgroundColor: isDark ? '#0f172a' : '#f0fdf4', padding: '10px 12px', borderRadius: '8px', border: isDark ? '1px solid #166534' : '1px solid #bbf7d0', fontSize: '0.82rem', color: isDark ? '#86efac' : '#166534' }}>
+                          💵 <strong>Pago al Recibir o Retirar:</strong> Cancelas en efectivo o tarjeta contra entrega con el repartidor o en el local.
+                        </div>
+                      )}
+
+                    </div>
+
                     <div>
                       <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px', color: titleColor }}>Notas o Indicaciones</label>
                       <input

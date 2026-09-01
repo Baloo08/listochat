@@ -25,7 +25,7 @@ interface AppointmentItem {
   createdAt?: string;
 }
 
-export default function SpecialistPortal() {
+export default function SpecialistPortal({ tenantSlug }: { tenantSlug?: string }) {
   const [specialist, setSpecialist] = useState<SpecialistInfo | null>(null);
   const [pin, setPin] = useState('');
   const [phone, setPhone] = useState('');
