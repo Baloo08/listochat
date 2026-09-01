@@ -102,6 +102,8 @@ interface WebsiteConfig {
   navbarHoverColor?: string;
   hoverEffectType?: 'lift' | 'glow' | 'scale' | 'border_highlight';
   hoverGlowColor?: string;
+  servicesPerPage?: number;
+  productsPerPage?: number;
   showAboutSection: boolean;
   showFeaturesSection: boolean;
   showProductsSection: boolean;
@@ -159,6 +161,8 @@ export default function WebsiteBuilder() {
     navbarHoverColor: '#2563eb',
     hoverEffectType: 'lift',
     hoverGlowColor: '#38bdf8',
+    servicesPerPage: 6,
+    productsPerPage: 8,
     showAboutSection: true,
     showFeaturesSection: true,
     showProductsSection: true,

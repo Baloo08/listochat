@@ -35,7 +35,7 @@ router.get('/:slug', async (req, res) => {
     }));
     const featuredServices = allServices;
 
-    const featuredProducts = products.slice(0, 8).map(p => ({
+    const allProducts = products.filter(p => p.active !== false).map(p => ({
       id: p.id,
       name: p.name,
       slug: p.slug,
@@ -43,8 +43,9 @@ router.get('/:slug', async (req, res) => {
       price: p.price,
       compareAtPrice: p.compareAtPrice,
       images: p.images,
-      category: p.category
+      category: p.category || 'General'
     }));
+    const featuredProducts = allProducts;
 
     res.json({
       success: true,

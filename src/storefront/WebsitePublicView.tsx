@@ -10,11 +10,18 @@ import {
   Star,
   ArrowRight,
   ChevronRight,
+  ChevronLeft,
   ShieldCheck,
   Award,
   Truck,
   Menu,
-  X
+  X,
+  Sparkles,
+  Sun,
+  Briefcase,
+  Tag,
+  FileText,
+  Layers
 } from 'lucide-react';
 import { WhatsAppIcon, InstagramIcon, FacebookIcon, TikTokIcon } from '../client/components/WebsiteBuilder';
 
@@ -27,6 +34,9 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
   const [loading, setLoading] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeServiceCategory, setActiveServiceCategory] = useState<string>("all");
+  const [currentServicePage, setCurrentServicePage] = useState<number>(1);
+  const [activeProductCategory, setActiveProductCategory] = useState<string>("all");
+  const [currentProductPage, setCurrentProductPage] = useState<number>(1);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -95,13 +105,27 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
 
   const { tenant, website, store, featuredServices, featuredProducts } = data;
   const formatServiceDuration = (mins: number) => {
-    if (mins >= 1440 || mins === 480) return '☀️ Día Completo';
+    if (mins >= 1440 || mins === 480) {
+      return (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#b45309', fontWeight: '700' }}>
+          <Sun size={14} color="#f59e0b" /> Día Completo
+        </span>
+      );
+    }
     if (mins >= 60) {
       const h = Math.floor(mins / 60);
       const m = mins % 60;
-      return `${h}h${m > 0 ? ' ' + m + 'm' : ''}`;
+      return (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+          <Clock size={14} color="#64748b" /> {`${h}h${m > 0 ? ' ' + m + 'm' : ''}`}
+        </span>
+      );
     }
-    return `${mins} min`;
+    return (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+        <Clock size={14} color="#64748b" /> {`${mins} min`}
+      </span>
+    );
   };
 
   const primaryColor = website.primaryColor || '#2563eb';
@@ -308,37 +332,37 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
             animation: 'fadeIn 0.2s ease-in-out'
           }}>
             
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {website.showAboutSection !== false && (
                 <a
                   onClick={() => { scrollTo('nosotros'); setMobileMenuOpen(false); }}
-                  style={{ color: '#0f172a', fontWeight: '700', fontSize: '1rem', padding: '8px 0', borderBottom: '1px solid #f1f5f9', cursor: 'pointer' }}
+                  style={{ color: '#0f172a', fontWeight: '700', fontSize: '0.95rem', padding: '10px 0', borderBottom: '1px solid #f1f5f9', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
                 >
-                  📌 Sobre Nosotros
+                  <FileText size={18} color={primaryColor} /> Sobre Nosotros
                 </a>
               )}
               {website.showProductsSection !== false && featuredProducts && featuredProducts.length > 0 && (
                 <a
                   onClick={() => { scrollTo('productos'); setMobileMenuOpen(false); }}
-                  style={{ color: '#0f172a', fontWeight: '700', fontSize: '1rem', padding: '8px 0', borderBottom: '1px solid #f1f5f9', cursor: 'pointer' }}
+                  style={{ color: '#0f172a', fontWeight: '700', fontSize: '0.95rem', padding: '10px 0', borderBottom: '1px solid #f1f5f9', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
                 >
-                  🛍️ Productos & Menú
+                  <ShoppingBag size={18} color={primaryColor} /> Productos & Menú
                 </a>
               )}
               {website.showServicesSection !== false && featuredServices && featuredServices.length > 0 && (
                 <a
                   onClick={() => { scrollTo('servicios'); setMobileMenuOpen(false); }}
-                  style={{ color: '#0f172a', fontWeight: '700', fontSize: '1rem', padding: '8px 0', borderBottom: '1px solid #f1f5f9', cursor: 'pointer' }}
+                  style={{ color: '#0f172a', fontWeight: '700', fontSize: '0.95rem', padding: '10px 0', borderBottom: '1px solid #f1f5f9', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
                 >
-                  💼 Servicios
+                  <Briefcase size={18} color={primaryColor} /> Servicios
                 </a>
               )}
               {website.showContactSection !== false && (
                 <a
                   onClick={() => { scrollTo('contacto'); setMobileMenuOpen(false); }}
-                  style={{ color: '#0f172a', fontWeight: '700', fontSize: '1rem', padding: '8px 0', borderBottom: '1px solid #f1f5f9', cursor: 'pointer' }}
+                  style={{ color: '#0f172a', fontWeight: '700', fontSize: '0.95rem', padding: '10px 0', borderBottom: '1px solid #f1f5f9', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
                 >
-                  📍 Contacto & Ubicación
+                  <MapPin size={18} color={primaryColor} /> Contacto & Ubicación
                 </a>
               )}
             </div>
@@ -700,92 +724,213 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
         </section>
       )}
 
-      {/* 5. PRODUCTOS / MENÚ DESTACADO */}
-      {website.showProductsSection !== false && featuredProducts && featuredProducts.length > 0 && (
-        <section id="productos" style={{ padding: '70px 20px', maxWidth: '1200px', margin: '0 auto' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '30px', flexWrap: 'wrap', gap: '12px' }}>
-            <div>
-              <div style={{ color: primaryColor, fontWeight: '700', fontSize: '0.85rem', textTransform: 'uppercase', marginBottom: '4px' }}>
-                Catálogo Digital
-              </div>
-              <h2 style={{ fontSize: 'clamp(1.8rem, 3vw, 2.2rem)', fontWeight: '900', color: '#0f172a', margin: 0 }}>
-                Productos y Menú Destacado
-              </h2>
-            </div>
-            <a
-              href={storeUrl}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: '6px',
-                color: primaryColor, fontWeight: '700', fontSize: '0.95rem', textDecoration: 'none'
-              }}
-            >
-              <span>Ver Catálogo Completo</span>
-              <ChevronRight size={18} />
-            </a>
-          </div>
+      {/* 5. PRODUCTOS / MENÚ CON FILTROS Y PAGINACIÓN */}
+      {website.showProductsSection !== false && featuredProducts && featuredProducts.length > 0 && (() => {
+        const productCategories = ['all', ...Array.from(new Set(featuredProducts.map((p: any) => p.category || 'General').filter(Boolean)))];
+        const displayedProducts = activeProductCategory === 'all'
+          ? featuredProducts
+          : featuredProducts.filter((p: any) => (p.category || 'General') === activeProductCategory);
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '20px' }}>
-            {featuredProducts.map((prod: any) => {
-              const imgUrl = prod.images && prod.images.length > 0 ? prod.images[0].url : null;
-              return (
-                <div
-                  key={prod.id}
-                  className="hover-card-interactive"
-                  style={{
-                    backgroundColor: '#ffffff',
-                    borderRadius: '16px',
-                    overflow: 'hidden',
-                    border: '1px solid #e2e8f0',
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
-                    display: 'flex',
-                    flexDirection: 'column'
-                  }}
-                >
-                  <div style={{ height: '170px', backgroundColor: '#f1f5f9', position: 'relative' }}>
-                    {imgUrl ? (
-                      <img src={imgUrl} alt={prod.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    ) : (
-                      <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
-                        <ShoppingBag size={32} />
+        const itemsPerPage = Number(website.productsPerPage) || 8;
+        const totalPages = Math.ceil(displayedProducts.length / itemsPerPage) || 1;
+        const safePage = Math.min(currentProductPage, totalPages);
+        const paginatedProducts = displayedProducts.slice((safePage - 1) * itemsPerPage, safePage * itemsPerPage);
+
+        return (
+          <section id="productos" style={{ padding: '70px 20px', maxWidth: '1200px', margin: '0 auto' }}>
+            
+            {/* Header Productos */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
+              <div>
+                <div style={{ color: primaryColor, fontWeight: '700', fontSize: '0.85rem', textTransform: 'uppercase', marginBottom: '4px' }}>
+                  Catálogo Digital
+                </div>
+                <h2 style={{ fontSize: 'clamp(1.8rem, 3vw, 2.2rem)', fontWeight: '900', color: '#0f172a', margin: 0 }}>
+                  Productos y Menú ({displayedProducts.length})
+                </h2>
+              </div>
+              <a
+                href={storeUrl}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: '6px',
+                  color: primaryColor, fontWeight: '700', fontSize: '0.95rem', textDecoration: 'none'
+                }}
+              >
+                <span>Ver Tienda Completa</span>
+                <ChevronRight size={18} />
+              </a>
+            </div>
+
+            {/* Filtros de Categorías de Productos */}
+            {productCategories.length > 2 && (
+              <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '12px', marginBottom: '20px', WebkitOverflowScrolling: 'touch' }}>
+                {productCategories.map((cat: string) => {
+                  const isActive = activeProductCategory === cat;
+                  return (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => {
+                        setActiveProductCategory(cat);
+                        setCurrentProductPage(1);
+                      }}
+                      style={{
+                        padding: '7px 16px',
+                        borderRadius: '20px',
+                        border: isActive ? `1.5px solid ${primaryColor}` : '1px solid #cbd5e1',
+                        backgroundColor: isActive ? `${primaryColor}15` : '#ffffff',
+                        color: isActive ? primaryColor : '#475569',
+                        fontWeight: isActive ? '800' : '600',
+                        fontSize: '0.84rem',
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      {cat === 'all' ? <Sparkles size={14} color={primaryColor} /> : <Tag size={13} />}
+                      <span>{cat === 'all' ? 'Todos los productos' : cat}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Grid de Productos Paginados */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '20px' }}>
+              {paginatedProducts.map((prod: any) => {
+                const imgUrl = prod.images && prod.images.length > 0 ? prod.images[0].url : null;
+                return (
+                  <div
+                    key={prod.id}
+                    className="hover-card-interactive"
+                    style={{
+                      backgroundColor: '#ffffff',
+                      borderRadius: '16px',
+                      overflow: 'hidden',
+                      border: '1px solid #e2e8f0',
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
+                      display: 'flex',
+                      flexDirection: 'column'
+                    }}
+                  >
+                    <div style={{ height: '170px', backgroundColor: '#f1f5f9', position: 'relative' }}>
+                      {imgUrl ? (
+                        <img src={imgUrl} alt={prod.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      ) : (
+                        <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
+                          <ShoppingBag size={32} />
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', flexGrow: 1 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '6px', marginBottom: '4px' }}>
+                        <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: '800', color: '#0f172a' }}>{prod.name}</h4>
+                        <span style={{ fontSize: '0.7rem', backgroundColor: '#f1f5f9', color: '#64748b', padding: '2px 6px', borderRadius: '8px', fontWeight: '600' }}>
+                          {prod.category || 'General'}
+                        </span>
                       </div>
-                    )}
-                  </div>
-                  <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', flexGrow: 1 }}>
-                    <h4 style={{ margin: '0 0 6px 0', fontSize: '0.95rem', fontWeight: '800', color: '#0f172a' }}>{prod.name}</h4>
-                    <p style={{ margin: '0 0 12px 0', fontSize: '0.8rem', color: '#64748b', flexGrow: 1, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                      {prod.description || ''}
-                    </p>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto' }}>
-                      <span style={{ fontSize: '1.1rem', fontWeight: '900', color: '#0f172a' }}>
-                        ₡{Number(prod.price || 0).toLocaleString('es-CR')}
-                      </span>
-                      <a
-                        href={storeUrl}
-                        className={buttonHoverEffect ? 'btn-interactive' : ''}
-                        style={{
-                          padding: '6px 14px', borderRadius: btnRadius,
-                          backgroundColor: primaryColor, color: 'white',
-                          textDecoration: 'none', fontWeight: '700', fontSize: '0.8rem',
-                          transition: 'all 0.2s ease'
-                        }}
-                      >
-                        Pedir
-                      </a>
+                      <p style={{ margin: '0 0 12px 0', fontSize: '0.8rem', color: '#64748b', flexGrow: 1, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                        {prod.description || ''}
+                      </p>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto' }}>
+                        <span style={{ fontSize: '1.1rem', fontWeight: '900', color: '#0f172a' }}>
+                          ₡{Number(prod.price || 0).toLocaleString('es-CR')}
+                        </span>
+                        <a
+                          href={storeUrl}
+                          className={buttonHoverEffect ? 'btn-interactive' : ''}
+                          style={{
+                            padding: '6px 14px', borderRadius: btnRadius,
+                            backgroundColor: primaryColor, color: 'white',
+                            textDecoration: 'none', fontWeight: '700', fontSize: '0.8rem',
+                            transition: 'all 0.2s ease'
+                          }}
+                        >
+                          Pedir
+                        </a>
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      )}
+                );
+              })}
+            </div>
 
-      {/* 6. SERVICIOS COMPLETOS CON FILTRO DE CATEGORÍAS */}
+            {/* Controles de Paginación / Slider de Productos */}
+            {totalPages > 1 && (
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '12px', marginTop: '36px', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  disabled={safePage <= 1}
+                  onClick={() => setCurrentProductPage(p => Math.max(1, p - 1))}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: '6px',
+                    padding: '8px 16px', borderRadius: btnRadius,
+                    border: '1px solid #cbd5e1', backgroundColor: safePage <= 1 ? '#f8fafc' : '#ffffff',
+                    color: safePage <= 1 ? '#94a3b8' : '#0f172a',
+                    fontWeight: '700', fontSize: '0.85rem', cursor: safePage <= 1 ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  <ChevronLeft size={16} /> Anterior
+                </button>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  {[...Array(totalPages)].map((_, idx) => {
+                    const pageNum = idx + 1;
+                    const isCurrent = pageNum === safePage;
+                    return (
+                      <button
+                        key={pageNum}
+                        type="button"
+                        onClick={() => setCurrentProductPage(pageNum)}
+                        style={{
+                          width: '34px', height: '34px', borderRadius: '8px',
+                          border: isCurrent ? `2px solid ${primaryColor}` : '1px solid #cbd5e1',
+                          backgroundColor: isCurrent ? primaryColor : '#ffffff',
+                          color: isCurrent ? '#ffffff' : '#334155',
+                          fontWeight: '800', fontSize: '0.82rem', cursor: 'pointer'
+                        }}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <button
+                  type="button"
+                  disabled={safePage >= totalPages}
+                  onClick={() => setCurrentProductPage(p => Math.min(totalPages, p + 1))}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: '6px',
+                    padding: '8px 16px', borderRadius: btnRadius,
+                    border: '1px solid #cbd5e1', backgroundColor: safePage >= totalPages ? '#f8fafc' : '#ffffff',
+                    color: safePage >= totalPages ? '#94a3b8' : '#0f172a',
+                    fontWeight: '700', fontSize: '0.85rem', cursor: safePage >= totalPages ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  Siguiente <ChevronRight size={16} />
+                </button>
+              </div>
+            )}
+
+          </section>
+        );
+      })()}
+
+      {/* 6. SERVICIOS COMPLETOS CON FILTRO DE CATEGORÍAS Y PAGINACIÓN */}
       {website.showServicesSection !== false && featuredServices && featuredServices.length > 0 && (() => {
         const serviceCategories = ['all', ...Array.from(new Set(featuredServices.map((s: any) => s.category || 'General').filter(Boolean)))];
         const displayedServices = activeServiceCategory === 'all'
           ? featuredServices
           : featuredServices.filter((s: any) => (s.category || 'General') === activeServiceCategory);
+
+        const itemsPerPage = Number(website.servicesPerPage) || 6;
+        const totalPages = Math.ceil(displayedServices.length / itemsPerPage) || 1;
+        const safePage = Math.min(currentServicePage, totalPages);
+        const paginatedServices = displayedServices.slice((safePage - 1) * itemsPerPage, safePage * itemsPerPage);
 
         return (
           <section id="servicios" style={{ padding: '70px 20px', backgroundColor: '#ffffff', borderTop: '1px solid #e2e8f0', borderBottom: '1px solid #e2e8f0' }}>
@@ -822,7 +967,10 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
                       <button
                         key={cat}
                         type="button"
-                        onClick={() => setActiveServiceCategory(cat)}
+                        onClick={() => {
+                          setActiveServiceCategory(cat);
+                          setCurrentServicePage(1);
+                        }}
                         style={{
                           padding: '7px 16px',
                           borderRadius: '20px',
@@ -833,19 +981,23 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
                           fontSize: '0.84rem',
                           cursor: 'pointer',
                           whiteSpace: 'nowrap',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
                           transition: 'all 0.15s ease'
                         }}
                       >
-                        {cat === 'all' ? '✨ Todas las categorías' : cat}
+                        {cat === 'all' ? <Sparkles size={14} color={primaryColor} /> : <Briefcase size={13} />}
+                        <span>{cat === 'all' ? 'Todos los servicios' : cat}</span>
                       </button>
                     );
                   })}
                 </div>
               )}
 
-              {/* Grid de Todos los Servicios */}
+              {/* Grid de Servicios Paginados */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '18px' }}>
-                {displayedServices.map((srv: any) => (
+                {paginatedServices.map((srv: any) => (
                   <div
                     key={srv.id}
                     className="hover-card-interactive"
@@ -874,9 +1026,9 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
                         </p>
                       )}
 
-                      <span style={{ fontSize: '0.8rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <Clock size={14} color="#64748b" /> {formatServiceDuration(srv.estimatedMinutes || 45)}
-                      </span>
+                      <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '6px' }}>
+                        {formatServiceDuration(srv.estimatedMinutes || 45)}
+                      </div>
                     </div>
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '10px', borderTop: '1px solid #e2e8f0' }}>
@@ -900,6 +1052,64 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
                   </div>
                 ))}
               </div>
+
+              {/* Controles de Paginación / Slider de Servicios */}
+              {totalPages > 1 && (
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '12px', marginTop: '36px', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    disabled={safePage <= 1}
+                    onClick={() => setCurrentServicePage(p => Math.max(1, p - 1))}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '6px',
+                      padding: '8px 16px', borderRadius: btnRadius,
+                      border: '1px solid #cbd5e1', backgroundColor: safePage <= 1 ? '#f8fafc' : '#ffffff',
+                      color: safePage <= 1 ? '#94a3b8' : '#0f172a',
+                      fontWeight: '700', fontSize: '0.85rem', cursor: safePage <= 1 ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    <ChevronLeft size={16} /> Anterior
+                  </button>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    {[...Array(totalPages)].map((_, idx) => {
+                      const pageNum = idx + 1;
+                      const isCurrent = pageNum === safePage;
+                      return (
+                        <button
+                          key={pageNum}
+                          type="button"
+                          onClick={() => setCurrentServicePage(pageNum)}
+                          style={{
+                            width: '34px', height: '34px', borderRadius: '8px',
+                            border: isCurrent ? `2px solid ${primaryColor}` : '1px solid #cbd5e1',
+                            backgroundColor: isCurrent ? primaryColor : '#ffffff',
+                            color: isCurrent ? '#ffffff' : '#334155',
+                            fontWeight: '800', fontSize: '0.82rem', cursor: 'pointer'
+                          }}
+                        >
+                          {pageNum}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={safePage >= totalPages}
+                    onClick={() => setCurrentServicePage(p => Math.min(totalPages, p + 1))}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '6px',
+                      padding: '8px 16px', borderRadius: btnRadius,
+                      border: '1px solid #cbd5e1', backgroundColor: safePage >= totalPages ? '#f8fafc' : '#ffffff',
+                      color: safePage >= totalPages ? '#94a3b8' : '#0f172a',
+                      fontWeight: '700', fontSize: '0.85rem', cursor: safePage >= totalPages ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    Siguiente <ChevronRight size={16} />
+                  </button>
+                </div>
+              )}
 
             </div>
           </section>
