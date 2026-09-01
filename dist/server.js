@@ -821,14 +821,15 @@ async function executeProvider(config, prompt, systemPrompt) {
     throw new Error("Unsupported provider: " + config.provider);
   }
   const timeoutPromise = new Promise((_, reject) => {
-    setTimeout(() => reject(new Error("AI inference timeout after 25s")), 25e3);
+    setTimeout(() => reject(new Error("AI inference timeout after 35s")), 35e3);
   });
   const generatePromise = (async () => {
     const { text, usage } = await generateText({
       model,
       system: systemPrompt || void 0,
       prompt,
-      temperature: config.temperature ?? 0.7
+      temperature: config.temperature ?? 0.2,
+      maxTokens: 160
     });
     return {
       text,
@@ -4811,42 +4812,42 @@ async function processWhatsAppMessageWithAI(tenantId, userMessage, senderPhone, 
   const crTime = new Intl.DateTimeFormat("es-CR", {
     timeZone: "America/Costa_Rica",
     dateStyle: "full",
-    timeStyle: "long"
+    timeStyle: "short"
   }).format(now);
-  const baseUrl = process.env.APP_URL || "https://betico-app.qvtdko.easypanel.host";
+  const baseUrl = process.env.APP_URL || "https://betico.tech";
   const storeUrl = tenant?.slug ? `${baseUrl}/tienda/${tenant.slug}` : "";
   const bookingUrl = tenant?.slug ? `${baseUrl}/reservas/${tenant.slug}` : "";
   const lowerMsg = userMessage.toLowerCase().trim();
-  const isPureGreeting = /^(hola|buenas|buenos dias|buenas tardes|buenas noches|hey|alo|hi|saludos|pura vida|hola que tal|hola como estas)[\s!.,?]*$/i.test(lowerMsg);
-  const asksForServices = /servicio|cita|reserva|agenda|agendar|horario|hora|fecha|disponib|turno|atencion/i.test(lowerMsg);
-  const asksForProducts = /precio|costo|cuanto|venden|catalogo|menu|producto|comprar|pedir|orden|foto|imagen|quiero|plato|comida|pizza|hamburguesa/i.test(lowerMsg);
+  const isPureGreeting = /^(hola|buenas|buenos dias|buenas tardes|buenas noches|hey|alo|hi|saludos|pura vida|hola que tal|hola como estas)[s!.,?]*$/i.test(lowerMsg);
+  const asksForServices = /servicio|cita|reserva|agenda|agendar|horario|hora|fecha|disponib|turno|atencion|lavado|pulido|mantenimiento/i.test(lowerMsg);
+  const asksForProducts = /precio|costo|cuanto|venden|catalogo|menu|producto|comprar|pedir|orden|foto|imagen|quiero|plato|comida|pizza|hamburguesa|cera/i.test(lowerMsg);
   const asksForPayments = /sinpe|transferencia|pago|pagar|cuenta|banco|efectivo|tarjeta|cuentas/i.test(lowerMsg);
   const asksForLocation = /ubicacion|donde|direccion|llegar|local|tienda|sucursal|mapa/i.test(lowerMsg);
+  const asksForHuman = /humano|asesor|persona|agente|hablar con alguien|queja|reclamo|urgente/i.test(lowerMsg);
   let paymentInfo = "";
   if (asksForPayments || asksForProducts || !isPureGreeting) {
-    paymentInfo = "M\xE9todos de Pago: ";
     const methods = [];
     if (store?.acceptSinpe && store.sinpePhone) methods.push(`SINPE M\xF3vil: ${store.sinpePhone} (${store.sinpeName || tenant?.name})`);
     if (store?.acceptTransfer && store.bankAccountInfo) methods.push(`Transferencia: ${store.bankAccountInfo}`);
     if (store?.acceptCashOnDelivery) methods.push("Efectivo contra entrega");
     if (store?.deliveryEnabled) methods.push(`Env\xEDo: \u20A1${Number(store.deliveryFee || 0).toLocaleString("es-CR")}`);
-    paymentInfo += methods.join(" | ") + "\n";
+    if (methods.length > 0) paymentInfo = "\u{1F4B3} Pagos: " + methods.join(" | ") + "\n";
   }
   let scheduleInfo = "";
   if (asksForServices || asksForLocation || !isPureGreeting) {
     if (schedule?.jornadaConfig) {
       const j = schedule.jornadaConfig;
-      scheduleInfo = `Horario de Atenci\xF3n: ${j.startHour || "08:00"} a ${j.endHour || "17:00"} (Citas de ${j.slotMinutes || 45} min)
+      scheduleInfo = `\u23F0 Horario: ${j.startHour || "08:00"} a ${j.endHour || "17:00"} (${j.slotMinutes || 45}m por cita)
 `;
     }
     if (schedule?.vacationConfig?.enabled) {
       const v = schedule.vacationConfig;
-      scheduleInfo += `\u26A0\uFE0F CIERRE TEMPORAL ACTIVO: del ${v.startDate} al ${v.endDate}. Mensaje: "${v.message}"
+      scheduleInfo += `\u26A0\uFE0F Cierre temporal: ${v.startDate} al ${v.endDate} (${v.message})
 `;
     }
   }
   let relevantServicesText = "";
-  if (!isPureGreeting) {
+  if (!isPureGreeting && services.length > 0) {
     const userWords = lowerMsg.split(/\s+/).filter((w) => w.length > 2);
     let matchedServices = services.filter((s) => {
       const sName = s.name.toLowerCase();
@@ -4854,11 +4855,11 @@ async function processWhatsAppMessageWithAI(tenantId, userMessage, senderPhone, 
       return userWords.some((w) => sName.includes(w) || sCat.includes(w));
     });
     if (matchedServices.length === 0) {
-      matchedServices = services.slice(0, 6);
+      matchedServices = services.slice(0, 4);
     }
     if (matchedServices.length > 0) {
-      relevantServicesText = "Servicios Disponibles:\n" + matchedServices.map(
-        (s) => `\u2022 ${s.name}: \u20A1${Number(s.price || 0).toLocaleString("es-CR")} (${s.duration || `${s.estimatedMinutes || 45} min`})`
+      relevantServicesText = "\u{1F697} Servicios:\n" + matchedServices.map(
+        (s) => `\u2022 ${s.name}: \u20A1${Number(s.price || 0).toLocaleString("es-CR")} (${s.duration || `${s.estimatedMinutes || 45}m`})`
       ).join("\n") + "\n";
     }
   }
@@ -4872,16 +4873,18 @@ async function processWhatsAppMessageWithAI(tenantId, userMessage, senderPhone, 
       return userWords.some((w) => pName.includes(w) || pCat.includes(w) || pTags.includes(w));
     });
     if (matchedProducts.length === 0) {
-      matchedProducts = products.slice(0, 6);
+      matchedProducts = products.slice(0, 4);
     }
-    relevantProductsText = "Cat\xE1logo de Productos:\n" + matchedProducts.map((p) => {
-      let photoUrl = "";
-      if (p.images && p.images.length > 0) {
-        const rawUrl = p.images[0].url;
-        photoUrl = rawUrl.startsWith("http") ? rawUrl : `${baseUrl}${rawUrl}`;
-      }
-      return `\u2022 ${p.name}: \u20A1${Number(p.price || 0).toLocaleString("es-CR")} | Stock:${p.stock ?? "disp"}${photoUrl ? ` | Foto:${photoUrl}` : ""}`;
-    }).join("\n") + "\n";
+    if (matchedProducts.length > 0) {
+      relevantProductsText = "\u{1F6CD}\uFE0F Productos:\n" + matchedProducts.map((p) => {
+        let photoUrl = "";
+        if (p.images && p.images.length > 0) {
+          const rawUrl = p.images[0].url;
+          photoUrl = rawUrl.startsWith("http") ? rawUrl : `${baseUrl}${rawUrl}`;
+        }
+        return `\u2022 ${p.name}: \u20A1${Number(p.price || 0).toLocaleString("es-CR")} (Stock: ${p.stock ?? "disp"})${photoUrl ? ` [Foto:${photoUrl}]` : ""}`;
+      }).join("\n") + "\n";
+    }
   }
   const masterSystemPrompt = `Eres el Asistente Virtual Oficial con IA de *${tenant?.name || "nuestro negocio"}* en WhatsApp.
 
@@ -4890,29 +4893,27 @@ ${agentConfig?.systemPrompt || "Atiende amablemente a los clientes, brinda infor
 ==============================================================
 
 === FUENTE DE VERDAD OFICIAL (CAT\xC1LOGO, HORARIOS Y PAGOS) ===
-- Fecha/Hora Actual (Costa Rica): ${crTime}
-${bookingUrl ? `- Enlace Directo para Reservar Citas: ${bookingUrl}` : ""}
-${storeUrl ? `- Enlace Directo de Tienda / Men\xFA: ${storeUrl}` : ""}
+- Fecha/Hora (Costa Rica): ${crTime}
+${bookingUrl ? `- Enlace de Citas: ${bookingUrl}` : ""}
+${storeUrl ? `- Enlace de Tienda: ${storeUrl}` : ""}
 ${scheduleInfo}${paymentInfo}${relevantServicesText}${relevantProductsText}=============================================================
 
-REGLAS OBLIGATORIAS DE ATENCI\xD3N:
-1. Sigue fielmente la personalidad, tono, respuestas y directivas indicadas en las INSTRUCCIONES MAESTRAS DEL NEGOCIO.
-2. Utiliza \xDANICAMENTE los servicios y productos listados en la FUENTE DE VERDAD OFICIAL. NUNCA inventes precios, promociones, duraciones ni productos que no est\xE9n listados.
-3. Si el cliente pregunta por un servicio o producto que no existe en el cat\xE1logo, expl\xEDcale con cortes\xEDa que no est\xE1 disponible y ofrece las opciones existentes.
-4. Formato de WhatsApp: Usa *negrita* para resaltar nombres/precios y emojis amigables con moderaci\xF3n.
-5. Si ya existen mensajes previos en el historial de chat, NO repitas el saludo de bienvenida; responde de inmediato a la duda del cliente.
-6. Pagos SINPE / Transferencia: Si el cliente decide pagar por SINPE M\xF3vil o Transferencia, ind\xEDcale los datos exactos del negocio y p\xEDdele que env\xEDe el comprobante por este chat para su verificaci\xF3n.
+REGLAS DE ATENCI\xD3N:
+1. Adopta fielmente la personalidad y tono de las INSTRUCCIONES MAESTRAS.
+2. Usa \xDANICAMENTE los datos del cat\xE1logo oficial. NUNCA inventes precios ni productos fuera de lista.
+3. Formato WhatsApp: Usa *negrita* para resaltar nombres/precios y emojis amigables.
+4. Respuestas concisas (1 a 2 p\xE1rrafos). Si hay historial previo, no repitas el saludo de bienvenida.
+5. Si el cliente pide pagar con SINPE o Transferencia, dale los datos y p\xEDdele enviar el comprobante a este chat.
 
-COMANDOS ESPECIALES (Solo incl\xFAyelos al final de tu respuesta si la acci\xF3n fue confirmada con el cliente):
-- Foto de producto: <<<COMMAND_SEND_MEDIA: {"mediaUrl": "URL_DE_FOTO", "caption": "Descripci\xF3n"}>>>
-- Confirmar cita: <<<COMMAND_BOOKING: {"service": "Nombre exacto", "date": "YYYY-MM-DD", "time": "HH:MM", "customerName": "${senderName}"}>>>
-- Confirmar compra: <<<COMMAND_ORDER: {"items": [{"productName": "Nombre exacto", "quantity": 1}]}>>>
-- Transferir a humano: <<<COMMAND_HANDOFF: {"reason": "Motivo"}>>>
+COMANDOS DE ACCI\xD3N (A\xF1ade al final de tu respuesta solo si se confirma la acci\xF3n):
+- Confirmar Cita: <<<COMMAND_BOOKING: {"service": "Nombre exacto", "date": "YYYY-MM-DD", "time": "HH:MM", "customerName": "${senderName}"}>>>
+- Confirmar Compra: <<<COMMAND_ORDER: {"items": [{"productName": "Nombre exacto", "quantity": 1}]}>>>
+- Enviar Foto: <<<COMMAND_SEND_MEDIA: {"mediaUrl": "URL", "caption": "Descripci\xF3n"}>>>
+- Pasar a Humano: <<<COMMAND_HANDOFF: {"reason": "Motivo"}>>>
 `;
-  let prompt = `Historial Reciente de la Conversaci\xF3n:
-${chatHistory.slice(-6).map((h) => `${h.role === "user" ? "Cliente" : "Asistente"}: ${h.content}`).join("\n")}
+  let prompt = `Historial Reciente:
+${chatHistory.slice(-4).map((h) => `${h.role === "user" ? "Cliente" : "Asistente"}: ${h.content}`).join("\n")}
 
-Mensaje entrante del cliente:
 Cliente (${senderName} / ${senderPhone}): ${userMessage}
 `;
   let apiKey = "";
@@ -4929,7 +4930,7 @@ Cliente (${senderName} / ${senderPhone}): ${userMessage}
       provider: tenant?.aiProvider || "gemini",
       apiKey,
       model: tenant?.aiModel || agentConfig?.model || "gemini-2.5-flash",
-      temperature: agentConfig?.temperature || 0.7
+      temperature: agentConfig?.temperature || 0.2
     };
   } else {
     isMarcaBlanca = true;
@@ -4947,7 +4948,7 @@ Cliente (${senderName} / ${senderPhone}): ${userMessage}
     const masterConfig = await getMasterAIConfig();
     config = {
       ...masterConfig,
-      temperature: agentConfig?.temperature || 0.7
+      temperature: agentConfig?.temperature || 0.2
     };
   }
   const aiResult = await callAI(config, prompt, masterSystemPrompt);

@@ -39,49 +39,48 @@ export async function processWhatsAppMessageWithAI(
   const crTime = new Intl.DateTimeFormat('es-CR', {
     timeZone: 'America/Costa_Rica',
     dateStyle: 'full',
-    timeStyle: 'long',
+    timeStyle: 'short',
   }).format(now);
 
-  const baseUrl = process.env.APP_URL || 'https://betico-app.qvtdko.easypanel.host';
+  const baseUrl = process.env.APP_URL || 'https://betico.tech';
   const storeUrl = tenant?.slug ? `${baseUrl}/tienda/${tenant.slug}` : '';
   const bookingUrl = tenant?.slug ? `${baseUrl}/reservas/${tenant.slug}` : '';
 
   // 1. SMART INTENT DETECTION & KEYWORD MATCHING
   const lowerMsg = userMessage.toLowerCase().trim();
-  const isPureGreeting = /^(hola|buenas|buenos dias|buenas tardes|buenas noches|hey|alo|hi|saludos|pura vida|hola que tal|hola como estas)[\s!.,?]*$/i.test(lowerMsg);
-  const asksForServices = /servicio|cita|reserva|agenda|agendar|horario|hora|fecha|disponib|turno|atencion/i.test(lowerMsg);
-  const asksForProducts = /precio|costo|cuanto|venden|catalogo|menu|producto|comprar|pedir|orden|foto|imagen|quiero|plato|comida|pizza|hamburguesa/i.test(lowerMsg);
+  const isPureGreeting = /^(hola|buenas|buenos dias|buenas tardes|buenas noches|hey|alo|hi|saludos|pura vida|hola que tal|hola como estas)[s!.,?]*$/i.test(lowerMsg);
+  const asksForServices = /servicio|cita|reserva|agenda|agendar|horario|hora|fecha|disponib|turno|atencion|lavado|pulido|mantenimiento/i.test(lowerMsg);
+  const asksForProducts = /precio|costo|cuanto|venden|catalogo|menu|producto|comprar|pedir|orden|foto|imagen|quiero|plato|comida|pizza|hamburguesa|cera/i.test(lowerMsg);
   const asksForPayments = /sinpe|transferencia|pago|pagar|cuenta|banco|efectivo|tarjeta|cuentas/i.test(lowerMsg);
   const asksForLocation = /ubicacion|donde|direccion|llegar|local|tienda|sucursal|mapa/i.test(lowerMsg);
+  const asksForHuman = /humano|asesor|persona|agente|hablar con alguien|queja|reclamo|urgente/i.test(lowerMsg);
 
-  // 2. CONTEXT-AWARE PAYMENT INFO
+  // 2. ENRICHED RAG BLOCKS (Concise, High Density)
   let paymentInfo = '';
   if (asksForPayments || asksForProducts || !isPureGreeting) {
-    paymentInfo = 'Métodos de Pago: ';
     const methods: string[] = [];
     if (store?.acceptSinpe && store.sinpePhone) methods.push(`SINPE Móvil: ${store.sinpePhone} (${store.sinpeName || tenant?.name})`);
     if (store?.acceptTransfer && store.bankAccountInfo) methods.push(`Transferencia: ${store.bankAccountInfo}`);
     if (store?.acceptCashOnDelivery) methods.push('Efectivo contra entrega');
     if (store?.deliveryEnabled) methods.push(`Envío: ₡${Number(store.deliveryFee || 0).toLocaleString('es-CR')}`);
-    paymentInfo += methods.join(' | ') + '\n';
+    if (methods.length > 0) paymentInfo = '💳 Pagos: ' + methods.join(' | ') + '\n';
   }
 
-  // 3. CONTEXT-AWARE SCHEDULE INFO
   let scheduleInfo = '';
   if (asksForServices || asksForLocation || !isPureGreeting) {
     if (schedule?.jornadaConfig) {
       const j = schedule.jornadaConfig;
-      scheduleInfo = `Horario de Atención: ${j.startHour || '08:00'} a ${j.endHour || '17:00'} (Citas de ${j.slotMinutes || 45} min)\n`;
+      scheduleInfo = `⏰ Horario: ${j.startHour || '08:00'} a ${j.endHour || '17:00'} (${j.slotMinutes || 45}m por cita)\n`;
     }
     if (schedule?.vacationConfig?.enabled) {
       const v = schedule.vacationConfig;
-      scheduleInfo += `⚠️ CIERRE TEMPORAL ACTIVO: del ${v.startDate} al ${v.endDate}. Mensaje: "${v.message}"\n`;
+      scheduleInfo += `⚠️ Cierre temporal: ${v.startDate} al ${v.endDate} (${v.message})\n`;
     }
   }
 
-  // 4. SMART FILTERING FOR SERVICES (Dense single-line format)
+  // Smart Filtering for Services
   let relevantServicesText = '';
-  if (!isPureGreeting) {
+  if (!isPureGreeting && services.length > 0) {
     const userWords = lowerMsg.split(/\s+/).filter(w => w.length > 2);
     let matchedServices = services.filter(s => {
       const sName = s.name.toLowerCase();
@@ -90,17 +89,17 @@ export async function processWhatsAppMessageWithAI(
     });
 
     if (matchedServices.length === 0) {
-      matchedServices = services.slice(0, 6); // Top 6 if generic query
+      matchedServices = services.slice(0, 4); // Top 4 if generic query
     }
 
     if (matchedServices.length > 0) {
-      relevantServicesText = 'Servicios Disponibles:\n' + matchedServices.map(s => 
-        `• ${s.name}: ₡${Number(s.price || 0).toLocaleString('es-CR')} (${s.duration || `${s.estimatedMinutes || 45} min`})`
+      relevantServicesText = '🚗 Servicios:\n' + matchedServices.map(s => 
+        `• ${s.name}: ₡${Number(s.price || 0).toLocaleString('es-CR')} (${s.duration || `${s.estimatedMinutes || 45}m`})`
       ).join('\n') + '\n';
     }
   }
 
-  // 5. SMART FILTERING FOR PRODUCTS (Dense single-line format with Photo URL)
+  // Smart Filtering for Products
   let relevantProductsText = '';
   if (!isPureGreeting && products.length > 0) {
     const userWords = lowerMsg.split(/\s+/).filter(w => w.length > 2);
@@ -112,20 +111,22 @@ export async function processWhatsAppMessageWithAI(
     });
 
     if (matchedProducts.length === 0) {
-      matchedProducts = products.slice(0, 6); // Top 6 if generic menu query
+      matchedProducts = products.slice(0, 4); // Top 4 if generic query
     }
 
-    relevantProductsText = 'Catálogo de Productos:\n' + matchedProducts.map(p => {
-      let photoUrl = '';
-      if (p.images && p.images.length > 0) {
-        const rawUrl = p.images[0].url;
-        photoUrl = rawUrl.startsWith('http') ? rawUrl : `${baseUrl}${rawUrl}`;
-      }
-      return `• ${p.name}: ₡${Number(p.price || 0).toLocaleString('es-CR')} | Stock:${p.stock ?? 'disp'}${photoUrl ? ` | Foto:${photoUrl}` : ''}`;
-    }).join('\n') + '\n';
+    if (matchedProducts.length > 0) {
+      relevantProductsText = '🛍️ Productos:\n' + matchedProducts.map(p => {
+        let photoUrl = '';
+        if (p.images && p.images.length > 0) {
+          const rawUrl = p.images[0].url;
+          photoUrl = rawUrl.startsWith('http') ? rawUrl : `${baseUrl}${rawUrl}`;
+        }
+        return `• ${p.name}: ₡${Number(p.price || 0).toLocaleString('es-CR')} (Stock: ${p.stock ?? 'disp'})${photoUrl ? ` [Foto:${photoUrl}]` : ''}`;
+      }).join('\n') + '\n';
+    }
   }
 
-  // 6. BUILD SYSTEM PROMPT (SUPREME AUTHORITY) & CONVERSATION PROMPT
+  // 3. MASTER SYSTEM PROMPT (SUPREME AUTHORITY + ENRICHED RAG)
   const masterSystemPrompt = `Eres el Asistente Virtual Oficial con IA de *${tenant?.name || 'nuestro negocio'}* en WhatsApp.
 
 === INSTRUCCIONES MAESTRAS DEL NEGOCIO (MÁXIMA PRIORIDAD) ===
@@ -133,30 +134,28 @@ ${agentConfig?.systemPrompt || 'Atiende amablemente a los clientes, brinda infor
 ==============================================================
 
 === FUENTE DE VERDAD OFICIAL (CATÁLOGO, HORARIOS Y PAGOS) ===
-- Fecha/Hora Actual (Costa Rica): ${crTime}
-${bookingUrl ? `- Enlace Directo para Reservar Citas: ${bookingUrl}` : ''}
-${storeUrl ? `- Enlace Directo de Tienda / Menú: ${storeUrl}` : ''}
+- Fecha/Hora (Costa Rica): ${crTime}
+${bookingUrl ? `- Enlace de Citas: ${bookingUrl}` : ''}
+${storeUrl ? `- Enlace de Tienda: ${storeUrl}` : ''}
 ${scheduleInfo}${paymentInfo}${relevantServicesText}${relevantProductsText}=============================================================
 
-REGLAS OBLIGATORIAS DE ATENCIÓN:
-1. Sigue fielmente la personalidad, tono, respuestas y directivas indicadas en las INSTRUCCIONES MAESTRAS DEL NEGOCIO.
-2. Utiliza ÚNICAMENTE los servicios y productos listados en la FUENTE DE VERDAD OFICIAL. NUNCA inventes precios, promociones, duraciones ni productos que no estén listados.
-3. Si el cliente pregunta por un servicio o producto que no existe en el catálogo, explícale con cortesía que no está disponible y ofrece las opciones existentes.
-4. Formato de WhatsApp: Usa *negrita* para resaltar nombres/precios y emojis amigables con moderación.
-5. Si ya existen mensajes previos en el historial de chat, NO repitas el saludo de bienvenida; responde de inmediato a la duda del cliente.
-6. Pagos SINPE / Transferencia: Si el cliente decide pagar por SINPE Móvil o Transferencia, indícale los datos exactos del negocio y pídele que envíe el comprobante por este chat para su verificación.
+REGLAS DE ATENCIÓN:
+1. Adopta fielmente la personalidad y tono de las INSTRUCCIONES MAESTRAS.
+2. Usa ÚNICAMENTE los datos del catálogo oficial. NUNCA inventes precios ni productos fuera de lista.
+3. Formato WhatsApp: Usa *negrita* para resaltar nombres/precios y emojis amigables.
+4. Respuestas concisas (1 a 2 párrafos). Si hay historial previo, no repitas el saludo de bienvenida.
+5. Si el cliente pide pagar con SINPE o Transferencia, dale los datos y pídele enviar el comprobante a este chat.
 
-COMANDOS ESPECIALES (Solo inclúyelos al final de tu respuesta si la acción fue confirmada con el cliente):
-- Foto de producto: <<<COMMAND_SEND_MEDIA: {"mediaUrl": "URL_DE_FOTO", "caption": "Descripción"}>>>
-- Confirmar cita: <<<COMMAND_BOOKING: {"service": "Nombre exacto", "date": "YYYY-MM-DD", "time": "HH:MM", "customerName": "${senderName}"}>>>
-- Confirmar compra: <<<COMMAND_ORDER: {"items": [{"productName": "Nombre exacto", "quantity": 1}]}>>>
-- Transferir a humano: <<<COMMAND_HANDOFF: {"reason": "Motivo"}>>>
+COMANDOS DE ACCIÓN (Añade al final de tu respuesta solo si se confirma la acción):
+- Confirmar Cita: <<<COMMAND_BOOKING: {"service": "Nombre exacto", "date": "YYYY-MM-DD", "time": "HH:MM", "customerName": "${senderName}"}>>>
+- Confirmar Compra: <<<COMMAND_ORDER: {"items": [{"productName": "Nombre exacto", "quantity": 1}]}>>>
+- Enviar Foto: <<<COMMAND_SEND_MEDIA: {"mediaUrl": "URL", "caption": "Descripción"}>>>
+- Pasar a Humano: <<<COMMAND_HANDOFF: {"reason": "Motivo"}>>>
 `;
 
-  let prompt = `Historial Reciente de la Conversación:
-${chatHistory.slice(-6).map(h => `${h.role === 'user' ? 'Cliente' : 'Asistente'}: ${h.content}`).join('\n')}
+  let prompt = `Historial Reciente:
+${chatHistory.slice(-4).map(h => `${h.role === 'user' ? 'Cliente' : 'Asistente'}: ${h.content}`).join('\n')}
 
-Mensaje entrante del cliente:
 Cliente (${senderName} / ${senderPhone}): ${userMessage}
 `;
 
@@ -170,15 +169,13 @@ Cliente (${senderName} / ${senderPhone}): ${userMessage}
   let config: TenantAIConfig;
 
   if (apiKey) {
-    // Tenant is using their own private API Key (BYOK)
     config = {
       provider: (tenant?.aiProvider as any) || 'gemini',
       apiKey,
       model: tenant?.aiModel || agentConfig?.model || 'gemini-2.5-flash',
-      temperature: agentConfig?.temperature || 0.7,
+      temperature: agentConfig?.temperature || 0.2,
     };
   } else {
-    // Tenant is using Betico AI Marca Blanca (LocalAI / Master AI)
     isMarcaBlanca = true;
     const usage = await getTenantCurrentMonthUsage(tenantId);
     if (usage.isExceeded) {
@@ -195,7 +192,7 @@ Cliente (${senderName} / ${senderPhone}): ${userMessage}
     const masterConfig = await getMasterAIConfig();
     config = {
       ...masterConfig,
-      temperature: agentConfig?.temperature || 0.7
+      temperature: agentConfig?.temperature || 0.2
     };
   }
 
@@ -237,7 +234,6 @@ Cliente (${senderName} / ${senderPhone}): ${userMessage}
     try {
       const parsed = JSON.parse(orderMatch[1]);
       if (parsed && Array.isArray(parsed.items) && parsed.items.length > 0) {
-        // Ensure items have non-empty product names
         const validItems = parsed.items.filter((it: any) => it.productName && it.productName.trim().length > 0);
         if (validItems.length > 0) {
           isOrderDetected = true;
