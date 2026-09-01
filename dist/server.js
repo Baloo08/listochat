@@ -821,14 +821,16 @@ async function executeProvider(config, prompt) {
     throw new Error("Unsupported provider: " + config.provider);
   }
   const timeoutPromise = new Promise((_, reject) => {
-    setTimeout(() => reject(new Error("AI inference timeout after 35s")), 35e3);
+    setTimeout(() => reject(new Error("AI inference timeout after 60s")), 6e4);
   });
+  const t0 = Date.now();
   const generatePromise = (async () => {
     const { text, usage } = await generateText({
       model,
       prompt,
       temperature: config.temperature ?? 0.7
     });
+    console.log(`[AI-Provider] ${config.provider}/${config.model} responded in ${Date.now() - t0}ms, tokens: ${usage?.totalTokens || "?"}`);
     return {
       text,
       tokensUsed: usage?.totalTokens || Math.ceil((prompt.length + text.length) / 4)

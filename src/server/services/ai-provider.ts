@@ -193,17 +193,19 @@ async function executeProvider(config: TenantAIConfig, prompt: string) {
     throw new Error("Unsupported provider: " + config.provider);
   }
 
-  // 35s timeout guard for local CPU inference
+  // 60s timeout guard for local CPU inference (production prompts take 25-45s on CPU)
   const timeoutPromise = new Promise<{ text: string, tokensUsed: number }>((_, reject) => {
-    setTimeout(() => reject(new Error('AI inference timeout after 35s')), 35000);
+    setTimeout(() => reject(new Error('AI inference timeout after 60s')), 60000);
   });
 
+  const t0 = Date.now();
   const generatePromise = (async () => {
     const { text, usage } = await generateText({
       model,
       prompt,
       temperature: config.temperature ?? 0.7,
     });
+    console.log(`[AI-Provider] ${config.provider}/${config.model} responded in ${Date.now() - t0}ms, tokens: ${usage?.totalTokens || '?'}`);
     return {
       text,
       tokensUsed: usage?.totalTokens || Math.ceil((prompt.length + text.length) / 4),
