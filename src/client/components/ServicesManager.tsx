@@ -78,19 +78,28 @@ export default function ServicesManager() {
     setName((svc.name || '') + ' (Copia)');
     setDescription(svc.description || '');
     setPrice(Number(svc.price) || 0);
-    setDuration(svc.duration || '45 min');
-    setEstimatedMinutes(Number(svc.estimatedMinutes) || 45);
+    
     const mins = Number(svc.estimatedMinutes) || 45;
-    if (mins >= 1440 || mins === 480 || svc.duration === 'Día Completo') {
+    setEstimatedMinutes(mins);
+
+    const isExplicitFullDay = svc.duration === 'Día Completo' || mins >= 1440;
+    if (isExplicitFullDay) {
       setDurationType('full_day');
-      setEstimatedMinutes(1440);
+      setDuration('Día Completo');
+      setCustomHours(24);
+      setCustomMins(0);
     } else if ([15, 30, 45, 60, 90, 120, 180, 240, 300, 360, 480].includes(mins)) {
       setDurationType('preset');
+      setDuration(formatDurationDisplay(mins));
+      setCustomHours(Math.floor(mins / 60));
+      setCustomMins(mins % 60);
     } else {
       setDurationType('custom');
       setCustomHours(Math.floor(mins / 60));
       setCustomMins(mins % 60);
+      setDuration(formatDurationDisplay(mins));
     }
+
     setCategory(svc.category || 'General');
     setParallelSlots(svc.parallelSlots || 1);
     setActive(true);
@@ -103,12 +112,32 @@ export default function ServicesManager() {
     setName(svc.name || '');
     setDescription(svc.description || '');
     setPrice(Number(svc.price) || 0);
-    setDuration(svc.duration || '45 min');
-    setEstimatedMinutes(Number(svc.estimatedMinutes) || 45);
+    
+    const mins = Number(svc.estimatedMinutes) || 45;
+    setEstimatedMinutes(mins);
+
+    const isExplicitFullDay = svc.duration === 'Día Completo' || mins >= 1440;
+    if (isExplicitFullDay) {
+      setDurationType('full_day');
+      setDuration('Día Completo');
+      setCustomHours(24);
+      setCustomMins(0);
+    } else if ([15, 30, 45, 60, 90, 120, 180, 240, 300, 360, 480].includes(mins)) {
+      setDurationType('preset');
+      setDuration(formatDurationDisplay(mins));
+      setCustomHours(Math.floor(mins / 60));
+      setCustomMins(mins % 60);
+    } else {
+      setDurationType('custom');
+      setCustomHours(Math.floor(mins / 60));
+      setCustomMins(mins % 60);
+      setDuration(formatDurationDisplay(mins));
+    }
+
     setCategory(svc.category || 'General');
     setParallelSlots(svc.parallelSlots || 1);
     setActive(svc.active !== false);
-    setCustomVariables(svc.customVariables || []);
+    setCustomVariables(svc.customVariables ? JSON.parse(JSON.stringify(svc.customVariables)) : []);
     setIsModalOpen(true);
   };
 
