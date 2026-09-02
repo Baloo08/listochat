@@ -295,12 +295,13 @@ router.get('/:id/dossier', async (req, res) => {
     const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
     // Parallel metric queries
-    const [ordersRes, apptsRes, chatsRes, aiRes, paymentsRes] = await Promise.all([
+    const [ordersRes, apptsRes, chatsRes, aiRes, paymentsRes, storeSettingsRes] = await Promise.all([
       query('SELECT COUNT(*) as count FROM orders WHERE tenant_id = $1', [id]),
       query('SELECT COUNT(*) as count FROM appointments WHERE tenant_id = $1', [id]),
       query('SELECT COUNT(*) as count FROM chat_messages WHERE tenant_id = $1', [id]),
       query('SELECT tokens_used as "tokensUsed", requests_count as "requestsCount" FROM tenant_ai_usage WHERE tenant_id = $1 AND month_year = $2', [id, currentMonth]),
-      query('SELECT id, amount, currency, payment_method as "paymentMethod", reference, proof_url as "proofUrl", notes, status, created_at as "createdAt" FROM tenant_payments WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT 50', [id])
+      query('SELECT id, amount, currency, payment_method as "paymentMethod", reference, proof_url as "proofUrl", notes, status, created_at as "createdAt" FROM tenant_payments WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT 50', [id]),
+      query('SELECT store_modules FROM store_settings WHERE tenant_id = $1', [id])
     ]);
 
     const ordersCount = parseInt(ordersRes.rows[0]?.count || '0', 10);
@@ -308,6 +309,7 @@ router.get('/:id/dossier', async (req, res) => {
     const chatsCount = parseInt(chatsRes.rows[0]?.count || '0', 10);
     const aiUsage = aiRes.rows[0] || { tokensUsed: 0, requestsCount: 0 };
     const payments = paymentsRes.rows || [];
+    const storeModules = storeSettingsRes.rows[0]?.store_modules || { storeEnabled: true, bookingsEnabled: true };
 
     res.json({
       tenant: {
@@ -316,6 +318,7 @@ router.get('/:id/dossier', async (req, res) => {
         adminName: adminUser?.name || null,
         adminPhone: tenant.whatsappNumber || null
       },
+      storeModules,
       metrics: {
         ordersCount,
         appointmentsCount,

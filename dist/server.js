@@ -2498,6 +2498,7 @@ async function getAgentConfig(tenantId) {
     systemPrompt: data.systemPrompt || defaultSystemPrompt,
     model: data.model || "gemini-2.5-flash",
     temperature: data.temperature ?? 0.7,
+    aiChatbotEnabled: data.aiChatbotEnabled ?? true,
     autoReplyEnabled: data.autoReplyEnabled ?? true,
     notifyNumber: data.notifyNumber,
     businessName: data.businessName,
@@ -2515,6 +2516,7 @@ async function saveAgentConfig(tenantId, config) {
     systemPrompt: config.systemPrompt,
     model: config.model,
     temperature: config.temperature,
+    aiChatbotEnabled: config.aiChatbotEnabled,
     autoReplyEnabled: config.autoReplyEnabled,
     notifyNumber: config.notifyNumber,
     businessName: config.businessName,
@@ -4820,18 +4822,20 @@ router2.get("/:id/dossier", async (req, res) => {
     const { query: query2 } = await Promise.resolve().then(() => (init_pool(), pool_exports));
     const now = /* @__PURE__ */ new Date();
     const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-    const [ordersRes, apptsRes, chatsRes, aiRes, paymentsRes] = await Promise.all([
+    const [ordersRes, apptsRes, chatsRes, aiRes, paymentsRes, storeSettingsRes] = await Promise.all([
       query2("SELECT COUNT(*) as count FROM orders WHERE tenant_id = $1", [id]),
       query2("SELECT COUNT(*) as count FROM appointments WHERE tenant_id = $1", [id]),
       query2("SELECT COUNT(*) as count FROM chat_messages WHERE tenant_id = $1", [id]),
       query2('SELECT tokens_used as "tokensUsed", requests_count as "requestsCount" FROM tenant_ai_usage WHERE tenant_id = $1 AND month_year = $2', [id, currentMonth]),
-      query2('SELECT id, amount, currency, payment_method as "paymentMethod", reference, proof_url as "proofUrl", notes, status, created_at as "createdAt" FROM tenant_payments WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT 50', [id])
+      query2('SELECT id, amount, currency, payment_method as "paymentMethod", reference, proof_url as "proofUrl", notes, status, created_at as "createdAt" FROM tenant_payments WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT 50', [id]),
+      query2("SELECT store_modules FROM store_settings WHERE tenant_id = $1", [id])
     ]);
     const ordersCount = parseInt(ordersRes.rows[0]?.count || "0", 10);
     const appointmentsCount = parseInt(apptsRes.rows[0]?.count || "0", 10);
     const chatsCount = parseInt(chatsRes.rows[0]?.count || "0", 10);
     const aiUsage = aiRes.rows[0] || { tokensUsed: 0, requestsCount: 0 };
     const payments = paymentsRes.rows || [];
+    const storeModules = storeSettingsRes.rows[0]?.store_modules || { storeEnabled: true, bookingsEnabled: true };
     res.json({
       tenant: {
         ...tenant,
@@ -4839,6 +4843,7 @@ router2.get("/:id/dossier", async (req, res) => {
         adminName: adminUser?.name || null,
         adminPhone: tenant.whatsappNumber || null
       },
+      storeModules,
       metrics: {
         ordersCount,
         appointmentsCount,
@@ -8368,6 +8373,27 @@ router21.get("/system-stats", async (req, res) => {
     });
   } catch (e) {
     res.status(500).json({ error: e.message || "Error al obtener m\xE9tricas del sistema" });
+  }
+});
+router21.post("/tenants/:id/toggle-courts", authenticateToken, requireSuperAdmin, async (req, res) => {
+  try {
+    const tenantId = req.params.id;
+    const { enabled } = req.body;
+    const isEnabled = enabled !== false;
+    const current = await query(`SELECT store_modules FROM store_settings WHERE tenant_id = $1`, [tenantId]);
+    let modules = { storeEnabled: true, bookingsEnabled: true };
+    if (current.rows.length > 0 && current.rows[0].store_modules) {
+      modules = current.rows[0].store_modules;
+    }
+    modules.courtsEnabled = isEnabled;
+    if (current.rows.length > 0) {
+      await query(`UPDATE store_settings SET store_modules = $1 WHERE tenant_id = $2`, [JSON.stringify(modules), tenantId]);
+    } else {
+      await query(`INSERT INTO store_settings (tenant_id, store_modules) VALUES ($1, $2)`, [tenantId, JSON.stringify(modules)]);
+    }
+    res.json({ success: true, courtsEnabled: isEnabled });
+  } catch (e) {
+    res.status(500).json({ error: e.message || "Error toggling courts module" });
   }
 });
 var superadmin_platform_routes_default = router21;

@@ -135,6 +135,17 @@ export default function TenantDossierModal({ tenantId, onClose, onRefresh }: Pro
     }
   };
 
+  const handleToggleCourts = async () => {
+    try {
+      const currentlyEnabled = data?.storeModules?.courtsEnabled === true;
+      await api.post(`/api/superadmin/platform/tenants/${tenantId}/toggle-courts`, { enabled: !currentlyEnabled });
+      alert(`Módulo de Canchas ${!currentlyEnabled ? 'ACTIVADO' : 'DESACTIVADO'} para ${data?.tenant?.name}`);
+      loadDossier();
+    } catch (e: any) {
+      alert('Error: ' + e.message);
+    }
+  };
+
   const openWhatsApp = (msg?: string) => {
     const rawPhone = (data?.tenant?.whatsappNumber || data?.tenant?.phone || '').replace(/[^0-9]/g, '');
     if (!rawPhone) {
@@ -226,6 +237,12 @@ export default function TenantDossierModal({ tenantId, onClose, onRefresh }: Pro
               style={{ padding: '8px 14px', backgroundColor: '#10b981', color: 'white', border: 'none', borderRadius: '10px', fontSize: '0.82rem', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
             >
               <Phone size={15} /> WhatsApp
+            </button>
+            <button
+              onClick={handleToggleCourts}
+              style={{ padding: '8px 14px', backgroundColor: data?.storeModules?.courtsEnabled ? '#f59e0b' : '#6366f1', color: 'white', border: 'none', borderRadius: '10px', fontSize: '0.82rem', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+            >
+              ⚽ {data?.storeModules?.courtsEnabled ? 'Desactivar Canchas' : 'Activar Canchas'}
             </button>
             <button onClick={onClose} style={{ padding: '8px', background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}>
               <X size={22} />

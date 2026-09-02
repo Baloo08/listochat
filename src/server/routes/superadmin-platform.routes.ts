@@ -653,5 +653,33 @@ router.get('/system-stats', async (req, res) => {
     res.status(500).json({ error: e.message || 'Error al obtener métricas del sistema' });
   }
 });
+// ========================================================
+// TOGGLE COURTS MODULE FOR A TENANT
+// ========================================================
+router.post('/tenants/:id/toggle-courts', authenticateToken, requireSuperAdmin, async (req: any, res) => {
+  try {
+    const tenantId = req.params.id;
+    const { enabled } = req.body;
+    const isEnabled = enabled !== false;
+
+    // Get current store_modules or default
+    const current = await query(`SELECT store_modules FROM store_settings WHERE tenant_id = $1`, [tenantId]);
+    let modules: any = { storeEnabled: true, bookingsEnabled: true };
+    if (current.rows.length > 0 && current.rows[0].store_modules) {
+      modules = current.rows[0].store_modules;
+    }
+    modules.courtsEnabled = isEnabled;
+
+    if (current.rows.length > 0) {
+      await query(`UPDATE store_settings SET store_modules = $1 WHERE tenant_id = $2`, [JSON.stringify(modules), tenantId]);
+    } else {
+      await query(`INSERT INTO store_settings (tenant_id, store_modules) VALUES ($1, $2)`, [tenantId, JSON.stringify(modules)]);
+    }
+
+    res.json({ success: true, courtsEnabled: isEnabled });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message || 'Error toggling courts module' });
+  }
+});
 
 export default router;
