@@ -20,8 +20,10 @@ export interface TenantWebsiteConfig {
   buttonTextColor: string;
   showStoreButton: boolean;
   showBookingButton: boolean;
+  showCourtsButton: boolean;
   storeButtonText: string;
   bookingButtonText: string;
+  courtsButtonText: string;
   showWhatsappButton: boolean;
   whatsappButtonText: string;
   headerLayout: 'split' | 'overlay' | 'banner_top';
@@ -67,8 +69,10 @@ export async function getWebsiteSettingsByTenant(tenantId: string): Promise<Tena
       buttonTextColor: '#ffffff',
       showStoreButton: true,
       showBookingButton: true,
+      showCourtsButton: false,
       storeButtonText: 'Ver Menú y Productos',
       bookingButtonText: 'Agendar Cita en Línea',
+      courtsButtonText: 'Reservar Cancha',
       showWhatsappButton: true,
       whatsappButtonText: 'WhatsApp Directo',
       headerLayout: 'split',
@@ -112,8 +116,10 @@ export async function getWebsiteSettingsByTenant(tenantId: string): Promise<Tena
     buttonTextColor: r.button_text_color || '#ffffff',
     showStoreButton: r.show_store_button !== false,
     showBookingButton: r.show_booking_button !== false,
+    showCourtsButton: r.show_courts_button === true,
     storeButtonText: r.store_button_text || 'Ver Menú y Productos',
     bookingButtonText: r.booking_button_text || 'Agendar Cita en Línea',
+    courtsButtonText: r.courts_button_text || 'Reservar Cancha',
     showWhatsappButton: r.show_whatsapp_button !== false,
     whatsappButtonText: r.whatsapp_button_text || 'WhatsApp Directo',
     headerLayout: r.header_layout || 'split',
@@ -144,7 +150,7 @@ export async function saveWebsiteSettings(tenantId: string, data: Partial<Tenant
       tenant_id, website_enabled, headline, subheadline, about_title, about_text,
       about_image_url, banner_image_url, logo_url, logo_white_url, primary_color, accent_color, font_family,
       button_style, button_hover_effect, button_text_color,
-      show_store_button, show_booking_button, store_button_text, booking_button_text,
+      show_store_button, show_booking_button, show_courts_button, store_button_text, booking_button_text, courts_button_text,
       show_whatsapp_button, whatsapp_button_text, header_layout, overlay_color, overlay_opacity,
       show_about_section, show_features_section, show_products_section,
       show_services_section, show_testimonials_section, show_contact_section,
@@ -154,12 +160,12 @@ export async function saveWebsiteSettings(tenantId: string, data: Partial<Tenant
       $1, $2, $3, $4, $5, $6,
       $7, $8, $9, $10, $11, $12, $13,
       $14, $15, $16,
-      $17, $18, $19, $20,
-      $21, $22, $23, $24, $25,
-      $26, $27, $28,
-      $29, $30, $31,
-      $32, $33, $34, $35, $36,
-      $37, $38, $39, CURRENT_TIMESTAMP
+      $17, $18, $19, $20, $21, $22,
+      $23, $24, $25, $26, $27,
+      $28, $29, $30,
+      $31, $32, $33,
+      $34, $35, $36, $37, $38,
+      $39, $40, $41, CURRENT_TIMESTAMP
     )
     ON CONFLICT (tenant_id) DO UPDATE SET
       website_enabled = EXCLUDED.website_enabled,
@@ -179,8 +185,10 @@ export async function saveWebsiteSettings(tenantId: string, data: Partial<Tenant
       button_text_color = EXCLUDED.button_text_color,
       show_store_button = EXCLUDED.show_store_button,
       show_booking_button = EXCLUDED.show_booking_button,
+      show_courts_button = EXCLUDED.show_courts_button,
       store_button_text = EXCLUDED.store_button_text,
       booking_button_text = EXCLUDED.booking_button_text,
+      courts_button_text = EXCLUDED.courts_button_text,
       show_whatsapp_button = EXCLUDED.show_whatsapp_button,
       whatsapp_button_text = EXCLUDED.whatsapp_button_text,
       header_layout = EXCLUDED.header_layout,
@@ -223,8 +231,10 @@ export async function saveWebsiteSettings(tenantId: string, data: Partial<Tenant
     data.buttonTextColor || '#ffffff',
     data.showStoreButton !== false,
     data.showBookingButton !== false,
+    data.showCourtsButton === true,
     data.storeButtonText || 'Ver Menú y Productos',
     data.bookingButtonText || 'Agendar Cita en Línea',
+    data.courtsButtonText || 'Reservar Cancha',
     data.showWhatsappButton !== false,
     data.whatsappButtonText || 'WhatsApp Directo',
     data.headerLayout || 'split',

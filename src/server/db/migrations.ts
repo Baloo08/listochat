@@ -663,5 +663,11 @@ export async function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_cb_open_matches ON court_bookings(match_status, date) WHERE match_status = 'open';
   `);
 
+  // Add courts button columns to tenant_websites
+  await query(`
+    ALTER TABLE tenant_websites ADD COLUMN IF NOT EXISTS show_courts_button BOOLEAN DEFAULT false;
+    ALTER TABLE tenant_websites ADD COLUMN IF NOT EXISTS courts_button_text VARCHAR(255) DEFAULT 'Reservar Cancha';
+  `).catch(() => {});
+
   console.log('Migrations completed successfully.');
 }

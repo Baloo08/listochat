@@ -39,6 +39,7 @@ export default function CourtsManager() {
   const [isIndoor, setIsIndoor] = useState(false);
   const [hasLighting, setHasLighting] = useState(false);
   const [active, setActive] = useState(true);
+  const [tenantSlug, setTenantSlug] = useState('');
 
   const api = useApi();
 
@@ -52,6 +53,7 @@ export default function CourtsManager() {
       if (storeData && storeData.storeModules && storeData.storeModules.courtsConfig) {
         setConfig(storeData.storeModules.courtsConfig);
       }
+      if (storeData?.storeSlug) setTenantSlug(storeData.storeSlug);
     } catch (error) {
       console.error('Error fetching courts data:', error);
     } finally {
@@ -200,6 +202,45 @@ export default function CourtsManager() {
           </p>
         </div>
       </div>
+
+      {/* URL Pública de Canchas */}
+      {tenantSlug && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px',
+          backgroundColor: 'var(--bg-elevated)', border: '1px solid var(--border)',
+          borderRadius: '10px', marginBottom: '16px', flexWrap: 'wrap'
+        }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+          <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: '600' }}>Página pública:</span>
+          <code style={{
+            backgroundColor: 'var(--bg)', padding: '4px 10px', borderRadius: '6px',
+            fontSize: '0.82rem', flex: 1, minWidth: '200px', wordBreak: 'break-all'
+          }}>
+            {window.location.origin}/canchas/{tenantSlug}
+          </code>
+          <button
+            onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/canchas/${tenantSlug}`); }}
+            style={{
+              padding: '6px 12px', backgroundColor: 'var(--primary)', color: 'white',
+              border: 'none', borderRadius: '6px', fontSize: '0.78rem', fontWeight: '700', cursor: 'pointer'
+            }}
+          >
+            Copiar
+          </button>
+          <a
+            href={`/canchas/${tenantSlug}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              padding: '6px 12px', backgroundColor: 'transparent', color: 'var(--primary)',
+              border: '1px solid var(--primary)', borderRadius: '6px', fontSize: '0.78rem',
+              fontWeight: '700', textDecoration: 'none', cursor: 'pointer'
+            }}
+          >
+            Abrir
+          </a>
+        </div>
+      )}
 
       {/* Tabs */}
       <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', marginBottom: '20px', gap: '8px' }}>
