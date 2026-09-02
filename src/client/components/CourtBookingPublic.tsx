@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Trophy, Calendar, Users, DollarSign, Plus, Minus, 
-  MapPin, Check, ChevronRight 
+  MapPin, Check, ChevronRight, Clock 
 } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
 import { Court, CourtBooking, StoreSettings } from '../../shared/types';
@@ -401,7 +401,9 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
                 openMatches.map(m => (
                   <div key={m.id} style={{ backgroundColor: 'white', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', borderLeft: '4px solid #d97706' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
-                      <h3 style={{ margin: 0, color: '#334155', fontSize: '1.1rem' }}>⚽ {m.courtName}</h3>
+                      <h3 style={{ margin: 0, color: '#334155', fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Trophy size={18} color="#d97706" /> {m.courtName}
+                      </h3>
                       <span style={{ backgroundColor: '#fef3c7', color: '#b45309', padding: '4px 8px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold' }}>Nivel: {m.skillLevel}</span>
                     </div>
                     
