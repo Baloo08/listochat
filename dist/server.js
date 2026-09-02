@@ -1448,6 +1448,8 @@ async function runMigrations() {
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_location JSONB;
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS driver_id UUID REFERENCES delivery_drivers(id) ON DELETE SET NULL;
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS waze_url TEXT;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_proof_url TEXT;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_proof_status VARCHAR(50) DEFAULT 'pending';
     ALTER TABLE products ADD COLUMN IF NOT EXISTS custom_variables JSONB;
     ALTER TABLE services ADD COLUMN IF NOT EXISTS custom_variables JSONB;
     ALTER TABLE order_items ADD COLUMN IF NOT EXISTS selected_variables JSONB;
@@ -2853,9 +2855,23 @@ async function upsertStoreSettings(tenantId, data) {
       store_name = EXCLUDED.store_name,
       store_slug = EXCLUDED.store_slug,
       store_description = EXCLUDED.store_description,
-      store_logo_url = EXCLUDED.store_logo_url,
-      store_banner_url = EXCLUDED.store_banner_url,
-      store_theme = EXCLUDED.store_theme,
+      store_logo_url = CASE 
+        WHEN EXCLUDED.store_logo_url IS NOT NULL AND EXCLUDED.store_logo_url != '' THEN EXCLUDED.store_logo_url 
+        ELSE store_settings.store_logo_url 
+      END,
+      store_banner_url = CASE 
+        WHEN EXCLUDED.store_banner_url IS NOT NULL AND EXCLUDED.store_banner_url != '' THEN EXCLUDED.store_banner_url 
+        ELSE store_settings.store_banner_url 
+      END,
+      store_theme = CASE
+        WHEN EXCLUDED.store_theme IS NOT NULL AND COALESCE(EXCLUDED.store_theme->>'logoUrl', '') != '' THEN EXCLUDED.store_theme
+        WHEN store_settings.store_logo_url IS NOT NULL AND store_settings.store_logo_url != '' THEN 
+          jsonb_set(
+            jsonb_set(COALESCE(EXCLUDED.store_theme, '{}'::jsonb), '{logoUrl}', to_jsonb(store_settings.store_logo_url)),
+            '{bannerUrl}', to_jsonb(COALESCE(store_settings.store_banner_url, ''))
+          )
+        ELSE EXCLUDED.store_theme
+      END,
       currency = EXCLUDED.currency,
       accept_sinpe = EXCLUDED.accept_sinpe,
       sinpe_phone = EXCLUDED.sinpe_phone,
@@ -3708,14 +3724,15 @@ async function getOrderById(id, tenantId) {
   return order;
 }
 async function createOrder(tenantId, data, items) {
-  const result = await query(`
+  const insertSql = `
     INSERT INTO orders (
       tenant_id, customer_name, customer_phone, customer_email, customer_address, whatsapp_jid,
       source, subtotal, delivery_fee, discount, total, currency, status, payment_method, 
       payment_status, payment_reference, payment_proof_url, payment_proof_status, notes, delivery_method, consumption_mode, table_number, customer_location
     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
     RETURNING id
-  `, [
+  `;
+  const params = [
     tenantId,
     data.customerName,
     data.customerPhone,
@@ -3739,7 +3756,22 @@ async function createOrder(tenantId, data, items) {
     data.consumptionMode || null,
     data.tableNumber || null,
     data.customerLocation ? JSON.stringify(data.customerLocation) : null
-  ]);
+  ];
+  let result;
+  try {
+    result = await query(insertSql, params);
+  } catch (err) {
+    if (err && (err.message?.includes("payment_proof_url") || err.message?.includes("payment_proof_status") || err.code === "42703")) {
+      console.log("[createOrder] Column missing detected, auto-migrating orders table...");
+      await query(`
+        ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_proof_url TEXT;
+        ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_proof_status VARCHAR(50) DEFAULT 'pending';
+      `);
+      result = await query(insertSql, params);
+    } else {
+      throw err;
+    }
+  }
   const orderId = result.rows[0].id;
   const orderItems = items || data.items || [];
   if (orderItems && orderItems.length > 0) {
@@ -6606,11 +6638,16 @@ async function persistFileToDatabase(filename, mimetype, filePath, size) {
   try {
     if (fs.existsSync(filePath)) {
       const fileBuffer = fs.readFileSync(filePath);
+      const dataBase64 = fileBuffer.toString("base64");
       await query(`
-        INSERT INTO uploaded_assets (filename, mimetype, data, size_bytes)
+        INSERT INTO uploaded_files (filename, mime_type, data_base64, size)
         VALUES ($1, $2, $3, $4)
-        ON CONFLICT (filename) DO UPDATE SET data = EXCLUDED.data, size_bytes = EXCLUDED.size_bytes
-      `, [filename, mimetype, fileBuffer, size]);
+        ON CONFLICT (filename) DO UPDATE SET 
+          mime_type = EXCLUDED.mime_type, 
+          data_base64 = EXCLUDED.data_base64, 
+          size = EXCLUDED.size
+      `, [filename, mimetype, dataBase64, size]);
+      console.log(`[Upload DB Sync] Persisted ${filename} to PostgreSQL uploaded_files (${size} bytes)`);
     }
   } catch (err) {
     console.error("[Upload DB Sync] Failed to persist file to PostgreSQL:", err);

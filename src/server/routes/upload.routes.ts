@@ -43,11 +43,16 @@ async function persistFileToDatabase(filename: string, mimetype: string, filePat
   try {
     if (fs.existsSync(filePath)) {
       const fileBuffer = fs.readFileSync(filePath);
+      const dataBase64 = fileBuffer.toString('base64');
       await query(`
-        INSERT INTO uploaded_assets (filename, mimetype, data, size_bytes)
+        INSERT INTO uploaded_files (filename, mime_type, data_base64, size)
         VALUES ($1, $2, $3, $4)
-        ON CONFLICT (filename) DO UPDATE SET data = EXCLUDED.data, size_bytes = EXCLUDED.size_bytes
-      `, [filename, mimetype, fileBuffer, size]);
+        ON CONFLICT (filename) DO UPDATE SET 
+          mime_type = EXCLUDED.mime_type, 
+          data_base64 = EXCLUDED.data_base64, 
+          size = EXCLUDED.size
+      `, [filename, mimetype, dataBase64, size]);
+      console.log(`[Upload DB Sync] Persisted ${filename} to PostgreSQL uploaded_files (${size} bytes)`);
     }
   } catch (err) {
     console.error('[Upload DB Sync] Failed to persist file to PostgreSQL:', err);

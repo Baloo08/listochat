@@ -68,20 +68,38 @@ export async function getOrderById(id: string, tenantId?: string): Promise<Order
 }
 
 export async function createOrder(tenantId: string, data: Partial<Order>, items?: OrderItem[]): Promise<Order> {
-  const result = await query(`
+  const insertSql = `
     INSERT INTO orders (
       tenant_id, customer_name, customer_phone, customer_email, customer_address, whatsapp_jid,
       source, subtotal, delivery_fee, discount, total, currency, status, payment_method, 
       payment_status, payment_reference, payment_proof_url, payment_proof_status, notes, delivery_method, consumption_mode, table_number, customer_location
     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
     RETURNING id
-  `, [
+  `;
+
+  const params = [
     tenantId, data.customerName, data.customerPhone, data.customerEmail, data.customerAddress, data.whatsappJid,
     data.source || 'store', data.subtotal, data.deliveryFee || 0, data.discount || 0, data.total, data.currency || 'CRC',
     data.status || 'pedido_recibido', data.paymentMethod, data.paymentStatus || 'pending', data.paymentReference || null,
     data.paymentProofUrl || null, data.paymentProofStatus || (data.paymentProofUrl ? 'received' : 'pending'), data.notes || null, data.deliveryMethod || 'pickup', data.consumptionMode || null, data.tableNumber || null,
     data.customerLocation ? JSON.stringify(data.customerLocation) : null
-  ]);
+  ];
+
+  let result;
+  try {
+    result = await query(insertSql, params);
+  } catch (err: any) {
+    if (err && (err.message?.includes('payment_proof_url') || err.message?.includes('payment_proof_status') || err.code === '42703')) {
+      console.log('[createOrder] Column missing detected, auto-migrating orders table...');
+      await query(`
+        ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_proof_url TEXT;
+        ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_proof_status VARCHAR(50) DEFAULT 'pending';
+      `);
+      result = await query(insertSql, params);
+    } else {
+      throw err;
+    }
+  }
   
   const orderId = result.rows[0].id;
   const orderItems = items || data.items || [];

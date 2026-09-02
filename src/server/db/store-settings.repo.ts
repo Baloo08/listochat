@@ -88,9 +88,23 @@ export async function upsertStoreSettings(tenantId: string, data: Partial<StoreS
       store_name = EXCLUDED.store_name,
       store_slug = EXCLUDED.store_slug,
       store_description = EXCLUDED.store_description,
-      store_logo_url = EXCLUDED.store_logo_url,
-      store_banner_url = EXCLUDED.store_banner_url,
-      store_theme = EXCLUDED.store_theme,
+      store_logo_url = CASE 
+        WHEN EXCLUDED.store_logo_url IS NOT NULL AND EXCLUDED.store_logo_url != '' THEN EXCLUDED.store_logo_url 
+        ELSE store_settings.store_logo_url 
+      END,
+      store_banner_url = CASE 
+        WHEN EXCLUDED.store_banner_url IS NOT NULL AND EXCLUDED.store_banner_url != '' THEN EXCLUDED.store_banner_url 
+        ELSE store_settings.store_banner_url 
+      END,
+      store_theme = CASE
+        WHEN EXCLUDED.store_theme IS NOT NULL AND COALESCE(EXCLUDED.store_theme->>'logoUrl', '') != '' THEN EXCLUDED.store_theme
+        WHEN store_settings.store_logo_url IS NOT NULL AND store_settings.store_logo_url != '' THEN 
+          jsonb_set(
+            jsonb_set(COALESCE(EXCLUDED.store_theme, '{}'::jsonb), '{logoUrl}', to_jsonb(store_settings.store_logo_url)),
+            '{bannerUrl}', to_jsonb(COALESCE(store_settings.store_banner_url, ''))
+          )
+        ELSE EXCLUDED.store_theme
+      END,
       currency = EXCLUDED.currency,
       accept_sinpe = EXCLUDED.accept_sinpe,
       sinpe_phone = EXCLUDED.sinpe_phone,
