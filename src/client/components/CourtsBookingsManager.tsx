@@ -2,10 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { 
   Calendar, Trophy, Users, DollarSign, Clock, CheckCircle2, 
   XCircle, AlertCircle, Phone, Search, Filter, Eye, RefreshCw, 
-  ChevronLeft, ChevronRight, ShieldCheck, Check, SlidersHorizontal
+  ChevronLeft, ChevronRight, ShieldCheck, Check, SlidersHorizontal,
+  Send, MessageSquare, Copy, Sparkles
 } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
 import { Court, CourtBooking } from '../../shared/types';
+import { formatFriendlyDate, formatShortDate, formatTime12h } from '../utils/dateFormat';
 
 export default function CourtsBookingsManager() {
   const [bookings, setBookings] = useState<CourtBooking[]>([]);
@@ -22,6 +24,12 @@ export default function CourtsBookingsManager() {
   // Selected detail modal
   const [selectedBooking, setSelectedBooking] = useState<CourtBooking | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  
+  // Reminder Modal state
+  const [reminderBooking, setReminderBooking] = useState<CourtBooking | null>(null);
+  const [reminderType, setReminderType] = useState<'reservation' | 'payment'>('payment');
+  const [targetTeam, setTargetTeam] = useState<'A' | 'B' | 'both'>('A');
+  const [sendingReminder, setSendingReminder] = useState(false);
 
   const api = useApi();
 
@@ -91,6 +99,29 @@ export default function CourtsBookingsManager() {
     }
   };
 
+  const handleSendApiReminder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reminderBooking) return;
+    
+    setSendingReminder(true);
+    try {
+      const res = await api.post(`/api/courts/bookings/${reminderBooking.id}/send-reminder`, {
+        reminderType,
+        targetTeam
+      });
+      if (res && res.success) {
+        alert(`¡Recordatorio enviado por WhatsApp exitosamente a ${res.sentCount} destinatario(s)!`);
+        setReminderBooking(null);
+      } else {
+        alert('No se pudo enviar el mensaje por WhatsApp. Verifica la conexión en Conexión WhatsApp.');
+      }
+    } catch (error: any) {
+      alert(error.message || 'Error al enviar recordatorio por WhatsApp');
+    } finally {
+      setSendingReminder(false);
+    }
+  };
+
   const openWhatsApp = (phone: string, text: string) => {
     const clean = phone.replace(/\D/g, '');
     if (!clean) return;
@@ -101,7 +132,7 @@ export default function CourtsBookingsManager() {
   const totalBookings = bookings.length;
   const pendingPayCount = bookings.filter(b => b.status !== 'cancelled' && (!b.teamAPaid || (b.teamBName && !b.teamBPaid))).length;
   const fullyPaidCount = bookings.filter(b => b.status !== 'cancelled' && b.teamAPaid && (!b.teamBName || b.teamBPaid)).length;
-  const openMatchesCount = bookings.filter(b => b.status !== 'cancelled' && b.matchStatus === 'open').length;
+  const openMatchesCount = bookings.filter(b => b.status !== 'cancelled' && (b.matchStatus === 'open' || (b.bookingMode === 'seek_match' && !b.teamBName))).length;
 
   // Filtered Bookings
   const filteredBookings = bookings.filter(b => {
@@ -116,7 +147,7 @@ export default function CourtsBookingsManager() {
       const isPaid = b.teamAPaid && (!b.teamBName || b.teamBPaid);
       if (!isPaid) return false;
     } else if (statusFilter === 'seeking') {
-      if (b.matchStatus !== 'open' || b.status === 'cancelled') return false;
+      if (b.status === 'cancelled' || (b.matchStatus !== 'open' && (b.bookingMode !== 'seek_match' || !!b.teamBName))) return false;
     } else if (statusFilter === 'matched') {
       if (b.matchStatus !== 'matched' || b.status === 'cancelled') return false;
     } else if (statusFilter === 'confirmed') {
@@ -145,7 +176,7 @@ export default function CourtsBookingsManager() {
     if (b.status === 'cancelled') {
       return <span style={{ backgroundColor: '#fee2e2', color: '#dc2626', padding: '4px 10px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '700' }}>Cancelado</span>;
     }
-    if (b.matchStatus === 'open') {
+    if (b.matchStatus === 'open' || (b.bookingMode === 'seek_match' && !b.teamBName)) {
       return <span style={{ backgroundColor: '#fef3c7', color: '#b45309', padding: '4px 10px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '700' }}>Esperando Reto</span>;
     }
     if (b.matchStatus === 'matched') {
@@ -160,7 +191,7 @@ export default function CourtsBookingsManager() {
     const isPartial = (b.teamAPaid && !b.teamBPaid) || (!b.teamAPaid && b.teamBPaid);
     
     if (isPaid) {
-      return <span style={{ backgroundColor: '#ecfdf5', color: '#059669', border: '1px solid #a7f3d0', padding: '3px 8px', borderRadius: '6px', fontSize: '0.72rem', fontWeight: '700' }}>Pagado Completo</span>;
+      return <span style={{ backgroundColor: '#ecfdf5', color: '#059669', border: '1px solid #a7f3d0', padding: '3px 8px', borderRadius: '6px', fontSize: '0.72rem', fontWeight: '700' }}>100% Pagado</span>;
     }
     if (isPartial) {
       return <span style={{ backgroundColor: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', padding: '3px 8px', borderRadius: '6px', fontSize: '0.72rem', fontWeight: '700' }}>Pago Parcial (1 Eq.)</span>;
@@ -178,7 +209,7 @@ export default function CourtsBookingsManager() {
             Reservas Deportivas
           </h2>
           <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.88rem' }}>
-            Control de partidos, pagos por equipo, retadores y agenda deportiva.
+            Control de partidos, recordatorios por WhatsApp, pagos por equipo y retos.
           </p>
         </div>
 
@@ -392,6 +423,8 @@ export default function CourtsBookingsManager() {
             filteredBookings.map(b => {
               const total = Number(b.totalPrice || 0);
               const perTeam = b.pricePerTeam || (total / 2);
+              const friendlyDate = formatFriendlyDate(b.date);
+              const friendlyTime = formatTime12h(b.time);
 
               return (
                 <div
@@ -407,11 +440,11 @@ export default function CourtsBookingsManager() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                       <div style={{ fontSize: '1.1rem', fontWeight: '800', color: 'var(--text)' }}>
-                        {b.courtName || 'Cancha'}
+                        {b.courtName || 'Cancha Deportiva'}
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: '600' }}>
-                        <Calendar size={14} /> {b.date}
-                        <Clock size={14} style={{ marginLeft: '6px' }} /> {b.time.substring(0, 5)} ({b.durationMinutes} min)
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', color: 'var(--primary)', fontWeight: '700' }}>
+                        <Calendar size={14} /> {friendlyDate}
+                        <Clock size={14} style={{ marginLeft: '6px' }} /> {friendlyTime} ({b.durationMinutes} min)
                       </div>
                     </div>
 
@@ -453,7 +486,7 @@ export default function CourtsBookingsManager() {
                         {b.teamAName || 'Equipo A'}
                       </div>
                       <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                        Capitán: <strong>{b.teamACaptain}</strong> · Tel: <span style={{ color: 'var(--primary)', cursor: 'pointer' }} onClick={() => openWhatsApp(b.teamAPhone, `Hola ${b.teamACaptain}, te contacto de la cancha sobre tu reserva del ${b.date} a las ${b.time}.`)}>{b.teamAPhone}</span>
+                        Capitán: <strong>{b.teamACaptain}</strong> · Tel: <span style={{ color: 'var(--primary)', cursor: 'pointer', textDecoration: 'underline' }} onClick={() => openWhatsApp(b.teamAPhone, `Hola ${b.teamACaptain}, te contacto de la cancha sobre tu reserva del ${friendlyDate} a las ${friendlyTime}.`)}>{b.teamAPhone}</span>
                       </div>
                     </div>
 
@@ -464,7 +497,7 @@ export default function CourtsBookingsManager() {
                           <div style={{ fontSize: '0.72rem', fontWeight: '800', color: '#d97706', textTransform: 'uppercase' }}>
                             ⚔️ Busca Reto Abierto
                           </div>
-                          <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                          <div style={{ fontSize: '0.85rem', color: 'var(--text)' }}>
                             Nivel: <strong>{b.skillLevel || 'Cualquiera'}</strong>
                           </div>
                           <div style={{ fontSize: '0.78rem', color: '#d97706' }}>
@@ -499,7 +532,7 @@ export default function CourtsBookingsManager() {
                           </div>
                           {b.teamBCaptain && (
                             <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                              Capitán: <strong>{b.teamBCaptain}</strong> · Tel: <span style={{ color: 'var(--primary)', cursor: 'pointer' }} onClick={() => openWhatsApp(b.teamBPhone || '', `Hola ${b.teamBCaptain}, te contacto de la cancha sobre tu partido del ${b.date} a las ${b.time}.`)}>{b.teamBPhone}</span>
+                              Capitán: <strong>{b.teamBCaptain}</strong> · Tel: <span style={{ color: 'var(--primary)', cursor: 'pointer', textDecoration: 'underline' }} onClick={() => openWhatsApp(b.teamBPhone || '', `Hola ${b.teamBCaptain}, te contacto de la cancha sobre tu partido del ${friendlyDate} a las ${friendlyTime}.`)}>{b.teamBPhone}</span>
                             </div>
                           )}
                         </>
@@ -517,7 +550,22 @@ export default function CourtsBookingsManager() {
                       )}
                     </div>
 
-                    <div style={{ display: 'flex', gap: '8px' }}>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      {/* Enviar Recordatorio WhatsApp Button */}
+                      {b.status !== 'cancelled' && (
+                        <button
+                          type="button"
+                          onClick={() => setReminderBooking(b)}
+                          style={{
+                            padding: '7px 12px', borderRadius: '8px', border: '1px solid #86efac',
+                            backgroundColor: '#f0fdf4', color: '#15803d', fontSize: '0.8rem',
+                            fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px'
+                          }}
+                        >
+                          <Send size={13} /> Recordatorio WhatsApp
+                        </button>
+                      )}
+
                       <button
                         type="button"
                         onClick={() => setSelectedBooking(b)}
@@ -556,11 +604,11 @@ export default function CourtsBookingsManager() {
       {/* CONTENT: CALENDAR VIEW */}
       {viewMode === 'calendar' && (
         <div style={{ backgroundColor: 'var(--surface)', borderRadius: '12px', border: '1px solid var(--border)', padding: '20px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
             <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '800', color: 'var(--text)' }}>
-              Horarios para el {selectedDate}
+              Horarios para: <span style={{ color: 'var(--primary)' }}>{formatFriendlyDate(selectedDate)}</span>
             </h3>
-            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: '600' }}>
               {filteredBookings.length} reserva(s) programada(s)
             </div>
           </div>
@@ -586,12 +634,12 @@ export default function CourtsBookingsManager() {
                           onClick={() => setSelectedBooking(b)}
                           style={{
                             padding: '10px', borderRadius: '8px', cursor: 'pointer',
-                            backgroundColor: b.status === 'cancelled' ? '#f1f5f9' : b.matchStatus === 'open' ? '#fffbeb' : '#f0fdf4',
-                            border: `1px solid ${b.status === 'cancelled' ? '#cbd5e1' : b.matchStatus === 'open' ? '#fcd34d' : '#86efac'}`
+                            backgroundColor: b.status === 'cancelled' ? '#f1f5f9' : (b.matchStatus === 'open' || (b.bookingMode === 'seek_match' && !b.teamBName)) ? '#fffbeb' : '#f0fdf4',
+                            border: `1px solid ${b.status === 'cancelled' ? '#cbd5e1' : (b.matchStatus === 'open' || (b.bookingMode === 'seek_match' && !b.teamBName)) ? '#fcd34d' : '#86efac'}`
                           }}
                         >
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                            <span style={{ fontWeight: '800', fontSize: '0.85rem', color: '#0f172a' }}>{b.time.substring(0, 5)}</span>
+                            <span style={{ fontWeight: '800', fontSize: '0.85rem', color: '#0f172a' }}>{formatTime12h(b.time)}</span>
                             {getStatusBadge(b)}
                           </div>
                           <div style={{ fontSize: '0.82rem', fontWeight: '700', color: '#334155' }}>
@@ -607,6 +655,111 @@ export default function CourtsBookingsManager() {
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* REMINDER MODAL */}
+      {reminderBooking && (
+        <div style={{
+          position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(3px)',
+          zIndex: 999999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px'
+        }}>
+          <div style={{
+            backgroundColor: 'var(--surface)', borderRadius: '16px', maxWidth: '480px', width: '100%',
+            padding: '24px', boxShadow: '0 20px 40px rgba(0,0,0,0.25)', border: '1px solid var(--border)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid var(--border)', paddingBottom: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Send size={18} color="#16a34a" />
+                <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: '800', color: 'var(--text)' }}>
+                  Enviar Recordatorio por WhatsApp
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setReminderBooking(null)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '1.2rem', fontWeight: 'bold' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSendApiReminder} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', backgroundColor: 'var(--bg-elevated)', padding: '10px 14px', borderRadius: '8px' }}>
+                <div><strong>Partido:</strong> {reminderBooking.courtName} · {formatFriendlyDate(reminderBooking.date)} a las {formatTime12h(reminderBooking.time)}</div>
+                <div style={{ marginTop: '3px' }}><strong>Equipos:</strong> {reminderBooking.teamAName} {reminderBooking.teamBName ? `vs ${reminderBooking.teamBName}` : ''}</div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', marginBottom: '6px', color: 'var(--text)' }}>
+                  Tipo de Recordatorio:
+                </label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setReminderType('payment')}
+                    style={{
+                      flex: 1, padding: '9px', borderRadius: '8px', border: reminderType === 'payment' ? '2px solid var(--primary)' : '1px solid var(--border)',
+                      backgroundColor: reminderType === 'payment' ? 'var(--primary-light)' : 'var(--bg-elevated)',
+                      color: reminderType === 'payment' ? 'var(--primary)' : 'var(--text)', fontWeight: '700', fontSize: '0.8rem', cursor: 'pointer'
+                    }}
+                  >
+                    💳 Recordatorio de Pago (SINPE)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setReminderType('reservation')}
+                    style={{
+                      flex: 1, padding: '9px', borderRadius: '8px', border: reminderType === 'reservation' ? '2px solid var(--primary)' : '1px solid var(--border)',
+                      backgroundColor: reminderType === 'reservation' ? 'var(--primary-light)' : 'var(--bg-elevated)',
+                      color: reminderType === 'reservation' ? 'var(--primary)' : 'var(--text)', fontWeight: '700', fontSize: '0.8rem', cursor: 'pointer'
+                    }}
+                  >
+                    ⚽ Recordatorio de Partido
+                  </button>
+                </div>
+              </div>
+
+              {reminderBooking.teamBName && (
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', marginBottom: '6px', color: 'var(--text)' }}>
+                    Destinatarios:
+                  </label>
+                  <select
+                    value={targetTeam}
+                    onChange={e => setTargetTeam(e.target.value as any)}
+                    style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: 'var(--background)', color: 'var(--text)', fontWeight: '600' }}
+                  >
+                    <option value="both">Ambos Equipos (Equipo A y Equipo B)</option>
+                    <option value="A">Solo Equipo A ({reminderBooking.teamAName})</option>
+                    <option value="B">Solo Equipo B ({reminderBooking.teamBName})</option>
+                  </select>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => setReminderBooking(null)}
+                  style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: 'transparent', color: 'var(--text)', fontWeight: '700', cursor: 'pointer' }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={sendingReminder}
+                  style={{
+                    flex: 1.5, padding: '10px', borderRadius: '8px', border: 'none',
+                    backgroundColor: '#16a34a', color: 'white', fontWeight: '800', cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'
+                  }}
+                >
+                  <Send size={15} />
+                  {sendingReminder ? 'Enviando...' : 'Enviar por WhatsApp'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -638,13 +791,18 @@ export default function CourtsBookingsManager() {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', fontSize: '0.9rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Código de Reserva:</span>
+                <strong style={{ color: 'var(--primary)', letterSpacing: '0.04em' }}>#RES-{selectedBooking.id.substring(0, 8).toUpperCase()}</strong>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: 'var(--text-muted)' }}>Cancha:</span>
                 <strong style={{ color: 'var(--text)' }}>{selectedBooking.courtName}</strong>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: 'var(--text-muted)' }}>Fecha & Hora:</span>
-                <strong style={{ color: 'var(--text)' }}>{selectedBooking.date} a las {selectedBooking.time.substring(0, 5)}</strong>
+                <strong style={{ color: 'var(--text)' }}>{formatFriendlyDate(selectedBooking.date)} a las {formatTime12h(selectedBooking.time)}</strong>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>

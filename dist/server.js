@@ -9341,6 +9341,23 @@ async function getBookingById(id, tenantId) {
   return res.rows[0] ? mapBookingRow(res.rows[0]) : null;
 }
 async function createBooking(tenantId, data) {
+  const bookingMode = data.bookingMode || "full";
+  const matchStatus = data.matchStatus || (bookingMode === "seek_match" ? "open" : "confirmed");
+  let totalPrice = Number(data.totalPrice || 0);
+  let durationMinutes = data.durationMinutes || 60;
+  let sportType = data.sportType;
+  if (data.courtId && (!totalPrice || !sportType)) {
+    const cRes = await query("SELECT * FROM courts WHERE id = $1", [data.courtId]);
+    if (cRes.rows[0]) {
+      const c = cRes.rows[0];
+      durationMinutes = data.durationMinutes || c.duration_minutes || 60;
+      sportType = sportType || c.sport_type || "futbol";
+      if (!totalPrice) {
+        totalPrice = Number(c.base_price || 0) + Number(data.teamAExtraPlayers || 0) * Number(c.extra_player_fee || 0);
+      }
+    }
+  }
+  const pricePerTeam = data.pricePerTeam ? Number(data.pricePerTeam) : totalPrice > 0 ? totalPrice / 2 : void 0;
   const res = await query(`
     INSERT INTO court_bookings (
       tenant_id, court_id, date, time, duration_minutes, booking_mode,
@@ -9358,9 +9375,9 @@ async function createBooking(tenantId, data) {
     data.courtId,
     data.date,
     data.time,
-    data.durationMinutes || 60,
-    data.bookingMode || "full",
-    data.matchStatus || "confirmed",
+    durationMinutes,
+    bookingMode,
+    matchStatus,
     data.matchExpiryHours || 1,
     data.teamAName || "Equipo A",
     data.teamACaptain,
@@ -9374,15 +9391,20 @@ async function createBooking(tenantId, data) {
     data.teamBPlayers || 5,
     data.teamBExtraPlayers || 0,
     data.teamBPaid || false,
-    data.totalPrice || 0,
-    data.pricePerTeam,
+    totalPrice,
+    pricePerTeam,
     data.paymentMode || "both",
-    data.sportType,
+    sportType,
     data.skillLevel,
     data.notes,
     data.status || "confirmed"
   ]);
-  return mapBookingRow(res.rows[0]);
+  const booking = mapBookingRow(res.rows[0]);
+  if (data.courtId) {
+    const cRes = await query("SELECT name FROM courts WHERE id = $1", [data.courtId]);
+    booking.courtName = cRes.rows[0]?.name || booking.courtName;
+  }
+  return booking;
 }
 async function updateBooking(id, tenantId, data) {
   const allowed = {
@@ -9434,7 +9456,10 @@ async function getOpenMatches(tenantId) {
     SELECT cb.*, c.name as court_name 
     FROM court_bookings cb
     JOIN courts c ON c.id = cb.court_id
-    WHERE cb.tenant_id = $1 AND cb.match_status = 'open' AND cb.date >= CURRENT_DATE
+    WHERE cb.tenant_id = $1 
+      AND cb.status != 'cancelled'
+      AND (cb.match_status = 'open' OR (cb.booking_mode = 'seek_match' AND (cb.team_b_name IS NULL OR cb.team_b_name = '')))
+      AND cb.date >= (CURRENT_DATE - INTERVAL '1 day')::date
     ORDER BY cb.date, cb.time
   `, [tenantId]);
   return res.rows.map(mapBookingRow);
@@ -9454,7 +9479,11 @@ async function joinMatch(id, teamBData) {
     teamBData.teamBExtraPlayers || 0,
     id
   ]);
-  return res.rows[0] ? mapBookingRow(res.rows[0]) : null;
+  if (!res.rows[0]) return null;
+  const booking = mapBookingRow(res.rows[0]);
+  const cRes = await query("SELECT name FROM courts WHERE id = $1", [booking.courtId]);
+  booking.courtName = cRes.rows[0]?.name || booking.courtName;
+  return booking;
 }
 async function getAvailableSlots(tenantId, courtId, date) {
   const tRes = await query("SELECT settings_json FROM tenants WHERE id = $1", [tenantId]);
@@ -9566,17 +9595,38 @@ router28.post("/public/:slug/book", async (req, res) => {
       const cleanPhone = booking.teamAPhone.replace(/\D/g, "");
       const dParts = booking.date.split("-");
       const formattedDate = dParts.length === 3 ? `${dParts[2]}/${dParts[1]}/${dParts[0]}` : booking.date;
-      const msg = `\u{1F3BE} *\xA1Reserva Confirmada!*
+      const code = booking.id.substring(0, 8).toUpperCase();
+      const timeShort = booking.time.substring(0, 5);
+      let msg = "";
+      if (booking.bookingMode === "seek_match") {
+        const cuota = (booking.pricePerTeam || booking.totalPrice / 2).toLocaleString();
+        msg = `\u26BD *\xA1Reto Publicado con \xC9xito!*
 
-Hola ${booking.teamACaptain},
-Tu reserva ha sido confirmada.
+Hola *${booking.teamACaptain}*,
+Tu b\xFAsqueda de reto para el equipo *${booking.teamAName}* ha sido publicada en el portal.
 
-\u{1F4C5} Fecha: ${formattedDate}
-\u23F0 Hora: ${booking.time.substring(0, 5)}
-\u26BD Cancha: ${booking.courtName || "Reservada"}
-\u{1F4B8} Total a pagar: \u20A1${booking.totalPrice}
+\u{1F4CB} *C\xF3digo:* #RES-${code}
+\u{1F3C6} *Cancha:* ${booking.courtName || "Cancha Deportiva"}
+\u{1F4C5} *Fecha:* ${formattedDate}
+\u23F0 *Hora:* ${timeShort}
+\u2694\uFE0F *Nivel:* ${booking.skillLevel || "Abierto"}
+\u{1F4B0} *Tu cuota (50%):* \u20A1${cuota}
 
-\xA1Te esperamos!`;
+Te notificaremos por este medio cuando un equipo rival acepte el reto. \xA1A entrenar!`;
+      } else {
+        msg = `\u26BD *\xA1Reserva Confirmada!*
+
+Hola *${booking.teamACaptain}*,
+Tu reserva de cancha para el equipo *${booking.teamAName}* ha sido confirmada.
+
+\u{1F4CB} *C\xF3digo:* #RES-${code}
+\u{1F3C6} *Cancha:* ${booking.courtName || "Cancha Deportiva"}
+\u{1F4C5} *Fecha:* ${formattedDate}
+\u23F0 *Hora:* ${timeShort}
+\u{1F4B0} *Total a pagar:* \u20A1${booking.totalPrice.toLocaleString()}
+
+\xA1Los esperamos en la cancha!`;
+      }
       await sendMessage(tenant.evolutionInstance, `${cleanPhone}@s.whatsapp.net`, msg).catch(console.error);
     }
     res.status(201).json(booking);
@@ -9607,19 +9657,35 @@ router28.post("/public/:slug/join-match/:bookingId", async (req, res) => {
       req.io.to(`tenant_${tenant.id}`).emit("courtBooking:matched", booking);
     }
     if (tenant.evolutionInstance) {
+      const dParts = booking.date.split("-");
+      const formattedDate = dParts.length === 3 ? `${dParts[2]}/${dParts[1]}/${dParts[0]}` : booking.date;
+      const code = booking.id.substring(0, 8).toUpperCase();
+      const timeShort = booking.time.substring(0, 5);
+      const cuota = (booking.pricePerTeam || booking.totalPrice / 2).toLocaleString();
       const msgA = `\u{1F525} *\xA1Reto Aceptado!*
 
-El equipo *${booking.teamBName}* ha aceptado tu reto.
-Capit\xE1n: ${booking.teamBCaptain}
-Tel: ${booking.teamBPhone}
+Hola *${booking.teamACaptain}*,
+\xA1Tu reto ya tiene rival! El equipo *${booking.teamBName}* (Capit\xE1n: *${booking.teamBCaptain}*, Tel: ${booking.teamBPhone}) ha aceptado el partido.
 
-\xA1Prep\xE1rense para el partido!`;
-      const msgB = `\u{1F525} *\xA1Te has unido al partido!*
-
-Te has unido al partido contra *${booking.teamAName}*.
-Capit\xE1n rival: ${booking.teamACaptain}
+\u{1F4CB} *C\xF3digo:* #RES-${code}
+\u{1F3C6} *Cancha:* ${booking.courtName || "Cancha Deportiva"}
+\u{1F4C5} *Fecha:* ${formattedDate}
+\u23F0 *Hora:* ${timeShort}
+\u{1F4B0} *Cuota por equipo:* \u20A1${cuota}
 
 \xA1Nos vemos en la cancha!`;
+      const msgB = `\u{1F525} *\xA1Te has unido al partido!*
+
+Hola *${booking.teamBCaptain}*,
+Tu equipo *${booking.teamBName}* jugar\xE1 contra *${booking.teamAName}* (Capit\xE1n: *${booking.teamACaptain}*, Tel: ${booking.teamAPhone}).
+
+\u{1F4CB} *C\xF3digo:* #RES-${code}
+\u{1F3C6} *Cancha:* ${booking.courtName || "Cancha Deportiva"}
+\u{1F4C5} *Fecha:* ${formattedDate}
+\u23F0 *Hora:* ${timeShort}
+\u{1F4B0} *Tu cuota:* \u20A1${cuota}
+
+\xA1Prep\xE1rense para el partido!`;
       const cleanA = booking.teamAPhone.replace(/\D/g, "");
       const cleanB = booking.teamBPhone?.replace(/\D/g, "");
       if (cleanA) await sendMessage(tenant.evolutionInstance, `${cleanA}@s.whatsapp.net`, msgA).catch(console.error);
@@ -9752,6 +9818,108 @@ router28.put("/bookings/:id/confirm-payment-b", async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Error al confirmar pago B" });
+  }
+});
+router28.post("/bookings/:id/send-reminder", async (req, res) => {
+  try {
+    const booking = await getBookingById(req.params.id, req.tenantId);
+    if (!booking) return res.status(404).json({ error: "Reserva no encontrada" });
+    const { reminderType, targetTeam, customMessage } = req.body;
+    const tRes = await query("SELECT evolution_instance, name FROM tenants WHERE id = $1", [req.tenantId]);
+    const evolutionInstance = tRes.rows[0]?.evolution_instance;
+    const businessName = tRes.rows[0]?.name || "el complejo deportivo";
+    if (!evolutionInstance) {
+      return res.status(400).json({ error: "No hay instancia de WhatsApp conectada para este negocio." });
+    }
+    const sRes = await query("SELECT sinpe_phone, sinpe_name, store_modules FROM store_settings WHERE tenant_id = $1", [req.tenantId]);
+    const s = sRes.rows[0] || {};
+    const sinpePhone = s.store_modules?.courtsConfig?.theme?.sinpePhone || s.sinpe_phone || "";
+    const sinpeName = s.store_modules?.courtsConfig?.theme?.sinpeName || s.sinpe_name || "";
+    const dParts = booking.date.split("-");
+    const formattedDate = dParts.length === 3 ? `${dParts[2]}/${dParts[1]}/${dParts[0]}` : booking.date;
+    const code = booking.id.substring(0, 8).toUpperCase();
+    const timeShort = booking.time.substring(0, 5);
+    let sentCount = 0;
+    if ((targetTeam === "A" || targetTeam === "both" || !targetTeam) && booking.teamAPhone) {
+      const cleanA = booking.teamAPhone.replace(/\D/g, "");
+      let msgA = "";
+      if (customMessage) {
+        msgA = customMessage;
+      } else if (reminderType === "payment") {
+        const amountA = booking.bookingMode === "seek_match" && !booking.teamBName ? booking.pricePerTeam || booking.totalPrice / 2 : booking.pricePerTeam || booking.totalPrice;
+        msgA = `\u{1F44B} *\xA1Recordatorio de Pago!*
+
+Hola *${booking.teamACaptain}*,
+Te recordamos el pago pendiente para tu reserva de cancha:
+
+\u{1F4CB} *C\xF3digo:* #RES-${code}
+\u{1F3C6} *Cancha:* ${booking.courtName}
+\u{1F4C5} *Fecha:* ${formattedDate} a las ${timeShort}
+\u{1F4B0} *Monto a pagar:* \u20A1${Number(amountA).toLocaleString()}
+`;
+        if (sinpePhone) {
+          msgA += `
+\u{1F4F2} *SINPE M\xF3vil:* ${sinpePhone}${sinpeName ? ` (${sinpeName})` : ""}
+*Detalle:* #RES-${code}`;
+        }
+      } else {
+        msgA = `\u26BD *\xA1Recordatorio de Partido!*
+
+Hola *${booking.teamACaptain}*,
+Te recordamos tu partido programado en *${businessName}*:
+
+\u{1F4CB} *C\xF3digo:* #RES-${code}
+\u{1F3C6} *Cancha:* ${booking.courtName}
+\u{1F4C5} *Fecha:* ${formattedDate}
+\u23F0 *Hora:* ${timeShort}
+
+\u26A0\uFE0F Por favor presentarse 10 minutos antes de la hora acordada. \xA1Buen partido!`;
+      }
+      await sendMessage(evolutionInstance, `${cleanA}@s.whatsapp.net`, msgA).catch(console.error);
+      sentCount++;
+    }
+    if ((targetTeam === "B" || targetTeam === "both") && booking.teamBPhone) {
+      const cleanB = booking.teamBPhone.replace(/\D/g, "");
+      let msgB = "";
+      if (customMessage) {
+        msgB = customMessage;
+      } else if (reminderType === "payment") {
+        const amountB = booking.pricePerTeam || booking.totalPrice / 2;
+        msgB = `\u{1F44B} *\xA1Recordatorio de Pago!*
+
+Hola *${booking.teamBCaptain}*,
+Te recordamos el pago de tu cuota de partido:
+
+\u{1F4CB} *C\xF3digo:* #RES-${code}
+\u{1F3C6} *Cancha:* ${booking.courtName}
+\u{1F4C5} *Fecha:* ${formattedDate} a las ${timeShort}
+\u{1F4B0} *Monto:* \u20A1${Number(amountB).toLocaleString()}
+`;
+        if (sinpePhone) {
+          msgB += `
+\u{1F4F2} *SINPE M\xF3vil:* ${sinpePhone}${sinpeName ? ` (${sinpeName})` : ""}
+*Detalle:* #RES-${code}`;
+        }
+      } else {
+        msgB = `\u26BD *\xA1Recordatorio de Partido!*
+
+Hola *${booking.teamBCaptain}*,
+Te recordamos tu partido programado en *${businessName}*:
+
+\u{1F4CB} *C\xF3digo:* #RES-${code}
+\u{1F3C6} *Cancha:* ${booking.courtName}
+\u{1F4C5} *Fecha:* ${formattedDate}
+\u23F0 *Hora:* ${timeShort}
+
+\u26A0\uFE0F Por favor presentarse 10 minutos antes de la hora acordada. \xA1Buen partido!`;
+      }
+      await sendMessage(evolutionInstance, `${cleanB}@s.whatsapp.net`, msgB).catch(console.error);
+      sentCount++;
+    }
+    res.json({ success: true, sentCount });
+  } catch (error) {
+    console.error("Error sending reminder:", error);
+    res.status(500).json({ error: "Error al enviar recordatorio" });
   }
 });
 var courts_routes_default = router28;

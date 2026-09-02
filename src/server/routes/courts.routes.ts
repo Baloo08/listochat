@@ -101,11 +101,22 @@ router.post('/public/:slug/book', async (req, res) => {
       (req as any).io.to(`tenant_${tenant.id}`).emit('courtBooking:created', booking);
     }
 
+    // WhatsApp Notification via Evolution API
     if (tenant.evolutionInstance && booking.teamAPhone) {
       const cleanPhone = booking.teamAPhone.replace(/\D/g, '');
       const dParts = booking.date.split('-');
       const formattedDate = dParts.length === 3 ? `${dParts[2]}/${dParts[1]}/${dParts[0]}` : booking.date;
-      const msg = `🎾 *¡Reserva Confirmada!*\n\nHola ${booking.teamACaptain},\nTu reserva ha sido confirmada.\n\n📅 Fecha: ${formattedDate}\n⏰ Hora: ${booking.time.substring(0, 5)}\n⚽ Cancha: ${booking.courtName || 'Reservada'}\n💸 Total a pagar: ₡${booking.totalPrice}\n\n¡Te esperamos!`;
+      const code = booking.id.substring(0, 8).toUpperCase();
+      const timeShort = booking.time.substring(0, 5);
+
+      let msg = '';
+      if (booking.bookingMode === 'seek_match') {
+        const cuota = (booking.pricePerTeam || (booking.totalPrice / 2)).toLocaleString();
+        msg = `⚽ *¡Reto Publicado con Éxito!*\n\nHola *${booking.teamACaptain}*,\nTu búsqueda de reto para el equipo *${booking.teamAName}* ha sido publicada en el portal.\n\n📋 *Código:* #RES-${code}\n🏆 *Cancha:* ${booking.courtName || 'Cancha Deportiva'}\n📅 *Fecha:* ${formattedDate}\n⏰ *Hora:* ${timeShort}\n⚔️ *Nivel:* ${booking.skillLevel || 'Abierto'}\n💰 *Tu cuota (50%):* ₡${cuota}\n\nTe notificaremos por este medio cuando un equipo rival acepte el reto. ¡A entrenar!`;
+      } else {
+        msg = `⚽ *¡Reserva Confirmada!*\n\nHola *${booking.teamACaptain}*,\nTu reserva de cancha para el equipo *${booking.teamAName}* ha sido confirmada.\n\n📋 *Código:* #RES-${code}\n🏆 *Cancha:* ${booking.courtName || 'Cancha Deportiva'}\n📅 *Fecha:* ${formattedDate}\n⏰ *Hora:* ${timeShort}\n💰 *Total a pagar:* ₡${booking.totalPrice.toLocaleString()}\n\n¡Los esperamos en la cancha!`;
+      }
+
       await sendMessage(tenant.evolutionInstance, `${cleanPhone}@s.whatsapp.net`, msg).catch(console.error);
     }
     
@@ -142,8 +153,14 @@ router.post('/public/:slug/join-match/:bookingId', async (req, res) => {
     }
 
     if (tenant.evolutionInstance) {
-      const msgA = `🔥 *¡Reto Aceptado!*\n\nEl equipo *${booking.teamBName}* ha aceptado tu reto.\nCapitán: ${booking.teamBCaptain}\nTel: ${booking.teamBPhone}\n\n¡Prepárense para el partido!`;
-      const msgB = `🔥 *¡Te has unido al partido!*\n\nTe has unido al partido contra *${booking.teamAName}*.\nCapitán rival: ${booking.teamACaptain}\n\n¡Nos vemos en la cancha!`;
+      const dParts = booking.date.split('-');
+      const formattedDate = dParts.length === 3 ? `${dParts[2]}/${dParts[1]}/${dParts[0]}` : booking.date;
+      const code = booking.id.substring(0, 8).toUpperCase();
+      const timeShort = booking.time.substring(0, 5);
+      const cuota = (booking.pricePerTeam || (booking.totalPrice / 2)).toLocaleString();
+
+      const msgA = `🔥 *¡Reto Aceptado!*\n\nHola *${booking.teamACaptain}*,\n¡Tu reto ya tiene rival! El equipo *${booking.teamBName}* (Capitán: *${booking.teamBCaptain}*, Tel: ${booking.teamBPhone}) ha aceptado el partido.\n\n📋 *Código:* #RES-${code}\n🏆 *Cancha:* ${booking.courtName || 'Cancha Deportiva'}\n📅 *Fecha:* ${formattedDate}\n⏰ *Hora:* ${timeShort}\n💰 *Cuota por equipo:* ₡${cuota}\n\n¡Nos vemos en la cancha!`;
+      const msgB = `🔥 *¡Te has unido al partido!*\n\nHola *${booking.teamBCaptain}*,\nTu equipo *${booking.teamBName}* jugará contra *${booking.teamAName}* (Capitán: *${booking.teamACaptain}*, Tel: ${booking.teamAPhone}).\n\n📋 *Código:* #RES-${code}\n🏆 *Cancha:* ${booking.courtName || 'Cancha Deportiva'}\n📅 *Fecha:* ${formattedDate}\n⏰ *Hora:* ${timeShort}\n💰 *Tu cuota:* ₡${cuota}\n\n¡Prepárense para el partido!`;
       
       const cleanA = booking.teamAPhone.replace(/\D/g, '');
       const cleanB = booking.teamBPhone?.replace(/\D/g, '');
@@ -291,6 +308,80 @@ router.put('/bookings/:id/confirm-payment-b', async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Error al confirmar pago B' });
+  }
+});
+
+router.post('/bookings/:id/send-reminder', async (req, res) => {
+  try {
+    const booking = await getBookingById(req.params.id, req.tenantId);
+    if (!booking) return res.status(404).json({ error: 'Reserva no encontrada' });
+
+    const { reminderType, targetTeam, customMessage } = req.body;
+
+    const tRes = await query('SELECT evolution_instance, name FROM tenants WHERE id = $1', [req.tenantId]);
+    const evolutionInstance = tRes.rows[0]?.evolution_instance;
+    const businessName = tRes.rows[0]?.name || 'el complejo deportivo';
+
+    if (!evolutionInstance) {
+      return res.status(400).json({ error: 'No hay instancia de WhatsApp conectada para este negocio.' });
+    }
+
+    const sRes = await query('SELECT sinpe_phone, sinpe_name, store_modules FROM store_settings WHERE tenant_id = $1', [req.tenantId]);
+    const s = sRes.rows[0] || {};
+    const sinpePhone = s.store_modules?.courtsConfig?.theme?.sinpePhone || s.sinpe_phone || '';
+    const sinpeName = s.store_modules?.courtsConfig?.theme?.sinpeName || s.sinpe_name || '';
+
+    const dParts = booking.date.split('-');
+    const formattedDate = dParts.length === 3 ? `${dParts[2]}/${dParts[1]}/${dParts[0]}` : booking.date;
+    const code = booking.id.substring(0, 8).toUpperCase();
+    const timeShort = booking.time.substring(0, 5);
+
+    let sentCount = 0;
+
+    // Send to Team A
+    if ((targetTeam === 'A' || targetTeam === 'both' || !targetTeam) && booking.teamAPhone) {
+      const cleanA = booking.teamAPhone.replace(/\D/g, '');
+      let msgA = '';
+      if (customMessage) {
+        msgA = customMessage;
+      } else if (reminderType === 'payment') {
+        const amountA = (booking.bookingMode === 'seek_match' && !booking.teamBName) ? (booking.pricePerTeam || booking.totalPrice / 2) : (booking.pricePerTeam || booking.totalPrice);
+        msgA = `👋 *¡Recordatorio de Pago!*\n\nHola *${booking.teamACaptain}*,\nTe recordamos el pago pendiente para tu reserva de cancha:\n\n📋 *Código:* #RES-${code}\n🏆 *Cancha:* ${booking.courtName}\n📅 *Fecha:* ${formattedDate} a las ${timeShort}\n💰 *Monto a pagar:* ₡${Number(amountA).toLocaleString()}\n`;
+        if (sinpePhone) {
+          msgA += `\n📲 *SINPE Móvil:* ${sinpePhone}${sinpeName ? ` (${sinpeName})` : ''}\n*Detalle:* #RES-${code}`;
+        }
+      } else {
+        msgA = `⚽ *¡Recordatorio de Partido!*\n\nHola *${booking.teamACaptain}*,\nTe recordamos tu partido programado en *${businessName}*:\n\n📋 *Código:* #RES-${code}\n🏆 *Cancha:* ${booking.courtName}\n📅 *Fecha:* ${formattedDate}\n⏰ *Hora:* ${timeShort}\n\n⚠️ Por favor presentarse 10 minutos antes de la hora acordada. ¡Buen partido!`;
+      }
+
+      await sendMessage(evolutionInstance, `${cleanA}@s.whatsapp.net`, msgA).catch(console.error);
+      sentCount++;
+    }
+
+    // Send to Team B
+    if ((targetTeam === 'B' || targetTeam === 'both') && booking.teamBPhone) {
+      const cleanB = booking.teamBPhone.replace(/\D/g, '');
+      let msgB = '';
+      if (customMessage) {
+        msgB = customMessage;
+      } else if (reminderType === 'payment') {
+        const amountB = booking.pricePerTeam || (booking.totalPrice / 2);
+        msgB = `👋 *¡Recordatorio de Pago!*\n\nHola *${booking.teamBCaptain}*,\nTe recordamos el pago de tu cuota de partido:\n\n📋 *Código:* #RES-${code}\n🏆 *Cancha:* ${booking.courtName}\n📅 *Fecha:* ${formattedDate} a las ${timeShort}\n💰 *Monto:* ₡${Number(amountB).toLocaleString()}\n`;
+        if (sinpePhone) {
+          msgB += `\n📲 *SINPE Móvil:* ${sinpePhone}${sinpeName ? ` (${sinpeName})` : ''}\n*Detalle:* #RES-${code}`;
+        }
+      } else {
+        msgB = `⚽ *¡Recordatorio de Partido!*\n\nHola *${booking.teamBCaptain}*,\nTe recordamos tu partido programado en *${businessName}*:\n\n📋 *Código:* #RES-${code}\n🏆 *Cancha:* ${booking.courtName}\n📅 *Fecha:* ${formattedDate}\n⏰ *Hora:* ${timeShort}\n\n⚠️ Por favor presentarse 10 minutos antes de la hora acordada. ¡Buen partido!`;
+      }
+
+      await sendMessage(evolutionInstance, `${cleanB}@s.whatsapp.net`, msgB).catch(console.error);
+      sentCount++;
+    }
+
+    res.json({ success: true, sentCount });
+  } catch (error) {
+    console.error('Error sending reminder:', error);
+    res.status(500).json({ error: 'Error al enviar recordatorio' });
   }
 });
 

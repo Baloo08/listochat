@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
 import { Court, CourtBooking, CourtsConfig } from '../../shared/types';
+import { formatFriendlyDate, formatTime12h } from '../utils/dateFormat';
 
 export default function CourtBookingPublic({ slug }: { slug: string }) {
   const [activeTab, setActiveTab] = useState<'book' | 'open_matches'>('book');
@@ -43,6 +44,15 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
   
   const api = useApi();
 
+  const fetchOpenMatches = async () => {
+    try {
+      const matches = await api.get(`/api/courts/public/${slug}/open-matches`);
+      if (matches) setOpenMatches(matches);
+    } catch (error) {
+      console.error('Error fetching open matches:', error);
+    }
+  };
+
   useEffect(() => {
     const init = async () => {
       try {
@@ -64,14 +74,6 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
 
   useEffect(() => {
     if (activeTab === 'open_matches') {
-      const fetchOpenMatches = async () => {
-        try {
-          const matches = await api.get(`/api/courts/public/${slug}/open-matches`);
-          if (matches) setOpenMatches(matches);
-        } catch (error) {
-          console.error(error);
-        }
-      };
       fetchOpenMatches();
     }
   }, [activeTab, slug]);
@@ -102,7 +104,6 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
   const announcement = theme.announcement;
   const sinpePhone = theme.sinpePhone || publicData?.sinpePhone;
   const sinpeName = theme.sinpeName || publicData?.sinpeName;
-  const bankAccountInfo = theme.bankAccountInfo || publicData?.bankAccountInfo;
 
   const calculateTotal = () => {
     if (!selectedCourt) return 0;
@@ -124,6 +125,7 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
         date: selectedDate,
         time: selectedSlot,
         bookingMode,
+        matchStatus: bookingMode === 'seek_match' ? 'open' : 'confirmed',
         teamAName,
         teamACaptain,
         teamAPhone,
@@ -142,6 +144,7 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
           ...created,
           courtName: selectedCourt.name
         });
+        fetchOpenMatches();
       }
     } catch (error) {
       alert('Error al procesar reserva. Intenta de nuevo.');
@@ -171,6 +174,7 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
           courtName: joiningMatch.courtName
         });
         setJoiningMatch(null);
+        fetchOpenMatches();
       }
     } catch (error) {
       alert('Error al unirse al partido.');
@@ -182,10 +186,13 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
   const copyBookingDetails = (b: CourtBooking) => {
     const total = Number(b.totalPrice || 0);
     const perTeam = b.pricePerTeam || (total / 2);
+    const friendlyDate = formatFriendlyDate(b.date);
+    const friendlyTime = formatTime12h(b.time);
+
     let text = `Comprobante de Reserva - ${pageTitle}\n`;
     text += `Código: #RES-${b.id.substring(0, 8).toUpperCase()}\n`;
     text += `Cancha: ${b.courtName}\n`;
-    text += `Fecha: ${b.date} a las ${b.time.substring(0, 5)}\n`;
+    text += `Fecha: ${friendlyDate} (${friendlyTime})\n`;
     text += `Equipo: ${b.teamAName} (Capitán: ${b.teamACaptain})\n`;
     if (b.teamBName) text += `Rival: ${b.teamBName} (Capitán: ${b.teamBCaptain})\n`;
     text += `Monto: ₡${total.toLocaleString()}`;
@@ -201,13 +208,16 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
     const phone = publicData?.tenant?.whatsappNumber || sinpePhone;
     if (!phone) return;
     
+    const friendlyDate = formatFriendlyDate(b.date);
+    const friendlyTime = formatTime12h(b.time);
+
     let text = `Hola, acabo de registrar mi reserva de cancha:\n\n`;
     text += `📋 *Código:* #RES-${b.id.substring(0, 8).toUpperCase()}\n`;
     text += `🏆 *Cancha:* ${b.courtName}\n`;
-    text += `📅 *Fecha:* ${b.date} - ${b.time.substring(0, 5)}\n`;
+    text += `📅 *Fecha:* ${friendlyDate} (${friendlyTime})\n`;
     text += `👥 *Equipo:* ${b.teamAName} (Capitán: ${b.teamACaptain})\n`;
     if (b.bookingMode === 'seek_match') {
-      text += `⚔️ *Modalidad:* Busca Reto (Nivel: ${b.skillLevel})\n`;
+      text += `⚔️ *Modalidad:* Busca Reto (Nivel: ${b.skillLevel || 'Abierto'})\n`;
       text += `💰 *Aportación:* ₡${(b.pricePerTeam || (total / 2)).toLocaleString()}\n`;
     } else {
       text += `💰 *Total:* ₡${total.toLocaleString()}\n`;
@@ -281,10 +291,10 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
               flex: 1, padding: '12px', border: 'none', 
               backgroundColor: activeTab === 'open_matches' ? primaryColor : 'transparent', 
               color: activeTab === 'open_matches' ? 'white' : primaryColor, 
-              fontWeight: '800', fontSize: '0.9rem', cursor: 'pointer' 
+              fontWeight: '800', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'
             }}
           >
-            Partidos Abiertos (Retos)
+            <Trophy size={16} /> Partidos Abiertos (Retos) {openMatches.length > 0 && <span style={{ backgroundColor: '#d97706', color: 'white', padding: '1px 6px', borderRadius: '10px', fontSize: '0.72rem' }}>{openMatches.length}</span>}
           </button>
         </div>
 
@@ -336,15 +346,21 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
                   <span style={{ backgroundColor: primaryColor, color: 'white', width: '22px', height: '22px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', fontSize: '0.75rem', fontWeight: '800' }}>2</span>
                   Fecha y Hora
                 </h3>
-                <input 
-                  type="date" 
-                  value={selectedDate}
-                  min={new Date().toISOString().split('T')[0]}
-                  onChange={e => { setSelectedDate(e.target.value); setSelectedSlot(''); }}
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '14px', fontSize: '0.9rem', fontWeight: '700', boxSizing: 'border-box' }}
-                />
+
+                <div style={{ marginBottom: '14px' }}>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', color: '#475569', marginBottom: '6px' }}>
+                    Fecha seleccionada: <span style={{ color: primaryColor, fontWeight: '800' }}>{formatFriendlyDate(selectedDate)}</span>
+                  </label>
+                  <input 
+                    type="date" 
+                    value={selectedDate}
+                    min={new Date().toISOString().split('T')[0]}
+                    onChange={e => { setSelectedDate(e.target.value); setSelectedSlot(''); }}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.9rem', fontWeight: '700', boxSizing: 'border-box' }}
+                  />
+                </div>
                 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(78px, 1fr))', gap: '8px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(88px, 1fr))', gap: '8px' }}>
                   {availableSlots.length === 0 ? (
                     <div style={{ gridColumn: '1 / -1', color: '#64748b', fontSize: '0.85rem', textAlign: 'center', padding: '14px 0' }}>
                       No hay espacios disponibles para esta fecha
@@ -355,14 +371,14 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
                       type="button"
                       onClick={() => setSelectedSlot(slot)}
                       style={{
-                        padding: '10px 6px', borderRadius: '8px', cursor: 'pointer', fontWeight: '800', fontSize: '0.85rem',
+                        padding: '10px 6px', borderRadius: '8px', cursor: 'pointer', fontWeight: '800', fontSize: '0.82rem',
                         border: selectedSlot === slot ? `2px solid ${primaryColor}` : '1px solid #cbd5e1',
                         backgroundColor: selectedSlot === slot ? primaryColor : 'white',
                         color: selectedSlot === slot ? 'white' : '#334155',
                         textAlign: 'center'
                       }}
                     >
-                      {slot}
+                      {formatTime12h(slot)}
                     </button>
                   ))}
                 </div>
@@ -415,7 +431,7 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
                     </div>
                     <input type="text" placeholder="Nombre del Equipo" required value={teamAName} onChange={e => setTeamAName(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', marginBottom: '8px', boxSizing: 'border-box' }} />
                     <input type="text" placeholder="Nombre del Capitán" required value={teamACaptain} onChange={e => setTeamACaptain(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', marginBottom: '8px', boxSizing: 'border-box' }} />
-                    <input type="tel" placeholder="WhatsApp del Capitán" required value={teamAPhone} onChange={e => setTeamAPhone(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} />
+                    <input type="tel" placeholder="WhatsApp del Capitán (Ej: 8888-8888)" required value={teamAPhone} onChange={e => setTeamAPhone(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} />
                   </div>
 
                   {bookingMode === 'full' && (
@@ -508,15 +524,16 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
                 
                 <div style={{ padding: '12px', backgroundColor: '#f1f5f9', borderRadius: '8px', marginBottom: '16px', fontSize: '0.85rem' }}>
                   <div><strong>Cancha:</strong> {joiningMatch.courtName}</div>
-                  <div><strong>Fecha:</strong> {joiningMatch.date} a las {joiningMatch.time.substring(0, 5)}</div>
-                  <div><strong>Nivel buscado:</strong> {joiningMatch.skillLevel}</div>
+                  <div><strong>Fecha:</strong> {formatFriendlyDate(joiningMatch.date)}</div>
+                  <div><strong>Hora:</strong> {formatTime12h(joiningMatch.time)} ({joiningMatch.durationMinutes || 60} min)</div>
+                  <div><strong>Nivel buscado:</strong> {joiningMatch.skillLevel || 'Abierto'}</div>
                   <div><strong>Aportación de tu equipo:</strong> ₡{(joiningMatch.totalPrice / 2).toLocaleString()}</div>
                 </div>
                 
                 <form onSubmit={handleJoinMatch} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   <input type="text" placeholder="Nombre de tu Equipo" required value={teamBName} onChange={e => setTeamBName(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} />
                   <input type="text" placeholder="Nombre del Capitán" required value={teamBCaptain} onChange={e => setTeamBCaptain(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} />
-                  <input type="tel" placeholder="Tu WhatsApp" required value={teamBPhone} onChange={e => setTeamBPhone(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} />
+                  <input type="tel" placeholder="Tu WhatsApp (Ej: 8888-8888)" required value={teamBPhone} onChange={e => setTeamBPhone(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} />
                   
                   <button type="submit" disabled={submitting} style={{ width: '100%', padding: '14px', borderRadius: '8px', border: 'none', backgroundColor: '#d97706', color: 'white', fontWeight: '800', fontSize: '1.05rem', cursor: 'pointer', marginTop: '6px' }}>
                     {submitting ? 'Procesando...' : '¡Aceptar Reto y Jugar!'}
@@ -537,11 +554,11 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
                       <h3 style={{ margin: 0, color: '#0f172a', fontSize: '1.05rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <Trophy size={18} color="#d97706" /> {m.courtName}
                       </h3>
-                      <span style={{ backgroundColor: '#fef3c7', color: '#b45309', padding: '3px 8px', borderRadius: '8px', fontSize: '0.72rem', fontWeight: '800' }}>Nivel: {m.skillLevel}</span>
+                      <span style={{ backgroundColor: '#fef3c7', color: '#b45309', padding: '3px 8px', borderRadius: '8px', fontSize: '0.72rem', fontWeight: '800' }}>Nivel: {m.skillLevel || 'Abierto'}</span>
                     </div>
                     
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.85rem', color: '#475569', marginBottom: '14px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Calendar size={14} /> {m.date} · {m.time.substring(0, 5)}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Calendar size={14} /> <strong>{formatFriendlyDate(m.date)}</strong> · {formatTime12h(m.time)}</div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Users size={14} /> Retador: <strong>{m.teamAName}</strong> (Capitán: {m.teamACaptain})</div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><DollarSign size={14} /> ₡{(m.totalPrice / 2).toLocaleString()} por equipo</div>
                     </div>
@@ -607,7 +624,8 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
             {/* Summary Details */}
             <div style={{ textAlign: 'left', backgroundColor: '#f8fafc', padding: '12px 16px', borderRadius: '10px', marginBottom: '16px', fontSize: '0.84rem', display: 'flex', flexDirection: 'column', gap: '6px' }}>
               <div><strong>Cancha:</strong> {confirmedBooking.courtName}</div>
-              <div><strong>Fecha & Hora:</strong> {confirmedBooking.date} a las {confirmedBooking.time.substring(0, 5)}</div>
+              <div><strong>Fecha:</strong> {formatFriendlyDate(confirmedBooking.date)}</div>
+              <div><strong>Hora:</strong> {formatTime12h(confirmedBooking.time)}</div>
               <div><strong>Equipo:</strong> {confirmedBooking.teamAName} {confirmedBooking.teamBName ? `vs ${confirmedBooking.teamBName}` : ''}</div>
               <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '6px', display: 'flex', justifyContent: 'space-between' }}>
                 <strong>Monto a pagar:</strong>

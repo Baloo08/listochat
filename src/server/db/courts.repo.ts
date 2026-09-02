@@ -148,6 +148,27 @@ export async function getBookingById(id: string, tenantId: string) {
 }
 
 export async function createBooking(tenantId: string, data: Partial<CourtBooking>) {
+  const bookingMode = data.bookingMode || 'full';
+  const matchStatus = data.matchStatus || (bookingMode === 'seek_match' ? 'open' : 'confirmed');
+  
+  let totalPrice = Number(data.totalPrice || 0);
+  let durationMinutes = data.durationMinutes || 60;
+  let sportType = data.sportType;
+
+  if (data.courtId && (!totalPrice || !sportType)) {
+    const cRes = await query('SELECT * FROM courts WHERE id = $1', [data.courtId]);
+    if (cRes.rows[0]) {
+      const c = cRes.rows[0];
+      durationMinutes = data.durationMinutes || c.duration_minutes || 60;
+      sportType = sportType || c.sport_type || 'futbol';
+      if (!totalPrice) {
+        totalPrice = Number(c.base_price || 0) + (Number(data.teamAExtraPlayers || 0) * Number(c.extra_player_fee || 0));
+      }
+    }
+  }
+
+  const pricePerTeam = data.pricePerTeam ? Number(data.pricePerTeam) : (totalPrice > 0 ? totalPrice / 2 : undefined);
+
   const res = await query(`
     INSERT INTO court_bookings (
       tenant_id, court_id, date, time, duration_minutes, booking_mode,
@@ -161,16 +182,22 @@ export async function createBooking(tenantId: string, data: Partial<CourtBooking
       $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27
     ) RETURNING *
   `, [
-    tenantId, data.courtId, data.date, data.time, data.durationMinutes || 60,
-    data.bookingMode || 'full', data.matchStatus || 'confirmed', data.matchExpiryHours || 1,
+    tenantId, data.courtId, data.date, data.time, durationMinutes,
+    bookingMode, matchStatus, data.matchExpiryHours || 1,
     data.teamAName || 'Equipo A', data.teamACaptain, data.teamAPhone,
     data.teamAPlayers || 5, data.teamAExtraPlayers || 0, data.teamAPaid || false,
     data.teamBName, data.teamBCaptain, data.teamBPhone, data.teamBPlayers || 5,
-    data.teamBExtraPlayers || 0, data.teamBPaid || false, data.totalPrice || 0,
-    data.pricePerTeam, data.paymentMode || 'both', data.sportType, data.skillLevel,
+    data.teamBExtraPlayers || 0, data.teamBPaid || false, totalPrice,
+    pricePerTeam, data.paymentMode || 'both', sportType, data.skillLevel,
     data.notes, data.status || 'confirmed'
   ]);
-  return mapBookingRow(res.rows[0]);
+
+  const booking = mapBookingRow(res.rows[0]);
+  if (data.courtId) {
+    const cRes = await query('SELECT name FROM courts WHERE id = $1', [data.courtId]);
+    booking.courtName = cRes.rows[0]?.name || booking.courtName;
+  }
+  return booking;
 }
 
 export async function updateBooking(id: string, tenantId: string, data: Partial<CourtBooking>) {
@@ -212,7 +239,10 @@ export async function getOpenMatches(tenantId: string) {
     SELECT cb.*, c.name as court_name 
     FROM court_bookings cb
     JOIN courts c ON c.id = cb.court_id
-    WHERE cb.tenant_id = $1 AND cb.match_status = 'open' AND cb.date >= CURRENT_DATE
+    WHERE cb.tenant_id = $1 
+      AND cb.status != 'cancelled'
+      AND (cb.match_status = 'open' OR (cb.booking_mode = 'seek_match' AND (cb.team_b_name IS NULL OR cb.team_b_name = '')))
+      AND cb.date >= (CURRENT_DATE - INTERVAL '1 day')::date
     ORDER BY cb.date, cb.time
   `, [tenantId]);
   return res.rows.map(mapBookingRow);
@@ -229,7 +259,12 @@ export async function joinMatch(id: string, teamBData: any) {
     teamBData.teamBName || 'Equipo B', teamBData.teamBCaptain, teamBData.teamBPhone,
     teamBData.teamBPlayers || 5, teamBData.teamBExtraPlayers || 0, id
   ]);
-  return res.rows[0] ? mapBookingRow(res.rows[0]) : null;
+  
+  if (!res.rows[0]) return null;
+  const booking = mapBookingRow(res.rows[0]);
+  const cRes = await query('SELECT name FROM courts WHERE id = $1', [booking.courtId]);
+  booking.courtName = cRes.rows[0]?.name || booking.courtName;
+  return booking;
 }
 
 export async function expireOldMatches() {
