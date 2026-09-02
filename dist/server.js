@@ -9488,6 +9488,47 @@ async function getAvailableSlots(tenantId, courtId, date) {
 init_evolution();
 init_pool();
 var router28 = Router28();
+router28.get("/public/:slug/info", async (req, res) => {
+  try {
+    const tenant = await getTenantBySlug(req.params.slug);
+    if (!tenant) return res.status(404).json({ error: "Negocio no encontrado" });
+    const storeSettingsRes = await query(`
+      SELECT store_name, store_slug, store_description, store_logo_url, store_banner_url, 
+             store_theme, sinpe_phone, sinpe_name, bank_account_info, currency, store_modules
+      FROM store_settings 
+      WHERE tenant_id = $1
+    `, [tenant.id]);
+    const s = storeSettingsRes.rows[0] || {};
+    const courtsConfig = s.store_modules?.courtsConfig || {
+      paymentMode: "both",
+      matchExpiryHours: 1,
+      allowSeekMatch: true,
+      sportTypes: ["futbol", "padel", "tenis"]
+    };
+    res.json({
+      tenant: {
+        id: tenant.id,
+        name: tenant.name,
+        slug: tenant.slug,
+        whatsappNumber: tenant.whatsappNumber
+      },
+      storeName: s.store_name || tenant.name,
+      storeSlug: s.store_slug || tenant.slug,
+      storeDescription: s.store_description || "",
+      storeLogoUrl: s.store_logo_url,
+      storeBannerUrl: s.store_banner_url,
+      storeTheme: s.store_theme || {},
+      sinpePhone: s.sinpe_phone,
+      sinpeName: s.sinpe_name,
+      bankAccountInfo: s.bank_account_info,
+      currency: s.currency || "CRC",
+      courtsConfig
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error al obtener informaci\xF3n de canchas" });
+  }
+});
 router28.get("/public/:slug/courts", async (req, res) => {
   try {
     const tenant = await getTenantBySlug(req.params.slug);

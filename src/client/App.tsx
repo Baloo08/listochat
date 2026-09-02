@@ -20,6 +20,7 @@ import StorefrontView from '../storefront/StorefrontView';
 import PublicBookingView from '../storefront/PublicBookingView';
 import CourtBookingPublic from './components/CourtBookingPublic';
 import CourtsManager from './components/CourtsManager';
+import CourtsBookingsManager from './components/CourtsBookingsManager';
 import DriverPortal from './components/DriverPortal';
 import SpecialistPortal from './components/SpecialistPortal';
 import KDSFullscreen from './components/KDSFullscreen';
@@ -66,7 +67,8 @@ import {
   Zap,
   Globe,
   Clock,
-  Trophy
+  Trophy,
+  CalendarCheck
 } from 'lucide-react';
 
 
@@ -410,7 +412,8 @@ export default function App() {
     ...(storeModules.courtsEnabled ? [{
       title: 'CANCHAS & DEPORTES',
       items: [
-        { id: 'canchas', label: 'Gestión de Canchas', icon: <Trophy size={18} /> }
+        { id: 'canchas', label: 'Gestión de Canchas', icon: <Trophy size={18} /> },
+        { id: 'canchas_reservas', label: 'Reservas Deportivas', icon: <CalendarCheck size={18} /> }
       ]
     }] : []),
     {
@@ -471,6 +474,7 @@ export default function App() {
         case 'campaigns': return <CampaignsManager />;
         case 'reservas': return <Bookings />;
         case 'canchas': return <CourtsManager />;
+        case 'canchas_reservas': return <CourtsBookingsManager />;
         case 'servicios': return <ServicesManager />;
         case 'productos': return <ProductManager />;
         case 'ordenes': return <OrdersPanel />;
@@ -863,6 +867,8 @@ export default function App() {
                 currentPage === 'tienda' ? 'Tienda & Envíos' :
                 currentPage === 'sitio' ? 'Mi Sitio Web' :
                 currentPage === 'reservas' ? 'Reservas & Agenda' :
+                currentPage === 'canchas' ? 'Gestión de Canchas' :
+                currentPage === 'canchas_reservas' ? 'Reservas de Canchas' :
                 currentPage === 'servicios' ? 'Servicios' :
                 currentPage === 'agente' ? 'Agente IA' :
                 currentPage === 'notificaciones' ? 'Notificaciones' :

@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Trophy, Calendar, Users, DollarSign, Plus, Minus, 
-  MapPin, Check, ChevronRight, Clock 
+  MapPin, Check, ChevronRight, Clock, AlertCircle, Copy, 
+  ExternalLink, Phone, ShieldCheck, CheckCircle2
 } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
-import { Court, CourtBooking, StoreSettings } from '../../shared/types';
+import { Court, CourtBooking, CourtsConfig } from '../../shared/types';
 
 export default function CourtBookingPublic({ slug }: { slug: string }) {
   const [activeTab, setActiveTab] = useState<'book' | 'open_matches'>('book');
-  const [storeInfo, setStoreInfo] = useState<StoreSettings | null>(null);
+  const [publicData, setPublicData] = useState<any>(null);
   
   // Tab 1 state
   const [courts, setCourts] = useState<Court[]>([]);
@@ -32,6 +33,11 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
   const [openMatches, setOpenMatches] = useState<CourtBooking[]>([]);
   const [joiningMatch, setJoiningMatch] = useState<CourtBooking | null>(null);
   
+  // Confirmation Modal state
+  const [confirmedBooking, setConfirmedBooking] = useState<CourtBooking | null>(null);
+  const [copiedResRef, setCopiedResRef] = useState(false);
+  const [copiedSinpe, setCopiedSinpe] = useState(false);
+
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   
@@ -40,12 +46,12 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
   useEffect(() => {
     const init = async () => {
       try {
-        // We reuse the appointments endpoint to get public info about the tenant
-        const info = await api.get(`/api/appointments/public/${slug}/info`);
-        setStoreInfo(info);
+        const [info, cData] = await Promise.all([
+          api.get(`/api/courts/public/${slug}/info`),
+          api.get(`/api/courts/public/${slug}/courts`)
+        ]);
         
-        // Fetch courts for this tenant
-        const cData = await api.get(`/api/courts/public/${slug}/courts`);
+        if (info) setPublicData(info);
         if (cData) setCourts(cData);
       } catch (error) {
         console.error('Error fetching public info:', error);
@@ -86,7 +92,17 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
     }
   }, [selectedCourt, selectedDate, slug]);
 
-  const primaryColor = storeInfo?.storeTheme?.primaryColor || '#16a34a';
+  const theme = publicData?.courtsConfig?.theme || {};
+  const primaryColor = theme.primaryColor || publicData?.storeTheme?.primaryColor || '#16a34a';
+  const accentColor = theme.accentColor || '#f59e0b';
+  const pageTitle = theme.title || publicData?.storeName || 'Reservas Deportivas';
+  const pageDescription = theme.description || publicData?.storeDescription || 'Reserva tu turno de cancha o encuentra rivales en línea.';
+  const logoUrl = theme.logoUrl || publicData?.storeLogoUrl;
+  const bannerUrl = theme.bannerUrl || publicData?.storeBannerUrl;
+  const announcement = theme.announcement;
+  const sinpePhone = theme.sinpePhone || publicData?.sinpePhone;
+  const sinpeName = theme.sinpeName || publicData?.sinpeName;
+  const bankAccountInfo = theme.bankAccountInfo || publicData?.bankAccountInfo;
 
   const calculateTotal = () => {
     if (!selectedCourt) return 0;
@@ -119,26 +135,14 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
         skillLevel: bookingMode === 'seek_match' ? skillLevel : undefined
       };
       
-      const res = await api.post(`/api/courts/public/${slug}/book`, payload);
+      const created = await api.post(`/api/courts/public/${slug}/book`, payload);
       
-      // Open WhatsApp
-      const total = calculateTotal();
-      let text = `Hola, quiero confirmar mi reserva de cancha.\n\n`;
-      text += `📅 Fecha: ${selectedDate}\n⏰ Hora: ${selectedSlot}\n🏆 Cancha: ${selectedCourt.name}\n`;
-      if (bookingMode === 'seek_match') {
-        text += `⚔️ Modo: Busca Reto\nNivel: ${skillLevel}\n`;
-      } else {
-        text += `👥 Equipos: ${teamAName} vs ${teamBName}\n`;
+      if (created) {
+        setConfirmedBooking({
+          ...created,
+          courtName: selectedCourt.name
+        });
       }
-      text += `💰 Total: ₡${total.toLocaleString()}\n`;
-      
-      if (storeInfo?.whatsappNumber) {
-        window.location.href = `https://wa.me/${storeInfo.whatsappNumber.replace(/\D/g, '')}?text=${encodeURIComponent(text)}`;
-      } else {
-        alert('Reserva creada con éxito. Nos pondremos en contacto.');
-        window.location.reload();
-      }
-      
     } catch (error) {
       alert('Error al procesar reserva. Intenta de nuevo.');
     } finally {
@@ -159,17 +163,14 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
         teamBExtraPlayers: extraPlayers
       };
       
-      await api.post(`/api/courts/public/${slug}/join-match/${joiningMatch.id}`, payload);
+      const updated = await api.post(`/api/courts/public/${slug}/join-match/${joiningMatch.id}`, payload);
       
-      let text = `Hola, quiero unirme al reto abierto.\n\n`;
-      text += `📅 Fecha: ${joiningMatch.date}\n⏰ Hora: ${joiningMatch.time}\n🏆 Equipo a retar: ${joiningMatch.teamAName}\n`;
-      text += `👥 Mi equipo: ${teamBName} (Capitán: ${teamBCaptain})\n`;
-      
-      if (storeInfo?.whatsappNumber) {
-        window.location.href = `https://wa.me/${storeInfo.whatsappNumber.replace(/\D/g, '')}?text=${encodeURIComponent(text)}`;
-      } else {
-        alert('Te has unido al partido con éxito.');
-        window.location.reload();
+      if (updated) {
+        setConfirmedBooking({
+          ...updated,
+          courtName: joiningMatch.courtName
+        });
+        setJoiningMatch(null);
       }
     } catch (error) {
       alert('Error al unirse al partido.');
@@ -178,79 +179,161 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
     }
   };
 
-  if (loading) return <div style={{ padding: '40px', textAlign: 'center' }}>Cargando portal...</div>;
+  const copyBookingDetails = (b: CourtBooking) => {
+    const total = Number(b.totalPrice || 0);
+    const perTeam = b.pricePerTeam || (total / 2);
+    let text = `Comprobante de Reserva - ${pageTitle}\n`;
+    text += `Código: #RES-${b.id.substring(0, 8).toUpperCase()}\n`;
+    text += `Cancha: ${b.courtName}\n`;
+    text += `Fecha: ${b.date} a las ${b.time.substring(0, 5)}\n`;
+    text += `Equipo: ${b.teamAName} (Capitán: ${b.teamACaptain})\n`;
+    if (b.teamBName) text += `Rival: ${b.teamBName} (Capitán: ${b.teamBCaptain})\n`;
+    text += `Monto: ₡${total.toLocaleString()}`;
+    if (b.bookingMode === 'seek_match') text += ` (₡${perTeam.toLocaleString()} por equipo)`;
+    
+    navigator.clipboard.writeText(text);
+    setCopiedResRef(true);
+    setTimeout(() => setCopiedResRef(false), 2500);
+  };
+
+  const notifyViaWhatsApp = (b: CourtBooking) => {
+    const total = Number(b.totalPrice || 0);
+    const phone = publicData?.tenant?.whatsappNumber || sinpePhone;
+    if (!phone) return;
+    
+    let text = `Hola, acabo de registrar mi reserva de cancha:\n\n`;
+    text += `📋 *Código:* #RES-${b.id.substring(0, 8).toUpperCase()}\n`;
+    text += `🏆 *Cancha:* ${b.courtName}\n`;
+    text += `📅 *Fecha:* ${b.date} - ${b.time.substring(0, 5)}\n`;
+    text += `👥 *Equipo:* ${b.teamAName} (Capitán: ${b.teamACaptain})\n`;
+    if (b.bookingMode === 'seek_match') {
+      text += `⚔️ *Modalidad:* Busca Reto (Nivel: ${b.skillLevel})\n`;
+      text += `💰 *Aportación:* ₡${(b.pricePerTeam || (total / 2)).toLocaleString()}\n`;
+    } else {
+      text += `💰 *Total:* ₡${total.toLocaleString()}\n`;
+    }
+    
+    window.open(`https://wa.me/${phone.replace(/\D/g, '')}?text=${encodeURIComponent(text)}`, '_blank');
+  };
+
+  if (loading) return <div style={{ padding: '60px 20px', textAlign: 'center', color: '#64748b' }}>Cargando portal de canchas...</div>;
 
   return (
     <div style={{ 
       minHeight: '100vh', 
-      backgroundColor: storeInfo?.storeTheme?.backgroundColor || '#f8fafc',
-      fontFamily: storeInfo?.storeTheme?.fontFamily || 'system-ui, sans-serif'
+      backgroundColor: theme.backgroundColor || '#f8fafc',
+      fontFamily: theme.fontFamily ? `${theme.fontFamily}, system-ui, sans-serif` : 'system-ui, sans-serif'
     }}>
       
-      {/* Header */}
-      <div style={{ backgroundColor: primaryColor, padding: '20px', color: 'white', textAlign: 'center' }}>
-        {storeInfo?.storeLogoUrl && (
-          <img src={storeInfo.storeLogoUrl} alt="Logo" style={{ height: '60px', marginBottom: '10px', borderRadius: '8px' }} />
+      {/* BANNER / HEADER */}
+      <div style={{ 
+        backgroundColor: primaryColor, 
+        backgroundImage: bannerUrl ? `linear-gradient(rgba(0,0,0,0.45), rgba(0,0,0,0.65)), url(${bannerUrl})` : undefined,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        padding: '36px 20px', 
+        color: 'white', 
+        textAlign: 'center' 
+      }}>
+        {logoUrl && (
+          <img src={logoUrl} alt="Logo" style={{ height: '65px', maxHeight: '65px', marginBottom: '12px', borderRadius: '10px', objectFit: 'contain', backgroundColor: 'rgba(255,255,255,0.1)', padding: '4px' }} />
         )}
-        <h1 style={{ margin: '0 0 5px 0', fontSize: '1.5rem' }}>{storeInfo?.storeName || 'Reservas Deportivas'}</h1>
-        <p style={{ margin: 0, opacity: 0.9 }}>{storeInfo?.storeDescription || 'Reserva tu cancha o encuentra rivales'}</p>
+        <h1 style={{ margin: '0 0 6px 0', fontSize: '1.75rem', fontWeight: '800', letterSpacing: '-0.02em' }}>
+          {pageTitle}
+        </h1>
+        <p style={{ margin: 0, opacity: 0.92, fontSize: '0.95rem', maxWidth: '600px', marginInline: 'auto' }}>
+          {pageDescription}
+        </p>
       </div>
 
-      <div style={{ maxWidth: '600px', margin: '0 auto', padding: '20px' }}>
+      <div style={{ maxWidth: '620px', margin: '0 auto', padding: '20px 16px 60px 16px' }}>
         
+        {/* Announcement / Policies Banner */}
+        {announcement && (
+          <div style={{
+            display: 'flex', alignItems: 'flex-start', gap: '10px',
+            backgroundColor: '#fffbeb', border: '1px solid #fde68a', color: '#92400e',
+            padding: '12px 16px', borderRadius: '10px', marginBottom: '20px', fontSize: '0.85rem'
+          }}>
+            <AlertCircle size={18} style={{ flexShrink: 0, marginTop: '2px', color: '#d97706' }} />
+            <div>{announcement}</div>
+          </div>
+        )}
+
         {/* Navigation Tabs */}
-        <div style={{ display: 'flex', borderRadius: '8px', overflow: 'hidden', border: `1px solid ${primaryColor}`, marginBottom: '20px' }}>
+        <div style={{ display: 'flex', borderRadius: '10px', overflow: 'hidden', border: `1.5px solid ${primaryColor}`, marginBottom: '20px', backgroundColor: 'white' }}>
           <button
+            type="button"
             onClick={() => setActiveTab('book')}
-            style={{ flex: 1, padding: '12px', border: 'none', backgroundColor: activeTab === 'book' ? primaryColor : 'transparent', color: activeTab === 'book' ? 'white' : primaryColor, fontWeight: 'bold', cursor: 'pointer' }}
+            style={{ 
+              flex: 1, padding: '12px', border: 'none', 
+              backgroundColor: activeTab === 'book' ? primaryColor : 'transparent', 
+              color: activeTab === 'book' ? 'white' : primaryColor, 
+              fontWeight: '800', fontSize: '0.9rem', cursor: 'pointer' 
+            }}
           >
             Reservar Cancha
           </button>
           <button
+            type="button"
             onClick={() => setActiveTab('open_matches')}
-            style={{ flex: 1, padding: '12px', border: 'none', backgroundColor: activeTab === 'open_matches' ? primaryColor : 'transparent', color: activeTab === 'open_matches' ? 'white' : primaryColor, fontWeight: 'bold', cursor: 'pointer' }}
+            style={{ 
+              flex: 1, padding: '12px', border: 'none', 
+              backgroundColor: activeTab === 'open_matches' ? primaryColor : 'transparent', 
+              color: activeTab === 'open_matches' ? 'white' : primaryColor, 
+              fontWeight: '800', fontSize: '0.9rem', cursor: 'pointer' 
+            }}
           >
-            Partidos Abiertos
+            Partidos Abiertos (Retos)
           </button>
         </div>
 
-        {/* Tab: Reservar Cancha */}
+        {/* TAB 1: RESERVAR CANCHA */}
         {activeTab === 'book' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             
             {/* Step 1: Cancha */}
-            <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-              <h3 style={{ margin: '0 0 16px 0', fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ backgroundColor: primaryColor, color: 'white', width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', fontSize: '0.8rem' }}>1</span>
-                Elige la cancha
+            <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '14px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', border: '1px solid #e2e8f0' }}>
+              <h3 style={{ margin: '0 0 14px 0', fontSize: '1.05rem', fontWeight: '800', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ backgroundColor: primaryColor, color: 'white', width: '22px', height: '22px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', fontSize: '0.75rem', fontWeight: '800' }}>1</span>
+                Elige la Cancha
               </h3>
+              
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {courts.map(c => (
-                  <button
-                    key={c.id}
-                    onClick={() => { setSelectedCourt(c); setSelectedSlot(''); }}
-                    style={{
-                      padding: '16px', borderRadius: '8px', textAlign: 'left', cursor: 'pointer',
-                      border: selectedCourt?.id === c.id ? `2px solid ${primaryColor}` : '1px solid #cbd5e1',
-                      backgroundColor: selectedCourt?.id === c.id ? `${primaryColor}10` : 'white'
-                    }}
-                  >
-                    <div style={{ fontWeight: 'bold', fontSize: '1.05rem', marginBottom: '4px' }}>{c.name}</div>
-                    <div style={{ fontSize: '0.85rem', color: '#475569', display: 'flex', gap: '12px' }}>
-                      <span><Users size={12} style={{ display: 'inline' }}/> {c.teamSize} vs {c.teamSize}</span>
-                      <span><Clock size={12} style={{ display: 'inline' }}/> {c.durationMinutes} min</span>
-                      <span style={{ fontWeight: 'bold', color: primaryColor }}>₡{c.basePrice.toLocaleString()}</span>
-                    </div>
-                  </button>
-                ))}
+                {courts.length === 0 ? (
+                  <div style={{ padding: '20px', textAlign: 'center', color: '#64748b', fontSize: '0.85rem' }}>
+                    No hay canchas disponibles en este momento.
+                  </div>
+                ) : (
+                  courts.map(c => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => { setSelectedCourt(c); setSelectedSlot(''); }}
+                      style={{
+                        padding: '14px 16px', borderRadius: '10px', textAlign: 'left', cursor: 'pointer',
+                        border: selectedCourt?.id === c.id ? `2px solid ${primaryColor}` : '1px solid #cbd5e1',
+                        backgroundColor: selectedCourt?.id === c.id ? `${primaryColor}10` : 'white',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      <div style={{ fontWeight: '800', fontSize: '1.0rem', color: '#0f172a', marginBottom: '4px' }}>{c.name}</div>
+                      <div style={{ fontSize: '0.82rem', color: '#475569', display: 'flex', gap: '14px', flexWrap: 'wrap' }}>
+                        <span><Users size={13} style={{ display: 'inline', verticalAlign: 'middle' }}/> {c.teamSize} vs {c.teamSize}</span>
+                        <span><Clock size={13} style={{ display: 'inline', verticalAlign: 'middle' }}/> {c.durationMinutes} min</span>
+                        <span style={{ fontWeight: '800', color: primaryColor }}>₡{Number(c.basePrice).toLocaleString()}</span>
+                      </div>
+                    </button>
+                  ))
+                )}
               </div>
             </div>
 
             {/* Step 2: Fecha y Hora */}
             {selectedCourt && (
-              <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-                <h3 style={{ margin: '0 0 16px 0', fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ backgroundColor: primaryColor, color: 'white', width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', fontSize: '0.8rem' }}>2</span>
+              <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '14px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', border: '1px solid #e2e8f0' }}>
+                <h3 style={{ margin: '0 0 14px 0', fontSize: '1.05rem', fontWeight: '800', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ backgroundColor: primaryColor, color: 'white', width: '22px', height: '22px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', fontSize: '0.75rem', fontWeight: '800' }}>2</span>
                   Fecha y Hora
                 </h3>
                 <input 
@@ -258,21 +341,25 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
                   value={selectedDate}
                   min={new Date().toISOString().split('T')[0]}
                   onChange={e => { setSelectedDate(e.target.value); setSelectedSlot(''); }}
-                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '16px' }}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '14px', fontSize: '0.9rem', fontWeight: '700', boxSizing: 'border-box' }}
                 />
                 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))', gap: '10px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(78px, 1fr))', gap: '8px' }}>
                   {availableSlots.length === 0 ? (
-                    <div style={{ gridColumn: '1 / -1', color: '#64748b', fontSize: '0.9rem', textAlign: 'center' }}>No hay espacios disponibles</div>
+                    <div style={{ gridColumn: '1 / -1', color: '#64748b', fontSize: '0.85rem', textAlign: 'center', padding: '14px 0' }}>
+                      No hay espacios disponibles para esta fecha
+                    </div>
                   ) : availableSlots.map(slot => (
                     <button
                       key={slot}
+                      type="button"
                       onClick={() => setSelectedSlot(slot)}
                       style={{
-                        padding: '10px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold',
+                        padding: '10px 6px', borderRadius: '8px', cursor: 'pointer', fontWeight: '800', fontSize: '0.85rem',
                         border: selectedSlot === slot ? `2px solid ${primaryColor}` : '1px solid #cbd5e1',
                         backgroundColor: selectedSlot === slot ? primaryColor : 'white',
-                        color: selectedSlot === slot ? 'white' : '#334155'
+                        color: selectedSlot === slot ? 'white' : '#334155',
+                        textAlign: 'center'
                       }}
                     >
                       {slot}
@@ -282,51 +369,72 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
               </div>
             )}
 
-            {/* Step 3: Detalles y Envío */}
+            {/* Step 3: Detalles y Reserva */}
             {selectedCourt && selectedSlot && (
-              <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-                <h3 style={{ margin: '0 0 16px 0', fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ backgroundColor: primaryColor, color: 'white', width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', fontSize: '0.8rem' }}>3</span>
+              <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '14px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', border: '1px solid #e2e8f0' }}>
+                <h3 style={{ margin: '0 0 14px 0', fontSize: '1.05rem', fontWeight: '800', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ backgroundColor: primaryColor, color: 'white', width: '22px', height: '22px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', fontSize: '0.75rem', fontWeight: '800' }}>3</span>
                   Detalles de la Reserva
                 </h3>
                 
-                <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+                <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
                   <button
+                    type="button"
                     onClick={() => setBookingMode('full')}
-                    style={{ flex: 1, padding: '12px', borderRadius: '8px', cursor: 'pointer', border: bookingMode === 'full' ? `2px solid ${primaryColor}` : '1px solid #cbd5e1', backgroundColor: bookingMode === 'full' ? `${primaryColor}10` : 'white', fontWeight: 'bold', color: bookingMode === 'full' ? primaryColor : '#475569' }}
+                    style={{ 
+                      flex: 1, padding: '12px 8px', borderRadius: '8px', cursor: 'pointer', 
+                      border: bookingMode === 'full' ? `2px solid ${primaryColor}` : '1px solid #cbd5e1', 
+                      backgroundColor: bookingMode === 'full' ? `${primaryColor}10` : 'white', 
+                      fontWeight: '800', fontSize: '0.85rem',
+                      color: bookingMode === 'full' ? primaryColor : '#475569' 
+                    }}
                   >
-                    Reserva Completa
+                    Reserva Completa (2 Eq.)
                   </button>
                   <button
+                    type="button"
                     onClick={() => setBookingMode('seek_match')}
-                    style={{ flex: 1, padding: '12px', borderRadius: '8px', cursor: 'pointer', border: bookingMode === 'seek_match' ? `2px solid #d97706` : '1px solid #cbd5e1', backgroundColor: bookingMode === 'seek_match' ? `#fef3c7` : 'white', fontWeight: 'bold', color: bookingMode === 'seek_match' ? '#d97706' : '#475569' }}
+                    style={{ 
+                      flex: 1, padding: '12px 8px', borderRadius: '8px', cursor: 'pointer', 
+                      border: bookingMode === 'seek_match' ? `2px solid ${accentColor}` : '1px solid #cbd5e1', 
+                      backgroundColor: bookingMode === 'seek_match' ? `#fef3c7` : 'white', 
+                      fontWeight: '800', fontSize: '0.85rem',
+                      color: bookingMode === 'seek_match' ? '#b45309' : '#475569' 
+                    }}
                   >
-                    ¡Busca Reto!
+                    ¡Busca Reto! (Dividir pago)
                   </button>
                 </div>
 
-                <form onSubmit={handleSubmitBooking} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <form onSubmit={handleSubmitBooking} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                   
-                  <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                    <h4 style={{ margin: '0 0 12px 0', color: '#334155' }}>Tu Equipo {bookingMode === 'full' ? '(Equipo A)' : ''}</h4>
-                    <input type="text" placeholder="Nombre del Equipo" required value={teamAName} onChange={e => setTeamAName(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', marginBottom: '10px' }} />
-                    <input type="text" placeholder="Nombre del Capitán" required value={teamACaptain} onChange={e => setTeamACaptain(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', marginBottom: '10px' }} />
-                    <input type="tel" placeholder="WhatsApp" required value={teamAPhone} onChange={e => setTeamAPhone(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
+                  {/* Equipo A */}
+                  <div style={{ backgroundColor: '#f8fafc', padding: '14px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ fontWeight: '800', fontSize: '0.82rem', color: '#1e293b', marginBottom: '10px', textTransform: 'uppercase' }}>
+                      Tu Equipo {bookingMode === 'full' ? '(Equipo A)' : ''}
+                    </div>
+                    <input type="text" placeholder="Nombre del Equipo" required value={teamAName} onChange={e => setTeamAName(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', marginBottom: '8px', boxSizing: 'border-box' }} />
+                    <input type="text" placeholder="Nombre del Capitán" required value={teamACaptain} onChange={e => setTeamACaptain(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', marginBottom: '8px', boxSizing: 'border-box' }} />
+                    <input type="tel" placeholder="WhatsApp del Capitán" required value={teamAPhone} onChange={e => setTeamAPhone(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} />
                   </div>
 
                   {bookingMode === 'full' && (
-                    <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                      <h4 style={{ margin: '0 0 12px 0', color: '#334155' }}>Equipo Rival (Equipo B)</h4>
-                      <input type="text" placeholder="Nombre del Equipo (opcional)" value={teamBName} onChange={e => setTeamBName(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', marginBottom: '10px' }} />
-                      <input type="text" placeholder="Nombre del Capitán (opcional)" value={teamBCaptain} onChange={e => setTeamBCaptain(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', marginBottom: '10px' }} />
-                      <input type="tel" placeholder="WhatsApp (opcional)" value={teamBPhone} onChange={e => setTeamBPhone(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
+                    <div style={{ backgroundColor: '#f8fafc', padding: '14px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                      <div style={{ fontWeight: '800', fontSize: '0.82rem', color: '#1e293b', marginBottom: '10px', textTransform: 'uppercase' }}>
+                        Equipo Rival (Equipo B - Opcional)
+                      </div>
+                      <input type="text" placeholder="Nombre del Equipo Rival" value={teamBName} onChange={e => setTeamBName(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', marginBottom: '8px', boxSizing: 'border-box' }} />
+                      <input type="text" placeholder="Nombre del Capitán Rival" value={teamBCaptain} onChange={e => setTeamBCaptain(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', marginBottom: '8px', boxSizing: 'border-box' }} />
+                      <input type="tel" placeholder="WhatsApp del Capitán Rival" value={teamBPhone} onChange={e => setTeamBPhone(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} />
                     </div>
                   )}
 
                   {bookingMode === 'seek_match' && (
-                    <div style={{ backgroundColor: '#fffbeb', padding: '16px', borderRadius: '8px', border: '1px solid #fde68a' }}>
-                      <h4 style={{ margin: '0 0 12px 0', color: '#b45309' }}>Nivel de tu equipo</h4>
-                      <select value={skillLevel} onChange={e => setSkillLevel(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #fcd34d', backgroundColor: 'white' }}>
+                    <div style={{ backgroundColor: '#fffbeb', padding: '14px', borderRadius: '10px', border: '1px solid #fde68a' }}>
+                      <div style={{ fontWeight: '800', fontSize: '0.82rem', color: '#b45309', marginBottom: '6px', textTransform: 'uppercase' }}>
+                        Nivel de tu equipo
+                      </div>
+                      <select value={skillLevel} onChange={e => setSkillLevel(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #fcd34d', backgroundColor: 'white', fontWeight: '700' }}>
                         <option value="principiante">Principiante</option>
                         <option value="intermedio">Intermedio</option>
                         <option value="avanzado">Avanzado</option>
@@ -335,25 +443,44 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
                     </div>
                   )}
 
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', backgroundColor: '#f1f5f9', borderRadius: '8px' }}>
+                  {/* Extra players */}
+                  {selectedCourt.maxExtraPlayers > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', backgroundColor: '#f1f5f9', borderRadius: '10px' }}>
+                      <div>
+                        <div style={{ fontWeight: '700', fontSize: '0.85rem' }}>Jugadores adicionales</div>
+                        <div style={{ fontSize: '0.75rem', color: '#64748b' }}>+ ₡{selectedCourt.extraPlayerFee} c/u</div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <button type="button" onClick={() => setExtraPlayers(Math.max(0, extraPlayers - 1))} style={{ width: '32px', height: '32px', borderRadius: '50%', border: 'none', backgroundColor: '#e2e8f0', cursor: 'pointer', fontWeight: 'bold' }}>-</button>
+                        <span style={{ fontWeight: '800', fontSize: '1.05rem', width: '20px', textAlign: 'center' }}>{extraPlayers}</span>
+                        <button type="button" onClick={() => setExtraPlayers(Math.min(selectedCourt.maxExtraPlayers, extraPlayers + 1))} style={{ width: '32px', height: '32px', borderRadius: '50%', border: 'none', backgroundColor: '#e2e8f0', cursor: 'pointer', fontWeight: 'bold' }}>+</button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Summary Total */}
+                  <div style={{ padding: '14px', backgroundColor: `${primaryColor}15`, borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
-                      <div style={{ fontWeight: 'bold' }}>Jugadores extra</div>
-                      <div style={{ fontSize: '0.8rem', color: '#64748b' }}>+ ₡{selectedCourt.extraPlayerFee} c/u</div>
+                      <div style={{ fontWeight: '800', color: primaryColor, fontSize: '0.95rem' }}>Total a pagar:</div>
+                      {bookingMode === 'seek_match' && (
+                        <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Tu equipo paga el 50% (₡{(calculateTotal() / 2).toLocaleString()})</div>
+                      )}
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <button type="button" onClick={() => setExtraPlayers(Math.max(0, extraPlayers - 1))} style={{ width: '32px', height: '32px', borderRadius: '50%', border: 'none', backgroundColor: '#e2e8f0', cursor: 'pointer', fontWeight: 'bold' }}>-</button>
-                      <span style={{ fontWeight: 'bold', fontSize: '1.1rem', width: '20px', textAlign: 'center' }}>{extraPlayers}</span>
-                      <button type="button" onClick={() => setExtraPlayers(Math.min(selectedCourt.maxExtraPlayers, extraPlayers + 1))} style={{ width: '32px', height: '32px', borderRadius: '50%', border: 'none', backgroundColor: '#e2e8f0', cursor: 'pointer', fontWeight: 'bold' }}>+</button>
+                    <div style={{ fontWeight: '800', color: primaryColor, fontSize: '1.3rem' }}>
+                      ₡{(bookingMode === 'seek_match' ? calculateTotal() / 2 : calculateTotal()).toLocaleString()}
                     </div>
                   </div>
 
-                  <div style={{ marginTop: '10px', padding: '16px', backgroundColor: `${primaryColor}15`, borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ fontWeight: 'bold', color: primaryColor, fontSize: '1.1rem' }}>Total a pagar:</div>
-                    <div style={{ fontWeight: 'bold', color: primaryColor, fontSize: '1.3rem' }}>₡{calculateTotal().toLocaleString()}</div>
-                  </div>
-
-                  <button type="submit" disabled={submitting} style={{ width: '100%', padding: '14px', borderRadius: '8px', border: 'none', backgroundColor: primaryColor, color: 'white', fontWeight: 'bold', fontSize: '1.1rem', cursor: 'pointer', marginTop: '10px' }}>
-                    {submitting ? 'Procesando...' : 'Confirmar Reserva'}
+                  <button 
+                    type="submit" 
+                    disabled={submitting} 
+                    style={{ 
+                      width: '100%', padding: '14px', borderRadius: '10px', border: 'none', 
+                      backgroundColor: primaryColor, color: 'white', fontWeight: '800', fontSize: '1.05rem', 
+                      cursor: 'pointer', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' 
+                    }}
+                  >
+                    {submitting ? 'Registrando Reserva...' : 'Confirmar Reserva'}
                   </button>
 
                 </form>
@@ -362,61 +489,67 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
           </div>
         )}
 
-        {/* Tab: Partidos Abiertos */}
+        {/* TAB 2: PARTIDOS ABIERTOS (RETOS) */}
         {activeTab === 'open_matches' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             {joiningMatch ? (
-              <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+              <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '14px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0' }}>
                 <button 
+                  type="button"
                   onClick={() => setJoiningMatch(null)}
-                  style={{ background: 'none', border: 'none', color: primaryColor, fontWeight: 'bold', marginBottom: '16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                  style={{ background: 'none', border: 'none', color: primaryColor, fontWeight: '800', marginBottom: '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.85rem' }}
                 >
-                  ← Volver a lista
+                  ← Volver a lista de retos
                 </button>
-                <h3 style={{ margin: '0 0 16px 0', color: '#334155' }}>Unirte al reto contra {joiningMatch.teamAName}</h3>
-                <div style={{ padding: '12px', backgroundColor: '#f1f5f9', borderRadius: '8px', marginBottom: '20px', fontSize: '0.9rem' }}>
+
+                <h3 style={{ margin: '0 0 14px 0', color: '#0f172a', fontSize: '1.1rem', fontWeight: '800' }}>
+                  Unirte al reto contra {joiningMatch.teamAName}
+                </h3>
+                
+                <div style={{ padding: '12px', backgroundColor: '#f1f5f9', borderRadius: '8px', marginBottom: '16px', fontSize: '0.85rem' }}>
                   <div><strong>Cancha:</strong> {joiningMatch.courtName}</div>
-                  <div><strong>Fecha:</strong> {joiningMatch.date} a las {joiningMatch.time}</div>
+                  <div><strong>Fecha:</strong> {joiningMatch.date} a las {joiningMatch.time.substring(0, 5)}</div>
                   <div><strong>Nivel buscado:</strong> {joiningMatch.skillLevel}</div>
-                  <div><strong>Aportación por equipo:</strong> ₡{(joiningMatch.totalPrice / 2).toLocaleString()}</div>
+                  <div><strong>Aportación de tu equipo:</strong> ₡{(joiningMatch.totalPrice / 2).toLocaleString()}</div>
                 </div>
                 
                 <form onSubmit={handleJoinMatch} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <input type="text" placeholder="Nombre de tu Equipo" required value={teamBName} onChange={e => setTeamBName(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
-                  <input type="text" placeholder="Nombre del Capitán" required value={teamBCaptain} onChange={e => setTeamBCaptain(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
-                  <input type="tel" placeholder="Tu WhatsApp" required value={teamBPhone} onChange={e => setTeamBPhone(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
+                  <input type="text" placeholder="Nombre de tu Equipo" required value={teamBName} onChange={e => setTeamBName(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} />
+                  <input type="text" placeholder="Nombre del Capitán" required value={teamBCaptain} onChange={e => setTeamBCaptain(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} />
+                  <input type="tel" placeholder="Tu WhatsApp" required value={teamBPhone} onChange={e => setTeamBPhone(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} />
                   
-                  <button type="submit" disabled={submitting} style={{ width: '100%', padding: '14px', borderRadius: '8px', border: 'none', backgroundColor: '#d97706', color: 'white', fontWeight: 'bold', fontSize: '1.1rem', cursor: 'pointer', marginTop: '10px' }}>
-                    {submitting ? 'Procesando...' : '¡Aceptar Reto!'}
+                  <button type="submit" disabled={submitting} style={{ width: '100%', padding: '14px', borderRadius: '8px', border: 'none', backgroundColor: '#d97706', color: 'white', fontWeight: '800', fontSize: '1.05rem', cursor: 'pointer', marginTop: '6px' }}>
+                    {submitting ? 'Procesando...' : '¡Aceptar Reto y Jugar!'}
                   </button>
                 </form>
               </div>
             ) : (
               openMatches.length === 0 ? (
-                <div style={{ backgroundColor: 'white', padding: '40px', borderRadius: '12px', textAlign: 'center', color: '#64748b', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-                  <Trophy size={48} style={{ margin: '0 auto 16px auto', opacity: 0.3 }} />
-                  <h3 style={{ margin: '0 0 8px 0', color: '#334155' }}>No hay retos disponibles</h3>
-                  <p style={{ margin: 0 }}>Crea tu propia reserva y marca "Busca Reto" para aparecer aquí.</p>
+                <div style={{ backgroundColor: 'white', padding: '40px 20px', borderRadius: '14px', textAlign: 'center', color: '#64748b', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', border: '1px solid #e2e8f0' }}>
+                  <Trophy size={44} style={{ margin: '0 auto 12px auto', opacity: 0.3 }} />
+                  <h3 style={{ margin: '0 0 6px 0', color: '#1e293b', fontSize: '1.05rem', fontWeight: '800' }}>No hay retos disponibles</h3>
+                  <p style={{ margin: 0, fontSize: '0.85rem' }}>Crea tu propia reserva y marca "¡Busca Reto!" para aparecer aquí y dividir el costo.</p>
                 </div>
               ) : (
                 openMatches.map(m => (
-                  <div key={m.id} style={{ backgroundColor: 'white', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', borderLeft: '4px solid #d97706' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
-                      <h3 style={{ margin: 0, color: '#334155', fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div key={m.id} style={{ backgroundColor: 'white', padding: '18px', borderRadius: '14px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', borderLeft: '5px solid #d97706', borderTop: '1px solid #e2e8f0', borderRight: '1px solid #e2e8f0', borderBottom: '1px solid #e2e8f0' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
+                      <h3 style={{ margin: 0, color: '#0f172a', fontSize: '1.05rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <Trophy size={18} color="#d97706" /> {m.courtName}
                       </h3>
-                      <span style={{ backgroundColor: '#fef3c7', color: '#b45309', padding: '4px 8px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold' }}>Nivel: {m.skillLevel}</span>
+                      <span style={{ backgroundColor: '#fef3c7', color: '#b45309', padding: '3px 8px', borderRadius: '8px', fontSize: '0.72rem', fontWeight: '800' }}>Nivel: {m.skillLevel}</span>
                     </div>
                     
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.9rem', color: '#475569', marginBottom: '16px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Calendar size={16} /> {m.date} · {m.time}</div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Users size={16} /> Retador: <strong>{m.teamAName}</strong></div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><DollarSign size={16} /> ₡{(m.totalPrice / 2).toLocaleString()} por equipo</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.85rem', color: '#475569', marginBottom: '14px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Calendar size={14} /> {m.date} · {m.time.substring(0, 5)}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Users size={14} /> Retador: <strong>{m.teamAName}</strong> (Capitán: {m.teamACaptain})</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><DollarSign size={14} /> ₡{(m.totalPrice / 2).toLocaleString()} por equipo</div>
                     </div>
                     
                     <button 
+                      type="button"
                       onClick={() => setJoiningMatch(m)}
-                      style={{ width: '100%', padding: '12px', backgroundColor: '#fffbeb', color: '#d97706', border: '1px solid #fcd34d', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}
+                      style={{ width: '100%', padding: '11px', backgroundColor: '#fffbeb', color: '#d97706', border: '1.5px solid #fcd34d', borderRadius: '8px', fontWeight: '800', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px', fontSize: '0.88rem' }}
                     >
                       ¡Me uno al reto!
                     </button>
@@ -428,6 +561,141 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
         )}
 
       </div>
+
+      {/* CONFIRMATION MODAL WITH RESERVATION NUMBER & PAYMENT INSTRUCTIONS */}
+      {confirmedBooking && (
+        <div style={{
+          position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(3px)',
+          zIndex: 999999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px'
+        }}>
+          <div style={{
+            backgroundColor: 'white', borderRadius: '18px', maxWidth: '480px', width: '100%',
+            padding: '24px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)', border: '1px solid #e2e8f0',
+            textAlign: 'center'
+          }}>
+            
+            <div style={{
+              width: '60px', height: '60px', borderRadius: '50%', backgroundColor: '#dcfce7',
+              color: '#15803d', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              margin: '0 auto 14px auto'
+            }}>
+              <CheckCircle2 size={36} />
+            </div>
+
+            <h2 style={{ margin: '0 0 6px 0', fontSize: '1.35rem', fontWeight: '800', color: '#0f172a' }}>
+              {confirmedBooking.bookingMode === 'seek_match' && !confirmedBooking.teamBName 
+                ? '¡Reto Publicado con Éxito!' 
+                : '¡Reserva Registrada con Éxito!'}
+            </h2>
+            <p style={{ margin: '0 0 16px 0', fontSize: '0.85rem', color: '#64748b' }}>
+              Guarda tu número de reserva para identificarte en el complejo deportivo.
+            </p>
+
+            {/* Reference Number Card */}
+            <div style={{
+              backgroundColor: '#f8fafc', border: '2px dashed #cbd5e1', borderRadius: '12px',
+              padding: '12px', marginBottom: '16px'
+            }}>
+              <div style={{ fontSize: '0.72rem', fontWeight: '800', color: '#64748b', textTransform: 'uppercase' }}>
+                Número de Reserva Oficial
+              </div>
+              <div style={{ fontSize: '1.35rem', fontWeight: '900', color: primaryColor, letterSpacing: '0.04em', margin: '4px 0' }}>
+                #RES-{confirmedBooking.id.substring(0, 8).toUpperCase()}
+              </div>
+            </div>
+
+            {/* Summary Details */}
+            <div style={{ textAlign: 'left', backgroundColor: '#f8fafc', padding: '12px 16px', borderRadius: '10px', marginBottom: '16px', fontSize: '0.84rem', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div><strong>Cancha:</strong> {confirmedBooking.courtName}</div>
+              <div><strong>Fecha & Hora:</strong> {confirmedBooking.date} a las {confirmedBooking.time.substring(0, 5)}</div>
+              <div><strong>Equipo:</strong> {confirmedBooking.teamAName} {confirmedBooking.teamBName ? `vs ${confirmedBooking.teamBName}` : ''}</div>
+              <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '6px', display: 'flex', justifyContent: 'space-between' }}>
+                <strong>Monto a pagar:</strong>
+                <strong style={{ color: primaryColor, fontSize: '0.95rem' }}>
+                  ₡{(confirmedBooking.bookingMode === 'seek_match' && !confirmedBooking.teamBName ? confirmedBooking.totalPrice / 2 : confirmedBooking.totalPrice).toLocaleString()}
+                </strong>
+              </div>
+            </div>
+
+            {/* SINPE Payment Card if configured */}
+            {sinpePhone && (
+              <div style={{
+                textAlign: 'left', backgroundColor: '#ecfdf5', border: '1px solid #a7f3d0',
+                borderRadius: '10px', padding: '12px 14px', marginBottom: '16px', fontSize: '0.82rem', color: '#065f46'
+              }}>
+                <div style={{ fontWeight: '800', marginBottom: '4px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span>Pago por SINPE Móvil:</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(sinpePhone);
+                      setCopiedSinpe(true);
+                      setTimeout(() => setCopiedSinpe(false), 2000);
+                    }}
+                    style={{
+                      border: 'none', background: '#059669', color: 'white', padding: '2px 8px',
+                      borderRadius: '4px', fontSize: '0.72rem', fontWeight: '700', cursor: 'pointer'
+                    }}
+                  >
+                    {copiedSinpe ? '¡Copiado!' : 'Copiar'}
+                  </button>
+                </div>
+                <div>Teléfono: <strong>{sinpePhone}</strong></div>
+                {sinpeName && <div>A nombre de: <strong>{sinpeName}</strong></div>}
+                <div style={{ fontSize: '0.72rem', color: '#047857', marginTop: '4px' }}>
+                  Detalle: #RES-{confirmedBooking.id.substring(0, 8).toUpperCase()}
+                </div>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <button
+                type="button"
+                onClick={() => copyBookingDetails(confirmedBooking)}
+                style={{
+                  padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1',
+                  backgroundColor: 'white', color: '#0f172a', fontWeight: '700', fontSize: '0.85rem',
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'
+                }}
+              >
+                <Copy size={15} />
+                {copiedResRef ? '¡Detalles Copiados!' : 'Copiar Resumen de Reserva'}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => notifyViaWhatsApp(confirmedBooking)}
+                style={{
+                  padding: '10px', borderRadius: '8px', border: 'none',
+                  backgroundColor: '#16a34a', color: 'white', fontWeight: '800', fontSize: '0.85rem',
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'
+                }}
+              >
+                <Phone size={15} />
+                Notificar por WhatsApp
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmedBooking(null);
+                  window.location.reload();
+                }}
+                style={{
+                  padding: '10px', borderRadius: '8px', border: 'none',
+                  backgroundColor: '#f1f5f9', color: '#475569', fontWeight: '700', fontSize: '0.85rem',
+                  cursor: 'pointer', marginTop: '4px'
+                }}
+              >
+                Cerrar
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

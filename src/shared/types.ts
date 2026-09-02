@@ -455,9 +455,26 @@ export interface CourtBooking {
   updatedAt?: string;
 }
 
+export interface CourtsTheme {
+  primaryColor?: string;
+  accentColor?: string;
+  backgroundColor?: string;
+  fontFamily?: string;
+  title?: string;
+  description?: string;
+  logoUrl?: string;
+  bannerUrl?: string;
+  announcement?: string;
+  sinpePhone?: string;
+  sinpeName?: string;
+  bankAccountInfo?: string;
+}
+
 export interface CourtsConfig {
   paymentMode: 'online' | 'on_site' | 'both';
   matchExpiryHours: number;
   allowSeekMatch: boolean;
   sportTypes: string[];
+  theme?: CourtsTheme;
 }
+
