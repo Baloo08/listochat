@@ -3,7 +3,7 @@ import {
   Calendar, Trophy, Users, DollarSign, Clock, CheckCircle2, 
   XCircle, AlertCircle, Phone, Search, Filter, Eye, RefreshCw, 
   ChevronLeft, ChevronRight, ShieldCheck, Check, SlidersHorizontal,
-  Send, MessageSquare, Copy, Sparkles
+  Send, MessageSquare, Copy, Sparkles, Plus, Trash2
 } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
 import { Court, CourtBooking } from '../../shared/types';
@@ -31,6 +31,25 @@ export default function CourtsBookingsManager() {
   const [targetTeam, setTargetTeam] = useState<'A' | 'B' | 'both'>('A');
   const [sendingReminder, setSendingReminder] = useState(false);
 
+  // Manual Booking Modal state
+  const [isManualModalOpen, setIsManualModalOpen] = useState(false);
+  const [creatingBooking, setCreatingBooking] = useState(false);
+  const [manualCourtId, setManualCourtId] = useState('');
+  const [manualDate, setManualDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [manualTime, setManualTime] = useState('');
+  const [manualSlots, setManualSlots] = useState<string[]>([]);
+  const [manualBookingMode, setManualBookingMode] = useState<'full' | 'seek_match'>('full');
+  const [manualTeamAName, setManualTeamAName] = useState('');
+  const [manualTeamACaptain, setManualTeamACaptain] = useState('');
+  const [manualTeamAPhone, setManualTeamAPhone] = useState('');
+  const [manualTeamAPaid, setManualTeamAPaid] = useState(false);
+  const [manualTeamBName, setManualTeamBName] = useState('');
+  const [manualTeamBCaptain, setManualTeamBCaptain] = useState('');
+  const [manualTeamBPhone, setManualTeamBPhone] = useState('');
+  const [manualTeamBPaid, setManualTeamBPaid] = useState(false);
+  const [manualTotalPrice, setManualTotalPrice] = useState(15000);
+  const [manualNotes, setManualNotes] = useState('');
+
   const api = useApi();
 
   const loadData = async () => {
@@ -41,7 +60,13 @@ export default function CourtsBookingsManager() {
         api.get('/api/courts')
       ]);
       if (bData) setBookings(bData);
-      if (cData) setCourts(cData);
+      if (cData) {
+        setCourts(cData);
+        if (cData.length > 0 && !manualCourtId) {
+          setManualCourtId(cData[0].id);
+          setManualTotalPrice(Number(cData[0].basePrice || 15000));
+        }
+      }
     } catch (error) {
       console.error('Error loading courts bookings:', error);
     } finally {
@@ -52,6 +77,100 @@ export default function CourtsBookingsManager() {
   useEffect(() => {
     loadData();
   }, []);
+
+  // Fetch available slots when court or date changes in manual booking modal
+  useEffect(() => {
+    if (isManualModalOpen && manualCourtId && manualDate) {
+      const fetchSlots = async () => {
+        try {
+          const storeRes = await api.get('/api/store');
+          const slug = storeRes?.storeSlug;
+          if (slug) {
+            const slots = await api.get(`/api/courts/public/${slug}/available-slots?courtId=${manualCourtId}&date=${manualDate}`);
+            const parsed = Array.isArray(slots) ? slots : (slots?.availableSlots || []);
+            setManualSlots(parsed);
+            if (parsed.length > 0 && !manualTime) {
+              setManualTime(parsed[0]);
+            }
+          }
+        } catch (e) {
+          setManualSlots([]);
+        }
+      };
+      fetchSlots();
+    }
+  }, [isManualModalOpen, manualCourtId, manualDate]);
+
+  const handleOpenManualModal = () => {
+    if (courts.length > 0) {
+      const defaultCourt = courts[0];
+      setManualCourtId(defaultCourt.id);
+      setManualTotalPrice(Number(defaultCourt.basePrice || 15000));
+    }
+    setManualDate(new Date().toISOString().split('T')[0]);
+    setManualTime('');
+    setManualBookingMode('full');
+    setManualTeamAName('');
+    setManualTeamACaptain('');
+    setManualTeamAPhone('');
+    setManualTeamAPaid(false);
+    setManualTeamBName('');
+    setManualTeamBCaptain('');
+    setManualTeamBPhone('');
+    setManualTeamBPaid(false);
+    setManualNotes('');
+    setIsManualModalOpen(true);
+  };
+
+  const handleCourtChange = (courtId: string) => {
+    setManualCourtId(courtId);
+    const selected = courts.find(c => c.id === courtId);
+    if (selected) {
+      setManualTotalPrice(Number(selected.basePrice || 15000));
+    }
+  };
+
+  const handleCreateManualBooking = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manualCourtId || !manualDate || !manualTime || !manualTeamACaptain) {
+      alert('Por favor completa los campos obligatorios (*)');
+      return;
+    }
+
+    setCreatingBooking(true);
+    try {
+      const payload = {
+        courtId: manualCourtId,
+        date: manualDate,
+        time: manualTime,
+        bookingMode: manualBookingMode,
+        matchStatus: manualBookingMode === 'seek_match' ? 'open' : 'confirmed',
+        teamAName: manualTeamAName || 'Equipo A',
+        teamACaptain: manualTeamACaptain,
+        teamAPhone: manualTeamAPhone,
+        teamAPaid: manualTeamAPaid,
+        teamBName: manualBookingMode === 'full' ? manualTeamBName : undefined,
+        teamBCaptain: manualBookingMode === 'full' ? manualTeamBCaptain : undefined,
+        teamBPhone: manualBookingMode === 'full' ? manualTeamBPhone : undefined,
+        teamBPaid: manualBookingMode === 'full' ? manualTeamBPaid : false,
+        totalPrice: Number(manualTotalPrice),
+        pricePerTeam: manualBookingMode === 'seek_match' ? Number(manualTotalPrice) / 2 : undefined,
+        notes: manualNotes || undefined,
+        status: 'confirmed'
+      };
+
+      const created = await api.post('/api/courts/bookings', payload);
+      if (created) {
+        setBookings(prev => [created, ...prev]);
+        setIsManualModalOpen(false);
+        alert('¡Reserva registrada con éxito!');
+      }
+    } catch (error) {
+      alert('Error al registrar reserva');
+    } finally {
+      setCreatingBooking(false);
+    }
+  };
 
   const handleTogglePaymentA = async (b: CourtBooking) => {
     setUpdatingId(b.id);
@@ -213,43 +332,59 @@ export default function CourtsBookingsManager() {
           </p>
         </div>
 
-        {/* View Switcher */}
-        <div style={{ display: 'flex', gap: '6px', backgroundColor: 'var(--bg-elevated)', padding: '4px', borderRadius: '10px', border: '1px solid var(--border)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          {/* New Manual Booking Button */}
           <button
             type="button"
-            onClick={() => setViewMode('list')}
+            onClick={handleOpenManualModal}
             style={{
-              padding: '8px 14px', borderRadius: '8px', border: 'none',
-              backgroundColor: viewMode === 'list' ? 'var(--primary)' : 'transparent',
-              color: viewMode === 'list' ? 'white' : 'var(--text)',
-              fontWeight: '700', fontSize: '0.82rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px'
+              padding: '8px 16px', borderRadius: '8px', border: 'none',
+              backgroundColor: 'var(--primary)', color: 'white', fontWeight: '800',
+              fontSize: '0.84rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px',
+              boxShadow: '0 2px 8px rgba(22, 163, 74, 0.25)'
             }}
           >
-            <SlidersHorizontal size={15} /> Lista
+            <Plus size={16} /> Nueva Reserva Manual
           </button>
-          <button
-            type="button"
-            onClick={() => setViewMode('calendar')}
-            style={{
-              padding: '8px 14px', borderRadius: '8px', border: 'none',
-              backgroundColor: viewMode === 'calendar' ? 'var(--primary)' : 'transparent',
-              color: viewMode === 'calendar' ? 'white' : 'var(--text)',
-              fontWeight: '700', fontSize: '0.82rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px'
-            }}
-          >
-            <Calendar size={15} /> Calendario
-          </button>
-          <button
-            type="button"
-            onClick={loadData}
-            title="Actualizar datos"
-            style={{
-              padding: '8px', borderRadius: '8px', border: 'none', background: 'none',
-              color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center'
-            }}
-          >
-            <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
-          </button>
+
+          {/* View Switcher */}
+          <div style={{ display: 'flex', gap: '4px', backgroundColor: 'var(--bg-elevated)', padding: '3px', borderRadius: '10px', border: '1px solid var(--border)' }}>
+            <button
+              type="button"
+              onClick={() => setViewMode('list')}
+              style={{
+                padding: '7px 12px', borderRadius: '7px', border: 'none',
+                backgroundColor: viewMode === 'list' ? 'var(--primary)' : 'transparent',
+                color: viewMode === 'list' ? 'white' : 'var(--text)',
+                fontWeight: '700', fontSize: '0.8rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px'
+              }}
+            >
+              <SlidersHorizontal size={14} /> Lista
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('calendar')}
+              style={{
+                padding: '7px 12px', borderRadius: '7px', border: 'none',
+                backgroundColor: viewMode === 'calendar' ? 'var(--primary)' : 'transparent',
+                color: viewMode === 'calendar' ? 'white' : 'var(--text)',
+                fontWeight: '700', fontSize: '0.8rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px'
+              }}
+            >
+              <Calendar size={14} /> Calendario
+            </button>
+            <button
+              type="button"
+              onClick={loadData}
+              title="Actualizar datos"
+              style={{
+                padding: '7px', borderRadius: '7px', border: 'none', background: 'none',
+                color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center'
+              }}
+            >
+              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -655,6 +790,208 @@ export default function CourtsBookingsManager() {
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* NEW MANUAL BOOKING MODAL */}
+      {isManualModalOpen && (
+        <div style={{
+          position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(3px)',
+          zIndex: 999999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px'
+        }}>
+          <div style={{
+            backgroundColor: 'var(--surface)', borderRadius: '16px', maxWidth: '560px', width: '100%',
+            padding: '24px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)', border: '1px solid var(--border)',
+            maxHeight: '90vh', overflowY: 'auto'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid var(--border)', paddingBottom: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Plus size={20} color="var(--primary)" />
+                <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '800', color: 'var(--text)' }}>
+                  Nueva Reserva Manual
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsManualModalOpen(false)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '1.2rem', fontWeight: 'bold' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateManualBooking} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              
+              {/* Cancha, Fecha y Turno */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', marginBottom: '4px', color: 'var(--text)' }}>
+                    Cancha *
+                  </label>
+                  <select
+                    value={manualCourtId}
+                    onChange={e => handleCourtChange(e.target.value)}
+                    style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: 'var(--background)', color: 'var(--text)', fontWeight: '600' }}
+                  >
+                    {courts.map(c => (
+                      <option key={c.id} value={c.id}>{c.name} (₡{Number(c.basePrice).toLocaleString()})</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', marginBottom: '4px', color: 'var(--text)' }}>
+                    Fecha *
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={manualDate}
+                    min={new Date().toISOString().split('T')[0]}
+                    onChange={e => setManualDate(e.target.value)}
+                    style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: 'var(--background)', color: 'var(--text)', fontWeight: '600', boxSizing: 'border-box' }}
+                  />
+                </div>
+              </div>
+
+              {/* Hora / Turno */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', marginBottom: '6px', color: 'var(--text)' }}>
+                  Hora / Turno * {manualDate && <span style={{ color: 'var(--primary)', fontWeight: 'normal' }}>({formatFriendlyDate(manualDate)})</span>}
+                </label>
+                {manualSlots.length > 0 ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))', gap: '6px', maxHeight: '120px', overflowY: 'auto', padding: '4px' }}>
+                    {manualSlots.map(slot => (
+                      <button
+                        key={slot}
+                        type="button"
+                        onClick={() => setManualTime(slot)}
+                        style={{
+                          padding: '7px 4px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: '700',
+                          border: manualTime === slot ? '2px solid var(--primary)' : '1px solid var(--border)',
+                          backgroundColor: manualTime === slot ? 'var(--primary)' : 'var(--bg-elevated)',
+                          color: manualTime === slot ? 'white' : 'var(--text)',
+                          textAlign: 'center'
+                        }}
+                      >
+                        {formatTime12h(slot)}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <input
+                    type="time"
+                    required
+                    value={manualTime}
+                    onChange={e => setManualTime(e.target.value)}
+                    style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: 'var(--background)', color: 'var(--text)', fontWeight: '600', boxSizing: 'border-box' }}
+                  />
+                )}
+              </div>
+
+              {/* Modalidad */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', marginBottom: '6px', color: 'var(--text)' }}>
+                  Modalidad de Reserva
+                </label>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', cursor: 'pointer', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border)', backgroundColor: manualBookingMode === 'full' ? 'var(--primary-light)' : 'transparent' }}>
+                    <input type="radio" name="manualMode" checked={manualBookingMode === 'full'} onChange={() => setManualBookingMode('full')} />
+                    <span>Reserva Completa (2 Equipos)</span>
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', cursor: 'pointer', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border)', backgroundColor: manualBookingMode === 'seek_match' ? '#fef3c7' : 'transparent' }}>
+                    <input type="radio" name="manualMode" checked={manualBookingMode === 'seek_match'} onChange={() => setManualBookingMode('seek_match')} />
+                    <span>⚔️ ¡Busca Reto! (Publicar en web)</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Equipo A */}
+              <div style={{ backgroundColor: 'var(--bg-elevated)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                <div style={{ fontWeight: '800', fontSize: '0.82rem', color: '#2563eb', marginBottom: '8px', textTransform: 'uppercase' }}>
+                  Equipo A (Responsable)
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '8px' }}>
+                  <input type="text" placeholder="Nombre Equipo (Ej: Los Galácticos)" value={manualTeamAName} onChange={e => setManualTeamAName(e.target.value)} style={{ padding: '8px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.82rem' }} />
+                  <input type="text" required placeholder="Capitán / Contacto *" value={manualTeamACaptain} onChange={e => setManualTeamACaptain(e.target.value)} style={{ padding: '8px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.82rem' }} />
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '10px', alignItems: 'center' }}>
+                  <input type="tel" placeholder="WhatsApp del Capitán (Ej: 8888-8888)" value={manualTeamAPhone} onChange={e => setManualTeamAPhone(e.target.value)} style={{ padding: '8px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.82rem' }} />
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={manualTeamAPaid} onChange={e => setManualTeamAPaid(e.target.checked)} />
+                    <span style={{ fontWeight: 'bold', color: manualTeamAPaid ? '#15803d' : 'var(--text-muted)' }}>¿Pago ya realizado?</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Equipo B (Solo en reserva completa) */}
+              {manualBookingMode === 'full' && (
+                <div style={{ backgroundColor: 'var(--bg-elevated)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                  <div style={{ fontWeight: '800', fontSize: '0.82rem', color: '#16a34a', marginBottom: '8px', textTransform: 'uppercase' }}>
+                    Equipo B (Rival - Opcional)
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '8px' }}>
+                    <input type="text" placeholder="Nombre Equipo Rival" value={manualTeamBName} onChange={e => setManualTeamBName(e.target.value)} style={{ padding: '8px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.82rem' }} />
+                    <input type="text" placeholder="Capitán Rival" value={manualTeamBCaptain} onChange={e => setManualTeamBCaptain(e.target.value)} style={{ padding: '8px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.82rem' }} />
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '10px', alignItems: 'center' }}>
+                    <input type="tel" placeholder="WhatsApp Capitán Rival" value={manualTeamBPhone} onChange={e => setManualTeamBPhone(e.target.value)} style={{ padding: '8px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.82rem' }} />
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={manualTeamBPaid} onChange={e => setManualTeamBPaid(e.target.checked)} />
+                      <span style={{ fontWeight: 'bold', color: manualTeamBPaid ? '#15803d' : 'var(--text-muted)' }}>¿Pago ya realizado?</span>
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {/* Monto & Notas */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '10px', alignItems: 'center' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', marginBottom: '4px', color: 'var(--text)' }}>
+                    Monto Total (₡) *
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min={0}
+                    value={manualTotalPrice}
+                    onChange={e => setManualTotalPrice(Number(e.target.value))}
+                    style={{ width: '100%', padding: '9px', borderRadius: '6px', border: '1px solid var(--border)', fontWeight: 'bold', fontSize: '0.9rem', boxSizing: 'border-box' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', marginBottom: '4px', color: 'var(--text)' }}>
+                    Notas / Comentarios
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ej. Pagaron por SINPE en recepción"
+                    value={manualNotes}
+                    onChange={e => setManualNotes(e.target.value)}
+                    style={{ width: '100%', padding: '9px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.82rem', boxSizing: 'border-box' }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => setIsManualModalOpen(false)}
+                  style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: 'transparent', color: 'var(--text)', fontWeight: '700', cursor: 'pointer' }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={creatingBooking}
+                  style={{ flex: 1.5, padding: '10px', borderRadius: '8px', border: 'none', backgroundColor: 'var(--primary)', color: 'white', fontWeight: '800', cursor: 'pointer' }}
+                >
+                  {creatingBooking ? 'Registrando...' : 'Registrar Reserva'}
+                </button>
+              </div>
+
+            </form>
           </div>
         </div>
       )}

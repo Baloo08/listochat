@@ -62,6 +62,22 @@ router.get('/public/:slug/available-slots', async (req, res) => {
     const schedule = await getScheduleSettings(tenant.id);
     const dateStr = String(date);
 
+    // Filter past dates (Costa Rica UTC-6)
+    const nowCR = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Costa_Rica' }));
+    const todayCR = `${nowCR.getFullYear()}-${String(nowCR.getMonth() + 1).padStart(2, '0')}-${String(nowCR.getDate()).padStart(2, '0')}`;
+    const currentMinutesNow = (nowCR.getHours() * 60) + nowCR.getMinutes();
+
+    if (dateStr < todayCR) {
+      res.json({
+        date: dateStr,
+        availableSlots: [],
+        maxParallelSlots: 0,
+        totalAvailable: 0,
+        message: 'No es posible reservar en fechas pasadas'
+      });
+      return;
+    }
+
     // 1. Check Vacation Mode / Date Blocking
     if (schedule?.vacationConfig?.enabled) {
       const v = schedule.vacationConfig;
@@ -177,7 +193,17 @@ router.get('/public/:slug/available-slots', async (req, res) => {
     }
 
     // A slot is available if active bookings at that time are less than the allowed parallel capacity
-    const availableSlots = candidateSlots.filter(t => (timeCountMap[t] || 0) < maxParallelSlots);
+    // and if not in the past for today
+    const isToday = dateStr === todayCR;
+    const availableSlots = candidateSlots.filter(t => {
+      if (isToday) {
+        const [sh, sm] = t.split(':').map(Number);
+        if ((sh * 60 + sm) <= currentMinutesNow) {
+          return false;
+        }
+      }
+      return (timeCountMap[t] || 0) < maxParallelSlots;
+    });
 
     res.json({
       date: dateStr,
@@ -233,7 +259,7 @@ router.post('/public/:slug/book', async (req, res) => {
       date,
       time,
       amount: finalAmount,
-      status: 'confirmed',
+      status: 'scheduled',
       details: combinedDetails,
       vehicleModel: vehicleModel || '',
       selectedVariables: req.body.selectedVariables
@@ -248,17 +274,16 @@ router.post('/public/:slug/book', async (req, res) => {
 
     // 1. Send WhatsApp confirmation to customer
     if (tenant.evolutionInstance && cleanCustomerPhone) {
-      const confirmMsg = `📅 *¡Cita Confirmada con Éxito!*
+      const confirmMsg = `📅 *¡Cita Programada con Éxito!*
 
-Hola *${customerName}*, tu cita para *${serviceName}* ha quedado agendada en *${tenant.name}*.
+Hola *${customerName}*, tu cita para *${serviceName}* ha quedado programada en *${tenant.name}*.
 
 🗓️ *Fecha:* ${date}
 ⏰ *Hora:* ${time}
 💰 *Valor:* ₡${amount.toLocaleString('es-CR')}
-${vehicleModel ? `🚗 *Vehículo / Detalle:* ${vehicleModel}` : ''}
-${combinedDetails ? `📝 *Información:* ${combinedDetails}` : ''}
-
-👉 _Te enviaremos un recordatorio antes de tu cita. Si necesitas reprogramar, por favor responde a este mensaje._ ¡Te esperamos!`;
+📌 *Estado:* 🕒 Programada
+${vehicleModel ? `🚗 *Vehículo / Detalle:* ${vehicleModel}\n` : ''}${combinedDetails ? `📝 *Información:* ${combinedDetails}\n` : ''}
+👉 _Te enviaremos la confirmación oficial antes de tu cita. Si necesitas cancelar o reprogramar, solo responde a este mensaje._ ¡Te esperamos!`;
 
       try {
         await sendMessage(tenant.evolutionInstance, cleanCustomerPhone, confirmMsg);
@@ -358,7 +383,7 @@ router.put('/:id/status', async (req, res) => {
 
     // If changing to confirmed, send confirmation
     if (notifyCustomer && updated?.whatsapp && tenant?.evolutionInstance) {
-      let statusText = status === 'confirmed' ? '✅ Confirmada' : status === 'completed' ? '🎉 Completada' : status === 'cancelled' ? '❌ Cancelada' : status;
+      let statusText = status === 'confirmed' ? '✅ Confirmada' : status === 'scheduled' ? '🕒 Programada' : status === 'completed' ? '🎉 Completada' : status === 'cancelled' ? '❌ Cancelada' : status;
       const msg = `*Actualización de Cita en ${tenant.name}*\n\nHola *${updated.name}*, el estado de tu cita para *${updated.service}* (${updated.date} a las ${updated.time}) ha sido actualizado a: *${statusText}*.`;
       try {
         await sendMessage(tenant.evolutionInstance, updated.whatsapp, msg);

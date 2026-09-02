@@ -277,6 +277,15 @@ export async function expireOldMatches() {
 }
 
 export async function getAvailableSlots(tenantId: string, courtId: string, date: string) {
+  // 0. Filter past dates (Costa Rica UTC-6)
+  const nowCR = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Costa_Rica' }));
+  const todayCR = `${nowCR.getFullYear()}-${String(nowCR.getMonth() + 1).padStart(2, '0')}-${String(nowCR.getDate()).padStart(2, '0')}`;
+  const currentMinutesNow = (nowCR.getHours() * 60) + nowCR.getMinutes();
+
+  if (date < todayCR) {
+    return [];
+  }
+
   // 1. Get tenant settings
   const tRes = await query('SELECT settings_json FROM tenants WHERE id = $1', [tenantId]);
   const settingsJson = tRes.rows[0]?.settings_json || {};
@@ -307,10 +316,18 @@ export async function getAvailableSlots(tenantId: string, courtId: string, date:
   `, [tenantId, courtId, date]);
 
   const bookedTimes = bookingsRes.rows.map(r => {
-    // some PG drivers return time as string like "14:00:00"
     return typeof r.time === 'string' ? r.time : (r.time as any).toString();
   });
 
-  // 4. Filter available
-  return slots.filter(slot => !bookedTimes.includes(slot));
+  // 4. Filter available (not booked, and not passed if today)
+  const isToday = date === todayCR;
+  return slots.filter(slot => {
+    if (isToday) {
+      const [sh, sm] = slot.split(':').map(Number);
+      if ((sh * 60 + sm) <= currentMinutesNow) {
+        return false;
+      }
+    }
+    return !bookedTimes.includes(slot);
+  });
 }

@@ -278,8 +278,8 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
           setStoreName(data.storeName || '');
           setStoreSlug(data.storeSlug || '');
           setStoreDescription(data.storeDescription || '');
-          setStoreLogoUrl(data.storeLogoUrl || '');
-          setStoreBannerUrl(data.storeBannerUrl || '');
+          setStoreLogoUrl(data.storeLogoUrl || data.storeTheme?.logoUrl || '');
+          setStoreBannerUrl(data.storeBannerUrl || data.storeTheme?.bannerUrl || '');
           setCurrency(data.currency || 'CRC');
           setAcceptSinpe(data.acceptSinpe !== false);
           setSinpePhone(data.sinpePhone || '');

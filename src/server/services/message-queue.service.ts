@@ -3,7 +3,7 @@ import { takeNextPending, markDone, markFailed } from '../db/message-queue.repo.
 import { processWhatsAppMessageWithAI } from './agent.js';
 import { getChatMessagesByTenant, getChatSession, setChatHumanMode, saveChatMessage } from '../db/chats.repo.js';
 import { getAgentConfig } from '../db/agent-config.repo.js';
-import { createBookingFromCommand } from './booking.service.js';
+import { createBookingFromCommand, cancelBookingFromWhatsApp, rescheduleBookingFromWhatsApp } from './booking.service.js';
 import { createOrderFromWhatsApp } from './order.service.js';
 import { sendMessage, sendMedia } from './evolution.js';
 import { query } from '../db/pool.js';
@@ -115,6 +115,26 @@ async function processNextInQueue() {
       try {
         await createOrderFromWhatsApp(msg.tenantId, { ...aiResult.orderData, customerPhone: aiResult.orderData.customerPhone || msg.cleanPhone, customerName: aiResult.orderData.customerName || msg.pushName });
       } catch (err) { console.error('[Queue] Failed to process order:', err); }
+    }
+
+    // Handle cancel booking command
+    if (aiResult.isCancelBookingDetected) {
+      try {
+        const cancelled = await cancelBookingFromWhatsApp(msg.tenantId, msg.cleanPhone, aiResult.cancelBookingData);
+        if (cancelled && io) {
+          io.to(`tenant_${msg.tenantId}`).emit('appointment:updated', cancelled);
+        }
+      } catch (err) { console.error('[Queue] Failed to process cancel booking:', err); }
+    }
+
+    // Handle reschedule booking command
+    if (aiResult.isRescheduleBookingDetected && aiResult.rescheduleBookingData) {
+      try {
+        const rescheduled = await rescheduleBookingFromWhatsApp(msg.tenantId, msg.cleanPhone, aiResult.rescheduleBookingData);
+        if (rescheduled && io) {
+          io.to(`tenant_${msg.tenantId}`).emit('appointment:updated', rescheduled);
+        }
+      } catch (err) { console.error('[Queue] Failed to process reschedule booking:', err); }
     }
     
     await markDone(msg.id, aiResult.replyText);

@@ -815,10 +815,12 @@ export default function Bookings() {
                             border: '1px solid var(--border)',
                             backgroundColor:
                               app.status === 'confirmed' ? '#f0fdf4' :
+                              app.status === 'scheduled' ? '#e0e7ff' :
                               app.status === 'completed' ? '#eff6ff' :
                               app.status === 'cancelled' ? '#fef2f2' : '#fefce8',
                             color:
                               app.status === 'confirmed' ? '#16a34a' :
+                              app.status === 'scheduled' ? '#4338ca' :
                               app.status === 'completed' ? '#2563eb' :
                               app.status === 'cancelled' ? '#dc2626' : '#ca8a04'
                           }}

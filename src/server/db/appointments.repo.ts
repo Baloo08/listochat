@@ -37,7 +37,7 @@ export async function createAppointment(tenantId: string, data: Partial<Appointm
            created_at as "createdAt"
   `, [
     tenantId, data.name, data.whatsapp, data.service, data.date, data.time, data.amount, 
-    data.status || 'pending', data.details, data.vehicleModel,
+    data.status || 'scheduled', data.details, data.vehicleModel,
     data.selectedVariables ? JSON.stringify(data.selectedVariables) : null
   ]);
   return result.rows[0];

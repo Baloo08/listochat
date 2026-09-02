@@ -130,6 +130,9 @@ export default function StorefrontView({ slug }: StorefrontProps) {
   const [calculatedKm, setCalculatedKm] = useState<number | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<'sinpe' | 'cash' | 'transfer'>('sinpe');
   const [paymentReference, setPaymentReference] = useState('');
+  const [paymentProofUrl, setPaymentProofUrl] = useState('');
+  const [paymentProofFile, setPaymentProofFile] = useState<File | null>(null);
+  const [uploadingProof, setUploadingProof] = useState(false);
   const [orderNotes, setOrderNotes] = useState('');
   const [selectedProvincia, setSelectedProvincia] = useState('');
   const [selectedCanton, setSelectedCanton] = useState('');
@@ -432,6 +435,7 @@ export default function StorefrontView({ slug }: StorefrontProps) {
         deliveryMethod: consumptionMode === 'correos_cr' ? 'correos_cr' : (consumptionMode === 'delivery' ? 'delivery' : 'pickup'),
         paymentMethod,
         paymentReference: paymentReference || undefined,
+        paymentProofUrl: paymentProofUrl || undefined,
         branchId: selectedBranch?.id || undefined,
         notes: orderNotes || undefined,
         items: cart.map(item => ({

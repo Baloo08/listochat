@@ -23,8 +23,14 @@ export async function getStoreSettings(tenantId: string): Promise<StoreSettings 
   const row = result.rows[0];
   if (!row) return null;
 
+  const storeTheme = row.storeTheme || {};
+  const storeLogoUrl = row.storeLogoUrl || storeTheme.logoUrl || '';
+  const storeBannerUrl = row.storeBannerUrl || storeTheme.bannerUrl || '';
+
   return {
     ...row,
+    storeLogoUrl,
+    storeBannerUrl,
     storeModules: row.storeModules || { storeEnabled: true, bookingsEnabled: true },
     storeSchedule: row.storeSchedule || { isOpenManual: true, autoScheduleEnabled: false, schedule: {} },
     correosCrConfig: row.correosCrConfig || {
@@ -127,8 +133,8 @@ export async function upsertStoreSettings(tenantId: string, data: Partial<StoreS
     data.storeName || 'Mi Negocio',
     data.storeSlug || 'tienda',
     data.storeDescription || '',
-    data.storeLogoUrl || '',
-    data.storeBannerUrl || '',
+    data.storeLogoUrl || (data.storeTheme as any)?.logoUrl || '',
+    data.storeBannerUrl || (data.storeTheme as any)?.bannerUrl || '',
     JSON.stringify(data.storeTheme || { primaryColor: '#16a34a', cardRadius: 'rounded', cardShadow: 'md', fontFamily: 'Inter' }),
     data.currency || 'CRC',
     data.acceptSinpe !== false,

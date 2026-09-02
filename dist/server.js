@@ -2790,8 +2790,13 @@ async function getStoreSettings(tenantId) {
   `, [tenantId]);
   const row = result.rows[0];
   if (!row) return null;
+  const storeTheme = row.storeTheme || {};
+  const storeLogoUrl = row.storeLogoUrl || storeTheme.logoUrl || "";
+  const storeBannerUrl = row.storeBannerUrl || storeTheme.bannerUrl || "";
   return {
     ...row,
+    storeLogoUrl,
+    storeBannerUrl,
     storeModules: row.storeModules || { storeEnabled: true, bookingsEnabled: true },
     storeSchedule: row.storeSchedule || { isOpenManual: true, autoScheduleEnabled: false, schedule: {} },
     correosCrConfig: row.correosCrConfig || {
@@ -2893,8 +2898,8 @@ async function upsertStoreSettings(tenantId, data) {
     data.storeName || "Mi Negocio",
     data.storeSlug || "tienda",
     data.storeDescription || "",
-    data.storeLogoUrl || "",
-    data.storeBannerUrl || "",
+    data.storeLogoUrl || data.storeTheme?.logoUrl || "",
+    data.storeBannerUrl || data.storeTheme?.bannerUrl || "",
     JSON.stringify(data.storeTheme || { primaryColor: "#16a34a", cardRadius: "rounded", cardShadow: "md", fontFamily: "Inter" }),
     data.currency || "CRC",
     data.acceptSinpe !== false,
@@ -3108,6 +3113,7 @@ async function getAllTenantsMonthlyUsage(monthYearParam) {
 }
 
 // src/server/services/agent.ts
+init_pool();
 async function processWhatsAppMessageWithAI(tenantId, userMessage, senderPhone, senderName, chatHistory) {
   const tenant = await getTenantById(tenantId);
   const agentConfig = await getAgentConfig(tenantId);
@@ -3193,6 +3199,24 @@ async function processWhatsAppMessageWithAI(tenantId, userMessage, senderPhone, 
       }).join("\n") + "\n";
     }
   }
+  let activeCustomerBookingsText = "";
+  try {
+    const cleanPhone = senderPhone.replace(/\D/g, "");
+    const activeAppts = await query(`
+      SELECT service, date, time, status 
+      FROM appointments 
+      WHERE tenant_id = $1 AND REPLACE(whatsapp, '+', '') LIKE '%' || $2 || '%' 
+        AND status IN ('scheduled', 'confirmed', 'pending')
+      ORDER BY date ASC, time ASC
+      LIMIT 3
+    `, [tenantId, cleanPhone.slice(-8)]);
+    if (activeAppts.rows.length > 0) {
+      activeCustomerBookingsText = "\nCITAS ACTIVAS DE ESTE CLIENTE:\n" + activeAppts.rows.map(
+        (a) => `- ${a.service} para el ${a.date} a las ${a.time} (Estado: ${a.status === "confirmed" ? "Confirmada" : "Programada"})`
+      ).join("\n") + "\n";
+    }
+  } catch (e) {
+  }
   let prompt = `Eres el asistente virtual de *${tenant?.name || "nuestro negocio"}* en WhatsApp.
 IDIOMA: Responde SIEMPRE en espa\xF1ol de Costa Rica. NUNCA en otro idioma.
 ${agentConfig?.systemPrompt || "Atiende amablemente a los clientes."}
@@ -3200,7 +3224,7 @@ ${agentConfig?.systemPrompt || "Atiende amablemente a los clientes."}
 Datos del negocio:
 ${crTime}
 ${agentConfig?.showBookingLink !== false && bookingUrl ? `Reservas online: ${bookingUrl}` : ""}${agentConfig?.showStoreLink !== false && storeUrl ? ` | Tienda online: ${storeUrl}` : ""}
-${scheduleInfo}${paymentInfo}${relevantServicesText}${relevantProductsText}
+${scheduleInfo}${paymentInfo}${relevantServicesText}${relevantProductsText}${activeCustomerBookingsText}
 REGLAS OBLIGATORIAS:
 1. Responde SOLO en espa\xF1ol. Nunca portugu\xE9s, ingl\xE9s ni otro idioma.
 2. Usa el nombre EXACTO del cliente como aparece abajo. No lo modifiques ni abrevies.
@@ -3209,9 +3233,15 @@ REGLAS OBLIGATORIAS:
 5. NUNCA inventes URLs, links, procesos, pasos ni informaci\xF3n que no est\xE9 en los datos.
 6. Si hay historial de conversaci\xF3n, no repitas el saludo. Contin\xFAa la conversaci\xF3n naturalmente.
 7. Para pagos SINPE/Transferencia, da los datos de pago del negocio y pide el comprobante.
+8. GESTI\xD3N DE CITAS:
+- Para AGENDAR: Cuando el cliente elija servicio, fecha y hora, a\xF1ade <<<COMMAND_BOOKING: {"service":"nombre","date":"YYYY-MM-DD","time":"HH:MM","customerName":"${senderName}"}>>>.
+- Para CANCELAR: Si el cliente pide cancelar una cita activa, SIEMPRE preg\xFAntale primero para confirmar: "\xBFEst\xE1s seguro de que deseas cancelar tu cita de [Servicio] para el [Fecha] a las [Hora]?". SOLO si el cliente responde confirmando ("s\xED", "confirmo", "correcto", "canc\xE9lala"), a\xF1ade <<<COMMAND_CANCEL_BOOKING: {"date":"YYYY-MM-DD", "reason":"solicitado por cliente"}>>>.
+- Para REAGENDAR: Ofr\xE9cele los horarios libres disponibles y cuando confirme la nueva fecha y hora, a\xF1ade <<<COMMAND_RESCHEDULE_BOOKING: {"newDate":"YYYY-MM-DD", "newTime":"HH:MM"}>>>.
 
-Acciones (a\xF1ade al final SOLO cuando el cliente confirme expl\xEDcitamente):
+Acciones (a\xF1ade al final SOLO cuando corresponda):
 Cita: <<<COMMAND_BOOKING: {"service":"nombre","date":"YYYY-MM-DD","time":"HH:MM","customerName":"${senderName}"}>>>
+Cancelar: <<<COMMAND_CANCEL_BOOKING: {"date":"YYYY-MM-DD","reason":"motivo"}>>>
+Reagendar: <<<COMMAND_RESCHEDULE_BOOKING: {"newDate":"YYYY-MM-DD","newTime":"HH:MM"}>>>
 Compra: <<<COMMAND_ORDER: {"items":[{"productName":"nombre","quantity":1}]}>>>
 Foto: <<<COMMAND_SEND_MEDIA: {"mediaUrl":"URL","caption":"desc"}>>>
 Humano: <<<COMMAND_HANDOFF: {"reason":"motivo"}>>>
@@ -3268,10 +3298,16 @@ Asistente:`;
   let handoffReason;
   let isMediaDetected = false;
   let mediaData;
+  let isCancelBookingDetected = false;
+  let cancelBookingData;
+  let isRescheduleBookingDetected = false;
+  let rescheduleBookingData;
   const bookingRegex = /<<<COMMAND_BOOKING:\s*({.*?})>>>/s;
   const orderRegex = /<<<COMMAND_ORDER:\s*({.*?})>>>/s;
   const handoffRegex = /<<<COMMAND_HANDOFF:\s*({.*?})>>>/s;
   const mediaRegex = /<<<COMMAND_SEND_MEDIA:\s*({.*?})>>>/s;
+  const cancelRegex = /<<<COMMAND_CANCEL_BOOKING:\s*({.*?})>>>/s;
+  const rescheduleRegex = /<<<COMMAND_RESCHEDULE_BOOKING:\s*({.*?})>>>/s;
   const bookingMatch = replyText.match(bookingRegex);
   if (bookingMatch && bookingMatch[1]) {
     try {
@@ -3279,6 +3315,25 @@ Asistente:`;
       if (parsed && parsed.service && (parsed.date || parsed.time)) {
         isBookingDetected = true;
         bookingData = parsed;
+      }
+    } catch (e) {
+    }
+  }
+  const cancelMatch = replyText.match(cancelRegex);
+  if (cancelMatch && cancelMatch[1]) {
+    try {
+      isCancelBookingDetected = true;
+      cancelBookingData = JSON.parse(cancelMatch[1]);
+    } catch (e) {
+    }
+  }
+  const rescheduleMatch = replyText.match(rescheduleRegex);
+  if (rescheduleMatch && rescheduleMatch[1]) {
+    try {
+      const parsed = JSON.parse(rescheduleMatch[1]);
+      if (parsed && (parsed.newDate || parsed.newTime)) {
+        isRescheduleBookingDetected = true;
+        rescheduleBookingData = parsed;
       }
     } catch (e) {
     }
@@ -3313,7 +3368,7 @@ Asistente:`;
     } catch (e) {
     }
   }
-  replyText = replyText.replace(bookingRegex, "").replace(orderRegex, "").replace(handoffRegex, "").replace(mediaRegex, "").replace(/\*\*/g, "*").trim();
+  replyText = replyText.replace(bookingRegex, "").replace(orderRegex, "").replace(handoffRegex, "").replace(mediaRegex, "").replace(cancelRegex, "").replace(rescheduleRegex, "").replace(/\*\*/g, "*").trim();
   return {
     replyText,
     isBookingDetected,
@@ -3324,6 +3379,10 @@ Asistente:`;
     handoffReason,
     isMediaDetected,
     mediaData,
+    isCancelBookingDetected,
+    cancelBookingData,
+    isRescheduleBookingDetected,
+    rescheduleBookingData,
     tokensUsed: aiResult.tokensUsed
   };
 }
@@ -3469,7 +3528,7 @@ async function createAppointment(tenantId, data) {
     data.date,
     data.time,
     data.amount,
-    data.status || "pending",
+    data.status || "scheduled",
     data.details,
     data.vehicleModel,
     data.selectedVariables ? JSON.stringify(data.selectedVariables) : null
@@ -3509,6 +3568,7 @@ async function deleteAppointment(id, tenantId) {
 }
 
 // src/server/services/booking.service.ts
+init_pool();
 async function createBookingFromCommand(tenantId, bookingData) {
   try {
     const services = await getServicesByTenant(tenantId);
@@ -3524,12 +3584,62 @@ async function createBookingFromCommand(tenantId, bookingData) {
       time: bookingData.time || "10:00 AM",
       amount: Number(price),
       details: bookingData.vehicleInfo || "",
-      status: "pending"
+      status: "scheduled"
     });
     return appointment;
   } catch (error) {
     console.error("Error creating booking from command:", error);
     throw error;
+  }
+}
+async function cancelBookingFromWhatsApp(tenantId, phone, cancelData) {
+  try {
+    const clean = phone.replace(/\D/g, "");
+    const res = await query(`
+      SELECT * FROM appointments 
+      WHERE tenant_id = $1 AND REPLACE(whatsapp, '+', '') LIKE '%' || $2 || '%' 
+        AND status IN ('scheduled', 'confirmed', 'pending')
+      ORDER BY date ASC, time ASC
+      LIMIT 1
+    `, [tenantId, clean.slice(-8)]);
+    if (!res.rows[0]) {
+      console.log(`[CancelBooking] No active appointment found for phone ${phone}`);
+      return null;
+    }
+    const appt = res.rows[0];
+    const updated = await updateAppointment(appt.id, tenantId, { status: "cancelled" });
+    console.log(`[CancelBooking] Successfully cancelled appointment ${appt.id} for ${appt.name}`);
+    return updated;
+  } catch (error) {
+    console.error("Error cancelling booking from WhatsApp:", error);
+    return null;
+  }
+}
+async function rescheduleBookingFromWhatsApp(tenantId, phone, rescheduleData) {
+  try {
+    const clean = phone.replace(/\D/g, "");
+    const res = await query(`
+      SELECT * FROM appointments 
+      WHERE tenant_id = $1 AND REPLACE(whatsapp, '+', '') LIKE '%' || $2 || '%' 
+        AND status IN ('scheduled', 'confirmed', 'pending')
+      ORDER BY date ASC, time ASC
+      LIMIT 1
+    `, [tenantId, clean.slice(-8)]);
+    if (!res.rows[0]) {
+      console.log(`[RescheduleBooking] No active appointment found for phone ${phone}`);
+      return null;
+    }
+    const appt = res.rows[0];
+    const updated = await updateAppointment(appt.id, tenantId, {
+      date: rescheduleData.newDate || appt.date,
+      time: rescheduleData.newTime || appt.time,
+      status: "scheduled"
+    });
+    console.log(`[RescheduleBooking] Successfully moved appointment ${appt.id} to ${rescheduleData.newDate} ${rescheduleData.newTime}`);
+    return updated;
+  } catch (error) {
+    console.error("Error rescheduling booking from WhatsApp:", error);
+    return null;
   }
 }
 
@@ -3832,6 +3942,26 @@ async function processNextInQueue() {
         await createOrderFromWhatsApp(msg.tenantId, { ...aiResult.orderData, customerPhone: aiResult.orderData.customerPhone || msg.cleanPhone, customerName: aiResult.orderData.customerName || msg.pushName });
       } catch (err) {
         console.error("[Queue] Failed to process order:", err);
+      }
+    }
+    if (aiResult.isCancelBookingDetected) {
+      try {
+        const cancelled = await cancelBookingFromWhatsApp(msg.tenantId, msg.cleanPhone, aiResult.cancelBookingData);
+        if (cancelled && io) {
+          io.to(`tenant_${msg.tenantId}`).emit("appointment:updated", cancelled);
+        }
+      } catch (err) {
+        console.error("[Queue] Failed to process cancel booking:", err);
+      }
+    }
+    if (aiResult.isRescheduleBookingDetected && aiResult.rescheduleBookingData) {
+      try {
+        const rescheduled = await rescheduleBookingFromWhatsApp(msg.tenantId, msg.cleanPhone, aiResult.rescheduleBookingData);
+        if (rescheduled && io) {
+          io.to(`tenant_${msg.tenantId}`).emit("appointment:updated", rescheduled);
+        }
+      } catch (err) {
+        console.error("[Queue] Failed to process reschedule booking:", err);
       }
     }
     await markDone(msg.id, aiResult.replyText);
@@ -5193,6 +5323,19 @@ router5.get("/public/:slug/available-slots", async (req, res) => {
     }
     const schedule = await getScheduleSettings(tenant.id);
     const dateStr = String(date);
+    const nowCR = new Date((/* @__PURE__ */ new Date()).toLocaleString("en-US", { timeZone: "America/Costa_Rica" }));
+    const todayCR = `${nowCR.getFullYear()}-${String(nowCR.getMonth() + 1).padStart(2, "0")}-${String(nowCR.getDate()).padStart(2, "0")}`;
+    const currentMinutesNow = nowCR.getHours() * 60 + nowCR.getMinutes();
+    if (dateStr < todayCR) {
+      res.json({
+        date: dateStr,
+        availableSlots: [],
+        maxParallelSlots: 0,
+        totalAvailable: 0,
+        message: "No es posible reservar en fechas pasadas"
+      });
+      return;
+    }
     if (schedule?.vacationConfig?.enabled) {
       const v = schedule.vacationConfig;
       if (v.startDate && v.endDate && dateStr >= v.startDate && dateStr <= v.endDate) {
@@ -5286,7 +5429,16 @@ router5.get("/public/:slug/available-slots", async (req, res) => {
     for (const row of activeAppts.rows) {
       timeCountMap[row.time] = (timeCountMap[row.time] || 0) + 1;
     }
-    const availableSlots = candidateSlots.filter((t) => (timeCountMap[t] || 0) < maxParallelSlots);
+    const isToday = dateStr === todayCR;
+    const availableSlots = candidateSlots.filter((t) => {
+      if (isToday) {
+        const [sh, sm] = t.split(":").map(Number);
+        if (sh * 60 + sm <= currentMinutesNow) {
+          return false;
+        }
+      }
+      return (timeCountMap[t] || 0) < maxParallelSlots;
+    });
     res.json({
       date: dateStr,
       availableSlots,
@@ -5331,7 +5483,7 @@ router5.post("/public/:slug/book", async (req, res) => {
       date,
       time,
       amount: finalAmount,
-      status: "confirmed",
+      status: "scheduled",
       details: combinedDetails,
       vehicleModel: vehicleModel || "",
       selectedVariables: req.body.selectedVariables
@@ -5341,17 +5493,18 @@ router5.post("/public/:slug/book", async (req, res) => {
     }
     const cleanCustomerPhone = customerPhone.replace(/\D/g, "");
     if (tenant.evolutionInstance && cleanCustomerPhone) {
-      const confirmMsg = `\u{1F4C5} *\xA1Cita Confirmada con \xC9xito!*
+      const confirmMsg = `\u{1F4C5} *\xA1Cita Programada con \xC9xito!*
 
-Hola *${customerName}*, tu cita para *${serviceName}* ha quedado agendada en *${tenant.name}*.
+Hola *${customerName}*, tu cita para *${serviceName}* ha quedado programada en *${tenant.name}*.
 
 \u{1F5D3}\uFE0F *Fecha:* ${date}
 \u23F0 *Hora:* ${time}
 \u{1F4B0} *Valor:* \u20A1${amount.toLocaleString("es-CR")}
-${vehicleModel ? `\u{1F697} *Veh\xEDculo / Detalle:* ${vehicleModel}` : ""}
-${combinedDetails ? `\u{1F4DD} *Informaci\xF3n:* ${combinedDetails}` : ""}
-
-\u{1F449} _Te enviaremos un recordatorio antes de tu cita. Si necesitas reprogramar, por favor responde a este mensaje._ \xA1Te esperamos!`;
+\u{1F4CC} *Estado:* \u{1F552} Programada
+${vehicleModel ? `\u{1F697} *Veh\xEDculo / Detalle:* ${vehicleModel}
+` : ""}${combinedDetails ? `\u{1F4DD} *Informaci\xF3n:* ${combinedDetails}
+` : ""}
+\u{1F449} _Te enviaremos la confirmaci\xF3n oficial antes de tu cita. Si necesitas cancelar o reprogramar, solo responde a este mensaje._ \xA1Te esperamos!`;
       try {
         await sendMessage(tenant.evolutionInstance, cleanCustomerPhone, confirmMsg);
       } catch (err) {
@@ -5432,7 +5585,7 @@ router5.put("/:id/status", async (req, res) => {
     const updated = await updateAppointmentStatus(req.params.id, req.tenantId, status);
     const tenant = await getTenantById(req.tenantId);
     if (notifyCustomer && updated?.whatsapp && tenant?.evolutionInstance) {
-      let statusText = status === "confirmed" ? "\u2705 Confirmada" : status === "completed" ? "\u{1F389} Completada" : status === "cancelled" ? "\u274C Cancelada" : status;
+      let statusText = status === "confirmed" ? "\u2705 Confirmada" : status === "scheduled" ? "\u{1F552} Programada" : status === "completed" ? "\u{1F389} Completada" : status === "cancelled" ? "\u274C Cancelada" : status;
       const msg = `*Actualizaci\xF3n de Cita en ${tenant.name}*
 
 Hola *${updated.name}*, el estado de tu cita para *${updated.service}* (${updated.date} a las ${updated.time}) ha sido actualizado a: *${statusText}*.`;
@@ -9486,6 +9639,12 @@ async function joinMatch(id, teamBData) {
   return booking;
 }
 async function getAvailableSlots(tenantId, courtId, date) {
+  const nowCR = new Date((/* @__PURE__ */ new Date()).toLocaleString("en-US", { timeZone: "America/Costa_Rica" }));
+  const todayCR = `${nowCR.getFullYear()}-${String(nowCR.getMonth() + 1).padStart(2, "0")}-${String(nowCR.getDate()).padStart(2, "0")}`;
+  const currentMinutesNow = nowCR.getHours() * 60 + nowCR.getMinutes();
+  if (date < todayCR) {
+    return [];
+  }
   const tRes = await query("SELECT settings_json FROM tenants WHERE id = $1", [tenantId]);
   const settingsJson = tRes.rows[0]?.settings_json || {};
   const scheduleSettings = settingsJson.scheduleSettings || { startHour: 8, endHour: 22, slotMinutes: 60 };
@@ -9510,7 +9669,16 @@ async function getAvailableSlots(tenantId, courtId, date) {
   const bookedTimes = bookingsRes.rows.map((r) => {
     return typeof r.time === "string" ? r.time : r.time.toString();
   });
-  return slots.filter((slot) => !bookedTimes.includes(slot));
+  const isToday = date === todayCR;
+  return slots.filter((slot) => {
+    if (isToday) {
+      const [sh, sm] = slot.split(":").map(Number);
+      if (sh * 60 + sm <= currentMinutesNow) {
+        return false;
+      }
+    }
+    return !bookedTimes.includes(slot);
+  });
 }
 
 // src/server/routes/courts.routes.ts

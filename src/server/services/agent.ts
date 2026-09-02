@@ -7,6 +7,7 @@ import { getTenantById } from '../db/tenant.repo.js';
 import { getStoreSettings } from '../db/store-settings.repo.js';
 import { getScheduleSettings } from '../db/schedule.repo.js';
 import { getTenantCurrentMonthUsage, incrementTenantUsage } from '../db/ai-usage.repo.js';
+import { query } from '../db/pool.js';
 
 export interface AgentProcessResult {
   replyText: string;
@@ -18,6 +19,10 @@ export interface AgentProcessResult {
   handoffReason?: string;
   isMediaDetected?: boolean;
   mediaData?: { mediaUrl: string; caption?: string };
+  isCancelBookingDetected?: boolean;
+  cancelBookingData?: any;
+  isRescheduleBookingDetected?: boolean;
+  rescheduleBookingData?: any;
   tokensUsed?: number;
 }
 
@@ -125,7 +130,27 @@ export async function processWhatsAppMessageWithAI(
       }).join('\n') + '\n';
     }
   }
-  // 3. BUILD OPTIMIZED SINGLE PROMPT (with strong guardrails for 8B model)
+  // 3. FETCH ACTIVE BOOKINGS FOR THIS CUSTOMER
+  let activeCustomerBookingsText = '';
+  try {
+    const cleanPhone = senderPhone.replace(/\D/g, '');
+    const activeAppts = await query(`
+      SELECT service, date, time, status 
+      FROM appointments 
+      WHERE tenant_id = $1 AND REPLACE(whatsapp, '+', '') LIKE '%' || $2 || '%' 
+        AND status IN ('scheduled', 'confirmed', 'pending')
+      ORDER BY date ASC, time ASC
+      LIMIT 3
+    `, [tenantId, cleanPhone.slice(-8)]);
+
+    if (activeAppts.rows.length > 0) {
+      activeCustomerBookingsText = '\nCITAS ACTIVAS DE ESTE CLIENTE:\n' + activeAppts.rows.map((a: any) => 
+        `- ${a.service} para el ${a.date} a las ${a.time} (Estado: ${a.status === 'confirmed' ? 'Confirmada' : 'Programada'})`
+      ).join('\n') + '\n';
+    }
+  } catch (e) {}
+
+  // 4. BUILD OPTIMIZED SINGLE PROMPT (with strong guardrails for 8B model)
   let prompt = `Eres el asistente virtual de *${tenant?.name || 'nuestro negocio'}* en WhatsApp.
 IDIOMA: Responde SIEMPRE en español de Costa Rica. NUNCA en otro idioma.
 ${agentConfig?.systemPrompt || 'Atiende amablemente a los clientes.'}
@@ -133,7 +158,7 @@ ${agentConfig?.systemPrompt || 'Atiende amablemente a los clientes.'}
 Datos del negocio:
 ${crTime}
 ${(agentConfig?.showBookingLink !== false && bookingUrl) ? `Reservas online: ${bookingUrl}` : ''}${(agentConfig?.showStoreLink !== false && storeUrl) ? ` | Tienda online: ${storeUrl}` : ''}
-${scheduleInfo}${paymentInfo}${relevantServicesText}${relevantProductsText}
+${scheduleInfo}${paymentInfo}${relevantServicesText}${relevantProductsText}${activeCustomerBookingsText}
 REGLAS OBLIGATORIAS:
 1. Responde SOLO en español. Nunca portugués, inglés ni otro idioma.
 2. Usa el nombre EXACTO del cliente como aparece abajo. No lo modifiques ni abrevies.
@@ -142,9 +167,15 @@ REGLAS OBLIGATORIAS:
 5. NUNCA inventes URLs, links, procesos, pasos ni información que no esté en los datos.
 6. Si hay historial de conversación, no repitas el saludo. Continúa la conversación naturalmente.
 7. Para pagos SINPE/Transferencia, da los datos de pago del negocio y pide el comprobante.
+8. GESTIÓN DE CITAS:
+- Para AGENDAR: Cuando el cliente elija servicio, fecha y hora, añade <<<COMMAND_BOOKING: {"service":"nombre","date":"YYYY-MM-DD","time":"HH:MM","customerName":"${senderName}"}>>>.
+- Para CANCELAR: Si el cliente pide cancelar una cita activa, SIEMPRE pregúntale primero para confirmar: "¿Estás seguro de que deseas cancelar tu cita de [Servicio] para el [Fecha] a las [Hora]?". SOLO si el cliente responde confirmando ("sí", "confirmo", "correcto", "cancélala"), añade <<<COMMAND_CANCEL_BOOKING: {"date":"YYYY-MM-DD", "reason":"solicitado por cliente"}>>>.
+- Para REAGENDAR: Ofrécele los horarios libres disponibles y cuando confirme la nueva fecha y hora, añade <<<COMMAND_RESCHEDULE_BOOKING: {"newDate":"YYYY-MM-DD", "newTime":"HH:MM"}>>>.
 
-Acciones (añade al final SOLO cuando el cliente confirme explícitamente):
+Acciones (añade al final SOLO cuando corresponda):
 Cita: <<<COMMAND_BOOKING: {"service":"nombre","date":"YYYY-MM-DD","time":"HH:MM","customerName":"${senderName}"}>>>
+Cancelar: <<<COMMAND_CANCEL_BOOKING: {"date":"YYYY-MM-DD","reason":"motivo"}>>>
+Reagendar: <<<COMMAND_RESCHEDULE_BOOKING: {"newDate":"YYYY-MM-DD","newTime":"HH:MM"}>>>
 Compra: <<<COMMAND_ORDER: {"items":[{"productName":"nombre","quantity":1}]}>>>
 Foto: <<<COMMAND_SEND_MEDIA: {"mediaUrl":"URL","caption":"desc"}>>>
 Humano: <<<COMMAND_HANDOFF: {"reason":"motivo"}>>>
@@ -207,11 +238,17 @@ Asistente:`;
   let handoffReason;
   let isMediaDetected = false;
   let mediaData;
+  let isCancelBookingDetected = false;
+  let cancelBookingData;
+  let isRescheduleBookingDetected = false;
+  let rescheduleBookingData;
 
   const bookingRegex = /<<<COMMAND_BOOKING:\s*({.*?})>>>/s;
   const orderRegex = /<<<COMMAND_ORDER:\s*({.*?})>>>/s;
   const handoffRegex = /<<<COMMAND_HANDOFF:\s*({.*?})>>>/s;
   const mediaRegex = /<<<COMMAND_SEND_MEDIA:\s*({.*?})>>>/s;
+  const cancelRegex = /<<<COMMAND_CANCEL_BOOKING:\s*({.*?})>>>/s;
+  const rescheduleRegex = /<<<COMMAND_RESCHEDULE_BOOKING:\s*({.*?})>>>/s;
 
   const bookingMatch = replyText.match(bookingRegex);
   if (bookingMatch && bookingMatch[1]) {
@@ -220,6 +257,25 @@ Asistente:`;
       if (parsed && parsed.service && (parsed.date || parsed.time)) {
         isBookingDetected = true;
         bookingData = parsed;
+      }
+    } catch (e) {}
+  }
+
+  const cancelMatch = replyText.match(cancelRegex);
+  if (cancelMatch && cancelMatch[1]) {
+    try {
+      isCancelBookingDetected = true;
+      cancelBookingData = JSON.parse(cancelMatch[1]);
+    } catch (e) {}
+  }
+
+  const rescheduleMatch = replyText.match(rescheduleRegex);
+  if (rescheduleMatch && rescheduleMatch[1]) {
+    try {
+      const parsed = JSON.parse(rescheduleMatch[1]);
+      if (parsed && (parsed.newDate || parsed.newTime)) {
+        isRescheduleBookingDetected = true;
+        rescheduleBookingData = parsed;
       }
     } catch (e) {}
   }
@@ -255,6 +311,8 @@ Asistente:`;
     .replace(orderRegex, '')
     .replace(handoffRegex, '')
     .replace(mediaRegex, '')
+    .replace(cancelRegex, '')
+    .replace(rescheduleRegex, '')
     .replace(/\*\*/g, '*')
     .trim();
 
@@ -268,6 +326,10 @@ Asistente:`;
     handoffReason,
     isMediaDetected,
     mediaData,
+    isCancelBookingDetected,
+    cancelBookingData,
+    isRescheduleBookingDetected,
+    rescheduleBookingData,
     tokensUsed: aiResult.tokensUsed
   };
 }
