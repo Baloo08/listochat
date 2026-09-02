@@ -75,7 +75,8 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
       const fetchSlots = async () => {
         try {
           const slots = await api.get(`/api/courts/public/${slug}/available-slots?courtId=${selectedCourt.id}&date=${selectedDate}`);
-          setAvailableSlots(slots || []);
+          const parsed = Array.isArray(slots) ? slots : (slots?.availableSlots || []);
+          setAvailableSlots(parsed);
         } catch (error) {
           console.error(error);
           setAvailableSlots([]);

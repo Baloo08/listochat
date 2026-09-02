@@ -9506,7 +9506,7 @@ router28.get("/public/:slug/available-slots", async (req, res) => {
     const tenant = await getTenantBySlug(req.params.slug);
     if (!tenant) return res.status(404).json({ error: "Negocio no encontrado" });
     const slots = await getAvailableSlots(tenant.id, String(courtId), String(date));
-    res.json({ availableSlots: slots });
+    res.json(slots);
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Error al obtener espacios" });
