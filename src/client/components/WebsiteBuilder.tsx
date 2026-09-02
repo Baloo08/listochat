@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApi } from '../hooks/useApi';
+import { loadGoogleFont, getFontFamilyCss, CURATED_FONTS } from '../utils/fontLoader';
 import {
   Globe,
   Palette,
@@ -188,6 +189,10 @@ export default function WebsiteBuilder() {
   useEffect(() => {
     loadWebsiteSettings();
   }, []);
+
+  useEffect(() => {
+    loadGoogleFont(formData.fontFamily);
+  }, [formData.fontFamily]);
 
   const loadWebsiteSettings = async () => {
     try {
@@ -1274,14 +1279,13 @@ export default function WebsiteBuilder() {
               <select
                 value={formData.fontFamily}
                 onChange={e => setFormData({ ...formData, fontFamily: e.target.value })}
-                style={{ width: '100%', maxWidth: '300px', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.9rem' }}
+                style={{ width: '100%', maxWidth: '350px', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.9rem', backgroundColor: 'white', fontFamily: getFontFamilyCss(formData.fontFamily) }}
               >
-                <option value="Inter">Inter (Moderna y Limpia)</option>
-                <option value="'Plus Jakarta Sans', sans-serif">Plus Jakarta Sans (Tecnológica y Elegante)</option>
-                <option value="Poppins, sans-serif">Poppins (Geométrica y Amigable)</option>
-                <option value="Roboto, sans-serif">Roboto (Clásica y Legible)</option>
-                <option value="'Playfair Display', serif">Playfair Display (Premium / Sofisticada)</option>
-                <option value="Outfit, sans-serif">Outfit (Minimalista)</option>
+                {CURATED_FONTS.map(f => (
+                  <option key={f.name} value={f.name} style={{ fontFamily: `'${f.name}', sans-serif`, padding: '6px' }}>
+                    {f.name} — {f.description} ({f.category === 'serif' ? 'Serif' : 'Sans-Serif'})
+                  </option>
+                ))}
               </select>
             </div>
 

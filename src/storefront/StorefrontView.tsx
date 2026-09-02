@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { Product, StoreSettings, DeliveryConfig, CustomVariable, CustomVariableOption } from '../shared/types';
 import { getCRProvincias, getCRCantones, getCRDistritos } from '../shared/costaRicaDivisions';
+import { loadGoogleFont, getFontFamilyCss } from '../client/utils/fontLoader';
 
 interface StorefrontProps {
   slug: string;
@@ -157,6 +158,13 @@ export default function StorefrontView({ slug }: StorefrontProps) {
         }
         const data = await res.json();
         setStore(data);
+        if (data.acceptSinpe === false) {
+          if (data.acceptTransfer !== false) {
+            setPaymentMethod('transfer');
+          } else if (data.acceptCashOnDelivery !== false) {
+            setPaymentMethod('cash');
+          }
+        }
 
         // Fetch products
         const prodRes = await fetch(`/api/storefront/${slug}/products`);
@@ -193,11 +201,7 @@ export default function StorefrontView({ slug }: StorefrontProps) {
   // Load custom Google Font dynamically
   useEffect(() => {
     if (store?.storeTheme?.fontFamily) {
-      const font = store.storeTheme.fontFamily;
-      const link = document.createElement('link');
-      link.href = `https://fonts.googleapis.com/css2?family=${font.replace(/\s+/g, '+')}:wght@300;400;500;600;700;800&display=swap`;
-      link.rel = 'stylesheet';
-      document.head.appendChild(link);
+      loadGoogleFont(store.storeTheme.fontFamily);
     }
   }, [store?.storeTheme?.fontFamily]);
 
@@ -472,7 +476,7 @@ export default function StorefrontView({ slug }: StorefrontProps) {
   const primaryColor = store?.storeTheme?.primaryColor || '#16a34a';
   const bgColor = store?.storeTheme?.backgroundColor || '#f8fafc';
   const cardBg = store?.storeTheme?.cardBackgroundColor || '#ffffff';
-  const fontFamily = store?.storeTheme?.fontFamily || 'Inter, sans-serif';
+  const fontFamily = getFontFamilyCss(store?.storeTheme?.fontFamily);
   // Normalización Universal de Códigos Hexadecimales
   const normalizeHex = (hex?: string): string => {
     if (!hex) return '#ffffff';

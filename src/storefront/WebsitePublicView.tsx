@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { loadGoogleFont, getFontFamilyCss } from '../client/utils/fontLoader';
 import {
   ShoppingBag,
   Calendar,
@@ -128,9 +129,15 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
     );
   };
 
+  useEffect(() => {
+    if (data?.website?.fontFamily) {
+      loadGoogleFont(data.website.fontFamily);
+    }
+  }, [data?.website?.fontFamily]);
+
   const primaryColor = website.primaryColor || '#2563eb';
   const accentColor = website.accentColor || '#f59e0b';
-  const fontFamily = website.fontFamily || 'Inter';
+  const fontFamily = getFontFamilyCss(website.fontFamily);
 
   // Button Shape & Hover Styles
   const buttonStyle = website.buttonStyle || 'rounded';

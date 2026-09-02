@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Store, Palette, Link as LinkIcon, Copy, ExternalLink, Save, CheckCircle, 
+  Store, CreditCard, Palette, Link as LinkIcon, Copy, ExternalLink, Save, CheckCircle, 
   Upload, Image as ImageIcon, Sparkles, Pipette, Info, Utensils, ShoppingBag, 
   Truck, MapPin, Package, Navigation, Users, Plus, Trash2, Phone, Bike, 
   MessageSquare, Key, HelpCircle, Edit, Send, Clock, ToggleLeft, ToggleRight, 
   Eye, Check, ShieldCheck, Box, Sliders
 } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
+import { loadGoogleFont, getFontFamilyCss, CURATED_FONTS } from '../utils/fontLoader';
 import { 
   StoreSettings as StoreSettingsType, StoreTheme, RestaurantConfig, 
   DeliveryConfig, DeliveryDriver, NotificationTemplates, CorreosCrConfig, 
@@ -20,6 +21,10 @@ export default function StoreSettings() {
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
   const [saveMessage, setSaveMessage] = useState(false);
+
+  useEffect(() => {
+    loadGoogleFont(fontFamily);
+  }, [fontFamily]);
 
   // General & Modules Form Fields
   const [storeEnabled, setStoreEnabled] = useState(true);
@@ -892,6 +897,180 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
               </div>
             </div>
           </div>
+
+          {/* Métodos de Pago del Negocio */}
+          <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+              <CreditCard size={20} color="var(--primary)" />
+              <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 'bold' }}>Métodos de Pago Aceptados en Tienda</h3>
+            </div>
+            <p style={{ margin: '0 0 20px 0', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+              Activa o desactiva qué opciones de pago verá tu cliente en el checkout de la tienda virtual y completa los datos requeridos.
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              
+              {/* Selector de Moneda */}
+              <div style={{ padding: '14px 16px', backgroundColor: 'var(--bg-elevated, #f8fafc)', borderRadius: '8px', border: '1px solid var(--border, #e2e8f0)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
+                <div>
+                  <strong style={{ fontSize: '0.9rem', display: 'block', color: 'var(--text)' }}>Moneda Principal de la Tienda</strong>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Símbolo monetario usado en el catálogo y los pedidos</span>
+                </div>
+                <select
+                  value={currency}
+                  onChange={(e) => setCurrency(e.target.value)}
+                  style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border, #cbd5e1)', backgroundColor: 'white', fontWeight: 'bold', fontSize: '0.9rem', cursor: 'pointer' }}
+                >
+                  <option value="CRC">₡ Colones Costarricenses (CRC)</option>
+                  <option value="USD">$ Dólares Americanos (USD)</option>
+                </select>
+              </div>
+
+              {/* 1. SINPE Móvil */}
+              <div style={{
+                padding: '16px', borderRadius: '10px',
+                border: `2px solid ${acceptSinpe ? 'var(--primary)' : 'var(--border, #e2e8f0)'}`,
+                backgroundColor: acceptSinpe ? 'rgba(22, 163, 74, 0.04)' : 'var(--bg-elevated, #f8fafc)',
+                transition: 'all 0.15s ease'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: acceptSinpe ? '14px' : 0 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', margin: 0 }}>
+                    <input
+                      type="checkbox"
+                      checked={acceptSinpe}
+                      onChange={(e) => setAcceptSinpe(e.target.checked)}
+                      style={{ width: '18px', height: '18px', accentColor: 'var(--primary)', cursor: 'pointer' }}
+                    />
+                    <div>
+                      <strong style={{ fontSize: '0.95rem', color: 'var(--text)', display: 'block' }}>
+                        📱 SINPE Móvil
+                      </strong>
+                      <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                        Transferencias directas por número de teléfono
+                      </span>
+                    </div>
+                  </label>
+                  <span style={{
+                    fontSize: '0.75rem', fontWeight: 'bold', padding: '3px 8px', borderRadius: '6px',
+                    backgroundColor: acceptSinpe ? '#dcfce7' : '#f1f5f9',
+                    color: acceptSinpe ? '#15803d' : '#64748b'
+                  }}>
+                    {acceptSinpe ? 'Habilitado' : 'Deshabilitado'}
+                  </span>
+                </div>
+
+                {acceptSinpe && (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', paddingTop: '12px', borderTop: '1px dashed var(--border, #cbd5e1)' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>Número de Teléfono SINPE</label>
+                      <input
+                        type="text"
+                        value={sinpePhone}
+                        onChange={(e) => setSinpePhone(e.target.value)}
+                        placeholder="Ej: 8888-8888 o 50688888888"
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border, #cbd5e1)', fontSize: '0.85rem', boxSizing: 'border-box' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>Nombre del Titular de la Cuenta</label>
+                      <input
+                        type="text"
+                        value={sinpeName}
+                        onChange={(e) => setSinpeName(e.target.value)}
+                        placeholder="Ej: Juan Pérez o Mi Empresa S.A."
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border, #cbd5e1)', fontSize: '0.85rem', boxSizing: 'border-box' }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 2. Transferencia Bancaria */}
+              <div style={{
+                padding: '16px', borderRadius: '10px',
+                border: `2px solid ${acceptTransfer ? '#2563eb' : 'var(--border, #e2e8f0)'}`,
+                backgroundColor: acceptTransfer ? 'rgba(37, 99, 235, 0.04)' : 'var(--bg-elevated, #f8fafc)',
+                transition: 'all 0.15s ease'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: acceptTransfer ? '14px' : 0 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', margin: 0 }}>
+                    <input
+                      type="checkbox"
+                      checked={acceptTransfer}
+                      onChange={(e) => setAcceptTransfer(e.target.checked)}
+                      style={{ width: '18px', height: '18px', accentColor: '#2563eb', cursor: 'pointer' }}
+                    />
+                    <div>
+                      <strong style={{ fontSize: '0.95rem', color: 'var(--text)', display: 'block' }}>
+                        🏦 Transferencia Bancaria (IBAN / Cuentas)
+                      </strong>
+                      <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                        Depósito o transferencia a cuentas bancarias nacionales o internacionales
+                      </span>
+                    </div>
+                  </label>
+                  <span style={{
+                    fontSize: '0.75rem', fontWeight: 'bold', padding: '3px 8px', borderRadius: '6px',
+                    backgroundColor: acceptTransfer ? '#dbeafe' : '#f1f5f9',
+                    color: acceptTransfer ? '#1d4ed8' : '#64748b'
+                  }}>
+                    {acceptTransfer ? 'Habilitado' : 'Deshabilitado'}
+                  </span>
+                </div>
+
+                {acceptTransfer && (
+                  <div style={{ paddingTop: '12px', borderTop: '1px dashed var(--border, #cbd5e1)' }}>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>
+                      Datos de Cuentas Bancarias / Instrucciones de Transferencia
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={bankAccountInfo}
+                      onChange={(e) => setBankAccountInfo(e.target.value)}
+                      placeholder="Ej: BAC Credomatic - IBAN: CR05010200009999999999 (Colones)&#10;Banco Nacional - IBAN: CR15015100008888888888 (Dólares)&#10;Cédula Jurídica: 3-101-XXXXXX"
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border, #cbd5e1)', fontSize: '0.85rem', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* 3. Efectivo / Pago al Recibir */}
+              <div style={{
+                padding: '16px', borderRadius: '10px',
+                border: `2px solid ${acceptCashOnDelivery ? '#ea580c' : 'var(--border, #e2e8f0)'}`,
+                backgroundColor: acceptCashOnDelivery ? 'rgba(234, 88, 12, 0.04)' : 'var(--bg-elevated, #f8fafc)',
+                transition: 'all 0.15s ease'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', margin: 0 }}>
+                    <input
+                      type="checkbox"
+                      checked={acceptCashOnDelivery}
+                      onChange={(e) => setAcceptCashOnDelivery(e.target.checked)}
+                      style={{ width: '18px', height: '18px', accentColor: '#ea580c', cursor: 'pointer' }}
+                    />
+                    <div>
+                      <strong style={{ fontSize: '0.95rem', color: 'var(--text)', display: 'block' }}>
+                        💵 Efectivo / Pago al Recibir
+                      </strong>
+                      <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                        Permite a los clientes abonar en efectivo al momento de la entrega o al retirar en local
+                      </span>
+                    </div>
+                  </label>
+                  <span style={{
+                    fontSize: '0.75rem', fontWeight: 'bold', padding: '3px 8px', borderRadius: '6px',
+                    backgroundColor: acceptCashOnDelivery ? '#ffedd5' : '#f1f5f9',
+                    color: acceptCashOnDelivery ? '#c2410c' : '#64748b'
+                  }}>
+                    {acceptCashOnDelivery ? 'Habilitado' : 'Deshabilitado'}
+                  </span>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
         </div>
       )}
 
@@ -1888,15 +2067,13 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
                 <select
                   value={fontFamily}
                   onChange={(e) => setFontFamily(e.target.value)}
-                  style={{ width: '100%', padding: '9px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.9rem', backgroundColor: 'white' }}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.9rem', backgroundColor: 'white', fontFamily: getFontFamilyCss(fontFamily) }}
                 >
-                  <option value="Inter">Inter (Moderna, Limpia, Legible)</option>
-                  <option value="Poppins">Poppins (Geométrica, Dinámica)</option>
-                  <option value="Montserrat">Montserrat (Elegante, Negocios)</option>
-                  <option value="Roboto">Roboto (Clásica, Estructurada)</option>
-                  <option value="Playfair Display">Playfair Display (Premium, Gourmet)</option>
-                  <option value="Outfit">Outfit (Moderna & Minimalista)</option>
-                  <option value="Plus Jakarta Sans">Plus Jakarta Sans (Tech & SaaS)</option>
+                  {CURATED_FONTS.map(f => (
+                    <option key={f.name} value={f.name} style={{ fontFamily: `'${f.name}', sans-serif`, padding: '6px' }}>
+                      {f.name} — {f.description} ({f.category === 'serif' ? 'Serif' : 'Sans-Serif'})
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -2085,7 +2262,7 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
 
               <div
                 style={{
-                  fontFamily: fontFamily,
+                  fontFamily: getFontFamilyCss(fontFamily),
                   backgroundColor: cardBackgroundColor,
                   borderRadius: radiusValue,
                   boxShadow: shadowValue,
