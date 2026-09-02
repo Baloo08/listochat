@@ -139,6 +139,7 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
 
   const storeUrl = `/tienda/${tenant.slug}`;
   const bookingUrl = `/reservas/${tenant.slug}`;
+  const courtsUrl = `/canchas/${tenant.slug}`;
   const cleanPhone = (tenant.whatsappNumber || website.contactPhone || '').replace(/\D/g, '');
   const waUrl = cleanPhone ? `https://wa.me/${cleanPhone}?text=Hola%2C%20estoy%20visitando%20su%20sitio%20web%20y%20tengo%20una%20consulta` : '#';
 
@@ -291,6 +292,24 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
                 <span>{website.bookingButtonText || 'Citas'}</span>
               </a>
             )}
+
+            {website.showCourtsButton && (
+              <a
+                href={courtsUrl}
+                className={buttonHoverEffect ? 'btn-interactive' : ''}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: '6px',
+                  padding: '9px 16px', borderRadius: btnRadius,
+                  backgroundColor: '#ffffff', color: '#16a34a',
+                  border: '1.5px solid #16a34a',
+                  textDecoration: 'none', fontWeight: '700', fontSize: '0.85rem',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+                <span>{website.courtsButtonText || 'Reservar Cancha'}</span>
+              </a>
+            )}
           </div>
 
           {/* BOTÓN HAMBURGUESA PARA MÓVIL */}
@@ -400,6 +419,22 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
                 </a>
               )}
 
+              {website.showCourtsButton && (
+                <a
+                  href={courtsUrl}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                    padding: '12px', borderRadius: btnRadius,
+                    backgroundColor: '#ffffff', color: '#16a34a',
+                    border: '1.5px solid #16a34a',
+                    textDecoration: 'none', fontWeight: '800', fontSize: '0.95rem'
+                  }}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+                  <span>{website.courtsButtonText || 'Reservar Cancha'}</span>
+                </a>
+              )}
+
               {website.showWhatsappButton !== false && cleanPhone && (
                 <a
                   href={waUrl}
@@ -498,6 +533,24 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
                   >
                     <Calendar size={18} color={primaryColor} />
                     <span>{website.bookingButtonText || 'Agendar Cita en Línea'}</span>
+                  </a>
+                )}
+
+                {website.showCourtsButton && (
+                  <a
+                    href={courtsUrl}
+                    className={buttonHoverEffect ? 'btn-interactive' : ''}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '8px',
+                      padding: '13px 24px', borderRadius: btnRadius,
+                      backgroundColor: '#ffffff', color: '#16a34a',
+                      border: '1.5px solid #16a34a',
+                      textDecoration: 'none', fontWeight: '800', fontSize: '0.95rem',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+                    <span>{website.courtsButtonText || 'Reservar Cancha'}</span>
                   </a>
                 )}
 
@@ -614,6 +667,24 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
                 >
                   <Calendar size={20} color={primaryColor} />
                   <span>{website.bookingButtonText || 'Agendar Cita en Línea'}</span>
+                </a>
+              )}
+
+              {website.showCourtsButton && (
+                <a
+                  href={courtsUrl}
+                  className={buttonHoverEffect ? 'btn-interactive' : ''}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: '8px',
+                    padding: '14px 28px', borderRadius: btnRadius,
+                    backgroundColor: '#ffffff', color: '#16a34a',
+                    textDecoration: 'none', fontWeight: '800', fontSize: '1rem',
+                    boxShadow: '0 8px 24px rgba(0, 0, 0, 0.2)',
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+                  <span>{website.courtsButtonText || 'Reservar Cancha'}</span>
                 </a>
               )}
 
@@ -1276,6 +1347,9 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
                 )}
                 {website.showBookingButton && (
                   <a href={bookingUrl} style={{ color: '#94a3b8', textDecoration: 'none', transition: 'color 0.2s' }}>Agendar Cita en Línea</a>
+                )}
+                {website.showCourtsButton && (
+                  <a href={courtsUrl} style={{ color: '#94a3b8', textDecoration: 'none', transition: 'color 0.2s' }}>{website.courtsButtonText || 'Reservar Cancha'}</a>
                 )}
                 {website.showAboutSection !== false && (
                   <a onClick={() => scrollTo('nosotros')} style={{ color: '#94a3b8', cursor: 'pointer', transition: 'color 0.2s' }}>Sobre Nosotros</a>

@@ -90,8 +90,10 @@ interface WebsiteConfig {
   buttonTextColor: string;
   showStoreButton: boolean;
   showBookingButton: boolean;
+  showCourtsButton: boolean;
   storeButtonText: string;
   bookingButtonText: string;
+  courtsButtonText: string;
   showWhatsappButton: boolean;
   whatsappButtonText: string;
   headerLayout: 'split' | 'overlay' | 'banner_top';
@@ -150,8 +152,10 @@ export default function WebsiteBuilder() {
     buttonTextColor: '#ffffff',
     showStoreButton: true,
     showBookingButton: true,
+    showCourtsButton: false,
     storeButtonText: 'Ver Menú y Productos',
     bookingButtonText: 'Agendar Cita en Línea',
+    courtsButtonText: 'Reservar Cancha',
     showWhatsappButton: true,
     whatsappButtonText: 'WhatsApp Directo',
     headerLayout: 'split',
@@ -708,6 +712,30 @@ export default function WebsiteBuilder() {
                     disabled={!formData.showBookingButton}
                     value={formData.bookingButtonText}
                     onChange={e => setFormData({ ...formData, bookingButtonText: e.target.value })}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.82rem', boxSizing: 'border-box' }}
+                  />
+                </div>
+
+                {/* Botón Canchas */}
+                <div style={{ backgroundColor: '#ffffff', padding: '14px', borderRadius: '10px', border: '1px solid #cbd5e1' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '700', fontSize: '0.85rem' }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+                      Botón Canchas / Deportes
+                    </div>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.78rem', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={formData.showCourtsButton}
+                        onChange={e => setFormData({ ...formData, showCourtsButton: e.target.checked })}
+                      /> Activo
+                    </label>
+                  </div>
+                  <input
+                    type="text"
+                    disabled={!formData.showCourtsButton}
+                    value={formData.courtsButtonText}
+                    onChange={e => setFormData({ ...formData, courtsButtonText: e.target.value })}
                     style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.82rem', boxSizing: 'border-box' }}
                   />
                 </div>
