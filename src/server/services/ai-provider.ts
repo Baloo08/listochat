@@ -102,7 +102,17 @@ export async function getMasterAIConfig(): Promise<TenantAIConfig> {
   }
 }
 
-export async function callAI(config: TenantAIConfig, prompt: string): Promise<{ text: string, tokensUsed: number }> {
+export interface StructuredPrompt {
+  system?: string;
+  messages?: Array<{
+    role: 'system' | 'user' | 'assistant';
+    content: string;
+  }>;
+}
+
+export type AIPromptInput = string | StructuredPrompt;
+
+export async function callAI(config: TenantAIConfig, input: AIPromptInput): Promise<{ text: string, tokensUsed: number }> {
   const provider = config.provider || 'gemini';
   const apiKey = config.apiKey || (provider === 'gemini' ? DEFAULT_GEMINI_KEY : '');
   
@@ -129,7 +139,7 @@ export async function callAI(config: TenantAIConfig, prompt: string): Promise<{ 
         model: modelName,
         temperature: config.temperature ?? 0.7,
         baseUrl: config.baseUrl
-      }, prompt);
+      }, input);
     } catch (error) {
       lastError = error;
       console.error(`Error calling AI with model ${modelName} (${provider}):`, error);
@@ -156,7 +166,7 @@ export async function callAI(config: TenantAIConfig, prompt: string): Promise<{ 
         apiKey: masterKey || DEFAULT_GEMINI_KEY,
         model: 'gemini-2.5-flash',
         temperature: 0.7
-      }, prompt);
+      }, input);
     } catch (geminiError) {
       console.error('[AI-Provider] Master Gemini Failover also failed:', geminiError);
     }
@@ -170,7 +180,7 @@ export async function callAI(config: TenantAIConfig, prompt: string): Promise<{ 
   };
 }
 
-async function executeProvider(config: TenantAIConfig, prompt: string) {
+async function executeProvider(config: TenantAIConfig, input: AIPromptInput) {
   let model;
   
   if (config.provider === 'gemini') {
@@ -200,15 +210,34 @@ async function executeProvider(config: TenantAIConfig, prompt: string) {
 
   const t0 = Date.now();
   const generatePromise = (async () => {
-    const { text, usage } = await generateText({
+    let callParams: any = {
       model,
-      prompt,
       temperature: config.temperature ?? 0.7,
-    });
+    };
+
+    let promptLengthEstimate = 0;
+
+    if (typeof input === 'string') {
+      callParams.prompt = input;
+      promptLengthEstimate = input.length;
+    } else {
+      if (input.system) {
+        callParams.system = input.system;
+        promptLengthEstimate += input.system.length;
+      }
+      if (input.messages && input.messages.length > 0) {
+        callParams.messages = input.messages;
+        promptLengthEstimate += input.messages.reduce((acc, m) => acc + (m.content || '').length, 0);
+      } else if (input.system) {
+        callParams.prompt = input.system;
+      }
+    }
+
+    const { text, usage } = await generateText(callParams);
     console.log(`[AI-Provider] ${config.provider}/${config.model} responded in ${Date.now() - t0}ms, tokens: ${usage?.totalTokens || '?'}`);
     return {
       text,
-      tokensUsed: usage?.totalTokens || Math.ceil((prompt.length + text.length) / 4),
+      tokensUsed: usage?.totalTokens || Math.ceil((promptLengthEstimate + text.length) / 4),
     };
   })();
 

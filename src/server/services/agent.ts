@@ -51,14 +51,18 @@ export async function processWhatsAppMessageWithAI(
   const storeUrl = tenant?.slug ? `${baseUrl}/tienda/${tenant.slug}` : '';
   const bookingUrl = tenant?.slug ? `${baseUrl}/reservas/${tenant.slug}` : '';
 
-  // 1. SMART INTENT DETECTION & KEYWORD MATCHING
+  // 1. SMART INTENT DETECTION & MULTI-TURN CONVERSATION CONTEXT
   const lowerMsg = userMessage.toLowerCase().trim();
+  const recentHistoryText = (chatHistory || []).slice(-6).map(h => h.content).join(' ').toLowerCase();
+  const conversationContext = `${recentHistoryText} ${lowerMsg}`;
+
   const isPureGreeting = /^(hola|buenas|buenos dias|buenas tardes|buenas noches|hey|alo|hi|saludos|pura vida|hola que tal|hola como estas)[s!.,?]*$/i.test(lowerMsg);
-  const asksForServices = /servicio|cita|reserva|agenda|agendar|horario|hora|fecha|disponib|turno|atencion|lavado|pulido|mantenimiento/i.test(lowerMsg);
-  const asksForProducts = /precio|costo|cuanto|venden|catalogo|menu|producto|comprar|pedir|orden|foto|imagen|quiero|plato|comida|pizza|hamburguesa|cera/i.test(lowerMsg);
-  const asksForPayments = /sinpe|transferencia|pago|pagar|cuenta|banco|efectivo|tarjeta|cuentas/i.test(lowerMsg);
-  const asksForLocation = /ubicacion|donde|direccion|llegar|local|tienda|sucursal|mapa/i.test(lowerMsg);
+  const asksForServices = /servicio|cita|reserva|agenda|agendar|horario|hora|fecha|disponib|turno|atencion|lavado|pulido|mantenimiento/i.test(conversationContext);
+  const asksForProducts = /precio|costo|cuanto|venden|catalogo|menu|producto|comprar|pedir|orden|foto|imagen|quiero|plato|comida|pizza|hamburguesa|cera|variante|talla|sabor|llevar|agregar|sumar|confirmo/i.test(conversationContext);
+  const asksForPayments = /sinpe|transferencia|pago|pagar|cuenta|banco|efectivo|tarjeta|cuentas/i.test(conversationContext);
+  const asksForLocation = /ubicacion|donde|direccion|llegar|local|tienda|sucursal|mapa/i.test(conversationContext);
   const asksForHuman = /humano|asesor|persona|agente|hablar con alguien|queja|reclamo|urgente/i.test(lowerMsg);
+  const asksForOrderStatus = /pedido|orden|paquete|comida|donde viene|estado del pedido|como va mi|cuando llega|mi orden|mi pedido/i.test(conversationContext);
 
   // 2. ENRICHED RAG BLOCKS (Concise, High Density)
   let paymentInfo = '';
@@ -83,14 +87,14 @@ export async function processWhatsAppMessageWithAI(
     }
   }
 
-  // Smart Filtering for Services
+  // Smart Filtering for Services across context
   let relevantServicesText = '';
   if (!isPureGreeting && services.length > 0) {
-    const userWords = lowerMsg.split(/\s+/).filter(w => w.length > 2);
+    const contextWords = conversationContext.split(/\s+/).filter(w => w.length > 2);
     let matchedServices = services.filter(s => {
       const sName = s.name.toLowerCase();
       const sCat = (s.category || '').toLowerCase();
-      return userWords.some(w => sName.includes(w) || sCat.includes(w));
+      return contextWords.some(w => sName.includes(w) || sCat.includes(w));
     });
 
     if (matchedServices.length === 0) {
@@ -104,15 +108,16 @@ export async function processWhatsAppMessageWithAI(
     }
   }
 
-  // Smart Filtering for Products
+  // Smart Filtering for Products with rich details (variants, descriptions, custom options)
   let relevantProductsText = '';
   if (!isPureGreeting && products.length > 0) {
-    const userWords = lowerMsg.split(/\s+/).filter(w => w.length > 2);
+    const contextWords = conversationContext.split(/\s+/).filter(w => w.length > 2);
     let matchedProducts = products.filter(p => {
       const pName = p.name.toLowerCase();
       const pCat = (p.category || '').toLowerCase();
       const pTags = Array.isArray(p.tags) ? p.tags.join(' ').toLowerCase() : '';
-      return userWords.some(w => pName.includes(w) || pCat.includes(w) || pTags.includes(w));
+      const pDesc = (p.description || '').toLowerCase();
+      return contextWords.some(w => pName.includes(w) || pCat.includes(w) || pTags.includes(w) || pDesc.includes(w));
     });
 
     if (matchedProducts.length === 0) {
@@ -120,16 +125,56 @@ export async function processWhatsAppMessageWithAI(
     }
 
     if (matchedProducts.length > 0) {
-      relevantProductsText = '🛍️ Productos:\n' + matchedProducts.map(p => {
-        let photoUrl = '';
+      relevantProductsText = '🛍️ Catálogo de Productos Relevantes:\n' + matchedProducts.map(p => {
+        let details = `• *${p.name}*`;
+        if (p.category) details += ` [${p.category}]`;
+        details += `: ₡${Number(p.price || 0).toLocaleString('es-CR')}`;
+        if (p.compareAtPrice && Number(p.compareAtPrice) > Number(p.price)) {
+          details += ` (Antes: ₡${Number(p.compareAtPrice).toLocaleString('es-CR')})`;
+        }
+        details += ` | Stock: ${p.stock ?? 'disponible'}`;
+
+        // Descripción / beneficios
+        if (p.description && p.description.trim()) {
+          details += `\n  📝 Descripción: ${p.description.trim().replace(/\n+/g, ' ')}`;
+        }
+
+        // Variantes (tallas, sabores, presentaciones con precios)
+        if (p.variants && Array.isArray(p.variants) && p.variants.length > 0) {
+          const varList = p.variants.map((v: any) => {
+            let vStr = v.name;
+            if (v.priceOverride && Number(v.priceOverride) > 0) vStr += ` (₡${Number(v.priceOverride).toLocaleString('es-CR')})`;
+            if (v.stock !== undefined && v.stock !== null) vStr += ` [Stock: ${v.stock}]`;
+            return vStr;
+          }).join(', ');
+          details += `\n  🔀 Variantes disponibles: ${varList}`;
+        }
+
+        // Características / Variables personalizables (extras, aderezos)
+        if (p.customVariables && Array.isArray(p.customVariables) && p.customVariables.length > 0) {
+          const varDetails = p.customVariables.map((cv: any) => {
+            const opts = (cv.options || []).map((o: any) => {
+              return o.price && Number(o.price) > 0 
+                ? `${o.name} (+₡${Number(o.price).toLocaleString('es-CR')})` 
+                : o.name;
+            }).join(', ');
+            return `${cv.name}: [${opts || 'opciones'}]`;
+          }).join(' | ');
+          details += `\n  ⚙️ Opciones/Extras: ${varDetails}`;
+        }
+
+        // Fotografía del producto
         if (p.images && p.images.length > 0) {
           const rawUrl = p.images[0].url;
-          photoUrl = rawUrl.startsWith('http') ? rawUrl : `${baseUrl}${rawUrl}`;
+          const photoUrl = rawUrl.startsWith('http') ? rawUrl : `${baseUrl}${rawUrl}`;
+          details += `\n  📸 Foto: ${photoUrl}`;
         }
-        return `• ${p.name}: ₡${Number(p.price || 0).toLocaleString('es-CR')} (Stock: ${p.stock ?? 'disp'})${photoUrl ? ` [Foto:${photoUrl}]` : ''}`;
-      }).join('\n') + '\n';
+
+        return details;
+      }).join('\n\n') + '\n';
     }
   }
+
   // 3. FETCH ACTIVE BOOKINGS FOR THIS CUSTOMER
   let activeCustomerBookingsText = '';
   try {
@@ -150,40 +195,122 @@ export async function processWhatsAppMessageWithAI(
     }
   } catch (e) {}
 
-  // 4. BUILD OPTIMIZED SINGLE PROMPT (with strong guardrails for 8B model)
-  let prompt = `Eres el asistente virtual de *${tenant?.name || 'nuestro negocio'}* en WhatsApp.
+  // 4. FETCH ACTIVE ORDERS FOR THIS CUSTOMER
+  let activeCustomerOrdersText = '';
+  try {
+    const cleanPhone = senderPhone.replace(/\D/g, '');
+    const activeOrders = await query(`
+      SELECT o.id, o.order_number as "orderNumber", o.status, o.total, o.currency,
+             o.delivery_method as "deliveryMethod", o.created_at as "createdAt",
+             COALESCE(
+               (SELECT json_agg(json_build_object('productName', oi.product_name, 'variantName', oi.variant_name, 'quantity', oi.quantity))
+                FROM order_items oi WHERE oi.order_id = o.id), '[]'::json
+             ) as items
+      FROM orders o
+      WHERE o.tenant_id = $1 AND REPLACE(o.customer_phone, '+', '') LIKE '%' || $2 || '%'
+        AND o.status NOT IN ('entregado', 'cancelled', 'cancelado', 'delivered')
+      ORDER BY o.created_at DESC
+      LIMIT 2
+    `, [tenantId, cleanPhone.slice(-8)]);
+
+    if (activeOrders.rows.length > 0) {
+      const stages = store?.customStages || {
+        fase_1: 'Pedido Recibido',
+        fase_2: 'En Preparación / Cocina',
+        fase_3: 'Listo para Entrega / Despacho',
+        fase_4: 'En Camino (Delivery)',
+        fase_5: 'Entregado'
+      };
+
+      const statusMap: Record<string, string> = {
+        'pedido_recibido': stages.fase_1 || 'Recibido',
+        'en_preparacion': stages.fase_2 || 'En Preparación',
+        'listo_para_entrega': stages.fase_3 || 'Listo para entrega',
+        'listo_entrega': stages.fase_3 || 'Listo para entrega',
+        'en_camino': stages.fase_4 || 'En Camino (Delivery)',
+        'pending': 'Pendiente de confirmación',
+        'confirmed': 'Confirmado',
+        'preparing': 'En Preparación',
+        'shipped': 'En Camino'
+      };
+
+      activeCustomerOrdersText = '\nPEDIDOS ACTIVOS EN CURSO DE ESTE CLIENTE:\n' + activeOrders.rows.map((o: any) => {
+        const itemsList = (o.items || []).map((it: any) => `${it.quantity}x ${it.productName}${it.variantName ? ` (${it.variantName})` : ''}`).join(', ');
+        const st = statusMap[o.status] || o.status;
+        return `• Pedido #ORD-${o.orderNumber}: [${itemsList || 'Productos'}] | Estado actual: *${st}* | Total: ₡${Number(o.total || 0).toLocaleString('es-CR')}`;
+      }).join('\n') + '\n';
+    }
+  } catch (e) {}
+
+  // 5. BUILD STRUCTURED SYSTEM PROMPT & CONVERSATION RULES
+  const isConversationOngoing = (chatHistory && chatHistory.length > 0);
+  const antiGreetingInstruction = isConversationOngoing
+    ? `⚠️ CONVERSACIÓN EN CURSO: El cliente ya está interactuando contigo. PROHIBIDO SALUDAR DE NUEVO (no digas "Hola", "Buenas", "Buenos días", etc.). Ve directo al grano respondiendo con calidez y entusiasmo a lo que pide el cliente.\n`
+    : `Saluda cordialmente al cliente presentándote como asistente de *${tenant?.name || 'nuestro negocio'}*.\n`;
+
+  const systemPrompt = `Eres el asistente virtual y asesor experto de ventas de *${tenant?.name || 'nuestro negocio'}* en WhatsApp.
 IDIOMA: Responde SIEMPRE en español de Costa Rica. NUNCA en otro idioma.
+${antiGreetingInstruction}
 ${agentConfig?.systemPrompt || 'Atiende amablemente a los clientes.'}
 
 Datos del negocio:
 ${crTime}
 ${(agentConfig?.showBookingLink !== false && bookingUrl) ? `Reservas online: ${bookingUrl}` : ''}${(agentConfig?.showStoreLink !== false && storeUrl) ? ` | Tienda online: ${storeUrl}` : ''}
-${scheduleInfo}${paymentInfo}${relevantServicesText}${relevantProductsText}${activeCustomerBookingsText}
+${scheduleInfo}${paymentInfo}${relevantServicesText}${relevantProductsText}${activeCustomerBookingsText}${activeCustomerOrdersText}
 REGLAS OBLIGATORIAS:
-1. Responde SOLO en español. Nunca portugués, inglés ni otro idioma.
-2. Usa el nombre EXACTO del cliente como aparece abajo. No lo modifiques ni abrevies.
-3. Usa *negrita* y emojis para dar calidez. Sé conciso (1-2 párrafos máximo).
-4. Solo menciona servicios, productos y precios que aparezcan arriba en "Datos del negocio". Si no aparece, di "consultaré con el equipo".
-5. NUNCA inventes URLs, links, procesos, pasos ni información que no esté en los datos.
-6. Si hay historial de conversación, no repitas el saludo. Continúa la conversación naturalmente.
-7. Para pagos SINPE/Transferencia, da los datos de pago del negocio y pide el comprobante.
-8. GESTIÓN DE CITAS:
+1. Responde SOLO en español con un tono cálido, empático, educado y ágil adaptado al público de Costa Rica (*pura vida*, con mucho gusto, claro que sí).
+2. Usa el nombre EXACTO del cliente (${senderName}) cuando sea oportuno. No lo modifiques.
+3. Usa *negrita* para datos clave (precios, productos, horarios) y emojis moderados para dar calidez. Sé conciso y claro (1-2 párrafos máximo).
+4. Solo menciona productos, servicios y precios que aparezcan arriba en los datos del negocio. Si algo no aparece, indica que consultarás con el equipo.
+5. NUNCA inventes URLs, links, procesos ni precios que no estén en la información proporcionada.
+
+6. ASESORÍA DE PRODUCTOS Y VENTAS (SÉ UN VENDEDOR CONSULTIVO):
+- Si el producto tiene variantes (tallas, sabores, modelos, presentaciones), preséntalas amablemente y pregunta cuál prefiere: *"¡Claro! Lo tenemos en presentación de [X] (₡...) y [Y] (₡...). ¿Cuál te gustaría?"*.
+- Usa las descripciones para destacar beneficios o responder dudas sobre ingredientes o calidad.
+- Si el producto tiene opciones/extras, ofrécelos para que el cliente personalice su orden a gusto.
+
+7. CARRITO CONVERSACIONAL MULTI-PRODUCTO (SUMAR PEDIDOS PROGRESIVAMENTE):
+- Cuando el cliente pida un producto y luego agregue otros ("también quiero...", "agrégale además...", "súmale..."), mantén el carrito acumulado con TODOS los productos pedidos a lo largo de la conversación.
+- Antes de confirmar, resume amablemente la lista acumulada de productos con subtotales y el monto total general.
+- Pregúntale si es para **Envío a Domicilio** (solicitando la dirección) o para **Retirar en el Local**.
+- Pregúntale el método de pago preferido (SINPE Móvil, Transferencia o Efectivo).
+- Cuando el cliente confirme la compra ("sí confirmo", "listo", "procedamos", "dale"), añade al final:
+  <<<COMMAND_ORDER: {"items":[{"productName":"Nombre Exacto","variantName":"opcional","quantity":1}], "deliveryMethod":"delivery"|"pickup", "deliveryAddress":"dirección si aplica", "customerName":"${senderName}"}>>>
+- Agradece la compra y brinda los datos de pago del negocio solicitando el comprobante para despacharlo.
+
+8. RASTREO Y CONSULTAS DE ESTADO DE PEDIDOS:
+- Si el cliente pregunta por su pedido ("¿Cómo va mi orden?", "¿Dónde viene?", "¿Ya salió?"), revisa la sección "PEDIDOS ACTIVOS EN CURSO DE ESTE CLIENTE" y respóndele de inmediato con el número de orden, los ítems y su estado real actual, dándole tranquilidad.
+
+9. GESTIÓN DE CITAS:
 - Para AGENDAR: Cuando el cliente elija servicio, fecha y hora, añade <<<COMMAND_BOOKING: {"service":"nombre","date":"YYYY-MM-DD","time":"HH:MM","customerName":"${senderName}"}>>>.
 - Para CANCELAR: Si el cliente pide cancelar una cita activa, SIEMPRE pregúntale primero para confirmar: "¿Estás seguro de que deseas cancelar tu cita de [Servicio] para el [Fecha] a las [Hora]?". SOLO si el cliente responde confirmando ("sí", "confirmo", "correcto", "cancélala"), añade <<<COMMAND_CANCEL_BOOKING: {"date":"YYYY-MM-DD", "reason":"solicitado por cliente"}>>>.
 - Para REAGENDAR: Ofrécele los horarios libres disponibles y cuando confirme la nueva fecha y hora, añade <<<COMMAND_RESCHEDULE_BOOKING: {"newDate":"YYYY-MM-DD", "newTime":"HH:MM"}>>>.
 
-Acciones (añade al final SOLO cuando corresponda):
+Acciones disponibles (añade al final SOLO cuando el cliente confirme explícitamente):
 Cita: <<<COMMAND_BOOKING: {"service":"nombre","date":"YYYY-MM-DD","time":"HH:MM","customerName":"${senderName}"}>>>
-Cancelar: <<<COMMAND_CANCEL_BOOKING: {"date":"YYYY-MM-DD","reason":"motivo"}>>>
-Reagendar: <<<COMMAND_RESCHEDULE_BOOKING: {"newDate":"YYYY-MM-DD","newTime":"HH:MM"}>>>
-Compra: <<<COMMAND_ORDER: {"items":[{"productName":"nombre","quantity":1}]}>>>
+Cancelar Cita: <<<COMMAND_CANCEL_BOOKING: {"date":"YYYY-MM-DD","reason":"motivo"}>>>
+Reagendar Cita: <<<COMMAND_RESCHEDULE_BOOKING: {"newDate":"YYYY-MM-DD","newTime":"HH:MM"}>>>
+Compra / Pedido: <<<COMMAND_ORDER: {"items":[{"productName":"nombre","variantName":"opcional","quantity":1}], "deliveryMethod":"delivery"|"pickup", "deliveryAddress":"dirección si aplica", "customerName":"${senderName}"}>>>
 Foto: <<<COMMAND_SEND_MEDIA: {"mediaUrl":"URL","caption":"desc"}>>>
-Humano: <<<COMMAND_HANDOFF: {"reason":"motivo"}>>>
+Humano: <<<COMMAND_HANDOFF: {"reason":"motivo"}>>>`;
 
-${chatHistory.slice(-3).map(h => `${h.role === 'user' ? 'Cliente' : 'Asistente'}: ${h.content}`).join('\n')}
+  // Structured messages array for clean chat dialogue
+  const structuredMessages: Array<{ role: 'system' | 'user' | 'assistant', content: string }> = [];
+  if (chatHistory && chatHistory.length > 0) {
+    for (const h of chatHistory.slice(-6)) {
+      structuredMessages.push({
+        role: h.role === 'assistant' ? 'assistant' : 'user',
+        content: h.content
+      });
+    }
+  }
+  structuredMessages.push({
+    role: 'user',
+    content: `${userMessage}`
+  });
 
-Cliente (${senderName}): ${userMessage}
-Asistente:`;
+  // Flat prompt fallback for models that prefer single string
+  const flatPrompt = `${systemPrompt}\n\n${chatHistory.slice(-6).map(h => `${h.role === 'user' ? 'Cliente' : 'Asistente'}: ${h.content}`).join('\n')}\n\nCliente (${senderName}): ${userMessage}\nAsistente:`;
 
   let apiKey = '';
   let isMarcaBlanca = false;
@@ -222,7 +349,10 @@ Asistente:`;
     };
   }
 
-  const aiResult = await callAI(config, prompt);
+  const aiResult = await callAI(config, {
+    system: systemPrompt,
+    messages: structuredMessages
+  });
   let replyText = aiResult.text;
 
   // Track token usage for Marca Blanca tenants

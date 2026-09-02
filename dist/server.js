@@ -741,7 +741,7 @@ async function getMasterAIConfig() {
     };
   }
 }
-async function callAI(config, prompt) {
+async function callAI(config, input) {
   const provider = config.provider || "gemini";
   const apiKey = config.apiKey || (provider === "gemini" ? DEFAULT_GEMINI_KEY : "");
   let chosenModel = config.model;
@@ -763,7 +763,7 @@ async function callAI(config, prompt) {
         model: modelName,
         temperature: config.temperature ?? 0.7,
         baseUrl: config.baseUrl
-      }, prompt);
+      }, input);
     } catch (error) {
       lastError = error;
       console.error(`Error calling AI with model ${modelName} (${provider}):`, error);
@@ -788,7 +788,7 @@ async function callAI(config, prompt) {
         apiKey: masterKey || DEFAULT_GEMINI_KEY,
         model: "gemini-2.5-flash",
         temperature: 0.7
-      }, prompt);
+      }, input);
     } catch (geminiError) {
       console.error("[AI-Provider] Master Gemini Failover also failed:", geminiError);
     }
@@ -799,7 +799,7 @@ async function callAI(config, prompt) {
     tokensUsed: 0
   };
 }
-async function executeProvider(config, prompt) {
+async function executeProvider(config, input) {
   let model;
   if (config.provider === "gemini") {
     const key = config.apiKey || DEFAULT_GEMINI_KEY;
@@ -825,15 +825,31 @@ async function executeProvider(config, prompt) {
   });
   const t0 = Date.now();
   const generatePromise = (async () => {
-    const { text, usage } = await generateText({
+    let callParams = {
       model,
-      prompt,
       temperature: config.temperature ?? 0.7
-    });
+    };
+    let promptLengthEstimate = 0;
+    if (typeof input === "string") {
+      callParams.prompt = input;
+      promptLengthEstimate = input.length;
+    } else {
+      if (input.system) {
+        callParams.system = input.system;
+        promptLengthEstimate += input.system.length;
+      }
+      if (input.messages && input.messages.length > 0) {
+        callParams.messages = input.messages;
+        promptLengthEstimate += input.messages.reduce((acc, m) => acc + (m.content || "").length, 0);
+      } else if (input.system) {
+        callParams.prompt = input.system;
+      }
+    }
+    const { text, usage } = await generateText(callParams);
     console.log(`[AI-Provider] ${config.provider}/${config.model} responded in ${Date.now() - t0}ms, tokens: ${usage?.totalTokens || "?"}`);
     return {
       text,
-      tokensUsed: usage?.totalTokens || Math.ceil((prompt.length + text.length) / 4)
+      tokensUsed: usage?.totalTokens || Math.ceil((promptLengthEstimate + text.length) / 4)
     };
   })();
   return await Promise.race([generatePromise, timeoutPromise]);
@@ -3147,12 +3163,15 @@ async function processWhatsAppMessageWithAI(tenantId, userMessage, senderPhone, 
   const storeUrl = tenant?.slug ? `${baseUrl}/tienda/${tenant.slug}` : "";
   const bookingUrl = tenant?.slug ? `${baseUrl}/reservas/${tenant.slug}` : "";
   const lowerMsg = userMessage.toLowerCase().trim();
+  const recentHistoryText = (chatHistory || []).slice(-6).map((h) => h.content).join(" ").toLowerCase();
+  const conversationContext = `${recentHistoryText} ${lowerMsg}`;
   const isPureGreeting = /^(hola|buenas|buenos dias|buenas tardes|buenas noches|hey|alo|hi|saludos|pura vida|hola que tal|hola como estas)[s!.,?]*$/i.test(lowerMsg);
-  const asksForServices = /servicio|cita|reserva|agenda|agendar|horario|hora|fecha|disponib|turno|atencion|lavado|pulido|mantenimiento/i.test(lowerMsg);
-  const asksForProducts = /precio|costo|cuanto|venden|catalogo|menu|producto|comprar|pedir|orden|foto|imagen|quiero|plato|comida|pizza|hamburguesa|cera/i.test(lowerMsg);
-  const asksForPayments = /sinpe|transferencia|pago|pagar|cuenta|banco|efectivo|tarjeta|cuentas/i.test(lowerMsg);
-  const asksForLocation = /ubicacion|donde|direccion|llegar|local|tienda|sucursal|mapa/i.test(lowerMsg);
+  const asksForServices = /servicio|cita|reserva|agenda|agendar|horario|hora|fecha|disponib|turno|atencion|lavado|pulido|mantenimiento/i.test(conversationContext);
+  const asksForProducts = /precio|costo|cuanto|venden|catalogo|menu|producto|comprar|pedir|orden|foto|imagen|quiero|plato|comida|pizza|hamburguesa|cera|variante|talla|sabor|llevar|agregar|sumar|confirmo/i.test(conversationContext);
+  const asksForPayments = /sinpe|transferencia|pago|pagar|cuenta|banco|efectivo|tarjeta|cuentas/i.test(conversationContext);
+  const asksForLocation = /ubicacion|donde|direccion|llegar|local|tienda|sucursal|mapa/i.test(conversationContext);
   const asksForHuman = /humano|asesor|persona|agente|hablar con alguien|queja|reclamo|urgente/i.test(lowerMsg);
+  const asksForOrderStatus = /pedido|orden|paquete|comida|donde viene|estado del pedido|como va mi|cuando llega|mi orden|mi pedido/i.test(conversationContext);
   let paymentInfo = "";
   if (asksForPayments || asksForProducts || !isPureGreeting) {
     const methods = [];
@@ -3177,11 +3196,11 @@ async function processWhatsAppMessageWithAI(tenantId, userMessage, senderPhone, 
   }
   let relevantServicesText = "";
   if (!isPureGreeting && services.length > 0) {
-    const userWords = lowerMsg.split(/\s+/).filter((w) => w.length > 2);
+    const contextWords = conversationContext.split(/\s+/).filter((w) => w.length > 2);
     let matchedServices = services.filter((s) => {
       const sName = s.name.toLowerCase();
       const sCat = (s.category || "").toLowerCase();
-      return userWords.some((w) => sName.includes(w) || sCat.includes(w));
+      return contextWords.some((w) => sName.includes(w) || sCat.includes(w));
     });
     if (matchedServices.length === 0) {
       matchedServices = services.slice(0, 4);
@@ -3194,25 +3213,58 @@ async function processWhatsAppMessageWithAI(tenantId, userMessage, senderPhone, 
   }
   let relevantProductsText = "";
   if (!isPureGreeting && products.length > 0) {
-    const userWords = lowerMsg.split(/\s+/).filter((w) => w.length > 2);
+    const contextWords = conversationContext.split(/\s+/).filter((w) => w.length > 2);
     let matchedProducts = products.filter((p) => {
       const pName = p.name.toLowerCase();
       const pCat = (p.category || "").toLowerCase();
       const pTags = Array.isArray(p.tags) ? p.tags.join(" ").toLowerCase() : "";
-      return userWords.some((w) => pName.includes(w) || pCat.includes(w) || pTags.includes(w));
+      const pDesc = (p.description || "").toLowerCase();
+      return contextWords.some((w) => pName.includes(w) || pCat.includes(w) || pTags.includes(w) || pDesc.includes(w));
     });
     if (matchedProducts.length === 0) {
       matchedProducts = products.slice(0, 4);
     }
     if (matchedProducts.length > 0) {
-      relevantProductsText = "\u{1F6CD}\uFE0F Productos:\n" + matchedProducts.map((p) => {
-        let photoUrl = "";
+      relevantProductsText = "\u{1F6CD}\uFE0F Cat\xE1logo de Productos Relevantes:\n" + matchedProducts.map((p) => {
+        let details = `\u2022 *${p.name}*`;
+        if (p.category) details += ` [${p.category}]`;
+        details += `: \u20A1${Number(p.price || 0).toLocaleString("es-CR")}`;
+        if (p.compareAtPrice && Number(p.compareAtPrice) > Number(p.price)) {
+          details += ` (Antes: \u20A1${Number(p.compareAtPrice).toLocaleString("es-CR")})`;
+        }
+        details += ` | Stock: ${p.stock ?? "disponible"}`;
+        if (p.description && p.description.trim()) {
+          details += `
+  \u{1F4DD} Descripci\xF3n: ${p.description.trim().replace(/\n+/g, " ")}`;
+        }
+        if (p.variants && Array.isArray(p.variants) && p.variants.length > 0) {
+          const varList = p.variants.map((v) => {
+            let vStr = v.name;
+            if (v.priceOverride && Number(v.priceOverride) > 0) vStr += ` (\u20A1${Number(v.priceOverride).toLocaleString("es-CR")})`;
+            if (v.stock !== void 0 && v.stock !== null) vStr += ` [Stock: ${v.stock}]`;
+            return vStr;
+          }).join(", ");
+          details += `
+  \u{1F500} Variantes disponibles: ${varList}`;
+        }
+        if (p.customVariables && Array.isArray(p.customVariables) && p.customVariables.length > 0) {
+          const varDetails = p.customVariables.map((cv) => {
+            const opts = (cv.options || []).map((o) => {
+              return o.price && Number(o.price) > 0 ? `${o.name} (+\u20A1${Number(o.price).toLocaleString("es-CR")})` : o.name;
+            }).join(", ");
+            return `${cv.name}: [${opts || "opciones"}]`;
+          }).join(" | ");
+          details += `
+  \u2699\uFE0F Opciones/Extras: ${varDetails}`;
+        }
         if (p.images && p.images.length > 0) {
           const rawUrl = p.images[0].url;
-          photoUrl = rawUrl.startsWith("http") ? rawUrl : `${baseUrl}${rawUrl}`;
+          const photoUrl = rawUrl.startsWith("http") ? rawUrl : `${baseUrl}${rawUrl}`;
+          details += `
+  \u{1F4F8} Foto: ${photoUrl}`;
         }
-        return `\u2022 ${p.name}: \u20A1${Number(p.price || 0).toLocaleString("es-CR")} (Stock: ${p.stock ?? "disp"})${photoUrl ? ` [Foto:${photoUrl}]` : ""}`;
-      }).join("\n") + "\n";
+        return details;
+      }).join("\n\n") + "\n";
     }
   }
   let activeCustomerBookingsText = "";
@@ -3233,36 +3285,114 @@ async function processWhatsAppMessageWithAI(tenantId, userMessage, senderPhone, 
     }
   } catch (e) {
   }
-  let prompt = `Eres el asistente virtual de *${tenant?.name || "nuestro negocio"}* en WhatsApp.
+  let activeCustomerOrdersText = "";
+  try {
+    const cleanPhone = senderPhone.replace(/\D/g, "");
+    const activeOrders = await query(`
+      SELECT o.id, o.order_number as "orderNumber", o.status, o.total, o.currency,
+             o.delivery_method as "deliveryMethod", o.created_at as "createdAt",
+             COALESCE(
+               (SELECT json_agg(json_build_object('productName', oi.product_name, 'variantName', oi.variant_name, 'quantity', oi.quantity))
+                FROM order_items oi WHERE oi.order_id = o.id), '[]'::json
+             ) as items
+      FROM orders o
+      WHERE o.tenant_id = $1 AND REPLACE(o.customer_phone, '+', '') LIKE '%' || $2 || '%'
+        AND o.status NOT IN ('entregado', 'cancelled', 'cancelado', 'delivered')
+      ORDER BY o.created_at DESC
+      LIMIT 2
+    `, [tenantId, cleanPhone.slice(-8)]);
+    if (activeOrders.rows.length > 0) {
+      const stages = store?.customStages || {
+        fase_1: "Pedido Recibido",
+        fase_2: "En Preparaci\xF3n / Cocina",
+        fase_3: "Listo para Entrega / Despacho",
+        fase_4: "En Camino (Delivery)",
+        fase_5: "Entregado"
+      };
+      const statusMap = {
+        "pedido_recibido": stages.fase_1 || "Recibido",
+        "en_preparacion": stages.fase_2 || "En Preparaci\xF3n",
+        "listo_para_entrega": stages.fase_3 || "Listo para entrega",
+        "listo_entrega": stages.fase_3 || "Listo para entrega",
+        "en_camino": stages.fase_4 || "En Camino (Delivery)",
+        "pending": "Pendiente de confirmaci\xF3n",
+        "confirmed": "Confirmado",
+        "preparing": "En Preparaci\xF3n",
+        "shipped": "En Camino"
+      };
+      activeCustomerOrdersText = "\nPEDIDOS ACTIVOS EN CURSO DE ESTE CLIENTE:\n" + activeOrders.rows.map((o) => {
+        const itemsList = (o.items || []).map((it) => `${it.quantity}x ${it.productName}${it.variantName ? ` (${it.variantName})` : ""}`).join(", ");
+        const st = statusMap[o.status] || o.status;
+        return `\u2022 Pedido #ORD-${o.orderNumber}: [${itemsList || "Productos"}] | Estado actual: *${st}* | Total: \u20A1${Number(o.total || 0).toLocaleString("es-CR")}`;
+      }).join("\n") + "\n";
+    }
+  } catch (e) {
+  }
+  const isConversationOngoing = chatHistory && chatHistory.length > 0;
+  const antiGreetingInstruction = isConversationOngoing ? `\u26A0\uFE0F CONVERSACI\xD3N EN CURSO: El cliente ya est\xE1 interactuando contigo. PROHIBIDO SALUDAR DE NUEVO (no digas "Hola", "Buenas", "Buenos d\xEDas", etc.). Ve directo al grano respondiendo con calidez y entusiasmo a lo que pide el cliente.
+` : `Saluda cordialmente al cliente present\xE1ndote como asistente de *${tenant?.name || "nuestro negocio"}*.
+`;
+  const systemPrompt = `Eres el asistente virtual y asesor experto de ventas de *${tenant?.name || "nuestro negocio"}* en WhatsApp.
 IDIOMA: Responde SIEMPRE en espa\xF1ol de Costa Rica. NUNCA en otro idioma.
+${antiGreetingInstruction}
 ${agentConfig?.systemPrompt || "Atiende amablemente a los clientes."}
 
 Datos del negocio:
 ${crTime}
 ${agentConfig?.showBookingLink !== false && bookingUrl ? `Reservas online: ${bookingUrl}` : ""}${agentConfig?.showStoreLink !== false && storeUrl ? ` | Tienda online: ${storeUrl}` : ""}
-${scheduleInfo}${paymentInfo}${relevantServicesText}${relevantProductsText}${activeCustomerBookingsText}
+${scheduleInfo}${paymentInfo}${relevantServicesText}${relevantProductsText}${activeCustomerBookingsText}${activeCustomerOrdersText}
 REGLAS OBLIGATORIAS:
-1. Responde SOLO en espa\xF1ol. Nunca portugu\xE9s, ingl\xE9s ni otro idioma.
-2. Usa el nombre EXACTO del cliente como aparece abajo. No lo modifiques ni abrevies.
-3. Usa *negrita* y emojis para dar calidez. S\xE9 conciso (1-2 p\xE1rrafos m\xE1ximo).
-4. Solo menciona servicios, productos y precios que aparezcan arriba en "Datos del negocio". Si no aparece, di "consultar\xE9 con el equipo".
-5. NUNCA inventes URLs, links, procesos, pasos ni informaci\xF3n que no est\xE9 en los datos.
-6. Si hay historial de conversaci\xF3n, no repitas el saludo. Contin\xFAa la conversaci\xF3n naturalmente.
-7. Para pagos SINPE/Transferencia, da los datos de pago del negocio y pide el comprobante.
-8. GESTI\xD3N DE CITAS:
+1. Responde SOLO en espa\xF1ol con un tono c\xE1lido, emp\xE1tico, educado y \xE1gil adaptado al p\xFAblico de Costa Rica (*pura vida*, con mucho gusto, claro que s\xED).
+2. Usa el nombre EXACTO del cliente (${senderName}) cuando sea oportuno. No lo modifiques.
+3. Usa *negrita* para datos clave (precios, productos, horarios) y emojis moderados para dar calidez. S\xE9 conciso y claro (1-2 p\xE1rrafos m\xE1ximo).
+4. Solo menciona productos, servicios y precios que aparezcan arriba en los datos del negocio. Si algo no aparece, indica que consultar\xE1s con el equipo.
+5. NUNCA inventes URLs, links, procesos ni precios que no est\xE9n en la informaci\xF3n proporcionada.
+
+6. ASESOR\xCDA DE PRODUCTOS Y VENTAS (S\xC9 UN VENDEDOR CONSULTIVO):
+- Si el producto tiene variantes (tallas, sabores, modelos, presentaciones), pres\xE9ntalas amablemente y pregunta cu\xE1l prefiere: *"\xA1Claro! Lo tenemos en presentaci\xF3n de [X] (\u20A1...) y [Y] (\u20A1...). \xBFCu\xE1l te gustar\xEDa?"*.
+- Usa las descripciones para destacar beneficios o responder dudas sobre ingredientes o calidad.
+- Si el producto tiene opciones/extras, ofr\xE9celos para que el cliente personalice su orden a gusto.
+
+7. CARRITO CONVERSACIONAL MULTI-PRODUCTO (SUMAR PEDIDOS PROGRESIVAMENTE):
+- Cuando el cliente pida un producto y luego agregue otros ("tambi\xE9n quiero...", "agr\xE9gale adem\xE1s...", "s\xFAmale..."), mant\xE9n el carrito acumulado con TODOS los productos pedidos a lo largo de la conversaci\xF3n.
+- Antes de confirmar, resume amablemente la lista acumulada de productos con subtotales y el monto total general.
+- Preg\xFAntale si es para **Env\xEDo a Domicilio** (solicitando la direcci\xF3n) o para **Retirar en el Local**.
+- Preg\xFAntale el m\xE9todo de pago preferido (SINPE M\xF3vil, Transferencia o Efectivo).
+- Cuando el cliente confirme la compra ("s\xED confirmo", "listo", "procedamos", "dale"), a\xF1ade al final:
+  <<<COMMAND_ORDER: {"items":[{"productName":"Nombre Exacto","variantName":"opcional","quantity":1}], "deliveryMethod":"delivery"|"pickup", "deliveryAddress":"direcci\xF3n si aplica", "customerName":"${senderName}"}>>>
+- Agradece la compra y brinda los datos de pago del negocio solicitando el comprobante para despacharlo.
+
+8. RASTREO Y CONSULTAS DE ESTADO DE PEDIDOS:
+- Si el cliente pregunta por su pedido ("\xBFC\xF3mo va mi orden?", "\xBFD\xF3nde viene?", "\xBFYa sali\xF3?"), revisa la secci\xF3n "PEDIDOS ACTIVOS EN CURSO DE ESTE CLIENTE" y resp\xF3ndele de inmediato con el n\xFAmero de orden, los \xEDtems y su estado real actual, d\xE1ndole tranquilidad.
+
+9. GESTI\xD3N DE CITAS:
 - Para AGENDAR: Cuando el cliente elija servicio, fecha y hora, a\xF1ade <<<COMMAND_BOOKING: {"service":"nombre","date":"YYYY-MM-DD","time":"HH:MM","customerName":"${senderName}"}>>>.
 - Para CANCELAR: Si el cliente pide cancelar una cita activa, SIEMPRE preg\xFAntale primero para confirmar: "\xBFEst\xE1s seguro de que deseas cancelar tu cita de [Servicio] para el [Fecha] a las [Hora]?". SOLO si el cliente responde confirmando ("s\xED", "confirmo", "correcto", "canc\xE9lala"), a\xF1ade <<<COMMAND_CANCEL_BOOKING: {"date":"YYYY-MM-DD", "reason":"solicitado por cliente"}>>>.
 - Para REAGENDAR: Ofr\xE9cele los horarios libres disponibles y cuando confirme la nueva fecha y hora, a\xF1ade <<<COMMAND_RESCHEDULE_BOOKING: {"newDate":"YYYY-MM-DD", "newTime":"HH:MM"}>>>.
 
-Acciones (a\xF1ade al final SOLO cuando corresponda):
+Acciones disponibles (a\xF1ade al final SOLO cuando el cliente confirme expl\xEDcitamente):
 Cita: <<<COMMAND_BOOKING: {"service":"nombre","date":"YYYY-MM-DD","time":"HH:MM","customerName":"${senderName}"}>>>
-Cancelar: <<<COMMAND_CANCEL_BOOKING: {"date":"YYYY-MM-DD","reason":"motivo"}>>>
-Reagendar: <<<COMMAND_RESCHEDULE_BOOKING: {"newDate":"YYYY-MM-DD","newTime":"HH:MM"}>>>
-Compra: <<<COMMAND_ORDER: {"items":[{"productName":"nombre","quantity":1}]}>>>
+Cancelar Cita: <<<COMMAND_CANCEL_BOOKING: {"date":"YYYY-MM-DD","reason":"motivo"}>>>
+Reagendar Cita: <<<COMMAND_RESCHEDULE_BOOKING: {"newDate":"YYYY-MM-DD","newTime":"HH:MM"}>>>
+Compra / Pedido: <<<COMMAND_ORDER: {"items":[{"productName":"nombre","variantName":"opcional","quantity":1}], "deliveryMethod":"delivery"|"pickup", "deliveryAddress":"direcci\xF3n si aplica", "customerName":"${senderName}"}>>>
 Foto: <<<COMMAND_SEND_MEDIA: {"mediaUrl":"URL","caption":"desc"}>>>
-Humano: <<<COMMAND_HANDOFF: {"reason":"motivo"}>>>
+Humano: <<<COMMAND_HANDOFF: {"reason":"motivo"}>>>`;
+  const structuredMessages = [];
+  if (chatHistory && chatHistory.length > 0) {
+    for (const h of chatHistory.slice(-6)) {
+      structuredMessages.push({
+        role: h.role === "assistant" ? "assistant" : "user",
+        content: h.content
+      });
+    }
+  }
+  structuredMessages.push({
+    role: "user",
+    content: `${userMessage}`
+  });
+  const flatPrompt = `${systemPrompt}
 
-${chatHistory.slice(-3).map((h) => `${h.role === "user" ? "Cliente" : "Asistente"}: ${h.content}`).join("\n")}
+${chatHistory.slice(-6).map((h) => `${h.role === "user" ? "Cliente" : "Asistente"}: ${h.content}`).join("\n")}
 
 Cliente (${senderName}): ${userMessage}
 Asistente:`;
@@ -3301,7 +3431,10 @@ Asistente:`;
       temperature: agentConfig?.temperature || 0.7
     };
   }
-  const aiResult = await callAI(config, prompt);
+  const aiResult = await callAI(config, {
+    system: systemPrompt,
+    messages: structuredMessages
+  });
   let replyText = aiResult.text;
   if (isMarcaBlanca && aiResult.tokensUsed > 0) {
     await incrementTenantUsage(tenantId, aiResult.tokensUsed);
@@ -3847,15 +3980,31 @@ async function createOrderFromWhatsApp(tenantId, orderData) {
     let subtotal = 0;
     for (const item of orderData.items || []) {
       const product = allProducts.find(
-        (p) => p.name.toLowerCase().includes((item.productName || "").toLowerCase())
+        (p) => p.name.toLowerCase().includes((item.productName || "").toLowerCase()) || (item.productName || "").toLowerCase().includes(p.name.toLowerCase())
       );
-      const unitPrice = product ? Number(product.price) : item.unitPrice || 0;
+      let unitPrice = product ? Number(product.price) : item.unitPrice || 0;
+      let variantName = item.variantName || null;
+      let variantId = null;
+      if (product && item.variantName && product.variants && product.variants.length > 0) {
+        const matchedVariant = product.variants.find(
+          (v) => v.name.toLowerCase().includes(item.variantName.toLowerCase()) || item.variantName.toLowerCase().includes(v.name.toLowerCase())
+        );
+        if (matchedVariant) {
+          variantId = matchedVariant.id;
+          variantName = matchedVariant.name;
+          if (matchedVariant.priceOverride && Number(matchedVariant.priceOverride) > 0) {
+            unitPrice = Number(matchedVariant.priceOverride);
+          }
+        }
+      }
       const qty = item.quantity || 1;
       const totalPrice = unitPrice * qty;
       subtotal += totalPrice;
       items.push({
         productId: product?.id || null,
+        variantId,
         productName: product?.name || item.productName || "Producto",
+        variantName,
         quantity: qty,
         unitPrice,
         totalPrice
@@ -3866,18 +4015,23 @@ async function createOrderFromWhatsApp(tenantId, orderData) {
         });
       }
     }
+    const deliveryMethod = orderData.deliveryMethod || (orderData.deliveryAddress ? "delivery" : "pickup");
+    const customerAddress = orderData.deliveryAddress || orderData.customerAddress || "";
     const order = await createOrder(
       tenantId,
       {
         customerName: orderData.customerName || "Cliente WhatsApp",
         customerPhone: orderData.customerPhone || "",
+        customerAddress,
+        deliveryMethod,
         source: "whatsapp",
         subtotal,
         total: subtotal,
         currency: "CRC",
-        status: "pending",
+        status: "pedido_recibido",
         paymentMethod: orderData.paymentMethod || "sinpe",
-        paymentStatus: "pending"
+        paymentStatus: "pending",
+        notes: orderData.notes || (deliveryMethod === "delivery" && customerAddress ? `Entrega a: ${customerAddress}` : void 0)
       },
       items
     );

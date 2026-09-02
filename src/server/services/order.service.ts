@@ -10,17 +10,37 @@ export async function createOrderFromWhatsApp(tenantId: string, orderData: any):
 
     for (const item of (orderData.items || [])) {
       const product = allProducts.find(p => 
-        p.name.toLowerCase().includes((item.productName || '').toLowerCase())
+        p.name.toLowerCase().includes((item.productName || '').toLowerCase()) ||
+        (item.productName || '').toLowerCase().includes(p.name.toLowerCase())
       );
       
-      const unitPrice = product ? Number(product.price) : (item.unitPrice || 0);
+      let unitPrice = product ? Number(product.price) : (item.unitPrice || 0);
+      let variantName = item.variantName || null;
+      let variantId = null;
+
+      if (product && item.variantName && product.variants && product.variants.length > 0) {
+        const matchedVariant = product.variants.find((v: any) => 
+          v.name.toLowerCase().includes(item.variantName.toLowerCase()) ||
+          item.variantName.toLowerCase().includes(v.name.toLowerCase())
+        );
+        if (matchedVariant) {
+          variantId = matchedVariant.id;
+          variantName = matchedVariant.name;
+          if (matchedVariant.priceOverride && Number(matchedVariant.priceOverride) > 0) {
+            unitPrice = Number(matchedVariant.priceOverride);
+          }
+        }
+      }
+
       const qty = item.quantity || 1;
       const totalPrice = unitPrice * qty;
       subtotal += totalPrice;
 
       items.push({
         productId: product?.id || null,
+        variantId,
         productName: product?.name || item.productName || 'Producto',
+        variantName,
         quantity: qty,
         unitPrice,
         totalPrice
@@ -33,18 +53,24 @@ export async function createOrderFromWhatsApp(tenantId: string, orderData: any):
       }
     }
 
+    const deliveryMethod = orderData.deliveryMethod || (orderData.deliveryAddress ? 'delivery' : 'pickup');
+    const customerAddress = orderData.deliveryAddress || orderData.customerAddress || '';
+
     const order = await createOrder(
       tenantId,
       {
         customerName: orderData.customerName || 'Cliente WhatsApp',
         customerPhone: orderData.customerPhone || '',
+        customerAddress,
+        deliveryMethod,
         source: 'whatsapp',
         subtotal,
         total: subtotal,
         currency: 'CRC',
-        status: 'pending',
+        status: 'pedido_recibido',
         paymentMethod: orderData.paymentMethod || 'sinpe',
-        paymentStatus: 'pending'
+        paymentStatus: 'pending',
+        notes: orderData.notes || (deliveryMethod === 'delivery' && customerAddress ? `Entrega a: ${customerAddress}` : undefined)
       },
       items
     );
