@@ -22,10 +22,6 @@ export default function StoreSettings() {
   const [copied, setCopied] = useState(false);
   const [saveMessage, setSaveMessage] = useState(false);
 
-  useEffect(() => {
-    loadGoogleFont(fontFamily);
-  }, [fontFamily]);
-
   // General & Modules Form Fields
   const [storeEnabled, setStoreEnabled] = useState(true);
   const [storeMode, setStoreMode] = useState<'retail' | 'restaurant'>('retail');
@@ -191,6 +187,10 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
   const [bodyFontWeight, setBodyFontWeight] = useState<'normal' | 'medium' | 'semibold' | 'bold'>('normal');
   const [titleColor, setTitleColor] = useState('#0f172a');
   const [bodyTextColor, setBodyTextColor] = useState('#64748b');
+
+  useEffect(() => {
+    loadGoogleFont(fontFamily);
+  }, [fontFamily]);
 
   // File Upload State
   const [uploadingLogo, setUploadingLogo] = useState(false);
