@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Trophy, Plus, Edit, Trash2, Check, X, Settings, Clock, 
   MapPin, Palette, Globe, Save, Copy, ExternalLink, ShieldCheck, 
-  Sliders, DollarSign, Users, RefreshCw
+  Sliders, DollarSign, Users, RefreshCw, Upload, Image as ImageIcon
 } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
 import { Court, CourtsConfig, CourtsTheme } from '../../shared/types';
@@ -14,6 +14,12 @@ export default function CourtsManager() {
   const [savingConfig, setSavingConfig] = useState(false);
   const [tenantSlug, setTenantSlug] = useState('');
   const [copiedUrl, setCopiedUrl] = useState(false);
+
+  // File Upload State & Refs
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [uploadingBanner, setUploadingBanner] = useState(false);
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  const bannerInputRef = useRef<HTMLInputElement>(null);
 
   // Config & Theme state
   const [config, setConfig] = useState<CourtsConfig>({
@@ -94,7 +100,6 @@ export default function CourtsManager() {
             }
           });
         } else {
-          // Defaults using store info if available
           setConfig(prev => ({
             ...prev,
             theme: {
@@ -120,6 +125,45 @@ export default function CourtsManager() {
   useEffect(() => {
     fetchData();
   }, []);
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, fieldName: 'logoUrl' | 'bannerUrl') => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const isLogo = fieldName === 'logoUrl';
+    if (isLogo) setUploadingLogo(true);
+    else setUploadingBanner(true);
+
+    const form = new FormData();
+    form.append('file', file);
+
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: form
+      });
+      const data = await res.json();
+      if (data && data.url) {
+        setConfig(prev => ({
+          ...prev,
+          theme: {
+            ...prev.theme,
+            [fieldName]: data.url
+          }
+        }));
+      } else {
+        alert('Error al subir la imagen: ' + (data?.error || 'Respuesta inválida'));
+      }
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      alert('Error de conexión al subir la imagen.');
+    } finally {
+      if (isLogo) setUploadingLogo(false);
+      else setUploadingBanner(false);
+    }
+  };
 
   const handleOpenCreateModal = () => {
     setEditingCourt(null);
@@ -210,7 +254,7 @@ export default function CourtsManager() {
           courtsConfig: config
         }
       });
-      alert('¡Configuración y personalización de canchas guardadas con éxito!');
+      alert('¡Configuración e imágenes de canchas guardadas con éxito!');
     } catch (error) {
       alert('Error al guardar configuración');
     } finally {
@@ -239,6 +283,22 @@ export default function CourtsManager() {
   return (
     <div style={{ maxWidth: '1050px', margin: '0 auto' }}>
       
+      {/* Hidden File Inputs */}
+      <input
+        type="file"
+        ref={logoInputRef}
+        onChange={e => handleImageUpload(e, 'logoUrl')}
+        accept="image/*"
+        style={{ display: 'none' }}
+      />
+      <input
+        type="file"
+        ref={bannerInputRef}
+        onChange={e => handleImageUpload(e, 'bannerUrl')}
+        accept="image/*"
+        style={{ display: 'none' }}
+      />
+
       {/* HEADER */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
         <div>
@@ -485,38 +545,128 @@ export default function CourtsManager() {
             </div>
           </div>
 
-          {/* Card: Logo & Banner */}
+          {/* Card: Logo & Portada con Subida Directa de Archivo (Mismo protocolo de Tienda / Sitio) */}
           <div style={{ backgroundColor: 'var(--surface)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border)' }}>
             <h3 style={{ margin: '0 0 16px 0', fontSize: '1.1rem', fontWeight: '800', color: 'var(--text)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Palette size={18} color="var(--primary)" /> Imágenes de Marca
+              <Palette size={18} color="var(--primary)" /> Imagen de Perfil y Portada
             </h3>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', marginBottom: '6px', color: 'var(--text)' }}>
-                  URL del Logo
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
+              
+              {/* Imagen de Perfil / Logo */}
+              <div style={{ backgroundColor: 'var(--bg-elevated)', padding: '16px', borderRadius: '10px', border: '1px solid var(--border)' }}>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '800', marginBottom: '10px', color: 'var(--text)' }}>
+                  Foto de Perfil / Logo
                 </label>
+                
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '12px' }}>
+                  <div style={{
+                    width: '64px', height: '64px', borderRadius: '12px', backgroundColor: 'var(--background)',
+                    border: '1.5px dashed var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    overflow: 'hidden', flexShrink: 0
+                  }}>
+                    {config.theme?.logoUrl ? (
+                      <img src={config.theme.logoUrl} alt="Logo preview" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                    ) : (
+                      <ImageIcon size={24} color="var(--text-muted)" />
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <button
+                      type="button"
+                      onClick={() => logoInputRef.current?.click()}
+                      disabled={uploadingLogo}
+                      style={{
+                        padding: '7px 12px', backgroundColor: 'var(--primary)', color: 'white',
+                        border: 'none', borderRadius: '6px', fontSize: '0.8rem', fontWeight: '700',
+                        cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px'
+                      }}
+                    >
+                      <Upload size={14} />
+                      {uploadingLogo ? 'Subiendo...' : config.theme?.logoUrl ? 'Cambiar Imagen' : 'Subir Imagen'}
+                    </button>
+                    {config.theme?.logoUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setConfig({ ...config, theme: { ...config.theme, logoUrl: '' } })}
+                        style={{
+                          padding: '4px 8px', background: 'none', color: '#e11d48', border: 'none',
+                          fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer', textAlign: 'left'
+                        }}
+                      >
+                        Eliminar imagen
+                      </button>
+                    )}
+                  </div>
+                </div>
+
                 <input
                   type="text"
-                  placeholder="https://tudominio.com/logo.png"
+                  placeholder="O ingresa URL directa https://..."
                   value={config.theme?.logoUrl || ''}
                   onChange={e => setConfig({ ...config, theme: { ...config.theme, logoUrl: e.target.value } })}
-                  style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: 'var(--background)', color: 'var(--text)', boxSizing: 'border-box' }}
+                  style={{ width: '100%', padding: '7px 10px', borderRadius: '6px', border: '1px solid var(--border)', backgroundColor: 'var(--background)', color: 'var(--text)', fontSize: '0.78rem', boxSizing: 'border-box' }}
                 />
               </div>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', marginBottom: '6px', color: 'var(--text)' }}>
-                  URL del Banner de Cabecera (opcional)
+              {/* Portada / Banner */}
+              <div style={{ backgroundColor: 'var(--bg-elevated)', padding: '16px', borderRadius: '10px', border: '1px solid var(--border)' }}>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '800', marginBottom: '10px', color: 'var(--text)' }}>
+                  Foto de Portada / Banner
                 </label>
+                
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '12px' }}>
+                  <div style={{
+                    width: '100px', height: '64px', borderRadius: '10px', backgroundColor: 'var(--background)',
+                    border: '1.5px dashed var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    overflow: 'hidden', flexShrink: 0
+                  }}>
+                    {config.theme?.bannerUrl ? (
+                      <img src={config.theme.bannerUrl} alt="Banner preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    ) : (
+                      <ImageIcon size={24} color="var(--text-muted)" />
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <button
+                      type="button"
+                      onClick={() => bannerInputRef.current?.click()}
+                      disabled={uploadingBanner}
+                      style={{
+                        padding: '7px 12px', backgroundColor: 'var(--primary)', color: 'white',
+                        border: 'none', borderRadius: '6px', fontSize: '0.8rem', fontWeight: '700',
+                        cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px'
+                      }}
+                    >
+                      <Upload size={14} />
+                      {uploadingBanner ? 'Subiendo...' : config.theme?.bannerUrl ? 'Cambiar Portada' : 'Subir Portada'}
+                    </button>
+                    {config.theme?.bannerUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setConfig({ ...config, theme: { ...config.theme, bannerUrl: '' } })}
+                        style={{
+                          padding: '4px 8px', background: 'none', color: '#e11d48', border: 'none',
+                          fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer', textAlign: 'left'
+                        }}
+                      >
+                        Eliminar portada
+                      </button>
+                    )}
+                  </div>
+                </div>
+
                 <input
                   type="text"
-                  placeholder="https://tudominio.com/banner.jpg"
+                  placeholder="O ingresa URL directa https://..."
                   value={config.theme?.bannerUrl || ''}
                   onChange={e => setConfig({ ...config, theme: { ...config.theme, bannerUrl: e.target.value } })}
-                  style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: 'var(--background)', color: 'var(--text)', boxSizing: 'border-box' }}
+                  style={{ width: '100%', padding: '7px 10px', borderRadius: '6px', border: '1px solid var(--border)', backgroundColor: 'var(--background)', color: 'var(--text)', fontSize: '0.78rem', boxSizing: 'border-box' }}
                 />
               </div>
+
             </div>
           </div>
 
