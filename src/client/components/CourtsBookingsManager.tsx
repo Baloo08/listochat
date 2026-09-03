@@ -89,6 +89,12 @@ export default function CourtsBookingsManager() {
     socket.on('courtBooking:matched', () => {
       loadData();
     });
+    socket.on('courtBooking:updated', () => {
+      loadData();
+    });
+    socket.on('court_booking:updated', () => {
+      loadData();
+    });
     return () => {
       socket.disconnect();
     };

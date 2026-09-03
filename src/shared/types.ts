@@ -535,3 +535,71 @@ export interface CourtsConfig {
   theme?: CourtsTheme;
 }
 
+export interface BookingField {
+  id: string;
+  label: string;
+  type: 'text' | 'select' | 'boolean' | 'number';
+  options?: string[];
+  required?: boolean;
+  placeholder?: string;
+}
+
+export interface DayBreakConfig {
+  hasBreak: boolean;
+  breakStart: string;
+  breakEnd: string;
+}
+
+export interface ScheduleSettings {
+  id?: string;
+  tenantId: string;
+  scheduleMode: 'jornada' | 'custom' | string;
+  globalParallelSlots?: number;
+  jornadaConfig?: {
+    startHour: string;
+    endHour: string;
+    slotMinutes: number;
+    hasBreak: boolean;
+    breakStart?: string;
+    breakEnd?: string;
+    daysEnabled: number[];
+    perDayBreaks?: Record<number, DayBreakConfig>;
+  };
+  customFields?: BookingField[];
+  vacationConfig?: {
+    enabled: boolean;
+    startDate: string;
+    endDate: string;
+    message?: string;
+  };
+  updatedAt?: string;
+}
+
+export interface Branch {
+  id: string;
+  tenantId?: string;
+  name: string;
+  code?: string;
+  address?: string;
+  phone?: string;
+  sinpePhone?: string;
+  sinpeName?: string;
+  latitude?: number;
+  longitude?: number;
+  isMain: boolean;
+  active: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface Specialist {
+  id: string;
+  tenantId: string;
+  name: string;
+  phone?: string;
+  specialty?: string;
+  accessPin: string;
+  active: boolean;
+  createdAt: string;
+}
+

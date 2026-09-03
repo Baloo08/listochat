@@ -292,6 +292,9 @@ export default function App() {
     socket.on('courtBooking:matched', () => {
       playBookingNotificationSound();
     });
+    socket.on('courtBooking:updated', () => {
+      playBookingNotificationSound();
+    });
 
     const interval = setInterval(checkUnread, 15000);
     return () => {

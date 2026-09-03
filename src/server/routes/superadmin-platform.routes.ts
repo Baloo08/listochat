@@ -7,6 +7,7 @@ import { notifyNewTenantEnrollment, notifyPaymentProofUploaded, notifyPaymentApp
 import { hashPassword } from '../db/users.repo.js';
 import { getAllTenantsMonthlyUsage } from '../db/ai-usage.repo.js';
 import { callAI, getMasterAIConfig } from '../services/ai-provider.js';
+import { env } from '../config/env.js';
 
 const router = Router();
 
@@ -355,9 +356,10 @@ router.post('/tenants/create', async (req, res) => {
     // Send Welcome WhatsApp to Client
     if (cleanPhone && cleanPhone.length >= 8) {
       const trialMsg = trialEnabled ? `⏳ Cuentas con *15 días de prueba gratis* hasta el *${trialEnd.toLocaleDateString('es-CR')}*.` : '';
+      const appLoginUrl = (env.APP_URL || 'https://betico.tech').replace(/\/$/, '') + '/login';
       const waText = `🎉 ¡Hola *${contactName || name}*! Te damos la bienvenida a *Betico.tech*.\n\n` +
         `Tu plataforma de ventas y WhatsApp con IA está lista:\n\n` +
-        `🔗 *Enlace de Acceso:* https://betico.tech/login\n` +
+        `🔗 *Enlace de Acceso:* ${appLoginUrl}\n` +
         `👤 *Usuario:* ${email}\n` +
         `🔑 *Contraseña Temporal:* ${tempPassword}\n\n` +
         `${trialMsg}\n\n` +

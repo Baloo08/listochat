@@ -21,7 +21,8 @@ export async function runMigrations() {
       plan VARCHAR(50) DEFAULT 'starter',
       active BOOLEAN DEFAULT true,
       settings_json JSONB,
-      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE TABLE IF NOT EXISTS users (
@@ -527,6 +528,7 @@ export async function runMigrations() {
       contact_address TEXT,
       instagram_url VARCHAR(255),
       facebook_url VARCHAR(255),
+      tiktok_url VARCHAR(255),
       show_about_section BOOLEAN DEFAULT true,
       show_features_section BOOLEAN DEFAULT true,
       show_products_section BOOLEAN DEFAULT true,
@@ -749,6 +751,29 @@ export async function runMigrations() {
     ALTER TABLE court_bookings ADD COLUMN IF NOT EXISTS tilopay_auth_code_a VARCHAR(100);
     ALTER TABLE court_bookings ADD COLUMN IF NOT EXISTS tilopay_transaction_id_b VARCHAR(100);
     ALTER TABLE court_bookings ADD COLUMN IF NOT EXISTS tilopay_auth_code_b VARCHAR(100);
+
+    ALTER TABLE tenant_websites ADD COLUMN IF NOT EXISTS tiktok_url VARCHAR(255);
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+
+    CREATE TABLE IF NOT EXISTS message_queue (
+      id TEXT PRIMARY KEY DEFAULT 'mq_' || gen_random_uuid()::text,
+      tenant_id TEXT NOT NULL,
+      remote_jid TEXT NOT NULL,
+      push_name TEXT DEFAULT '',
+      clean_phone TEXT DEFAULT '',
+      user_message TEXT NOT NULL,
+      instance_name TEXT DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'pending',
+      is_voice_note BOOLEAN DEFAULT false,
+      priority INTEGER DEFAULT 0,
+      error_message TEXT,
+      ai_response TEXT,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+      processed_at TIMESTAMPTZ,
+      completed_at TIMESTAMPTZ
+    );
+    CREATE INDEX IF NOT EXISTS idx_mq_status ON message_queue(status, created_at);
+    CREATE INDEX IF NOT EXISTS idx_mq_tenant ON message_queue(tenant_id, status);
   `).catch((err) => {
     console.warn('[Migrations] Payment columns warning:', err?.message || err);
   });

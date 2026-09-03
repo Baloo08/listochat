@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import { tenantContext } from '../middleware/tenantContext.js';
-import { getAppointmentsByTenant, createAppointment, updateAppointmentStatus, deleteAppointment } from '../db/appointments.repo.js';
+import { getAppointmentsByTenant, createAppointment, updateAppointment, updateAppointmentStatus, deleteAppointment } from '../db/appointments.repo.js';
 import { getScheduleSettings, saveScheduleSettings } from '../db/schedule.repo.js';
 import { getTenantBySlug, getTenantById } from '../db/tenant.repo.js';
 import { getServicesByTenant } from '../db/services.repo.js';
@@ -424,6 +424,23 @@ router.post('/', async (req, res) => {
     res.status(201).json(appt);
   } catch (error) {
     res.status(500).json({ error: 'Error al agendar cita' });
+  }
+});
+
+router.put('/:id', async (req, res) => {
+  try {
+    const updated = await updateAppointment(req.params.id, req.tenantId!, req.body);
+    if (!updated) {
+      res.status(404).json({ error: 'Cita no encontrada' });
+      return;
+    }
+    if ((req as any).io) {
+      (req as any).io.to(`tenant_${req.tenantId}`).emit('appointment:updated', updated);
+    }
+    res.json(updated);
+  } catch (error) {
+    console.error('Error al actualizar cita:', error);
+    res.status(500).json({ error: 'Error al actualizar cita' });
   }
 });
 

@@ -1199,9 +1199,10 @@ Responde como Betico Sales AI:`;
           INSERT INTO users (tenant_id, name, email, password_hash, role, active)
           VALUES ($1, $2, $3, $4, 'admin', true)
         `, [tenantId, cName, email, passwordHash]);
+        const appLoginUrl = (env.APP_URL || "https://betico.tech").replace(/\/$/, "") + "/login";
         const welcomeCreds = `\u{1F389} \xA1Tu cuenta para *${bName}* ha sido creada exitosamente!
 
-\u{1F517} *Enlace de Acceso:* https://betico.tech/login
+\u{1F517} *Enlace de Acceso:* ${appLoginUrl}
 \u{1F464} *Usuario:* ${email}
 \u{1F511} *Contrase\xF1a Temporal:* ${tempPassword}
 
@@ -1260,6 +1261,7 @@ var init_superadmin_bot_service = __esm({
     init_pool();
     init_users_repo();
     init_superadmin_notify_service();
+    init_env();
   }
 });
 
@@ -1450,7 +1452,8 @@ async function runMigrations() {
       plan VARCHAR(50) DEFAULT 'starter',
       active BOOLEAN DEFAULT true,
       settings_json JSONB,
-      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE TABLE IF NOT EXISTS users (
@@ -1956,6 +1959,7 @@ async function runMigrations() {
       contact_address TEXT,
       instagram_url VARCHAR(255),
       facebook_url VARCHAR(255),
+      tiktok_url VARCHAR(255),
       show_about_section BOOLEAN DEFAULT true,
       show_features_section BOOLEAN DEFAULT true,
       show_products_section BOOLEAN DEFAULT true,
@@ -2164,6 +2168,29 @@ async function runMigrations() {
     ALTER TABLE court_bookings ADD COLUMN IF NOT EXISTS tilopay_auth_code_a VARCHAR(100);
     ALTER TABLE court_bookings ADD COLUMN IF NOT EXISTS tilopay_transaction_id_b VARCHAR(100);
     ALTER TABLE court_bookings ADD COLUMN IF NOT EXISTS tilopay_auth_code_b VARCHAR(100);
+
+    ALTER TABLE tenant_websites ADD COLUMN IF NOT EXISTS tiktok_url VARCHAR(255);
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+
+    CREATE TABLE IF NOT EXISTS message_queue (
+      id TEXT PRIMARY KEY DEFAULT 'mq_' || gen_random_uuid()::text,
+      tenant_id TEXT NOT NULL,
+      remote_jid TEXT NOT NULL,
+      push_name TEXT DEFAULT '',
+      clean_phone TEXT DEFAULT '',
+      user_message TEXT NOT NULL,
+      instance_name TEXT DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'pending',
+      is_voice_note BOOLEAN DEFAULT false,
+      priority INTEGER DEFAULT 0,
+      error_message TEXT,
+      ai_response TEXT,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+      processed_at TIMESTAMPTZ,
+      completed_at TIMESTAMPTZ
+    );
+    CREATE INDEX IF NOT EXISTS idx_mq_status ON message_queue(status, created_at);
+    CREATE INDEX IF NOT EXISTS idx_mq_tenant ON message_queue(tenant_id, status);
   `).catch((err) => {
     console.warn("[Migrations] Payment columns warning:", err?.message || err);
   });
@@ -7692,6 +7719,22 @@ router5.post("/", async (req, res) => {
     res.status(500).json({ error: "Error al agendar cita" });
   }
 });
+router5.put("/:id", async (req, res) => {
+  try {
+    const updated = await updateAppointment(req.params.id, req.tenantId, req.body);
+    if (!updated) {
+      res.status(404).json({ error: "Cita no encontrada" });
+      return;
+    }
+    if (req.io) {
+      req.io.to(`tenant_${req.tenantId}`).emit("appointment:updated", updated);
+    }
+    res.json(updated);
+  } catch (error) {
+    console.error("Error al actualizar cita:", error);
+    res.status(500).json({ error: "Error al actualizar cita" });
+  }
+});
 router5.put("/:id/status", async (req, res) => {
   try {
     const { status, notifyCustomer = true } = req.body;
@@ -10312,6 +10355,7 @@ init_evolution();
 init_superadmin_notify_service();
 init_users_repo();
 init_ai_provider();
+init_env();
 var router21 = Router21();
 router21.post("/submit-payment-proof", authenticateToken, async (req, res) => {
   try {
@@ -10607,11 +10651,12 @@ router21.post("/tenants/create", async (req, res) => {
     `, [tenant.id, contactName || name, email.toLowerCase().trim(), passwordHash]);
     if (cleanPhone && cleanPhone.length >= 8) {
       const trialMsg = trialEnabled ? `\u23F3 Cuentas con *15 d\xEDas de prueba gratis* hasta el *${trialEnd.toLocaleDateString("es-CR")}*.` : "";
+      const appLoginUrl = (env.APP_URL || "https://betico.tech").replace(/\/$/, "") + "/login";
       const waText = `\u{1F389} \xA1Hola *${contactName || name}*! Te damos la bienvenida a *Betico.tech*.
 
 Tu plataforma de ventas y WhatsApp con IA est\xE1 lista:
 
-\u{1F517} *Enlace de Acceso:* https://betico.tech/login
+\u{1F517} *Enlace de Acceso:* ${appLoginUrl}
 \u{1F464} *Usuario:* ${email}
 \u{1F511} *Contrase\xF1a Temporal:* ${tempPassword}
 
@@ -12196,6 +12241,7 @@ Hola *${apt.name}*, tu cita en *${tenant.name}* ha sido confirmada con \xE9xito.
           paymentReference: transactionId
         });
         if (req.io) {
+          req.io.to(`tenant_${booking.tenantId}`).emit("courtBooking:updated", updatedBooking || booking);
           req.io.to(`tenant_${booking.tenantId}`).emit("court_booking:updated", updatedBooking || booking);
         }
         try {

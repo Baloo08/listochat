@@ -3,6 +3,7 @@ import { sendMessage } from './evolution.js';
 import { query } from '../db/pool.js';
 import { hashPassword } from '../db/users.repo.js';
 import { notifyNewTenantEnrollment } from './superadmin-notify.service.js';
+import { env } from '../config/env.js';
 
 /**
  * Handles incoming WhatsApp messages for SuperAdmin instances (betico_ventas and betico_soporte).
@@ -88,8 +89,9 @@ Atiendes a prospectos que te escriben por WhatsApp interesados en la plataforma.
         `, [tenantId, cName, email, passwordHash]);
 
         // Send credentials in follow-up message
+        const appLoginUrl = (env.APP_URL || 'https://betico.tech').replace(/\/$/, '') + '/login';
         const welcomeCreds = `🎉 ¡Tu cuenta para *${bName}* ha sido creada exitosamente!\n\n` +
-          `🔗 *Enlace de Acceso:* https://betico.tech/login\n` +
+          `🔗 *Enlace de Acceso:* ${appLoginUrl}\n` +
           `👤 *Usuario:* ${email}\n` +
           `🔑 *Contraseña Temporal:* ${tempPassword}\n\n` +
           `⏳ Cuentas con *15 días de prueba gratis* hasta el *${trialEnd.toLocaleDateString('es-CR')}*.\n` +

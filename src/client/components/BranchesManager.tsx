@@ -1,21 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApi } from '../hooks/useApi.js';
 import { Building2, Plus, Edit2, Trash2, MapPin, Phone, CheckCircle, Smartphone, AlertCircle, X } from 'lucide-react';
-
-interface Branch {
-  id: string;
-  name: string;
-  code?: string;
-  address?: string;
-  phone?: string;
-  sinpePhone?: string;
-  sinpeName?: string;
-  latitude?: number;
-  longitude?: number;
-  isMain: boolean;
-  active: boolean;
-  createdAt?: string;
-}
+import { Branch } from '../../shared/types';
 
 export default function BranchesManager() {
   const api = useApi();
