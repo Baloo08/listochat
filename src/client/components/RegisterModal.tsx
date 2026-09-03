@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Bot, X, ArrowRight, ShieldCheck, Check, Sparkles, Zap, Lock, Mail, Phone, Building2, User } from 'lucide-react';
+import { X, ArrowRight, ShieldCheck, Check, Sparkles, Zap, Lock, Mail, Phone, Building2, User } from 'lucide-react';
 
 interface RegisterModalProps {
   isOpen: boolean;
@@ -23,7 +23,7 @@ export default function RegisterModal({ isOpen, onClose, initialPlan = 'pro' }: 
     e.preventDefault();
     setError('');
 
-    if (!businessName || !ownerName || !email || !password) {
+    if (!businessName.trim() || !ownerName.trim() || !email.trim() || !password) {
       setError('Por favor completa todos los campos obligatorios.');
       return;
     }
@@ -39,11 +39,11 @@ export default function RegisterModal({ isOpen, onClose, initialPlan = 'pro' }: 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          businessName,
-          ownerName,
-          email,
+          businessName: businessName.trim(),
+          ownerName: ownerName.trim(),
+          email: email.trim(),
           password,
-          phone,
+          phone: phone.trim(),
           plan
         })
       });
@@ -69,76 +69,93 @@ export default function RegisterModal({ isOpen, onClose, initialPlan = 'pro' }: 
   };
 
   return (
-    <div style={{
-      position: 'fixed',
-      inset: 0,
-      backgroundColor: 'rgba(8, 13, 26, 0.85)',
-      backdropFilter: 'blur(10px)',
-      zIndex: 100,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: '16px',
-      overflowY: 'auto'
-    }}>
-      <div style={{
-        backgroundColor: '#0f172a',
-        borderRadius: '24px',
-        border: '1px solid rgba(255, 255, 255, 0.15)',
-        width: '100%',
-        maxWidth: '520px',
-        padding: '32px 28px',
-        boxShadow: '0 25px 60px rgba(0, 0, 0, 0.8)',
-        position: 'relative',
-        color: '#f8fafc',
-        fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif"
-      }}>
-        
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        backgroundColor: 'rgba(11, 60, 61, 0.45)',
+        backdropFilter: 'blur(8px)',
+        zIndex: 100,
+        display: 'flex',
+        alignItems: 'flex-start',
+        justifyContent: 'center',
+        padding: '32px 16px 32px 16px',
+        overflowY: 'auto',
+        boxSizing: 'border-box'
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        style={{
+          backgroundColor: '#ffffff',
+          borderRadius: '24px',
+          border: '1px solid #e2e8f0',
+          width: '100%',
+          maxWidth: '520px',
+          padding: '32px 28px',
+          boxShadow: '0 25px 60px rgba(11, 60, 61, 0.18)',
+          position: 'relative',
+          color: '#0f172a',
+          fontFamily: "'Poppins', sans-serif",
+          margin: 'auto 0',
+          boxSizing: 'border-box'
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Close Button */}
         <button
           onClick={onClose}
           style={{
             position: 'absolute',
-            top: '20px',
-            right: '20px',
-            background: 'none',
-            border: 'none',
-            color: '#94a3b8',
+            top: '18px',
+            right: '18px',
+            background: '#f1f5f9',
+            border: '1px solid #e2e8f0',
+            borderRadius: '50%',
+            color: '#64748b',
             cursor: 'pointer',
-            padding: '4px'
+            padding: '7px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            transition: 'all 0.2s'
           }}
+          aria-label="Cerrar"
         >
-          <X size={22} />
+          <X size={18} />
         </button>
 
-        {/* Header */}
-        <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-          <div style={{
-            width: '50px', height: '50px',
-            borderRadius: '16px',
-            background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            margin: '0 auto 12px auto',
-            boxShadow: '0 4px 18px rgba(16, 185, 129, 0.4)'
-          }}>
-            <Bot size={28} color="white" />
-          </div>
-          <h2 style={{ fontSize: '1.5rem', fontWeight: '900', margin: '0 0 6px 0', letterSpacing: '-0.5px' }}>
+        {/* Header with Prominent BE TICO Logo */}
+        <div style={{ textAlign: 'center', marginBottom: '22px' }}>
+          <img
+            src="/logo.png"
+            alt="Betico"
+            style={{
+              height: '46px',
+              width: 'auto',
+              objectFit: 'contain',
+              display: 'block',
+              margin: '0 auto 10px auto'
+            }}
+          />
+          <h2 style={{ fontSize: '1.45rem', fontWeight: '900', margin: '0 0 6px 0', letterSpacing: '-0.5px', color: '#0f172a' }}>
             Comienza tu Prueba Gratis de 15 Días
           </h2>
-          <p style={{ color: '#94a3b8', fontSize: '0.88rem', margin: 0 }}>
+          <p style={{ color: '#64748b', fontSize: '0.86rem', margin: 0 }}>
             Sin tarjeta de crédito. Acceso instantáneo a todas las funciones.
           </p>
         </div>
 
         {error && (
           <div style={{
-            backgroundColor: 'rgba(239, 68, 68, 0.15)',
-            border: '1px solid rgba(239, 68, 68, 0.4)',
-            color: '#fca5a5',
+            backgroundColor: '#fff1f0',
+            border: '1px solid #ffc7c4',
+            color: '#b51c12',
             padding: '10px 14px',
-            borderRadius: '10px',
-            fontSize: '0.85rem',
+            borderRadius: '12px',
+            fontSize: '0.84rem',
             marginBottom: '16px',
             fontWeight: '600'
           }}>
@@ -146,68 +163,86 @@ export default function RegisterModal({ isOpen, onClose, initialPlan = 'pro' }: 
           </div>
         )}
 
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          
+        <form
+          onSubmit={handleSubmit}
+          autoComplete="off"
+          style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}
+        >
           {/* Plan Selector */}
           <div>
-            <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', color: '#cbd5e1', marginBottom: '6px' }}>
+            <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
               Plan a Probar (15 días gratis)
             </label>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
               <div
                 onClick={() => setPlan('pro')}
                 style={{
-                  padding: '10px 12px',
-                  borderRadius: '10px',
-                  border: plan === 'pro' ? '2px solid #10b981' : '1px solid rgba(255,255,255,0.1)',
-                  backgroundColor: plan === 'pro' ? 'rgba(16, 185, 129, 0.15)' : '#1e293b',
+                  padding: '12px 14px',
+                  borderRadius: '12px',
+                  border: plan === 'pro' ? '2px solid #0b3c3d' : '1px solid #e2e8f0',
+                  backgroundColor: plan === 'pro' ? '#eff7f7' : '#f8fafc',
                   cursor: 'pointer',
-                  textAlign: 'center'
+                  textAlign: 'center',
+                  transition: 'all 0.2s',
+                  boxShadow: plan === 'pro' ? '0 2px 8px rgba(11,60,61,0.08)' : 'none'
                 }}
               >
-                <div style={{ fontWeight: '800', fontSize: '0.88rem', color: plan === 'pro' ? '#34d399' : 'white' }}>Betico Pro</div>
-                <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>₡55.000/mes</div>
+                <div style={{ fontWeight: '800', fontSize: '0.9rem', color: plan === 'pro' ? '#0b3c3d' : '#0f172a' }}>
+                  Betico Pro
+                </div>
+                <div style={{ fontSize: '0.76rem', color: plan === 'pro' ? '#134b4c' : '#64748b', fontWeight: '600', marginTop: '2px' }}>
+                  ₡55.000/mes
+                </div>
               </div>
 
               <div
                 onClick={() => setPlan('enterprise')}
                 style={{
-                  padding: '10px 12px',
-                  borderRadius: '10px',
-                  border: plan === 'enterprise' ? '2px solid #10b981' : '1px solid rgba(255,255,255,0.1)',
-                  backgroundColor: plan === 'enterprise' ? 'rgba(16, 185, 129, 0.15)' : '#1e293b',
+                  padding: '12px 14px',
+                  borderRadius: '12px',
+                  border: plan === 'enterprise' ? '2px solid #0b3c3d' : '1px solid #e2e8f0',
+                  backgroundColor: plan === 'enterprise' ? '#eff7f7' : '#f8fafc',
                   cursor: 'pointer',
-                  textAlign: 'center'
+                  textAlign: 'center',
+                  transition: 'all 0.2s',
+                  boxShadow: plan === 'enterprise' ? '0 2px 8px rgba(11,60,61,0.08)' : 'none'
                 }}
               >
-                <div style={{ fontWeight: '800', fontSize: '0.88rem', color: plan === 'enterprise' ? '#34d399' : 'white' }}>Betico Empresa</div>
-                <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Multi-Sucursal (₡85k)</div>
+                <div style={{ fontWeight: '800', fontSize: '0.9rem', color: plan === 'enterprise' ? '#0b3c3d' : '#0f172a' }}>
+                  Betico Empresa
+                </div>
+                <div style={{ fontSize: '0.76rem', color: plan === 'enterprise' ? '#134b4c' : '#64748b', fontWeight: '600', marginTop: '2px' }}>
+                  Multi-Sucursal (₡85k)
+                </div>
               </div>
             </div>
           </div>
 
           {/* Business Name */}
           <div>
-            <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', color: '#cbd5e1', marginBottom: '4px' }}>
+            <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', color: '#334155', marginBottom: '4px' }}>
               Nombre de tu Negocio o Comercio *
             </label>
             <div style={{ position: 'relative' }}>
-              <Building2 size={16} color="#64748b" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+              <Building2 size={16} color="#0b3c3d" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
               <input
                 type="text"
+                name="betico_reg_biz"
                 required
                 placeholder="Ej. Soda Doña Flor, Barbería Classic..."
                 value={businessName}
                 onChange={(e) => setBusinessName(e.target.value)}
+                autoComplete="off"
                 style={{
                   width: '100%',
-                  padding: '10px 12px 10px 36px',
-                  backgroundColor: '#1e293b',
-                  border: '1px solid rgba(255,255,255,0.12)',
-                  borderRadius: '10px',
-                  color: 'white',
+                  padding: '11px 12px 11px 38px',
+                  backgroundColor: '#f8fafc',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '12px',
+                  color: '#0f172a',
                   fontSize: '0.88rem',
-                  boxSizing: 'border-box'
+                  boxSizing: 'border-box',
+                  outline: 'none'
                 }}
               />
             </div>
@@ -216,106 +251,120 @@ export default function RegisterModal({ isOpen, onClose, initialPlan = 'pro' }: 
           {/* Owner Name & WhatsApp */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
             <div>
-              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', color: '#cbd5e1', marginBottom: '4px' }}>
+              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', color: '#334155', marginBottom: '4px' }}>
                 Tu Nombre *
               </label>
               <div style={{ position: 'relative' }}>
-                <User size={16} color="#64748b" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+                <User size={16} color="#0b3c3d" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
                 <input
                   type="text"
+                  name="betico_reg_owner"
                   required
                   placeholder="Tu nombre"
                   value={ownerName}
                   onChange={(e) => setOwnerName(e.target.value)}
+                  autoComplete="off"
                   style={{
                     width: '100%',
-                    padding: '10px 12px 10px 36px',
-                    backgroundColor: '#1e293b',
-                    border: '1px solid rgba(255,255,255,0.12)',
-                    borderRadius: '10px',
-                    color: 'white',
+                    padding: '11px 12px 11px 38px',
+                    backgroundColor: '#f8fafc',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '12px',
+                    color: '#0f172a',
                     fontSize: '0.88rem',
-                    boxSizing: 'border-box'
+                    boxSizing: 'border-box',
+                    outline: 'none'
                   }}
                 />
               </div>
             </div>
 
             <div>
-              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', color: '#cbd5e1', marginBottom: '4px' }}>
+              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', color: '#334155', marginBottom: '4px' }}>
                 WhatsApp *
               </label>
               <div style={{ position: 'relative' }}>
-                <Phone size={16} color="#64748b" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+                <Phone size={16} color="#0b3c3d" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
                 <input
                   type="text"
+                  name="betico_reg_phone"
                   placeholder="8888-8888"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
+                  autoComplete="off"
                   style={{
                     width: '100%',
-                    padding: '10px 12px 10px 36px',
-                    backgroundColor: '#1e293b',
-                    border: '1px solid rgba(255,255,255,0.12)',
-                    borderRadius: '10px',
-                    color: 'white',
+                    padding: '11px 12px 11px 38px',
+                    backgroundColor: '#f8fafc',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '12px',
+                    color: '#0f172a',
                     fontSize: '0.88rem',
-                    boxSizing: 'border-box'
+                    boxSizing: 'border-box',
+                    outline: 'none'
                   }}
                 />
               </div>
             </div>
           </div>
 
-          {/* Email */}
+          {/* Email - Isolated to prevent autofill */}
           <div>
-            <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', color: '#cbd5e1', marginBottom: '4px' }}>
+            <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', color: '#334155', marginBottom: '4px' }}>
               Correo Electrónico de Acceso *
             </label>
             <div style={{ position: 'relative' }}>
-              <Mail size={16} color="#64748b" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+              <Mail size={16} color="#0b3c3d" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
               <input
                 type="email"
+                name="betico_reg_email"
                 required
                 placeholder="tu@correo.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                autoComplete="off"
+                autoCapitalize="none"
+                spellCheck={false}
                 style={{
                   width: '100%',
-                  padding: '10px 12px 10px 36px',
-                  backgroundColor: '#1e293b',
-                  border: '1px solid rgba(255,255,255,0.12)',
-                  borderRadius: '10px',
-                  color: 'white',
+                  padding: '11px 12px 11px 38px',
+                  backgroundColor: '#f8fafc',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '12px',
+                  color: '#0f172a',
                   fontSize: '0.88rem',
-                  boxSizing: 'border-box'
+                  boxSizing: 'border-box',
+                  outline: 'none'
                 }}
               />
             </div>
           </div>
 
-          {/* Password */}
+          {/* Password - With autoComplete="new-password" to stop autofill */}
           <div>
-            <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', color: '#cbd5e1', marginBottom: '4px' }}>
+            <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', color: '#334155', marginBottom: '4px' }}>
               Contraseña de Acceso *
             </label>
             <div style={{ position: 'relative' }}>
-              <Lock size={16} color="#64748b" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+              <Lock size={16} color="#0b3c3d" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
               <input
                 type="password"
+                name="betico_reg_password"
                 required
                 placeholder="Mínimo 6 caracteres"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                autoComplete="new-password"
                 style={{
                   width: '100%',
-                  padding: '10px 12px 10px 36px',
-                  backgroundColor: '#1e293b',
-                  border: '1px solid rgba(255,255,255,0.12)',
-                  borderRadius: '10px',
-                  color: 'white',
+                  padding: '11px 12px 11px 38px',
+                  backgroundColor: '#f8fafc',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '12px',
+                  color: '#0f172a',
                   fontSize: '0.88rem',
-                  boxSizing: 'border-box'
+                  boxSizing: 'border-box',
+                  outline: 'none'
                 }}
               />
             </div>
@@ -326,12 +375,12 @@ export default function RegisterModal({ isOpen, onClose, initialPlan = 'pro' }: 
             type="submit"
             disabled={loading}
             style={{
-              marginTop: '10px',
+              marginTop: '8px',
               padding: '14px',
-              background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+              backgroundColor: '#0b3c3d',
               color: 'white',
               border: 'none',
-              borderRadius: '12px',
+              borderRadius: '14px',
               fontWeight: '800',
               fontSize: '0.98rem',
               cursor: 'pointer',
@@ -339,7 +388,8 @@ export default function RegisterModal({ isOpen, onClose, initialPlan = 'pro' }: 
               alignItems: 'center',
               justifyContent: 'center',
               gap: '8px',
-              boxShadow: '0 4px 18px rgba(16, 185, 129, 0.4)'
+              boxShadow: '0 4px 16px rgba(11, 60, 61, 0.25)',
+              transition: 'all 0.2s'
             }}
           >
             {loading ? 'Creando tu cuenta y sitio web...' : (
@@ -349,12 +399,11 @@ export default function RegisterModal({ isOpen, onClose, initialPlan = 'pro' }: 
             )}
           </button>
 
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '0.78rem', color: '#94a3b8', marginTop: '4px' }}>
-            <ShieldCheck size={14} color="#10b981" /> 100% Seguro • Cancelas en cualquier momento
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '0.78rem', color: '#64748b', marginTop: '4px' }}>
+            <ShieldCheck size={15} color="#0b3c3d" />
+            <span>100% Seguro • Cancelas en cualquier momento</span>
           </div>
-
         </form>
-
       </div>
     </div>
   );

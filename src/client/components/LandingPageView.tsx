@@ -162,25 +162,17 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
           justifyContent: 'space-between',
           gap: '16px'
         }}>
-          {/* Logo Único */}
+          {/* Logo Oficial Único (Máximo Protagonismo) */}
           <a
             href="#"
             onClick={(e) => { e.preventDefault(); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-            style={{ display: 'flex', alignItems: 'center', gap: '12px', textDecoration: 'none', flexShrink: 0 }}
+            style={{ display: 'flex', alignItems: 'center', textDecoration: 'none', flexShrink: 0, padding: '4px 0' }}
           >
             <img
               src="/logo.png"
-              alt="Betico Logo"
-              style={{ height: '42px', width: 'auto', objectFit: 'contain' }}
+              alt="Betico"
+              style={{ height: '54px', width: 'auto', objectFit: 'contain', cursor: 'pointer', transition: 'transform 0.2s' }}
             />
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <span style={{ fontWeight: '900', fontSize: '1.35rem', color: '#0f172a', letterSpacing: '-0.5px', lineHeight: 1 }}>
-                betico<span style={{ color: '#0b3c3d' }}>.tech</span>
-              </span>
-              <span style={{ fontSize: '10px', fontWeight: '800', letterSpacing: '0.1em', color: '#b51c12', textTransform: 'uppercase', marginTop: '2px' }}>
-                Costa Rica
-              </span>
-            </div>
           </a>
 
           {/* Desktop Navigation Links */}
@@ -1404,13 +1396,10 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
           
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.5fr 1fr 1fr 1.2fr', gap: isMobile ? '32px' : '40px', paddingBottom: '48px', borderBottom: '1px solid #e2e8f0' }}>
             
-            {/* Logo & Bio */}
+            {/* Logo & Bio (Máximo Protagonismo) */}
             <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-                <img src="/logo.png" alt="Betico Logo" style={{ height: '36px', width: 'auto', objectFit: 'contain' }} />
-                <span style={{ fontWeight: '900', fontSize: '1.25rem', color: '#0f172a', letterSpacing: '-0.5px' }}>
-                  betico<span style={{ color: '#0b3c3d' }}>.tech</span>
-                </span>
+              <div style={{ marginBottom: '18px' }}>
+                <img src="/logo.png" alt="Betico" style={{ height: '48px', width: 'auto', objectFit: 'contain' }} />
               </div>
               <p style={{ fontSize: '0.85rem', color: '#64748b', lineHeight: 1.6, maxWidth: '300px', margin: '0 0 16px 0' }}>
                 La plataforma SaaS costarricense que une tu sitio web oficial, tienda digital, agenda de citas y motor de IA en WhatsApp.
