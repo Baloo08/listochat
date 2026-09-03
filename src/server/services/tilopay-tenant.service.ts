@@ -11,9 +11,8 @@ const tokenCache = new Map<string, TokenCacheEntry>();
 
 export class TilopayTenantService {
   private static getBaseUrl(environment: 'SANDBOX' | 'PRODUCTION'): string {
-    return environment === 'PRODUCTION'
-      ? 'https://app.tilopay.net/api/v1'
-      : 'https://sandbox.tilopay.net/api/v1';
+    // La API oficial de Tilopay (tanto en pruebas/sandbox como producción) opera sobre app.tilopay.com
+    return 'https://app.tilopay.com/api/v1';
   }
 
   /**
@@ -38,6 +37,9 @@ export class TilopayTenantService {
     }
 
     const baseUrl = this.getBaseUrl(environment);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+
     try {
       const res = await fetch(`${baseUrl}/loginSdk`, {
         method: 'POST',
@@ -46,7 +48,8 @@ export class TilopayTenantService {
           api_key: apiKey.trim(),
           api_user: apiUser.trim(),
           password: apiPassword.trim()
-        })
+        }),
+        signal: controller.signal
       });
 
       const data = await res.json().catch(() => ({}));
@@ -57,7 +60,11 @@ export class TilopayTenantService {
 
       return { success: true, message: 'Conexión con Tilopay verificada exitosamente.' };
     } catch (err: any) {
-      return { success: false, message: `Error de red al conectar con Tilopay: ${err.message}` };
+      const isTimeout = err.name === 'AbortError' || err.message?.includes('aborted');
+      const msg = isTimeout ? 'Tiempo de espera agotado al conectar con Tilopay (10s)' : err.message;
+      return { success: false, message: `Error de red al conectar con Tilopay: ${msg}` };
+    } finally {
+      clearTimeout(timeout);
     }
   }
 

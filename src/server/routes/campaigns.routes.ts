@@ -287,8 +287,14 @@ router.post('/:id/send', async (req, res) => {
 
 router.post('/:id/pause', async (req, res) => {
   try {
+    const tenantId = req.user!.tenantId;
     const campaignId = req.params.id;
-    await pauseCampaign(campaignId);
+    const campCheck = await query('SELECT id FROM whatsapp_campaigns WHERE id = $1 AND tenant_id = $2', [campaignId, tenantId]);
+    if (campCheck.rows.length === 0) {
+      res.status(404).json({ error: 'Campaña no encontrada' });
+      return;
+    }
+    await pauseCampaign(campaignId, tenantId);
     res.json({ success: true, message: 'Campaña pausada' });
   } catch (error) {
     res.status(500).json({ error: 'Error al pausar campaña' });
@@ -299,6 +305,11 @@ router.post('/:id/resume', async (req, res) => {
   try {
     const tenantId = req.user!.tenantId;
     const campaignId = req.params.id;
+    const campCheck = await query('SELECT id FROM whatsapp_campaigns WHERE id = $1 AND tenant_id = $2', [campaignId, tenantId]);
+    if (campCheck.rows.length === 0) {
+      res.status(404).json({ error: 'Campaña no encontrada' });
+      return;
+    }
     await resumeCampaign(campaignId, tenantId);
     res.json({ success: true, message: 'Campaña reanudada' });
   } catch (error) {
@@ -308,8 +319,14 @@ router.post('/:id/resume', async (req, res) => {
 
 router.post('/:id/cancel', async (req, res) => {
   try {
+    const tenantId = req.user!.tenantId;
     const campaignId = req.params.id;
-    await cancelCampaign(campaignId);
+    const campCheck = await query('SELECT id FROM whatsapp_campaigns WHERE id = $1 AND tenant_id = $2', [campaignId, tenantId]);
+    if (campCheck.rows.length === 0) {
+      res.status(404).json({ error: 'Campaña no encontrada' });
+      return;
+    }
+    await cancelCampaign(campaignId, tenantId);
     res.json({ success: true, message: 'Campaña cancelada' });
   } catch (error) {
     res.status(500).json({ error: 'Error al cancelar campaña' });

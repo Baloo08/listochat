@@ -955,8 +955,9 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                   {/* Customer Information Form */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
                     <div>
-                      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px', color: titleColor }}>Nombre Completo *</label>
+                      <label htmlFor="checkout-customer-name" style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px', color: titleColor }}>Nombre Completo *</label>
                       <input
+                        id="checkout-customer-name"
                         type="text"
                         required
                         placeholder="Tu nombre y apellidos"
@@ -967,8 +968,9 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                     </div>
 
                     <div>
-                      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px', color: titleColor }}>Teléfono WhatsApp *</label>
+                      <label htmlFor="checkout-customer-phone" style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px', color: titleColor }}>Teléfono WhatsApp *</label>
                       <input
+                        id="checkout-customer-phone"
                         type="tel"
                         required
                         placeholder="Ej: 8888-8888"

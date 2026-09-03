@@ -1424,7 +1424,7 @@ import { Server as SocketIOServer } from "socket.io";
 import cors from "cors";
 import helmet from "helmet";
 import compression from "compression";
-import rateLimit from "express-rate-limit";
+import rateLimit2 from "express-rate-limit";
 import path2 from "path";
 import { fileURLToPath } from "url";
 import fs2 from "fs";
@@ -2436,12 +2436,14 @@ async function enqueueCampaign(campaignId, tenantId) {
   processCampaignJob(job);
   return true;
 }
-async function pauseCampaign(campaignId) {
+async function pauseCampaign(campaignId, tenantId) {
   const job = activeJobs.get(campaignId);
   if (job) {
     job.isPaused = true;
   }
-  await query(`UPDATE whatsapp_campaigns SET status = 'paused' WHERE id = $1`, [campaignId]);
+  const sql = tenantId ? `UPDATE whatsapp_campaigns SET status = 'paused' WHERE id = $1 AND tenant_id = $2` : `UPDATE whatsapp_campaigns SET status = 'paused' WHERE id = $1`;
+  const params = tenantId ? [campaignId, tenantId] : [campaignId];
+  await query(sql, params);
   if (redis) {
     try {
       await redis.hset(`campaign:${campaignId}`, "status", "paused");
@@ -2458,7 +2460,7 @@ async function resumeCampaign(campaignId, tenantId) {
     job = { campaignId, tenantId, isPaused: false, isCancelled: false };
     activeJobs.set(campaignId, job);
   }
-  await query(`UPDATE whatsapp_campaigns SET status = 'sending' WHERE id = $1`, [campaignId]);
+  await query(`UPDATE whatsapp_campaigns SET status = 'sending' WHERE id = $1 AND tenant_id = $2`, [campaignId, tenantId]);
   if (redis) {
     try {
       await redis.hset(`campaign:${campaignId}`, "status", "sending");
@@ -2468,13 +2470,15 @@ async function resumeCampaign(campaignId, tenantId) {
   processCampaignJob(job);
   return true;
 }
-async function cancelCampaign(campaignId) {
+async function cancelCampaign(campaignId, tenantId) {
   const job = activeJobs.get(campaignId);
   if (job) {
     job.isCancelled = true;
   }
   activeJobs.delete(campaignId);
-  await query(`UPDATE whatsapp_campaigns SET status = 'cancelled' WHERE id = $1`, [campaignId]);
+  const sql = tenantId ? `UPDATE whatsapp_campaigns SET status = 'cancelled' WHERE id = $1 AND tenant_id = $2` : `UPDATE whatsapp_campaigns SET status = 'cancelled' WHERE id = $1`;
+  const params = tenantId ? [campaignId, tenantId] : [campaignId];
+  await query(sql, params);
   if (redis) {
     try {
       await redis.del(`campaign:${campaignId}`);
@@ -4505,27 +4509,30 @@ async function getAllChatSessions(tenantId) {
   return map;
 }
 async function setChatHumanMode(tenantId, remoteJid, isHumanMode, hoursUntilExpire = 4) {
-  const untilSql = isHumanMode ? `CURRENT_TIMESTAMP + INTERVAL '${Math.max(1, hoursUntilExpire)} hours'` : "NULL";
+  const safeHours = Math.max(1, Math.min(168, Number(hoursUntilExpire) || 4));
+  const intervalStr = `${safeHours} hours`;
+  const sql = isHumanMode ? `
+    INSERT INTO chat_sessions (tenant_id, remote_jid, is_human_mode, human_mode_until, updated_at)
+    VALUES ($1, $2, $3, CURRENT_TIMESTAMP + $4::interval, CURRENT_TIMESTAMP)
+    ON CONFLICT (tenant_id, remote_jid) DO UPDATE SET
+      is_human_mode = EXCLUDED.is_human_mode,
+      human_mode_until = CURRENT_TIMESTAMP + $4::interval,
+      updated_at = CURRENT_TIMESTAMP
+  ` : `
+    INSERT INTO chat_sessions (tenant_id, remote_jid, is_human_mode, human_mode_until, updated_at)
+    VALUES ($1, $2, $3, NULL, CURRENT_TIMESTAMP)
+    ON CONFLICT (tenant_id, remote_jid) DO UPDATE SET
+      is_human_mode = EXCLUDED.is_human_mode,
+      human_mode_until = NULL,
+      updated_at = CURRENT_TIMESTAMP
+  `;
+  const params = isHumanMode ? [tenantId, remoteJid, true, intervalStr] : [tenantId, remoteJid, false];
   try {
-    await query(`
-      INSERT INTO chat_sessions (tenant_id, remote_jid, is_human_mode, human_mode_until, updated_at)
-      VALUES ($1, $2, $3, ${untilSql}, CURRENT_TIMESTAMP)
-      ON CONFLICT (tenant_id, remote_jid) DO UPDATE SET
-        is_human_mode = EXCLUDED.is_human_mode,
-        human_mode_until = ${untilSql},
-        updated_at = CURRENT_TIMESTAMP
-    `, [tenantId, remoteJid, isHumanMode]);
+    await query(sql, params);
   } catch (err) {
     if (err && (err.message?.includes("human_mode_until") || err.code === "42703")) {
       await query(`ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS human_mode_until TIMESTAMPTZ;`);
-      await query(`
-        INSERT INTO chat_sessions (tenant_id, remote_jid, is_human_mode, human_mode_until, updated_at)
-        VALUES ($1, $2, $3, ${untilSql}, CURRENT_TIMESTAMP)
-        ON CONFLICT (tenant_id, remote_jid) DO UPDATE SET
-          is_human_mode = EXCLUDED.is_human_mode,
-          human_mode_until = ${untilSql},
-          updated_at = CURRENT_TIMESTAMP
-      `, [tenantId, remoteJid, isHumanMode]);
+      await query(sql, params);
     } else {
       throw err;
     }
@@ -4923,7 +4930,11 @@ async function updateOrderStatus(id, tenantId, status) {
   return updateOrder(id, tenantId, { status });
 }
 async function confirmPayment(id, tenantId, paymentReference) {
-  return updateOrder(id, tenantId, { paymentStatus: "paid", paymentReference: paymentReference || "Confirmado manual" });
+  const result = await executeOrderPaymentConfirmation(tenantId, id, {
+    paymentMethod: "manual",
+    paymentReference: paymentReference || "Confirmado manual"
+  });
+  return result.order || getOrderById(id, tenantId);
 }
 async function executeOrderPaymentConfirmation(tenantId, orderId, paymentData) {
   const client = await getClient();
@@ -5246,17 +5257,7 @@ async function processSingleMessage(msg) {
       await markFailed(msg.id, "No AI reply generated");
       return;
     }
-    let sendRes;
-    if (aiResult.isMediaDetected && aiResult.mediaData?.mediaUrl) {
-      sendRes = await sendMedia(msg.instanceName, msg.cleanPhone, aiResult.mediaData.mediaUrl, aiResult.replyText || aiResult.mediaData.caption || "");
-    } else {
-      sendRes = await sendMessage(msg.instanceName, msg.cleanPhone, aiResult.replyText);
-    }
-    const aiMsgId = `ai_${Date.now()}`;
-    await saveChatMessage(msg.tenantId, { id: aiMsgId, remoteJid: msg.remoteJid, pushName: "Asistente IA", fromMe: true, messageText: aiResult.replyText, aiResponse: aiResult.replyText, status: sendRes.success ? "sent" : "failed" });
-    if (io) {
-      io.to(`tenant_${msg.tenantId}`).emit("chat:message", { id: aiMsgId, tenantId: msg.tenantId, remoteJid: msg.remoteJid, pushName: "Asistente IA", fromMe: true, messageText: aiResult.replyText, createdAt: (/* @__PURE__ */ new Date()).toISOString() });
-    }
+    let finalReplyText = aiResult.replyText;
     if (aiResult.isBookingDetected && aiResult.bookingData) {
       try {
         const bResult = await createBookingFromCommand(msg.tenantId, { ...aiResult.bookingData, customerPhone: aiResult.bookingData.customerPhone || msg.cleanPhone, customerName: aiResult.bookingData.customerName || msg.pushName });
@@ -5267,6 +5268,7 @@ async function processSingleMessage(msg) {
       } catch (err) {
         console.error("[Queue] Failed to process booking:", err);
         await logAICommand(msg.tenantId, msg.remoteJid, "booking", aiResult.bookingData, "failed", err?.message);
+        finalReplyText = `Disculpa *${msg.pushName}*, tuvimos un inconveniente al agendar tu cita porque el horario solicitado ya no est\xE1 disponible o hubo un error en el sistema. \xBFTe gustar\xEDa consultar otro horario?`;
         if (io) {
           io.to(`tenant_${msg.tenantId}`).emit("ai:command_failed", {
             remoteJid: msg.remoteJid,
@@ -5309,6 +5311,7 @@ async function processSingleMessage(msg) {
       } catch (courtErr) {
         console.error("[Queue] Failed to process court booking:", courtErr);
         await logAICommand(msg.tenantId, msg.remoteJid, "court_booking", aiResult.courtBookingData, "failed", courtErr?.message);
+        finalReplyText = `Disculpa *${msg.pushName}*, no pudimos apartar la cancha para ese horario porque ya se encuentra ocupada o hubo un inconveniente. \xBFTe gustar\xEDa consultar otro horario?`;
         if (io) {
           io.to(`tenant_${msg.tenantId}`).emit("ai:command_failed", {
             remoteJid: msg.remoteJid,
@@ -5329,6 +5332,7 @@ async function processSingleMessage(msg) {
       } catch (err) {
         console.error("[Queue] Failed to process order:", err);
         await logAICommand(msg.tenantId, msg.remoteJid, "order", aiResult.orderData, "failed", err?.message);
+        finalReplyText = `Disculpa *${msg.pushName}*, tuvimos un inconveniente t\xE9cnico al registrar tu orden en el sistema. Un asesor de nuestro equipo se comunicar\xE1 contigo de inmediato para atender tu pedido.`;
         if (io) {
           io.to(`tenant_${msg.tenantId}`).emit("ai:command_failed", {
             remoteJid: msg.remoteJid,
@@ -5338,6 +5342,17 @@ async function processSingleMessage(msg) {
           });
         }
       }
+    }
+    let sendRes;
+    if (aiResult.isMediaDetected && aiResult.mediaData?.mediaUrl) {
+      sendRes = await sendMedia(msg.instanceName, msg.cleanPhone, aiResult.mediaData.mediaUrl, finalReplyText || aiResult.mediaData.caption || "");
+    } else {
+      sendRes = await sendMessage(msg.instanceName, msg.cleanPhone, finalReplyText);
+    }
+    const aiMsgId = `ai_${Date.now()}`;
+    await saveChatMessage(msg.tenantId, { id: aiMsgId, remoteJid: msg.remoteJid, pushName: "Asistente IA", fromMe: true, messageText: finalReplyText, aiResponse: finalReplyText, status: sendRes.success ? "sent" : "failed" });
+    if (io) {
+      io.to(`tenant_${msg.tenantId}`).emit("chat:message", { id: aiMsgId, tenantId: msg.tenantId, remoteJid: msg.remoteJid, pushName: "Asistente IA", fromMe: true, messageText: finalReplyText, createdAt: (/* @__PURE__ */ new Date()).toISOString() });
     }
     if (aiResult.isCancelBookingDetected) {
       try {
@@ -6775,6 +6790,10 @@ router3.post("/", requireRole("superadmin", "admin"), async (req, res) => {
       res.status(400).json({ error: "Nombre, email y contrase\xF1a son requeridos" });
       return;
     }
+    if (role === "superadmin" && req.user?.role !== "superadmin") {
+      res.status(403).json({ error: "No tienes permisos para crear usuarios con rol superadmin" });
+      return;
+    }
     const user = await createUser({
       tenantId: req.tenantId,
       name,
@@ -6794,7 +6813,12 @@ router3.post("/", requireRole("superadmin", "admin"), async (req, res) => {
 });
 router3.put("/:id", requireRole("superadmin", "admin"), async (req, res) => {
   try {
-    const updated = await updateUser(req.params.id, req.tenantId, req.body);
+    const updateData = { ...req.body };
+    if (updateData.role === "superadmin" && req.user?.role !== "superadmin") {
+      res.status(403).json({ error: "No tienes permisos para asignar el rol superadmin" });
+      return;
+    }
+    const updated = await updateUser(req.params.id, req.tenantId, updateData);
     if (!updated) {
       res.status(404).json({ error: "Usuario no encontrado" });
       return;
@@ -8164,7 +8188,17 @@ import fs from "fs";
 import { v4 as uuidv4 } from "uuid";
 init_env();
 init_pool();
+import rateLimit from "express-rate-limit";
 var router15 = Router15();
+var publicUploadLimiter = rateLimit({
+  windowMs: 5 * 60 * 1e3,
+  // 5 minutos
+  max: 15,
+  // máximo 15 comprobantes por IP cada 5 min
+  message: { error: "Demasiados intentos de subida. Por favor espera unos minutos." },
+  standardHeaders: true,
+  legacyHeaders: false
+});
 var uploadDir = env.UPLOAD_DIR || path.join(process.cwd(), "uploads");
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
@@ -8210,7 +8244,7 @@ async function persistFileToDatabase(filename, mimetype, filePath, size) {
     console.error("[Upload DB Sync] Failed to persist file to PostgreSQL:", err);
   }
 }
-router15.post("/public-proof", upload2.single("file"), async (req, res) => {
+router15.post("/public-proof", publicUploadLimiter, upload2.single("file"), async (req, res) => {
   if (!req.file) {
     res.status(400).json({ error: "No se recibi\xF3 archivo de comprobante" });
     return;
@@ -8289,7 +8323,7 @@ init_env();
 var tokenCache = /* @__PURE__ */ new Map();
 var TilopayTenantService = class {
   static getBaseUrl(environment) {
-    return environment === "PRODUCTION" ? "https://app.tilopay.net/api/v1" : "https://sandbox.tilopay.net/api/v1";
+    return "https://app.tilopay.com/api/v1";
   }
   /**
    * Clears cached tokens for a tenant (useful when credentials are saved or rotated).
@@ -8306,6 +8340,8 @@ var TilopayTenantService = class {
       return { success: false, message: "Todos los campos de credenciales son requeridos." };
     }
     const baseUrl = this.getBaseUrl(environment);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 1e4);
     try {
       const res = await fetch(`${baseUrl}/loginSdk`, {
         method: "POST",
@@ -8314,7 +8350,8 @@ var TilopayTenantService = class {
           api_key: apiKey.trim(),
           api_user: apiUser.trim(),
           password: apiPassword.trim()
-        })
+        }),
+        signal: controller.signal
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.access_token && !data.token) {
@@ -8323,7 +8360,11 @@ var TilopayTenantService = class {
       }
       return { success: true, message: "Conexi\xF3n con Tilopay verificada exitosamente." };
     } catch (err) {
-      return { success: false, message: `Error de red al conectar con Tilopay: ${err.message}` };
+      const isTimeout = err.name === "AbortError" || err.message?.includes("aborted");
+      const msg = isTimeout ? "Tiempo de espera agotado al conectar con Tilopay (10s)" : err.message;
+      return { success: false, message: `Error de red al conectar con Tilopay: ${msg}` };
+    } finally {
+      clearTimeout(timeout);
     }
   }
   /**
@@ -9425,21 +9466,23 @@ router19.put("/:id", async (req, res) => {
   try {
     const driver = await updateDriver(req.params.id, req.tenantId, req.body);
     if (!driver) {
-      const check = await query(`
-        UPDATE delivery_drivers
-        SET name = COALESCE($2, name),
-            phone = COALESCE($3, phone),
-            access_pin = COALESCE($4, access_pin),
-            vehicle_type = COALESCE($5, vehicle_type),
-            plate_number = COALESCE($6, plate_number),
-            active = COALESCE($7, active)
-        WHERE id = $1
-        RETURNING id, tenant_id as "tenantId", name, phone, access_pin as "accessPin",
-                  vehicle_type as "vehicleType", plate_number as "plateNumber", active, created_at as "createdAt"
-      `, [req.params.id, req.body.name, req.body.phone, req.body.accessPin, req.body.vehicleType, req.body.plateNumber, req.body.active]);
-      if (check.rows.length > 0) {
-        res.json(check.rows[0]);
-        return;
+      if (req.user?.role === "superadmin") {
+        const check = await query(`
+          UPDATE delivery_drivers
+          SET name = COALESCE($2, name),
+              phone = COALESCE($3, phone),
+              access_pin = COALESCE($4, access_pin),
+              vehicle_type = COALESCE($5, vehicle_type),
+              plate_number = COALESCE($6, plate_number),
+              active = COALESCE($7, active)
+          WHERE id = $1
+          RETURNING id, tenant_id as "tenantId", name, phone, access_pin as "accessPin",
+                    vehicle_type as "vehicleType", plate_number as "plateNumber", active, created_at as "createdAt"
+        `, [req.params.id, req.body.name, req.body.phone, req.body.accessPin, req.body.vehicleType, req.body.plateNumber, req.body.active]);
+        if (check.rows.length > 0) {
+          res.json(check.rows[0]);
+          return;
+        }
       }
       res.status(404).json({ error: "Repartidor no encontrado" });
       return;
@@ -10698,8 +10741,14 @@ router22.post("/:id/send", async (req, res) => {
 });
 router22.post("/:id/pause", async (req, res) => {
   try {
+    const tenantId = req.user.tenantId;
     const campaignId = req.params.id;
-    await pauseCampaign(campaignId);
+    const campCheck = await query("SELECT id FROM whatsapp_campaigns WHERE id = $1 AND tenant_id = $2", [campaignId, tenantId]);
+    if (campCheck.rows.length === 0) {
+      res.status(404).json({ error: "Campa\xF1a no encontrada" });
+      return;
+    }
+    await pauseCampaign(campaignId, tenantId);
     res.json({ success: true, message: "Campa\xF1a pausada" });
   } catch (error) {
     res.status(500).json({ error: "Error al pausar campa\xF1a" });
@@ -10709,6 +10758,11 @@ router22.post("/:id/resume", async (req, res) => {
   try {
     const tenantId = req.user.tenantId;
     const campaignId = req.params.id;
+    const campCheck = await query("SELECT id FROM whatsapp_campaigns WHERE id = $1 AND tenant_id = $2", [campaignId, tenantId]);
+    if (campCheck.rows.length === 0) {
+      res.status(404).json({ error: "Campa\xF1a no encontrada" });
+      return;
+    }
     await resumeCampaign(campaignId, tenantId);
     res.json({ success: true, message: "Campa\xF1a reanudada" });
   } catch (error) {
@@ -10717,8 +10771,14 @@ router22.post("/:id/resume", async (req, res) => {
 });
 router22.post("/:id/cancel", async (req, res) => {
   try {
+    const tenantId = req.user.tenantId;
     const campaignId = req.params.id;
-    await cancelCampaign(campaignId);
+    const campCheck = await query("SELECT id FROM whatsapp_campaigns WHERE id = $1 AND tenant_id = $2", [campaignId, tenantId]);
+    if (campCheck.rows.length === 0) {
+      res.status(404).json({ error: "Campa\xF1a no encontrada" });
+      return;
+    }
+    await cancelCampaign(campaignId, tenantId);
     res.json({ success: true, message: "Campa\xF1a cancelada" });
   } catch (error) {
     res.status(500).json({ error: "Error al cancelar campa\xF1a" });
@@ -11797,7 +11857,7 @@ async function startServer() {
   app.use(cors());
   app.use(express.json({ limit: "25mb" }));
   app.use(express.urlencoded({ extended: true, limit: "25mb" }));
-  const authLimiter = rateLimit({
+  const authLimiter = rateLimit2({
     windowMs: 15 * 60 * 1e3,
     // 15 minutes window
     max: 20,
@@ -11806,7 +11866,7 @@ async function startServer() {
     standardHeaders: true,
     legacyHeaders: false
   });
-  const publicLimiter = rateLimit({
+  const publicLimiter = rateLimit2({
     windowMs: 1 * 60 * 1e3,
     // 1 minute
     max: 200,

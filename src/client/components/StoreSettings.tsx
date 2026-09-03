@@ -573,6 +573,17 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
         pickupEnabled
       });
 
+      // Sincronizar estado habilitado de Tilopay si está configurado
+      try {
+        await api.post('/api/tenant/payment-config', {
+          isEnabled: tiloEnabled,
+          environment: tiloEnv,
+          captureMode: tiloCaptureMode
+        });
+      } catch (e) {
+        // Silencioso si aún no se han configurado llaves
+      }
+
       setStoreSlug(cleanSlug || storeSlug);
       setSaveMessage(true);
       setTimeout(() => setSaveMessage(false), 3000);
@@ -1159,6 +1170,72 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
                   }}>
                     {acceptCashOnDelivery ? 'Habilitado' : 'Deshabilitado'}
                   </span>
+                </div>
+              </div>
+
+              {/* 4. Tarjeta de Crédito / Débito (Tilopay) */}
+              <div style={{
+                padding: '16px', borderRadius: '10px',
+                border: `2px solid ${tiloEnabled ? '#2563eb' : 'var(--border, #e2e8f0)'}`,
+                backgroundColor: tiloEnabled ? 'rgba(37, 99, 235, 0.04)' : 'var(--bg-elevated, #f8fafc)',
+                transition: 'all 0.15s ease'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', margin: 0 }}>
+                    <input
+                      type="checkbox"
+                      checked={tiloEnabled}
+                      onChange={(e) => setTiloEnabled(e.target.checked)}
+                      style={{ width: '18px', height: '18px', accentColor: '#2563eb', cursor: 'pointer' }}
+                    />
+                    <div>
+                      <strong style={{ fontSize: '0.95rem', color: 'var(--text)', display: 'block' }}>
+                        💳 Tarjeta de Crédito / Débito (Tilopay)
+                      </strong>
+                      <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                        Cobro directo con tarjetas Visa, MasterCard y autenticación 3D Secure
+                      </span>
+                    </div>
+                  </label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{
+                      fontSize: '0.75rem', fontWeight: 'bold', padding: '3px 8px', borderRadius: '6px',
+                      backgroundColor: tiloEnabled ? '#dbeafe' : '#f1f5f9',
+                      color: tiloEnabled ? '#1d4ed8' : '#64748b'
+                    }}>
+                      {tiloEnabled ? 'Habilitado' : 'Deshabilitado'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('tilopay')}
+                      style={{
+                        padding: '5px 12px', fontSize: '0.78rem', fontWeight: '700',
+                        backgroundColor: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe',
+                        borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px'
+                      }}
+                    >
+                      {tiloIsConfigured ? '⚙️ Ajustar Llaves' : '🔑 Configurar Llaves'}
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ fontSize: '0.8rem', marginTop: '10px', paddingTop: '8px', borderTop: '1px dashed var(--border, #e2e8f0)' }}>
+                  {tiloIsConfigured ? (
+                    <span style={{ color: '#15803d', fontWeight: '600' }}>
+                      ✅ Pasarela configurada en entorno <strong>{tiloEnv}</strong>.
+                    </span>
+                  ) : (
+                    <span style={{ color: '#b45309', fontWeight: '600' }}>
+                      ⚠️ Requiere ingresar tus credenciales de Tilopay para poder procesar cobros.{' '}
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('tilopay')}
+                        style={{ background: 'none', border: 'none', color: '#2563eb', textDecoration: 'underline', cursor: 'pointer', padding: 0, font: 'inherit', fontWeight: 'bold' }}
+                      >
+                        Ingresar credenciales aquí
+                      </button>
+                    </span>
+                  )}
                 </div>
               </div>
 

@@ -64,12 +64,16 @@ export async function enqueueCampaign(campaignId: string, tenantId: string): Pro
   return true;
 }
 
-export async function pauseCampaign(campaignId: string): Promise<boolean> {
+export async function pauseCampaign(campaignId: string, tenantId?: string): Promise<boolean> {
   const job = activeJobs.get(campaignId);
   if (job) {
     job.isPaused = true;
   }
-  await query(`UPDATE whatsapp_campaigns SET status = 'paused' WHERE id = $1`, [campaignId]);
+  const sql = tenantId 
+    ? `UPDATE whatsapp_campaigns SET status = 'paused' WHERE id = $1 AND tenant_id = $2`
+    : `UPDATE whatsapp_campaigns SET status = 'paused' WHERE id = $1`;
+  const params = tenantId ? [campaignId, tenantId] : [campaignId];
+  await query(sql, params);
   if (redis) {
     try {
       await redis.hset(`campaign:${campaignId}`, 'status', 'paused');
@@ -87,7 +91,7 @@ export async function resumeCampaign(campaignId: string, tenantId: string): Prom
     activeJobs.set(campaignId, job);
   }
 
-  await query(`UPDATE whatsapp_campaigns SET status = 'sending' WHERE id = $1`, [campaignId]);
+  await query(`UPDATE whatsapp_campaigns SET status = 'sending' WHERE id = $1 AND tenant_id = $2`, [campaignId, tenantId]);
   if (redis) {
     try {
       await redis.hset(`campaign:${campaignId}`, 'status', 'sending');
@@ -98,13 +102,17 @@ export async function resumeCampaign(campaignId: string, tenantId: string): Prom
   return true;
 }
 
-export async function cancelCampaign(campaignId: string): Promise<boolean> {
+export async function cancelCampaign(campaignId: string, tenantId?: string): Promise<boolean> {
   const job = activeJobs.get(campaignId);
   if (job) {
     job.isCancelled = true;
   }
   activeJobs.delete(campaignId);
-  await query(`UPDATE whatsapp_campaigns SET status = 'cancelled' WHERE id = $1`, [campaignId]);
+  const sql = tenantId
+    ? `UPDATE whatsapp_campaigns SET status = 'cancelled' WHERE id = $1 AND tenant_id = $2`
+    : `UPDATE whatsapp_campaigns SET status = 'cancelled' WHERE id = $1`;
+  const params = tenantId ? [campaignId, tenantId] : [campaignId];
+  await query(sql, params);
   if (redis) {
     try {
       await redis.del(`campaign:${campaignId}`);

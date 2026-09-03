@@ -127,24 +127,9 @@ async function processSingleMessage(msg: any) {
       return;
     }
     
-    // Send reply
-    let sendRes;
-    if (aiResult.isMediaDetected && aiResult.mediaData?.mediaUrl) {
-      sendRes = await sendMedia(msg.instanceName, msg.cleanPhone, aiResult.mediaData.mediaUrl, aiResult.replyText || aiResult.mediaData.caption || '');
-    } else {
-      sendRes = await sendMessage(msg.instanceName, msg.cleanPhone, aiResult.replyText);
-    }
-    
-    // Save AI reply
-    const aiMsgId = `ai_${Date.now()}`;
-    await saveChatMessage(msg.tenantId, { id: aiMsgId, remoteJid: msg.remoteJid, pushName: 'Asistente IA', fromMe: true, messageText: aiResult.replyText, aiResponse: aiResult.replyText, status: sendRes.success ? 'sent' : 'failed' });
-    
-    // Emit via WebSocket
-    if (io) {
-      io.to(`tenant_${msg.tenantId}`).emit('chat:message', { id: aiMsgId, tenantId: msg.tenantId, remoteJid: msg.remoteJid, pushName: 'Asistente IA', fromMe: true, messageText: aiResult.replyText, createdAt: new Date().toISOString() });
-    }
-    
-    // Handle booking command
+    let finalReplyText = aiResult.replyText;
+
+    // 1. Handle booking command prior to dispatching WhatsApp message
     if (aiResult.isBookingDetected && aiResult.bookingData) {
       try {
         const bResult = await createBookingFromCommand(msg.tenantId, { ...aiResult.bookingData, customerPhone: aiResult.bookingData.customerPhone || msg.cleanPhone, customerName: aiResult.bookingData.customerName || msg.pushName });
@@ -155,6 +140,7 @@ async function processSingleMessage(msg: any) {
       } catch (err: any) {
         console.error('[Queue] Failed to process booking:', err);
         await logAICommand(msg.tenantId, msg.remoteJid, 'booking', aiResult.bookingData, 'failed', err?.message);
+        finalReplyText = `Disculpa *${msg.pushName}*, tuvimos un inconveniente al agendar tu cita porque el horario solicitado ya no está disponible o hubo un error en el sistema. ¿Te gustaría consultar otro horario?`;
         if (io) {
           io.to(`tenant_${msg.tenantId}`).emit('ai:command_failed', {
             remoteJid: msg.remoteJid,
@@ -166,7 +152,7 @@ async function processSingleMessage(msg: any) {
       }
     }
 
-    // Handle court booking command
+    // 2. Handle court booking command prior to dispatching WhatsApp message
     if (aiResult.isCourtBookingDetected && aiResult.courtBookingData) {
       try {
         const cData = aiResult.courtBookingData;
@@ -201,6 +187,7 @@ async function processSingleMessage(msg: any) {
       } catch (courtErr: any) {
         console.error('[Queue] Failed to process court booking:', courtErr);
         await logAICommand(msg.tenantId, msg.remoteJid, 'court_booking', aiResult.courtBookingData, 'failed', courtErr?.message);
+        finalReplyText = `Disculpa *${msg.pushName}*, no pudimos apartar la cancha para ese horario porque ya se encuentra ocupada o hubo un inconveniente. ¿Te gustaría consultar otro horario?`;
         if (io) {
           io.to(`tenant_${msg.tenantId}`).emit('ai:command_failed', {
             remoteJid: msg.remoteJid,
@@ -212,7 +199,7 @@ async function processSingleMessage(msg: any) {
       }
     }
     
-    // Handle order command
+    // 3. Handle order command prior to dispatching WhatsApp message
     if (aiResult.isOrderDetected && aiResult.orderData) {
       try {
         const orderResult = await createOrderFromWhatsApp(msg.tenantId, { ...aiResult.orderData, customerPhone: aiResult.orderData.customerPhone || msg.cleanPhone, customerName: aiResult.orderData.customerName || msg.pushName });
@@ -223,6 +210,7 @@ async function processSingleMessage(msg: any) {
       } catch (err: any) {
         console.error('[Queue] Failed to process order:', err);
         await logAICommand(msg.tenantId, msg.remoteJid, 'order', aiResult.orderData, 'failed', err?.message);
+        finalReplyText = `Disculpa *${msg.pushName}*, tuvimos un inconveniente técnico al registrar tu orden en el sistema. Un asesor de nuestro equipo se comunicará contigo de inmediato para atender tu pedido.`;
         if (io) {
           io.to(`tenant_${msg.tenantId}`).emit('ai:command_failed', {
             remoteJid: msg.remoteJid,
@@ -232,6 +220,23 @@ async function processSingleMessage(msg: any) {
           });
         }
       }
+    }
+
+    // 4. Send reply guaranteed to match database state
+    let sendRes;
+    if (aiResult.isMediaDetected && aiResult.mediaData?.mediaUrl) {
+      sendRes = await sendMedia(msg.instanceName, msg.cleanPhone, aiResult.mediaData.mediaUrl, finalReplyText || aiResult.mediaData.caption || '');
+    } else {
+      sendRes = await sendMessage(msg.instanceName, msg.cleanPhone, finalReplyText);
+    }
+    
+    // Save AI reply
+    const aiMsgId = `ai_${Date.now()}`;
+    await saveChatMessage(msg.tenantId, { id: aiMsgId, remoteJid: msg.remoteJid, pushName: 'Asistente IA', fromMe: true, messageText: finalReplyText, aiResponse: finalReplyText, status: sendRes.success ? 'sent' : 'failed' });
+    
+    // Emit via WebSocket
+    if (io) {
+      io.to(`tenant_${msg.tenantId}`).emit('chat:message', { id: aiMsgId, tenantId: msg.tenantId, remoteJid: msg.remoteJid, pushName: 'Asistente IA', fromMe: true, messageText: finalReplyText, createdAt: new Date().toISOString() });
     }
 
     // Handle cancel booking command

@@ -7,7 +7,17 @@ import { authenticateToken } from '../middleware/auth.js';
 import { env } from '../config/env.js';
 import { query } from '../db/pool.js';
 
+import rateLimit from 'express-rate-limit';
+
 const router = Router();
+
+const publicUploadLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000, // 5 minutos
+  max: 15, // máximo 15 comprobantes por IP cada 5 min
+  message: { error: 'Demasiados intentos de subida. Por favor espera unos minutos.' },
+  standardHeaders: true,
+  legacyHeaders: false
+});
 
 const uploadDir = env.UPLOAD_DIR || path.join(process.cwd(), 'uploads');
 
@@ -60,7 +70,7 @@ async function persistFileToDatabase(filename: string, mimetype: string, filePat
 }
 
 // 1. Public upload endpoint for customer payment proof screenshots (NO JWT REQUIRED)
-router.post('/public-proof', upload.single('file'), async (req, res) => {
+router.post('/public-proof', publicUploadLimiter, upload.single('file'), async (req, res) => {
   if (!req.file) {
     res.status(400).json({ error: 'No se recibió archivo de comprobante' });
     return;

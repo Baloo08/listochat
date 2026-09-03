@@ -129,27 +129,33 @@ export async function getAllChatSessions(tenantId: string): Promise<Record<strin
 }
 
 export async function setChatHumanMode(tenantId: string, remoteJid: string, isHumanMode: boolean, hoursUntilExpire: number = 4): Promise<void> {
-  const untilSql = isHumanMode ? `CURRENT_TIMESTAMP + INTERVAL '${Math.max(1, hoursUntilExpire)} hours'` : 'NULL';
+  const safeHours = Math.max(1, Math.min(168, Number(hoursUntilExpire) || 4));
+  const intervalStr = `${safeHours} hours`;
+
+  const sql = isHumanMode ? `
+    INSERT INTO chat_sessions (tenant_id, remote_jid, is_human_mode, human_mode_until, updated_at)
+    VALUES ($1, $2, $3, CURRENT_TIMESTAMP + $4::interval, CURRENT_TIMESTAMP)
+    ON CONFLICT (tenant_id, remote_jid) DO UPDATE SET
+      is_human_mode = EXCLUDED.is_human_mode,
+      human_mode_until = CURRENT_TIMESTAMP + $4::interval,
+      updated_at = CURRENT_TIMESTAMP
+  ` : `
+    INSERT INTO chat_sessions (tenant_id, remote_jid, is_human_mode, human_mode_until, updated_at)
+    VALUES ($1, $2, $3, NULL, CURRENT_TIMESTAMP)
+    ON CONFLICT (tenant_id, remote_jid) DO UPDATE SET
+      is_human_mode = EXCLUDED.is_human_mode,
+      human_mode_until = NULL,
+      updated_at = CURRENT_TIMESTAMP
+  `;
+
+  const params = isHumanMode ? [tenantId, remoteJid, true, intervalStr] : [tenantId, remoteJid, false];
+
   try {
-    await query(`
-      INSERT INTO chat_sessions (tenant_id, remote_jid, is_human_mode, human_mode_until, updated_at)
-      VALUES ($1, $2, $3, ${untilSql}, CURRENT_TIMESTAMP)
-      ON CONFLICT (tenant_id, remote_jid) DO UPDATE SET
-        is_human_mode = EXCLUDED.is_human_mode,
-        human_mode_until = ${untilSql},
-        updated_at = CURRENT_TIMESTAMP
-    `, [tenantId, remoteJid, isHumanMode]);
+    await query(sql, params);
   } catch (err: any) {
     if (err && (err.message?.includes('human_mode_until') || err.code === '42703')) {
       await query(`ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS human_mode_until TIMESTAMPTZ;`);
-      await query(`
-        INSERT INTO chat_sessions (tenant_id, remote_jid, is_human_mode, human_mode_until, updated_at)
-        VALUES ($1, $2, $3, ${untilSql}, CURRENT_TIMESTAMP)
-        ON CONFLICT (tenant_id, remote_jid) DO UPDATE SET
-          is_human_mode = EXCLUDED.is_human_mode,
-          human_mode_until = ${untilSql},
-          updated_at = CURRENT_TIMESTAMP
-      `, [tenantId, remoteJid, isHumanMode]);
+      await query(sql, params);
     } else {
       throw err;
     }

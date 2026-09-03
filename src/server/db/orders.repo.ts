@@ -157,7 +157,11 @@ export async function updateOrderStatus(id: string, tenantId: string, status: an
 }
 
 export async function confirmPayment(id: string, tenantId: string, paymentReference?: string) {
-  return updateOrder(id, tenantId, { paymentStatus: 'paid', paymentReference: paymentReference || 'Confirmado manual' });
+  const result = await executeOrderPaymentConfirmation(tenantId, id, {
+    paymentMethod: 'manual',
+    paymentReference: paymentReference || 'Confirmado manual'
+  });
+  return result.order || getOrderById(id, tenantId);
 }
 
 export async function executeOrderPaymentConfirmation(

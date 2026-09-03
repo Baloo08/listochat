@@ -67,11 +67,9 @@ export default function TilopayPaymentForm({
   };
 
   useEffect(() => {
-    // Dynamic load of Tilopay JS SDK V2 script
+    // Dynamic load of official Tilopay JS SDK V2 script
     const scriptId = 'tilopay-sdk-v2';
-    const sdkUrl = environment === 'PRODUCTION'
-      ? 'https://app.tilopay.net/sdk/v2/tilopay.js'
-      : 'https://sandbox.tilopay.net/sdk/v2/tilopay.js';
+    const sdkUrl = 'https://app.tilopay.com/sdk/v2/sdk_tpay.min.js';
 
     if (!document.getElementById(scriptId)) {
       const script = document.createElement('script');
@@ -88,7 +86,7 @@ export default function TilopayPaymentForm({
     } else {
       setSdkReady(true);
     }
-  }, [environment]);
+  }, []);
 
   const handleSubmitPayment = async (e: React.FormEvent) => {
     e.preventDefault();

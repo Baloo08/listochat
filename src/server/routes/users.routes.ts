@@ -25,6 +25,10 @@ router.post('/', requireRole('superadmin', 'admin'), async (req, res) => {
       res.status(400).json({ error: 'Nombre, email y contraseña son requeridos' });
       return;
     }
+    if (role === 'superadmin' && req.user?.role !== 'superadmin') {
+      res.status(403).json({ error: 'No tienes permisos para crear usuarios con rol superadmin' });
+      return;
+    }
     const user = await createUser({
       tenantId: req.tenantId!,
       name,
@@ -45,7 +49,12 @@ router.post('/', requireRole('superadmin', 'admin'), async (req, res) => {
 
 router.put('/:id', requireRole('superadmin', 'admin'), async (req, res) => {
   try {
-    const updated = await updateUser(req.params.id, req.tenantId!, req.body);
+    const updateData = { ...req.body };
+    if (updateData.role === 'superadmin' && req.user?.role !== 'superadmin') {
+      res.status(403).json({ error: 'No tienes permisos para asignar el rol superadmin' });
+      return;
+    }
+    const updated = await updateUser(req.params.id, req.tenantId!, updateData);
     if (!updated) {
       res.status(404).json({ error: 'Usuario no encontrado' });
       return;
