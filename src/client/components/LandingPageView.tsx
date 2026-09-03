@@ -106,16 +106,16 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
       a: 'No. Puedes conectar el mismo número comercial que ya tienes activo mediante código QR en menos de 2 minutos. Tus contactos, chats existentes y fotos de perfil se mantienen intactos.'
     },
     {
-      q: '¿Cómo funciona la verificación automática de SINPE Móvil?',
-      a: 'Cuando un cliente envía una captura del comprobante de SINPE Móvil, nuestro módulo de Visión Artificial escanea automáticamente el número de comprobante, el banco de origen, la fecha, el destinatario y el monto exacto, validándolo al instante sin que tengas que pausar tu trabajo para revisar tu teléfono personal.'
+      q: '¿Cómo funciona la verificación de SINPE Móvil?',
+      a: 'En Betico puedes ofrecer dos modalidades según prefieras: SINPE Automático, donde la pasarela verifica la transacción de forma inmediata directamente con el banco y confirma el pedido o cita en segundos; o SINPE Manual, donde tu cliente transfiere a tu número habitual y recibes el comprobante en tu panel para confirmarlo tú mismo con un clic.'
     },
     {
       q: '¿Cómo funciona el cobro con Tarjetas de Crédito y Débito en Betico?',
-      a: 'Gracias a nuestra integración nativa con Tilopay, tus clientes pueden pagar con Visa, Mastercard y AMEX mediante pasarela con protocolo 3D Secure 2.0. El dinero de las compras se liquida de manera transparente directamente a tu cuenta bancaria nacional (IBAN).'
+      a: 'Tus clientes pueden pagar con Visa, Mastercard y AMEX de manera fácil y rápida al comprar en tu tienda web, agendar una cita o reservar una cancha. La verificación es inmediata y el dinero de tus ventas se liquida directamente en tu cuenta bancaria nacional.'
     },
     {
-      q: '¿Es seguro para mi negocio aceptar pagos con tarjeta? ¿Hay riesgo de fraude o contracargos?',
-      a: 'Totalmente seguro. El estándar bancario 3D Secure exige una validación de dos factores al tarjetahabiente (código SMS OTP o confirmación en su app bancaria), lo que transfiere la responsabilidad de fraude al banco emisor y elimina casi por completo los intentos de contracargos fraudulentos.'
+      q: '¿Es seguro para mi negocio aceptar pagos con tarjeta y SINPE en línea?',
+      a: 'Totalmente seguro. Las transacciones cuentan con verificación directa con el banco del cliente mediante confirmación en su app bancaria o código SMS, garantizando compras legítimas y protegiendo tu negocio en cada venta.'
     },
     {
       q: '¿El asistente entiende notas de voz y modismos costarricenses?',
@@ -353,7 +353,7 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
                 <span style={{ position: 'absolute', width: '100%', height: '100%', borderRadius: '50%', backgroundColor: '#f04337', opacity: 0.75, animation: 'ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite' }} />
                 <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#b51c12' }} />
               </span>
-              <span>⚡ Nuevo: Pagos con Tarjeta 3D Secure (Tilopay) + SINPE con Visión + Motor IA Propio</span>
+              <span>⚡ Nuevo: Pagos con Tarjeta + Verificación de SINPE Móvil + Motor IA Propio</span>
             </div>
 
             {/* Hero Headline */}
@@ -479,7 +479,7 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
                   <span style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#f59e0b' }} />
                   <span style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#10b981' }} />
                   <span style={{ marginLeft: '8px', fontWeight: '600', color: '#f8fafc' }}>
-                    Demostración en Tiempo Real • WhatsApp & SINPE Visión
+                    Demostración en Tiempo Real • WhatsApp & Pagos Verificados
                   </span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -527,14 +527,14 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
                 {/* Side-by-Side Dual Payment Validations */}
                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px', paddingTop: '6px' }}>
                   
-                  {/* SINPE Vision Validation */}
+                  {/* SINPE Payment Validation */}
                   <div style={{ backgroundColor: '#ffffff', padding: '14px', borderRadius: '12px', border: '2px solid rgba(11,60,61,0.25)', display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
                     <div style={{ width: '38px', height: '38px', borderRadius: '8px', backgroundColor: '#eff7f7', color: '#0b3c3d', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                       <QrCode size={20} />
                     </div>
                     <div style={{ fontSize: '0.8rem' }}>
                       <div style={{ fontWeight: '800', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <span>SINPE Móvil Validado por Visión</span>
+                        <span>SINPE Móvil Verificado</span>
                         <CheckCircle2 size={14} color="#0b3c3d" />
                       </div>
                       <div style={{ color: '#64748b', marginTop: '2px', fontFamily: 'monospace', fontSize: '0.74rem' }}>
@@ -546,21 +546,21 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
                     </div>
                   </div>
 
-                  {/* 3D Secure Card Payment */}
+                  {/* Card Payment Validation */}
                   <div style={{ backgroundColor: '#ffffff', padding: '14px', borderRadius: '12px', border: '2px solid rgba(240,67,55,0.25)', display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
                     <div style={{ width: '38px', height: '38px', borderRadius: '8px', backgroundColor: '#fff1f0', color: '#b51c12', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                       <CreditCard size={20} />
                     </div>
                     <div style={{ fontSize: '0.8rem' }}>
                       <div style={{ fontWeight: '800', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <span>Pago Aprobado (Tilopay 3D Secure)</span>
+                        <span>Tarjeta de Débito / Crédito</span>
                         <ShieldCheck size={14} color="#b51c12" />
                       </div>
                       <div style={{ color: '#64748b', marginTop: '2px', fontFamily: 'monospace', fontSize: '0.74rem' }}>
                         Monto: <strong style={{ color: '#0f172a' }}>₡5.500</strong> • Aut: BAC-948210
                       </div>
                       <span style={{ display: 'inline-block', marginTop: '4px', fontSize: '0.72rem', color: '#b51c12', backgroundColor: '#fff1f0', padding: '2px 6px', borderRadius: '4px', fontWeight: '600', border: '1px solid #ffc7c4' }}>
-                        ✓ Verificado en 0s con banco del cliente
+                        ✓ Pago verificado al instante
                       </span>
                     </div>
                   </div>
@@ -591,11 +591,11 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <ShieldCheck size={18} color="#0b3c3d" />
-              <span>Protocolo Bancario 3D Secure 2.0</span>
+              <span>Pagos con Tarjeta y SINPE Verificados</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Building2 size={18} color="#0b3c3d" />
-              <span>Liquidación Directa a Bancos de Costa Rica</span>
+              <span>Depósito Directo a tu Cuenta Bancaria</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Zap size={18} color="#b51c12" />
@@ -603,7 +603,7 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <CheckCircle2 size={18} color="#0b3c3d" />
-              <span>Comprobantes SINPE Móvil Verificados</span>
+              <span>Cobra en Tienda, Citas y Canchas</span>
             </div>
           </div>
         </section>
@@ -716,16 +716,16 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
                     Tienda Digital & Pasarela Multicanal
                   </h3>
                   <p style={{ color: '#64748b', fontSize: '0.92rem', lineHeight: 1.6, marginBottom: '20px' }}>
-                    Catálogo interactivo con carrito de compras, cobro en línea con <strong>Tarjetas de Crédito y Débito</strong> (Visa, Mastercard, AMEX) vía Tilopay 3D Secure, validación instantánea de <strong>SINPE Móvil</strong> con Visión Artificial y gestión de envíos express por GPS.
+                    Catálogo interactivo con carrito de compras, cobro en línea con <strong>Tarjetas de Crédito y Débito</strong> (Visa, Mastercard, AMEX), verificación de <strong>SINPE Móvil</strong> (automático o manual) y gestión de envíos express por GPS.
                   </p>
                   <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 24px 0', display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.85rem', color: '#334155' }}>
                     <li style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
                       <CheckCircle2 size={16} color="#0b3c3d" style={{ flexShrink: 0, marginTop: '2px' }} />
-                      <span>Pasarela oficial de Tarjetas de Crédito y Débito con Tilopay 3D Secure.</span>
+                      <span>Acepta pagos con Tarjetas de Crédito y Débito (Visa, Mastercard, AMEX).</span>
                     </li>
                     <li style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
                       <CheckCircle2 size={16} color="#0b3c3d" style={{ flexShrink: 0, marginTop: '2px' }} />
-                      <span>Verificación instantánea de comprobantes SINPE Móvil sin abrir tu banco.</span>
+                      <span>Verificación de SINPE Móvil: automática con confirmación bancaria o manual desde tu panel.</span>
                     </li>
                     <li style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
                       <CheckCircle2 size={16} color="#0b3c3d" style={{ flexShrink: 0, marginTop: '2px' }} />
@@ -753,7 +753,7 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
                     Agenda de Citas & Reservas 24/7
                   </h3>
                   <p style={{ color: '#64748b', fontSize: '0.92rem', lineHeight: 1.6, marginBottom: '20px' }}>
-                    Permite a tus clientes agendar citas por WhatsApp o desde tu portal web de reservas. Asignación automática por especialista o colaborador, control de horarios y recordatorios automáticos para eliminar inasistencias.
+                    Permite a tus clientes agendar citas por WhatsApp o desde tu portal web de reservas, con opción de cobro en línea con tarjeta o SINPE. Asignación automática por especialista o colaborador, control de horarios y recordatorios automáticos para eliminar inasistencias.
                   </p>
                   <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 24px 0', display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.85rem', color: '#334155' }}>
                     <li style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
@@ -800,17 +800,17 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
                 </h2>
 
                 <p style={{ color: '#64748b', fontSize: '1rem', lineHeight: 1.65, marginBottom: '24px' }}>
-                  Multiplica tus ventas permitiendo que tus clientes paguen en segundos con cualquier tarjeta bancaria nacional o internacional. Integración oficial con <strong>Tilopay</strong> y homologación con los principales bancos de Costa Rica, con depósito directo a tu cuenta bancaria y blindaje antifraude.
+                  Multiplica tus ventas permitiendo que tus clientes paguen en segundos con tarjeta o SINPE Móvil. Integración directa y segura para recibir tus ingresos en tu propia cuenta bancaria en colones o dólares, con verificación automática e inmediata.
                 </p>
 
                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '14px', marginBottom: '24px' }}>
                   <div style={{ backgroundColor: '#FAF8F5', padding: '16px', borderRadius: '14px', border: '1px solid #e2e8f0' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '700', color: '#0f172a', fontSize: '0.88rem', marginBottom: '4px' }}>
                       <ShieldCheck size={18} color="#0b3c3d" />
-                      <span>Protección 3D Secure 2.0</span>
+                      <span>Pagos Seguros y Verificados</span>
                     </div>
                     <p style={{ margin: 0, fontSize: '0.78rem', color: '#64748b', lineHeight: 1.5 }}>
-                      Autenticación OTP con BAC, BCR, BNCR, Scotiabank y Promerica. Cero contracargos y máxima confianza.
+                      Confirmación directa con el banco del cliente en segundos. Máxima tranquilidad para ti y para tu cliente.
                     </p>
                   </div>
 
@@ -820,27 +820,27 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
                       <span>Verificación Inmediata</span>
                     </div>
                     <p style={{ margin: 0, fontSize: '0.78rem', color: '#64748b', lineHeight: 1.5 }}>
-                      El pago se acredita al segundo, el stock se descuenta en BD y la cocina o almacén recibe la comanda lista.
+                      El pago se aprueba al instante, el pedido pasa directo a preparación y tu cliente recibe la confirmación por WhatsApp.
                     </p>
                   </div>
 
                   <div style={{ backgroundColor: '#FAF8F5', padding: '16px', borderRadius: '14px', border: '1px solid #e2e8f0' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '700', color: '#0f172a', fontSize: '0.88rem', marginBottom: '4px' }}>
                       <Building2 size={18} color="#b51c12" />
-                      <span>Directo a tu Banco</span>
+                      <span>Directo a tu Cuenta</span>
                     </div>
                     <p style={{ margin: 0, fontSize: '0.78rem', color: '#64748b', lineHeight: 1.5 }}>
-                      Sin intermediarios reteniendo tu dinero. Las ventas en colones o dólares se depositan en tu propia cuenta.
+                      Sin intermediarios reteniendo tu dinero. Las ventas en colones o dólares se depositan en tu propia cuenta bancaria.
                     </p>
                   </div>
 
                   <div style={{ backgroundColor: '#FAF8F5', padding: '16px', borderRadius: '14px', border: '1px solid #e2e8f0' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '700', color: '#0f172a', fontSize: '0.88rem', marginBottom: '4px' }}>
                       <Store size={18} color="#0b3c3d" />
-                      <span>Checkout Todo en Uno</span>
+                      <span>Todos los Métodos de Pago</span>
                     </div>
                     <p style={{ margin: 0, fontSize: '0.78rem', color: '#64748b', lineHeight: 1.5 }}>
-                      Tarjetas bancarias + SINPE Móvil con Visión IA + Transferencias + Contra Entrega en una sola experiencia.
+                      Tarjetas bancarias, SINPE Móvil (automático o con comprobante), transferencias y pago contra entrega.
                     </p>
                   </div>
                 </div>
@@ -869,10 +869,10 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '16px', borderBottom: '1px solid rgba(255,255,255,0.1)', fontSize: '0.78rem' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#f04337' }} />
-                      <span style={{ color: '#cbd5e1', fontWeight: '600' }}>Pasarela Segura Tilopay</span>
+                      <span style={{ color: '#cbd5e1', fontWeight: '600' }}>Pasarela Segura Integrada</span>
                     </div>
                     <span style={{ backgroundColor: '#0b3c3d', color: '#b0dcdc', padding: '3px 10px', borderRadius: '9999px', fontFamily: 'monospace', fontSize: '0.72rem', border: '1px solid rgba(176,220,220,0.3)' }}>
-                      PCI-DSS Nivel 1
+                      Verificación Oficial
                     </span>
                   </div>
 
@@ -1131,9 +1131,9 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
                     <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><CheckCircle2 size={18} color="#0b3c3d" /> <span><strong>Comprensión de Notas de Voz</strong> de WhatsApp</span></li>
                     <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><CheckCircle2 size={18} color="#0b3c3d" /> <span><strong>Creador de Sitios Web Oficial</strong> (<span style={{ color: '#0b3c3d', fontFamily: 'monospace' }}>betico.tech/sitio/tu-marca</span>)</span></li>
                     <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><CheckCircle2 size={18} color="#0b3c3d" /> <span><strong>Tienda Online & Menú</strong> con pedidos a WhatsApp</span></li>
-                    <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><CheckCircle2 size={18} color="#0b3c3d" /> <span><strong>Pasarela de Tarjetas Débito y Crédito</strong> (Tilopay 3D Secure incluida)</span></li>
-                    <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><CheckCircle2 size={18} color="#0b3c3d" /> <span><strong>Agenda de Citas & Reservas 24/7</strong> con recordatorios</span></li>
-                    <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><CheckCircle2 size={18} color="#b51c12" /> <span><strong>Verificación SINPE Móvil con Visión Artificial</strong></span></li>
+                    <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><CheckCircle2 size={18} color="#0b3c3d" /> <span><strong>Pagos con Tarjeta Débito y Crédito</strong> (Visa, Mastercard, AMEX)</span></li>
+                    <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><CheckCircle2 size={18} color="#0b3c3d" /> <span><strong>Agenda de Citas & Reservas 24/7</strong> con cobro en línea opcional</span></li>
+                    <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><CheckCircle2 size={18} color="#b51c12" /> <span><strong>Verificación de SINPE Móvil</strong> (Automática y Manual)</span></li>
                     <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><CheckCircle2 size={18} color="#0b3c3d" /> <span>Portal de Repartidores & Asignación por GPS (1 Local)</span></li>
                     <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><CheckCircle2 size={18} color="#0b3c3d" /> <span>Pantalla de Cocina (KDS) & Difusión Masiva CRM</span></li>
                   </ul>
@@ -1418,9 +1418,9 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
               <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.82rem' }}>
                 <li><a onClick={() => scrollToSection('sitio-web')} style={{ color: '#64748b', textDecoration: 'none', cursor: 'pointer' }}>Sitio Web Oficial</a></li>
                 <li><a onClick={() => scrollToSection('motor-ia')} style={{ color: '#64748b', textDecoration: 'none', cursor: 'pointer' }}>Motor Betico IA</a></li>
-                <li><a onClick={() => scrollToSection('tienda-citas')} style={{ color: '#64748b', textDecoration: 'none', cursor: 'pointer' }}>Tienda Digital & Tarjetas</a></li>
+                <li><a onClick={() => scrollToSection('tienda-citas')} style={{ color: '#64748b', textDecoration: 'none', cursor: 'pointer' }}>Tienda Digital & Pagos</a></li>
                 <li><a onClick={() => scrollToSection('tienda-citas')} style={{ color: '#64748b', textDecoration: 'none', cursor: 'pointer' }}>Agenda de Citas 24/7</a></li>
-                <li><a onClick={() => scrollToSection('pagos-tarjeta')} style={{ color: '#64748b', textDecoration: 'none', cursor: 'pointer' }}>Validación SINPE con Visión</a></li>
+                <li><a onClick={() => scrollToSection('pagos-tarjeta')} style={{ color: '#64748b', textDecoration: 'none', cursor: 'pointer' }}>Tarjetas & SINPE Móvil</a></li>
               </ul>
             </div>
 
