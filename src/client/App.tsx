@@ -18,6 +18,8 @@ import TenantSettings from './components/TenantSettings';
 import SuperAdminPanel from './components/SuperAdminPanel';
 import StorefrontView from '../storefront/StorefrontView';
 import PublicBookingView from '../storefront/PublicBookingView';
+import OrderSuccessView from '../storefront/OrderSuccessView';
+import HostedCheckoutView from '../storefront/HostedCheckoutView';
 import CourtBookingPublic from './components/CourtBookingPublic';
 import CourtsManager from './components/CourtsManager';
 import CourtsBookingsManager from './components/CourtsBookingsManager';
@@ -118,6 +120,16 @@ export default function App() {
   if (pathname.startsWith('/tienda/')) {
     const slug = pathname.replace('/tienda/', '').split('/')[0];
     return <StorefrontView slug={slug} />;
+  }
+
+  if (pathname.startsWith('/order/success/')) {
+    const orderId = pathname.replace('/order/success/', '').split('/')[0];
+    return <OrderSuccessView orderId={orderId} />;
+  }
+
+  if (pathname.startsWith('/pay/')) {
+    const token = pathname.replace('/pay/', '').split('/')[0];
+    return <HostedCheckoutView token={token} />;
   }
 
   if (pathname.startsWith('/reservas/')) {

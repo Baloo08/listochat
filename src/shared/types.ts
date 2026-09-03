@@ -1,7 +1,7 @@
 export type UserRole = 'superadmin' | 'admin' | 'staff' | 'viewer';
 export type OrderStatus = 'pedido_recibido' | 'pedido_aceptado' | 'procesando' | 'listo_entrega' | 'en_camino' | 'entregado' | 'cancelado' | 'pending' | 'confirmed' | 'preparing' | 'shipped' | 'delivered';
 export type PaymentMethod = 'sinpe' | 'transfer' | 'cash' | 'card';
-export type PaymentStatus = 'pending' | 'proof_sent' | 'paid' | 'refunded';
+export type PaymentStatus = 'pending' | 'proof_sent' | 'paid' | 'refunded' | 'PENDING' | 'PAID' | 'EXPIRED' | 'FAILED';
 export type DeliveryMethod = 'pickup' | 'delivery';
 export type AIProvider = 'gemini' | 'openai' | 'anthropic';
 export type SubscriptionPlan = 'starter' | 'pro' | 'business' | 'enterprise';
@@ -351,10 +351,53 @@ export interface Order {
   tableNumber?: string;
   driverId?: string;
   wazeUrl?: string;
+  channelOrigin?: 'WEB_STORE' | 'WHATSAPP';
+  paymentLinkToken?: string;
+  paymentLinkExpiresAt?: Date | string;
+  tilopayTransactionId?: string;
+  tilopayAuthCode?: string;
   estimatedDelivery?: Date;
   chatMessageId?: string;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface TenantPaymentConfig {
+  id?: string;
+  tenantId: string;
+  provider: 'TILOPAY';
+  isEnabled: boolean;
+  environment: 'SANDBOX' | 'PRODUCTION';
+  apiKeyEncrypted?: string;
+  apiKeyMasked?: string;
+  apiUser?: string;
+  apiPasswordEncrypted?: string;
+  apiPasswordMasked?: string;
+  captureMode: 'IMMEDIATE' | 'AUTH_ONLY';
+  isConfigured?: boolean;
+  createdAt?: Date | string;
+  updatedAt?: Date | string;
+}
+
+export interface TenantWhatsappConfig {
+  id?: string;
+  tenantId: string;
+  instanceName?: string;
+  apiUrl?: string;
+  apiKeyEncrypted?: string;
+  isEnabled: boolean;
+  createdAt?: Date | string;
+  updatedAt?: Date | string;
+}
+
+export interface PaymentConfigAuditLog {
+  id: string;
+  tenantId: string;
+  changedBy: string;
+  fieldChanged: string;
+  oldValueMasked?: string;
+  newValueMasked?: string;
+  timestamp: Date | string;
 }
 
 export interface ReminderConfig {

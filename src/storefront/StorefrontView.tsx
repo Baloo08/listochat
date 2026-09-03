@@ -4,9 +4,10 @@ import {
   AlertCircle, Trash2, MapPin, Truck, Store, ShieldCheck, Tag, Utensils, 
   Navigation, Package, User, Palette, Sliders, CheckCircle2, Building2 
 } from 'lucide-react';
-import { Product, StoreSettings, DeliveryConfig, CustomVariable, CustomVariableOption } from '../shared/types';
-import { getCRProvincias, getCRCantones, getCRDistritos } from '../shared/costaRicaDivisions';
-import { loadGoogleFont, getFontFamilyCss } from '../client/utils/fontLoader';
+import { Product, StoreSettings, DeliveryConfig, CustomVariable, CustomVariableOption } from '../shared/types.js';
+import { getCRProvincias, getCRCantones, getCRDistritos } from '../shared/costaRicaDivisions.js';
+import { loadGoogleFont, getFontFamilyCss } from '../client/utils/fontLoader.js';
+import TilopayPaymentForm from '../client/components/TilopayPaymentForm.js';
 
 interface StorefrontProps {
   slug: string;
@@ -129,7 +130,8 @@ export default function StorefrontView({ slug }: StorefrontProps) {
   const [customerGps, setCustomerGps] = useState<{ lat?: number; lng?: number; mapsUrl?: string }>({});
   const [fetchingGps, setFetchingGps] = useState(false);
   const [calculatedKm, setCalculatedKm] = useState<number | null>(null);
-  const [paymentMethod, setPaymentMethod] = useState<'sinpe' | 'cash' | 'transfer'>('sinpe');
+  const [paymentMethod, setPaymentMethod] = useState<'sinpe' | 'cash' | 'transfer' | 'card'>('sinpe');
+  const [activeTilopaySession, setActiveTilopaySession] = useState<any | null>(null);
   const [paymentReference, setPaymentReference] = useState('');
   const [paymentProofUrl, setPaymentProofUrl] = useState('');
   const [paymentProofFile, setPaymentProofFile] = useState<File | null>(null);
@@ -464,9 +466,14 @@ export default function StorefrontView({ slug }: StorefrontProps) {
       }
 
       const orderData = await res.json();
-      setOrderCompleted(orderData);
-      setCart([]);
-      setIsCartOpen(false);
+      if (orderData.tilopaySession) {
+        setActiveTilopaySession(orderData.tilopaySession);
+        setIsCartOpen(false);
+      } else {
+        setOrderCompleted(orderData);
+        setCart([]);
+        setIsCartOpen(false);
+      }
     } catch (err: any) {
       alert('Error: ' + err.message);
     } finally {
@@ -1184,9 +1191,31 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                             💵 Contra Entrega
                           </button>
                         )}
+
+                        {(store as any).tilopayEnabled && (
+                          <button
+                            type="button"
+                            onClick={() => setPaymentMethod('card')}
+                            style={{
+                              padding: '10px 8px', borderRadius: '8px',
+                              border: paymentMethod === 'card' ? `2px solid ${primaryColor}` : (isDark ? '1px solid #475569' : '1px solid #cbd5e1'),
+                              backgroundColor: paymentMethod === 'card' ? `${primaryColor}15` : (isDark ? '#0f172a' : '#ffffff'),
+                              color: paymentMethod === 'card' ? primaryColor : titleColor,
+                              fontWeight: paymentMethod === 'card' ? '800' : '600',
+                              fontSize: '0.82rem', cursor: 'pointer', textAlign: 'center', transition: 'all 0.15s'
+                            }}
+                          >
+                            💳 Tarjeta (Tilopay)
+                          </button>
+                        )}
                       </div>
 
                       {/* DETALLE SEGÚN MÉTODO DE PAGO */}
+                      {paymentMethod === 'card' && (
+                        <div style={{ backgroundColor: isDark ? '#0f172a' : '#f0fdf4', padding: '12px', borderRadius: '8px', border: isDark ? '1px solid #166534' : '1px solid #bbf7d0', fontSize: '0.82rem', color: isDark ? '#86efac' : '#166534', lineHeight: '1.5' }}>
+                          🔒 <strong>Pago Seguro con Tarjeta (Tilopay):</strong> Al presionar "Confirmar Pedido", se desplegará el formulario seguro para ingresar tu tarjeta de crédito o débito con autenticación bancaria 3D Secure.
+                        </div>
+                      )}
                       {paymentMethod === 'sinpe' && (
                         <div style={{ backgroundColor: isDark ? '#0f172a' : '#eff6ff', padding: '10px 12px', borderRadius: '8px', border: isDark ? '1px solid #1e3a8a' : '1px solid #bfdbfe', fontSize: '0.82rem' }}>
                           <div style={{ fontWeight: 'bold', color: isDark ? '#93c5fd' : '#1e40af', marginBottom: '4px' }}>
@@ -1394,6 +1423,39 @@ export default function StorefrontView({ slug }: StorefrontProps) {
             >
               Cerrar y Seguir Navegando
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Pago Seguro Tilopay */}
+      {activeTilopaySession && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', zIndex: 75, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', backdropFilter: 'blur(3px)' }}>
+          <div style={{ maxWidth: '480px', width: '100%', maxHeight: '95vh', overflowY: 'auto', position: 'relative' }}>
+            <TilopayPaymentForm
+              orderId={activeTilopaySession.orderId}
+              orderNumber={activeTilopaySession.orderNumber}
+              amount={activeTilopaySession.amount}
+              currency={activeTilopaySession.currency}
+              sdkToken={activeTilopaySession.sdkToken}
+              apiKey={activeTilopaySession.apiKey}
+              environment={activeTilopaySession.environment}
+              customerName={customerName}
+              customerEmail={customerPhone ? `${customerPhone.replace(/\D/g, '')}@cliente.cr` : 'cliente@betico.cr'}
+              customerPhone={customerPhone}
+              themeColor={primaryColor}
+              onSuccess={() => {
+                const oid = activeTilopaySession.orderId;
+                setActiveTilopaySession(null);
+                setCart([]);
+                window.location.href = `/order/success/${oid}`;
+              }}
+              onError={(err) => {
+                console.warn('[TilopayPayment] Error:', err);
+              }}
+              onCancel={() => {
+                setActiveTilopaySession(null);
+              }}
+            />
           </div>
         </div>
       )}

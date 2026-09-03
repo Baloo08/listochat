@@ -16,6 +16,7 @@ import { recoverInterruptedCampaigns, startScheduledCampaignScanner } from './se
 import { startSubscriptionLifecycleWorker } from './services/subscription.service.js';
 import { startQueueWorker } from './services/message-queue.service.js';
 import { ensureQueueTable } from './db/message-queue.repo.js';
+import { initEvolutionPaymentListeners } from './services/evolution-api.service.js';
 
 // Route imports
 import authRoutes from './routes/auth.routes.js';
@@ -46,6 +47,8 @@ import websiteRoutes from './routes/website.routes.js';
 import websitePublicRoutes from './routes/website-public.routes.js';
 import queueRoutes from './routes/queue.routes.js';
 import courtsRoutes from './routes/courts.routes.js';
+import tilopayWebhookRoutes from './routes/tilopay-webhook.routes.js';
+import tenantPaymentRoutes from './routes/tenant-payment.routes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -176,6 +179,8 @@ async function startServer() {
   app.use('/api/website', websiteRoutes);
   app.use('/api/storefront', publicLimiter, storefrontRoutes);
   app.use('/api/calendar', calendarRoutes);
+  app.use('/api/tenant/payment-config', tenantPaymentRoutes);
+  app.use('/api/webhooks/tilopay', tilopayWebhookRoutes);
   app.use('/api/webhook/evolution', webhookRoutes);
   app.use('/api/webhook', webhookRoutes);
   app.use('/webhook', webhookRoutes);
@@ -252,6 +257,8 @@ async function startServer() {
     startSubscriptionLifecycleWorker();
     // Start AI message queue worker
     startQueueWorker(io);
+    // Initialize WhatsApp payment confirmation event listener
+    initEvolutionPaymentListeners();
   } catch (err) {
     console.error('Failed to run database migrations:', err);
   }

@@ -11,6 +11,8 @@ export const env = {
   EVOLUTION_API_URL: process.env.EVOLUTION_API_URL || 'http://betico_evolution:8080',
   EVOLUTION_API_KEY: process.env.EVOLUTION_API_KEY || '429683C4C977415CAAFCCE10F7D57E11',
   ENCRYPTION_KEY: process.env.ENCRYPTION_KEY || 'e8a1b2c3d4e5f60718293a4b5c6d7e8f',
+  APP_ENCRYPTION_KEY: process.env.APP_ENCRYPTION_KEY || process.env.ENCRYPTION_KEY || 'e8a1b2c3d4e5f60718293a4b5c6d7e8f',
+  TILOPAY_MODULE_ENABLED: process.env.TILOPAY_MODULE_ENABLED !== 'false',
   SUPERADMIN_EMAIL: process.env.SUPERADMIN_EMAIL || 'admin@betico.cr',
   SUPERADMIN_PASSWORD: process.env.SUPERADMIN_PASSWORD || 'BeticoAdmin2026!',
   UPLOAD_DIR: process.env.UPLOAD_DIR || './uploads',

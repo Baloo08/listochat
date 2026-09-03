@@ -283,6 +283,43 @@ export async function runMigrations() {
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS tenant_payment_configs (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+      provider VARCHAR(50) NOT NULL DEFAULT 'TILOPAY',
+      is_enabled BOOLEAN DEFAULT false,
+      environment VARCHAR(20) DEFAULT 'SANDBOX',
+      api_key_encrypted TEXT,
+      api_user VARCHAR(150),
+      api_password_encrypted TEXT,
+      capture_mode VARCHAR(50) DEFAULT 'IMMEDIATE',
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(tenant_id, provider)
+    );
+
+    CREATE TABLE IF NOT EXISTS tenant_whatsapp_configs (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+      instance_name VARCHAR(150),
+      api_url VARCHAR(255),
+      api_key_encrypted TEXT,
+      is_enabled BOOLEAN DEFAULT false,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(tenant_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS payment_config_audit_log (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+      changed_by VARCHAR(100),
+      field_changed VARCHAR(100) NOT NULL,
+      old_value_masked VARCHAR(255),
+      new_value_masked VARCHAR(255),
+      timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE TABLE IF NOT EXISTS delivery_drivers (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
@@ -314,6 +351,11 @@ export async function runMigrations() {
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS waze_url TEXT;
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_proof_url TEXT;
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_proof_status VARCHAR(50) DEFAULT 'pending';
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS channel_origin VARCHAR(50) DEFAULT 'WEB_STORE';
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_link_token UUID UNIQUE;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_link_expires_at TIMESTAMP WITH TIME ZONE;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS tilopay_transaction_id VARCHAR(100);
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS tilopay_auth_code VARCHAR(100);
     ALTER TABLE products ADD COLUMN IF NOT EXISTS custom_variables JSONB;
     ALTER TABLE services ADD COLUMN IF NOT EXISTS custom_variables JSONB;
     ALTER TABLE order_items ADD COLUMN IF NOT EXISTS selected_variables JSONB;
@@ -550,6 +592,10 @@ export async function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_password_reset_otp ON password_reset_tokens(otp_code);
     CREATE INDEX IF NOT EXISTS idx_ai_cmd_logs_tenant ON ai_command_logs(tenant_id, status);
     CREATE INDEX IF NOT EXISTS idx_ai_cmd_logs_jid ON ai_command_logs(remote_jid);
+    CREATE INDEX IF NOT EXISTS idx_tenant_payment_configs_tenant ON tenant_payment_configs(tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_tenant_whatsapp_configs_tenant ON tenant_whatsapp_configs(tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_payment_audit_tenant ON payment_config_audit_log(tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_orders_payment_token ON orders(payment_link_token);
   `;
 
   await query(tables);

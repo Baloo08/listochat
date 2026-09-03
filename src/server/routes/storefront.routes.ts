@@ -5,6 +5,8 @@ import { getStoreSettings } from '../db/store-settings.repo.js';
 import { createOrder } from '../db/orders.repo.js';
 import { sendMessage } from '../services/evolution.js';
 import { query } from '../db/pool.js';
+import { getTenantPaymentConfig } from '../db/tenant-payment.repo.js';
+import { TilopayTenantService } from '../services/tilopay-tenant.service.js';
 
 const router = Router();
 
@@ -23,15 +25,148 @@ router.get('/:slug', async (req, res) => {
       return;
     }
 
+    const paymentConfig = await getTenantPaymentConfig(tenant.id);
+    const tilopayEnabled = Boolean(paymentConfig?.isEnabled && paymentConfig?.isConfigured);
+
     res.json({
       ...settings,
       tenantName: tenant.name,
       tenantSlug: tenant.slug,
-      whatsappNumber: tenant.whatsappNumber || settings.sinpePhone
+      whatsappNumber: tenant.whatsappNumber || settings.sinpePhone,
+      tilopayEnabled
     });
   } catch (error) {
     console.error('Storefront info error:', error);
     res.status(500).json({ error: 'Error al obtener datos de la tienda' });
+  }
+});
+
+// 1.1. Resumen público de orden para /order/success/:id
+router.get('/order-public/:orderId', async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const result = await query(`
+      SELECT o.id, o.order_number as "orderNumber", o.customer_name as "customerName",
+             o.customer_phone as "customerPhone", o.subtotal, o.delivery_fee as "deliveryFee",
+             o.total, o.currency, o.status, o.payment_status as "paymentStatus",
+             o.payment_method as "paymentMethod", o.delivery_method as "deliveryMethod",
+             o.consumption_mode as "consumptionMode", o.table_number as "tableNumber",
+             o.created_at as "createdAt",
+             t.name as "storeName", t.whatsapp_number as "whatsappNumber",
+             COALESCE(
+               (SELECT json_agg(json_build_object(
+                  'productName', oi.product_name,
+                  'variantName', oi.variant_name,
+                  'quantity', oi.quantity,
+                  'totalPrice', oi.total_price
+                ))
+                FROM order_items oi WHERE oi.order_id = o.id), '[]'::json
+             ) as items
+      FROM orders o
+      JOIN tenants t ON o.tenant_id = t.id
+      WHERE o.id::text = $1 OR o.order_number::text = $1
+      LIMIT 1
+    `, [orderId]);
+
+    if (result.rows.length === 0) {
+      res.status(404).json({ error: 'Orden no encontrada' });
+      return;
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error fetching public order summary:', error);
+    res.status(500).json({ error: 'Error al consultar resumen de orden' });
+  }
+});
+
+// 1.2. Iniciar sesión de pago Tilopay para una orden
+router.post('/:slug/pay-session/:orderId', async (req, res) => {
+  try {
+    const tenant = await getTenantBySlug(req.params.slug);
+    if (!tenant) {
+      res.status(404).json({ error: 'Tienda no encontrada' });
+      return;
+    }
+
+    const session = await TilopayTenantService.createPaymentSession(tenant.id, req.params.orderId);
+    res.json(session);
+  } catch (error: any) {
+    console.error('Error creating payment session:', error);
+    res.status(400).json({ error: error.message || 'Error al iniciar sesión de pago' });
+  }
+});
+
+// 1.3. Hosted Checkout Token Resolution (Dynamic WhatsApp Links with 60m TTL)
+router.get('/pay-token/:token', async (req, res) => {
+  try {
+    const { token } = req.params;
+    if (!token || typeof token !== 'string' || token.trim().length < 8) {
+      res.status(400).json({ error: 'invalid_token', message: 'Token de pago inválido.' });
+      return;
+    }
+
+    const result = await query(`
+      SELECT o.id, o.tenant_id as "tenantId", o.order_number as "orderNumber",
+             o.customer_name as "customerName", o.customer_phone as "customerPhone",
+             o.customer_email as "customerEmail", o.total, o.currency,
+             o.payment_status as "paymentStatus", o.payment_link_expires_at as "paymentLinkExpiresAt",
+             t.name as "storeName", t.whatsapp_number as "whatsappNumber",
+             COALESCE(
+               (SELECT json_agg(json_build_object(
+                  'productName', oi.product_name,
+                  'variantName', oi.variant_name,
+                  'quantity', oi.quantity,
+                  'totalPrice', oi.total_price
+                ))
+                FROM order_items oi WHERE oi.order_id = o.id), '[]'::json
+             ) as items
+      FROM orders o
+      JOIN tenants t ON o.tenant_id = t.id
+      WHERE o.payment_link_token = $1
+      LIMIT 1
+    `, [token.trim()]);
+
+    if (result.rows.length === 0) {
+      res.status(404).json({ error: 'not_found', message: 'El enlace de pago no fue encontrado o ya no está disponible.' });
+      return;
+    }
+
+    const order = result.rows[0];
+
+    // Check if already paid
+    if (order.paymentStatus === 'paid') {
+      res.json({
+        status: 'already_paid',
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        storeName: order.storeName
+      });
+      return;
+    }
+
+    // Check TTL (60 minutes expiration)
+    if (order.paymentLinkExpiresAt && new Date() > new Date(order.paymentLinkExpiresAt)) {
+      res.status(410).json({
+        error: 'expired',
+        message: 'Este enlace de pago ha expirado por seguridad (vigencia máxima de 60 minutos). Solicita uno nuevo a nuestro WhatsApp.',
+        whatsappNumber: order.whatsappNumber,
+        orderNumber: order.orderNumber,
+        storeName: order.storeName
+      });
+      return;
+    }
+
+    // Generate secure Tilopay Session
+    const tilopaySession = await TilopayTenantService.createPaymentSession(order.tenantId, order.id);
+
+    res.json({
+      order,
+      tilopaySession
+    });
+  } catch (error: any) {
+    console.error('Error resolving payment link token:', error);
+    res.status(500).json({ error: 'server_error', message: error.message || 'Error al validar el enlace de pago.' });
   }
 });
 
@@ -236,9 +371,25 @@ router.post('/:slug/checkout', async (req, res) => {
       formattedItems
     );
 
-    // Associate branch if provided
+    // Associate branch if provided (validando aislamiento multi-tenant)
     if (req.body.branchId) {
-      await query(`UPDATE orders SET branch_id = $1 WHERE id = $2`, [req.body.branchId, order.id]);
+      const branchCheck = await query(
+        `SELECT id FROM branches WHERE id = $1 AND tenant_id = $2`,
+        [req.body.branchId, tenant.id]
+      );
+      if (branchCheck.rows.length > 0) {
+        await query(`UPDATE orders SET branch_id = $1 WHERE id = $2 AND tenant_id = $3`, [req.body.branchId, order.id, tenant.id]);
+      }
+    }
+
+    // Si el método de pago es tarjeta/Tilopay, inicializamos la sesión segura
+    let tilopaySession = null;
+    if (paymentMethod === 'card' || paymentMethod === 'tilopay') {
+      try {
+        tilopaySession = await TilopayTenantService.createPaymentSession(tenant.id, order.id);
+      } catch (sessErr: any) {
+        console.warn('[StorefrontCheckout] No se pudo inicializar sesión Tilopay automática:', sessErr.message);
+      }
     }
 
     // Emit real-time WebSocket event to Kitchen Display & Admin Dashboard
@@ -345,7 +496,8 @@ _Gestiona este pedido en tiempo real desde tu Panel de Betico._`;
       ...order,
       orderCode,
       storeName,
-      whatsappNumber: tenant.whatsappNumber || store?.sinpePhone
+      whatsappNumber: tenant.whatsappNumber || store?.sinpePhone,
+      tilopaySession
     });
   } catch (error) {
     console.error('Storefront checkout error:', error);

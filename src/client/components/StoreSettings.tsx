@@ -15,13 +15,25 @@ import {
 } from '../../shared/types';
 
 export default function StoreSettings() {
-  const [activeTab, setActiveTab] = useState<'general' | 'restaurant' | 'delivery' | 'drivers' | 'templates' | 'design'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'restaurant' | 'delivery' | 'drivers' | 'templates' | 'design' | 'tilopay'>('general');
   const [shippingSubTab, setShippingSubTab] = useState<'express' | 'local' | 'correos'>('express');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
   const [saveMessage, setSaveMessage] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Tilopay Payment Gateway State
+  const [tiloEnabled, setTiloEnabled] = useState(false);
+  const [tiloEnv, setTiloEnv] = useState<'SANDBOX' | 'PRODUCTION'>('SANDBOX');
+  const [tiloKey, setTiloKey] = useState('');
+  const [tiloUser, setTiloUser] = useState('');
+  const [tiloPassword, setTiloPassword] = useState('');
+  const [tiloCaptureMode, setTiloCaptureMode] = useState<'IMMEDIATE' | 'AUTH_ONLY'>('IMMEDIATE');
+  const [tiloIsConfigured, setTiloIsConfigured] = useState(false);
+  const [testingTilo, setTestingTilo] = useState(false);
+  const [tiloTestResult, setTiloTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [savingTilo, setSavingTilo] = useState(false);
 
   // General & Modules Form Fields
   const [storeEnabled, setStoreEnabled] = useState(true);
@@ -308,6 +320,22 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
             if (data.storeTheme.bodyTextColor) setBodyTextColor(data.storeTheme.bodyTextColor);
           }
         }
+
+        // Cargar configuración de Pasarela Tilopay
+        try {
+          const tiloRes = await api.get('/api/tenant/payment-config');
+          if (tiloRes) {
+            setTiloEnabled(Boolean(tiloRes.isEnabled));
+            setTiloEnv(tiloRes.environment || 'SANDBOX');
+            setTiloUser(tiloRes.apiUser || '');
+            setTiloKey(tiloRes.apiKeyMasked || '');
+            setTiloPassword(tiloRes.apiPasswordMasked || '');
+            setTiloCaptureMode(tiloRes.captureMode || 'IMMEDIATE');
+            setTiloIsConfigured(Boolean(tiloRes.isConfigured));
+          }
+        } catch (tiloErr) {
+          console.warn('No se pudo cargar la configuración de Tilopay:', tiloErr);
+        }
       } catch (err) {
         console.error('Error fetching store settings:', err);
       } finally {
@@ -557,6 +585,50 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
     }
   };
 
+  const handleTestTilopay = async () => {
+    setTestingTilo(true);
+    setTiloTestResult(null);
+    try {
+      const res = await api.post('/api/tenant/payment-config/test', {
+        apiKey: tiloKey,
+        apiUser: tiloUser,
+        apiPassword: tiloPassword,
+        environment: tiloEnv
+      });
+      setTiloTestResult({ success: true, message: res.message || 'Conexión exitosa con Tilopay' });
+    } catch (err: any) {
+      setTiloTestResult({ success: false, message: err.message || 'Error al conectar con Tilopay' });
+    } finally {
+      setTestingTilo(false);
+    }
+  };
+
+  const handleSaveTilopay = async () => {
+    setSavingTilo(true);
+    setErrorMessage(null);
+    try {
+      const res = await api.post('/api/tenant/payment-config', {
+        apiKey: tiloKey,
+        apiUser: tiloUser,
+        apiPassword: tiloPassword,
+        environment: tiloEnv,
+        isEnabled: tiloEnabled,
+        captureMode: tiloCaptureMode
+      });
+      if (res.config) {
+        setTiloKey(res.config.apiKeyMasked || '');
+        setTiloPassword(res.config.apiPasswordMasked || '');
+        setTiloIsConfigured(Boolean(res.config.isConfigured));
+      }
+      setSaveMessage(true);
+      setTimeout(() => setSaveMessage(false), 3000);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Error al guardar configuración de Tilopay');
+    } finally {
+      setSavingTilo(false);
+    }
+  };
+
   const storeUrl = `${window.location.origin}/tienda/${storeSlug || 'demo'}`;
 
   const copyStoreLink = () => {
@@ -721,6 +793,19 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
           }}
         >
           <Palette size={17} /> Diseño Visual & Tipografía
+        </button>
+
+        <button
+          onClick={() => setActiveTab('tilopay')}
+          style={{
+            padding: '10px 16px', border: 'none',
+            borderBottom: activeTab === 'tilopay' ? '2px solid #059669' : '2px solid transparent',
+            backgroundColor: 'transparent',
+            color: activeTab === 'tilopay' ? '#059669' : 'var(--text-muted)',
+            fontWeight: 'bold', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap'
+          }}
+        >
+          <CreditCard size={17} /> Pasarela Tilopay
         </button>
       </div>
 
@@ -2320,6 +2405,153 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
                   </div>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 7: TILOPAY PAYMENT GATEWAY */}
+      {activeTab === 'tilopay' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+              <div>
+                <h3 style={{ margin: '0 0 6px 0', fontSize: '1.2rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <CreditCard size={20} color="#059669" /> Pasarela de Pagos con Tarjeta (Tilopay BYOK)
+                </h3>
+                <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                  Conecta tu cuenta de Tilopay para recibir pagos seguros con tarjeta de crédito/débito y SINPE Móvil bajo el modelo <em>Bring Your Own Keys</em>.
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                {tiloIsConfigured && (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 10px', backgroundColor: '#dcfce7', color: '#166534', borderRadius: '20px', fontSize: '0.78rem', fontWeight: 'bold' }}>
+                    <ShieldCheck size={14} /> Credenciales Conectadas
+                  </span>
+                )}
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.9rem' }}>
+                  <input
+                    type="checkbox"
+                    checked={tiloEnabled}
+                    onChange={(e) => setTiloEnabled(e.target.checked)}
+                    style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                  />
+                  <span>Habilitar Tilopay</span>
+                </label>
+              </div>
+            </div>
+
+            {/* Environment Selector */}
+            <div style={{ backgroundColor: '#f8fafc', padding: '14px', borderRadius: '10px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#334155', marginBottom: '8px' }}>Entorno de Transacción:</div>
+              <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.88rem' }}>
+                  <input
+                    type="radio"
+                    name="tiloEnv"
+                    value="SANDBOX"
+                    checked={tiloEnv === 'SANDBOX'}
+                    onChange={() => setTiloEnv('SANDBOX')}
+                  />
+                  <span>🧪 <strong>Sandbox (Modo de Pruebas)</strong></span>
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.88rem' }}>
+                  <input
+                    type="radio"
+                    name="tiloEnv"
+                    value="PRODUCTION"
+                    checked={tiloEnv === 'PRODUCTION'}
+                    onChange={() => setTiloEnv('PRODUCTION')}
+                  />
+                  <span>🚀 <strong>Producción (Cobros Reales)</strong></span>
+                </label>
+              </div>
+            </div>
+
+            {/* Credentials Inputs */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '6px' }}>
+                  API Key de Tilopay
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ej: abcd1234efgh5678"
+                  value={tiloKey}
+                  onChange={(e) => setTiloKey(e.target.value)}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '0.9rem', fontFamily: 'monospace' }}
+                />
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Cifrada automáticamente con Envelope Encryption (AES-256-GCM).</span>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '6px' }}>
+                  API User (Usuario Tilopay)
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ej: tu_usuario_tilopay"
+                  value={tiloUser}
+                  onChange={(e) => setTiloUser(e.target.value)}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '0.9rem' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '6px' }}>
+                  API Password (Contraseña)
+                </label>
+                <input
+                  type="password"
+                  placeholder="••••••••••••"
+                  value={tiloPassword}
+                  onChange={(e) => setTiloPassword(e.target.value)}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '0.9rem' }}
+                />
+              </div>
+            </div>
+
+            {/* Diagnostics message */}
+            {tiloTestResult && (
+              <div style={{
+                padding: '12px 16px', borderRadius: '8px', marginBottom: '20px', fontSize: '0.88rem', fontWeight: '600',
+                backgroundColor: tiloTestResult.success ? '#f0fdf4' : '#fef2f2',
+                border: `1px solid ${tiloTestResult.success ? '#bbf7d0' : '#fecaca'}`,
+                color: tiloTestResult.success ? '#166534' : '#991b1b',
+                display: 'flex', alignItems: 'center', gap: '8px'
+              }}>
+                {tiloTestResult.success ? <CheckCircle size={18} /> : <AlertCircle size={18} />}
+                <span>{tiloTestResult.message}</span>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={handleTestTilopay}
+                disabled={testingTilo}
+                style={{
+                  padding: '10px 18px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '8px',
+                  fontWeight: 'bold', fontSize: '0.88rem', color: '#334155', cursor: testingTilo ? 'wait' : 'pointer'
+                }}
+              >
+                {testingTilo ? 'Probando conexión...' : '⚡ Probar Conexión con Tilopay'}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSaveTilopay}
+                disabled={savingTilo}
+                style={{
+                  padding: '10px 22px', backgroundColor: '#059669', border: 'none', borderRadius: '8px',
+                  fontWeight: 'bold', fontSize: '0.88rem', color: 'white', cursor: savingTilo ? 'wait' : 'pointer',
+                  display: 'flex', alignItems: 'center', gap: '6px'
+                }}
+              >
+                <Save size={16} /> {savingTilo ? 'Guardando...' : 'Guardar Configuración Tilopay'}
+              </button>
             </div>
           </div>
         </div>

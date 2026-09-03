@@ -25,6 +25,8 @@ var init_env = __esm({
       EVOLUTION_API_URL: process.env.EVOLUTION_API_URL || "http://betico_evolution:8080",
       EVOLUTION_API_KEY: process.env.EVOLUTION_API_KEY || "429683C4C977415CAAFCCE10F7D57E11",
       ENCRYPTION_KEY: process.env.ENCRYPTION_KEY || "e8a1b2c3d4e5f60718293a4b5c6d7e8f",
+      APP_ENCRYPTION_KEY: process.env.APP_ENCRYPTION_KEY || process.env.ENCRYPTION_KEY || "e8a1b2c3d4e5f60718293a4b5c6d7e8f",
+      TILOPAY_MODULE_ENABLED: process.env.TILOPAY_MODULE_ENABLED !== "false",
       SUPERADMIN_EMAIL: process.env.SUPERADMIN_EMAIL || "admin@betico.cr",
       SUPERADMIN_PASSWORD: process.env.SUPERADMIN_PASSWORD || "BeticoAdmin2026!",
       UPLOAD_DIR: process.env.UPLOAD_DIR || "./uploads",
@@ -869,6 +871,265 @@ var init_ai_provider = __esm({
   }
 });
 
+// src/server/services/crypto.service.ts
+import crypto4 from "crypto";
+function getMasterKey() {
+  const secret = process.env.APP_ENCRYPTION_KEY || process.env.ENCRYPTION_KEY || env.ENCRYPTION_KEY || "betico_master_encryption_key_default_32bytes";
+  return crypto4.scryptSync(secret, "betico_envelope_salt_2026", 32);
+}
+function getTenantDataKey(tenantId) {
+  const masterKey = getMasterKey();
+  return crypto4.createHmac("sha256", masterKey).update(`tenant_dek_${tenantId}`).digest();
+}
+function encryptWithKey(key, plaintext) {
+  if (!plaintext) return "";
+  const iv = crypto4.randomBytes(IV_LENGTH2);
+  const cipher = crypto4.createCipheriv(ALGORITHM2, key, iv);
+  let encrypted = cipher.update(plaintext, "utf8", "base64");
+  encrypted += cipher.final("base64");
+  const authTag = cipher.getAuthTag().toString("base64");
+  return `${iv.toString("base64")}:${authTag}:${encrypted}`;
+}
+function decryptWithKey(key, cipherText) {
+  if (!cipherText || !cipherText.includes(":")) return cipherText || "";
+  const parts = cipherText.split(":");
+  if (parts.length !== 3) {
+    throw new Error("Formato de texto cifrado inv\xE1lido");
+  }
+  const [ivBase64, authTagBase64, encryptedBase64] = parts;
+  const iv = Buffer.from(ivBase64, "base64");
+  const authTag = Buffer.from(authTagBase64, "base64");
+  const decipher = crypto4.createDecipheriv(ALGORITHM2, key, iv);
+  decipher.setAuthTag(authTag);
+  let decrypted = decipher.update(encryptedBase64, "base64", "utf8");
+  decrypted += decipher.final("utf8");
+  return decrypted;
+}
+var ALGORITHM2, IV_LENGTH2, CryptoService;
+var init_crypto_service = __esm({
+  "src/server/services/crypto.service.ts"() {
+    "use strict";
+    init_env();
+    ALGORITHM2 = "aes-256-gcm";
+    IV_LENGTH2 = 16;
+    CryptoService = class {
+      /**
+       * Encrypts tenant sensitive data (e.g. Tilopay API Key, API Password)
+       * using the tenant's derived unique Data Encryption Key (Envelope Encryption).
+       */
+      static encryptForTenant(tenantId, plaintext) {
+        if (!tenantId) throw new Error("tenantId es requerido para el cifrado de sobre");
+        const dek = getTenantDataKey(tenantId);
+        return encryptWithKey(dek, plaintext);
+      }
+      /**
+       * Decrypts tenant sensitive data using the tenant's derived Data Encryption Key.
+       */
+      static decryptForTenant(tenantId, cipherText) {
+        if (!tenantId || !cipherText) return "";
+        const dek = getTenantDataKey(tenantId);
+        try {
+          return decryptWithKey(dek, cipherText);
+        } catch (err) {
+          try {
+            const legacyKey = crypto4.scryptSync(process.env.ENCRYPTION_KEY || env.ENCRYPTION_KEY || "legacy_key", "salt", 32);
+            return decryptWithKey(legacyKey, cipherText);
+          } catch (fallbackErr) {
+            console.error(`[CryptoService] Error descifrando datos para tenant ${tenantId}`);
+            throw new Error("Fallo al descifrar credenciales de pago");
+          }
+        }
+      }
+      /**
+       * General purpose encryption using the Master Key.
+       */
+      static encrypt(plaintext) {
+        const masterKey = getMasterKey();
+        return encryptWithKey(masterKey, plaintext);
+      }
+      /**
+       * General purpose decryption using the Master Key.
+       */
+      static decrypt(cipherText) {
+        const masterKey = getMasterKey();
+        return decryptWithKey(masterKey, cipherText);
+      }
+      /**
+       * Safely masks a sensitive secret for UI display (e.g. '••••••••abcd').
+       * Never exposes the full plaintext.
+       */
+      static maskSecret(secret, visibleChars = 4) {
+        if (!secret) return "";
+        const trimmed = String(secret).trim();
+        if (trimmed.length <= visibleChars) return "\u2022\u2022\u2022\u2022";
+        const tail = trimmed.slice(-visibleChars);
+        return `\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022${tail}`;
+      }
+    };
+  }
+});
+
+// src/server/db/tenant-payment.repo.ts
+var tenant_payment_repo_exports = {};
+__export(tenant_payment_repo_exports, {
+  getPaymentAuditLogs: () => getPaymentAuditLogs,
+  getTenantPaymentConfig: () => getTenantPaymentConfig,
+  getTenantPaymentConfigRaw: () => getTenantPaymentConfigRaw,
+  saveTenantPaymentConfig: () => saveTenantPaymentConfig
+});
+async function getTenantPaymentConfig(tenantId) {
+  const res = await query(`
+    SELECT id, tenant_id as "tenantId", provider, is_enabled as "isEnabled",
+           environment, api_key_encrypted as "apiKeyEncrypted", api_user as "apiUser",
+           api_password_encrypted as "apiPasswordEncrypted", capture_mode as "captureMode",
+           created_at as "createdAt", updated_at as "updatedAt"
+    FROM tenant_payment_configs
+    WHERE tenant_id = $1 AND provider = 'TILOPAY'
+  `, [tenantId]);
+  if (res.rows.length === 0) return null;
+  const row = res.rows[0];
+  let rawKey = "";
+  let rawPass = "";
+  if (row.apiKeyEncrypted) {
+    try {
+      rawKey = CryptoService.decryptForTenant(tenantId, row.apiKeyEncrypted);
+    } catch (e) {
+    }
+  }
+  if (row.apiPasswordEncrypted) {
+    try {
+      rawPass = CryptoService.decryptForTenant(tenantId, row.apiPasswordEncrypted);
+    } catch (e) {
+    }
+  }
+  return {
+    id: row.id,
+    tenantId: row.tenantId,
+    provider: row.provider,
+    isEnabled: Boolean(row.isEnabled),
+    environment: row.environment || "SANDBOX",
+    apiUser: row.apiUser || "",
+    apiKeyMasked: rawKey ? CryptoService.maskSecret(rawKey) : "",
+    apiPasswordMasked: rawPass ? CryptoService.maskSecret(rawPass) : "",
+    captureMode: row.captureMode || "IMMEDIATE",
+    isConfigured: Boolean(rawKey && row.apiUser && rawPass),
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt
+  };
+}
+async function getTenantPaymentConfigRaw(tenantId) {
+  const res = await query(`
+    SELECT is_enabled as "isEnabled", environment, api_key_encrypted, api_user,
+           api_password_encrypted, capture_mode as "captureMode"
+    FROM tenant_payment_configs
+    WHERE tenant_id = $1 AND provider = 'TILOPAY'
+  `, [tenantId]);
+  if (res.rows.length === 0) return null;
+  const row = res.rows[0];
+  let apiKey = "";
+  let apiPassword = "";
+  if (row.api_key_encrypted) {
+    apiKey = CryptoService.decryptForTenant(tenantId, row.api_key_encrypted);
+  }
+  if (row.api_password_encrypted) {
+    apiPassword = CryptoService.decryptForTenant(tenantId, row.api_password_encrypted);
+  }
+  return {
+    apiKey,
+    apiUser: row.api_user || "",
+    apiPassword,
+    environment: row.environment || "SANDBOX",
+    isEnabled: Boolean(row.isEnabled),
+    captureMode: row.captureMode || "IMMEDIATE"
+  };
+}
+async function saveTenantPaymentConfig(tenantId, data, changedBy = "system") {
+  const existing = await query(`
+    SELECT * FROM tenant_payment_configs WHERE tenant_id = $1 AND provider = 'TILOPAY'
+  `, [tenantId]);
+  const prevRow = existing.rows[0] || null;
+  let newEncryptedKey = prevRow?.api_key_encrypted || null;
+  let newEncryptedPass = prevRow?.api_password_encrypted || null;
+  if (data.apiKey && !data.apiKey.includes("\u2022\u2022\u2022\u2022")) {
+    newEncryptedKey = CryptoService.encryptForTenant(tenantId, data.apiKey.trim());
+  }
+  if (data.apiPassword && !data.apiPassword.includes("\u2022\u2022\u2022\u2022")) {
+    newEncryptedPass = CryptoService.encryptForTenant(tenantId, data.apiPassword.trim());
+  }
+  const isEnabled = data.isEnabled !== void 0 ? data.isEnabled : prevRow ? prevRow.is_enabled : false;
+  const environment = data.environment || prevRow?.environment || "SANDBOX";
+  const apiUser = data.apiUser !== void 0 ? data.apiUser.trim() : prevRow?.api_user || "";
+  const captureMode = data.captureMode || prevRow?.capture_mode || "IMMEDIATE";
+  const upsertSql = `
+    INSERT INTO tenant_payment_configs (
+      tenant_id, provider, is_enabled, environment, api_key_encrypted, api_user, api_password_encrypted, capture_mode, updated_at
+    ) VALUES ($1, 'TILOPAY', $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
+    ON CONFLICT (tenant_id, provider) DO UPDATE SET
+      is_enabled = EXCLUDED.is_enabled,
+      environment = EXCLUDED.environment,
+      api_key_encrypted = COALESCE(EXCLUDED.api_key_encrypted, tenant_payment_configs.api_key_encrypted),
+      api_user = EXCLUDED.api_user,
+      api_password_encrypted = COALESCE(EXCLUDED.api_password_encrypted, tenant_payment_configs.api_password_encrypted),
+      capture_mode = EXCLUDED.capture_mode,
+      updated_at = CURRENT_TIMESTAMP
+    RETURNING id
+  `;
+  await query(upsertSql, [
+    tenantId,
+    isEnabled,
+    environment,
+    newEncryptedKey,
+    apiUser,
+    newEncryptedPass,
+    captureMode
+  ]);
+  const auditDiffs = [];
+  if (prevRow) {
+    if (prevRow.is_enabled !== isEnabled) {
+      auditDiffs.push({ field: "is_enabled", oldVal: String(prevRow.is_enabled), newVal: String(isEnabled) });
+    }
+    if (prevRow.environment !== environment) {
+      auditDiffs.push({ field: "environment", oldVal: prevRow.environment, newVal: environment });
+    }
+    if (data.apiKey && !data.apiKey.includes("\u2022\u2022\u2022\u2022")) {
+      auditDiffs.push({ field: "api_key", oldVal: "\u2022\u2022\u2022\u2022", newVal: CryptoService.maskSecret(data.apiKey) });
+    }
+    if (data.apiPassword && !data.apiPassword.includes("\u2022\u2022\u2022\u2022")) {
+      auditDiffs.push({ field: "api_password", oldVal: "\u2022\u2022\u2022\u2022", newVal: CryptoService.maskSecret(data.apiPassword) });
+    }
+    if (prevRow.api_user !== apiUser) {
+      auditDiffs.push({ field: "api_user", oldVal: prevRow.api_user, newVal: apiUser });
+    }
+  } else {
+    auditDiffs.push({ field: "created", oldVal: void 0, newVal: `provider=TILOPAY, env=${environment}` });
+  }
+  for (const diff of auditDiffs) {
+    await query(`
+      INSERT INTO payment_config_audit_log (tenant_id, changed_by, field_changed, old_value_masked, new_value_masked)
+      VALUES ($1, $2, $3, $4, $5)
+    `, [tenantId, changedBy, diff.field, diff.oldVal || null, diff.newVal || null]);
+  }
+  return await getTenantPaymentConfig(tenantId);
+}
+async function getPaymentAuditLogs(tenantId, limit = 20) {
+  const res = await query(`
+    SELECT id, tenant_id as "tenantId", changed_by as "changedBy", field_changed as "fieldChanged",
+           old_value_masked as "oldValueMasked", new_value_masked as "newValueMasked", timestamp
+    FROM payment_config_audit_log
+    WHERE tenant_id = $1
+    ORDER BY timestamp DESC
+    LIMIT $2
+  `, [tenantId, limit]);
+  return res.rows;
+}
+var init_tenant_payment_repo = __esm({
+  "src/server/db/tenant-payment.repo.ts"() {
+    "use strict";
+    init_pool();
+    init_crypto_service();
+  }
+});
+
 // src/server/services/superadmin-bot.service.ts
 var superadmin_bot_service_exports = {};
 __export(superadmin_bot_service_exports, {
@@ -1451,6 +1712,43 @@ async function runMigrations() {
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS tenant_payment_configs (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+      provider VARCHAR(50) NOT NULL DEFAULT 'TILOPAY',
+      is_enabled BOOLEAN DEFAULT false,
+      environment VARCHAR(20) DEFAULT 'SANDBOX',
+      api_key_encrypted TEXT,
+      api_user VARCHAR(150),
+      api_password_encrypted TEXT,
+      capture_mode VARCHAR(50) DEFAULT 'IMMEDIATE',
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(tenant_id, provider)
+    );
+
+    CREATE TABLE IF NOT EXISTS tenant_whatsapp_configs (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+      instance_name VARCHAR(150),
+      api_url VARCHAR(255),
+      api_key_encrypted TEXT,
+      is_enabled BOOLEAN DEFAULT false,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(tenant_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS payment_config_audit_log (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+      changed_by VARCHAR(100),
+      field_changed VARCHAR(100) NOT NULL,
+      old_value_masked VARCHAR(255),
+      new_value_masked VARCHAR(255),
+      timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE TABLE IF NOT EXISTS delivery_drivers (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
@@ -1482,6 +1780,11 @@ async function runMigrations() {
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS waze_url TEXT;
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_proof_url TEXT;
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_proof_status VARCHAR(50) DEFAULT 'pending';
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS channel_origin VARCHAR(50) DEFAULT 'WEB_STORE';
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_link_token UUID UNIQUE;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_link_expires_at TIMESTAMP WITH TIME ZONE;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS tilopay_transaction_id VARCHAR(100);
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS tilopay_auth_code VARCHAR(100);
     ALTER TABLE products ADD COLUMN IF NOT EXISTS custom_variables JSONB;
     ALTER TABLE services ADD COLUMN IF NOT EXISTS custom_variables JSONB;
     ALTER TABLE order_items ADD COLUMN IF NOT EXISTS selected_variables JSONB;
@@ -1718,6 +2021,10 @@ async function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_password_reset_otp ON password_reset_tokens(otp_code);
     CREATE INDEX IF NOT EXISTS idx_ai_cmd_logs_tenant ON ai_command_logs(tenant_id, status);
     CREATE INDEX IF NOT EXISTS idx_ai_cmd_logs_jid ON ai_command_logs(remote_jid);
+    CREATE INDEX IF NOT EXISTS idx_tenant_payment_configs_tenant ON tenant_payment_configs(tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_tenant_whatsapp_configs_tenant ON tenant_whatsapp_configs(tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_payment_audit_tenant ON payment_config_audit_log(tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_orders_payment_token ON orders(payment_link_token);
   `;
   await query(tables);
   const superAdminEmail = (process.env.SUPERADMIN_EMAIL || "admin@betico.cr").toLowerCase().trim();
@@ -4441,7 +4748,7 @@ async function rescheduleBookingFromWhatsApp(tenantId, phone, rescheduleData) {
 
 // src/server/db/orders.repo.ts
 init_pool();
-async function getOrdersByTenant(tenantId) {
+async function getOrdersByTenant(tenantId, filters) {
   const result = await query(`
     SELECT o.id, o.tenant_id as "tenantId", o.order_number as "orderNumber", o.customer_name as "customerName",
            o.customer_phone as "customerPhone", o.customer_email as "customerEmail", o.customer_address as "customerAddress",
@@ -4617,6 +4924,79 @@ async function updateOrderStatus(id, tenantId, status) {
 }
 async function confirmPayment(id, tenantId, paymentReference) {
   return updateOrder(id, tenantId, { paymentStatus: "paid", paymentReference: paymentReference || "Confirmado manual" });
+}
+async function executeOrderPaymentConfirmation(tenantId, orderId, paymentData) {
+  const client = await getClient();
+  try {
+    await client.query("BEGIN");
+    const orderRes = await client.query(`
+      SELECT * FROM orders WHERE id = $1 AND tenant_id = $2 FOR UPDATE
+    `, [orderId, tenantId]);
+    if (orderRes.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return { success: false, error: "Orden no encontrada para este comercio" };
+    }
+    const currentOrder = orderRes.rows[0];
+    if (String(currentOrder.payment_status).toLowerCase() === "paid") {
+      await client.query("ROLLBACK");
+      const order = await getOrderById(orderId, tenantId);
+      return { success: true, alreadyProcessed: true, order: order || void 0 };
+    }
+    const newPaymentStatus = "paid";
+    const newOrderStatus = currentOrder.status === "pending" || currentOrder.status === "pedido_recibido" ? "pedido_aceptado" : currentOrder.status;
+    await client.query(`
+      UPDATE orders
+      SET payment_status = $1,
+          status = $2,
+          tilopay_transaction_id = $3,
+          tilopay_auth_code = $4,
+          payment_reference = COALESCE($5, payment_reference),
+          payment_method = COALESCE($6, payment_method),
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $7 AND tenant_id = $8
+    `, [
+      newPaymentStatus,
+      newOrderStatus,
+      paymentData.tilopayTransactionId || null,
+      paymentData.tilopayAuthCode || null,
+      paymentData.paymentReference || paymentData.tilopayTransactionId || "Tilopay",
+      paymentData.paymentMethod || "card",
+      orderId,
+      tenantId
+    ]);
+    const itemsRes = await client.query(`
+      SELECT product_id as "productId", variant_id as "variantId", quantity
+      FROM order_items
+      WHERE order_id = $1 AND tenant_id = $2
+    `, [orderId, tenantId]);
+    for (const item of itemsRes.rows) {
+      const qty = Number(item.quantity || 1);
+      if (item.productId) {
+        await client.query(`
+          UPDATE products
+          SET stock = GREATEST(0, stock - $1),
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = $2 AND tenant_id = $3 AND track_stock = true
+        `, [qty, item.productId, tenantId]);
+        if (item.variantId) {
+          await client.query(`
+            UPDATE product_variants
+            SET stock = GREATEST(0, stock - $1)
+            WHERE id = $2 AND product_id = $3
+          `, [qty, item.variantId, item.productId]);
+        }
+      }
+    }
+    await client.query("COMMIT");
+    const updatedOrder = await getOrderById(orderId, tenantId);
+    return { success: true, alreadyProcessed: false, order: updatedOrder || void 0 };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error(`[executeOrderPaymentConfirmation] Error en transacci\xF3n at\xF3mica de orden ${orderId}:`, err);
+    return { success: false, error: err.message || "Error en la transacci\xF3n de confirmaci\xF3n de pago" };
+  } finally {
+    client.release();
+  }
 }
 
 // src/server/services/order.service.ts
@@ -5017,6 +5397,166 @@ async function processSingleMessage(msg) {
       console.error("[Queue] Error marking message as failed:", markErr);
     }
   }
+}
+
+// src/server/services/evolution-api.service.ts
+init_evolution();
+import crypto3 from "crypto";
+
+// src/server/services/event-bus.service.ts
+import { EventEmitter } from "events";
+var DomainEventBus = class extends EventEmitter {
+  constructor() {
+    super();
+    this.setMaxListeners(50);
+  }
+};
+var domainEventBus = new DomainEventBus();
+var ORDER_PAID_EVENT = "order:paid";
+function emitOrderPaidEvent(payload) {
+  try {
+    domainEventBus.emit(ORDER_PAID_EVENT, payload);
+  } catch (err) {
+    console.error("[DomainEventBus] Error al emitir OrderPaidEvent:", err);
+  }
+}
+function onOrderPaidEvent(handler) {
+  domainEventBus.on(ORDER_PAID_EVENT, async (payload) => {
+    try {
+      await handler(payload);
+    } catch (err) {
+      console.error(`[DomainEventBus] Error en listener de OrderPaidEvent para orden #${payload.orderNumber}:`, err);
+    }
+  });
+}
+
+// src/server/services/evolution-api.service.ts
+init_env();
+init_pool();
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+var EvolutionApiService = class {
+  /**
+   * Sends a WhatsApp message with exponential backoff retry logic.
+   */
+  static async sendMessageWithRetry(instanceName, phone, messageText, maxRetries = 3) {
+    let cleanPhone = (phone || "").replace(/\D/g, "");
+    if (cleanPhone.length === 8) {
+      cleanPhone = "506" + cleanPhone;
+    }
+    if (!cleanPhone || !instanceName) {
+      console.warn("[EvolutionApiService] Par\xE1metros incompletos para env\xEDo de WhatsApp.");
+      return false;
+    }
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        await sendMessage(instanceName, cleanPhone, messageText);
+        return true;
+      } catch (err) {
+        console.warn(`[EvolutionApiService] Intento ${attempt}/${maxRetries} fallido para ${cleanPhone}:`, err.message);
+        if (attempt < maxRetries) {
+          const backoff = Math.pow(2, attempt) * 1e3;
+          await sleep(backoff);
+        }
+      }
+    }
+    console.error(`[EvolutionApiService] No fue posible enviar WhatsApp a ${cleanPhone} tras ${maxRetries} intentos.`);
+    return false;
+  }
+  /**
+   * Generates a conversational order for WhatsApp with a secure, non-sequential
+   * dynamic payment link and a 60-minute TTL.
+   */
+  static async createOrderAndGeneratePaymentLink(tenantId, orderData) {
+    const paymentLinkToken = crypto3.randomUUID();
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1e3);
+    const store = await getStoreSettings(tenantId);
+    const tenant = await getTenantById(tenantId);
+    const newOrder = await createOrder(
+      tenantId,
+      {
+        customerName: orderData.customerName,
+        customerPhone: orderData.customerPhone,
+        customerAddress: orderData.customerAddress || null,
+        source: "whatsapp",
+        subtotal: orderData.subtotal,
+        deliveryFee: orderData.deliveryFee || 0,
+        total: orderData.total,
+        currency: orderData.currency || store?.currency || "CRC",
+        status: "pending",
+        paymentMethod: "card",
+        paymentStatus: "pending",
+        deliveryMethod: orderData.deliveryMethod || "pickup",
+        notes: orderData.notes || null,
+        channelOrigin: "WHATSAPP",
+        paymentLinkToken,
+        paymentLinkExpiresAt: expiresAt
+      },
+      orderData.items
+    );
+    await query(`
+      UPDATE orders
+      SET channel_origin = 'WHATSAPP',
+          payment_link_token = $1,
+          payment_link_expires_at = $2
+      WHERE id = $3 AND tenant_id = $4
+    `, [paymentLinkToken, expiresAt, newOrder.id, tenantId]);
+    const baseUrl = env.APP_URL || "https://betico.tech";
+    const paymentLink = `${baseUrl.replace(/\/$/, "")}/pay/${paymentLinkToken}`;
+    return {
+      order: newOrder,
+      paymentLink,
+      paymentLinkToken,
+      expiresAt
+    };
+  }
+};
+function initEvolutionPaymentListeners() {
+  onOrderPaidEvent(async (payload) => {
+    try {
+      const tenant = await getTenantById(payload.tenantId);
+      if (!tenant?.evolutionInstance) {
+        return;
+      }
+      if (!payload.customerPhone) {
+        return;
+      }
+      const store = await getStoreSettings(payload.tenantId);
+      const storeName = store?.storeName || tenant.name || "nuestro negocio";
+      const currencySymbol = payload.currency === "USD" ? "$" : "\u20A1";
+      const receiptMsg = `\u{1F389} *\xA1PAGO CONFIRMADO CON \xC9XITO!* \u2705
+
+Hola *${payload.customerName}*, confirmamos el pago seguro de tu pedido *#ORD-${payload.orderNumber}* en *${storeName}*.
+
+\u{1F4B0} *Total Cancelado:* ${currencySymbol}${Number(payload.total).toLocaleString("es-CR")}
+\u{1F4B3} *Transacci\xF3n Tilopay:* ${payload.tilopayTransactionId || "Aprobada"}
+${payload.tilopayAuthCode ? `\u{1F511} *C\xF3digo de Autorizaci\xF3n:* ${payload.tilopayAuthCode}
+` : ""}\u{1F4E6} *Estado:* En preparaci\xF3n para entrega
+
+\xA1Muchas gracias por tu preferencia! Te notificaremos ante cualquier avance. \u2B50`;
+      await EvolutionApiService.sendMessageWithRetry(
+        tenant.evolutionInstance,
+        payload.customerPhone,
+        receiptMsg,
+        3
+      );
+      let cleanCustomerPhone = payload.customerPhone.replace(/\D/g, "");
+      if (cleanCustomerPhone.length === 8) cleanCustomerPhone = "506" + cleanCustomerPhone;
+      await query(`
+        INSERT INTO notifications_log (id, tenant_id, recipient, message, trigger_type, status)
+        VALUES ($1, $2, $3, $4, 'tilopay_payment_confirmed', 'sent')
+      `, [
+        `notif_${Date.now()}`,
+        payload.tenantId,
+        cleanCustomerPhone,
+        `Confirmaci\xF3n de pago Tilopay para orden #ORD-${payload.orderNumber}`
+      ]);
+    } catch (err) {
+      console.error("[EvolutionPaymentListener] Error enviando WhatsApp de pago:", err);
+    }
+  });
+  console.log("[EvolutionApiService] Listener de OrderPaidEvent inicializado correctamente.");
 }
 
 // src/server/routes/auth.routes.ts
@@ -5644,9 +6184,9 @@ router.post("/forgot-password", async (req, res) => {
       res.status(400).json({ error: "Tu cuenta no tiene un n\xFAmero de WhatsApp vinculado para recibir el c\xF3digo. Por favor contacta a soporte." });
       return;
     }
-    const crypto3 = await import("crypto");
-    const otpCode = crypto3.randomInt(1e5, 999999).toString();
-    const tokenHash = crypto3.createHash("sha256").update(otpCode + user.id).digest("hex");
+    const crypto5 = await import("crypto");
+    const otpCode = crypto5.randomInt(1e5, 999999).toString();
+    const tokenHash = crypto5.createHash("sha256").update(otpCode + user.id).digest("hex");
     await (await Promise.resolve().then(() => (init_pool(), pool_exports))).query(`
       UPDATE password_reset_tokens SET used = true WHERE user_id = $1 AND used = false
     `, [user.id]);
@@ -7741,6 +8281,134 @@ var upload_routes_default = router15;
 import { Router as Router16 } from "express";
 init_evolution();
 init_pool();
+init_tenant_payment_repo();
+
+// src/server/services/tilopay-tenant.service.ts
+init_tenant_payment_repo();
+init_env();
+var tokenCache = /* @__PURE__ */ new Map();
+var TilopayTenantService = class {
+  static getBaseUrl(environment) {
+    return environment === "PRODUCTION" ? "https://app.tilopay.net/api/v1" : "https://sandbox.tilopay.net/api/v1";
+  }
+  /**
+   * Clears cached tokens for a tenant (useful when credentials are saved or rotated).
+   */
+  static clearTokenCache(tenantId) {
+    tokenCache.delete(`tilopay_jwt:${tenantId}:SANDBOX`);
+    tokenCache.delete(`tilopay_jwt:${tenantId}:PRODUCTION`);
+  }
+  /**
+   * Diagnostic method to test credentials against Tilopay prior to saving.
+   */
+  static async verifyCredentials(apiKey, apiUser, apiPassword, environment) {
+    if (!apiKey || !apiUser || !apiPassword) {
+      return { success: false, message: "Todos los campos de credenciales son requeridos." };
+    }
+    const baseUrl = this.getBaseUrl(environment);
+    try {
+      const res = await fetch(`${baseUrl}/loginSdk`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          api_key: apiKey.trim(),
+          api_user: apiUser.trim(),
+          password: apiPassword.trim()
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.access_token && !data.token) {
+        const errorMsg = data.message || data.error || `HTTP ${res.status}: Autenticaci\xF3n fallida con Tilopay`;
+        return { success: false, message: errorMsg };
+      }
+      return { success: true, message: "Conexi\xF3n con Tilopay verificada exitosamente." };
+    } catch (err) {
+      return { success: false, message: `Error de red al conectar con Tilopay: ${err.message}` };
+    }
+  }
+  /**
+   * Retrieves or refreshes an isolated SDK JWT token for a specific tenant.
+   * Multi-tenant isolated via composite cache key: `tilopay_jwt:${tenantId}:${env}`.
+   */
+  static async getSdkToken(tenantId) {
+    if (!env.TILOPAY_MODULE_ENABLED) {
+      throw new Error("El m\xF3dulo de Tilopay se encuentra temporalmente inactivo.");
+    }
+    const config = await getTenantPaymentConfigRaw(tenantId);
+    if (!config || !config.isEnabled) {
+      throw new Error("La pasarela de pagos Tilopay no est\xE1 activada para este comercio.");
+    }
+    if (!config.apiKey || !config.apiUser || !config.apiPassword) {
+      throw new Error("Credenciales de Tilopay incompletas para este comercio.");
+    }
+    const cacheKey = `tilopay_jwt:${tenantId}:${config.environment}`;
+    const cached = tokenCache.get(cacheKey);
+    const now = Date.now();
+    if (cached && cached.expiresAt > now) {
+      return {
+        token: cached.token,
+        apiKey: config.apiKey,
+        environment: config.environment
+      };
+    }
+    const baseUrl = this.getBaseUrl(config.environment);
+    const res = await fetch(`${baseUrl}/loginSdk`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        api_key: config.apiKey,
+        api_user: config.apiUser,
+        password: config.apiPassword
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.access_token && !data.token) {
+      throw new Error(data.message || data.error || "No fue posible autenticar con Tilopay");
+    }
+    const token = data.access_token || data.token;
+    const expiresInSeconds = Number(data.expires_in) || 3600;
+    const expiresAt = now + Math.max(60, expiresInSeconds - 60) * 1e3;
+    tokenCache.set(cacheKey, { token, expiresAt });
+    return {
+      token,
+      apiKey: config.apiKey,
+      environment: config.environment
+    };
+  }
+  /**
+   * Generates client-side session parameters for mounting the Tilopay JS SDK V2.
+   * Checks order validity, amount and returns public token + order info.
+   */
+  static async createPaymentSession(tenantId, orderId) {
+    const order = await getOrderById(orderId, tenantId);
+    if (!order) {
+      throw new Error("Orden no encontrada");
+    }
+    if (order.paymentStatus === "paid" || order.paymentStatus === "PAID") {
+      throw new Error("Esta orden ya se encuentra pagada");
+    }
+    if (order.status === "cancelado" || order.status === "cancelled") {
+      throw new Error("Esta orden fue cancelada y no puede ser procesada");
+    }
+    const { token: sdkToken, apiKey, environment } = await this.getSdkToken(tenantId);
+    const config = await getTenantPaymentConfigRaw(tenantId);
+    return {
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      amount: Number(order.total),
+      currency: order.currency || "CRC",
+      sdkToken,
+      apiKey,
+      environment,
+      customerName: order.customerName,
+      customerEmail: order.customerEmail,
+      customerPhone: order.customerPhone,
+      captureMode: config.captureMode || "IMMEDIATE"
+    };
+  }
+};
+
+// src/server/routes/storefront.routes.ts
 var router16 = Router16();
 router16.get("/:slug", async (req, res) => {
   try {
@@ -7754,15 +8422,128 @@ router16.get("/:slug", async (req, res) => {
       res.status(404).json({ error: "La tienda no est\xE1 disponible p\xFAblicamente" });
       return;
     }
+    const paymentConfig = await getTenantPaymentConfig(tenant.id);
+    const tilopayEnabled = Boolean(paymentConfig?.isEnabled && paymentConfig?.isConfigured);
     res.json({
       ...settings,
       tenantName: tenant.name,
       tenantSlug: tenant.slug,
-      whatsappNumber: tenant.whatsappNumber || settings.sinpePhone
+      whatsappNumber: tenant.whatsappNumber || settings.sinpePhone,
+      tilopayEnabled
     });
   } catch (error) {
     console.error("Storefront info error:", error);
     res.status(500).json({ error: "Error al obtener datos de la tienda" });
+  }
+});
+router16.get("/order-public/:orderId", async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const result = await query(`
+      SELECT o.id, o.order_number as "orderNumber", o.customer_name as "customerName",
+             o.customer_phone as "customerPhone", o.subtotal, o.delivery_fee as "deliveryFee",
+             o.total, o.currency, o.status, o.payment_status as "paymentStatus",
+             o.payment_method as "paymentMethod", o.delivery_method as "deliveryMethod",
+             o.consumption_mode as "consumptionMode", o.table_number as "tableNumber",
+             o.created_at as "createdAt",
+             t.name as "storeName", t.whatsapp_number as "whatsappNumber",
+             COALESCE(
+               (SELECT json_agg(json_build_object(
+                  'productName', oi.product_name,
+                  'variantName', oi.variant_name,
+                  'quantity', oi.quantity,
+                  'totalPrice', oi.total_price
+                ))
+                FROM order_items oi WHERE oi.order_id = o.id), '[]'::json
+             ) as items
+      FROM orders o
+      JOIN tenants t ON o.tenant_id = t.id
+      WHERE o.id::text = $1 OR o.order_number::text = $1
+      LIMIT 1
+    `, [orderId]);
+    if (result.rows.length === 0) {
+      res.status(404).json({ error: "Orden no encontrada" });
+      return;
+    }
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error("Error fetching public order summary:", error);
+    res.status(500).json({ error: "Error al consultar resumen de orden" });
+  }
+});
+router16.post("/:slug/pay-session/:orderId", async (req, res) => {
+  try {
+    const tenant = await getTenantBySlug(req.params.slug);
+    if (!tenant) {
+      res.status(404).json({ error: "Tienda no encontrada" });
+      return;
+    }
+    const session = await TilopayTenantService.createPaymentSession(tenant.id, req.params.orderId);
+    res.json(session);
+  } catch (error) {
+    console.error("Error creating payment session:", error);
+    res.status(400).json({ error: error.message || "Error al iniciar sesi\xF3n de pago" });
+  }
+});
+router16.get("/pay-token/:token", async (req, res) => {
+  try {
+    const { token } = req.params;
+    if (!token || typeof token !== "string" || token.trim().length < 8) {
+      res.status(400).json({ error: "invalid_token", message: "Token de pago inv\xE1lido." });
+      return;
+    }
+    const result = await query(`
+      SELECT o.id, o.tenant_id as "tenantId", o.order_number as "orderNumber",
+             o.customer_name as "customerName", o.customer_phone as "customerPhone",
+             o.customer_email as "customerEmail", o.total, o.currency,
+             o.payment_status as "paymentStatus", o.payment_link_expires_at as "paymentLinkExpiresAt",
+             t.name as "storeName", t.whatsapp_number as "whatsappNumber",
+             COALESCE(
+               (SELECT json_agg(json_build_object(
+                  'productName', oi.product_name,
+                  'variantName', oi.variant_name,
+                  'quantity', oi.quantity,
+                  'totalPrice', oi.total_price
+                ))
+                FROM order_items oi WHERE oi.order_id = o.id), '[]'::json
+             ) as items
+      FROM orders o
+      JOIN tenants t ON o.tenant_id = t.id
+      WHERE o.payment_link_token = $1
+      LIMIT 1
+    `, [token.trim()]);
+    if (result.rows.length === 0) {
+      res.status(404).json({ error: "not_found", message: "El enlace de pago no fue encontrado o ya no est\xE1 disponible." });
+      return;
+    }
+    const order = result.rows[0];
+    if (order.paymentStatus === "paid") {
+      res.json({
+        status: "already_paid",
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        storeName: order.storeName
+      });
+      return;
+    }
+    if (order.paymentLinkExpiresAt && /* @__PURE__ */ new Date() > new Date(order.paymentLinkExpiresAt)) {
+      res.status(410).json({
+        error: "expired",
+        message: "Este enlace de pago ha expirado por seguridad (vigencia m\xE1xima de 60 minutos). Solicita uno nuevo a nuestro WhatsApp.",
+        whatsappNumber: order.whatsappNumber,
+        orderNumber: order.orderNumber,
+        storeName: order.storeName
+      });
+      return;
+    }
+    const tilopaySession = await TilopayTenantService.createPaymentSession(order.tenantId, order.id);
+    res.json({
+      order,
+      tilopaySession
+    });
+  } catch (error) {
+    console.error("Error resolving payment link token:", error);
+    res.status(500).json({ error: "server_error", message: error.message || "Error al validar el enlace de pago." });
   }
 });
 router16.get("/:slug/branches", async (req, res) => {
@@ -7934,7 +8715,21 @@ router16.post("/:slug/checkout", async (req, res) => {
       formattedItems
     );
     if (req.body.branchId) {
-      await query(`UPDATE orders SET branch_id = $1 WHERE id = $2`, [req.body.branchId, order.id]);
+      const branchCheck = await query(
+        `SELECT id FROM branches WHERE id = $1 AND tenant_id = $2`,
+        [req.body.branchId, tenant.id]
+      );
+      if (branchCheck.rows.length > 0) {
+        await query(`UPDATE orders SET branch_id = $1 WHERE id = $2 AND tenant_id = $3`, [req.body.branchId, order.id, tenant.id]);
+      }
+    }
+    let tilopaySession = null;
+    if (paymentMethod === "card" || paymentMethod === "tilopay") {
+      try {
+        tilopaySession = await TilopayTenantService.createPaymentSession(tenant.id, order.id);
+      } catch (sessErr) {
+        console.warn("[StorefrontCheckout] No se pudo inicializar sesi\xF3n Tilopay autom\xE1tica:", sessErr.message);
+      }
     }
     if (req.io) {
       req.io.to(`tenant_${tenant.id}`).emit("order:created", {
@@ -8023,7 +8818,8 @@ _Gestiona este pedido en tiempo real desde tu Panel de Betico._`;
       ...order,
       orderCode,
       storeName,
-      whatsappNumber: tenant.whatsappNumber || store?.sinpePhone
+      whatsappNumber: tenant.whatsappNumber || store?.sinpePhone,
+      tilopaySession
     });
   } catch (error) {
     console.error("Storefront checkout error:", error);
@@ -10782,6 +11578,191 @@ Te recordamos tu partido programado en *${businessName}*:
 });
 var courts_routes_default = router28;
 
+// src/server/routes/tilopay-webhook.routes.ts
+init_pool();
+import { Router as Router29 } from "express";
+var router29 = Router29();
+router29.post("/", async (req, res) => {
+  res.status(200).json({ received: true, timestamp: (/* @__PURE__ */ new Date()).toISOString() });
+  try {
+    const payload = req.body || {};
+    console.log("[TilopayWebhook] Notificaci\xF3n recibida:", JSON.stringify(payload));
+    const rawOrderId = payload.order_id || payload.orderId || payload.bill_to || payload.reference || payload.merchant_order_id || req.query.orderId;
+    if (!rawOrderId) {
+      console.warn("[TilopayWebhook] Webhook omitido: payload no contiene identificador de orden v\xE1lido.");
+      return;
+    }
+    const cleanOrderId = String(rawOrderId).replace(/^#ORD-/, "").trim();
+    const resultCode = String(payload.result_code || payload.result || payload.code || "");
+    const status = String(payload.status || "").toLowerCase();
+    const isApproved = resultCode === "1" || resultCode === "00" || status === "approved" || status === "success" || status === "paid" || payload.approved === true;
+    const orderLookup = await query(`
+      SELECT o.id, o.tenant_id as "tenantId", o.order_number as "orderNumber",
+             o.customer_name as "customerName", o.customer_phone as "customerPhone",
+             o.customer_email as "customerEmail", o.total, o.currency, o.channel_origin as "channelOrigin",
+             o.payment_status as "paymentStatus", o.delivery_method as "deliveryMethod"
+      FROM orders o
+      WHERE o.id::text = $1 OR o.order_number::text = $1 OR o.payment_link_token::text = $1
+      LIMIT 1
+    `, [cleanOrderId]);
+    if (orderLookup.rows.length === 0) {
+      console.warn(`[TilopayWebhook] No se encontr\xF3 ninguna orden en BD para el identificador: ${cleanOrderId}`);
+      return;
+    }
+    const order = orderLookup.rows[0];
+    const tenantId = order.tenantId;
+    const transactionId = String(payload.transaction_id || payload.transactionId || payload.id || `tilo_${Date.now()}`);
+    const authCode = String(payload.auth_code || payload.authCode || payload.authorization || "");
+    if (isApproved) {
+      console.log(`[TilopayWebhook] Procesando pago aprobado para orden #${order.orderNumber} (ID: ${order.id})`);
+      const result = await executeOrderPaymentConfirmation(tenantId, order.id, {
+        tilopayTransactionId: transactionId,
+        tilopayAuthCode: authCode,
+        paymentMethod: "card",
+        paymentReference: transactionId
+      });
+      if (!result.success) {
+        console.error(`[TilopayWebhook] Error al confirmar orden ${order.id} en BD:`, result.error);
+        return;
+      }
+      if (result.alreadyProcessed) {
+        console.log(`[TilopayWebhook] Idempotencia activada: Orden #${order.orderNumber} ya hab\xEDa sido confirmada previamente.`);
+        return;
+      }
+      const updatedOrder = result.order;
+      emitOrderPaidEvent({
+        tenantId,
+        orderId: updatedOrder.id,
+        orderNumber: updatedOrder.orderNumber,
+        customerName: updatedOrder.customerName,
+        customerPhone: updatedOrder.customerPhone,
+        customerEmail: updatedOrder.customerEmail,
+        total: Number(updatedOrder.total),
+        currency: updatedOrder.currency || "CRC",
+        channelOrigin: updatedOrder.channelOrigin,
+        tilopayTransactionId: transactionId,
+        tilopayAuthCode: authCode,
+        deliveryMethod: updatedOrder.deliveryMethod,
+        items: (updatedOrder.items || []).map((i) => ({
+          productId: i.productId,
+          productName: i.productName,
+          variantName: i.variantName,
+          quantity: i.quantity,
+          unitPrice: Number(i.unitPrice),
+          totalPrice: Number(i.totalPrice || Number(i.unitPrice) * Number(i.quantity))
+        }))
+      });
+      if (req.io) {
+        req.io.to(`tenant_${tenantId}`).emit("order:updated", updatedOrder);
+      }
+    } else {
+      console.log(`[TilopayWebhook] Notificaci\xF3n de pago no aprobado o fallido para orden #${order.orderNumber}. Estado: ${status || resultCode}`);
+      await query(`
+        UPDATE orders
+        SET payment_status = 'failed',
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1 AND payment_status = 'pending'
+      `, [order.id]);
+      if (req.io) {
+        req.io.to(`tenant_${tenantId}`).emit("order:updated", { id: order.id, paymentStatus: "failed" });
+      }
+    }
+  } catch (error) {
+    console.error("[TilopayWebhook] Error no controlado en procesamiento de webhook:", error);
+  }
+});
+var tilopay_webhook_routes_default = router29;
+
+// src/server/routes/tenant-payment.routes.ts
+import { Router as Router30 } from "express";
+init_tenant_payment_repo();
+var router30 = Router30();
+router30.use(authenticateToken);
+router30.use(tenantContext);
+router30.get("/", async (req, res) => {
+  try {
+    const config = await getTenantPaymentConfig(req.tenantId);
+    res.json(config || {
+      provider: "TILOPAY",
+      isEnabled: false,
+      environment: "SANDBOX",
+      isConfigured: false,
+      apiUser: "",
+      apiKeyMasked: "",
+      apiPasswordMasked: "",
+      captureMode: "IMMEDIATE"
+    });
+  } catch (error) {
+    console.error("[TenantPaymentRoutes] Error al obtener configuraci\xF3n de pago:", error);
+    res.status(500).json({ error: "Error al obtener configuraci\xF3n de pagos" });
+  }
+});
+router30.post("/test", async (req, res) => {
+  try {
+    const { apiKey, apiUser, apiPassword, environment = "SANDBOX" } = req.body;
+    let testKey = apiKey;
+    let testPass = apiPassword;
+    if (!testKey || testKey.includes("\u2022\u2022\u2022\u2022") || (!testPass || testPass.includes("\u2022\u2022\u2022\u2022"))) {
+      const existing = await Promise.resolve().then(() => (init_tenant_payment_repo(), tenant_payment_repo_exports)).then((m) => m.getTenantPaymentConfigRaw(req.tenantId));
+      if (existing) {
+        testKey = !testKey || testKey.includes("\u2022\u2022\u2022\u2022") ? existing.apiKey : testKey;
+        testPass = !testPass || testPass.includes("\u2022\u2022\u2022\u2022") ? existing.apiPassword : testPass;
+      }
+    }
+    const testResult = await TilopayTenantService.verifyCredentials(
+      testKey,
+      apiUser,
+      testPass,
+      environment
+    );
+    if (testResult.success) {
+      res.json({ success: true, message: testResult.message });
+    } else {
+      res.status(400).json({ success: false, error: testResult.message });
+    }
+  } catch (error) {
+    console.error("[TenantPaymentRoutes] Error en prueba de credenciales:", error);
+    res.status(500).json({ error: error.message || "Error en prueba de conexi\xF3n" });
+  }
+});
+router30.post("/", async (req, res) => {
+  try {
+    const { apiKey, apiUser, apiPassword, environment, isEnabled, captureMode } = req.body;
+    const changedBy = req.user?.userId || req.user?.role || "admin";
+    TilopayTenantService.clearTokenCache(req.tenantId);
+    const updated = await saveTenantPaymentConfig(
+      req.tenantId,
+      {
+        apiKey,
+        apiUser,
+        apiPassword,
+        environment,
+        isEnabled,
+        captureMode
+      },
+      changedBy
+    );
+    res.json({
+      success: true,
+      message: "Configuraci\xF3n de pasarela Tilopay actualizada con \xE9xito",
+      config: updated
+    });
+  } catch (error) {
+    console.error("[TenantPaymentRoutes] Error al guardar configuraci\xF3n de pago:", error);
+    res.status(500).json({ error: error.message || "Error al guardar configuraci\xF3n de pagos" });
+  }
+});
+router30.get("/audit", async (req, res) => {
+  try {
+    const logs = await getPaymentAuditLogs(req.tenantId, 20);
+    res.json(logs);
+  } catch (error) {
+    console.error("[TenantPaymentRoutes] Error al obtener auditor\xEDa de pagos:", error);
+    res.status(500).json({ error: "Error al obtener registros de auditor\xEDa" });
+  }
+});
+var tenant_payment_routes_default = router30;
+
 // src/server/index.ts
 var __filename = fileURLToPath(import.meta.url);
 var __dirname = path2.dirname(__filename);
@@ -10890,6 +11871,8 @@ async function startServer() {
   app.use("/api/website", website_routes_default);
   app.use("/api/storefront", publicLimiter, storefront_routes_default);
   app.use("/api/calendar", calendar_routes_default);
+  app.use("/api/tenant/payment-config", tenant_payment_routes_default);
+  app.use("/api/webhooks/tilopay", tilopay_webhook_routes_default);
   app.use("/api/webhook/evolution", webhook_routes_default);
   app.use("/api/webhook", webhook_routes_default);
   app.use("/webhook", webhook_routes_default);
@@ -10952,6 +11935,7 @@ async function startServer() {
     startScheduledCampaignScanner();
     startSubscriptionLifecycleWorker();
     startQueueWorker(io2);
+    initEvolutionPaymentListeners();
   } catch (err) {
     console.error("Failed to run database migrations:", err);
   }

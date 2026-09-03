@@ -1,7 +1,7 @@
-import { query } from './pool.js';
+import { query, getClient } from './pool.js';
 import { Order, OrderItem } from '../../shared/types.js';
 
-export async function getOrdersByTenant(tenantId: string): Promise<Order[]> {
+export async function getOrdersByTenant(tenantId: string, filters?: any): Promise<Order[]> {
   const result = await query(`
     SELECT o.id, o.tenant_id as "tenantId", o.order_number as "orderNumber", o.customer_name as "customerName",
            o.customer_phone as "customerPhone", o.customer_email as "customerEmail", o.customer_address as "customerAddress",
@@ -159,3 +159,104 @@ export async function updateOrderStatus(id: string, tenantId: string, status: an
 export async function confirmPayment(id: string, tenantId: string, paymentReference?: string) {
   return updateOrder(id, tenantId, { paymentStatus: 'paid', paymentReference: paymentReference || 'Confirmado manual' });
 }
+
+export async function executeOrderPaymentConfirmation(
+  tenantId: string,
+  orderId: string,
+  paymentData: {
+    tilopayTransactionId?: string;
+    tilopayAuthCode?: string;
+    paymentMethod?: string;
+    paymentReference?: string;
+  }
+): Promise<{ success: boolean; alreadyProcessed?: boolean; order?: Order; error?: string }> {
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
+
+    // 1. Bloquear la fila de la orden para actualización atómica
+    const orderRes = await client.query(`
+      SELECT * FROM orders WHERE id = $1 AND tenant_id = $2 FOR UPDATE
+    `, [orderId, tenantId]);
+
+    if (orderRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return { success: false, error: 'Orden no encontrada para este comercio' };
+    }
+
+    const currentOrder = orderRes.rows[0];
+
+    // Idempotencia: Si ya está pagada, no se vuelve a cobrar ni a descontar stock
+    if (String(currentOrder.payment_status).toLowerCase() === 'paid') {
+      await client.query('ROLLBACK');
+      const order = await getOrderById(orderId, tenantId);
+      return { success: true, alreadyProcessed: true, order: order || undefined };
+    }
+
+    // 2. Actualizar estado de pago y orden
+    const newPaymentStatus = 'paid';
+    const newOrderStatus = currentOrder.status === 'pending' || currentOrder.status === 'pedido_recibido'
+      ? 'pedido_aceptado'
+      : currentOrder.status;
+
+    await client.query(`
+      UPDATE orders
+      SET payment_status = $1,
+          status = $2,
+          tilopay_transaction_id = $3,
+          tilopay_auth_code = $4,
+          payment_reference = COALESCE($5, payment_reference),
+          payment_method = COALESCE($6, payment_method),
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $7 AND tenant_id = $8
+    `, [
+      newPaymentStatus,
+      newOrderStatus,
+      paymentData.tilopayTransactionId || null,
+      paymentData.tilopayAuthCode || null,
+      paymentData.paymentReference || paymentData.tilopayTransactionId || 'Tilopay',
+      paymentData.paymentMethod || 'card',
+      orderId,
+      tenantId
+    ]);
+
+    // 3. Descuento atómico de inventario para todos los ítems de la orden
+    const itemsRes = await client.query(`
+      SELECT product_id as "productId", variant_id as "variantId", quantity
+      FROM order_items
+      WHERE order_id = $1 AND tenant_id = $2
+    `, [orderId, tenantId]);
+
+    for (const item of itemsRes.rows) {
+      const qty = Number(item.quantity || 1);
+      if (item.productId) {
+        await client.query(`
+          UPDATE products
+          SET stock = GREATEST(0, stock - $1),
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = $2 AND tenant_id = $3 AND track_stock = true
+        `, [qty, item.productId, tenantId]);
+
+        if (item.variantId) {
+          await client.query(`
+            UPDATE product_variants
+            SET stock = GREATEST(0, stock - $1)
+            WHERE id = $2 AND product_id = $3
+          `, [qty, item.variantId, item.productId]);
+        }
+      }
+    }
+
+    await client.query('COMMIT');
+
+    const updatedOrder = await getOrderById(orderId, tenantId);
+    return { success: true, alreadyProcessed: false, order: updatedOrder || undefined };
+  } catch (err: any) {
+    await client.query('ROLLBACK');
+    console.error(`[executeOrderPaymentConfirmation] Error en transacción atómica de orden ${orderId}:`, err);
+    return { success: false, error: err.message || 'Error en la transacción de confirmación de pago' };
+  } finally {
+    client.release();
+  }
+}
+
