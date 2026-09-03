@@ -80,14 +80,20 @@ export default function Login({ onBack, onSuccess }: LoginProps) {
         )}
 
         <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-          <div style={{
-            width: '60px', height: '60px', backgroundColor: '#e0f2fe',
-            borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            margin: '0 auto 12px auto', border: '1px solid #bae6fd'
-          }}>
-            <Bot size={32} color="#0284c7" />
-          </div>
-          <h1 style={{ fontSize: '1.6rem', fontWeight: 'bold', color: '#0f172a', margin: '0 0 4px 0' }}>Betico</h1>
+          <img
+            src="/logo.png"
+            alt="Betico Logo"
+            style={{
+              height: '64px',
+              width: 'auto',
+              objectFit: 'contain',
+              margin: '0 auto 12px auto',
+              display: 'block'
+            }}
+          />
+          <h1 style={{ fontSize: '1.6rem', fontWeight: '900', color: '#0f172a', margin: '0 0 4px 0', letterSpacing: '-0.5px' }}>
+            betico<span style={{ color: '#0b3c3d' }}>.tech</span>
+          </h1>
           <p style={{ margin: 0, color: '#64748b', fontSize: '0.85rem' }}>Plataforma Inteligente de WhatsApp AI SaaS</p>
         </div>
         
