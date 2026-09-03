@@ -121,12 +121,20 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
       a: 'Cuando un cliente envía una captura de su comprobante bancario por WhatsApp o en la tienda online, la Inteligencia Artificial con Visión analiza el comprobante en tiempo real, verifica el monto, la referencia y el teléfono de destino, y marca el pedido como pagado al instante sin que tengas que revisar tu app bancaria manualmente.'
     },
     {
+      q: '¿Cómo funciona el cobro con Tarjetas de Crédito y Débito en Betico?',
+      a: 'Tus clientes pueden pagar directamente desde tu catálogo web con cualquier tarjeta Visa, Mastercard o American Express. La transacción se procesa de forma segura mediante Tilopay con autenticación 3D Secure 2.0 (BAC, Banco Nacional, BCR, etc.). El pago se valida al segundo, se descuenta el inventario automáticamente y los fondos se acreditan directamente en la cuenta bancaria de tu negocio en Costa Rica.'
+    },
+    {
+      q: '¿Es seguro para mi negocio aceptar pagos con tarjeta? ¿Hay riesgo de fraude o contracargos?',
+      a: 'Es 100% seguro. La pasarela opera bajo certificación bancaria internacional PCI-DSS Nivel 1. Al utilizar el protocolo 3D Secure 2.0, el banco emisor del cliente valida la compra mediante su propio token digital o código OTP bancario, lo que traslada la responsabilidad legal al banco y protege a tu negocio contra fraudes y contracargos.'
+    },
+    {
       q: '¿El asistente entiende notas de voz y modismos costarricenses?',
       a: 'Sí. Betico IA reconoce notas de voz, audios rápidos y expresiones comunes de Costa Rica ("pura vida", "mae", "a nombre de", "sinpe", "para llevar", etc.) y responde en texto formateado en menos de 1.5 segundos.'
     },
     {
-      q: '¿La tienda online y la agenda de citas tienen costo adicional?',
-      a: 'No, vienen 100% incluidas en tu suscripción de Betico. Puedes activar tanto la tienda online para vender productos como la agenda de citas para servicios, con tu propio enlace personalizado y sin comisiones por venta.'
+      q: '¿La tienda online, pasarelas de pago y agenda de citas tienen costo adicional?',
+      a: 'No, vienen 100% incluidas en tu suscripción de Betico. Puedes activar tu tienda online, pasarela de tarjetas Tilopay, validación SINPE con Visión y la agenda de citas 24/7 sin comisiones sorpresa por venta de nuestra parte.'
     }
   ];
 
@@ -181,8 +189,9 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
 
           {/* Desktop Nav Links */}
           {!isMobile && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '22px', fontSize: '0.9rem', fontWeight: '600' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '20px', fontSize: '0.9rem', fontWeight: '600' }}>
               <a onClick={() => scrollToSection('pilares')} style={{ color: '#cbd5e1', textDecoration: 'none', cursor: 'pointer', transition: 'color 0.2s' }}>4 Superpoderes</a>
+              <a onClick={() => scrollToSection('pagos-tarjeta')} style={{ color: '#60a5fa', textDecoration: 'none', cursor: 'pointer', fontWeight: '800' }}>💳 Pagos con Tarjeta</a>
               <a onClick={() => scrollToSection('website-builder')} style={{ color: '#cbd5e1', textDecoration: 'none', cursor: 'pointer' }}>Sitio Web Oficial</a>
               <a onClick={() => scrollToSection('betico-ia')} style={{ color: '#cbd5e1', textDecoration: 'none', cursor: 'pointer' }}>Betico IA Propia</a>
               <a onClick={() => scrollToSection('tienda-agenda')} style={{ color: '#cbd5e1', textDecoration: 'none', cursor: 'pointer' }}>Tienda & Citas</a>
@@ -297,6 +306,7 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
             fontWeight: '600'
           }}>
             <a onClick={() => scrollToSection('pilares')} style={{ color: '#f8fafc', padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>⚡ 4 Superpoderes de Betico</a>
+            <a onClick={() => scrollToSection('pagos-tarjeta')} style={{ color: '#60a5fa', padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,0.06)', fontWeight: 'bold' }}>💳 Pagos con Tarjeta (Nuevo)</a>
             <a onClick={() => scrollToSection('website-builder')} style={{ color: '#f8fafc', padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>🌐 Creador de Sitios Web</a>
             <a onClick={() => scrollToSection('betico-ia')} style={{ color: '#f8fafc', padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>🤖 Motor de IA Propio</a>
             <a onClick={() => scrollToSection('tienda-agenda')} style={{ color: '#f8fafc', padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>🛍️ Tienda & Agenda de Citas</a>
@@ -323,17 +333,17 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
           alignItems: 'center',
           gap: '8px',
           padding: '8px 20px',
-          backgroundColor: 'rgba(16, 185, 129, 0.12)',
-          border: '1px solid rgba(16, 185, 129, 0.4)',
+          backgroundColor: 'rgba(59, 130, 246, 0.12)',
+          border: '1px solid rgba(59, 130, 246, 0.4)',
           borderRadius: '9999px',
           fontSize: isMobile ? '0.8rem' : '0.9rem',
           fontWeight: '800',
-          color: '#34d399',
+          color: '#60a5fa',
           marginBottom: '24px',
-          boxShadow: '0 0 20px rgba(16, 185, 129, 0.15)'
+          boxShadow: '0 0 20px rgba(59, 130, 246, 0.15)'
         }}>
-          <Zap size={17} />
-          <span>⚡ Impulsado por Betico IA: Nuestro Motor de IA Propio y Seguro</span>
+          <CreditCard size={17} />
+          <span>⚡ Nuevo: Pagos con Tarjeta 3D Secure (Tilopay) • SINPE con Visión • Motor IA Propio</span>
         </div>
 
         {/* Main Title */}
@@ -354,12 +364,12 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
         <p style={{
           fontSize: 'clamp(1rem, 2.6vw, 1.3rem)',
           color: '#94a3b8',
-          maxWidth: '860px',
+          maxWidth: '880px',
           margin: '0 auto 36px auto',
           lineHeight: '1.6',
           padding: '0 10px'
         }}>
-          Crea tu <strong style={{ color: '#ffffff' }}>Página Web Oficial</strong> en minutos, vende en tu <strong style={{ color: '#ffffff' }}>Tienda Digital</strong>, llena tu <strong style={{ color: '#ffffff' }}>Agenda de Citas</strong> y automatiza la atención 24/7 por WhatsApp con <strong style={{ color: '#34d399' }}>Betico IA</strong> y cobros SINPE verificados con visión.
+          Crea tu <strong style={{ color: '#ffffff' }}>Página Web Oficial</strong> en minutos, vende en tu <strong style={{ color: '#ffffff' }}>Tienda Digital</strong> con cobros por <strong style={{ color: '#60a5fa' }}>Tarjeta (Visa, Mastercard, AMEX)</strong> y SINPE Móvil, llena tu <strong style={{ color: '#ffffff' }}>Agenda de Citas</strong> y automatiza la atención 24/7 por WhatsApp con <strong style={{ color: '#34d399' }}>Betico IA</strong>.
         </p>
 
         {/* Action CTAs */}
@@ -481,6 +491,16 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
               <div style={{ fontSize: '0.85rem' }}>Monto confirmado: <strong>₡5.500</strong> • Ref: <strong>#893012</strong></div>
               <div style={{ fontSize: '0.78rem', color: '#6ee7b7', marginTop: '4px' }}>
                 ⚡ Pedido confirmado, comanda despachada a cocina y cita reservada en el calendario.
+              </div>
+            </div>
+
+            <div style={{ alignSelf: 'flex-end', maxWidth: isMobile ? '94%' : '82%', backgroundColor: '#0b233a', border: '1px solid #0284c7', padding: '14px 18px', borderRadius: '16px 16px 4px 16px', fontSize: '0.9rem', color: '#f0f9ff' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '900', color: '#7dd3fc', marginBottom: '4px', fontSize: '0.85rem' }}>
+                <CreditCard size={18} /> 💳 Pago Aprobado con Tarjeta (Tilopay 3D Secure)
+              </div>
+              <div style={{ fontSize: '0.85rem' }}>Monto: <strong>₡5.500</strong> • Ref: <strong>#ORD-104</strong> • Aut: <strong>BAC-948210</strong></div>
+              <div style={{ fontSize: '0.78rem', color: '#38bdf8', marginTop: '4px' }}>
+                🛡️ Verificado en 0s con banco del cliente, inventario descontado y notificación automática.
               </div>
             </div>
           </div>
@@ -606,15 +626,15 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
                 <span style={{ fontSize: '0.75rem', fontWeight: '800', backgroundColor: 'rgba(245, 158, 11, 0.2)', color: '#fbbf24', padding: '3px 8px', borderRadius: '6px' }}>PILAR 3</span>
-                <h3 style={{ fontSize: '1.45rem', fontWeight: '800', margin: 0, color: 'white' }}>Tienda Digital & Menú Online</h3>
+                <h3 style={{ fontSize: '1.45rem', fontWeight: '800', margin: 0, color: 'white' }}>Tienda Digital & Pasarela Multicanal</h3>
               </div>
               <p style={{ color: '#94a3b8', fontSize: '0.95rem', lineHeight: '1.6', marginBottom: '20px' }}>
-                Catálogo interactivo con carrito de compras, cálculo de envío express o retiro en local y pedidos directo a WhatsApp. Validación automática de capturas SINPE Móvil mediante IA con Visión Artificial.
+                Catálogo interactivo con carrito de compras, cobro en línea con <strong style={{ color: '#ffffff' }}>Tarjetas de Crédito y Débito</strong> (Visa, Mastercard, AMEX) vía Tilopay 3D Secure, validación instantánea de <strong style={{ color: '#ffffff' }}>SINPE Móvil</strong> con Visión Artificial y gestión de envíos express por GPS.
               </p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.88rem', color: '#cbd5e1' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#f59e0b" /> Verificación instantánea de comprobantes bancarios sin abrir tu banco</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#f59e0b" /> Soporte para variantes de producto (tallas, sabores, extras)</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#f59e0b" /> Pantalla de Cocina (KDS) y portal de repartidores integrado</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#f59e0b" /> Pasarela oficial de Tarjetas de Crédito y Débito con Tilopay 3D Secure</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#f59e0b" /> Verificación instantánea de comprobantes SINPE Móvil sin abrir tu banco</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={16} color="#f59e0b" /> Pantalla de Cocina (KDS), portal de repartidores y descuento de stock en tiempo real</div>
               </div>
             </div>
 
@@ -659,7 +679,221 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
       </section>
 
       {/* ==============================================================
-          4. CALCULADORA DE AHORRO (ROI)
+          4. NUEVA SECCIÓN PROTAGONISTA: PASARELA DE PAGOS CON TARJETA
+      ============================================================== */}
+      <section id="pagos-tarjeta" style={{
+        padding: isMobile ? '60px 16px' : '90px 24px',
+        maxWidth: '1280px',
+        margin: '0 auto',
+        position: 'relative'
+      }}>
+        {/* Glow Effects */}
+        <div style={{
+          position: 'absolute', top: '10%', left: '30%', width: '500px', height: '350px',
+          borderRadius: '50%', backgroundColor: 'rgba(37, 99, 235, 0.12)', filter: 'blur(110px)', pointerEvents: 'none'
+        }} />
+        <div style={{
+          position: 'absolute', bottom: '10%', right: '20%', width: '400px', height: '300px',
+          borderRadius: '50%', backgroundColor: 'rgba(16, 185, 129, 0.1)', filter: 'blur(100px)', pointerEvents: 'none'
+        }} />
+
+        <div style={{
+          backgroundColor: '#0c1322',
+          border: '1px solid rgba(59, 130, 246, 0.35)',
+          borderRadius: '28px',
+          padding: isMobile ? '32px 20px' : '64px 48px',
+          boxShadow: '0 25px 60px -15px rgba(0, 0, 0, 0.7), 0 0 40px rgba(37, 99, 235, 0.12)',
+          position: 'relative',
+          overflow: 'hidden'
+        }}>
+          
+          {/* Top Pill */}
+          <div style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '6px 18px',
+            backgroundColor: 'rgba(59, 130, 246, 0.15)',
+            border: '1px solid rgba(59, 130, 246, 0.45)',
+            borderRadius: '9999px',
+            fontSize: '0.85rem',
+            fontWeight: '800',
+            color: '#60a5fa',
+            marginBottom: '20px'
+          }}>
+            <CreditCard size={18} />
+            <span>NUEVO SUPERPODER • PASARELA DE TARJETAS TILOPAY</span>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.1fr 0.9fr', gap: isMobile ? '36px' : '48px', alignItems: 'center' }}>
+            
+            {/* Left Column: Features & Narrative */}
+            <div>
+              <h2 style={{
+                fontSize: 'clamp(2rem, 4.2vw, 3.1rem)',
+                fontWeight: '900',
+                lineHeight: '1.15',
+                margin: '0 0 20px 0',
+                letterSpacing: '-1px',
+                color: 'white'
+              }}>
+                Acepta <span style={{ background: 'linear-gradient(135deg, #60a5fa 0%, #3b82f6 50%, #2563eb 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Tarjetas de Crédito y Débito</span> con Respaldo Bancario 3D Secure
+              </h2>
+
+              <p style={{ color: '#94a3b8', fontSize: '1.05rem', lineHeight: '1.7', marginBottom: '28px' }}>
+                Multiplica tus ventas permitiendo que tus clientes paguen en segundos con cualquier tarjeta bancaria nacional o internacional. Integración oficial con <strong style={{ color: 'white' }}>Tilopay</strong> y homologación con los principales bancos de Costa Rica, con depósito directo a tu cuenta bancaria y blindaje antifraude.
+              </p>
+
+              {/* 4 Key Grid Cards */}
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px', marginBottom: '28px' }}>
+                <div style={{ backgroundColor: 'rgba(15, 23, 42, 0.7)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px', padding: '18px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+                    <div style={{ width: '34px', height: '34px', borderRadius: '10px', backgroundColor: 'rgba(16, 185, 129, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <ShieldCheck size={20} color="#34d399" />
+                    </div>
+                    <strong style={{ fontSize: '0.95rem', color: '#f8fafc' }}>Protección 3D Secure 2.0</strong>
+                  </div>
+                  <p style={{ margin: 0, fontSize: '0.84rem', color: '#94a3b8', lineHeight: '1.5' }}>
+                    Autenticación OTP con BAC, BCR, BNCR, Scotiabank y Promerica. Cero contracargos y máxima confianza.
+                  </p>
+                </div>
+
+                <div style={{ backgroundColor: 'rgba(15, 23, 42, 0.7)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px', padding: '18px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+                    <div style={{ width: '34px', height: '34px', borderRadius: '10px', backgroundColor: 'rgba(59, 130, 246, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Zap size={20} color="#60a5fa" />
+                    </div>
+                    <strong style={{ fontSize: '0.95rem', color: '#f8fafc' }}>Verificación Inmediata</strong>
+                  </div>
+                  <p style={{ margin: 0, fontSize: '0.84rem', color: '#94a3b8', lineHeight: '1.5' }}>
+                    El pago se acredita al segundo, el stock se descuenta en BD y la cocina o almacén recibe la comanda lista.
+                  </p>
+                </div>
+
+                <div style={{ backgroundColor: 'rgba(15, 23, 42, 0.7)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px', padding: '18px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+                    <div style={{ width: '34px', height: '34px', borderRadius: '10px', backgroundColor: 'rgba(245, 158, 11, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Building2 size={20} color="#fbbf24" />
+                    </div>
+                    <strong style={{ fontSize: '0.95rem', color: '#f8fafc' }}>Directo a tu Banco</strong>
+                  </div>
+                  <p style={{ margin: 0, fontSize: '0.84rem', color: '#94a3b8', lineHeight: '1.5' }}>
+                    Sin intermediarios reteniendo tu dinero. Las ventas en colones o dólares se depositan en tu propia cuenta.
+                  </p>
+                </div>
+
+                <div style={{ backgroundColor: 'rgba(15, 23, 42, 0.7)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px', padding: '18px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+                    <div style={{ width: '34px', height: '34px', borderRadius: '10px', backgroundColor: 'rgba(168, 85, 247, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Layers size={20} color="#c084fc" />
+                    </div>
+                    <strong style={{ fontSize: '0.95rem', color: '#f8fafc' }}>Checkout Todo en Uno</strong>
+                  </div>
+                  <p style={{ margin: 0, fontSize: '0.84rem', color: '#94a3b8', lineHeight: '1.5' }}>
+                    Tarjetas bancarias + SINPE Móvil con Visión IA + Transferencias + Contra Entrega en una sola experiencia.
+                  </p>
+                </div>
+              </div>
+
+              {/* Supported Payment Badges */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '0.82rem', color: '#94a3b8', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Tarjetas y Redes Soportadas:
+                </span>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <span style={{ padding: '4px 12px', backgroundColor: 'rgba(255, 255, 255, 0.08)', border: '1px solid rgba(255, 255, 255, 0.12)', borderRadius: '8px', fontSize: '0.82rem', fontWeight: 'bold', color: '#f8fafc' }}>💳 VISA</span>
+                  <span style={{ padding: '4px 12px', backgroundColor: 'rgba(255, 255, 255, 0.08)', border: '1px solid rgba(255, 255, 255, 0.12)', borderRadius: '8px', fontSize: '0.82rem', fontWeight: 'bold', color: '#f8fafc' }}>💳 Mastercard</span>
+                  <span style={{ padding: '4px 12px', backgroundColor: 'rgba(255, 255, 255, 0.08)', border: '1px solid rgba(255, 255, 255, 0.12)', borderRadius: '8px', fontSize: '0.82rem', fontWeight: 'bold', color: '#f8fafc' }}>💳 American Express</span>
+                  <span style={{ padding: '4px 12px', backgroundColor: 'rgba(16, 185, 129, 0.15)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: '8px', fontSize: '0.82rem', fontWeight: 'bold', color: '#34d399' }}>📱 SINPE Móvil</span>
+                </div>
+              </div>
+
+            </div>
+
+            {/* Right Column: Visual Mockup of Card Checkout */}
+            <div style={{
+              backgroundColor: '#0a0f1d',
+              borderRadius: '24px',
+              border: '1px solid rgba(59, 130, 246, 0.3)',
+              padding: isMobile ? '22px' : '30px',
+              boxShadow: '0 20px 50px rgba(0,0,0,0.6)',
+              position: 'relative'
+            }}>
+              
+              {/* Mockup Card Header */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', paddingBottom: '14px', marginBottom: '18px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#10b981' }} />
+                  <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#cbd5e1' }}>Pasarela Segura Tilopay</span>
+                </div>
+                <span style={{ fontSize: '0.74rem', backgroundColor: 'rgba(16, 185, 129, 0.15)', color: '#34d399', padding: '3px 10px', borderRadius: '9999px', fontWeight: 'bold' }}>
+                  🔒 PCI-DSS Nivel 1
+                </span>
+              </div>
+
+              {/* Visual Credit Card */}
+              <div style={{
+                background: 'linear-gradient(135deg, #1e3a8a 0%, #1e40af 50%, #0369a1 100%)',
+                borderRadius: '16px',
+                padding: '20px',
+                color: 'white',
+                boxShadow: '0 12px 28px rgba(30, 58, 138, 0.45)',
+                marginBottom: '18px',
+                border: '1px solid rgba(255, 255, 255, 0.15)'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                  <span style={{ fontSize: '0.82rem', fontWeight: 'bold', letterSpacing: '0.05em', color: '#bfdbfe' }}>PASARELA BANCARIA</span>
+                  <span style={{ fontSize: '1rem', fontWeight: '900', letterSpacing: '1px' }}>VISA</span>
+                </div>
+                <div style={{ fontSize: '1.15rem', fontWeight: 'bold', letterSpacing: '2px', fontFamily: 'monospace', marginBottom: '16px' }}>
+                  •••• •••• •••• 4281
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', fontSize: '0.78rem' }}>
+                  <div>
+                    <div style={{ color: '#93c5fd', fontSize: '0.68rem', textTransform: 'uppercase' }}>Titular</div>
+                    <div style={{ fontWeight: 'bold', letterSpacing: '0.05em' }}>CLIENTE VERIFICADO</div>
+                  </div>
+                  <div>
+                    <div style={{ color: '#93c5fd', fontSize: '0.68rem', textTransform: 'uppercase' }}>Vencimiento</div>
+                    <div style={{ fontWeight: 'bold' }}>12/28</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Order Transaction Summary */}
+              <div style={{ backgroundColor: 'rgba(15, 23, 42, 0.8)', borderRadius: '14px', padding: '16px', border: '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.85rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#94a3b8' }}>Orden Comercial:</span>
+                  <strong style={{ color: 'white' }}>#ORD-104</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#94a3b8' }}>Monto Acreditado:</span>
+                  <strong style={{ color: '#34d399', fontSize: '0.95rem' }}>₡14.500</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#94a3b8' }}>Estado del Pago:</span>
+                  <span style={{ color: '#34d399', fontWeight: 'bold' }}>✅ Cancelado con Tarjeta (Tilopay)</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#94a3b8' }}>Impacto en Tienda:</span>
+                  <span style={{ color: '#38bdf8', fontWeight: 'bold' }}>📦 Stock Descontado en 0s</span>
+                </div>
+              </div>
+
+              {/* Stat Callout */}
+              <div style={{ marginTop: '16px', padding: '12px 14px', backgroundColor: 'rgba(59, 130, 246, 0.12)', borderRadius: '12px', border: '1px solid rgba(59, 130, 246, 0.3)', fontSize: '0.82rem', color: '#93c5fd', lineHeight: '1.5' }}>
+                💡 <strong>Dato de Conversión:</strong> Los negocios en línea que ofrecen pago con tarjeta junto a SINPE reducen el abandono de carritos hasta un <strong>35%</strong>.
+              </div>
+
+            </div>
+
+          </div>
+
+        </div>
+      </section>
+
+      {/* ==============================================================
+          5. CALCULADORA DE AHORRO (ROI)
       ============================================================== */}
       <section id="roi" style={{ padding: '80px 24px', maxWidth: '1000px', margin: '0 auto', textAlign: 'center' }}>
         <div style={{ color: '#10b981', fontWeight: '800', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>
@@ -789,6 +1023,7 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={17} color="#10b981" /> <strong>Comprensión de Notas de Voz</strong> de WhatsApp</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={17} color="#10b981" /> <strong>Creador de Sitios Web Oficial</strong> (betico.tech/sitio/tu-marca)</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={17} color="#10b981" /> <strong>Tienda Online & Menú</strong> con pedidos a WhatsApp</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={17} color="#10b981" /> <strong>Pasarela de Tarjetas Débito y Crédito</strong> (Tilopay 3D Secure incluida)</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={17} color="#10b981" /> <strong>Agenda de Citas & Reservas 24/7</strong> con recordatorios</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={17} color="#10b981" /> <strong>Verificación SINPE Móvil con Visión Artificial</strong></div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle2 size={17} color="#10b981" /> <strong>Portal de Repartidores & Asignación por GPS</strong> (1 Local)</div>
