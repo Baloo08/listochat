@@ -13,7 +13,8 @@ export default function OrderSuccessView({ orderId }: OrderSuccessViewProps) {
   useEffect(() => {
     async function loadOrder() {
       try {
-        const res = await fetch(`/api/storefront/order-public/${orderId}`);
+        const queryStr = window.location.search ? window.location.search : '';
+        const res = await fetch(`/api/storefront/order-public/${orderId}${queryStr}`);
         if (!res.ok) {
           throw new Error('No fue posible cargar los detalles de esta orden.');
         }
@@ -89,9 +90,21 @@ export default function OrderSuccessView({ orderId }: OrderSuccessViewProps) {
               <strong>{order.customerName} ({order.customerPhone})</strong>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: '#64748b' }}>Método de Pago:</span>
+              <strong style={{ color: '#0f172a' }}>
+                {order.paymentMethod === 'card' || order.paymentMethod === 'tilopay'
+                  ? '💳 Tarjeta (Tilopay)'
+                  : order.paymentMethod === 'sinpe'
+                    ? '📱 SINPE Móvil'
+                    : order.paymentMethod === 'transfer'
+                      ? '🏦 Transferencia'
+                      : '💵 Contra Entrega'}
+              </strong>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span style={{ color: '#64748b' }}>Estado del Pago:</span>
               <span style={{ color: isPaid ? '#166534' : '#b45309', fontWeight: 'bold' }}>
-                {isPaid ? '✅ Cancelado con Tarjeta / Tilopay' : '⏳ Pendiente de Verificación'}
+                {isPaid ? '✅ Pago Verificado y Aprobado' : '⏳ Pendiente de Verificación'}
               </span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -156,14 +169,17 @@ export default function OrderSuccessView({ orderId }: OrderSuccessViewProps) {
 
             <button
               type="button"
-              onClick={() => { window.location.href = '/'; }}
+              onClick={() => {
+                const targetSlug = order.storeSlug || order.tenantSlug;
+                window.location.href = targetSlug ? `/tienda/${targetSlug}` : '/';
+              }}
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
                 padding: '12px', backgroundColor: 'transparent', border: '1px solid #cbd5e1',
-                borderRadius: '10px', color: '#64748b', fontWeight: '600', fontSize: '0.88rem', cursor: 'pointer'
+                borderRadius: '10px', color: '#0f172a', fontWeight: '700', fontSize: '0.88rem', cursor: 'pointer'
               }}
             >
-              <ArrowLeft size={16} /> Volver a la Tienda
+              <ArrowLeft size={16} /> Volver a la Tienda {order.storeName ? `(${order.storeName})` : ''}
             </button>
           </div>
         </div>

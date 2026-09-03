@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { getTenantBySlug } from '../db/tenant.repo.js';
 import { getProductsByTenant, getProductBySlug } from '../db/products.repo.js';
 import { getStoreSettings } from '../db/store-settings.repo.js';
-import { createOrder } from '../db/orders.repo.js';
+import { createOrder, executeOrderPaymentConfirmation } from '../db/orders.repo.js';
 import { sendMessage } from '../services/evolution.js';
 import { query } from '../db/pool.js';
 import { getTenantPaymentConfig } from '../db/tenant-payment.repo.js';
@@ -46,13 +46,16 @@ router.get('/order-public/:orderId', async (req, res) => {
   try {
     const { orderId } = req.params;
     const result = await query(`
-      SELECT o.id, o.order_number as "orderNumber", o.customer_name as "customerName",
+      SELECT o.id, o.tenant_id as "tenantId", o.order_number as "orderNumber", o.customer_name as "customerName",
              o.customer_phone as "customerPhone", o.subtotal, o.delivery_fee as "deliveryFee",
              o.total, o.currency, o.status, o.payment_status as "paymentStatus",
              o.payment_method as "paymentMethod", o.delivery_method as "deliveryMethod",
              o.consumption_mode as "consumptionMode", o.table_number as "tableNumber",
              o.created_at as "createdAt",
-             t.name as "storeName", t.whatsapp_number as "whatsappNumber",
+             COALESCE(ss.store_name, t.name) as "storeName",
+             COALESCE(ss.store_slug, t.slug) as "storeSlug",
+             t.slug as "tenantSlug",
+             COALESCE(ss.sinpe_phone, t.whatsapp_number) as "whatsappNumber",
              COALESCE(
                (SELECT json_agg(json_build_object(
                   'productName', oi.product_name,
@@ -64,6 +67,7 @@ router.get('/order-public/:orderId', async (req, res) => {
              ) as items
       FROM orders o
       JOIN tenants t ON o.tenant_id = t.id
+      LEFT JOIN store_settings ss ON ss.tenant_id = t.id
       WHERE o.id::text = $1 OR o.order_number::text = $1
       LIMIT 1
     `, [orderId]);
@@ -73,7 +77,35 @@ router.get('/order-public/:orderId', async (req, res) => {
       return;
     }
 
-    res.json(result.rows[0]);
+    const orderRow = result.rows[0];
+
+    // Doble garantía de confirmación inmediata si el cliente regresa de Tilopay con parámetros de aprobación
+    const resultCode = String(req.query.code || req.query.result_code || req.query.result || '');
+    const statusParam = String(req.query.status || '').toLowerCase();
+    const isApprovedParam =
+      resultCode === '1' ||
+      resultCode === '00' ||
+      statusParam === 'approved' ||
+      statusParam === 'success' ||
+      statusParam === 'paid';
+
+    if (isApprovedParam && orderRow.paymentStatus !== 'paid') {
+      const txId = String(req.query.transaction_id || req.query.id || req.query.auth || `tilo_${Date.now()}`);
+      const authCode = String(req.query.auth_code || req.query.auth || '');
+      await executeOrderPaymentConfirmation(orderRow.tenantId, orderRow.id, {
+        tilopayTransactionId: txId,
+        tilopayAuthCode: authCode,
+        paymentMethod: 'card',
+        paymentReference: txId
+      });
+      orderRow.paymentStatus = 'paid';
+      orderRow.paymentMethod = 'card';
+      if (orderRow.status === 'pending' || orderRow.status === 'pedido_recibido') {
+        orderRow.status = 'pedido_aceptado';
+      }
+    }
+
+    res.json(orderRow);
   } catch (error) {
     console.error('Error fetching public order summary:', error);
     res.status(500).json({ error: 'Error al consultar resumen de orden' });

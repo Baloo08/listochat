@@ -20,19 +20,23 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
 
     // Extract Order Identifier (UUID, orderNumber or token)
     const rawOrderId =
+      payload.orderNumber ||
+      payload.order_number ||
+      payload.order ||
       payload.order_id ||
       payload.orderId ||
       payload.bill_to ||
       payload.reference ||
       payload.merchant_order_id ||
-      req.query.orderId;
+      req.query.orderId ||
+      req.query.orderNumber;
 
     if (!rawOrderId) {
       console.warn('[TilopayWebhook] Webhook omitido: payload no contiene identificador de orden válido.');
       return;
     }
 
-    const cleanOrderId = String(rawOrderId).replace(/^#ORD-/, '').trim();
+    const cleanOrderId = String(rawOrderId).replace(/^#?ORD-?/i, '').trim();
 
     // Check transaction status from Tilopay payload
     const resultCode = String(payload.result_code || payload.result || payload.code || '');

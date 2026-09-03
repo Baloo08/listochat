@@ -366,7 +366,9 @@ export default function DriverPortal({ tenantSlug }: { tenantSlug?: string }) {
                             ₡{Number(o.total || 0).toLocaleString('es-CR')}
                           </div>
                           <span style={{ fontSize: '0.7rem', color: o.paymentStatus === 'paid' ? '#15803d' : '#b45309', fontWeight: 'bold' }}>
-                            {o.paymentStatus === 'paid' ? '🟢 Pagado' : '🟠 Cobrar al entregar'}
+                            {o.paymentStatus === 'paid'
+                              ? (o.paymentMethod === 'card' || o.paymentMethod === 'tilopay' ? '🟢 Pagado con Tarjeta' : '🟢 Pagado')
+                              : (o.paymentMethod === 'card' || o.paymentMethod === 'tilopay' ? '🟠 Tarjeta Pendiente' : '🟠 Cobrar al entregar')}
                           </span>
                         </div>
                       </div>

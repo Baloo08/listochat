@@ -275,8 +275,12 @@ export default function KDSFullscreen() {
                               <div style={{ fontSize: '1rem', fontWeight: 'bold', color: '#38bdf8' }}>
                                 #ORD-{order.orderNumber}
                               </div>
-                              {order.paymentMethod === 'sinpe' ? (
-                                <span style={{ fontSize: '0.68rem', padding: '1px 5px', backgroundColor: 'rgba(56, 189, 248, 0.2)', color: '#38bdf8', borderRadius: '4px', fontWeight: 'bold' }}>
+                              {order.paymentMethod === 'card' || order.paymentMethod === 'tilopay' ? (
+                                <span style={{ fontSize: '0.68rem', padding: '1px 5px', backgroundColor: 'rgba(52, 211, 153, 0.2)', color: '#34d399', borderRadius: '4px', fontWeight: 'bold' }}>
+                                  💳 Tarjeta {order.paymentStatus === 'paid' ? '✓ Pagado' : '⏳'}
+                                </span>
+                              ) : order.paymentMethod === 'sinpe' ? (
+                                <span style={{ fontSize: '0.68rem', padding: '1px 5px', backgroundColor: 'rgba(56, 189, 248, 0.2)', color: '#34d399', borderRadius: '4px', fontWeight: 'bold' }}>
                                   📱 SINPE {order.paymentStatus === 'proof_sent' ? '✓' : ''}
                                 </span>
                               ) : order.paymentMethod === 'transfer' ? (
@@ -413,7 +417,15 @@ export default function KDSFullscreen() {
                 </div>
               )}
               <div style={{ fontSize: '0.85rem', color: '#cbd5e1' }}>
-                <strong>Pago:</strong> {selectedOrder.paymentMethod?.toUpperCase()} ({selectedOrder.paymentStatus === 'paid' ? '✅ Pagado' : '💰 Pendiente'})
+                <strong>Pago:</strong>{' '}
+                {selectedOrder.paymentMethod === 'card' || selectedOrder.paymentMethod === 'tilopay'
+                  ? '💳 Tarjeta (Tilopay)'
+                  : selectedOrder.paymentMethod === 'sinpe'
+                    ? '📱 SINPE Móvil'
+                    : selectedOrder.paymentMethod === 'transfer'
+                      ? '🏦 Transferencia'
+                      : '💵 Contra Entrega'}{' '}
+                ({selectedOrder.paymentStatus === 'paid' ? '✅ Pagado' : '💰 Pendiente'})
               </div>
             </div>
 

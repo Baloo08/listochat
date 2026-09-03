@@ -325,7 +325,11 @@ export default function OrdersPanel() {
                                 <strong style={{ fontSize: '0.95rem', color: '#1e293b' }}>#ORD-{order.orderNumber}</strong>
                                 
                                 {/* Payment Method Badge */}
-                                {order.paymentMethod === 'sinpe' ? (
+                                {order.paymentMethod === 'card' || order.paymentMethod === 'tilopay' ? (
+                                  <span style={{ fontSize: '0.68rem', padding: '1px 6px', backgroundColor: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', borderRadius: '4px', fontWeight: 'bold' }}>
+                                    💳 Tarjeta {order.paymentStatus === 'paid' ? '✓ Pagado' : '⏳ Pend.'}
+                                  </span>
+                                ) : order.paymentMethod === 'sinpe' ? (
                                   <span style={{ fontSize: '0.68rem', padding: '1px 6px', backgroundColor: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: '4px', fontWeight: 'bold' }}>
                                     📱 SINPE {order.paymentStatus === 'proof_sent' ? '✓ Comp.' : ''}
                                   </span>
@@ -512,8 +516,14 @@ export default function OrdersPanel() {
                       </span>
                     </td>
                     <td style={{ padding: '14px 16px' }}>
-                      <span style={{ padding: '3px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold', backgroundColor: order.paymentStatus === 'paid' ? '#dcfce7' : '#fef9c3', color: order.paymentStatus === 'paid' ? '#15803d' : '#854d0e' }}>
-                        {order.paymentStatus === 'paid' ? 'Pagado' : order.paymentMethod.toUpperCase()}
+                      <span style={{
+                        padding: '3px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold',
+                        backgroundColor: order.paymentStatus === 'paid' ? '#dcfce7' : '#fef9c3',
+                        color: order.paymentStatus === 'paid' ? '#15803d' : '#854d0e'
+                      }}>
+                        {order.paymentStatus === 'paid'
+                          ? (order.paymentMethod === 'card' || order.paymentMethod === 'tilopay' ? '💳 Tarjeta Verificada' : '✅ Pagado')
+                          : (order.paymentMethod === 'card' || order.paymentMethod === 'tilopay' ? '💳 Tarjeta (Pendiente)' : order.paymentMethod.toUpperCase())}
                       </span>
                     </td>
                     <td style={{ padding: '14px 16px', textAlign: 'right' }}>
@@ -584,8 +594,26 @@ export default function OrdersPanel() {
             <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '10px', border: '1px solid #e2e8f0', marginBottom: '20px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '0.85rem' }}>
               <div><strong>Cliente:</strong> {selectedOrder.customerName}</div>
               <div><strong>Teléfono:</strong> {selectedOrder.customerPhone || 'No registrado'}</div>
-              <div><strong>Modalidad:</strong> {selectedOrder.consumptionMode === 'dine_in' ? `En Mesa (#${selectedOrder.tableNumber || 1})` : selectedOrder.deliveryMethod === 'delivery' ? 'Delivery Express' : 'Retiro en Local'}</div>
-              <div><strong>Método de Pago:</strong> {selectedOrder.paymentMethod.toUpperCase()} ({selectedOrder.paymentStatus})</div>
+              <div>
+                <strong>Método de Pago:</strong>{' '}
+                {selectedOrder.paymentMethod === 'card' || selectedOrder.paymentMethod === 'tilopay'
+                  ? '💳 Tarjeta de Crédito / Débito (Tilopay)'
+                  : selectedOrder.paymentMethod === 'sinpe'
+                    ? '📱 SINPE Móvil'
+                    : selectedOrder.paymentMethod === 'transfer'
+                      ? '🏦 Transferencia Bancaria'
+                      : '💵 Contra Entrega'}
+              </div>
+              <div>
+                <strong>Estado del Pago:</strong>{' '}
+                <span style={{
+                  padding: '2px 8px', borderRadius: '4px', fontSize: '0.78rem', fontWeight: 'bold',
+                  backgroundColor: selectedOrder.paymentStatus === 'paid' ? '#dcfce7' : '#fef9c3',
+                  color: selectedOrder.paymentStatus === 'paid' ? '#15803d' : '#854d0e'
+                }}>
+                  {selectedOrder.paymentStatus === 'paid' ? '✅ Pago Verificado' : '⏳ Pendiente de Verificación'}
+                </span>
+              </div>
               {selectedOrder.customerAddress && (
                 <div style={{ gridColumn: '1 / -1' }}>
                   <strong>Dirección:</strong> {selectedOrder.customerAddress}
