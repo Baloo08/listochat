@@ -467,6 +467,12 @@ export default function StorefrontView({ slug }: StorefrontProps) {
 
       const orderData = await res.json();
       if (orderData.tilopaySession) {
+        if (orderData.tilopaySession.paymentUrl) {
+          setCart([]);
+          setIsCartOpen(false);
+          window.location.href = orderData.tilopaySession.paymentUrl;
+          return;
+        }
         setActiveTilopaySession(orderData.tilopaySession);
         setIsCartOpen(false);
       } else {

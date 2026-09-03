@@ -25,6 +25,8 @@ export class TilopayTenantService {
 
   /**
    * Diagnostic method to test credentials against Tilopay prior to saving.
+   * Uses Tilopay's official authentication endpoint: POST /api/v1/login
+   * with email (API User) and password.
    */
   static async verifyCredentials(
     apiKey: string,
@@ -41,24 +43,23 @@ export class TilopayTenantService {
     const timeout = setTimeout(() => controller.abort(), 10000);
 
     try {
-      const res = await fetch(`${baseUrl}/loginSdk`, {
+      const res = await fetch(`${baseUrl}/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          api_key: apiKey.trim(),
-          api_user: apiUser.trim(),
+          email: apiUser.trim(),
           password: apiPassword.trim()
         }),
         signal: controller.signal
       });
 
       const data = await res.json().catch(() => ({}));
-      if (!res.ok || (!data.access_token && !data.token)) {
-        const errorMsg = data.message || data.error || `HTTP ${res.status}: Autenticación fallida con Tilopay`;
+      if (!res.ok || !data.access_token) {
+        const errorMsg = data.message || data.error || `HTTP ${res.status}: Credenciales de Tilopay inválidas. Verifica tu usuario y contraseña.`;
         return { success: false, message: errorMsg };
       }
 
-      return { success: true, message: 'Conexión con Tilopay verificada exitosamente.' };
+      return { success: true, message: 'Credenciales de Tilopay verificadas exitosamente.' };
     } catch (err: any) {
       const isTimeout = err.name === 'AbortError' || err.message?.includes('aborted');
       const msg = isTimeout ? 'Tiempo de espera agotado al conectar con Tilopay (10s)' : err.message;
@@ -98,24 +99,23 @@ export class TilopayTenantService {
     }
 
     const baseUrl = this.getBaseUrl(config.environment);
-    const res = await fetch(`${baseUrl}/loginSdk`, {
+    const res = await fetch(`${baseUrl}/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        api_key: config.apiKey,
-        api_user: config.apiUser,
-        password: config.apiPassword
+        email: config.apiUser.trim(),
+        password: config.apiPassword.trim()
       })
     });
 
     const data = await res.json().catch(() => ({}));
-    if (!res.ok || (!data.access_token && !data.token)) {
+    if (!res.ok || !data.access_token) {
       throw new Error(data.message || data.error || 'No fue posible autenticar con Tilopay');
     }
 
-    const token = data.access_token || data.token;
-    // Buffer of 60 seconds prior to expiration
-    const expiresInSeconds = Number(data.expires_in) || 3600;
+    const token = data.access_token;
+    // Buffer of 60 seconds prior to expiration (expires_in is in seconds, e.g. 86400)
+    const expiresInSeconds = Number(data.expires_in) || 86400;
     const expiresAt = now + Math.max(60, expiresInSeconds - 60) * 1000;
 
     tokenCache.set(cacheKey, { token, expiresAt });
@@ -128,14 +128,15 @@ export class TilopayTenantService {
   }
 
   /**
-   * Generates client-side session parameters for mounting the Tilopay JS SDK V2.
-   * Checks order validity, amount and returns public token + order info.
+   * Generates client-side session parameters and hosted checkout URL on Tilopay.
+   * Calls official POST /api/v1/processPayment with Bearer token.
    */
   static async createPaymentSession(tenantId: string, orderId: string): Promise<{
     orderId: string;
     orderNumber: number;
     amount: number;
     currency: string;
+    paymentUrl: string;
     sdkToken: string;
     apiKey: string;
     environment: 'SANDBOX' | 'PRODUCTION';
@@ -159,12 +160,54 @@ export class TilopayTenantService {
 
     const { token: sdkToken, apiKey, environment } = await this.getSdkToken(tenantId);
     const config = (await getTenantPaymentConfigRaw(tenantId))!;
+    const baseUrl = this.getBaseUrl(environment);
+
+    const nameParts = (order.customerName || 'Cliente').trim().split(/\s+/);
+    const firstName = nameParts[0] || 'Cliente';
+    const lastName = nameParts.slice(1).join(' ') || firstName;
+    const cleanPhone = (order.customerPhone || '88888888').replace(/\D/g, '') || '88888888';
+    const appUrl = (env.APP_URL || 'https://betico.tech').replace(/\/$/, '');
+
+    const paymentPayload = {
+      key: apiKey,
+      amount: Number(order.total).toFixed(2),
+      currency: (order.currency || 'CRC').toUpperCase(),
+      billToFirstName: firstName,
+      billToLastName: lastName,
+      billToEmail: order.customerEmail || 'cliente@betico.cr',
+      billToAddress: order.customerAddress || 'Costa Rica',
+      billToAddress2: 'N/A',
+      billToCity: 'San Jose',
+      billToState: 'SJ',
+      billToZip: '10101',
+      billToCountry: 'CR',
+      billToTelephone: cleanPhone,
+      orderNumber: `ORD-${order.orderNumber}`,
+      redirect: `${appUrl}/order/success/${order.id}`,
+      callback: `${appUrl}/api/webhooks/tilopay`
+    };
+
+    const paymentRes = await fetch(`${baseUrl}/processPayment`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${sdkToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(paymentPayload)
+    });
+
+    const paymentData = await paymentRes.json().catch(() => ({}));
+    if (!paymentRes.ok || !paymentData.url) {
+      console.error('[TilopayProcessPayment] Falló la creación de pasarela:', paymentData);
+      throw new Error(paymentData.message || paymentData.error || 'No fue posible generar el enlace de pago con Tilopay');
+    }
 
     return {
       orderId: order.id,
       orderNumber: order.orderNumber,
       amount: Number(order.total),
       currency: order.currency || 'CRC',
+      paymentUrl: paymentData.url,
       sdkToken,
       apiKey,
       environment,

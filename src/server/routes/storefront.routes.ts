@@ -388,7 +388,11 @@ router.post('/:slug/checkout', async (req, res) => {
       try {
         tilopaySession = await TilopayTenantService.createPaymentSession(tenant.id, order.id);
       } catch (sessErr: any) {
-        console.warn('[StorefrontCheckout] No se pudo inicializar sesión Tilopay automática:', sessErr.message);
+        console.error('[StorefrontCheckout] Error al inicializar sesión Tilopay:', sessErr.message);
+        res.status(400).json({
+          error: `No fue posible conectar con la pasarela de pagos con tarjeta: ${sessErr.message}. Por favor intenta de nuevo o selecciona otro método de pago.`
+        });
+        return;
       }
     }
 
