@@ -324,9 +324,14 @@ export default function CourtsBookingsManager() {
     if (b.status === 'cancelled') return null;
     const isPaid = b.teamAPaid && (!b.teamBName || b.teamBPaid);
     const isPartial = (b.teamAPaid && !b.teamBPaid) || (!b.teamAPaid && b.teamBPaid);
+    const hasTilopay = Boolean(b.tilopayTransactionIdA || b.tilopayTransactionIdB);
     
     if (isPaid) {
-      return <span style={{ backgroundColor: '#ecfdf5', color: '#059669', border: '1px solid #a7f3d0', padding: '3px 8px', borderRadius: '6px', fontSize: '0.72rem', fontWeight: '700' }}>100% Pagado</span>;
+      return (
+        <span style={{ backgroundColor: '#ecfdf5', color: '#059669', border: '1px solid #a7f3d0', padding: '3px 8px', borderRadius: '6px', fontSize: '0.72rem', fontWeight: '700' }}>
+          {hasTilopay ? '✅ Verificado (Tilopay)' : '100% Pagado'}
+        </span>
+      );
     }
     if (isPartial) {
       return <span style={{ backgroundColor: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', padding: '3px 8px', borderRadius: '6px', fontSize: '0.72rem', fontWeight: '700' }}>Pago Parcial (1 Eq.)</span>;
@@ -639,6 +644,11 @@ export default function CourtsBookingsManager() {
                       <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                         Capitán: <strong>{b.teamACaptain}</strong> · Tel: <span style={{ color: 'var(--primary)', cursor: 'pointer', textDecoration: 'underline' }} onClick={() => openWhatsApp(b.teamAPhone, `Hola ${b.teamACaptain}, te contacto de la cancha sobre tu reserva del ${friendlyDate} a las ${friendlyTime}.`)}>{b.teamAPhone}</span>
                       </div>
+                      {b.tilopayTransactionIdA && (
+                        <div style={{ fontSize: '0.72rem', color: '#059669', fontWeight: '700' }}>
+                          ⚡ Tilopay: #{b.tilopayTransactionIdA}
+                        </div>
+                      )}
                     </div>
 
                     {/* Team B or Seek Match Status */}
@@ -684,6 +694,11 @@ export default function CourtsBookingsManager() {
                           {b.teamBCaptain && (
                             <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                               Capitán: <strong>{b.teamBCaptain}</strong> · Tel: <span style={{ color: 'var(--primary)', cursor: 'pointer', textDecoration: 'underline' }} onClick={() => openWhatsApp(b.teamBPhone || '', `Hola ${b.teamBCaptain}, te contacto de la cancha sobre tu partido del ${friendlyDate} a las ${friendlyTime}.`)}>{b.teamBPhone}</span>
+                            </div>
+                          )}
+                          {b.tilopayTransactionIdB && (
+                            <div style={{ fontSize: '0.72rem', color: '#059669', fontWeight: '700' }}>
+                              ⚡ Tilopay: #{b.tilopayTransactionIdB}
                             </div>
                           )}
                         </>
@@ -1177,7 +1192,7 @@ export default function CourtsBookingsManager() {
                 <div>Capitán: {selectedBooking.teamACaptain}</div>
                 <div>Teléfono: {selectedBooking.teamAPhone}</div>
                 <div style={{ marginTop: '6px' }}>
-                  Pago Equipo A: {selectedBooking.teamAPaid ? <span style={{ color: '#15803d', fontWeight: 'bold' }}>✅ Confirmado</span> : <span style={{ color: '#dc2626', fontWeight: 'bold' }}>❌ Pendiente</span>}
+                  Pago Equipo A: {selectedBooking.teamAPaid ? <span style={{ color: '#15803d', fontWeight: 'bold' }}>✅ Confirmado {selectedBooking.tilopayTransactionIdA ? `(Tilopay #${selectedBooking.tilopayTransactionIdA})` : ''}</span> : <span style={{ color: '#dc2626', fontWeight: 'bold' }}>❌ Pendiente</span>}
                 </div>
               </div>
 
@@ -1189,8 +1204,16 @@ export default function CourtsBookingsManager() {
                   <div>Capitán: {selectedBooking.teamBCaptain}</div>
                   <div>Teléfono: {selectedBooking.teamBPhone}</div>
                   <div style={{ marginTop: '6px' }}>
-                    Pago Equipo B: {selectedBooking.teamBPaid ? <span style={{ color: '#15803d', fontWeight: 'bold' }}>✅ Confirmado</span> : <span style={{ color: '#dc2626', fontWeight: 'bold' }}>❌ Pendiente</span>}
+                    Pago Equipo B: {selectedBooking.teamBPaid ? <span style={{ color: '#15803d', fontWeight: 'bold' }}>✅ Confirmado {selectedBooking.tilopayTransactionIdB ? `(Tilopay #${selectedBooking.tilopayTransactionIdB})` : ''}</span> : <span style={{ color: '#dc2626', fontWeight: 'bold' }}>❌ Pendiente</span>}
                   </div>
+                </div>
+              )}
+
+              {selectedBooking.paymentMethod && (
+                <div style={{ padding: '10px 12px', backgroundColor: 'var(--bg-elevated)', borderRadius: '8px', fontSize: '0.82rem' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Método de Registro: </span>
+                  <strong>{selectedBooking.paymentMethod === 'sinpe_tilopay' ? '⚡ SINPE Verificado (Tilopay)' : selectedBooking.paymentMethod === 'card' ? '💳 Tarjeta (Tilopay)' : selectedBooking.paymentMethod === 'sinpe' ? '📱 SINPE Móvil Manual' : '💵 En Cancha'}</strong>
+                  {selectedBooking.paymentReference && <div>Referencia / Comprobante: <strong>{selectedBooking.paymentReference}</strong></div>}
                 </div>
               )}
 

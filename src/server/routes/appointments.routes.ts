@@ -6,6 +6,8 @@ import { getScheduleSettings, saveScheduleSettings } from '../db/schedule.repo.j
 import { getTenantBySlug, getTenantById } from '../db/tenant.repo.js';
 import { getServicesByTenant } from '../db/services.repo.js';
 import { getStoreSettings } from '../db/store-settings.repo.js';
+import { getTenantPaymentConfigRaw } from '../db/tenant-payment.repo.js';
+import { TilopayTenantService } from '../services/tilopay-tenant.service.js';
 import { sendMessage } from '../services/evolution.js';
 import { query } from '../db/pool.js';
 
@@ -26,6 +28,8 @@ router.get('/public/:slug/info', async (req, res) => {
     const services = await getServicesByTenant(tenant.id);
     const store = await getStoreSettings(tenant.id);
     const schedule = await getScheduleSettings(tenant.id);
+    const tilopayConfig = await getTenantPaymentConfigRaw(tenant.id);
+    const tiloAvailable = Boolean(tilopayConfig && tilopayConfig.isEnabled && tilopayConfig.apiKey);
 
     res.json({
       name: tenant.name,
@@ -37,7 +41,16 @@ router.get('/public/:slug/info', async (req, res) => {
       services: services.filter((s: any) => s.active !== false),
       scheduleMode: schedule?.scheduleMode || 'jornada',
       customFields: schedule?.customFields || [],
-      vacationConfig: schedule?.vacationConfig
+      vacationConfig: schedule?.vacationConfig,
+      paymentSettings: {
+        acceptSinpe: store?.acceptSinpe !== false,
+        acceptSinpeTilopay: store?.acceptSinpeTilopay === true && tiloAvailable,
+        sinpePhone: store?.sinpePhone || '',
+        sinpeName: store?.sinpeName || '',
+        acceptCard: tiloAvailable,
+        acceptCash: store?.acceptCashOnDelivery !== false,
+        currency: store?.currency || 'CRC'
+      }
     });
   } catch (error) {
     console.error('Error fetching public booking info:', error);
@@ -251,6 +264,8 @@ router.post('/public/:slug/book', async (req, res) => {
     }
 
     const finalAmount = req.body.amount !== undefined ? Number(req.body.amount) : amount;
+    const paymentMethod = req.body.paymentMethod || 'cash';
+    const isOnlinePayment = paymentMethod === 'card' || paymentMethod === 'sinpe_tilopay';
 
     const appt = await createAppointment(tenant.id, {
       name: customerName,
@@ -260,14 +275,30 @@ router.post('/public/:slug/book', async (req, res) => {
       time,
       amount: finalAmount,
       status: 'scheduled',
+      paymentMethod,
+      paymentStatus: paymentMethod === 'sinpe' ? 'proof_sent' : 'pending',
+      paymentReference: req.body.paymentReference || null,
       details: combinedDetails,
       vehicleModel: vehicleModel || '',
       selectedVariables: req.body.selectedVariables
     });
 
+    let paymentSession: any = null;
+    if (isOnlinePayment && finalAmount > 0) {
+      try {
+        paymentSession = await TilopayTenantService.createAppointmentPaymentSession(
+          tenant.id,
+          appt.id,
+          req.body.returnUrl
+        );
+      } catch (err: any) {
+        console.error('[Appointments] Error al crear sesión de pago con Tilopay:', err?.message || err);
+      }
+    }
+
     // Emit real-time WebSocket event
     if ((req as any).io) {
-      (req as any).io.to(`tenant_${tenant.id}`).emit('appointment:created', appt);
+      (req as any).io.to(`tenant_${tenant.id}`).emit('appointment:created', { ...appt, paymentSession });
     }
 
     const cleanCustomerPhone = customerPhone.replace(/\D/g, '');
@@ -281,6 +312,7 @@ Hola *${customerName}*, tu cita para *${serviceName}* ha quedado programada en *
 🗓️ *Fecha:* ${date}
 ⏰ *Hora:* ${time}
 💰 *Valor:* ₡${amount.toLocaleString('es-CR')}
+💳 *Método de Pago:* ${paymentMethod === 'card' ? 'Tarjeta Débito/Crédito' : paymentMethod === 'sinpe_tilopay' ? 'SINPE Móvil Verificado' : paymentMethod === 'sinpe' ? 'SINPE Móvil (Manual)' : 'Efectivo / En Local'}
 📌 *Estado:* 🕒 Programada
 ${vehicleModel ? `🚗 *Vehículo / Detalle:* ${vehicleModel}\n` : ''}${combinedDetails ? `📝 *Información:* ${combinedDetails}\n` : ''}
 👉 _Te enviaremos la confirmación oficial antes de tu cita. Si necesitas cancelar o reprogramar, solo responde a este mensaje._ ¡Te esperamos!`;
@@ -301,6 +333,7 @@ ${vehicleModel ? `🚗 *Vehículo / Detalle:* ${vehicleModel}\n` : ''}${combined
 🛠️ *Servicio:* ${serviceName}
 🗓️ *Fecha:* ${date} a las ${time}
 💰 *Monto:* ₡${amount.toLocaleString('es-CR')}
+💳 *Pago:* ${paymentMethod}
 ${combinedDetails ? `📝 *Detalles:* ${combinedDetails}` : ''}`;
 
       try {
@@ -323,12 +356,31 @@ ${combinedDetails ? `📝 *Detalles:* ${combinedDetails}` : ''}`;
 
     res.status(201).json({
       ...appt,
+      paymentSession,
+      paymentUrl: paymentSession?.paymentUrl || null,
       businessName: tenant.name,
       whatsappNumber: tenant.whatsappNumber
     });
   } catch (error) {
     console.error('Public booking error:', error);
     res.status(500).json({ error: 'Error al procesar reserva' });
+  }
+});
+
+router.post('/public/:slug/pay/:id', async (req, res) => {
+  try {
+    const tenant = await getTenantBySlug(req.params.slug);
+    if (!tenant) return res.status(404).json({ error: 'Negocio no encontrado' });
+
+    const session = await TilopayTenantService.createAppointmentPaymentSession(
+      tenant.id,
+      req.params.id,
+      req.body.returnUrl
+    );
+    res.json(session);
+  } catch (error: any) {
+    console.error('[Appointments] Error al generar sesión de pago:', error);
+    res.status(400).json({ error: error.message || 'Error al generar sesión de pago' });
   }
 });
 

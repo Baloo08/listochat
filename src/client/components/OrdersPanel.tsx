@@ -325,7 +325,11 @@ export default function OrdersPanel() {
                                 <strong style={{ fontSize: '0.95rem', color: '#1e293b' }}>#ORD-{order.orderNumber}</strong>
                                 
                                 {/* Payment Method Badge */}
-                                {order.paymentMethod === 'card' || order.paymentMethod === 'tilopay' ? (
+                                {order.paymentMethod === 'sinpe_tilopay' ? (
+                                  <span style={{ fontSize: '0.68rem', padding: '1px 6px', backgroundColor: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', borderRadius: '4px', fontWeight: 'bold' }}>
+                                    ⚡ SINPE Auto {order.paymentStatus === 'paid' ? '✓ Verificado' : '⏳ Pend.'}
+                                  </span>
+                                ) : order.paymentMethod === 'card' || order.paymentMethod === 'tilopay' ? (
                                   <span style={{ fontSize: '0.68rem', padding: '1px 6px', backgroundColor: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', borderRadius: '4px', fontWeight: 'bold' }}>
                                     💳 Tarjeta {order.paymentStatus === 'paid' ? '✓ Pagado' : '⏳ Pend.'}
                                   </span>
@@ -522,8 +526,16 @@ export default function OrdersPanel() {
                         color: order.paymentStatus === 'paid' ? '#15803d' : '#854d0e'
                       }}>
                         {order.paymentStatus === 'paid'
-                          ? (order.paymentMethod === 'card' || order.paymentMethod === 'tilopay' ? '💳 Tarjeta Verificada' : '✅ Pagado')
-                          : (order.paymentMethod === 'card' || order.paymentMethod === 'tilopay' ? '💳 Tarjeta (Pendiente)' : order.paymentMethod.toUpperCase())}
+                          ? (order.paymentMethod === 'sinpe_tilopay'
+                              ? '⚡ SINPE Verificado'
+                              : order.paymentMethod === 'card' || order.paymentMethod === 'tilopay'
+                                ? '💳 Tarjeta Verificada'
+                                : '✅ Pagado')
+                          : (order.paymentMethod === 'sinpe_tilopay'
+                              ? '⚡ SINPE Auto (Pend.)'
+                              : order.paymentMethod === 'card' || order.paymentMethod === 'tilopay'
+                                ? '💳 Tarjeta (Pendiente)'
+                                : order.paymentMethod.toUpperCase())}
                       </span>
                     </td>
                     <td style={{ padding: '14px 16px', textAlign: 'right' }}>
@@ -596,13 +608,15 @@ export default function OrdersPanel() {
               <div><strong>Teléfono:</strong> {selectedOrder.customerPhone || 'No registrado'}</div>
               <div>
                 <strong>Método de Pago:</strong>{' '}
-                {selectedOrder.paymentMethod === 'card' || selectedOrder.paymentMethod === 'tilopay'
-                  ? '💳 Tarjeta de Crédito / Débito (Tilopay)'
-                  : selectedOrder.paymentMethod === 'sinpe'
-                    ? '📱 SINPE Móvil'
-                    : selectedOrder.paymentMethod === 'transfer'
-                      ? '🏦 Transferencia Bancaria'
-                      : '💵 Contra Entrega'}
+                {selectedOrder.paymentMethod === 'sinpe_tilopay'
+                  ? '⚡ SINPE Móvil Automático (Verificado con Tilopay)'
+                  : selectedOrder.paymentMethod === 'card' || selectedOrder.paymentMethod === 'tilopay'
+                    ? '💳 Tarjeta de Crédito / Débito (Tilopay)'
+                    : selectedOrder.paymentMethod === 'sinpe'
+                      ? '📱 SINPE Móvil Manual'
+                      : selectedOrder.paymentMethod === 'transfer'
+                        ? '🏦 Transferencia Bancaria'
+                        : '💵 Contra Entrega'}
               </div>
               <div>
                 <strong>Estado del Pago:</strong>{' '}

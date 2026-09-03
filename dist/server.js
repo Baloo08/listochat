@@ -3874,6 +3874,46 @@ async function updateBooking(id, tenantId, data) {
   `, [id, tenantId, ...values]);
   return res.rows[0] ? mapBookingRow(res.rows[0]) : null;
 }
+async function updateCourtBookingPayment(id, team, data) {
+  const updates = [];
+  const params = [id];
+  let paramIdx = 2;
+  if (team === "a") {
+    updates.push(`team_a_paid = true`);
+    if (data.tilopayTxId) {
+      updates.push(`tilopay_transaction_id_a = $${paramIdx++}`);
+      params.push(data.tilopayTxId);
+    }
+    if (data.tilopayAuth) {
+      updates.push(`tilopay_auth_code_a = $${paramIdx++}`);
+      params.push(data.tilopayAuth);
+    }
+  } else {
+    updates.push(`team_b_paid = true`);
+    if (data.tilopayTxId) {
+      updates.push(`tilopay_transaction_id_b = $${paramIdx++}`);
+      params.push(data.tilopayTxId);
+    }
+    if (data.tilopayAuth) {
+      updates.push(`tilopay_auth_code_b = $${paramIdx++}`);
+      params.push(data.tilopayAuth);
+    }
+  }
+  if (data.paymentMethod) {
+    updates.push(`payment_method = $${paramIdx++}`);
+    params.push(data.paymentMethod);
+  }
+  if (data.paymentReference) {
+    updates.push(`payment_reference = $${paramIdx++}`);
+    params.push(data.paymentReference);
+  }
+  updates.push(`updated_at = CURRENT_TIMESTAMP`);
+  const res = await query(`
+    UPDATE court_bookings SET ${updates.join(", ")}
+    WHERE id = $1 RETURNING *
+  `, params);
+  return res.rows[0] ? mapBookingRow(res.rows[0]) : null;
+}
 async function cancelBooking(id, tenantId) {
   const res = await query(`
     UPDATE court_bookings SET status = 'cancelled', match_status = 'cancelled', updated_at = CURRENT_TIMESTAMP
@@ -4683,6 +4723,47 @@ async function updateAppointment(id, tenantId, data) {
   const result = await query(`
     UPDATE appointments SET ${updates.join(", ")}
     WHERE id = $1 AND tenant_id = $2
+    RETURNING id, tenant_id as "tenantId", name, whatsapp, service, 
+           date, time, amount, status, details, vehicle_model as "vehicleModel",
+           selected_variables as "selectedVariables", specialist_id as "specialistId",
+           payment_method as "paymentMethod", payment_status as "paymentStatus",
+           payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
+           tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
+           created_at as "createdAt"
+  `, params);
+  return result.rows[0] || null;
+}
+async function updateAppointmentPayment(id, paymentData) {
+  const updates = [];
+  const params = [id];
+  let paramIdx = 2;
+  if (paymentData.paymentStatus !== void 0) {
+    updates.push(`payment_status = $${paramIdx++}`);
+    params.push(paymentData.paymentStatus);
+    if (paymentData.paymentStatus === "paid") {
+      updates.push(`status = 'confirmed'`);
+    }
+  }
+  if (paymentData.paymentMethod !== void 0) {
+    updates.push(`payment_method = $${paramIdx++}`);
+    params.push(paymentData.paymentMethod);
+  }
+  if (paymentData.paymentReference !== void 0) {
+    updates.push(`payment_reference = $${paramIdx++}`);
+    params.push(paymentData.paymentReference);
+  }
+  if (paymentData.tilopayTransactionId !== void 0) {
+    updates.push(`tilopay_transaction_id = $${paramIdx++}`);
+    params.push(paymentData.tilopayTransactionId);
+  }
+  if (paymentData.tilopayAuthCode !== void 0) {
+    updates.push(`tilopay_auth_code = $${paramIdx++}`);
+    params.push(paymentData.tilopayAuthCode);
+  }
+  if (updates.length === 0) return getAppointmentById(id);
+  const result = await query(`
+    UPDATE appointments SET ${updates.join(", ")}
+    WHERE id = $1
     RETURNING id, tenant_id as "tenantId", name, whatsapp, service, 
            date, time, amount, status, details, vehicle_model as "vehicleModel",
            selected_variables as "selectedVariables", specialist_id as "specialistId",
@@ -6971,6 +7052,299 @@ var services_routes_default = router4;
 
 // src/server/routes/appointments.routes.ts
 import { Router as Router5 } from "express";
+init_tenant_payment_repo();
+
+// src/server/services/tilopay-tenant.service.ts
+init_tenant_payment_repo();
+init_env();
+var tokenCache = /* @__PURE__ */ new Map();
+var TilopayTenantService = class {
+  static getBaseUrl(environment) {
+    return "https://app.tilopay.com/api/v1";
+  }
+  /**
+   * Clears cached tokens for a tenant (useful when credentials are saved or rotated).
+   */
+  static clearTokenCache(tenantId) {
+    tokenCache.delete(`tilopay_jwt:${tenantId}:SANDBOX`);
+    tokenCache.delete(`tilopay_jwt:${tenantId}:PRODUCTION`);
+  }
+  /**
+   * Diagnostic method to test credentials against Tilopay prior to saving.
+   * Uses Tilopay's official authentication endpoint: POST /api/v1/login
+   * with email (API User) and password.
+   */
+  static async verifyCredentials(apiKey, apiUser, apiPassword, environment) {
+    if (!apiKey || !apiUser || !apiPassword) {
+      return { success: false, message: "Todos los campos de credenciales son requeridos." };
+    }
+    const baseUrl = this.getBaseUrl(environment);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 1e4);
+    try {
+      const res = await fetch(`${baseUrl}/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: apiUser.trim(),
+          password: apiPassword.trim()
+        }),
+        signal: controller.signal
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.access_token) {
+        const errorMsg = data.message || data.error || `HTTP ${res.status}: Credenciales de Tilopay inv\xE1lidas. Verifica tu usuario y contrase\xF1a.`;
+        return { success: false, message: errorMsg };
+      }
+      return { success: true, message: "Credenciales de Tilopay verificadas exitosamente." };
+    } catch (err) {
+      const isTimeout = err.name === "AbortError" || err.message?.includes("aborted");
+      const msg = isTimeout ? "Tiempo de espera agotado al conectar con Tilopay (10s)" : err.message;
+      return { success: false, message: `Error de red al conectar con Tilopay: ${msg}` };
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+  /**
+   * Retrieves or refreshes an isolated SDK JWT token for a specific tenant.
+   * Multi-tenant isolated via composite cache key: `tilopay_jwt:${tenantId}:${env}`.
+   */
+  static async getSdkToken(tenantId) {
+    if (!env.TILOPAY_MODULE_ENABLED) {
+      throw new Error("El m\xF3dulo de Tilopay se encuentra temporalmente inactivo.");
+    }
+    const config = await getTenantPaymentConfigRaw(tenantId);
+    if (!config || !config.isEnabled) {
+      throw new Error("La pasarela de pagos Tilopay no est\xE1 activada para este comercio.");
+    }
+    if (!config.apiKey || !config.apiUser || !config.apiPassword) {
+      throw new Error("Credenciales de Tilopay incompletas para este comercio.");
+    }
+    const cacheKey = `tilopay_jwt:${tenantId}:${config.environment}`;
+    const cached = tokenCache.get(cacheKey);
+    const now = Date.now();
+    if (cached && cached.expiresAt > now) {
+      return {
+        token: cached.token,
+        apiKey: config.apiKey,
+        environment: config.environment
+      };
+    }
+    const baseUrl = this.getBaseUrl(config.environment);
+    const res = await fetch(`${baseUrl}/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: config.apiUser.trim(),
+        password: config.apiPassword.trim()
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.access_token) {
+      throw new Error(data.message || data.error || "No fue posible autenticar con Tilopay");
+    }
+    const token = data.access_token;
+    const expiresInSeconds = Number(data.expires_in) || 86400;
+    const expiresAt = now + Math.max(60, expiresInSeconds - 60) * 1e3;
+    tokenCache.set(cacheKey, { token, expiresAt });
+    return {
+      token,
+      apiKey: config.apiKey,
+      environment: config.environment
+    };
+  }
+  /**
+   * Generates client-side session parameters and hosted checkout URL on Tilopay.
+   * Calls official POST /api/v1/processPayment with Bearer token.
+   */
+  static async createPaymentSession(tenantId, orderId) {
+    const order = await getOrderById(orderId, tenantId);
+    if (!order) {
+      throw new Error("Orden no encontrada");
+    }
+    if (order.paymentStatus === "paid" || order.paymentStatus === "PAID") {
+      throw new Error("Esta orden ya se encuentra pagada");
+    }
+    if (order.status === "cancelado" || order.status === "cancelled") {
+      throw new Error("Esta orden fue cancelada y no puede ser procesada");
+    }
+    const { token: sdkToken, apiKey, environment } = await this.getSdkToken(tenantId);
+    const config = await getTenantPaymentConfigRaw(tenantId);
+    const baseUrl = this.getBaseUrl(environment);
+    const nameParts = (order.customerName || "Cliente").trim().split(/\s+/);
+    const firstName = nameParts[0] || "Cliente";
+    const lastName = nameParts.slice(1).join(" ") || firstName;
+    const cleanPhone = (order.customerPhone || "88888888").replace(/\D/g, "") || "88888888";
+    const appUrl = (env.APP_URL || "https://betico.tech").replace(/\/$/, "");
+    const paymentPayload = {
+      key: apiKey,
+      amount: Number(order.total).toFixed(2),
+      currency: (order.currency || "CRC").toUpperCase(),
+      billToFirstName: firstName,
+      billToLastName: lastName,
+      billToEmail: order.customerEmail || "cliente@betico.cr",
+      billToAddress: order.customerAddress || "Costa Rica",
+      billToAddress2: "N/A",
+      billToCity: "San Jose",
+      billToState: "SJ",
+      billToZip: "10101",
+      billToCountry: "CR",
+      billToTelephone: cleanPhone,
+      orderNumber: `ORD-${order.orderNumber}`,
+      redirect: `${appUrl}/order/success/${order.id}`,
+      callback: `${appUrl}/api/webhooks/tilopay`
+    };
+    const paymentRes = await fetch(`${baseUrl}/processPayment`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${sdkToken}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(paymentPayload)
+    });
+    const paymentData = await paymentRes.json().catch(() => ({}));
+    if (!paymentRes.ok || !paymentData.url) {
+      console.error("[TilopayProcessPayment] Fall\xF3 la creaci\xF3n de pasarela:", paymentData);
+      throw new Error(paymentData.message || paymentData.error || "No fue posible generar el enlace de pago con Tilopay");
+    }
+    return {
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      amount: Number(order.total),
+      currency: order.currency || "CRC",
+      paymentUrl: paymentData.url,
+      sdkToken,
+      apiKey,
+      environment,
+      customerName: order.customerName,
+      customerEmail: order.customerEmail,
+      customerPhone: order.customerPhone,
+      captureMode: config.captureMode || "IMMEDIATE"
+    };
+  }
+  /**
+   * Generates payment session for an Appointment / Cita.
+   */
+  static async createAppointmentPaymentSession(tenantId, appointmentId, returnUrl) {
+    const apt = await getAppointmentById(appointmentId, tenantId);
+    if (!apt) throw new Error("Cita no encontrada");
+    if (apt.paymentStatus === "paid") throw new Error("Esta cita ya se encuentra pagada");
+    const { token: sdkToken, apiKey, environment } = await this.getSdkToken(tenantId);
+    const baseUrl = this.getBaseUrl(environment);
+    const nameParts = (apt.name || "Cliente").trim().split(/\s+/);
+    const firstName = nameParts[0] || "Cliente";
+    const lastName = nameParts.slice(1).join(" ") || firstName;
+    const cleanPhone = (apt.whatsapp || "88888888").replace(/\D/g, "") || "88888888";
+    const appUrl = (env.APP_URL || "https://betico.tech").replace(/\/$/, "");
+    const paymentPayload = {
+      key: apiKey,
+      amount: Number(apt.amount).toFixed(2),
+      currency: "CRC",
+      billToFirstName: firstName,
+      billToLastName: lastName,
+      billToEmail: "cliente@betico.cr",
+      billToAddress: "Costa Rica",
+      billToAddress2: "N/A",
+      billToCity: "San Jose",
+      billToState: "SJ",
+      billToZip: "10101",
+      billToCountry: "CR",
+      billToTelephone: cleanPhone,
+      orderNumber: `APT-${apt.id}`,
+      redirect: returnUrl || `${appUrl}/reservas/confirmacion/${apt.id}`,
+      callback: `${appUrl}/api/webhooks/tilopay`
+    };
+    const paymentRes = await fetch(`${baseUrl}/processPayment`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${sdkToken}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(paymentPayload)
+    });
+    const paymentData = await paymentRes.json().catch(() => ({}));
+    if (!paymentRes.ok || !paymentData.url) {
+      console.error("[TilopayAppointmentPayment] Fall\xF3 creaci\xF3n de pago:", paymentData);
+      throw new Error(paymentData.message || paymentData.error || "No fue posible generar el enlace de pago con Tilopay");
+    }
+    return {
+      appointmentId: apt.id,
+      amount: Number(apt.amount),
+      currency: "CRC",
+      paymentUrl: paymentData.url,
+      sdkToken,
+      apiKey,
+      environment,
+      customerName: apt.name,
+      customerPhone: apt.whatsapp
+    };
+  }
+  /**
+   * Generates payment session for a Court Booking (Full court or Team A / Team B in Busca Rival).
+   */
+  static async createCourtPaymentSession(tenantId, bookingId, team = "a", returnUrl) {
+    const booking = await getBookingById(bookingId, tenantId);
+    if (!booking) throw new Error("Reserva de cancha no encontrada");
+    const isTeamB = team === "b";
+    if (isTeamB && booking.teamBPaid) throw new Error("El equipo B ya realiz\xF3 el pago de su cupo");
+    if (!isTeamB && booking.teamAPaid) throw new Error("El equipo A ya realiz\xF3 el pago");
+    const amount = isTeamB ? booking.pricePerTeam || booking.totalPrice / 2 : booking.bookingMode === "split_match" && booking.pricePerTeam ? booking.pricePerTeam : booking.totalPrice;
+    const customerName = isTeamB ? booking.teamBCaptain || booking.teamBName || "Equipo B" : booking.teamACaptain || booking.teamAName || "Equipo A";
+    const customerPhone = isTeamB ? booking.teamBPhone || "88888888" : booking.teamAPhone || "88888888";
+    const { token: sdkToken, apiKey, environment } = await this.getSdkToken(tenantId);
+    const baseUrl = this.getBaseUrl(environment);
+    const nameParts = customerName.trim().split(/\s+/);
+    const firstName = nameParts[0] || "Capit\xE1n";
+    const lastName = nameParts.slice(1).join(" ") || firstName;
+    const cleanPhone = customerPhone.replace(/\D/g, "") || "88888888";
+    const appUrl = (env.APP_URL || "https://betico.tech").replace(/\/$/, "");
+    const paymentPayload = {
+      key: apiKey,
+      amount: Number(amount).toFixed(2),
+      currency: "CRC",
+      billToFirstName: firstName,
+      billToLastName: lastName,
+      billToEmail: "cliente@betico.cr",
+      billToAddress: "Costa Rica",
+      billToAddress2: "N/A",
+      billToCity: "San Jose",
+      billToState: "SJ",
+      billToZip: "10101",
+      billToCountry: "CR",
+      billToTelephone: cleanPhone,
+      orderNumber: `CRT-${team.toUpperCase()}-${booking.id}`,
+      redirect: returnUrl || `${appUrl}/canchas/confirmacion/${booking.id}`,
+      callback: `${appUrl}/api/webhooks/tilopay`
+    };
+    const paymentRes = await fetch(`${baseUrl}/processPayment`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${sdkToken}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(paymentPayload)
+    });
+    const paymentData = await paymentRes.json().catch(() => ({}));
+    if (!paymentRes.ok || !paymentData.url) {
+      console.error("[TilopayCourtPayment] Fall\xF3 creaci\xF3n de pago:", paymentData);
+      throw new Error(paymentData.message || paymentData.error || "No fue posible generar el enlace de pago para la cancha");
+    }
+    return {
+      bookingId: booking.id,
+      team,
+      amount: Number(amount),
+      currency: "CRC",
+      paymentUrl: paymentData.url,
+      sdkToken,
+      apiKey,
+      environment,
+      customerName,
+      customerPhone
+    };
+  }
+};
+
+// src/server/routes/appointments.routes.ts
 init_evolution();
 init_pool();
 var router5 = Router5();
@@ -6984,6 +7358,8 @@ router5.get("/public/:slug/info", async (req, res) => {
     const services = await getServicesByTenant(tenant.id);
     const store = await getStoreSettings(tenant.id);
     const schedule = await getScheduleSettings(tenant.id);
+    const tilopayConfig = await getTenantPaymentConfigRaw(tenant.id);
+    const tiloAvailable = Boolean(tilopayConfig && tilopayConfig.isEnabled && tilopayConfig.apiKey);
     res.json({
       name: tenant.name,
       slug: tenant.slug,
@@ -6994,7 +7370,16 @@ router5.get("/public/:slug/info", async (req, res) => {
       services: services.filter((s) => s.active !== false),
       scheduleMode: schedule?.scheduleMode || "jornada",
       customFields: schedule?.customFields || [],
-      vacationConfig: schedule?.vacationConfig
+      vacationConfig: schedule?.vacationConfig,
+      paymentSettings: {
+        acceptSinpe: store?.acceptSinpe !== false,
+        acceptSinpeTilopay: store?.acceptSinpeTilopay === true && tiloAvailable,
+        sinpePhone: store?.sinpePhone || "",
+        sinpeName: store?.sinpeName || "",
+        acceptCard: tiloAvailable,
+        acceptCash: store?.acceptCashOnDelivery !== false,
+        currency: store?.currency || "CRC"
+      }
     });
   } catch (error) {
     console.error("Error fetching public booking info:", error);
@@ -7168,6 +7553,8 @@ router5.post("/public/:slug/book", async (req, res) => {
       }
     }
     const finalAmount = req.body.amount !== void 0 ? Number(req.body.amount) : amount;
+    const paymentMethod = req.body.paymentMethod || "cash";
+    const isOnlinePayment = paymentMethod === "card" || paymentMethod === "sinpe_tilopay";
     const appt = await createAppointment(tenant.id, {
       name: customerName,
       whatsapp: customerPhone,
@@ -7176,12 +7563,27 @@ router5.post("/public/:slug/book", async (req, res) => {
       time,
       amount: finalAmount,
       status: "scheduled",
+      paymentMethod,
+      paymentStatus: paymentMethod === "sinpe" ? "proof_sent" : "pending",
+      paymentReference: req.body.paymentReference || null,
       details: combinedDetails,
       vehicleModel: vehicleModel || "",
       selectedVariables: req.body.selectedVariables
     });
+    let paymentSession = null;
+    if (isOnlinePayment && finalAmount > 0) {
+      try {
+        paymentSession = await TilopayTenantService.createAppointmentPaymentSession(
+          tenant.id,
+          appt.id,
+          req.body.returnUrl
+        );
+      } catch (err) {
+        console.error("[Appointments] Error al crear sesi\xF3n de pago con Tilopay:", err?.message || err);
+      }
+    }
     if (req.io) {
-      req.io.to(`tenant_${tenant.id}`).emit("appointment:created", appt);
+      req.io.to(`tenant_${tenant.id}`).emit("appointment:created", { ...appt, paymentSession });
     }
     const cleanCustomerPhone = customerPhone.replace(/\D/g, "");
     if (tenant.evolutionInstance && cleanCustomerPhone) {
@@ -7192,6 +7594,7 @@ Hola *${customerName}*, tu cita para *${serviceName}* ha quedado programada en *
 \u{1F5D3}\uFE0F *Fecha:* ${date}
 \u23F0 *Hora:* ${time}
 \u{1F4B0} *Valor:* \u20A1${amount.toLocaleString("es-CR")}
+\u{1F4B3} *M\xE9todo de Pago:* ${paymentMethod === "card" ? "Tarjeta D\xE9bito/Cr\xE9dito" : paymentMethod === "sinpe_tilopay" ? "SINPE M\xF3vil Verificado" : paymentMethod === "sinpe" ? "SINPE M\xF3vil (Manual)" : "Efectivo / En Local"}
 \u{1F4CC} *Estado:* \u{1F552} Programada
 ${vehicleModel ? `\u{1F697} *Veh\xEDculo / Detalle:* ${vehicleModel}
 ` : ""}${combinedDetails ? `\u{1F4DD} *Informaci\xF3n:* ${combinedDetails}
@@ -7211,6 +7614,7 @@ ${vehicleModel ? `\u{1F697} *Veh\xEDculo / Detalle:* ${vehicleModel}
 \u{1F6E0}\uFE0F *Servicio:* ${serviceName}
 \u{1F5D3}\uFE0F *Fecha:* ${date} a las ${time}
 \u{1F4B0} *Monto:* \u20A1${amount.toLocaleString("es-CR")}
+\u{1F4B3} *Pago:* ${paymentMethod}
 ${combinedDetails ? `\u{1F4DD} *Detalles:* ${combinedDetails}` : ""}`;
       try {
         await sendMessage(tenant.evolutionInstance, adminPhone, adminMsg);
@@ -7229,12 +7633,29 @@ ${combinedDetails ? `\u{1F4DD} *Detalles:* ${combinedDetails}` : ""}`;
     ]);
     res.status(201).json({
       ...appt,
+      paymentSession,
+      paymentUrl: paymentSession?.paymentUrl || null,
       businessName: tenant.name,
       whatsappNumber: tenant.whatsappNumber
     });
   } catch (error) {
     console.error("Public booking error:", error);
     res.status(500).json({ error: "Error al procesar reserva" });
+  }
+});
+router5.post("/public/:slug/pay/:id", async (req, res) => {
+  try {
+    const tenant = await getTenantBySlug(req.params.slug);
+    if (!tenant) return res.status(404).json({ error: "Negocio no encontrado" });
+    const session = await TilopayTenantService.createAppointmentPaymentSession(
+      tenant.id,
+      req.params.id,
+      req.body.returnUrl
+    );
+    res.json(session);
+  } catch (error) {
+    console.error("[Appointments] Error al generar sesi\xF3n de pago:", error);
+    res.status(400).json({ error: error.message || "Error al generar sesi\xF3n de pago" });
   }
 });
 router5.use(authenticateToken);
@@ -8394,178 +8815,6 @@ import { Router as Router16 } from "express";
 init_evolution();
 init_pool();
 init_tenant_payment_repo();
-
-// src/server/services/tilopay-tenant.service.ts
-init_tenant_payment_repo();
-init_env();
-var tokenCache = /* @__PURE__ */ new Map();
-var TilopayTenantService = class {
-  static getBaseUrl(environment) {
-    return "https://app.tilopay.com/api/v1";
-  }
-  /**
-   * Clears cached tokens for a tenant (useful when credentials are saved or rotated).
-   */
-  static clearTokenCache(tenantId) {
-    tokenCache.delete(`tilopay_jwt:${tenantId}:SANDBOX`);
-    tokenCache.delete(`tilopay_jwt:${tenantId}:PRODUCTION`);
-  }
-  /**
-   * Diagnostic method to test credentials against Tilopay prior to saving.
-   * Uses Tilopay's official authentication endpoint: POST /api/v1/login
-   * with email (API User) and password.
-   */
-  static async verifyCredentials(apiKey, apiUser, apiPassword, environment) {
-    if (!apiKey || !apiUser || !apiPassword) {
-      return { success: false, message: "Todos los campos de credenciales son requeridos." };
-    }
-    const baseUrl = this.getBaseUrl(environment);
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 1e4);
-    try {
-      const res = await fetch(`${baseUrl}/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: apiUser.trim(),
-          password: apiPassword.trim()
-        }),
-        signal: controller.signal
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.access_token) {
-        const errorMsg = data.message || data.error || `HTTP ${res.status}: Credenciales de Tilopay inv\xE1lidas. Verifica tu usuario y contrase\xF1a.`;
-        return { success: false, message: errorMsg };
-      }
-      return { success: true, message: "Credenciales de Tilopay verificadas exitosamente." };
-    } catch (err) {
-      const isTimeout = err.name === "AbortError" || err.message?.includes("aborted");
-      const msg = isTimeout ? "Tiempo de espera agotado al conectar con Tilopay (10s)" : err.message;
-      return { success: false, message: `Error de red al conectar con Tilopay: ${msg}` };
-    } finally {
-      clearTimeout(timeout);
-    }
-  }
-  /**
-   * Retrieves or refreshes an isolated SDK JWT token for a specific tenant.
-   * Multi-tenant isolated via composite cache key: `tilopay_jwt:${tenantId}:${env}`.
-   */
-  static async getSdkToken(tenantId) {
-    if (!env.TILOPAY_MODULE_ENABLED) {
-      throw new Error("El m\xF3dulo de Tilopay se encuentra temporalmente inactivo.");
-    }
-    const config = await getTenantPaymentConfigRaw(tenantId);
-    if (!config || !config.isEnabled) {
-      throw new Error("La pasarela de pagos Tilopay no est\xE1 activada para este comercio.");
-    }
-    if (!config.apiKey || !config.apiUser || !config.apiPassword) {
-      throw new Error("Credenciales de Tilopay incompletas para este comercio.");
-    }
-    const cacheKey = `tilopay_jwt:${tenantId}:${config.environment}`;
-    const cached = tokenCache.get(cacheKey);
-    const now = Date.now();
-    if (cached && cached.expiresAt > now) {
-      return {
-        token: cached.token,
-        apiKey: config.apiKey,
-        environment: config.environment
-      };
-    }
-    const baseUrl = this.getBaseUrl(config.environment);
-    const res = await fetch(`${baseUrl}/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        email: config.apiUser.trim(),
-        password: config.apiPassword.trim()
-      })
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data.access_token) {
-      throw new Error(data.message || data.error || "No fue posible autenticar con Tilopay");
-    }
-    const token = data.access_token;
-    const expiresInSeconds = Number(data.expires_in) || 86400;
-    const expiresAt = now + Math.max(60, expiresInSeconds - 60) * 1e3;
-    tokenCache.set(cacheKey, { token, expiresAt });
-    return {
-      token,
-      apiKey: config.apiKey,
-      environment: config.environment
-    };
-  }
-  /**
-   * Generates client-side session parameters and hosted checkout URL on Tilopay.
-   * Calls official POST /api/v1/processPayment with Bearer token.
-   */
-  static async createPaymentSession(tenantId, orderId) {
-    const order = await getOrderById(orderId, tenantId);
-    if (!order) {
-      throw new Error("Orden no encontrada");
-    }
-    if (order.paymentStatus === "paid" || order.paymentStatus === "PAID") {
-      throw new Error("Esta orden ya se encuentra pagada");
-    }
-    if (order.status === "cancelado" || order.status === "cancelled") {
-      throw new Error("Esta orden fue cancelada y no puede ser procesada");
-    }
-    const { token: sdkToken, apiKey, environment } = await this.getSdkToken(tenantId);
-    const config = await getTenantPaymentConfigRaw(tenantId);
-    const baseUrl = this.getBaseUrl(environment);
-    const nameParts = (order.customerName || "Cliente").trim().split(/\s+/);
-    const firstName = nameParts[0] || "Cliente";
-    const lastName = nameParts.slice(1).join(" ") || firstName;
-    const cleanPhone = (order.customerPhone || "88888888").replace(/\D/g, "") || "88888888";
-    const appUrl = (env.APP_URL || "https://betico.tech").replace(/\/$/, "");
-    const paymentPayload = {
-      key: apiKey,
-      amount: Number(order.total).toFixed(2),
-      currency: (order.currency || "CRC").toUpperCase(),
-      billToFirstName: firstName,
-      billToLastName: lastName,
-      billToEmail: order.customerEmail || "cliente@betico.cr",
-      billToAddress: order.customerAddress || "Costa Rica",
-      billToAddress2: "N/A",
-      billToCity: "San Jose",
-      billToState: "SJ",
-      billToZip: "10101",
-      billToCountry: "CR",
-      billToTelephone: cleanPhone,
-      orderNumber: `ORD-${order.orderNumber}`,
-      redirect: `${appUrl}/order/success/${order.id}`,
-      callback: `${appUrl}/api/webhooks/tilopay`
-    };
-    const paymentRes = await fetch(`${baseUrl}/processPayment`, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${sdkToken}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(paymentPayload)
-    });
-    const paymentData = await paymentRes.json().catch(() => ({}));
-    if (!paymentRes.ok || !paymentData.url) {
-      console.error("[TilopayProcessPayment] Fall\xF3 la creaci\xF3n de pasarela:", paymentData);
-      throw new Error(paymentData.message || paymentData.error || "No fue posible generar el enlace de pago con Tilopay");
-    }
-    return {
-      orderId: order.id,
-      orderNumber: order.orderNumber,
-      amount: Number(order.total),
-      currency: order.currency || "CRC",
-      paymentUrl: paymentData.url,
-      sdkToken,
-      apiKey,
-      environment,
-      customerName: order.customerName,
-      customerEmail: order.customerEmail,
-      customerPhone: order.customerPhone,
-      captureMode: config.captureMode || "IMMEDIATE"
-    };
-  }
-};
-
-// src/server/routes/storefront.routes.ts
 var router16 = Router16();
 router16.get("/:slug", async (req, res) => {
   try {
@@ -8904,13 +9153,13 @@ router16.post("/:slug/checkout", async (req, res) => {
       }
     }
     let tilopaySession = null;
-    if (paymentMethod === "card" || paymentMethod === "tilopay") {
+    if (paymentMethod === "card" || paymentMethod === "tilopay" || paymentMethod === "sinpe_tilopay") {
       try {
         tilopaySession = await TilopayTenantService.createPaymentSession(tenant.id, order.id);
       } catch (sessErr) {
         console.error("[StorefrontCheckout] Error al inicializar sesi\xF3n Tilopay:", sessErr.message);
         res.status(400).json({
-          error: `No fue posible conectar con la pasarela de pagos con tarjeta: ${sessErr.message}. Por favor intenta de nuevo o selecciona otro m\xE9todo de pago.`
+          error: `No fue posible conectar con la pasarela de pagos seguros: ${sessErr.message}. Por favor intenta de nuevo o selecciona otro m\xE9todo de pago.`
         });
         return;
       }
@@ -11371,6 +11620,7 @@ var queue_routes_default = router27;
 
 // src/server/routes/courts.routes.ts
 import { Router as Router28 } from "express";
+init_tenant_payment_repo();
 init_evolution();
 init_pool();
 var router28 = Router28();
@@ -11380,7 +11630,8 @@ router28.get("/public/:slug/info", async (req, res) => {
     if (!tenant) return res.status(404).json({ error: "Negocio no encontrado" });
     const storeSettingsRes = await query(`
       SELECT store_name, store_slug, store_description, store_logo_url, store_banner_url, 
-             store_theme, sinpe_phone, sinpe_name, bank_account_info, currency, store_modules
+             store_theme, sinpe_phone, sinpe_name, accept_sinpe, accept_sinpe_tilopay,
+             bank_account_info, currency, store_modules
       FROM store_settings 
       WHERE tenant_id = $1
     `, [tenant.id]);
@@ -11391,6 +11642,8 @@ router28.get("/public/:slug/info", async (req, res) => {
       allowSeekMatch: true,
       sportTypes: ["futbol", "padel", "tenis"]
     };
+    const tilopayConfig = await getTenantPaymentConfigRaw(tenant.id);
+    const tiloAvailable = Boolean(tilopayConfig && tilopayConfig.isEnabled && tilopayConfig.apiKey);
     res.json({
       tenant: {
         id: tenant.id,
@@ -11408,7 +11661,15 @@ router28.get("/public/:slug/info", async (req, res) => {
       sinpeName: s.sinpe_name,
       bankAccountInfo: s.bank_account_info,
       currency: s.currency || "CRC",
-      courtsConfig
+      courtsConfig,
+      paymentSettings: {
+        acceptSinpe: s.accept_sinpe !== false,
+        acceptSinpeTilopay: s.accept_sinpe_tilopay === true && tiloAvailable,
+        acceptCard: tiloAvailable,
+        sinpePhone: s.sinpe_phone || "",
+        sinpeName: s.sinpe_name || "",
+        currency: s.currency || "CRC"
+      }
     });
   } catch (error) {
     console.error(error);
@@ -11444,9 +11705,28 @@ router28.post("/public/:slug/book", async (req, res) => {
     const tenant = await getTenantBySlug(req.params.slug);
     if (!tenant) return res.status(404).json({ error: "Negocio no encontrado" });
     const data = req.body;
-    const booking = await createBooking(tenant.id, data);
+    const paymentMethod = data.paymentMethod || "cash";
+    const isOnlinePayment = paymentMethod === "card" || paymentMethod === "sinpe_tilopay";
+    const booking = await createBooking(tenant.id, {
+      ...data,
+      paymentMethod,
+      paymentReference: data.paymentReference || null
+    });
+    let paymentSession = null;
+    if (isOnlinePayment && booking.totalPrice > 0) {
+      try {
+        paymentSession = await TilopayTenantService.createCourtPaymentSession(
+          tenant.id,
+          booking.id,
+          "a",
+          data.returnUrl
+        );
+      } catch (err) {
+        console.error("[Courts] Error al crear sesi\xF3n de pago Tilopay:", err?.message || err);
+      }
+    }
     if (req.io) {
-      req.io.to(`tenant_${tenant.id}`).emit("courtBooking:created", booking);
+      req.io.to(`tenant_${tenant.id}`).emit("courtBooking:created", { ...booking, paymentSession });
     }
     if (tenant.evolutionInstance && booking.teamAPhone) {
       const cleanPhone = booking.teamAPhone.replace(/\D/g, "");
@@ -11454,6 +11734,7 @@ router28.post("/public/:slug/book", async (req, res) => {
       const formattedDate = dParts.length === 3 ? `${dParts[2]}/${dParts[1]}/${dParts[0]}` : booking.date;
       const code = booking.id.substring(0, 8).toUpperCase();
       const timeShort = booking.time.substring(0, 5);
+      const payText = paymentMethod === "card" ? "Tarjeta D\xE9bito/Cr\xE9dito" : paymentMethod === "sinpe_tilopay" ? "SINPE M\xF3vil Verificado" : paymentMethod === "sinpe" ? "SINPE M\xF3vil (Manual)" : "Efectivo / En Cancha";
       let msg = "";
       if (booking.bookingMode === "seek_match") {
         const cuota = (booking.pricePerTeam || booking.totalPrice / 2).toLocaleString();
@@ -11468,6 +11749,7 @@ Tu b\xFAsqueda de reto para el equipo *${booking.teamAName}* ha sido publicada e
 \u23F0 *Hora:* ${timeShort}
 \u2694\uFE0F *Nivel:* ${booking.skillLevel || "Abierto"}
 \u{1F4B0} *Tu cuota (50%):* \u20A1${cuota}
+\u{1F4B3} *M\xE9todo:* ${payText}
 
 Te notificaremos por este medio cuando un equipo rival acepte el reto. \xA1A entrenar!`;
       } else {
@@ -11481,12 +11763,17 @@ Tu reserva de cancha para el equipo *${booking.teamAName}* ha sido confirmada.
 \u{1F4C5} *Fecha:* ${formattedDate}
 \u23F0 *Hora:* ${timeShort}
 \u{1F4B0} *Total a pagar:* \u20A1${booking.totalPrice.toLocaleString()}
+\u{1F4B3} *M\xE9todo:* ${payText}
 
 \xA1Los esperamos en la cancha!`;
       }
       await sendMessage(tenant.evolutionInstance, `${cleanPhone}@s.whatsapp.net`, msg).catch(console.error);
     }
-    res.status(201).json(booking);
+    res.status(201).json({
+      ...booking,
+      paymentSession,
+      paymentUrl: paymentSession?.paymentUrl || null
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Error al crear reserva" });
@@ -11508,10 +11795,25 @@ router28.post("/public/:slug/join-match/:bookingId", async (req, res) => {
     const tenant = await getTenantBySlug(req.params.slug);
     if (!tenant) return res.status(404).json({ error: "Negocio no encontrado" });
     const { bookingId } = req.params;
+    const paymentMethod = req.body.paymentMethod || "cash";
+    const isOnlinePayment = paymentMethod === "card" || paymentMethod === "sinpe_tilopay";
     const booking = await joinMatch(bookingId, tenant.id, req.body);
     if (!booking) return res.status(404).json({ error: "Match no encontrado" });
+    let paymentSession = null;
+    if (isOnlinePayment) {
+      try {
+        paymentSession = await TilopayTenantService.createCourtPaymentSession(
+          tenant.id,
+          booking.id,
+          "b",
+          req.body.returnUrl
+        );
+      } catch (err) {
+        console.error("[Courts] Error al crear sesi\xF3n de pago Tilopay para Equipo B:", err?.message || err);
+      }
+    }
     if (req.io) {
-      req.io.to(`tenant_${tenant.id}`).emit("courtBooking:matched", booking);
+      req.io.to(`tenant_${tenant.id}`).emit("courtBooking:matched", { ...booking, paymentSession });
     }
     if (tenant.evolutionInstance) {
       const dParts = booking.date.split("-");
@@ -11519,6 +11821,7 @@ router28.post("/public/:slug/join-match/:bookingId", async (req, res) => {
       const code = booking.id.substring(0, 8).toUpperCase();
       const timeShort = booking.time.substring(0, 5);
       const cuota = (booking.pricePerTeam || booking.totalPrice / 2).toLocaleString();
+      const payText = paymentMethod === "card" ? "Tarjeta D\xE9bito/Cr\xE9dito" : paymentMethod === "sinpe_tilopay" ? "SINPE M\xF3vil Verificado" : paymentMethod === "sinpe" ? "SINPE M\xF3vil (Manual)" : "Efectivo / En Cancha";
       const msgA = `\u{1F525} *\xA1Reto Aceptado!*
 
 Hola *${booking.teamACaptain}*,
@@ -11541,6 +11844,7 @@ Tu equipo *${booking.teamBName}* jugar\xE1 contra *${booking.teamAName}* (Capit\
 \u{1F4C5} *Fecha:* ${formattedDate}
 \u23F0 *Hora:* ${timeShort}
 \u{1F4B0} *Tu cuota:* \u20A1${cuota}
+\u{1F4B3} *M\xE9todo:* ${payText}
 
 \xA1Prep\xE1rense para el partido!`;
       const cleanA = booking.teamAPhone.replace(/\D/g, "");
@@ -11548,10 +11852,31 @@ Tu equipo *${booking.teamBName}* jugar\xE1 contra *${booking.teamAName}* (Capit\
       if (cleanA) await sendMessage(tenant.evolutionInstance, `${cleanA}@s.whatsapp.net`, msgA).catch(console.error);
       if (cleanB) await sendMessage(tenant.evolutionInstance, `${cleanB}@s.whatsapp.net`, msgB).catch(console.error);
     }
-    res.json(booking);
+    res.json({
+      ...booking,
+      paymentSession,
+      paymentUrl: paymentSession?.paymentUrl || null
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Error al unirse al partido" });
+  }
+});
+router28.post("/public/:slug/pay/:bookingId", async (req, res) => {
+  try {
+    const tenant = await getTenantBySlug(req.params.slug);
+    if (!tenant) return res.status(404).json({ error: "Negocio no encontrado" });
+    const team = req.body.team === "b" ? "b" : "a";
+    const session = await TilopayTenantService.createCourtPaymentSession(
+      tenant.id,
+      req.params.bookingId,
+      team,
+      req.body.returnUrl
+    );
+    res.json(session);
+  } catch (error) {
+    console.error("[Courts] Error al generar sesi\xF3n de pago:", error);
+    res.status(400).json({ error: error.message || "Error al generar sesi\xF3n de pago" });
   }
 });
 router28.use(authenticateToken);
@@ -11784,6 +12109,7 @@ var courts_routes_default = router28;
 // src/server/routes/tilopay-webhook.routes.ts
 init_pool();
 import { Router as Router29 } from "express";
+init_evolution();
 var router29 = Router29();
 router29.post("/", async (req, res) => {
   res.status(200).json({ received: true, timestamp: (/* @__PURE__ */ new Date()).toISOString() });
@@ -11795,10 +12121,110 @@ router29.post("/", async (req, res) => {
       console.warn("[TilopayWebhook] Webhook omitido: payload no contiene identificador de orden v\xE1lido.");
       return;
     }
-    const cleanOrderId = String(rawOrderId).replace(/^#?ORD-?/i, "").trim();
+    const orderStr = String(rawOrderId).trim();
     const resultCode = String(payload.result_code || payload.result || payload.code || "");
     const status = String(payload.status || "").toLowerCase();
     const isApproved = resultCode === "1" || resultCode === "00" || status === "approved" || status === "success" || status === "paid" || payload.approved === true;
+    const transactionId = String(payload.transaction_id || payload.transactionId || payload.id || `tilo_${Date.now()}`);
+    const authCode = String(payload.auth_code || payload.authCode || payload.authorization || "");
+    const isSinpe = String(payload.payment_type || payload.type || payload.method || "").toLowerCase().includes("sinpe");
+    const paymentMethod = isSinpe ? "sinpe_tilopay" : "card";
+    const paymentLabel = isSinpe ? "SINPE M\xF3vil Verificado" : "Tarjeta D\xE9bito/Cr\xE9dito";
+    if (orderStr.startsWith("APT-")) {
+      const cleanAptId = orderStr.replace(/^APT-/i, "").trim();
+      const apt = await getAppointmentById(cleanAptId);
+      if (!apt) {
+        console.warn(`[TilopayWebhook] No se encontr\xF3 cita en BD para ID: ${cleanAptId}`);
+        return;
+      }
+      if (isApproved) {
+        console.log(`[TilopayWebhook] Pago aprobado para cita ${apt.id} (${apt.name} - ${apt.service})`);
+        const updatedApt = await updateAppointmentPayment(apt.id, {
+          paymentStatus: "paid",
+          paymentMethod,
+          paymentReference: transactionId,
+          tilopayTransactionId: transactionId,
+          tilopayAuthCode: authCode
+        });
+        if (req.io) {
+          req.io.to(`tenant_${apt.tenantId}`).emit("appointment:updated", updatedApt || { ...apt, paymentStatus: "paid", status: "confirmed" });
+        }
+        try {
+          const tenant = await getTenantById(apt.tenantId);
+          if (tenant?.evolutionInstance && apt.whatsapp) {
+            const cleanPhone = apt.whatsapp.replace(/\D/g, "");
+            const msg = `\u2705 *\xA1Pago Confirmado!* (${paymentLabel})
+
+Hola *${apt.name}*, tu cita en *${tenant.name}* ha sido confirmada con \xE9xito.
+
+\u{1F4C5} *Fecha:* ${apt.date}
+\u23F0 *Hora:* ${apt.time}
+\u{1F4BC} *Servicio:* ${apt.service}
+\u{1F4B0} *Monto Pagado:* \u20A1${Number(apt.amount).toLocaleString("es-CR")}
+\u{1F516} *Comprobante:* #${transactionId}
+
+\xA1Te esperamos! \u2B50`;
+            await sendMessage(tenant.evolutionInstance, cleanPhone, msg);
+          }
+        } catch (msgErr) {
+          console.error("[TilopayWebhook] Error al enviar WhatsApp de cita confirmada:", msgErr);
+        }
+      } else {
+        console.log(`[TilopayWebhook] Pago fallido para cita ${apt.id}.`);
+        await updateAppointmentPayment(apt.id, { paymentStatus: "failed" });
+        if (req.io) {
+          req.io.to(`tenant_${apt.tenantId}`).emit("appointment:updated", { ...apt, paymentStatus: "failed" });
+        }
+      }
+      return;
+    }
+    if (orderStr.startsWith("CRT-")) {
+      const match = orderStr.match(/^CRT-([AB])-(.+)$/i);
+      const team = match ? match[1].toLowerCase() : "a";
+      const cleanBookingId = match ? match[2].trim() : orderStr.replace(/^CRT-/i, "").trim();
+      const booking = await getBookingById(cleanBookingId);
+      if (!booking) {
+        console.warn(`[TilopayWebhook] No se encontr\xF3 reserva de cancha para ID: ${cleanBookingId}`);
+        return;
+      }
+      if (isApproved) {
+        console.log(`[TilopayWebhook] Pago aprobado para cancha ${booking.id} (Equipo ${team.toUpperCase()})`);
+        const updatedBooking = await updateCourtBookingPayment(booking.id, team, {
+          tilopayTxId: transactionId,
+          tilopayAuth: authCode,
+          paymentMethod,
+          paymentReference: transactionId
+        });
+        if (req.io) {
+          req.io.to(`tenant_${booking.tenantId}`).emit("court_booking:updated", updatedBooking || booking);
+        }
+        try {
+          const tenant = await getTenantById(booking.tenantId);
+          const captainPhone = team === "b" ? booking.teamBPhone : booking.teamAPhone;
+          const captainName = team === "b" ? booking.teamBCaptain || booking.teamBName || "Equipo B" : booking.teamACaptain || booking.teamAName || "Equipo A";
+          if (tenant?.evolutionInstance && captainPhone) {
+            const cleanPhone = captainPhone.replace(/\D/g, "");
+            const amountPaid = team === "b" ? booking.pricePerTeam || booking.totalPrice / 2 : booking.pricePerTeam || booking.totalPrice;
+            const msg = `\u26BD *\xA1Pago de Cancha Confirmado!* (${paymentLabel})
+
+Hola *${captainName}*, el pago para la reserva de cancha ha sido confirmado con \xE9xito.
+
+\u{1F3DF}\uFE0F *Cancha:* ${booking.courtName || "Cancha Deportiva"}
+\u{1F4C5} *Fecha:* ${booking.date}
+\u23F0 *Hora:* ${booking.time} (${booking.durationMinutes} min)
+\u{1F4B0} *Monto Pagado:* \u20A1${Number(amountPaid).toLocaleString("es-CR")}
+\u{1F516} *Comprobante:* #${transactionId}
+
+\xA1Nos vemos en la cancha! \u{1F3C6}`;
+            await sendMessage(tenant.evolutionInstance, cleanPhone, msg);
+          }
+        } catch (msgErr) {
+          console.error("[TilopayWebhook] Error al enviar WhatsApp de cancha confirmada:", msgErr);
+        }
+      }
+      return;
+    }
+    const cleanOrderId = orderStr.replace(/^#?ORD-?/i, "").trim();
     const orderLookup = await query(`
       SELECT o.id, o.tenant_id as "tenantId", o.order_number as "orderNumber",
              o.customer_name as "customerName", o.customer_phone as "customerPhone",
@@ -11814,14 +12240,12 @@ router29.post("/", async (req, res) => {
     }
     const order = orderLookup.rows[0];
     const tenantId = order.tenantId;
-    const transactionId = String(payload.transaction_id || payload.transactionId || payload.id || `tilo_${Date.now()}`);
-    const authCode = String(payload.auth_code || payload.authCode || payload.authorization || "");
     if (isApproved) {
       console.log(`[TilopayWebhook] Procesando pago aprobado para orden #${order.orderNumber} (ID: ${order.id})`);
       const result = await executeOrderPaymentConfirmation(tenantId, order.id, {
         tilopayTransactionId: transactionId,
         tilopayAuthCode: authCode,
-        paymentMethod: "card",
+        paymentMethod,
         paymentReference: transactionId
       });
       if (!result.success) {

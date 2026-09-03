@@ -772,7 +772,7 @@ export default function Bookings() {
                     <th style={{ padding: '12px 16px' }}>Cliente</th>
                     <th style={{ padding: '12px 16px' }}>Servicio</th>
                     <th style={{ padding: '12px 16px' }}>Fecha & Hora</th>
-                    <th style={{ padding: '12px 16px' }}>Monto</th>
+                    <th style={{ padding: '12px 16px' }}>Monto & Pago</th>
                     <th style={{ padding: '12px 16px' }}>Estado</th>
                     <th style={{ padding: '12px 16px', textAlign: 'right' }}>Acciones</th>
                   </tr>
@@ -799,8 +799,27 @@ export default function Bookings() {
                         <div style={{ fontWeight: '600' }}>{formatShortDate(app.date)}</div>
                         <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{app.time}</div>
                       </td>
-                      <td style={{ padding: '12px 16px', fontWeight: '600' }}>
-                        ₡{Number(app.amount || 0).toLocaleString('es-CR')}
+                      <td style={{ padding: '12px 16px' }}>
+                        <div style={{ fontWeight: '600' }}>₡{Number(app.amount || 0).toLocaleString('es-CR')}</div>
+                        <div style={{ marginTop: '3px' }}>
+                          {app.paymentStatus === 'paid' ? (
+                            <span style={{ fontSize: '0.72rem', fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px', backgroundColor: '#dcfce7', color: '#15803d', display: 'inline-block' }}>
+                              ✅ Verificado ({app.paymentMethod === 'sinpe_tilopay' ? 'SINPE Auto' : app.paymentMethod === 'card' ? 'Tarjeta' : 'Pagado'})
+                            </span>
+                          ) : app.paymentStatus === 'proof_sent' ? (
+                            <span style={{ fontSize: '0.72rem', fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px', backgroundColor: '#fef3c7', color: '#b45309', display: 'inline-block' }}>
+                              📱 SINPE (Comprobante)
+                            </span>
+                          ) : app.paymentMethod === 'cash' ? (
+                            <span style={{ fontSize: '0.72rem', fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px', backgroundColor: '#f1f5f9', color: '#64748b', display: 'inline-block' }}>
+                              💵 En Local
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: '0.72rem', fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px', backgroundColor: '#f1f5f9', color: '#64748b', display: 'inline-block' }}>
+                              ⏳ Pendiente
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td style={{ padding: '12px 16px' }}>
                         <select
@@ -1593,6 +1612,57 @@ export default function Bookings() {
                   </div>
                 </div>
               )}
+
+              {/* Bloque de Información de Pago */}
+              <div style={{
+                padding: '12px',
+                borderRadius: '8px',
+                backgroundColor: selectedAppointment.paymentStatus === 'paid' ? '#f0fdf4' : '#f8fafc',
+                border: `1px solid ${selectedAppointment.paymentStatus === 'paid' ? '#86efac' : '#e2e8f0'}`
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--text-muted)' }}>ESTADO DEL PAGO</span>
+                  <span style={{
+                    fontSize: '0.75rem', fontWeight: 'bold', padding: '3px 8px', borderRadius: '6px',
+                    backgroundColor: selectedAppointment.paymentStatus === 'paid' ? '#dcfce7' : selectedAppointment.paymentStatus === 'proof_sent' ? '#fef3c7' : '#f1f5f9',
+                    color: selectedAppointment.paymentStatus === 'paid' ? '#15803d' : selectedAppointment.paymentStatus === 'proof_sent' ? '#b45309' : '#64748b'
+                  }}>
+                    {selectedAppointment.paymentStatus === 'paid' ? '✅ Pago Verificado' : selectedAppointment.paymentStatus === 'proof_sent' ? '📱 Comprobante Enviado' : '⏳ Pendiente de Pago'}
+                  </span>
+                </div>
+                <div style={{ fontSize: '0.85rem', color: 'var(--text)' }}>
+                  <strong>Método:</strong> {selectedAppointment.paymentMethod === 'sinpe_tilopay' ? '⚡ SINPE Móvil Automático (Tilopay)' : selectedAppointment.paymentMethod === 'card' ? '💳 Tarjeta de Crédito/Débito (Tilopay)' : selectedAppointment.paymentMethod === 'sinpe' ? '📱 SINPE Móvil (Manual)' : '💵 Efectivo / En Establecimiento'}
+                </div>
+                {selectedAppointment.tilopayTransactionId && (
+                  <div style={{ fontSize: '0.8rem', color: '#15803d', marginTop: '4px' }}>
+                    <strong>ID Transacción:</strong> #{selectedAppointment.tilopayTransactionId} {selectedAppointment.tilopayAuthCode ? `(Auth: ${selectedAppointment.tilopayAuthCode})` : ''}
+                  </div>
+                )}
+                {selectedAppointment.paymentReference && !selectedAppointment.tilopayTransactionId && (
+                  <div style={{ fontSize: '0.8rem', color: '#475569', marginTop: '4px' }}>
+                    <strong>Referencia / Comprobante:</strong> {selectedAppointment.paymentReference}
+                  </div>
+                )}
+                {selectedAppointment.paymentStatus !== 'paid' && (
+                  <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px dashed #cbd5e1', display: 'flex', gap: '8px' }}>
+                    <button
+                      onClick={async () => {
+                        try {
+                          await api.put(`/api/appointments/${selectedAppointment.id}`, { paymentStatus: 'paid', status: 'confirmed' });
+                          alert('¡Pago confirmado manualmente!');
+                          fetchAppointments();
+                          setSelectedAppointment({ ...selectedAppointment, paymentStatus: 'paid', status: 'confirmed' });
+                        } catch (e: any) {
+                          alert('Error al confirmar pago: ' + e?.message);
+                        }
+                      }}
+                      style={{ padding: '5px 10px', backgroundColor: '#15803d', color: 'white', border: 'none', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 'bold', cursor: 'pointer' }}
+                    >
+                      ✓ Marcar como Pagado
+                    </button>
+                  </div>
+                )}
+              </div>
 
               <div>
                 <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>Cambiar Estado:</span>

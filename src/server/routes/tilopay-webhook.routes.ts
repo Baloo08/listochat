@@ -2,6 +2,10 @@ import { Router, Request, Response } from 'express';
 import { query } from '../db/pool.js';
 import { executeOrderPaymentConfirmation } from '../db/orders.repo.js';
 import { emitOrderPaidEvent } from '../services/event-bus.service.js';
+import { getAppointmentById, updateAppointmentPayment } from '../db/appointments.repo.js';
+import { getBookingById, updateCourtBookingPayment } from '../db/courts.repo.js';
+import { getTenantById } from '../db/tenant.repo.js';
+import { sendMessage } from '../services/evolution.js';
 
 const router = Router();
 
@@ -9,6 +13,10 @@ const router = Router();
  * Public Webhook endpoint for Tilopay transaction notifications.
  * Mounted at /api/webhooks/tilopay.
  * Fast response (< 2s) and idempotent transaction processing.
+ * Supports Multi-Entity:
+ * - ORD-*: Orders (Store & Restaurant)
+ * - APT-*: Appointments (Citas y Reservas)
+ * - CRT-*: Court Bookings (Canchas Deportivas & Busca Rival)
  */
 router.post('/', async (req: Request, res: Response): Promise<void> => {
   // Always return immediate 200 OK so Tilopay does not time out
@@ -36,7 +44,7 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const cleanOrderId = String(rawOrderId).replace(/^#?ORD-?/i, '').trim();
+    const orderStr = String(rawOrderId).trim();
 
     // Check transaction status from Tilopay payload
     const resultCode = String(payload.result_code || payload.result || payload.code || '');
@@ -48,6 +56,108 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       status === 'success' ||
       status === 'paid' ||
       payload.approved === true;
+
+    const transactionId = String(payload.transaction_id || payload.transactionId || payload.id || `tilo_${Date.now()}`);
+    const authCode = String(payload.auth_code || payload.authCode || payload.authorization || '');
+    const isSinpe = String(payload.payment_type || payload.type || payload.method || '').toLowerCase().includes('sinpe');
+    const paymentMethod = isSinpe ? 'sinpe_tilopay' : 'card';
+    const paymentLabel = isSinpe ? 'SINPE Móvil Verificado' : 'Tarjeta Débito/Crédito';
+
+    // =========================================================================
+    // ROUTING CASE 1: CITAS / APPOINTMENTS (Prefix: APT-)
+    // =========================================================================
+    if (orderStr.startsWith('APT-')) {
+      const cleanAptId = orderStr.replace(/^APT-/i, '').trim();
+      const apt = await getAppointmentById(cleanAptId);
+      if (!apt) {
+        console.warn(`[TilopayWebhook] No se encontró cita en BD para ID: ${cleanAptId}`);
+        return;
+      }
+
+      if (isApproved) {
+        console.log(`[TilopayWebhook] Pago aprobado para cita ${apt.id} (${apt.name} - ${apt.service})`);
+        const updatedApt = await updateAppointmentPayment(apt.id, {
+          paymentStatus: 'paid',
+          paymentMethod,
+          paymentReference: transactionId,
+          tilopayTransactionId: transactionId,
+          tilopayAuthCode: authCode
+        });
+
+        if ((req as any).io) {
+          (req as any).io.to(`tenant_${apt.tenantId}`).emit('appointment:updated', updatedApt || { ...apt, paymentStatus: 'paid', status: 'confirmed' });
+        }
+
+        // Send WhatsApp confirmation to client
+        try {
+          const tenant = await getTenantById(apt.tenantId);
+          if (tenant?.evolutionInstance && apt.whatsapp) {
+            const cleanPhone = apt.whatsapp.replace(/\D/g, '');
+            const msg = `✅ *¡Pago Confirmado!* (${paymentLabel})\n\nHola *${apt.name}*, tu cita en *${tenant.name}* ha sido confirmada con éxito.\n\n📅 *Fecha:* ${apt.date}\n⏰ *Hora:* ${apt.time}\n💼 *Servicio:* ${apt.service}\n💰 *Monto Pagado:* ₡${Number(apt.amount).toLocaleString('es-CR')}\n🔖 *Comprobante:* #${transactionId}\n\n¡Te esperamos! ⭐`;
+            await sendMessage(tenant.evolutionInstance, cleanPhone, msg);
+          }
+        } catch (msgErr) {
+          console.error('[TilopayWebhook] Error al enviar WhatsApp de cita confirmada:', msgErr);
+        }
+      } else {
+        console.log(`[TilopayWebhook] Pago fallido para cita ${apt.id}.`);
+        await updateAppointmentPayment(apt.id, { paymentStatus: 'failed' });
+        if ((req as any).io) {
+          (req as any).io.to(`tenant_${apt.tenantId}`).emit('appointment:updated', { ...apt, paymentStatus: 'failed' });
+        }
+      }
+      return;
+    }
+
+    // =========================================================================
+    // ROUTING CASE 2: CANCHAS DEPORTIVAS / COURT BOOKINGS (Prefix: CRT-)
+    // =========================================================================
+    if (orderStr.startsWith('CRT-')) {
+      const match = orderStr.match(/^CRT-([AB])-(.+)$/i);
+      const team = match ? (match[1].toLowerCase() as 'a' | 'b') : 'a';
+      const cleanBookingId = match ? match[2].trim() : orderStr.replace(/^CRT-/i, '').trim();
+
+      const booking = await getBookingById(cleanBookingId);
+      if (!booking) {
+        console.warn(`[TilopayWebhook] No se encontró reserva de cancha para ID: ${cleanBookingId}`);
+        return;
+      }
+
+      if (isApproved) {
+        console.log(`[TilopayWebhook] Pago aprobado para cancha ${booking.id} (Equipo ${team.toUpperCase()})`);
+        const updatedBooking = await updateCourtBookingPayment(booking.id, team, {
+          tilopayTxId: transactionId,
+          tilopayAuth: authCode,
+          paymentMethod,
+          paymentReference: transactionId
+        });
+
+        if ((req as any).io) {
+          (req as any).io.to(`tenant_${booking.tenantId}`).emit('court_booking:updated', updatedBooking || booking);
+        }
+
+        // Send WhatsApp confirmation to team captain
+        try {
+          const tenant = await getTenantById(booking.tenantId);
+          const captainPhone = team === 'b' ? booking.teamBPhone : booking.teamAPhone;
+          const captainName = team === 'b' ? (booking.teamBCaptain || booking.teamBName || 'Equipo B') : (booking.teamACaptain || booking.teamAName || 'Equipo A');
+          if (tenant?.evolutionInstance && captainPhone) {
+            const cleanPhone = captainPhone.replace(/\D/g, '');
+            const amountPaid = team === 'b' ? (booking.pricePerTeam || booking.totalPrice / 2) : (booking.pricePerTeam || booking.totalPrice);
+            const msg = `⚽ *¡Pago de Cancha Confirmado!* (${paymentLabel})\n\nHola *${captainName}*, el pago para la reserva de cancha ha sido confirmado con éxito.\n\n🏟️ *Cancha:* ${booking.courtName || 'Cancha Deportiva'}\n📅 *Fecha:* ${booking.date}\n⏰ *Hora:* ${booking.time} (${booking.durationMinutes} min)\n💰 *Monto Pagado:* ₡${Number(amountPaid).toLocaleString('es-CR')}\n🔖 *Comprobante:* #${transactionId}\n\n¡Nos vemos en la cancha! 🏆`;
+            await sendMessage(tenant.evolutionInstance, cleanPhone, msg);
+          }
+        } catch (msgErr) {
+          console.error('[TilopayWebhook] Error al enviar WhatsApp de cancha confirmada:', msgErr);
+        }
+      }
+      return;
+    }
+
+    // =========================================================================
+    // ROUTING CASE 3: ÓRDENES DE TIENDA Y RESTAURANTE (Prefix: ORD- o ID)
+    // =========================================================================
+    const cleanOrderId = orderStr.replace(/^#?ORD-?/i, '').trim();
 
     // Resolve order in database
     const orderLookup = await query(`
@@ -68,9 +178,6 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
     const order = orderLookup.rows[0];
     const tenantId = order.tenantId;
 
-    const transactionId = String(payload.transaction_id || payload.transactionId || payload.id || `tilo_${Date.now()}`);
-    const authCode = String(payload.auth_code || payload.authCode || payload.authorization || '');
-
     if (isApproved) {
       console.log(`[TilopayWebhook] Procesando pago aprobado para orden #${order.orderNumber} (ID: ${order.id})`);
 
@@ -78,7 +185,7 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       const result = await executeOrderPaymentConfirmation(tenantId, order.id, {
         tilopayTransactionId: transactionId,
         tilopayAuthCode: authCode,
-        paymentMethod: 'card',
+        paymentMethod,
         paymentReference: transactionId
       });
 

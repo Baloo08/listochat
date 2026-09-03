@@ -7,6 +7,8 @@ import {
   getOpenMatches, joinMatch, getAvailableSlots
 } from '../db/courts.repo.js';
 import { getTenantBySlug } from '../db/tenant.repo.js';
+import { getTenantPaymentConfigRaw } from '../db/tenant-payment.repo.js';
+import { TilopayTenantService } from '../services/tilopay-tenant.service.js';
 import { sendMessage } from '../services/evolution.js';
 import { query } from '../db/pool.js';
 
@@ -24,7 +26,8 @@ router.get('/public/:slug/info', async (req, res) => {
     // Fetch store settings for theme and courtsConfig
     const storeSettingsRes = await query(`
       SELECT store_name, store_slug, store_description, store_logo_url, store_banner_url, 
-             store_theme, sinpe_phone, sinpe_name, bank_account_info, currency, store_modules
+             store_theme, sinpe_phone, sinpe_name, accept_sinpe, accept_sinpe_tilopay,
+             bank_account_info, currency, store_modules
       FROM store_settings 
       WHERE tenant_id = $1
     `, [tenant.id]);
@@ -36,6 +39,9 @@ router.get('/public/:slug/info', async (req, res) => {
       allowSeekMatch: true,
       sportTypes: ['futbol', 'padel', 'tenis']
     };
+
+    const tilopayConfig = await getTenantPaymentConfigRaw(tenant.id);
+    const tiloAvailable = Boolean(tilopayConfig && tilopayConfig.isEnabled && tilopayConfig.apiKey);
 
     res.json({
       tenant: {
@@ -54,7 +60,15 @@ router.get('/public/:slug/info', async (req, res) => {
       sinpeName: s.sinpe_name,
       bankAccountInfo: s.bank_account_info,
       currency: s.currency || 'CRC',
-      courtsConfig
+      courtsConfig,
+      paymentSettings: {
+        acceptSinpe: s.accept_sinpe !== false,
+        acceptSinpeTilopay: s.accept_sinpe_tilopay === true && tiloAvailable,
+        acceptCard: tiloAvailable,
+        sinpePhone: s.sinpe_phone || '',
+        sinpeName: s.sinpe_name || '',
+        currency: s.currency || 'CRC'
+      }
     });
   } catch (error) {
     console.error(error);
@@ -95,10 +109,31 @@ router.post('/public/:slug/book', async (req, res) => {
     if (!tenant) return res.status(404).json({ error: 'Negocio no encontrado' });
     
     const data = req.body;
-    const booking = await createBooking(tenant.id, data);
+    const paymentMethod = data.paymentMethod || 'cash';
+    const isOnlinePayment = paymentMethod === 'card' || paymentMethod === 'sinpe_tilopay';
+
+    const booking = await createBooking(tenant.id, {
+      ...data,
+      paymentMethod,
+      paymentReference: data.paymentReference || null
+    });
+
+    let paymentSession: any = null;
+    if (isOnlinePayment && booking.totalPrice > 0) {
+      try {
+        paymentSession = await TilopayTenantService.createCourtPaymentSession(
+          tenant.id,
+          booking.id,
+          'a',
+          data.returnUrl
+        );
+      } catch (err: any) {
+        console.error('[Courts] Error al crear sesión de pago Tilopay:', err?.message || err);
+      }
+    }
     
     if ((req as any).io) {
-      (req as any).io.to(`tenant_${tenant.id}`).emit('courtBooking:created', booking);
+      (req as any).io.to(`tenant_${tenant.id}`).emit('courtBooking:created', { ...booking, paymentSession });
     }
 
     // WhatsApp Notification via Evolution API
@@ -108,19 +143,24 @@ router.post('/public/:slug/book', async (req, res) => {
       const formattedDate = dParts.length === 3 ? `${dParts[2]}/${dParts[1]}/${dParts[0]}` : booking.date;
       const code = booking.id.substring(0, 8).toUpperCase();
       const timeShort = booking.time.substring(0, 5);
+      const payText = paymentMethod === 'card' ? 'Tarjeta Débito/Crédito' : paymentMethod === 'sinpe_tilopay' ? 'SINPE Móvil Verificado' : paymentMethod === 'sinpe' ? 'SINPE Móvil (Manual)' : 'Efectivo / En Cancha';
 
       let msg = '';
       if (booking.bookingMode === 'seek_match') {
         const cuota = (booking.pricePerTeam || (booking.totalPrice / 2)).toLocaleString();
-        msg = `⚽ *¡Reto Publicado con Éxito!*\n\nHola *${booking.teamACaptain}*,\nTu búsqueda de reto para el equipo *${booking.teamAName}* ha sido publicada en el portal.\n\n📋 *Código:* #RES-${code}\n🏆 *Cancha:* ${booking.courtName || 'Cancha Deportiva'}\n📅 *Fecha:* ${formattedDate}\n⏰ *Hora:* ${timeShort}\n⚔️ *Nivel:* ${booking.skillLevel || 'Abierto'}\n💰 *Tu cuota (50%):* ₡${cuota}\n\nTe notificaremos por este medio cuando un equipo rival acepte el reto. ¡A entrenar!`;
+        msg = `⚽ *¡Reto Publicado con Éxito!*\n\nHola *${booking.teamACaptain}*,\nTu búsqueda de reto para el equipo *${booking.teamAName}* ha sido publicada en el portal.\n\n📋 *Código:* #RES-${code}\n🏆 *Cancha:* ${booking.courtName || 'Cancha Deportiva'}\n📅 *Fecha:* ${formattedDate}\n⏰ *Hora:* ${timeShort}\n⚔️ *Nivel:* ${booking.skillLevel || 'Abierto'}\n💰 *Tu cuota (50%):* ₡${cuota}\n💳 *Método:* ${payText}\n\nTe notificaremos por este medio cuando un equipo rival acepte el reto. ¡A entrenar!`;
       } else {
-        msg = `⚽ *¡Reserva Confirmada!*\n\nHola *${booking.teamACaptain}*,\nTu reserva de cancha para el equipo *${booking.teamAName}* ha sido confirmada.\n\n📋 *Código:* #RES-${code}\n🏆 *Cancha:* ${booking.courtName || 'Cancha Deportiva'}\n📅 *Fecha:* ${formattedDate}\n⏰ *Hora:* ${timeShort}\n💰 *Total a pagar:* ₡${booking.totalPrice.toLocaleString()}\n\n¡Los esperamos en la cancha!`;
+        msg = `⚽ *¡Reserva Confirmada!*\n\nHola *${booking.teamACaptain}*,\nTu reserva de cancha para el equipo *${booking.teamAName}* ha sido confirmada.\n\n📋 *Código:* #RES-${code}\n🏆 *Cancha:* ${booking.courtName || 'Cancha Deportiva'}\n📅 *Fecha:* ${formattedDate}\n⏰ *Hora:* ${timeShort}\n💰 *Total a pagar:* ₡${booking.totalPrice.toLocaleString()}\n💳 *Método:* ${payText}\n\n¡Los esperamos en la cancha!`;
       }
 
       await sendMessage(tenant.evolutionInstance, `${cleanPhone}@s.whatsapp.net`, msg).catch(console.error);
     }
     
-    res.status(201).json(booking);
+    res.status(201).json({
+      ...booking,
+      paymentSession,
+      paymentUrl: paymentSession?.paymentUrl || null
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Error al crear reserva' });
@@ -145,11 +185,28 @@ router.post('/public/:slug/join-match/:bookingId', async (req, res) => {
     if (!tenant) return res.status(404).json({ error: 'Negocio no encontrado' });
     const { bookingId } = req.params;
     
+    const paymentMethod = req.body.paymentMethod || 'cash';
+    const isOnlinePayment = paymentMethod === 'card' || paymentMethod === 'sinpe_tilopay';
+
     const booking = await joinMatch(bookingId, tenant.id, req.body);
     if (!booking) return res.status(404).json({ error: 'Match no encontrado' });
 
+    let paymentSession: any = null;
+    if (isOnlinePayment) {
+      try {
+        paymentSession = await TilopayTenantService.createCourtPaymentSession(
+          tenant.id,
+          booking.id,
+          'b',
+          req.body.returnUrl
+        );
+      } catch (err: any) {
+        console.error('[Courts] Error al crear sesión de pago Tilopay para Equipo B:', err?.message || err);
+      }
+    }
+
     if ((req as any).io) {
-      (req as any).io.to(`tenant_${tenant.id}`).emit('courtBooking:matched', booking);
+      (req as any).io.to(`tenant_${tenant.id}`).emit('courtBooking:matched', { ...booking, paymentSession });
     }
 
     if (tenant.evolutionInstance) {
@@ -158,9 +215,10 @@ router.post('/public/:slug/join-match/:bookingId', async (req, res) => {
       const code = booking.id.substring(0, 8).toUpperCase();
       const timeShort = booking.time.substring(0, 5);
       const cuota = (booking.pricePerTeam || (booking.totalPrice / 2)).toLocaleString();
+      const payText = paymentMethod === 'card' ? 'Tarjeta Débito/Crédito' : paymentMethod === 'sinpe_tilopay' ? 'SINPE Móvil Verificado' : paymentMethod === 'sinpe' ? 'SINPE Móvil (Manual)' : 'Efectivo / En Cancha';
 
       const msgA = `🔥 *¡Reto Aceptado!*\n\nHola *${booking.teamACaptain}*,\n¡Tu reto ya tiene rival! El equipo *${booking.teamBName}* (Capitán: *${booking.teamBCaptain}*, Tel: ${booking.teamBPhone}) ha aceptado el partido.\n\n📋 *Código:* #RES-${code}\n🏆 *Cancha:* ${booking.courtName || 'Cancha Deportiva'}\n📅 *Fecha:* ${formattedDate}\n⏰ *Hora:* ${timeShort}\n💰 *Cuota por equipo:* ₡${cuota}\n\n¡Nos vemos en la cancha!`;
-      const msgB = `🔥 *¡Te has unido al partido!*\n\nHola *${booking.teamBCaptain}*,\nTu equipo *${booking.teamBName}* jugará contra *${booking.teamAName}* (Capitán: *${booking.teamACaptain}*, Tel: ${booking.teamAPhone}).\n\n📋 *Código:* #RES-${code}\n🏆 *Cancha:* ${booking.courtName || 'Cancha Deportiva'}\n📅 *Fecha:* ${formattedDate}\n⏰ *Hora:* ${timeShort}\n💰 *Tu cuota:* ₡${cuota}\n\n¡Prepárense para el partido!`;
+      const msgB = `🔥 *¡Te has unido al partido!*\n\nHola *${booking.teamBCaptain}*,\nTu equipo *${booking.teamBName}* jugará contra *${booking.teamAName}* (Capitán: *${booking.teamACaptain}*, Tel: ${booking.teamAPhone}).\n\n📋 *Código:* #RES-${code}\n🏆 *Cancha:* ${booking.courtName || 'Cancha Deportiva'}\n📅 *Fecha:* ${formattedDate}\n⏰ *Hora:* ${timeShort}\n💰 *Tu cuota:* ₡${cuota}\n💳 *Método:* ${payText}\n\n¡Prepárense para el partido!`;
       
       const cleanA = booking.teamAPhone.replace(/\D/g, '');
       const cleanB = booking.teamBPhone?.replace(/\D/g, '');
@@ -168,10 +226,33 @@ router.post('/public/:slug/join-match/:bookingId', async (req, res) => {
       if (cleanB) await sendMessage(tenant.evolutionInstance, `${cleanB}@s.whatsapp.net`, msgB).catch(console.error);
     }
 
-    res.json(booking);
+    res.json({
+      ...booking,
+      paymentSession,
+      paymentUrl: paymentSession?.paymentUrl || null
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Error al unirse al partido' });
+  }
+});
+
+router.post('/public/:slug/pay/:bookingId', async (req, res) => {
+  try {
+    const tenant = await getTenantBySlug(req.params.slug);
+    if (!tenant) return res.status(404).json({ error: 'Negocio no encontrado' });
+
+    const team = (req.body.team === 'b' ? 'b' : 'a') as 'a' | 'b';
+    const session = await TilopayTenantService.createCourtPaymentSession(
+      tenant.id,
+      req.params.bookingId,
+      team,
+      req.body.returnUrl
+    );
+    res.json(session);
+  } catch (error: any) {
+    console.error('[Courts] Error al generar sesión de pago:', error);
+    res.status(400).json({ error: error.message || 'Error al generar sesión de pago' });
   }
 });
 

@@ -130,7 +130,7 @@ export default function StorefrontView({ slug }: StorefrontProps) {
   const [customerGps, setCustomerGps] = useState<{ lat?: number; lng?: number; mapsUrl?: string }>({});
   const [fetchingGps, setFetchingGps] = useState(false);
   const [calculatedKm, setCalculatedKm] = useState<number | null>(null);
-  const [paymentMethod, setPaymentMethod] = useState<'sinpe' | 'cash' | 'transfer' | 'card'>('sinpe');
+  const [paymentMethod, setPaymentMethod] = useState<'sinpe' | 'cash' | 'transfer' | 'card' | 'sinpe_tilopay'>('sinpe');
   const [activeTilopaySession, setActiveTilopaySession] = useState<any | null>(null);
   const [paymentReference, setPaymentReference] = useState('');
   const [paymentProofUrl, setPaymentProofUrl] = useState('');
@@ -1216,9 +1216,31 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                             💳 Tarjeta (Tilopay)
                           </button>
                         )}
+
+                        {(store as any).tilopayEnabled && (store as any).acceptSinpeTilopay && (
+                          <button
+                            type="button"
+                            onClick={() => setPaymentMethod('sinpe_tilopay')}
+                            style={{
+                              padding: '10px 8px', borderRadius: '8px',
+                              border: paymentMethod === 'sinpe_tilopay' ? `2px solid #059669` : (isDark ? '1px solid #475569' : '1px solid #cbd5e1'),
+                              backgroundColor: paymentMethod === 'sinpe_tilopay' ? (isDark ? 'rgba(5, 150, 105, 0.2)' : '#ecfdf5') : (isDark ? '#0f172a' : '#ffffff'),
+                              color: paymentMethod === 'sinpe_tilopay' ? '#059669' : titleColor,
+                              fontWeight: paymentMethod === 'sinpe_tilopay' ? '800' : '600',
+                              fontSize: '0.82rem', cursor: 'pointer', textAlign: 'center', transition: 'all 0.15s'
+                            }}
+                          >
+                            ⚡ SINPE Auto (Tilopay)
+                          </button>
+                        )}
                       </div>
 
                       {/* DETALLE SEGÚN MÉTODO DE PAGO */}
+                      {paymentMethod === 'sinpe_tilopay' && (
+                        <div style={{ backgroundColor: isDark ? '#0f172a' : '#f0fdf4', padding: '12px', borderRadius: '8px', border: isDark ? '1px solid #166534' : '1px solid #bbf7d0', fontSize: '0.82rem', color: isDark ? '#86efac' : '#166534', lineHeight: '1.5' }}>
+                          ⚡ <strong>SINPE Móvil Automático (Verificación Inmediata):</strong> Al presionar "Confirmar Pedido", se procesará tu pago a través de Tilopay con comprobación instantánea sin esperas ni demoras.
+                        </div>
+                      )}
                       {paymentMethod === 'card' && (
                         <div style={{ backgroundColor: isDark ? '#0f172a' : '#f0fdf4', padding: '12px', borderRadius: '8px', border: isDark ? '1px solid #166534' : '1px solid #bbf7d0', fontSize: '0.82rem', color: isDark ? '#86efac' : '#166534', lineHeight: '1.5' }}>
                           🔒 <strong>Pago Seguro con Tarjeta (Tilopay):</strong> Al presionar "Confirmar Pedido", se desplegará el formulario seguro para ingresar tu tarjeta de crédito o débito con autenticación bancaria 3D Secure.

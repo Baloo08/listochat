@@ -275,13 +275,17 @@ export default function KDSFullscreen() {
                               <div style={{ fontSize: '1rem', fontWeight: 'bold', color: '#38bdf8' }}>
                                 #ORD-{order.orderNumber}
                               </div>
-                              {order.paymentMethod === 'card' || order.paymentMethod === 'tilopay' ? (
+                              {order.paymentMethod === 'sinpe_tilopay' ? (
+                                <span style={{ fontSize: '0.68rem', padding: '1px 5px', backgroundColor: 'rgba(52, 211, 153, 0.25)', color: '#34d399', borderRadius: '4px', fontWeight: 'bold' }}>
+                                  ⚡ SINPE Auto {order.paymentStatus === 'paid' ? '✓ Verificado' : '⏳'}
+                                </span>
+                              ) : order.paymentMethod === 'card' || order.paymentMethod === 'tilopay' ? (
                                 <span style={{ fontSize: '0.68rem', padding: '1px 5px', backgroundColor: 'rgba(52, 211, 153, 0.2)', color: '#34d399', borderRadius: '4px', fontWeight: 'bold' }}>
                                   💳 Tarjeta {order.paymentStatus === 'paid' ? '✓ Pagado' : '⏳'}
                                 </span>
                               ) : order.paymentMethod === 'sinpe' ? (
-                                <span style={{ fontSize: '0.68rem', padding: '1px 5px', backgroundColor: 'rgba(56, 189, 248, 0.2)', color: '#34d399', borderRadius: '4px', fontWeight: 'bold' }}>
-                                  📱 SINPE {order.paymentStatus === 'proof_sent' ? '✓' : ''}
+                                <span style={{ fontSize: '0.68rem', padding: '1px 5px', backgroundColor: 'rgba(56, 189, 248, 0.2)', color: '#38bdf8', borderRadius: '4px', fontWeight: 'bold' }}>
+                                  📱 SINPE {order.paymentStatus === 'paid' ? '✓ Pagado' : order.paymentStatus === 'proof_sent' ? '✓ Comp.' : ''}
                                 </span>
                               ) : order.paymentMethod === 'transfer' ? (
                                 <span style={{ fontSize: '0.68rem', padding: '1px 5px', backgroundColor: 'rgba(168, 85, 247, 0.2)', color: '#c084fc', borderRadius: '4px', fontWeight: 'bold' }}>
@@ -418,13 +422,15 @@ export default function KDSFullscreen() {
               )}
               <div style={{ fontSize: '0.85rem', color: '#cbd5e1' }}>
                 <strong>Pago:</strong>{' '}
-                {selectedOrder.paymentMethod === 'card' || selectedOrder.paymentMethod === 'tilopay'
-                  ? '💳 Tarjeta (Tilopay)'
-                  : selectedOrder.paymentMethod === 'sinpe'
-                    ? '📱 SINPE Móvil'
-                    : selectedOrder.paymentMethod === 'transfer'
-                      ? '🏦 Transferencia'
-                      : '💵 Contra Entrega'}{' '}
+                {selectedOrder.paymentMethod === 'sinpe_tilopay'
+                  ? '⚡ SINPE Móvil Automático (Tilopay)'
+                  : selectedOrder.paymentMethod === 'card' || selectedOrder.paymentMethod === 'tilopay'
+                    ? '💳 Tarjeta (Tilopay)'
+                    : selectedOrder.paymentMethod === 'sinpe'
+                      ? '📱 SINPE Móvil Manual'
+                      : selectedOrder.paymentMethod === 'transfer'
+                        ? '🏦 Transferencia'
+                        : '💵 Contra Entrega'}{' '}
                 ({selectedOrder.paymentStatus === 'paid' ? '✅ Pagado' : '💰 Pendiente'})
               </div>
             </div>

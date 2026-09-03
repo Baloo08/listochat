@@ -1,5 +1,7 @@
 import { getTenantPaymentConfigRaw } from '../db/tenant-payment.repo.js';
 import { getOrderById } from '../db/orders.repo.js';
+import { getAppointmentById } from '../db/appointments.repo.js';
+import { getBookingById } from '../db/courts.repo.js';
 import { env } from '../config/env.js';
 
 interface TokenCacheEntry {
@@ -215,6 +217,175 @@ export class TilopayTenantService {
       customerEmail: order.customerEmail,
       customerPhone: order.customerPhone,
       captureMode: config.captureMode || 'IMMEDIATE'
+    };
+  }
+
+  /**
+   * Generates payment session for an Appointment / Cita.
+   */
+  static async createAppointmentPaymentSession(
+    tenantId: string,
+    appointmentId: string,
+    returnUrl?: string
+  ): Promise<{
+    appointmentId: string;
+    amount: number;
+    currency: string;
+    paymentUrl: string;
+    sdkToken: string;
+    apiKey: string;
+    environment: 'SANDBOX' | 'PRODUCTION';
+    customerName: string;
+    customerPhone: string;
+  }> {
+    const apt = await getAppointmentById(appointmentId, tenantId);
+    if (!apt) throw new Error('Cita no encontrada');
+    if (apt.paymentStatus === 'paid') throw new Error('Esta cita ya se encuentra pagada');
+
+    const { token: sdkToken, apiKey, environment } = await this.getSdkToken(tenantId);
+    const baseUrl = this.getBaseUrl(environment);
+
+    const nameParts = (apt.name || 'Cliente').trim().split(/\s+/);
+    const firstName = nameParts[0] || 'Cliente';
+    const lastName = nameParts.slice(1).join(' ') || firstName;
+    const cleanPhone = (apt.whatsapp || '88888888').replace(/\D/g, '') || '88888888';
+    const appUrl = (env.APP_URL || 'https://betico.tech').replace(/\/$/, '');
+
+    const paymentPayload = {
+      key: apiKey,
+      amount: Number(apt.amount).toFixed(2),
+      currency: 'CRC',
+      billToFirstName: firstName,
+      billToLastName: lastName,
+      billToEmail: 'cliente@betico.cr',
+      billToAddress: 'Costa Rica',
+      billToAddress2: 'N/A',
+      billToCity: 'San Jose',
+      billToState: 'SJ',
+      billToZip: '10101',
+      billToCountry: 'CR',
+      billToTelephone: cleanPhone,
+      orderNumber: `APT-${apt.id}`,
+      redirect: returnUrl || `${appUrl}/reservas/confirmacion/${apt.id}`,
+      callback: `${appUrl}/api/webhooks/tilopay`
+    };
+
+    const paymentRes = await fetch(`${baseUrl}/processPayment`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${sdkToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(paymentPayload)
+    });
+
+    const paymentData = await paymentRes.json().catch(() => ({}));
+    if (!paymentRes.ok || !paymentData.url) {
+      console.error('[TilopayAppointmentPayment] Falló creación de pago:', paymentData);
+      throw new Error(paymentData.message || paymentData.error || 'No fue posible generar el enlace de pago con Tilopay');
+    }
+
+    return {
+      appointmentId: apt.id,
+      amount: Number(apt.amount),
+      currency: 'CRC',
+      paymentUrl: paymentData.url,
+      sdkToken,
+      apiKey,
+      environment,
+      customerName: apt.name,
+      customerPhone: apt.whatsapp
+    };
+  }
+
+  /**
+   * Generates payment session for a Court Booking (Full court or Team A / Team B in Busca Rival).
+   */
+  static async createCourtPaymentSession(
+    tenantId: string,
+    bookingId: string,
+    team: 'a' | 'b' = 'a',
+    returnUrl?: string
+  ): Promise<{
+    bookingId: string;
+    team: 'a' | 'b';
+    amount: number;
+    currency: string;
+    paymentUrl: string;
+    sdkToken: string;
+    apiKey: string;
+    environment: 'SANDBOX' | 'PRODUCTION';
+    customerName: string;
+    customerPhone: string;
+  }> {
+    const booking = await getBookingById(bookingId, tenantId);
+    if (!booking) throw new Error('Reserva de cancha no encontrada');
+
+    const isTeamB = team === 'b';
+    if (isTeamB && booking.teamBPaid) throw new Error('El equipo B ya realizó el pago de su cupo');
+    if (!isTeamB && booking.teamAPaid) throw new Error('El equipo A ya realizó el pago');
+
+    const amount = isTeamB
+      ? (booking.pricePerTeam || booking.totalPrice / 2)
+      : (booking.bookingMode === 'split_match' && booking.pricePerTeam ? booking.pricePerTeam : booking.totalPrice);
+
+    const customerName = isTeamB ? (booking.teamBCaptain || booking.teamBName || 'Equipo B') : (booking.teamACaptain || booking.teamAName || 'Equipo A');
+    const customerPhone = isTeamB ? (booking.teamBPhone || '88888888') : (booking.teamAPhone || '88888888');
+
+    const { token: sdkToken, apiKey, environment } = await this.getSdkToken(tenantId);
+    const baseUrl = this.getBaseUrl(environment);
+
+    const nameParts = customerName.trim().split(/\s+/);
+    const firstName = nameParts[0] || 'Capitán';
+    const lastName = nameParts.slice(1).join(' ') || firstName;
+    const cleanPhone = customerPhone.replace(/\D/g, '') || '88888888';
+    const appUrl = (env.APP_URL || 'https://betico.tech').replace(/\/$/, '');
+
+    const paymentPayload = {
+      key: apiKey,
+      amount: Number(amount).toFixed(2),
+      currency: 'CRC',
+      billToFirstName: firstName,
+      billToLastName: lastName,
+      billToEmail: 'cliente@betico.cr',
+      billToAddress: 'Costa Rica',
+      billToAddress2: 'N/A',
+      billToCity: 'San Jose',
+      billToState: 'SJ',
+      billToZip: '10101',
+      billToCountry: 'CR',
+      billToTelephone: cleanPhone,
+      orderNumber: `CRT-${team.toUpperCase()}-${booking.id}`,
+      redirect: returnUrl || `${appUrl}/canchas/confirmacion/${booking.id}`,
+      callback: `${appUrl}/api/webhooks/tilopay`
+    };
+
+    const paymentRes = await fetch(`${baseUrl}/processPayment`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${sdkToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(paymentPayload)
+    });
+
+    const paymentData = await paymentRes.json().catch(() => ({}));
+    if (!paymentRes.ok || !paymentData.url) {
+      console.error('[TilopayCourtPayment] Falló creación de pago:', paymentData);
+      throw new Error(paymentData.message || paymentData.error || 'No fue posible generar el enlace de pago para la cancha');
+    }
+
+    return {
+      bookingId: booking.id,
+      team,
+      amount: Number(amount),
+      currency: 'CRC',
+      paymentUrl: paymentData.url,
+      sdkToken,
+      apiKey,
+      environment,
+      customerName,
+      customerPhone
     };
   }
 }

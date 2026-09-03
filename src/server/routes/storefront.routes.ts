@@ -414,15 +414,15 @@ router.post('/:slug/checkout', async (req, res) => {
       }
     }
 
-    // Si el método de pago es tarjeta/Tilopay, inicializamos la sesión segura
+    // Si el método de pago es tarjeta o SINPE Tilopay, inicializamos la sesión segura
     let tilopaySession = null;
-    if (paymentMethod === 'card' || paymentMethod === 'tilopay') {
+    if (paymentMethod === 'card' || paymentMethod === 'tilopay' || paymentMethod === 'sinpe_tilopay') {
       try {
         tilopaySession = await TilopayTenantService.createPaymentSession(tenant.id, order.id);
       } catch (sessErr: any) {
         console.error('[StorefrontCheckout] Error al inicializar sesión Tilopay:', sessErr.message);
         res.status(400).json({
-          error: `No fue posible conectar con la pasarela de pagos con tarjeta: ${sessErr.message}. Por favor intenta de nuevo o selecciona otro método de pago.`
+          error: `No fue posible conectar con la pasarela de pagos seguros: ${sessErr.message}. Por favor intenta de nuevo o selecciona otro método de pago.`
         });
         return;
       }
