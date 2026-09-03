@@ -1,12 +1,19 @@
 import { Router } from 'express';
+import { authenticateToken } from '../middleware/auth.js';
+import { tenantContext } from '../middleware/tenantContext.js';
 import { getPendingByTenant, getQueueStats } from '../db/message-queue.repo.js';
 
 const router = Router();
+router.use(authenticateToken);
+router.use(tenantContext);
 
-// GET /api/queue/pending?tenantId=xxx
+// GET /api/queue/pending
 router.get('/pending', async (req, res) => {
   try {
-    const tenantId = (req as any).tenantId || req.query.tenantId as string;
+    const tenantId = ((req as any).user?.role === 'superadmin' && req.query.tenantId)
+      ? (req.query.tenantId as string)
+      : req.tenantId;
+
     if (!tenantId) return res.status(400).json({ error: 'tenantId required' });
     const messages = await getPendingByTenant(tenantId);
     res.json(messages);
@@ -16,10 +23,13 @@ router.get('/pending', async (req, res) => {
   }
 });
 
-// GET /api/queue/stats?tenantId=xxx
+// GET /api/queue/stats
 router.get('/stats', async (req, res) => {
   try {
-    const tenantId = (req as any).tenantId || req.query.tenantId as string;
+    const tenantId = ((req as any).user?.role === 'superadmin' && req.query.tenantId)
+      ? (req.query.tenantId as string)
+      : req.tenantId;
+
     const stats = await getQueueStats(tenantId || undefined);
     res.json(stats);
   } catch (error: any) {

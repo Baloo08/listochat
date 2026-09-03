@@ -248,16 +248,16 @@ export async function getOpenMatches(tenantId: string) {
   return res.rows.map(mapBookingRow);
 }
 
-export async function joinMatch(id: string, teamBData: any) {
+export async function joinMatch(id: string, tenantId: string, teamBData: any) {
   const res = await query(`
     UPDATE court_bookings 
     SET team_b_name = $1, team_b_captain = $2, team_b_phone = $3,
         team_b_players = $4, team_b_extra_players = $5,
         match_status = 'matched', updated_at = CURRENT_TIMESTAMP
-    WHERE id = $6 RETURNING *
+    WHERE id = $6 AND tenant_id = $7 RETURNING *
   `, [
     teamBData.teamBName || 'Equipo B', teamBData.teamBCaptain, teamBData.teamBPhone,
-    teamBData.teamBPlayers || 5, teamBData.teamBExtraPlayers || 0, id
+    teamBData.teamBPlayers || 5, teamBData.teamBExtraPlayers || 0, id, tenantId
   ]);
   
   if (!res.rows[0]) return null;

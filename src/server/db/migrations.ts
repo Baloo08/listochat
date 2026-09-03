@@ -265,10 +265,22 @@ export async function runMigrations() {
       tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
       remote_jid VARCHAR(100) NOT NULL,
       is_human_mode BOOLEAN DEFAULT FALSE,
+      human_mode_until TIMESTAMP WITH TIME ZONE,
       unread BOOLEAN DEFAULT FALSE,
       notes TEXT,
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (tenant_id, remote_jid)
+    );
+
+    CREATE TABLE IF NOT EXISTS ai_command_logs (
+      id TEXT PRIMARY KEY DEFAULT 'cmd_' || gen_random_uuid()::text,
+      tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+      remote_jid VARCHAR(100) NOT NULL,
+      command_type VARCHAR(50) NOT NULL,
+      payload JSONB,
+      status VARCHAR(50) NOT NULL,
+      error_message TEXT,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE TABLE IF NOT EXISTS delivery_drivers (
@@ -509,6 +521,7 @@ export async function runMigrations() {
     ALTER TABLE tenant_websites ADD COLUMN IF NOT EXISTS button_text_color VARCHAR(50) DEFAULT '#ffffff';
 
     ALTER TABLE appointments ADD COLUMN IF NOT EXISTS specialist_id UUID REFERENCES specialists(id) ON DELETE SET NULL;
+    ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS human_mode_until TIMESTAMP WITH TIME ZONE;
 
     CREATE INDEX IF NOT EXISTS idx_tenant_websites_tenant ON tenant_websites(tenant_id);
     CREATE INDEX IF NOT EXISTS idx_ai_usage_tenant_month ON tenant_ai_usage(tenant_id, month_year);
@@ -535,6 +548,8 @@ export async function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_store_settings_tenant_id ON store_settings(tenant_id);
     CREATE INDEX IF NOT EXISTS idx_password_reset_user ON password_reset_tokens(user_id);
     CREATE INDEX IF NOT EXISTS idx_password_reset_otp ON password_reset_tokens(otp_code);
+    CREATE INDEX IF NOT EXISTS idx_ai_cmd_logs_tenant ON ai_command_logs(tenant_id, status);
+    CREATE INDEX IF NOT EXISTS idx_ai_cmd_logs_jid ON ai_command_logs(remote_jid);
   `;
 
   await query(tables);

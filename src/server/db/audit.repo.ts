@@ -50,11 +50,15 @@ export async function getAuditLogs(
   }
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-  const limit = filters.limit || 50;
-  const offset = filters.offset || 0;
+  const limit = Math.min(Math.max(1, parseInt(String(filters.limit || 50), 10) || 50), 200);
+  const offset = Math.max(0, parseInt(String(filters.offset || 0), 10) || 0);
 
   const countRes = await query(`SELECT COUNT(*) as total FROM audit_logs a ${whereClause}`, params);
   const total = parseInt(countRes.rows[0].total, 10);
+
+  const queryParams = [...params, limit, offset];
+  const limitIdx = queryParams.length - 1;
+  const offsetIdx = queryParams.length;
 
   const result = await query(`
     SELECT a.id, a.tenant_id as "tenantId", a.user_id as "userId",
@@ -66,8 +70,8 @@ export async function getAuditLogs(
     LEFT JOIN users u ON a.user_id = u.id
     ${whereClause}
     ORDER BY a.created_at DESC
-    LIMIT ${limit} OFFSET ${offset}
-  `, params);
+    LIMIT $${limitIdx} OFFSET $${offsetIdx}
+  `, queryParams);
 
   return { logs: result.rows, total };
 }

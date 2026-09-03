@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApi } from '../hooks/useApi';
+import { io } from 'socket.io-client';
 import { ArrowLeft, MessageSquare, Send, User, Bot, Search, Phone, RefreshCw, ExternalLink, ShieldAlert, UserCheck, CheckCircle2, Clock, MapPin, Sparkles } from 'lucide-react';
 import { ChatMessage } from '../../shared/types';
 
@@ -24,6 +25,7 @@ export default function ChatsInbox() {
   const [filterTab, setFilterTab] = useState<'all' | 'human' | 'ai'>('all');
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [isMobile, setIsMobile] = useState<boolean>(typeof window !== 'undefined' ? window.innerWidth <= 768 : false);
+  const [commandAlert, setCommandAlert] = useState<{ remoteJid: string; commandType: string; errorMessage: string; clientName: string } | null>(null);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth <= 768);
@@ -106,6 +108,21 @@ export default function ChatsInbox() {
 
   useEffect(() => {
     loadChats();
+    const socket = io(window.location.origin);
+    const auth = JSON.parse(localStorage.getItem('auth') || '{}');
+    const tenantId = auth.tenantId || auth.user?.tenantId;
+    if (tenantId) {
+      socket.emit('join_tenant', tenantId);
+    }
+    socket.on('chat:message', () => {
+      loadChats(true);
+    });
+    socket.on('ai:command_failed', (data: any) => {
+      setCommandAlert(data);
+    });
+    return () => {
+      socket.disconnect();
+    };
   }, []);
 
   // Polling in background every 4s without disrupting user scroll
@@ -495,6 +512,42 @@ export default function ChatsInbox() {
                 </button>
               </div>
             </div>
+
+            {/* AI Command Failure Alert Banner */}
+            {commandAlert && commandAlert.remoteJid === selectedJid && (
+              <div style={{
+                backgroundColor: '#fef2f2',
+                borderBottom: '1px solid #fecaca',
+                color: '#991b1b',
+                padding: '10px 18px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                fontSize: '0.85rem'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span>⚠️</span>
+                  <span>
+                    <strong>Atención requerida:</strong> La IA no pudo completar la acción automática (<em>{commandAlert.commandType}</em>): {commandAlert.errorMessage}.
+                  </span>
+                </div>
+                <button
+                  onClick={() => setCommandAlert(null)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    color: '#991b1b',
+                    fontWeight: 'bold',
+                    fontSize: '1rem',
+                    padding: '0 4px'
+                  }}
+                  title="Cerrar aviso"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
 
             {/* Chat Thread Messages (with ref attached) */}
             <div ref={messagesContainerRef} style={{ flex: 1, padding: '18px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>

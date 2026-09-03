@@ -51,6 +51,29 @@ export async function enqueueMessage(
   instanceName: string,
   isVoiceNote: boolean = false
 ): Promise<QueueMessage> {
+  // Debouncing: check if there is an existing pending message created within the last 5 seconds for this chat
+  const existingRes = await query(`
+    SELECT id, user_message, is_voice_note 
+    FROM message_queue
+    WHERE tenant_id = $1 AND remote_jid = $2 AND status = 'pending'
+      AND created_at >= (CURRENT_TIMESTAMP - INTERVAL '5 seconds')
+    ORDER BY created_at DESC 
+    LIMIT 1
+  `, [tenantId, remoteJid]);
+
+  if (existingRes.rows.length > 0) {
+    const existing = existingRes.rows[0];
+    const updatedRes = await query(`
+      UPDATE message_queue
+      SET user_message = user_message || E'\n' || $1,
+          is_voice_note = is_voice_note OR $2,
+          created_at = CURRENT_TIMESTAMP
+      WHERE id = $3
+      RETURNING *
+    `, [userMessage, isVoiceNote, existing.id]);
+    return mapToQueueMessage(updatedRes.rows[0]);
+  }
+
   const sql = `
     INSERT INTO message_queue 
     (tenant_id, remote_jid, push_name, clean_phone, user_message, instance_name, status, is_voice_note)
@@ -61,15 +84,36 @@ export async function enqueueMessage(
   return mapToQueueMessage(result.rows[0]);
 }
 
-export async function takeNextPending(): Promise<QueueMessage | null> {
+export async function consumePendingForChat(tenantId: string, remoteJid: string, currentMessageId: string): Promise<string[]> {
+  const res = await query(`
+    UPDATE message_queue
+    SET status = 'done', completed_at = CURRENT_TIMESTAMP, ai_response = 'DEBOUNCED_CONCAT'
+    WHERE tenant_id = $1 AND remote_jid = $2 AND status = 'pending' AND id != $3
+    RETURNING user_message
+  `, [tenantId, remoteJid, currentMessageId]);
+  return res.rows.map((r: any) => r.user_message);
+}
+
+export async function takeNextPending(excludeChatKeys: string[] = []): Promise<QueueMessage | null> {
+  let excludeClause = '';
+  const params: any[] = [];
+  if (excludeChatKeys && excludeChatKeys.length > 0) {
+    excludeClause = 'AND (tenant_id || \':\' || remote_jid) != ALL($1::text[])';
+    params.push(excludeChatKeys);
+  }
+
   const sql = `
     UPDATE message_queue SET status = 'processing', processed_at = CURRENT_TIMESTAMP
     WHERE id = (
-      SELECT id FROM message_queue WHERE status = 'pending' ORDER BY created_at ASC LIMIT 1 FOR UPDATE SKIP LOCKED
+      SELECT id FROM message_queue 
+      WHERE status = 'pending' ${excludeClause}
+      ORDER BY created_at ASC 
+      LIMIT 1 
+      FOR UPDATE SKIP LOCKED
     )
     RETURNING *;
   `;
-  const result = await query(sql);
+  const result = await query(sql, params);
   if (result.rows.length === 0) return null;
   return mapToQueueMessage(result.rows[0]);
 }

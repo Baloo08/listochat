@@ -22,11 +22,7 @@ function normalizeCostaRicaPhone(phone: string): string {
 async function resolveInstanceName(tenantId: string): Promise<string | undefined> {
   const tenant = await getTenantById(tenantId);
   if (tenant?.evolutionInstance) return tenant.evolutionInstance;
-
-  const anyActiveInstance = await query(`SELECT evolution_instance FROM tenants WHERE evolution_instance IS NOT NULL AND evolution_instance != '' LIMIT 1`);
-  if (anyActiveInstance.rows.length > 0) {
-    return anyActiveInstance.rows[0].evolution_instance;
-  }
+  console.warn(`[OrdersRoute] Tenant ${tenantId} does not have a configured WhatsApp evolutionInstance. Notification skipped.`);
   return undefined;
 }
 
@@ -59,22 +55,23 @@ router.get('/', async (req, res) => {
                o.payment_status as "paymentStatus", o.payment_reference as "paymentReference",
                o.notes, o.delivery_method as "deliveryMethod", o.consumption_mode as "consumptionMode",
                o.table_number as "tableNumber", o.driver_id as "driverId", o.waze_url as "wazeUrl",
-               o.created_at as "createdAt", o.updated_at as "updatedAt"
+               o.created_at as "createdAt", o.updated_at as "updatedAt",
+               COALESCE(
+                 (SELECT json_agg(json_build_object(
+                    'id', oi.id,
+                    'productName', oi.product_name,
+                    'variantName', oi.variant_name,
+                    'quantity', oi.quantity,
+                    'unitPrice', oi.unit_price,
+                    'totalPrice', oi.total_price
+                  ))
+                  FROM order_items oi WHERE oi.order_id = o.id), '[]'::json
+               ) as items
         FROM orders o
         ORDER BY o.created_at DESC
+        LIMIT 100
       `);
-
-      const allOrders = [];
-      for (const row of allRes.rows) {
-        const itemsRes = await query(`
-          SELECT id, product_name as "productName", variant_name as "variantName",
-                 quantity, unit_price as "unitPrice", total_price as "totalPrice"
-          FROM order_items
-          WHERE order_id = $1
-        `, [row.id]);
-        allOrders.push({ ...row, items: itemsRes.rows });
-      }
-      orders = allOrders;
+      orders = allRes.rows;
     }
     res.json(orders);
   } catch (error) {
@@ -118,7 +115,7 @@ router.put('/:id/proof-status', async (req, res) => {
       return;
     }
 
-    const order = await getOrderById(req.params.id, req.tenantId);
+    const order = await getOrderById(req.params.id, req.tenantId!);
     if (!order) {
       res.status(404).json({ error: 'Orden no encontrada' });
       return;

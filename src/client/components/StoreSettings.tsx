@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Store, CreditCard, Palette, Link as LinkIcon, Copy, ExternalLink, Save, CheckCircle, 
+  Store, CreditCard, Palette, Link as LinkIcon, Copy, ExternalLink, Save, CheckCircle, AlertCircle, 
   Upload, Image as ImageIcon, Sparkles, Pipette, Info, Utensils, ShoppingBag, 
   Truck, MapPin, Package, Navigation, Users, Plus, Trash2, Phone, Bike, 
   MessageSquare, Key, HelpCircle, Edit, Send, Clock, ToggleLeft, ToggleRight, 
@@ -21,6 +21,7 @@ export default function StoreSettings() {
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
   const [saveMessage, setSaveMessage] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // General & Modules Form Fields
   const [storeEnabled, setStoreEnabled] = useState(true);
@@ -548,7 +549,9 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
       setSaveMessage(true);
       setTimeout(() => setSaveMessage(false), 3000);
     } catch (err: any) {
-      alert('Error al guardar configuración: ' + (err.message || 'Verifique los datos'));
+      const msg = err?.message || 'Error al guardar configuración. Verifique los datos o la conexión.';
+      setErrorMessage(msg);
+      setTimeout(() => setErrorMessage(null), 6000);
     } finally {
       setSaving(false);
     }
@@ -599,6 +602,12 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
       {saveMessage && (
         <div style={{ padding: '12px 16px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534', borderRadius: '8px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '600', fontSize: '0.9rem' }}>
           <CheckCircle size={18} /> ¡Configuración guardada exitosamente!
+        </div>
+      )}
+
+      {errorMessage && (
+        <div style={{ padding: '12px 16px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', borderRadius: '8px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '600', fontSize: '0.9rem' }}>
+          <AlertCircle size={18} /> {errorMessage}
         </div>
       )}
 

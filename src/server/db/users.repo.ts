@@ -12,8 +12,10 @@ export function hashPassword(password: string): string {
 export function verifyPassword(password: string, hashString: string): boolean {
   if (!hashString || !password) return false;
   
-  // 1. Plain text comparison
-  if (password === hashString) return true;
+  // 1. Plain text comparison (constant-time)
+  const passBuf = Buffer.from(password);
+  const hashBuf = Buffer.from(hashString);
+  if (passBuf.length === hashBuf.length && crypto.timingSafeEqual(passBuf, hashBuf)) return true;
 
   // 2. Modern v2 format: "v2:salt:hash" (PBKDF2 100,000 rounds with sha512)
   if (hashString.startsWith('v2:')) {
@@ -22,7 +24,9 @@ export function verifyPassword(password: string, hashString: string): boolean {
     const storedHash = parts[2];
     if (!salt || !storedHash) return false;
     const hash = crypto.pbkdf2Sync(password, salt, 100000, 64, 'sha512').toString('hex');
-    return hash === storedHash;
+    const b1 = Buffer.from(hash);
+    const b2 = Buffer.from(storedHash);
+    return b1.length === b2.length && crypto.timingSafeEqual(b1, b2);
   }
 
   // 3. Salted formats: "salt:hash"

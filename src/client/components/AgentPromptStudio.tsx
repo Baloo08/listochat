@@ -13,6 +13,9 @@ export default function AgentPromptStudio() {
     notifyNumber: initialData?.notifyNumber || '',
     showBookingLink: initialData ? (initialData.showBookingLink !== false) : true,
     showStoreLink: initialData ? (initialData.showStoreLink !== false) : true,
+    humanHandoffEnabled: initialData ? (initialData.humanHandoffEnabled !== false) : true,
+    handoffNotifyPhone: initialData?.handoffNotifyPhone || '',
+    handoffKeywords: Array.isArray(initialData?.handoffKeywords) ? initialData.handoffKeywords : ['humano', 'asesor', 'persona', 'agente', 'hablar con alguien', 'queja', 'reclamo', 'urgente'],
   });
   const [simInput, setSimInput] = useState('');
   const [simOutput, setSimOutput] = useState('');
@@ -65,6 +68,9 @@ export default function AgentPromptStudio() {
             notifyNumber: data.notifyNumber || '',
             showBookingLink: data.showBookingLink !== false,
             showStoreLink: data.showStoreLink !== false,
+            humanHandoffEnabled: data.humanHandoffEnabled !== false,
+            handoffNotifyPhone: data.handoffNotifyPhone || '',
+            handoffKeywords: Array.isArray(data.handoffKeywords) ? data.handoffKeywords : ['humano', 'asesor', 'persona', 'agente', 'hablar con alguien', 'queja', 'reclamo', 'urgente'],
           };
           setConfig(newConf);
           try { sessionStorage.setItem('betico_cached_agent_prompt', JSON.stringify(newConf)); } catch(e) {}

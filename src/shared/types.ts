@@ -88,6 +88,7 @@ export interface Appointment {
   vehicleModel?: string;
   selectedVariables?: Record<string, string | string[]>;
   selectedVariablesSummary?: string;
+  specialistId?: string;
   createdAt?: Date;
 }
 

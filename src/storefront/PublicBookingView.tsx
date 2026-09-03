@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Clock, User, Phone, CheckCircle, Sparkles, Sliders, Check, ChevronDown, MessageCircle, AlertCircle, Palmtree, MapPin, Sliders } from 'lucide-react';
+import { Calendar, Clock, User, Phone, CheckCircle, Sparkles, Sliders, Check, ChevronDown, MessageCircle, AlertCircle, Palmtree, MapPin } from 'lucide-react';
 import { BookingField } from '../shared/types';
 
 interface PublicBookingViewProps {

@@ -128,7 +128,7 @@ export default function TenantDossierModal({ tenantId, onClose, onRefresh }: Pro
         localStorage.setItem('superadmin_token', currentToken);
         localStorage.setItem('impersonated_tenant_name', data?.tenant?.name || 'Cliente');
         localStorage.setItem('token', res.token);
-        window.location.href = '/panel';
+        window.location.href = '/app';
       }
     } catch (e: any) {
       alert('Error al acceder al portal: ' + e.message);

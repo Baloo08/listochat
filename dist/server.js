@@ -104,14 +104,18 @@ function hashPassword(password) {
 }
 function verifyPassword(password, hashString) {
   if (!hashString || !password) return false;
-  if (password === hashString) return true;
+  const passBuf = Buffer.from(password);
+  const hashBuf = Buffer.from(hashString);
+  if (passBuf.length === hashBuf.length && crypto.timingSafeEqual(passBuf, hashBuf)) return true;
   if (hashString.startsWith("v2:")) {
     const parts = hashString.split(":");
     const salt = parts[1];
     const storedHash = parts[2];
     if (!salt || !storedHash) return false;
     const hash = crypto.pbkdf2Sync(password, salt, 1e5, 64, "sha512").toString("hex");
-    return hash === storedHash;
+    const b1 = Buffer.from(hash);
+    const b2 = Buffer.from(storedHash);
+    return b1.length === b2.length && crypto.timingSafeEqual(b1, b2);
   }
   if (hashString.includes(":")) {
     const [salt, storedHash] = hashString.split(":");
@@ -1429,10 +1433,22 @@ async function runMigrations() {
       tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
       remote_jid VARCHAR(100) NOT NULL,
       is_human_mode BOOLEAN DEFAULT FALSE,
+      human_mode_until TIMESTAMP WITH TIME ZONE,
       unread BOOLEAN DEFAULT FALSE,
       notes TEXT,
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (tenant_id, remote_jid)
+    );
+
+    CREATE TABLE IF NOT EXISTS ai_command_logs (
+      id TEXT PRIMARY KEY DEFAULT 'cmd_' || gen_random_uuid()::text,
+      tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+      remote_jid VARCHAR(100) NOT NULL,
+      command_type VARCHAR(50) NOT NULL,
+      payload JSONB,
+      status VARCHAR(50) NOT NULL,
+      error_message TEXT,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE TABLE IF NOT EXISTS delivery_drivers (
@@ -1673,6 +1689,7 @@ async function runMigrations() {
     ALTER TABLE tenant_websites ADD COLUMN IF NOT EXISTS button_text_color VARCHAR(50) DEFAULT '#ffffff';
 
     ALTER TABLE appointments ADD COLUMN IF NOT EXISTS specialist_id UUID REFERENCES specialists(id) ON DELETE SET NULL;
+    ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS human_mode_until TIMESTAMP WITH TIME ZONE;
 
     CREATE INDEX IF NOT EXISTS idx_tenant_websites_tenant ON tenant_websites(tenant_id);
     CREATE INDEX IF NOT EXISTS idx_ai_usage_tenant_month ON tenant_ai_usage(tenant_id, month_year);
@@ -1699,6 +1716,8 @@ async function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_store_settings_tenant_id ON store_settings(tenant_id);
     CREATE INDEX IF NOT EXISTS idx_password_reset_user ON password_reset_tokens(user_id);
     CREATE INDEX IF NOT EXISTS idx_password_reset_otp ON password_reset_tokens(otp_code);
+    CREATE INDEX IF NOT EXISTS idx_ai_cmd_logs_tenant ON ai_command_logs(tenant_id, status);
+    CREATE INDEX IF NOT EXISTS idx_ai_cmd_logs_jid ON ai_command_logs(remote_jid);
   `;
   await query(tables);
   const superAdminEmail = (process.env.SUPERADMIN_EMAIL || "admin@betico.cr").toLowerCase().trim();
@@ -2405,6 +2424,27 @@ async function ensureQueueTable() {
   await query(sql);
 }
 async function enqueueMessage(tenantId, remoteJid, pushName, cleanPhone, userMessage, instanceName, isVoiceNote = false) {
+  const existingRes = await query(`
+    SELECT id, user_message, is_voice_note 
+    FROM message_queue
+    WHERE tenant_id = $1 AND remote_jid = $2 AND status = 'pending'
+      AND created_at >= (CURRENT_TIMESTAMP - INTERVAL '5 seconds')
+    ORDER BY created_at DESC 
+    LIMIT 1
+  `, [tenantId, remoteJid]);
+  if (existingRes.rows.length > 0) {
+    const existing = existingRes.rows[0];
+    const updatedRes = await query(`
+      UPDATE message_queue
+      SET user_message = user_message || E'
+' || $1,
+          is_voice_note = is_voice_note OR $2,
+          created_at = CURRENT_TIMESTAMP
+      WHERE id = $3
+      RETURNING *
+    `, [userMessage, isVoiceNote, existing.id]);
+    return mapToQueueMessage(updatedRes.rows[0]);
+  }
   const sql = `
     INSERT INTO message_queue 
     (tenant_id, remote_jid, push_name, clean_phone, user_message, instance_name, status, is_voice_note)
@@ -2414,15 +2454,34 @@ async function enqueueMessage(tenantId, remoteJid, pushName, cleanPhone, userMes
   const result = await query(sql, [tenantId, remoteJid, pushName, cleanPhone, userMessage, instanceName, isVoiceNote]);
   return mapToQueueMessage(result.rows[0]);
 }
-async function takeNextPending() {
+async function consumePendingForChat(tenantId, remoteJid, currentMessageId) {
+  const res = await query(`
+    UPDATE message_queue
+    SET status = 'done', completed_at = CURRENT_TIMESTAMP, ai_response = 'DEBOUNCED_CONCAT'
+    WHERE tenant_id = $1 AND remote_jid = $2 AND status = 'pending' AND id != $3
+    RETURNING user_message
+  `, [tenantId, remoteJid, currentMessageId]);
+  return res.rows.map((r) => r.user_message);
+}
+async function takeNextPending(excludeChatKeys = []) {
+  let excludeClause = "";
+  const params = [];
+  if (excludeChatKeys && excludeChatKeys.length > 0) {
+    excludeClause = "AND (tenant_id || ':' || remote_jid) != ALL($1::text[])";
+    params.push(excludeChatKeys);
+  }
   const sql = `
     UPDATE message_queue SET status = 'processing', processed_at = CURRENT_TIMESTAMP
     WHERE id = (
-      SELECT id FROM message_queue WHERE status = 'pending' ORDER BY created_at ASC LIMIT 1 FOR UPDATE SKIP LOCKED
+      SELECT id FROM message_queue 
+      WHERE status = 'pending' ${excludeClause}
+      ORDER BY created_at ASC 
+      LIMIT 1 
+      FOR UPDATE SKIP LOCKED
     )
     RETURNING *;
   `;
-  const result = await query(sql);
+  const result = await query(sql, params);
   if (result.rows.length === 0) return null;
   return mapToQueueMessage(result.rows[0]);
 }
@@ -3144,6 +3203,412 @@ async function getAllTenantsMonthlyUsage(monthYearParam) {
   });
 }
 
+// src/server/db/specialists.repo.ts
+init_pool();
+async function getSpecialistsByTenant(tenantId) {
+  const res = await query(
+    'SELECT id, tenant_id as "tenantId", name, phone, specialty, access_pin as "accessPin", active, created_at as "createdAt" FROM specialists WHERE tenant_id = $1 ORDER BY name ASC',
+    [tenantId]
+  );
+  return res.rows;
+}
+async function getSpecialistByPin(pin, phone) {
+  const cleanPin = (pin || "").trim();
+  let sql = 'SELECT id, tenant_id as "tenantId", name, phone, specialty, access_pin as "accessPin", active, created_at as "createdAt" FROM specialists WHERE TRIM(access_pin) = $1 AND active = TRUE';
+  const params = [cleanPin];
+  if (phone) {
+    const clean = phone.replace(/\D/g, "");
+    sql += " AND (REPLACE(phone, '-', '') LIKE '%' || $2 OR phone LIKE '%' || $2)";
+    params.push(clean.slice(-8));
+  }
+  sql += " LIMIT 1";
+  const res = await query(sql, params);
+  return res.rows[0] || null;
+}
+async function createSpecialist(tenantId, data) {
+  const pin = data.accessPin || Math.floor(1e3 + Math.random() * 9e3).toString();
+  const res = await query(
+    'INSERT INTO specialists (tenant_id, name, phone, specialty, access_pin, active) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, tenant_id as "tenantId", name, phone, specialty, access_pin as "accessPin", active, created_at as "createdAt"',
+    [tenantId, data.name || "Colaborador", data.phone || "", data.specialty || "General", pin, data.active !== false]
+  );
+  return res.rows[0];
+}
+async function updateSpecialist(id, tenantId, data) {
+  const res = await query(
+    'UPDATE specialists SET name = COALESCE($3, name), phone = COALESCE($4, phone), specialty = COALESCE($5, specialty), access_pin = COALESCE($6, access_pin), active = COALESCE($7, active) WHERE id = $1 AND tenant_id = $2 RETURNING id, tenant_id as "tenantId", name, phone, specialty, access_pin as "accessPin", active, created_at as "createdAt"',
+    [id, tenantId, data.name, data.phone, data.specialty, data.accessPin, data.active]
+  );
+  return res.rows[0] || null;
+}
+async function deleteSpecialist(id, tenantId) {
+  const res = await query("DELETE FROM specialists WHERE id = $1 AND tenant_id = $2", [id, tenantId]);
+  return (res.rowCount || 0) > 0;
+}
+async function getActiveAppointmentsForSpecialist(specialistId) {
+  const res = await query(
+    `SELECT a.id, a.tenant_id as "tenantId", a.name, a.whatsapp, a.service, a.date, a.time, a.amount, a.status, a.details, a.vehicle_model as "vehicleModel", a.specialist_id as "specialistId", a.created_at as "createdAt" FROM appointments a WHERE a.specialist_id = $1 AND a.status NOT IN ('completed', 'completado', 'cancelled', 'cancelado') ORDER BY a.date ASC, a.time ASC`,
+    [specialistId]
+  );
+  return res.rows;
+}
+async function getCompletedAppointmentsForSpecialist(specialistId, fromDate, toDate) {
+  let sql = `SELECT a.id, a.tenant_id as "tenantId", a.name, a.whatsapp, a.service, a.date, a.time, a.amount, a.status, a.details, a.vehicle_model as "vehicleModel", a.specialist_id as "specialistId", a.created_at as "createdAt" FROM appointments a WHERE a.specialist_id = $1 AND a.status IN ('completed', 'completado')`;
+  const params = [specialistId];
+  if (fromDate) {
+    params.push(fromDate);
+    sql += " AND a.date >= $" + params.length;
+  }
+  if (toDate) {
+    params.push(toDate);
+    sql += " AND a.date <= $" + params.length;
+  }
+  sql += " ORDER BY a.date DESC, a.time DESC";
+  const res = await query(sql, params);
+  return res.rows;
+}
+
+// src/server/db/courts.repo.ts
+init_pool();
+function mapCourtRow(row) {
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    name: row.name,
+    sportType: row.sport_type,
+    customSportType: row.custom_sport_type,
+    description: row.description,
+    surface: row.surface,
+    isIndoor: row.is_indoor,
+    hasLighting: row.has_lighting,
+    basePrice: Number(row.base_price),
+    priceDisplay: row.price_display,
+    durationMinutes: row.duration_minutes,
+    teamSize: row.team_size,
+    maxExtraPlayers: row.max_extra_players,
+    extraPlayerFee: Number(row.extra_player_fee),
+    active: row.active,
+    sortOrder: row.sort_order,
+    createdAt: row.created_at
+  };
+}
+function mapBookingRow(row) {
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    courtId: row.court_id,
+    courtName: row.court_name || row.name,
+    // in case of join
+    date: row.date,
+    time: row.time,
+    durationMinutes: row.duration_minutes,
+    bookingMode: row.booking_mode,
+    matchStatus: row.match_status,
+    matchExpiryHours: Number(row.match_expiry_hours),
+    teamAName: row.team_a_name,
+    teamACaptain: row.team_a_captain,
+    teamAPhone: row.team_a_phone,
+    teamAPlayers: row.team_a_players,
+    teamAExtraPlayers: row.team_a_extra_players,
+    teamAPaid: row.team_a_paid,
+    teamBName: row.team_b_name,
+    teamBCaptain: row.team_b_captain,
+    teamBPhone: row.team_b_phone,
+    teamBPlayers: row.team_b_players,
+    teamBExtraPlayers: row.team_b_extra_players,
+    teamBPaid: row.team_b_paid,
+    totalPrice: Number(row.total_price),
+    pricePerTeam: row.price_per_team ? Number(row.price_per_team) : void 0,
+    paymentMode: row.payment_mode,
+    sportType: row.sport_type,
+    skillLevel: row.skill_level,
+    notes: row.notes,
+    status: row.status,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+async function getCourtsByTenant(tenantId) {
+  const res = await query(`SELECT * FROM courts WHERE tenant_id = $1 ORDER BY sort_order, name`, [tenantId]);
+  return res.rows.map(mapCourtRow);
+}
+async function getCourtById(id, tenantId) {
+  const res = await query(`SELECT * FROM courts WHERE id = $1 AND tenant_id = $2`, [id, tenantId]);
+  return res.rows[0] ? mapCourtRow(res.rows[0]) : null;
+}
+async function createCourt(tenantId, data) {
+  const res = await query(`
+    INSERT INTO courts (
+      tenant_id, name, sport_type, custom_sport_type, description, surface, 
+      is_indoor, has_lighting, base_price, price_display, duration_minutes, 
+      team_size, max_extra_players, extra_player_fee, active, sort_order
+    ) VALUES (
+      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
+    ) RETURNING *
+  `, [
+    tenantId,
+    data.name,
+    data.sportType,
+    data.customSportType,
+    data.description,
+    data.surface,
+    data.isIndoor,
+    data.hasLighting,
+    data.basePrice,
+    data.priceDisplay,
+    data.durationMinutes,
+    data.teamSize,
+    data.maxExtraPlayers,
+    data.extraPlayerFee,
+    data.active !== false,
+    data.sortOrder || 0
+  ]);
+  return mapCourtRow(res.rows[0]);
+}
+async function updateCourt(id, tenantId, data) {
+  const allowed = {
+    name: "name",
+    sportType: "sport_type",
+    customSportType: "custom_sport_type",
+    description: "description",
+    surface: "surface",
+    isIndoor: "is_indoor",
+    hasLighting: "has_lighting",
+    basePrice: "base_price",
+    priceDisplay: "price_display",
+    durationMinutes: "duration_minutes",
+    teamSize: "team_size",
+    maxExtraPlayers: "max_extra_players",
+    extraPlayerFee: "extra_player_fee",
+    active: "active",
+    sortOrder: "sort_order"
+  };
+  const entries = Object.entries(data).filter(([k, v]) => allowed[k] !== void 0 && v !== void 0);
+  if (entries.length === 0) return getCourtById(id, tenantId);
+  const setClause = entries.map(([k], i) => `${allowed[k]} = $${i + 3}`).join(", ");
+  const values = entries.map((e) => e[1]);
+  const res = await query(`
+    UPDATE courts SET ${setClause} WHERE id = $1 AND tenant_id = $2 RETURNING *
+  `, [id, tenantId, ...values]);
+  return res.rows[0] ? mapCourtRow(res.rows[0]) : null;
+}
+async function deleteCourt(id, tenantId) {
+  const res = await query(`DELETE FROM courts WHERE id = $1 AND tenant_id = $2`, [id, tenantId]);
+  return (res.rowCount || 0) > 0;
+}
+async function getBookingsByTenant(tenantId, date) {
+  let q = `
+    SELECT cb.*, c.name as court_name 
+    FROM court_bookings cb
+    JOIN courts c ON c.id = cb.court_id
+    WHERE cb.tenant_id = $1
+  `;
+  const params = [tenantId];
+  if (date) {
+    q += ` AND cb.date = $2`;
+    params.push(date);
+  }
+  q += ` ORDER BY cb.date DESC, cb.time DESC`;
+  const res = await query(q, params);
+  return res.rows.map(mapBookingRow);
+}
+async function getBookingById(id, tenantId) {
+  const res = await query(`
+    SELECT cb.*, c.name as court_name 
+    FROM court_bookings cb
+    JOIN courts c ON c.id = cb.court_id
+    WHERE cb.id = $1 AND cb.tenant_id = $2
+  `, [id, tenantId]);
+  return res.rows[0] ? mapBookingRow(res.rows[0]) : null;
+}
+async function createBooking(tenantId, data) {
+  const bookingMode = data.bookingMode || "full";
+  const matchStatus = data.matchStatus || (bookingMode === "seek_match" ? "open" : "confirmed");
+  let totalPrice = Number(data.totalPrice || 0);
+  let durationMinutes = data.durationMinutes || 60;
+  let sportType = data.sportType;
+  if (data.courtId && (!totalPrice || !sportType)) {
+    const cRes = await query("SELECT * FROM courts WHERE id = $1", [data.courtId]);
+    if (cRes.rows[0]) {
+      const c = cRes.rows[0];
+      durationMinutes = data.durationMinutes || c.duration_minutes || 60;
+      sportType = sportType || c.sport_type || "futbol";
+      if (!totalPrice) {
+        totalPrice = Number(c.base_price || 0) + Number(data.teamAExtraPlayers || 0) * Number(c.extra_player_fee || 0);
+      }
+    }
+  }
+  const pricePerTeam = data.pricePerTeam ? Number(data.pricePerTeam) : totalPrice > 0 ? totalPrice / 2 : void 0;
+  const res = await query(`
+    INSERT INTO court_bookings (
+      tenant_id, court_id, date, time, duration_minutes, booking_mode,
+      match_status, match_expiry_hours, team_a_name, team_a_captain,
+      team_a_phone, team_a_players, team_a_extra_players, team_a_paid,
+      team_b_name, team_b_captain, team_b_phone, team_b_players,
+      team_b_extra_players, team_b_paid, total_price, price_per_team,
+      payment_mode, sport_type, skill_level, notes, status
+    ) VALUES (
+      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
+      $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27
+    ) RETURNING *
+  `, [
+    tenantId,
+    data.courtId,
+    data.date,
+    data.time,
+    durationMinutes,
+    bookingMode,
+    matchStatus,
+    data.matchExpiryHours || 1,
+    data.teamAName || "Equipo A",
+    data.teamACaptain,
+    data.teamAPhone,
+    data.teamAPlayers || 5,
+    data.teamAExtraPlayers || 0,
+    data.teamAPaid || false,
+    data.teamBName,
+    data.teamBCaptain,
+    data.teamBPhone,
+    data.teamBPlayers || 5,
+    data.teamBExtraPlayers || 0,
+    data.teamBPaid || false,
+    totalPrice,
+    pricePerTeam,
+    data.paymentMode || "both",
+    sportType,
+    data.skillLevel,
+    data.notes,
+    data.status || "confirmed"
+  ]);
+  const booking = mapBookingRow(res.rows[0]);
+  if (data.courtId) {
+    const cRes = await query("SELECT name FROM courts WHERE id = $1", [data.courtId]);
+    booking.courtName = cRes.rows[0]?.name || booking.courtName;
+  }
+  return booking;
+}
+async function updateBooking(id, tenantId, data) {
+  const allowed = {
+    date: "date",
+    time: "time",
+    durationMinutes: "duration_minutes",
+    bookingMode: "booking_mode",
+    matchStatus: "match_status",
+    matchExpiryHours: "match_expiry_hours",
+    teamAName: "team_a_name",
+    teamACaptain: "team_a_captain",
+    teamAPhone: "team_a_phone",
+    teamAPlayers: "team_a_players",
+    teamAExtraPlayers: "team_a_extra_players",
+    teamAPaid: "team_a_paid",
+    teamBName: "team_b_name",
+    teamBCaptain: "team_b_captain",
+    teamBPhone: "team_b_phone",
+    teamBPlayers: "team_b_players",
+    teamBExtraPlayers: "team_b_extra_players",
+    teamBPaid: "team_b_paid",
+    totalPrice: "total_price",
+    pricePerTeam: "price_per_team",
+    paymentMode: "payment_mode",
+    sportType: "sport_type",
+    skillLevel: "skill_level",
+    notes: "notes",
+    status: "status"
+  };
+  const entries = Object.entries(data).filter(([k, v]) => allowed[k] !== void 0 && v !== void 0);
+  if (entries.length === 0) return getBookingById(id, tenantId);
+  const setClause = entries.map(([k], i) => `${allowed[k]} = $${i + 3}`).join(", ");
+  const values = entries.map((e) => e[1]);
+  const res = await query(`
+    UPDATE court_bookings SET ${setClause}, updated_at = CURRENT_TIMESTAMP 
+    WHERE id = $1 AND tenant_id = $2 RETURNING *
+  `, [id, tenantId, ...values]);
+  return res.rows[0] ? mapBookingRow(res.rows[0]) : null;
+}
+async function cancelBooking(id, tenantId) {
+  const res = await query(`
+    UPDATE court_bookings SET status = 'cancelled', match_status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+    WHERE id = $1 AND tenant_id = $2 RETURNING *
+  `, [id, tenantId]);
+  return res.rows[0] ? mapBookingRow(res.rows[0]) : null;
+}
+async function getOpenMatches(tenantId) {
+  const res = await query(`
+    SELECT cb.*, c.name as court_name 
+    FROM court_bookings cb
+    JOIN courts c ON c.id = cb.court_id
+    WHERE cb.tenant_id = $1 
+      AND cb.status != 'cancelled'
+      AND (cb.match_status = 'open' OR (cb.booking_mode = 'seek_match' AND (cb.team_b_name IS NULL OR cb.team_b_name = '')))
+      AND cb.date >= (CURRENT_DATE - INTERVAL '1 day')::date
+    ORDER BY cb.date, cb.time
+  `, [tenantId]);
+  return res.rows.map(mapBookingRow);
+}
+async function joinMatch(id, tenantId, teamBData) {
+  const res = await query(`
+    UPDATE court_bookings 
+    SET team_b_name = $1, team_b_captain = $2, team_b_phone = $3,
+        team_b_players = $4, team_b_extra_players = $5,
+        match_status = 'matched', updated_at = CURRENT_TIMESTAMP
+    WHERE id = $6 AND tenant_id = $7 RETURNING *
+  `, [
+    teamBData.teamBName || "Equipo B",
+    teamBData.teamBCaptain,
+    teamBData.teamBPhone,
+    teamBData.teamBPlayers || 5,
+    teamBData.teamBExtraPlayers || 0,
+    id,
+    tenantId
+  ]);
+  if (!res.rows[0]) return null;
+  const booking = mapBookingRow(res.rows[0]);
+  const cRes = await query("SELECT name FROM courts WHERE id = $1", [booking.courtId]);
+  booking.courtName = cRes.rows[0]?.name || booking.courtName;
+  return booking;
+}
+async function getAvailableSlots(tenantId, courtId, date) {
+  const nowCR = new Date((/* @__PURE__ */ new Date()).toLocaleString("en-US", { timeZone: "America/Costa_Rica" }));
+  const todayCR = `${nowCR.getFullYear()}-${String(nowCR.getMonth() + 1).padStart(2, "0")}-${String(nowCR.getDate()).padStart(2, "0")}`;
+  const currentMinutesNow = nowCR.getHours() * 60 + nowCR.getMinutes();
+  if (date < todayCR) {
+    return [];
+  }
+  const tRes = await query("SELECT settings_json FROM tenants WHERE id = $1", [tenantId]);
+  const settingsJson = tRes.rows[0]?.settings_json || {};
+  const scheduleSettings = settingsJson.scheduleSettings || { startHour: 8, endHour: 22, slotMinutes: 60 };
+  const startHour = Number(scheduleSettings.startHour) || 8;
+  const endHour = Number(scheduleSettings.endHour) || 22;
+  const slotMinutes = Number(scheduleSettings.slotMinutes) || 60;
+  const slots = [];
+  let currentMinutes = startHour * 60;
+  const endMinutes = endHour * 60;
+  while (currentMinutes < endMinutes) {
+    const h = Math.floor(currentMinutes / 60);
+    const m = currentMinutes % 60;
+    const timeStr = `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:00`;
+    slots.push(timeStr);
+    currentMinutes += slotMinutes;
+  }
+  const bookingsRes = await query(`
+    SELECT time 
+    FROM court_bookings 
+    WHERE tenant_id = $1 AND court_id = $2 AND date = $3 AND status != 'cancelled'
+  `, [tenantId, courtId, date]);
+  const bookedTimes = bookingsRes.rows.map((r) => {
+    return typeof r.time === "string" ? r.time : r.time.toString();
+  });
+  const isToday = date === todayCR;
+  return slots.filter((slot) => {
+    if (isToday) {
+      const [sh, sm] = slot.split(":").map(Number);
+      if (sh * 60 + sm <= currentMinutesNow) {
+        return false;
+      }
+    }
+    return !bookedTimes.includes(slot);
+  });
+}
+
 // src/server/services/agent.ts
 init_pool();
 async function processWhatsAppMessageWithAI(tenantId, userMessage, senderPhone, senderName, chatHistory) {
@@ -3163,7 +3628,7 @@ async function processWhatsAppMessageWithAI(tenantId, userMessage, senderPhone, 
   const storeUrl = tenant?.slug ? `${baseUrl}/tienda/${tenant.slug}` : "";
   const bookingUrl = tenant?.slug ? `${baseUrl}/reservas/${tenant.slug}` : "";
   const lowerMsg = userMessage.toLowerCase().trim();
-  const recentHistoryText = (chatHistory || []).slice(-6).map((h) => h.content).join(" ").toLowerCase();
+  const recentHistoryText = (chatHistory || []).slice(-12).map((h) => h.content).join(" ").toLowerCase();
   const conversationContext = `${recentHistoryText} ${lowerMsg}`;
   const isPureGreeting = /^(hola|buenas|buenos dias|buenas tardes|buenas noches|hey|alo|hi|saludos|pura vida|hola que tal|hola como estas)[s!.,?]*$/i.test(lowerMsg);
   const asksForServices = /servicio|cita|reserva|agenda|agendar|horario|hora|fecha|disponib|turno|atencion|lavado|pulido|mantenimiento/i.test(conversationContext);
@@ -3210,6 +3675,57 @@ async function processWhatsAppMessageWithAI(tenantId, userMessage, senderPhone, 
         (s) => `\u2022 ${s.name}: \u20A1${Number(s.price || 0).toLocaleString("es-CR")} (${s.duration || `${s.estimatedMinutes || 45}m`})`
       ).join("\n") + "\n";
     }
+  }
+  let busySlotsText = "";
+  let specialistsText = "";
+  if (asksForServices || !isPureGreeting) {
+    try {
+      const todayStr = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+      const busySlotsRes = await query(`
+        SELECT date, time, service
+        FROM appointments
+        WHERE tenant_id = $1 AND date >= $2 AND status NOT IN ('cancelled', 'cancelado')
+        ORDER BY date ASC, time ASC
+        LIMIT 40
+      `, [tenantId, todayStr]);
+      if (busySlotsRes.rows.length > 0) {
+        const grouped = {};
+        busySlotsRes.rows.forEach((r) => {
+          const d = r.date;
+          if (!grouped[d]) grouped[d] = [];
+          grouped[d].push(r.time);
+        });
+        const busySummary = Object.entries(grouped).map(([d, times]) => `  \u2022 ${d}: ${times.join(", ")} (OCUPADOS)`).join("\n");
+        busySlotsText = `\u{1F6AB} HORARIOS YA OCUPADOS (NO OFRECER NI AGENDAR ESTOS HORARIOS):
+${busySummary}
+`;
+      }
+      const specialists = await getSpecialistsByTenant(tenantId);
+      if (specialists && specialists.length > 0) {
+        const activeSpecs = specialists.filter((s) => s.active);
+        if (activeSpecs.length > 0) {
+          specialistsText = "\u{1F465} Especialistas / Equipo:\n" + activeSpecs.map((s) => `\u2022 ${s.name}${s.specialty ? ` (${s.specialty})` : ""}`).join("\n") + "\n";
+        }
+      }
+    } catch (slotErr) {
+      console.error("[Agent] Error querying busy slots or specialists:", slotErr);
+    }
+  }
+  let courtsText = "";
+  try {
+    const courts = await getCourtsByTenant(tenantId);
+    if (courts && courts.length > 0) {
+      const activeCourts = courts.filter((c) => c.active !== false);
+      if (activeCourts.length > 0) {
+        courtsText = "\u26BD/\u{1F3BE} CANCHAS DEPORTIVAS DISPONIBLES:\n" + activeCourts.map((c) => {
+          let desc = `\u2022 *${c.name}* [${c.sportType || "cancha"}${c.surface ? `, ${c.surface}` : ""}]: \u20A1${Number(c.basePrice || 0).toLocaleString("es-CR")}/hora`;
+          if (c.hasLighting) desc += " (iluminaci\xF3n incluida)";
+          return desc;
+        }).join("\n") + "\n";
+      }
+    }
+  } catch (courtErr) {
+    console.error("[Agent] Error fetching courts:", courtErr);
   }
   let relevantProductsText = "";
   if (!isPureGreeting && products.length > 0) {
@@ -3340,13 +3856,14 @@ ${agentConfig?.systemPrompt || "Atiende amablemente a los clientes."}
 Datos del negocio:
 ${crTime}
 ${agentConfig?.showBookingLink !== false && bookingUrl ? `Reservas online: ${bookingUrl}` : ""}${agentConfig?.showStoreLink !== false && storeUrl ? ` | Tienda online: ${storeUrl}` : ""}
-${scheduleInfo}${paymentInfo}${relevantServicesText}${relevantProductsText}${activeCustomerBookingsText}${activeCustomerOrdersText}
+${scheduleInfo}${paymentInfo}${relevantServicesText}${relevantProductsText}${courtsText}${specialistsText}${busySlotsText}${activeCustomerBookingsText}${activeCustomerOrdersText}
 REGLAS OBLIGATORIAS:
 1. Responde SOLO en espa\xF1ol con un tono c\xE1lido, emp\xE1tico, educado y \xE1gil adaptado al p\xFAblico de Costa Rica (*pura vida*, con mucho gusto, claro que s\xED).
 2. Usa el nombre EXACTO del cliente (${senderName}) cuando sea oportuno. No lo modifiques.
 3. Usa *negrita* para datos clave (precios, productos, horarios) y emojis moderados para dar calidez. S\xE9 conciso y claro (1-2 p\xE1rrafos m\xE1ximo).
 4. Solo menciona productos, servicios y precios que aparezcan arriba en los datos del negocio. Si algo no aparece, indica que consultar\xE1s con el equipo.
 5. NUNCA inventes URLs, links, procesos ni precios que no est\xE9n en la informaci\xF3n proporcionada.
+6. POL\xCDTICA DE PRECIOS Y ANTIRREGATEO: Los precios, tarifas y promociones mostrados arriba son oficiales y fijos. Si el cliente insiste en pedir rebajas, regatea o solicita descuentos no oficiales, declina amablemente con simpat\xEDa explicando que nuestros precios son los establecidos y destaca la calidad y valor de lo que ofrecemos.
 
 6. ASESOR\xCDA DE PRODUCTOS Y VENTAS (S\xC9 UN VENDEDOR CONSULTIVO):
 - Si el producto tiene variantes (tallas, sabores, modelos, presentaciones), pres\xE9ntalas amablemente y pregunta cu\xE1l prefiere: *"\xA1Claro! Lo tenemos en presentaci\xF3n de [X] (\u20A1...) y [Y] (\u20A1...). \xBFCu\xE1l te gustar\xEDa?"*.
@@ -3366,20 +3883,26 @@ REGLAS OBLIGATORIAS:
 - Si el cliente pregunta por su pedido ("\xBFC\xF3mo va mi orden?", "\xBFD\xF3nde viene?", "\xBFYa sali\xF3?"), revisa la secci\xF3n "PEDIDOS ACTIVOS EN CURSO DE ESTE CLIENTE" y resp\xF3ndele de inmediato con el n\xFAmero de orden, los \xEDtems y su estado real actual, d\xE1ndole tranquilidad.
 
 9. GESTI\xD3N DE CITAS:
-- Para AGENDAR: Cuando el cliente elija servicio, fecha y hora, a\xF1ade <<<COMMAND_BOOKING: {"service":"nombre","date":"YYYY-MM-DD","time":"HH:MM","customerName":"${senderName}"}>>>.
-- Para CANCELAR: Si el cliente pide cancelar una cita activa, SIEMPRE preg\xFAntale primero para confirmar: "\xBFEst\xE1s seguro de que deseas cancelar tu cita de [Servicio] para el [Fecha] a las [Hora]?". SOLO si el cliente responde confirmando ("s\xED", "confirmo", "correcto", "canc\xE9lala"), a\xF1ade <<<COMMAND_CANCEL_BOOKING: {"date":"YYYY-MM-DD", "reason":"solicitado por cliente"}>>>.
+- Para AGENDAR: Cuando el cliente elija servicio, fecha y hora (verificando que NO figure en HORARIOS YA OCUPADOS), y opcionalmente elija con qui\xE9n atenderse, a\xF1ade <<<COMMAND_BOOKING: {"service":"nombre","date":"YYYY-MM-DD","time":"HH:MM","customerName":"${senderName}","specialistName":"opcional"}>>>.
+- Para CANCELAR: Si el cliente pide cancelar una cita activa, SIEMPRE preg\xFAntale primero para confirmar: "\xBFEst\xE1s seguro de que deseas cancelar tu cita de [Servicio] para el [Fecha] a las [Hora]?". SOLO si el cliente responde confirmando ("s\xED", "confirmo", "correcto", "canc\xE9lala"), a\xF1ade <<<COMMAND_CANCEL_BOOKING: {"date":"YYYY-MM-DD", "service":"opcional", "reason":"solicitado por cliente"}>>>.
 - Para REAGENDAR: Ofr\xE9cele los horarios libres disponibles y cuando confirme la nueva fecha y hora, a\xF1ade <<<COMMAND_RESCHEDULE_BOOKING: {"newDate":"YYYY-MM-DD", "newTime":"HH:MM"}>>>.
 
+10. RESERVA DE CANCHAS DEPORTIVAS (F\xDATBOL / P\xC1DEL):
+- Si el cliente pregunta por canchas o partidos, ofr\xE9cele las canchas del cat\xE1logo con sus precios por hora. Preg\xFAntale fecha, hora y modalidad ("full" para cancha completa o "seek_match" si busca rival / partido abierto).
+- Cuando el cliente confirme la reserva de cancha, a\xF1ade al final:
+  <<<COMMAND_COURT_BOOKING: {"courtName":"nombre cancha", "date":"YYYY-MM-DD", "time":"HH:MM", "bookingMode":"full"|"seek_match", "teamAName":"${senderName}"}>>>
+
 Acciones disponibles (a\xF1ade al final SOLO cuando el cliente confirme expl\xEDcitamente):
-Cita: <<<COMMAND_BOOKING: {"service":"nombre","date":"YYYY-MM-DD","time":"HH:MM","customerName":"${senderName}"}>>>
-Cancelar Cita: <<<COMMAND_CANCEL_BOOKING: {"date":"YYYY-MM-DD","reason":"motivo"}>>>
+Cita: <<<COMMAND_BOOKING: {"service":"nombre","date":"YYYY-MM-DD","time":"HH:MM","customerName":"${senderName}","specialistName":"opcional"}>>>
+Cancha: <<<COMMAND_COURT_BOOKING: {"courtName":"nombre", "date":"YYYY-MM-DD", "time":"HH:MM", "bookingMode":"full"|"seek_match", "teamAName":"${senderName}"}>>>
+Cancelar Cita: <<<COMMAND_CANCEL_BOOKING: {"date":"YYYY-MM-DD","service":"opcional","reason":"motivo"}>>>
 Reagendar Cita: <<<COMMAND_RESCHEDULE_BOOKING: {"newDate":"YYYY-MM-DD","newTime":"HH:MM"}>>>
 Compra / Pedido: <<<COMMAND_ORDER: {"items":[{"productName":"nombre","variantName":"opcional","quantity":1}], "deliveryMethod":"delivery"|"pickup", "deliveryAddress":"direcci\xF3n si aplica", "customerName":"${senderName}"}>>>
 Foto: <<<COMMAND_SEND_MEDIA: {"mediaUrl":"URL","caption":"desc"}>>>
 Humano: <<<COMMAND_HANDOFF: {"reason":"motivo"}>>>`;
   const structuredMessages = [];
   if (chatHistory && chatHistory.length > 0) {
-    for (const h of chatHistory.slice(-6)) {
+    for (const h of chatHistory.slice(-12)) {
       structuredMessages.push({
         role: h.role === "assistant" ? "assistant" : "user",
         content: h.content
@@ -3392,7 +3915,7 @@ Humano: <<<COMMAND_HANDOFF: {"reason":"motivo"}>>>`;
   });
   const flatPrompt = `${systemPrompt}
 
-${chatHistory.slice(-6).map((h) => `${h.role === "user" ? "Cliente" : "Asistente"}: ${h.content}`).join("\n")}
+${chatHistory.slice(-12).map((h) => `${h.role === "user" ? "Cliente" : "Asistente"}: ${h.content}`).join("\n")}
 
 Cliente (${senderName}): ${userMessage}
 Asistente:`;
@@ -3451,77 +3974,94 @@ Asistente:`;
   let cancelBookingData;
   let isRescheduleBookingDetected = false;
   let rescheduleBookingData;
+  let isCourtBookingDetected = false;
+  let courtBookingData;
   const bookingRegex = /<<<COMMAND_BOOKING:\s*({.*?})>>>/s;
+  const courtBookingRegex = /<<<COMMAND_COURT_BOOKING:\s*({.*?})>>>/s;
   const orderRegex = /<<<COMMAND_ORDER:\s*({.*?})>>>/s;
   const handoffRegex = /<<<COMMAND_HANDOFF:\s*({.*?})>>>/s;
   const mediaRegex = /<<<COMMAND_SEND_MEDIA:\s*({.*?})>>>/s;
   const cancelRegex = /<<<COMMAND_CANCEL_BOOKING:\s*({.*?})>>>/s;
   const rescheduleRegex = /<<<COMMAND_RESCHEDULE_BOOKING:\s*({.*?})>>>/s;
+  function safeParseJSON(rawStr) {
+    if (!rawStr || typeof rawStr !== "string") return null;
+    let cleaned = rawStr.trim();
+    cleaned = cleaned.replace(/[\u201C\u201D\u201E\u201F\u2033\u2036]/g, '"').replace(/[\u2018\u2019\u201A\u201B\u2032\u2035]/g, "'").replace(/,\s*}/g, "}").replace(/,\s*]/g, "]");
+    try {
+      return JSON.parse(cleaned);
+    } catch (e1) {
+      try {
+        const relaxed = cleaned.replace(/([{,]\s*)([a-zA-Z0-9_]+)\s*:/g, '$1"$2":').replace(/,\s*}/g, "}").replace(/,\s*]/g, "]");
+        return JSON.parse(relaxed);
+      } catch (e2) {
+        return null;
+      }
+    }
+  }
   const bookingMatch = replyText.match(bookingRegex);
   if (bookingMatch && bookingMatch[1]) {
-    try {
-      const parsed = JSON.parse(bookingMatch[1]);
-      if (parsed && parsed.service && (parsed.date || parsed.time)) {
-        isBookingDetected = true;
-        bookingData = parsed;
-      }
-    } catch (e) {
+    const parsed = safeParseJSON(bookingMatch[1]);
+    if (parsed && parsed.service && (parsed.date || parsed.time)) {
+      isBookingDetected = true;
+      bookingData = parsed;
+    }
+  }
+  const courtMatch = replyText.match(courtBookingRegex);
+  if (courtMatch && courtMatch[1]) {
+    const parsed = safeParseJSON(courtMatch[1]);
+    if (parsed && (parsed.courtName || parsed.courtId) && (parsed.date || parsed.time)) {
+      isCourtBookingDetected = true;
+      courtBookingData = parsed;
     }
   }
   const cancelMatch = replyText.match(cancelRegex);
   if (cancelMatch && cancelMatch[1]) {
-    try {
+    const parsed = safeParseJSON(cancelMatch[1]);
+    if (parsed) {
       isCancelBookingDetected = true;
-      cancelBookingData = JSON.parse(cancelMatch[1]);
-    } catch (e) {
+      cancelBookingData = parsed;
     }
   }
   const rescheduleMatch = replyText.match(rescheduleRegex);
   if (rescheduleMatch && rescheduleMatch[1]) {
-    try {
-      const parsed = JSON.parse(rescheduleMatch[1]);
-      if (parsed && (parsed.newDate || parsed.newTime)) {
-        isRescheduleBookingDetected = true;
-        rescheduleBookingData = parsed;
-      }
-    } catch (e) {
+    const parsed = safeParseJSON(rescheduleMatch[1]);
+    if (parsed && (parsed.newDate || parsed.newTime)) {
+      isRescheduleBookingDetected = true;
+      rescheduleBookingData = parsed;
     }
   }
   const orderMatch = replyText.match(orderRegex);
   if (orderMatch && orderMatch[1]) {
-    try {
-      const parsed = JSON.parse(orderMatch[1]);
-      if (parsed && Array.isArray(parsed.items) && parsed.items.length > 0) {
-        const validItems = parsed.items.filter((it) => it.productName && it.productName.trim().length > 0);
-        if (validItems.length > 0) {
-          isOrderDetected = true;
-          orderData = { ...parsed, items: validItems };
-        }
+    const parsed = safeParseJSON(orderMatch[1]);
+    if (parsed && Array.isArray(parsed.items) && parsed.items.length > 0) {
+      const validItems = parsed.items.filter((it) => it.productName && it.productName.trim().length > 0);
+      if (validItems.length > 0) {
+        isOrderDetected = true;
+        orderData = { ...parsed, items: validItems };
       }
-    } catch (e) {
     }
   }
   const handoffMatch = replyText.match(handoffRegex);
   if (handoffMatch && handoffMatch[1]) {
     isHandoffRequested = true;
-    try {
-      handoffReason = JSON.parse(handoffMatch[1]).reason;
-    } catch (e) {
-    }
+    const parsed = safeParseJSON(handoffMatch[1]);
+    if (parsed?.reason) handoffReason = parsed.reason;
   }
   const mediaMatch = replyText.match(mediaRegex);
   if (mediaMatch && mediaMatch[1]) {
-    isMediaDetected = true;
-    try {
-      mediaData = JSON.parse(mediaMatch[1]);
-    } catch (e) {
+    const parsed = safeParseJSON(mediaMatch[1]);
+    if (parsed && (parsed.mediaUrl || parsed.url)) {
+      isMediaDetected = true;
+      mediaData = { mediaUrl: parsed.mediaUrl || parsed.url, caption: parsed.caption };
     }
   }
-  replyText = replyText.replace(bookingRegex, "").replace(orderRegex, "").replace(handoffRegex, "").replace(mediaRegex, "").replace(cancelRegex, "").replace(rescheduleRegex, "").replace(/\*\*/g, "*").trim();
+  replyText = replyText.replace(bookingRegex, "").replace(courtBookingRegex, "").replace(orderRegex, "").replace(handoffRegex, "").replace(mediaRegex, "").replace(cancelRegex, "").replace(rescheduleRegex, "").replace(/\*\*/g, "*").trim();
   return {
     replyText,
     isBookingDetected,
     bookingData,
+    isCourtBookingDetected,
+    courtBookingData,
     isOrderDetected,
     orderData,
     isHandoffRequested,
@@ -3600,37 +4140,89 @@ async function createChatMessage(tenantIdOrData, optionalData) {
   return result.rows[0];
 }
 async function getChatSession(tenantId, remoteJid) {
-  const result = await query(`
-    SELECT is_human_mode as "isHumanMode", unread, notes
-    FROM chat_sessions
-    WHERE tenant_id = $1 AND remote_jid = $2
-  `, [tenantId, remoteJid]);
-  return result.rows[0] || { isHumanMode: false, unread: false, notes: "" };
+  let result;
+  try {
+    result = await query(`
+      SELECT is_human_mode as "isHumanMode", unread, notes, human_mode_until as "humanModeUntil"
+      FROM chat_sessions
+      WHERE tenant_id = $1 AND remote_jid = $2
+    `, [tenantId, remoteJid]);
+  } catch (err) {
+    if (err && (err.message?.includes("human_mode_until") || err.code === "42703")) {
+      await query(`ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS human_mode_until TIMESTAMPTZ;`);
+      result = await query(`
+        SELECT is_human_mode as "isHumanMode", unread, notes, human_mode_until as "humanModeUntil"
+        FROM chat_sessions
+        WHERE tenant_id = $1 AND remote_jid = $2
+      `, [tenantId, remoteJid]);
+    } else {
+      throw err;
+    }
+  }
+  const session = result.rows[0];
+  if (!session) return { isHumanMode: false, unread: false, notes: "" };
+  if (session.isHumanMode && session.humanModeUntil && new Date(session.humanModeUntil).getTime() < Date.now()) {
+    await query(`
+      UPDATE chat_sessions 
+      SET is_human_mode = false, human_mode_until = NULL, updated_at = CURRENT_TIMESTAMP
+      WHERE tenant_id = $1 AND remote_jid = $2
+    `, [tenantId, remoteJid]);
+    return { isHumanMode: false, unread: session.unread || false, notes: session.notes || "" };
+  }
+  return session;
 }
 async function getAllChatSessions(tenantId) {
-  const result = await query(`
-    SELECT remote_jid as "remoteJid", is_human_mode as "isHumanMode", unread, notes
-    FROM chat_sessions
-    WHERE tenant_id = $1
-  `, [tenantId]);
+  let result;
+  try {
+    result = await query(`
+      SELECT remote_jid as "remoteJid", is_human_mode as "isHumanMode", unread, notes, human_mode_until as "humanModeUntil"
+      FROM chat_sessions
+      WHERE tenant_id = $1
+    `, [tenantId]);
+  } catch (err) {
+    result = await query(`
+      SELECT remote_jid as "remoteJid", is_human_mode as "isHumanMode", unread, notes
+      FROM chat_sessions
+      WHERE tenant_id = $1
+    `, [tenantId]);
+  }
   const map = {};
   result.rows.forEach((r) => {
     map[r.remoteJid] = {
       isHumanMode: r.isHumanMode || false,
       unread: r.unread || false,
-      notes: r.notes || ""
+      notes: r.notes || "",
+      humanModeUntil: r.humanModeUntil
     };
   });
   return map;
 }
-async function setChatHumanMode(tenantId, remoteJid, isHumanMode) {
-  await query(`
-    INSERT INTO chat_sessions (tenant_id, remote_jid, is_human_mode, updated_at)
-    VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
-    ON CONFLICT (tenant_id, remote_jid) DO UPDATE SET
-      is_human_mode = EXCLUDED.is_human_mode,
-      updated_at = CURRENT_TIMESTAMP
-  `, [tenantId, remoteJid, isHumanMode]);
+async function setChatHumanMode(tenantId, remoteJid, isHumanMode, hoursUntilExpire = 4) {
+  const untilSql = isHumanMode ? `CURRENT_TIMESTAMP + INTERVAL '${Math.max(1, hoursUntilExpire)} hours'` : "NULL";
+  try {
+    await query(`
+      INSERT INTO chat_sessions (tenant_id, remote_jid, is_human_mode, human_mode_until, updated_at)
+      VALUES ($1, $2, $3, ${untilSql}, CURRENT_TIMESTAMP)
+      ON CONFLICT (tenant_id, remote_jid) DO UPDATE SET
+        is_human_mode = EXCLUDED.is_human_mode,
+        human_mode_until = ${untilSql},
+        updated_at = CURRENT_TIMESTAMP
+    `, [tenantId, remoteJid, isHumanMode]);
+  } catch (err) {
+    if (err && (err.message?.includes("human_mode_until") || err.code === "42703")) {
+      await query(`ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS human_mode_until TIMESTAMPTZ;`);
+      await query(`
+        INSERT INTO chat_sessions (tenant_id, remote_jid, is_human_mode, human_mode_until, updated_at)
+        VALUES ($1, $2, $3, ${untilSql}, CURRENT_TIMESTAMP)
+        ON CONFLICT (tenant_id, remote_jid) DO UPDATE SET
+          is_human_mode = EXCLUDED.is_human_mode,
+          human_mode_until = ${untilSql},
+          updated_at = CURRENT_TIMESTAMP
+      `, [tenantId, remoteJid, isHumanMode]);
+    } else {
+      throw err;
+    }
+  }
 }
 var getChatMessagesByTenant = getChatsByTenant;
 var saveChatMessage = createChatMessage;
@@ -3641,7 +4233,7 @@ async function getAppointmentsByTenant(tenantId) {
   const result = await query(`
     SELECT id, tenant_id as "tenantId", name, whatsapp, service, 
            date, time, amount, status, details, vehicle_model as "vehicleModel",
-           selected_variables as "selectedVariables",
+           selected_variables as "selectedVariables", specialist_id as "specialistId",
            created_at as "createdAt"
     FROM appointments 
     WHERE tenant_id = $1
@@ -3653,7 +4245,7 @@ async function getAppointmentById(id, tenantId) {
   const result = await query(`
     SELECT id, tenant_id as "tenantId", name, whatsapp, service, 
            date, time, amount, status, details, vehicle_model as "vehicleModel",
-           selected_variables as "selectedVariables",
+           selected_variables as "selectedVariables", specialist_id as "specialistId",
            created_at as "createdAt"
     FROM appointments 
     WHERE id = $1 AND tenant_id = $2
@@ -3663,11 +4255,11 @@ async function getAppointmentById(id, tenantId) {
 async function createAppointment(tenantId, data) {
   const result = await query(`
     INSERT INTO appointments (
-      tenant_id, name, whatsapp, service, date, time, amount, status, details, vehicle_model, selected_variables
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      tenant_id, name, whatsapp, service, date, time, amount, status, details, vehicle_model, selected_variables, specialist_id
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
     RETURNING id, tenant_id as "tenantId", name, whatsapp, service, 
            date, time, amount, status, details, vehicle_model as "vehicleModel",
-           selected_variables as "selectedVariables",
+           selected_variables as "selectedVariables", specialist_id as "specialistId",
            created_at as "createdAt"
   `, [
     tenantId,
@@ -3680,7 +4272,8 @@ async function createAppointment(tenantId, data) {
     data.status || "scheduled",
     data.details,
     data.vehicleModel,
-    data.selectedVariables ? JSON.stringify(data.selectedVariables) : null
+    data.selectedVariables ? JSON.stringify(data.selectedVariables) : null,
+    data.specialistId || null
   ]);
   return result.rows[0];
 }
@@ -3688,7 +4281,7 @@ async function updateAppointment(id, tenantId, data) {
   const updates = [];
   const params = [id, tenantId];
   let paramIdx = 3;
-  const fields = ["name", "whatsapp", "service", "date", "time", "amount", "status", "details", "vehicleModel", "selectedVariables"];
+  const fields = ["name", "whatsapp", "service", "date", "time", "amount", "status", "details", "vehicleModel", "selectedVariables", "specialistId"];
   for (const field of fields) {
     if (data[field] !== void 0) {
       const dbField = field.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
@@ -3703,7 +4296,7 @@ async function updateAppointment(id, tenantId, data) {
     WHERE id = $1 AND tenant_id = $2
     RETURNING id, tenant_id as "tenantId", name, whatsapp, service, 
            date, time, amount, status, details, vehicle_model as "vehicleModel",
-           selected_variables as "selectedVariables",
+           selected_variables as "selectedVariables", specialist_id as "specialistId",
            created_at as "createdAt"
   `, params);
   return result.rows[0] || null;
@@ -3725,14 +4318,37 @@ async function createBookingFromCommand(tenantId, bookingData) {
       (s) => s.name.toLowerCase().includes((bookingData.service || "").toLowerCase())
     ) || services[0];
     const price = matchedService ? matchedService.price : 0;
+    const bookingDate = bookingData.date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+    const bookingTime = bookingData.time || "10:00 AM";
+    const collisionCheck = await query(`
+      SELECT id, name, time 
+      FROM appointments 
+      WHERE tenant_id = $1 AND date = $2 AND time = $3 AND status NOT IN ('cancelled', 'cancelado')
+      LIMIT 1
+    `, [tenantId, bookingDate, bookingTime]);
+    if (collisionCheck.rows.length > 0) {
+      console.warn(`[createBookingFromCommand] Conflict detected: Slot ${bookingDate} ${bookingTime} is already booked.`);
+      throw new Error(`El horario ${bookingDate} a las ${bookingTime} ya se encuentra reservado.`);
+    }
+    let specialistId = void 0;
+    if (bookingData.specialistId) {
+      specialistId = bookingData.specialistId;
+    } else if (bookingData.specialistName) {
+      const allSpecs = await getSpecialistsByTenant(tenantId);
+      const matchedSpec = allSpecs.find(
+        (s) => s.name.toLowerCase().includes(bookingData.specialistName.toLowerCase()) || bookingData.specialistName.toLowerCase().includes(s.name.toLowerCase())
+      );
+      if (matchedSpec) specialistId = matchedSpec.id;
+    }
     const appointment = await createAppointment(tenantId, {
       name: bookingData.customerName || "Cliente WhatsApp",
       whatsapp: bookingData.customerPhone || "",
       service: matchedService ? matchedService.name : bookingData.service || "Servicio General",
-      date: bookingData.date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0],
-      time: bookingData.time || "10:00 AM",
+      date: bookingDate,
+      time: bookingTime,
       amount: Number(price),
       details: bookingData.vehicleInfo || "",
+      specialistId,
       status: "scheduled"
     });
     return appointment;
@@ -3744,20 +4360,30 @@ async function createBookingFromCommand(tenantId, bookingData) {
 async function cancelBookingFromWhatsApp(tenantId, phone, cancelData) {
   try {
     const clean = phone.replace(/\D/g, "");
-    const res = await query(`
+    let sql = `
       SELECT * FROM appointments 
       WHERE tenant_id = $1 AND REPLACE(whatsapp, '+', '') LIKE '%' || $2 || '%' 
         AND status IN ('scheduled', 'confirmed', 'pending')
-      ORDER BY date ASC, time ASC
-      LIMIT 1
-    `, [tenantId, clean.slice(-8)]);
+    `;
+    const params = [tenantId, clean.slice(-8)];
+    let paramIdx = 3;
+    if (cancelData?.date) {
+      sql += ` AND date = $${paramIdx++}`;
+      params.push(cancelData.date);
+    }
+    if (cancelData?.service) {
+      sql += ` AND service ILIKE $${paramIdx++}`;
+      params.push(`%${cancelData.service}%`);
+    }
+    sql += ` ORDER BY date ASC, time ASC LIMIT 1`;
+    const res = await query(sql, params);
     if (!res.rows[0]) {
-      console.log(`[CancelBooking] No active appointment found for phone ${phone}`);
+      console.log(`[CancelBooking] No active appointment found for phone ${phone} matching criteria:`, cancelData);
       return null;
     }
     const appt = res.rows[0];
     const updated = await updateAppointment(appt.id, tenantId, { status: "cancelled" });
-    console.log(`[CancelBooking] Successfully cancelled appointment ${appt.id} for ${appt.name}`);
+    console.log(`[CancelBooking] Successfully cancelled appointment ${appt.id} for ${appt.name} (${appt.service} - ${appt.date} ${appt.time})`);
     return updated;
   } catch (error) {
     console.error("Error cancelling booking from WhatsApp:", error);
@@ -3767,24 +4393,45 @@ async function cancelBookingFromWhatsApp(tenantId, phone, cancelData) {
 async function rescheduleBookingFromWhatsApp(tenantId, phone, rescheduleData) {
   try {
     const clean = phone.replace(/\D/g, "");
-    const res = await query(`
+    let sql = `
       SELECT * FROM appointments 
       WHERE tenant_id = $1 AND REPLACE(whatsapp, '+', '') LIKE '%' || $2 || '%' 
         AND status IN ('scheduled', 'confirmed', 'pending')
-      ORDER BY date ASC, time ASC
-      LIMIT 1
-    `, [tenantId, clean.slice(-8)]);
+    `;
+    const params = [tenantId, clean.slice(-8)];
+    let paramIdx = 3;
+    if (rescheduleData?.currentDate || rescheduleData?.date) {
+      sql += ` AND date = $${paramIdx++}`;
+      params.push(rescheduleData.currentDate || rescheduleData.date);
+    }
+    if (rescheduleData?.service) {
+      sql += ` AND service ILIKE $${paramIdx++}`;
+      params.push(`%${rescheduleData.service}%`);
+    }
+    sql += ` ORDER BY date ASC, time ASC LIMIT 1`;
+    const res = await query(sql, params);
     if (!res.rows[0]) {
-      console.log(`[RescheduleBooking] No active appointment found for phone ${phone}`);
+      console.log(`[RescheduleBooking] No active appointment found for phone ${phone} matching criteria:`, rescheduleData);
       return null;
     }
     const appt = res.rows[0];
+    const targetDate = rescheduleData.newDate || appt.date;
+    const targetTime = rescheduleData.newTime || appt.time;
+    const collisionCheck = await query(`
+      SELECT id FROM appointments 
+      WHERE tenant_id = $1 AND date = $2 AND time = $3 AND status NOT IN ('cancelled', 'cancelado') AND id != $4
+      LIMIT 1
+    `, [tenantId, targetDate, targetTime, appt.id]);
+    if (collisionCheck.rows.length > 0) {
+      console.warn(`[RescheduleBooking] Conflict detected: Target slot ${targetDate} ${targetTime} is already occupied.`);
+      throw new Error(`El horario ${targetDate} a las ${targetTime} ya se encuentra ocupado.`);
+    }
     const updated = await updateAppointment(appt.id, tenantId, {
-      date: rescheduleData.newDate || appt.date,
-      time: rescheduleData.newTime || appt.time,
+      date: targetDate,
+      time: targetTime,
       status: "scheduled"
     });
-    console.log(`[RescheduleBooking] Successfully moved appointment ${appt.id} to ${rescheduleData.newDate} ${rescheduleData.newTime}`);
+    console.log(`[RescheduleBooking] Successfully moved appointment ${appt.id} (${appt.service}) to ${targetDate} ${targetTime}`);
     return updated;
   } catch (error) {
     console.error("Error rescheduling booking from WhatsApp:", error);
@@ -3843,16 +4490,16 @@ async function getOrderById(id, tenantId) {
            chat_message_id as "chatMessageId", driver_id as "driverId", waze_url as "wazeUrl",
            created_at as "createdAt", updated_at as "updatedAt"
     FROM orders 
-    WHERE id = $1
-  `, [id]);
+    WHERE id = $1 AND tenant_id = $2
+  `, [id, tenantId]);
   if (result.rows.length === 0) return null;
   const order = result.rows[0];
   const itemsRes = await query(`
     SELECT id, product_id as "productId", variant_id as "variantId", product_name as "productName",
            variant_name as "variantName", selected_variables as "selectedVariables",
            quantity, unit_price as "unitPrice", total_price as "totalPrice"
-    FROM order_items WHERE order_id = $1
-  `, [id]);
+    FROM order_items WHERE order_id = $1 AND tenant_id = $2
+  `, [id, tenantId]);
   order.items = itemsRes.rows;
   return order;
 }
@@ -3961,7 +4608,7 @@ async function updateOrder(id, tenantId, data) {
   }
   if (updates.length > 0) {
     updates.push(`updated_at = CURRENT_TIMESTAMP`);
-    await query(`UPDATE orders SET ${updates.join(", ")} WHERE id = $1 AND (tenant_id = $2 OR tenant_id IS NOT NULL)`, params);
+    await query(`UPDATE orders SET ${updates.join(", ")} WHERE id = $1 AND tenant_id = $2`, params);
   }
   return getOrderById(id, tenantId);
 }
@@ -3973,11 +4620,30 @@ async function confirmPayment(id, tenantId, paymentReference) {
 }
 
 // src/server/services/order.service.ts
+init_pool();
 async function createOrderFromWhatsApp(tenantId, orderData) {
   try {
     const allProducts = await getProductsByTenant(tenantId, true);
     const items = [];
     let subtotal = 0;
+    for (const item of orderData.items || []) {
+      const product = allProducts.find(
+        (p) => p.name.toLowerCase().includes((item.productName || "").toLowerCase()) || (item.productName || "").toLowerCase().includes(p.name.toLowerCase())
+      );
+      const qty = item.quantity || 1;
+      if (product && product.trackStock) {
+        if (item.variantName && product.variants && product.variants.length > 0) {
+          const matchedVariant = product.variants.find(
+            (v) => v.name.toLowerCase().includes(item.variantName.toLowerCase()) || item.variantName.toLowerCase().includes(v.name.toLowerCase())
+          );
+          if (matchedVariant && (matchedVariant.stock ?? 0) < qty) {
+            throw new Error(`Stock insuficiente para la variante "${matchedVariant.name}" de "${product.name}". Disponible: ${matchedVariant.stock ?? 0}`);
+          }
+        } else if ((product.stock ?? 0) < qty) {
+          throw new Error(`Stock insuficiente para "${product.name}". Disponible: ${product.stock ?? 0}`);
+        }
+      }
+    }
     for (const item of orderData.items || []) {
       const product = allProducts.find(
         (p) => p.name.toLowerCase().includes((item.productName || "").toLowerCase()) || (item.productName || "").toLowerCase().includes(p.name.toLowerCase())
@@ -4001,22 +4667,33 @@ async function createOrderFromWhatsApp(tenantId, orderData) {
       const totalPrice = unitPrice * qty;
       subtotal += totalPrice;
       items.push({
-        productId: product?.id || null,
-        variantId,
+        productId: product?.id || void 0,
+        variantId: variantId || void 0,
         productName: product?.name || item.productName || "Producto",
-        variantName,
+        variantName: variantName || void 0,
         quantity: qty,
         unitPrice,
         totalPrice
       });
       if (product && product.trackStock) {
-        await updateProduct(product.id, tenantId, {
-          stock: Math.max(0, (product.stock || 0) - qty)
-        });
+        await query(
+          "UPDATE products SET stock = GREATEST(0, stock - $1), updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND tenant_id = $3",
+          [qty, product.id, tenantId]
+        );
+        if (variantId) {
+          await query(
+            "UPDATE product_variants SET stock = GREATEST(0, stock - $1) WHERE id = $2 AND product_id = $3",
+            [qty, variantId, product.id]
+          );
+        }
       }
     }
     const deliveryMethod = orderData.deliveryMethod || (orderData.deliveryAddress ? "delivery" : "pickup");
     const customerAddress = orderData.deliveryAddress || orderData.customerAddress || "";
+    const store = await getStoreSettings(tenantId);
+    const isDelivery = deliveryMethod === "delivery";
+    const deliveryFee = isDelivery ? Number(store?.deliveryFee || 0) : 0;
+    const finalTotal = subtotal + deliveryFee;
     const order = await createOrder(
       tenantId,
       {
@@ -4026,8 +4703,9 @@ async function createOrderFromWhatsApp(tenantId, orderData) {
         deliveryMethod,
         source: "whatsapp",
         subtotal,
-        total: subtotal,
-        currency: "CRC",
+        deliveryFee,
+        total: finalTotal,
+        currency: store?.currency || "CRC",
         status: "pedido_recibido",
         paymentMethod: orderData.paymentMethod || "sinpe",
         paymentStatus: "pending",
@@ -4044,44 +4722,113 @@ async function createOrderFromWhatsApp(tenantId, orderData) {
 
 // src/server/services/message-queue.service.ts
 init_evolution();
+
+// src/server/db/ai-command-logs.repo.ts
+init_pool();
+async function logAICommand(tenantId, remoteJid, commandType, payload, status, errorMessage) {
+  try {
+    await query(`
+      INSERT INTO ai_command_logs (tenant_id, remote_jid, command_type, payload, status, error_message)
+      VALUES ($1, $2, $3, $4, $5, $6)
+    `, [
+      tenantId,
+      remoteJid,
+      commandType,
+      payload ? JSON.stringify(payload) : null,
+      status,
+      errorMessage || null
+    ]);
+  } catch (err) {
+    if (err && (err.message?.includes("ai_command_logs") || err.code === "42P01")) {
+      try {
+        await query(`
+          CREATE TABLE IF NOT EXISTS ai_command_logs (
+            id TEXT PRIMARY KEY DEFAULT 'cmd_' || gen_random_uuid()::text,
+            tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+            remote_jid VARCHAR(100) NOT NULL,
+            command_type VARCHAR(50) NOT NULL,
+            payload JSONB,
+            status VARCHAR(50) NOT NULL,
+            error_message TEXT,
+            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+          );
+        `);
+        await query(`
+          INSERT INTO ai_command_logs (tenant_id, remote_jid, command_type, payload, status, error_message)
+          VALUES ($1, $2, $3, $4, $5, $6)
+        `, [
+          tenantId,
+          remoteJid,
+          commandType,
+          payload ? JSON.stringify(payload) : null,
+          status,
+          errorMessage || null
+        ]);
+      } catch (innerErr) {
+        console.error("[logAICommand] Inner error creating table or inserting:", innerErr);
+      }
+    } else {
+      console.error("[logAICommand] Error logging AI command:", err);
+    }
+  }
+}
+
+// src/server/services/message-queue.service.ts
 var io = null;
-var isProcessing = false;
+var activeChats = /* @__PURE__ */ new Set();
+var MAX_CONCURRENT = 5;
+var isPolling = false;
 function startQueueWorker(socketIo) {
   io = socketIo;
-  console.log("[Queue] Worker started. Polling every 2 seconds...");
-  setInterval(processNextInQueue, 2e3);
+  console.log("[Queue] Worker started. Multi-tenant concurrent worker active (up to 5 parallel)...");
+  setInterval(tickQueue, 1500);
 }
-async function processNextInQueue() {
-  if (isProcessing) return;
-  isProcessing = true;
+async function tickQueue() {
+  if (isPolling) return;
+  isPolling = true;
   try {
-    const msg = await takeNextPending();
-    if (!msg) {
-      isProcessing = false;
-      return;
+    while (activeChats.size < MAX_CONCURRENT) {
+      const excludeKeys = Array.from(activeChats);
+      const msg = await takeNextPending(excludeKeys);
+      if (!msg) break;
+      const chatKey = `${msg.tenantId}:${msg.remoteJid}`;
+      activeChats.add(chatKey);
+      processSingleMessage(msg).catch((err) => console.error("[Queue] Uncaught error in processSingleMessage:", err)).finally(() => {
+        activeChats.delete(chatKey);
+      });
     }
+  } finally {
+    isPolling = false;
+  }
+}
+async function processSingleMessage(msg) {
+  try {
     console.log(`[Queue] Processing message from ${msg.pushName} (${msg.cleanPhone}): "${msg.userMessage.slice(0, 50)}..."`);
     const session = await getChatSession(msg.tenantId, msg.remoteJid);
     if (session?.isHumanMode) {
       console.log(`[Queue] Chat ${msg.remoteJid} is in HUMAN MODE. Skipping.`);
       await markDone(msg.id, "HUMAN_MODE_SKIP");
-      isProcessing = false;
       return;
     }
     const agentConfig = await getAgentConfig(msg.tenantId);
     if (agentConfig?.aiChatbotEnabled === false) {
       await markDone(msg.id, "AI_DISABLED");
-      isProcessing = false;
       return;
     }
-    const allChats = await getChatMessagesByTenant(msg.tenantId, 20);
+    const additionalMessages = await consumePendingForChat(msg.tenantId, msg.remoteJid, msg.id);
+    let fullUserMessage = msg.userMessage;
+    if (additionalMessages.length > 0) {
+      fullUserMessage += "\n" + additionalMessages.join("\n");
+      console.log(`[Queue] Debounced ${additionalMessages.length} burst messages for ${msg.pushName}`);
+    }
+    const allChats = await getChatMessagesByTenant(msg.tenantId, 50);
     const history = allChats.filter((c) => (c.remoteJid || c.remote_jid) === msg.remoteJid).map((c) => ({
       role: c.fromMe || c.from_me ? "assistant" : "user",
       content: c.messageText || c.message_text || c.aiResponse || c.ai_response || ""
     }));
     const aiResult = await processWhatsAppMessageWithAI(
       msg.tenantId,
-      msg.userMessage,
+      fullUserMessage,
       msg.cleanPhone,
       msg.pushName,
       history
@@ -4097,12 +4844,26 @@ async function processNextInQueue() {
       await saveChatMessage(msg.tenantId, { id: `ai_${Date.now()}`, remoteJid: msg.remoteJid, pushName: "Asistente IA", fromMe: true, messageText: customerHandoffReply, aiResponse: customerHandoffReply, status: "sent" });
       await markDone(msg.id, customerHandoffReply);
       if (io) io.to(`tenant_${msg.tenantId}`).emit("chat:message", { id: `ai_${Date.now()}`, tenantId: msg.tenantId, remoteJid: msg.remoteJid, pushName: "Asistente IA", fromMe: true, messageText: customerHandoffReply, createdAt: (/* @__PURE__ */ new Date()).toISOString() });
-      isProcessing = false;
+      const tenant = await getTenantById(msg.tenantId);
+      const adminPhone = (agentConfig?.handoffNotifyPhone || tenant?.whatsappNumber || "").replace(/\D/g, "");
+      if (adminPhone) {
+        const reason = aiResult.handoffReason || (isKeywordTriggered ? `Palabra clave: "${msg.userMessage}"` : "Solicitado por el cliente o la IA");
+        const alertMsg = `\u{1F6A8} *\xA1ATENCI\xD3N HUMANA REQUERIDA!*
+
+\u{1F464} *Cliente:* ${msg.pushName} (+${msg.cleanPhone})
+\u{1F4DD} *Motivo:* ${reason}
+
+\u{1F449} _La IA ha sido pausada en este chat. Responde desde WhatsApp o tu Panel de Betico._`;
+        try {
+          await sendMessage(msg.instanceName, adminPhone, alertMsg);
+        } catch (adminErr) {
+          console.error("[Queue] Error notifying admin of handoff:", adminErr);
+        }
+      }
       return;
     }
     if (!aiResult || !aiResult.replyText) {
       await markFailed(msg.id, "No AI reply generated");
-      isProcessing = false;
       return;
     }
     let sendRes;
@@ -4118,44 +4879,143 @@ async function processNextInQueue() {
     }
     if (aiResult.isBookingDetected && aiResult.bookingData) {
       try {
-        await createBookingFromCommand(msg.tenantId, { ...aiResult.bookingData, customerPhone: aiResult.bookingData.customerPhone || msg.cleanPhone, customerName: aiResult.bookingData.customerName || msg.pushName });
+        const bResult = await createBookingFromCommand(msg.tenantId, { ...aiResult.bookingData, customerPhone: aiResult.bookingData.customerPhone || msg.cleanPhone, customerName: aiResult.bookingData.customerName || msg.pushName });
+        await logAICommand(msg.tenantId, msg.remoteJid, "booking", aiResult.bookingData, "success");
+        if (bResult && io) {
+          io.to(`tenant_${msg.tenantId}`).emit("appointment:created", bResult);
+        }
       } catch (err) {
         console.error("[Queue] Failed to process booking:", err);
+        await logAICommand(msg.tenantId, msg.remoteJid, "booking", aiResult.bookingData, "failed", err?.message);
+        if (io) {
+          io.to(`tenant_${msg.tenantId}`).emit("ai:command_failed", {
+            remoteJid: msg.remoteJid,
+            commandType: "booking",
+            clientName: msg.pushName,
+            errorMessage: err?.message || "Error al agendar cita"
+          });
+        }
+      }
+    }
+    if (aiResult.isCourtBookingDetected && aiResult.courtBookingData) {
+      try {
+        const cData = aiResult.courtBookingData;
+        const allCourts = await getCourtsByTenant(msg.tenantId);
+        const matchedCourt = allCourts.find(
+          (c) => c.name.toLowerCase().includes((cData.courtName || "").toLowerCase()) || (cData.courtName || "").toLowerCase().includes(c.name.toLowerCase())
+        ) || allCourts[0];
+        if (matchedCourt) {
+          const rawTime = cData.time || "19:00";
+          const cleanTime = rawTime.includes(":") ? rawTime.split(":").slice(0, 2).join(":") + ":00" : "19:00:00";
+          const newCourtBooking = await createBooking(msg.tenantId, {
+            courtId: matchedCourt.id,
+            date: cData.date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0],
+            time: cleanTime,
+            durationMinutes: cData.durationMinutes || matchedCourt.durationMinutes || 60,
+            bookingMode: cData.bookingMode === "seek_match" ? "seek_match" : "full",
+            teamAName: cData.teamAName || msg.pushName || "Cliente WhatsApp",
+            teamACaptain: msg.pushName || "Cliente WhatsApp",
+            teamAPhone: msg.cleanPhone,
+            sportType: matchedCourt.sportType,
+            totalPrice: matchedCourt.basePrice,
+            status: "confirmed"
+          });
+          console.log(`[Queue] Court booking created for ${msg.pushName} on ${matchedCourt.name} (${newCourtBooking.date} ${newCourtBooking.time})`);
+          await logAICommand(msg.tenantId, msg.remoteJid, "court_booking", cData, "success");
+          if (io) {
+            io.to(`tenant_${msg.tenantId}`).emit("courtBooking:created", newCourtBooking);
+          }
+        }
+      } catch (courtErr) {
+        console.error("[Queue] Failed to process court booking:", courtErr);
+        await logAICommand(msg.tenantId, msg.remoteJid, "court_booking", aiResult.courtBookingData, "failed", courtErr?.message);
+        if (io) {
+          io.to(`tenant_${msg.tenantId}`).emit("ai:command_failed", {
+            remoteJid: msg.remoteJid,
+            commandType: "court_booking",
+            clientName: msg.pushName,
+            errorMessage: courtErr?.message || "Error al reservar cancha"
+          });
+        }
       }
     }
     if (aiResult.isOrderDetected && aiResult.orderData) {
       try {
-        await createOrderFromWhatsApp(msg.tenantId, { ...aiResult.orderData, customerPhone: aiResult.orderData.customerPhone || msg.cleanPhone, customerName: aiResult.orderData.customerName || msg.pushName });
+        const orderResult = await createOrderFromWhatsApp(msg.tenantId, { ...aiResult.orderData, customerPhone: aiResult.orderData.customerPhone || msg.cleanPhone, customerName: aiResult.orderData.customerName || msg.pushName });
+        await logAICommand(msg.tenantId, msg.remoteJid, "order", aiResult.orderData, "success");
+        if (orderResult && io) {
+          io.to(`tenant_${msg.tenantId}`).emit("order:created", orderResult);
+        }
       } catch (err) {
         console.error("[Queue] Failed to process order:", err);
+        await logAICommand(msg.tenantId, msg.remoteJid, "order", aiResult.orderData, "failed", err?.message);
+        if (io) {
+          io.to(`tenant_${msg.tenantId}`).emit("ai:command_failed", {
+            remoteJid: msg.remoteJid,
+            commandType: "order",
+            clientName: msg.pushName,
+            errorMessage: err?.message || "Error al procesar orden"
+          });
+        }
       }
     }
     if (aiResult.isCancelBookingDetected) {
       try {
         const cancelled = await cancelBookingFromWhatsApp(msg.tenantId, msg.cleanPhone, aiResult.cancelBookingData);
-        if (cancelled && io) {
-          io.to(`tenant_${msg.tenantId}`).emit("appointment:updated", cancelled);
+        if (cancelled) {
+          await logAICommand(msg.tenantId, msg.remoteJid, "cancel_booking", aiResult.cancelBookingData, "success");
+          if (io) {
+            io.to(`tenant_${msg.tenantId}`).emit("appointment:updated", cancelled);
+          }
+        } else {
+          await logAICommand(msg.tenantId, msg.remoteJid, "cancel_booking", aiResult.cancelBookingData, "failed", "No se encontr\xF3 cita activa para cancelar");
         }
       } catch (err) {
         console.error("[Queue] Failed to process cancel booking:", err);
+        await logAICommand(msg.tenantId, msg.remoteJid, "cancel_booking", aiResult.cancelBookingData, "failed", err?.message);
       }
     }
     if (aiResult.isRescheduleBookingDetected && aiResult.rescheduleBookingData) {
       try {
         const rescheduled = await rescheduleBookingFromWhatsApp(msg.tenantId, msg.cleanPhone, aiResult.rescheduleBookingData);
-        if (rescheduled && io) {
-          io.to(`tenant_${msg.tenantId}`).emit("appointment:updated", rescheduled);
+        if (rescheduled) {
+          await logAICommand(msg.tenantId, msg.remoteJid, "reschedule_booking", aiResult.rescheduleBookingData, "success");
+          if (io) {
+            io.to(`tenant_${msg.tenantId}`).emit("appointment:updated", rescheduled);
+          }
+        } else {
+          await logAICommand(msg.tenantId, msg.remoteJid, "reschedule_booking", aiResult.rescheduleBookingData, "failed", "Horario ocupado o no se encontr\xF3 cita");
+          if (io) {
+            io.to(`tenant_${msg.tenantId}`).emit("ai:command_failed", {
+              remoteJid: msg.remoteJid,
+              commandType: "reschedule_booking",
+              clientName: msg.pushName,
+              errorMessage: "Horario ocupado o no se encontr\xF3 la cita"
+            });
+          }
         }
       } catch (err) {
         console.error("[Queue] Failed to process reschedule booking:", err);
+        await logAICommand(msg.tenantId, msg.remoteJid, "reschedule_booking", aiResult.rescheduleBookingData, "failed", err?.message);
+        if (io) {
+          io.to(`tenant_${msg.tenantId}`).emit("ai:command_failed", {
+            remoteJid: msg.remoteJid,
+            commandType: "reschedule_booking",
+            clientName: msg.pushName,
+            errorMessage: err?.message || "Error al reagendar cita"
+          });
+        }
       }
     }
     await markDone(msg.id, aiResult.replyText);
     console.log(`[Queue] \u2705 Processed message for ${msg.pushName} in queue`);
   } catch (error) {
     console.error("[Queue] Error processing message:", error);
-  } finally {
-    isProcessing = false;
+    try {
+      await markFailed(msg.id, error?.message || "Error inesperado al procesar mensaje");
+    } catch (markErr) {
+      console.error("[Queue] Error marking message as failed:", markErr);
+    }
   }
 }
 
@@ -4454,10 +5314,13 @@ async function getAuditLogs(tenantId, filters = {}) {
     params.push(filters.endDate);
   }
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-  const limit = filters.limit || 50;
-  const offset = filters.offset || 0;
+  const limit = Math.min(Math.max(1, parseInt(String(filters.limit || 50), 10) || 50), 200);
+  const offset = Math.max(0, parseInt(String(filters.offset || 0), 10) || 0);
   const countRes = await query(`SELECT COUNT(*) as total FROM audit_logs a ${whereClause}`, params);
   const total = parseInt(countRes.rows[0].total, 10);
+  const queryParams = [...params, limit, offset];
+  const limitIdx = queryParams.length - 1;
+  const offsetIdx = queryParams.length;
   const result = await query(`
     SELECT a.id, a.tenant_id as "tenantId", a.user_id as "userId",
            u.name as "userName", u.email as "userEmail",
@@ -4468,8 +5331,8 @@ async function getAuditLogs(tenantId, filters = {}) {
     LEFT JOIN users u ON a.user_id = u.id
     ${whereClause}
     ORDER BY a.created_at DESC
-    LIMIT ${limit} OFFSET ${offset}
-  `, params);
+    LIMIT $${limitIdx} OFFSET $${offsetIdx}
+  `, queryParams);
   return { logs: result.rows, total };
 }
 
@@ -4493,7 +5356,7 @@ function recordFailedAttempt(key) {
   const now = Date.now();
   const attempt = loginAttempts.get(key) || { count: 0, firstAttempt: now, blockedUntil: 0 };
   attempt.count += 1;
-  if (attempt.count >= 15) {
+  if (attempt.count >= 5) {
     attempt.blockedUntil = now + 5 * 60 * 1e3;
   }
   loginAttempts.set(key, attempt);
@@ -4746,7 +5609,8 @@ router.get("/me", authenticateToken, async (req, res) => {
       tenantSlug: tenant?.slug || ""
     });
   } catch (err) {
-    res.json(req.user);
+    console.error("Error fetching user profile in /me:", err);
+    res.status(500).json({ error: "Error al obtener perfil de usuario" });
   }
 });
 router.post("/forgot-password", async (req, res) => {
@@ -6450,10 +7314,7 @@ function normalizeCostaRicaPhone(phone) {
 async function resolveInstanceName(tenantId) {
   const tenant = await getTenantById(tenantId);
   if (tenant?.evolutionInstance) return tenant.evolutionInstance;
-  const anyActiveInstance = await query(`SELECT evolution_instance FROM tenants WHERE evolution_instance IS NOT NULL AND evolution_instance != '' LIMIT 1`);
-  if (anyActiveInstance.rows.length > 0) {
-    return anyActiveInstance.rows[0].evolution_instance;
-  }
+  console.warn(`[OrdersRoute] Tenant ${tenantId} does not have a configured WhatsApp evolutionInstance. Notification skipped.`);
   return void 0;
 }
 var STATUS_LABELS = {
@@ -6484,21 +7345,23 @@ router12.get("/", async (req, res) => {
                o.payment_status as "paymentStatus", o.payment_reference as "paymentReference",
                o.notes, o.delivery_method as "deliveryMethod", o.consumption_mode as "consumptionMode",
                o.table_number as "tableNumber", o.driver_id as "driverId", o.waze_url as "wazeUrl",
-               o.created_at as "createdAt", o.updated_at as "updatedAt"
+               o.created_at as "createdAt", o.updated_at as "updatedAt",
+               COALESCE(
+                 (SELECT json_agg(json_build_object(
+                    'id', oi.id,
+                    'productName', oi.product_name,
+                    'variantName', oi.variant_name,
+                    'quantity', oi.quantity,
+                    'unitPrice', oi.unit_price,
+                    'totalPrice', oi.total_price
+                  ))
+                  FROM order_items oi WHERE oi.order_id = o.id), '[]'::json
+               ) as items
         FROM orders o
         ORDER BY o.created_at DESC
+        LIMIT 100
       `);
-      const allOrders = [];
-      for (const row of allRes.rows) {
-        const itemsRes = await query(`
-          SELECT id, product_name as "productName", variant_name as "variantName",
-                 quantity, unit_price as "unitPrice", total_price as "totalPrice"
-          FROM order_items
-          WHERE order_id = $1
-        `, [row.id]);
-        allOrders.push({ ...row, items: itemsRes.rows });
-      }
-      orders = allOrders;
+      orders = allRes.rows;
     }
     res.json(orders);
   } catch (error) {
@@ -6982,22 +7845,69 @@ router16.post("/:slug/checkout", async (req, res) => {
       res.status(400).json({ error: "Nombre, tel\xE9fono y al menos un producto son requeridos" });
       return;
     }
-    const subtotal = items.reduce((acc, item) => {
-      const price = Number(item.unitPrice || item.price || 0);
-      const qty = parseInt(item.quantity || "1", 10);
-      return acc + price * qty;
-    }, 0);
+    const productIds = items.map((item) => item.productId || item.id).filter((id) => typeof id === "string" && id.length > 10);
+    if (productIds.length === 0) {
+      res.status(400).json({ error: "La orden no contiene productos v\xE1lidos" });
+      return;
+    }
+    const dbProductsRes = await query(`
+      SELECT p.id, p.name, p.price, p.custom_variables as "customVariables",
+             COALESCE((
+               SELECT json_agg(json_build_object('id', pv.id, 'name', pv.name, 'priceOverride', pv.price_override))
+               FROM product_variants pv WHERE pv.product_id = p.id
+             ), '[]'::json) as variants
+      FROM products p
+      WHERE p.tenant_id = $1 AND p.id = ANY($2::uuid[]) AND p.active = TRUE
+    `, [tenant.id, productIds]);
+    const dbProductsMap = new Map(dbProductsRes.rows.map((p) => [p.id, p]));
+    const formattedItems = [];
+    let subtotal = 0;
+    for (const item of items) {
+      const pid = item.productId || item.id;
+      const dbProduct = dbProductsMap.get(pid);
+      if (!dbProduct) {
+        res.status(400).json({ error: `El producto "${item.productName || item.name || "solicitado"}" no est\xE1 disponible o no existe en esta tienda.` });
+        return;
+      }
+      let verifiedPrice = Number(dbProduct.price || 0);
+      if (item.variantId || item.variantName) {
+        const matchedVariant = (dbProduct.variants || []).find(
+          (v) => item.variantId && v.id === item.variantId || item.variantName && v.name.toLowerCase() === item.variantName.toLowerCase()
+        );
+        if (matchedVariant && matchedVariant.priceOverride !== null && matchedVariant.priceOverride !== void 0) {
+          verifiedPrice = Number(matchedVariant.priceOverride);
+        }
+      }
+      if (item.selectedVariables && Array.isArray(dbProduct.customVariables)) {
+        for (const cv of dbProduct.customVariables) {
+          const selectedVal = item.selectedVariables[cv.name];
+          if (selectedVal && Array.isArray(cv.options)) {
+            const vals = Array.isArray(selectedVal) ? selectedVal : [selectedVal];
+            for (const v of vals) {
+              const opt = cv.options.find((o) => o.name === v);
+              if (opt && opt.price && Number(opt.price) > 0) {
+                verifiedPrice += Number(opt.price);
+              }
+            }
+          }
+        }
+      }
+      const qty = Math.max(1, parseInt(item.quantity || "1", 10));
+      const lineTotal = verifiedPrice * qty;
+      subtotal += lineTotal;
+      formattedItems.push({
+        productId: dbProduct.id,
+        productName: item.productName || item.name || dbProduct.name,
+        variantName: item.variantName || null,
+        selectedVariables: item.selectedVariables || void 0,
+        quantity: qty,
+        unitPrice: verifiedPrice,
+        totalPrice: lineTotal
+      });
+    }
     const isDelivery = consumptionMode === "delivery" || deliveryMethod === "delivery";
     const deliveryFee = isDelivery && store?.deliveryEnabled ? Number(store.deliveryFee || 0) : 0;
     const total = subtotal + deliveryFee;
-    const formattedItems = items.map((item) => ({
-      productId: item.productId || item.id,
-      productName: item.productName || item.name || "Producto",
-      variantName: item.variantName || null,
-      quantity: parseInt(item.quantity || "1", 10),
-      unitPrice: Number(item.unitPrice || item.price || 0),
-      totalPrice: Number(item.unitPrice || item.price || 0) * parseInt(item.quantity || "1", 10)
-    }));
     const order = await createOrder(
       tenant.id,
       {
@@ -7511,15 +8421,11 @@ router18.get("/:slug.ics", async (req, res) => {
       const svcKey = String(appt.service || "").toLowerCase().trim();
       const duration = serviceDurationMap.get(svcKey) || 45;
       const dtEnd = calculateEndTime(appt.date, appt.time, duration);
-      const summary = escapeICSText(`Cita: ${appt.name} (${appt.service})`);
+      const summary = escapeICSText(`Cita reservada: ${appt.service || "Servicio"}`);
       const descLines = [
-        `\u{1F464} Cliente: ${appt.name}`,
-        `\u{1F4F1} WhatsApp: ${appt.whatsapp || "No especificado"}`,
-        `\u{1F6E0}\uFE0F Servicio: ${appt.service}`,
-        `\u{1F4B0} Monto: \u20A1${Number(appt.amount || 0).toLocaleString("es-CR")}`,
-        appt.vehicleModel ? `\u{1F697} Detalle: ${appt.vehicleModel}` : "",
-        appt.details ? `\u{1F4DD} Notas: ${appt.details}` : "",
-        `\u{1F4CC} Estado: ${appt.status}`
+        `\u{1F6E0}\uFE0F Servicio: ${appt.service || "Servicio"}`,
+        `\u23F1\uFE0F Duraci\xF3n estimada: ${duration} min`,
+        `\u{1F4CC} Estado: ${appt.status === "confirmed" ? "Confirmada" : "Programada"}`
       ].filter(Boolean).join("\n");
       const escapedDesc = escapeICSText(descLines);
       icsContent.push("BEGIN:VEVENT");
@@ -8239,8 +9145,8 @@ router21.get("/settings", async (req, res) => {
       quotaProTokens: parseInt(settings.quota_pro_tokens || "100000", 10),
       quotaBusinessTokens: parseInt(settings.quota_business_tokens || "300000", 10),
       superadminNotifyPhone: settings.superadmin_notify_phone || "",
-      deployWebhookApp: settings.deploy_webhook_app || "http://2.25.103.200:3000/api/deploy/f5abd18bdaaff3ce20c24522c9c72beac7c756d9260d995b",
-      deployWebhookLocalai: settings.deploy_webhook_localai || "http://2.25.103.200:3000/api/deploy/4317a4ff5a1ed51532fc824fb9547b6ae20847cd3ef8ea4e"
+      deployWebhookApp: settings.deploy_webhook_app || process.env.DEPLOY_WEBHOOK_APP || "http://2.25.103.200:3000/api/deploy/f5abd18bdaaff3ce20c24522c9c72beac7c756d9260d995b",
+      deployWebhookLocalai: settings.deploy_webhook_localai || process.env.DEPLOY_WEBHOOK_LOCALAI || "http://2.25.103.200:3000/api/deploy/4317a4ff5a1ed51532fc824fb9547b6ae20847cd3ef8ea4e"
     });
   } catch (error) {
     console.error("Error fetching platform settings:", error);
@@ -8321,7 +9227,7 @@ router21.post("/deploy/:target", async (req, res) => {
     const dbRes = await query(`SELECT value FROM platform_settings WHERE key = $1`, [settingKey]);
     let deployUrl = dbRes.rows[0]?.value;
     if (!deployUrl) {
-      deployUrl = target === "localai" ? "http://2.25.103.200:3000/api/deploy/4317a4ff5a1ed51532fc824fb9547b6ae20847cd3ef8ea4e" : "http://2.25.103.200:3000/api/deploy/f5abd18bdaaff3ce20c24522c9c72beac7c756d9260d995b";
+      deployUrl = target === "localai" ? process.env.DEPLOY_WEBHOOK_LOCALAI || "http://2.25.103.200:3000/api/deploy/4317a4ff5a1ed51532fc824fb9547b6ae20847cd3ef8ea4e" : process.env.DEPLOY_WEBHOOK_APP || "http://2.25.103.200:3000/api/deploy/f5abd18bdaaff3ce20c24522c9c72beac7c756d9260d995b";
     }
     console.log(`[Deploy] Triggering webhook for ${target} at ${deployUrl}...`);
     try {
@@ -9213,72 +10119,6 @@ var branches_routes_default = router23;
 
 // src/server/routes/specialists.routes.ts
 import { Router as Router24 } from "express";
-
-// src/server/db/specialists.repo.ts
-init_pool();
-async function getSpecialistsByTenant(tenantId) {
-  const res = await query(
-    'SELECT id, tenant_id as "tenantId", name, phone, specialty, access_pin as "accessPin", active, created_at as "createdAt" FROM specialists WHERE tenant_id = $1 ORDER BY name ASC',
-    [tenantId]
-  );
-  return res.rows;
-}
-async function getSpecialistByPin(pin, phone) {
-  const cleanPin = (pin || "").trim();
-  let sql = 'SELECT id, tenant_id as "tenantId", name, phone, specialty, access_pin as "accessPin", active, created_at as "createdAt" FROM specialists WHERE TRIM(access_pin) = $1 AND active = TRUE';
-  const params = [cleanPin];
-  if (phone) {
-    const clean = phone.replace(/\D/g, "");
-    sql += " AND (REPLACE(phone, '-', '') LIKE '%' || $2 OR phone LIKE '%' || $2)";
-    params.push(clean.slice(-8));
-  }
-  sql += " LIMIT 1";
-  const res = await query(sql, params);
-  return res.rows[0] || null;
-}
-async function createSpecialist(tenantId, data) {
-  const pin = data.accessPin || Math.floor(1e3 + Math.random() * 9e3).toString();
-  const res = await query(
-    'INSERT INTO specialists (tenant_id, name, phone, specialty, access_pin, active) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, tenant_id as "tenantId", name, phone, specialty, access_pin as "accessPin", active, created_at as "createdAt"',
-    [tenantId, data.name || "Colaborador", data.phone || "", data.specialty || "General", pin, data.active !== false]
-  );
-  return res.rows[0];
-}
-async function updateSpecialist(id, tenantId, data) {
-  const res = await query(
-    'UPDATE specialists SET name = COALESCE($3, name), phone = COALESCE($4, phone), specialty = COALESCE($5, specialty), access_pin = COALESCE($6, access_pin), active = COALESCE($7, active) WHERE id = $1 AND tenant_id = $2 RETURNING id, tenant_id as "tenantId", name, phone, specialty, access_pin as "accessPin", active, created_at as "createdAt"',
-    [id, tenantId, data.name, data.phone, data.specialty, data.accessPin, data.active]
-  );
-  return res.rows[0] || null;
-}
-async function deleteSpecialist(id, tenantId) {
-  const res = await query("DELETE FROM specialists WHERE id = $1 AND tenant_id = $2", [id, tenantId]);
-  return (res.rowCount || 0) > 0;
-}
-async function getActiveAppointmentsForSpecialist(specialistId) {
-  const res = await query(
-    `SELECT a.id, a.tenant_id as "tenantId", a.name, a.whatsapp, a.service, a.date, a.time, a.amount, a.status, a.details, a.vehicle_model as "vehicleModel", a.specialist_id as "specialistId", a.created_at as "createdAt" FROM appointments a WHERE a.specialist_id = $1 AND a.status NOT IN ('completed', 'completado', 'cancelled', 'cancelado') ORDER BY a.date ASC, a.time ASC`,
-    [specialistId]
-  );
-  return res.rows;
-}
-async function getCompletedAppointmentsForSpecialist(specialistId, fromDate, toDate) {
-  let sql = `SELECT a.id, a.tenant_id as "tenantId", a.name, a.whatsapp, a.service, a.date, a.time, a.amount, a.status, a.details, a.vehicle_model as "vehicleModel", a.specialist_id as "specialistId", a.created_at as "createdAt" FROM appointments a WHERE a.specialist_id = $1 AND a.status IN ('completed', 'completado')`;
-  const params = [specialistId];
-  if (fromDate) {
-    params.push(fromDate);
-    sql += " AND a.date >= $" + params.length;
-  }
-  if (toDate) {
-    params.push(toDate);
-    sql += " AND a.date <= $" + params.length;
-  }
-  sql += " ORDER BY a.date DESC, a.time DESC";
-  const res = await query(sql, params);
-  return res.rows;
-}
-
-// src/server/routes/specialists.routes.ts
 init_pool();
 var router24 = Router24();
 router24.post("/portal/login", async (req, res) => {
@@ -9505,9 +10345,11 @@ var website_public_routes_default = router26;
 // src/server/routes/queue.routes.ts
 import { Router as Router27 } from "express";
 var router27 = Router27();
+router27.use(authenticateToken);
+router27.use(tenantContext);
 router27.get("/pending", async (req, res) => {
   try {
-    const tenantId = req.tenantId || req.query.tenantId;
+    const tenantId = req.user?.role === "superadmin" && req.query.tenantId ? req.query.tenantId : req.tenantId;
     if (!tenantId) return res.status(400).json({ error: "tenantId required" });
     const messages = await getPendingByTenant(tenantId);
     res.json(messages);
@@ -9518,7 +10360,7 @@ router27.get("/pending", async (req, res) => {
 });
 router27.get("/stats", async (req, res) => {
   try {
-    const tenantId = req.tenantId || req.query.tenantId;
+    const tenantId = req.user?.role === "superadmin" && req.query.tenantId ? req.query.tenantId : req.tenantId;
     const stats = await getQueueStats(tenantId || void 0);
     res.json(stats);
   } catch (error) {
@@ -9530,349 +10372,6 @@ var queue_routes_default = router27;
 
 // src/server/routes/courts.routes.ts
 import { Router as Router28 } from "express";
-
-// src/server/db/courts.repo.ts
-init_pool();
-function mapCourtRow(row) {
-  return {
-    id: row.id,
-    tenantId: row.tenant_id,
-    name: row.name,
-    sportType: row.sport_type,
-    customSportType: row.custom_sport_type,
-    description: row.description,
-    surface: row.surface,
-    isIndoor: row.is_indoor,
-    hasLighting: row.has_lighting,
-    basePrice: Number(row.base_price),
-    priceDisplay: row.price_display,
-    durationMinutes: row.duration_minutes,
-    teamSize: row.team_size,
-    maxExtraPlayers: row.max_extra_players,
-    extraPlayerFee: Number(row.extra_player_fee),
-    active: row.active,
-    sortOrder: row.sort_order,
-    createdAt: row.created_at
-  };
-}
-function mapBookingRow(row) {
-  return {
-    id: row.id,
-    tenantId: row.tenant_id,
-    courtId: row.court_id,
-    courtName: row.court_name || row.name,
-    // in case of join
-    date: row.date,
-    time: row.time,
-    durationMinutes: row.duration_minutes,
-    bookingMode: row.booking_mode,
-    matchStatus: row.match_status,
-    matchExpiryHours: Number(row.match_expiry_hours),
-    teamAName: row.team_a_name,
-    teamACaptain: row.team_a_captain,
-    teamAPhone: row.team_a_phone,
-    teamAPlayers: row.team_a_players,
-    teamAExtraPlayers: row.team_a_extra_players,
-    teamAPaid: row.team_a_paid,
-    teamBName: row.team_b_name,
-    teamBCaptain: row.team_b_captain,
-    teamBPhone: row.team_b_phone,
-    teamBPlayers: row.team_b_players,
-    teamBExtraPlayers: row.team_b_extra_players,
-    teamBPaid: row.team_b_paid,
-    totalPrice: Number(row.total_price),
-    pricePerTeam: row.price_per_team ? Number(row.price_per_team) : void 0,
-    paymentMode: row.payment_mode,
-    sportType: row.sport_type,
-    skillLevel: row.skill_level,
-    notes: row.notes,
-    status: row.status,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at
-  };
-}
-async function getCourtsByTenant(tenantId) {
-  const res = await query(`SELECT * FROM courts WHERE tenant_id = $1 ORDER BY sort_order, name`, [tenantId]);
-  return res.rows.map(mapCourtRow);
-}
-async function getCourtById(id, tenantId) {
-  const res = await query(`SELECT * FROM courts WHERE id = $1 AND tenant_id = $2`, [id, tenantId]);
-  return res.rows[0] ? mapCourtRow(res.rows[0]) : null;
-}
-async function createCourt(tenantId, data) {
-  const res = await query(`
-    INSERT INTO courts (
-      tenant_id, name, sport_type, custom_sport_type, description, surface, 
-      is_indoor, has_lighting, base_price, price_display, duration_minutes, 
-      team_size, max_extra_players, extra_player_fee, active, sort_order
-    ) VALUES (
-      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
-    ) RETURNING *
-  `, [
-    tenantId,
-    data.name,
-    data.sportType,
-    data.customSportType,
-    data.description,
-    data.surface,
-    data.isIndoor,
-    data.hasLighting,
-    data.basePrice,
-    data.priceDisplay,
-    data.durationMinutes,
-    data.teamSize,
-    data.maxExtraPlayers,
-    data.extraPlayerFee,
-    data.active !== false,
-    data.sortOrder || 0
-  ]);
-  return mapCourtRow(res.rows[0]);
-}
-async function updateCourt(id, tenantId, data) {
-  const allowed = {
-    name: "name",
-    sportType: "sport_type",
-    customSportType: "custom_sport_type",
-    description: "description",
-    surface: "surface",
-    isIndoor: "is_indoor",
-    hasLighting: "has_lighting",
-    basePrice: "base_price",
-    priceDisplay: "price_display",
-    durationMinutes: "duration_minutes",
-    teamSize: "team_size",
-    maxExtraPlayers: "max_extra_players",
-    extraPlayerFee: "extra_player_fee",
-    active: "active",
-    sortOrder: "sort_order"
-  };
-  const entries = Object.entries(data).filter(([k, v]) => allowed[k] !== void 0 && v !== void 0);
-  if (entries.length === 0) return getCourtById(id, tenantId);
-  const setClause = entries.map(([k], i) => `${allowed[k]} = $${i + 3}`).join(", ");
-  const values = entries.map((e) => e[1]);
-  const res = await query(`
-    UPDATE courts SET ${setClause} WHERE id = $1 AND tenant_id = $2 RETURNING *
-  `, [id, tenantId, ...values]);
-  return res.rows[0] ? mapCourtRow(res.rows[0]) : null;
-}
-async function deleteCourt(id, tenantId) {
-  const res = await query(`DELETE FROM courts WHERE id = $1 AND tenant_id = $2`, [id, tenantId]);
-  return (res.rowCount || 0) > 0;
-}
-async function getBookingsByTenant(tenantId, date) {
-  let q = `
-    SELECT cb.*, c.name as court_name 
-    FROM court_bookings cb
-    JOIN courts c ON c.id = cb.court_id
-    WHERE cb.tenant_id = $1
-  `;
-  const params = [tenantId];
-  if (date) {
-    q += ` AND cb.date = $2`;
-    params.push(date);
-  }
-  q += ` ORDER BY cb.date DESC, cb.time DESC`;
-  const res = await query(q, params);
-  return res.rows.map(mapBookingRow);
-}
-async function getBookingById(id, tenantId) {
-  const res = await query(`
-    SELECT cb.*, c.name as court_name 
-    FROM court_bookings cb
-    JOIN courts c ON c.id = cb.court_id
-    WHERE cb.id = $1 AND cb.tenant_id = $2
-  `, [id, tenantId]);
-  return res.rows[0] ? mapBookingRow(res.rows[0]) : null;
-}
-async function createBooking(tenantId, data) {
-  const bookingMode = data.bookingMode || "full";
-  const matchStatus = data.matchStatus || (bookingMode === "seek_match" ? "open" : "confirmed");
-  let totalPrice = Number(data.totalPrice || 0);
-  let durationMinutes = data.durationMinutes || 60;
-  let sportType = data.sportType;
-  if (data.courtId && (!totalPrice || !sportType)) {
-    const cRes = await query("SELECT * FROM courts WHERE id = $1", [data.courtId]);
-    if (cRes.rows[0]) {
-      const c = cRes.rows[0];
-      durationMinutes = data.durationMinutes || c.duration_minutes || 60;
-      sportType = sportType || c.sport_type || "futbol";
-      if (!totalPrice) {
-        totalPrice = Number(c.base_price || 0) + Number(data.teamAExtraPlayers || 0) * Number(c.extra_player_fee || 0);
-      }
-    }
-  }
-  const pricePerTeam = data.pricePerTeam ? Number(data.pricePerTeam) : totalPrice > 0 ? totalPrice / 2 : void 0;
-  const res = await query(`
-    INSERT INTO court_bookings (
-      tenant_id, court_id, date, time, duration_minutes, booking_mode,
-      match_status, match_expiry_hours, team_a_name, team_a_captain,
-      team_a_phone, team_a_players, team_a_extra_players, team_a_paid,
-      team_b_name, team_b_captain, team_b_phone, team_b_players,
-      team_b_extra_players, team_b_paid, total_price, price_per_team,
-      payment_mode, sport_type, skill_level, notes, status
-    ) VALUES (
-      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
-      $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27
-    ) RETURNING *
-  `, [
-    tenantId,
-    data.courtId,
-    data.date,
-    data.time,
-    durationMinutes,
-    bookingMode,
-    matchStatus,
-    data.matchExpiryHours || 1,
-    data.teamAName || "Equipo A",
-    data.teamACaptain,
-    data.teamAPhone,
-    data.teamAPlayers || 5,
-    data.teamAExtraPlayers || 0,
-    data.teamAPaid || false,
-    data.teamBName,
-    data.teamBCaptain,
-    data.teamBPhone,
-    data.teamBPlayers || 5,
-    data.teamBExtraPlayers || 0,
-    data.teamBPaid || false,
-    totalPrice,
-    pricePerTeam,
-    data.paymentMode || "both",
-    sportType,
-    data.skillLevel,
-    data.notes,
-    data.status || "confirmed"
-  ]);
-  const booking = mapBookingRow(res.rows[0]);
-  if (data.courtId) {
-    const cRes = await query("SELECT name FROM courts WHERE id = $1", [data.courtId]);
-    booking.courtName = cRes.rows[0]?.name || booking.courtName;
-  }
-  return booking;
-}
-async function updateBooking(id, tenantId, data) {
-  const allowed = {
-    date: "date",
-    time: "time",
-    durationMinutes: "duration_minutes",
-    bookingMode: "booking_mode",
-    matchStatus: "match_status",
-    matchExpiryHours: "match_expiry_hours",
-    teamAName: "team_a_name",
-    teamACaptain: "team_a_captain",
-    teamAPhone: "team_a_phone",
-    teamAPlayers: "team_a_players",
-    teamAExtraPlayers: "team_a_extra_players",
-    teamAPaid: "team_a_paid",
-    teamBName: "team_b_name",
-    teamBCaptain: "team_b_captain",
-    teamBPhone: "team_b_phone",
-    teamBPlayers: "team_b_players",
-    teamBExtraPlayers: "team_b_extra_players",
-    teamBPaid: "team_b_paid",
-    totalPrice: "total_price",
-    pricePerTeam: "price_per_team",
-    paymentMode: "payment_mode",
-    sportType: "sport_type",
-    skillLevel: "skill_level",
-    notes: "notes",
-    status: "status"
-  };
-  const entries = Object.entries(data).filter(([k, v]) => allowed[k] !== void 0 && v !== void 0);
-  if (entries.length === 0) return getBookingById(id, tenantId);
-  const setClause = entries.map(([k], i) => `${allowed[k]} = $${i + 3}`).join(", ");
-  const values = entries.map((e) => e[1]);
-  const res = await query(`
-    UPDATE court_bookings SET ${setClause}, updated_at = CURRENT_TIMESTAMP 
-    WHERE id = $1 AND tenant_id = $2 RETURNING *
-  `, [id, tenantId, ...values]);
-  return res.rows[0] ? mapBookingRow(res.rows[0]) : null;
-}
-async function cancelBooking(id, tenantId) {
-  const res = await query(`
-    UPDATE court_bookings SET status = 'cancelled', match_status = 'cancelled', updated_at = CURRENT_TIMESTAMP
-    WHERE id = $1 AND tenant_id = $2 RETURNING *
-  `, [id, tenantId]);
-  return res.rows[0] ? mapBookingRow(res.rows[0]) : null;
-}
-async function getOpenMatches(tenantId) {
-  const res = await query(`
-    SELECT cb.*, c.name as court_name 
-    FROM court_bookings cb
-    JOIN courts c ON c.id = cb.court_id
-    WHERE cb.tenant_id = $1 
-      AND cb.status != 'cancelled'
-      AND (cb.match_status = 'open' OR (cb.booking_mode = 'seek_match' AND (cb.team_b_name IS NULL OR cb.team_b_name = '')))
-      AND cb.date >= (CURRENT_DATE - INTERVAL '1 day')::date
-    ORDER BY cb.date, cb.time
-  `, [tenantId]);
-  return res.rows.map(mapBookingRow);
-}
-async function joinMatch(id, teamBData) {
-  const res = await query(`
-    UPDATE court_bookings 
-    SET team_b_name = $1, team_b_captain = $2, team_b_phone = $3,
-        team_b_players = $4, team_b_extra_players = $5,
-        match_status = 'matched', updated_at = CURRENT_TIMESTAMP
-    WHERE id = $6 RETURNING *
-  `, [
-    teamBData.teamBName || "Equipo B",
-    teamBData.teamBCaptain,
-    teamBData.teamBPhone,
-    teamBData.teamBPlayers || 5,
-    teamBData.teamBExtraPlayers || 0,
-    id
-  ]);
-  if (!res.rows[0]) return null;
-  const booking = mapBookingRow(res.rows[0]);
-  const cRes = await query("SELECT name FROM courts WHERE id = $1", [booking.courtId]);
-  booking.courtName = cRes.rows[0]?.name || booking.courtName;
-  return booking;
-}
-async function getAvailableSlots(tenantId, courtId, date) {
-  const nowCR = new Date((/* @__PURE__ */ new Date()).toLocaleString("en-US", { timeZone: "America/Costa_Rica" }));
-  const todayCR = `${nowCR.getFullYear()}-${String(nowCR.getMonth() + 1).padStart(2, "0")}-${String(nowCR.getDate()).padStart(2, "0")}`;
-  const currentMinutesNow = nowCR.getHours() * 60 + nowCR.getMinutes();
-  if (date < todayCR) {
-    return [];
-  }
-  const tRes = await query("SELECT settings_json FROM tenants WHERE id = $1", [tenantId]);
-  const settingsJson = tRes.rows[0]?.settings_json || {};
-  const scheduleSettings = settingsJson.scheduleSettings || { startHour: 8, endHour: 22, slotMinutes: 60 };
-  const startHour = Number(scheduleSettings.startHour) || 8;
-  const endHour = Number(scheduleSettings.endHour) || 22;
-  const slotMinutes = Number(scheduleSettings.slotMinutes) || 60;
-  const slots = [];
-  let currentMinutes = startHour * 60;
-  const endMinutes = endHour * 60;
-  while (currentMinutes < endMinutes) {
-    const h = Math.floor(currentMinutes / 60);
-    const m = currentMinutes % 60;
-    const timeStr = `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:00`;
-    slots.push(timeStr);
-    currentMinutes += slotMinutes;
-  }
-  const bookingsRes = await query(`
-    SELECT time 
-    FROM court_bookings 
-    WHERE tenant_id = $1 AND court_id = $2 AND date = $3 AND status != 'cancelled'
-  `, [tenantId, courtId, date]);
-  const bookedTimes = bookingsRes.rows.map((r) => {
-    return typeof r.time === "string" ? r.time : r.time.toString();
-  });
-  const isToday = date === todayCR;
-  return slots.filter((slot) => {
-    if (isToday) {
-      const [sh, sm] = slot.split(":").map(Number);
-      if (sh * 60 + sm <= currentMinutesNow) {
-        return false;
-      }
-    }
-    return !bookedTimes.includes(slot);
-  });
-}
-
-// src/server/routes/courts.routes.ts
 init_evolution();
 init_pool();
 var router28 = Router28();
@@ -10010,7 +10509,7 @@ router28.post("/public/:slug/join-match/:bookingId", async (req, res) => {
     const tenant = await getTenantBySlug(req.params.slug);
     if (!tenant) return res.status(404).json({ error: "Negocio no encontrado" });
     const { bookingId } = req.params;
-    const booking = await joinMatch(bookingId, req.body);
+    const booking = await joinMatch(bookingId, tenant.id, req.body);
     if (!booking) return res.status(404).json({ error: "Match no encontrado" });
     if (req.io) {
       req.io.to(`tenant_${tenant.id}`).emit("courtBooking:matched", booking);

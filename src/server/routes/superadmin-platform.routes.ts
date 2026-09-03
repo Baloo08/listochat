@@ -90,8 +90,8 @@ router.get('/settings', async (req, res) => {
       quotaProTokens: parseInt(settings.quota_pro_tokens || '100000', 10),
       quotaBusinessTokens: parseInt(settings.quota_business_tokens || '300000', 10),
       superadminNotifyPhone: settings.superadmin_notify_phone || '',
-      deployWebhookApp: settings.deploy_webhook_app || 'http://2.25.103.200:3000/api/deploy/f5abd18bdaaff3ce20c24522c9c72beac7c756d9260d995b',
-      deployWebhookLocalai: settings.deploy_webhook_localai || 'http://2.25.103.200:3000/api/deploy/4317a4ff5a1ed51532fc824fb9547b6ae20847cd3ef8ea4e'
+      deployWebhookApp: settings.deploy_webhook_app || process.env.DEPLOY_WEBHOOK_APP || 'http://2.25.103.200:3000/api/deploy/f5abd18bdaaff3ce20c24522c9c72beac7c756d9260d995b',
+      deployWebhookLocalai: settings.deploy_webhook_localai || process.env.DEPLOY_WEBHOOK_LOCALAI || 'http://2.25.103.200:3000/api/deploy/4317a4ff5a1ed51532fc824fb9547b6ae20847cd3ef8ea4e'
     });
   } catch (error) {
     console.error('Error fetching platform settings:', error);
@@ -186,8 +186,8 @@ router.post('/deploy/:target', async (req, res) => {
 
     if (!deployUrl) {
       deployUrl = target === 'localai'
-        ? 'http://2.25.103.200:3000/api/deploy/4317a4ff5a1ed51532fc824fb9547b6ae20847cd3ef8ea4e'
-        : 'http://2.25.103.200:3000/api/deploy/f5abd18bdaaff3ce20c24522c9c72beac7c756d9260d995b';
+        ? (process.env.DEPLOY_WEBHOOK_LOCALAI || 'http://2.25.103.200:3000/api/deploy/4317a4ff5a1ed51532fc824fb9547b6ae20847cd3ef8ea4e')
+        : (process.env.DEPLOY_WEBHOOK_APP || 'http://2.25.103.200:3000/api/deploy/f5abd18bdaaff3ce20c24522c9c72beac7c756d9260d995b');
     }
 
     console.log(`[Deploy] Triggering webhook for ${target} at ${deployUrl}...`);

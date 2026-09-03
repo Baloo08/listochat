@@ -126,8 +126,8 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
   const [connectingInstance, setConnectingInstance] = useState<string | null>(null);
 
   // 5. SYSTEM & DEPLOY STATE
-  const [deployWebhookApp, setDeployWebhookApp] = useState('http://2.25.103.200:3000/api/deploy/f5abd18bdaaff3ce20c24522c9c72beac7c756d9260d995b');
-  const [deployWebhookLocalai, setDeployWebhookLocalai] = useState('http://2.25.103.200:3000/api/deploy/4317a4ff5a1ed51532fc824fb9547b6ae20847cd3ef8ea4e');
+  const [deployWebhookApp, setDeployWebhookApp] = useState((import.meta as any).env?.VITE_DEPLOY_WEBHOOK_APP || 'http://2.25.103.200:3000/api/deploy/f5abd18bdaaff3ce20c24522c9c72beac7c756d9260d995b');
+  const [deployWebhookLocalai, setDeployWebhookLocalai] = useState((import.meta as any).env?.VITE_DEPLOY_WEBHOOK_LOCALAI || 'http://2.25.103.200:3000/api/deploy/4317a4ff5a1ed51532fc824fb9547b6ae20847cd3ef8ea4e');
   const [deployingTarget, setDeployingTarget] = useState<string | null>(null);
   const [deployMessage, setDeployMessage] = useState<string | null>(null);
   const [systemMetrics, setSystemMetrics] = useState<any>(null);

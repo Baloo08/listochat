@@ -40,7 +40,7 @@ export async function getOrdersByTenant(tenantId: string): Promise<Order[]> {
   return result.rows;
 }
 
-export async function getOrderById(id: string, tenantId?: string): Promise<Order | null> {
+export async function getOrderById(id: string, tenantId: string): Promise<Order | null> {
   const result = await query(`
     SELECT id, tenant_id as "tenantId", order_number as "orderNumber", customer_name as "customerName",
            customer_phone as "customerPhone", customer_email as "customerEmail", customer_address as "customerAddress",
@@ -51,8 +51,8 @@ export async function getOrderById(id: string, tenantId?: string): Promise<Order
            chat_message_id as "chatMessageId", driver_id as "driverId", waze_url as "wazeUrl",
            created_at as "createdAt", updated_at as "updatedAt"
     FROM orders 
-    WHERE id = $1
-  `, [id]);
+    WHERE id = $1 AND tenant_id = $2
+  `, [id, tenantId]);
   
   if (result.rows.length === 0) return null;
   const order = result.rows[0];
@@ -61,8 +61,8 @@ export async function getOrderById(id: string, tenantId?: string): Promise<Order
     SELECT id, product_id as "productId", variant_id as "variantId", product_name as "productName",
            variant_name as "variantName", selected_variables as "selectedVariables",
            quantity, unit_price as "unitPrice", total_price as "totalPrice"
-    FROM order_items WHERE order_id = $1
-  `, [id]);
+    FROM order_items WHERE order_id = $1 AND tenant_id = $2
+  `, [id, tenantId]);
   order.items = itemsRes.rows;
   return order;
 }
@@ -147,7 +147,7 @@ export async function updateOrder(id: string, tenantId: string, data: Partial<Or
 
   if (updates.length > 0) {
     updates.push(`updated_at = CURRENT_TIMESTAMP`);
-    await query(`UPDATE orders SET ${updates.join(', ')} WHERE id = $1 AND (tenant_id = $2 OR tenant_id IS NOT NULL)`, params);
+    await query(`UPDATE orders SET ${updates.join(', ')} WHERE id = $1 AND tenant_id = $2`, params);
   }
   return getOrderById(id, tenantId);
 }

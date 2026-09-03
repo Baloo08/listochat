@@ -8,6 +8,7 @@ import {
 import { useApi } from '../hooks/useApi';
 import { Court, CourtBooking } from '../../shared/types';
 import { formatFriendlyDate, formatShortDate, formatTime12h } from '../utils/dateFormat';
+import { io } from 'socket.io-client';
 
 export default function CourtsBookingsManager() {
   const [bookings, setBookings] = useState<CourtBooking[]>([]);
@@ -76,6 +77,21 @@ export default function CourtsBookingsManager() {
 
   useEffect(() => {
     loadData();
+    const socket = io(window.location.origin);
+    const auth = JSON.parse(localStorage.getItem('auth') || '{}');
+    const tenantId = auth.tenantId || auth.user?.tenantId;
+    if (tenantId) {
+      socket.emit('join_tenant', tenantId);
+    }
+    socket.on('courtBooking:created', () => {
+      loadData();
+    });
+    socket.on('courtBooking:matched', () => {
+      loadData();
+    });
+    return () => {
+      socket.disconnect();
+    };
   }, []);
 
   // Fetch available slots when court or date changes in manual booking modal

@@ -7,12 +7,16 @@ import { getTenantById } from '../db/tenant.repo.js';
 import { getStoreSettings } from '../db/store-settings.repo.js';
 import { getScheduleSettings } from '../db/schedule.repo.js';
 import { getTenantCurrentMonthUsage, incrementTenantUsage } from '../db/ai-usage.repo.js';
+import { getSpecialistsByTenant } from '../db/specialists.repo.js';
+import { getCourtsByTenant } from '../db/courts.repo.js';
 import { query } from '../db/pool.js';
 
 export interface AgentProcessResult {
   replyText: string;
   isBookingDetected: boolean;
   bookingData?: any;
+  isCourtBookingDetected?: boolean;
+  courtBookingData?: any;
   isOrderDetected: boolean;
   orderData?: any;
   isHandoffRequested: boolean;
@@ -53,7 +57,7 @@ export async function processWhatsAppMessageWithAI(
 
   // 1. SMART INTENT DETECTION & MULTI-TURN CONVERSATION CONTEXT
   const lowerMsg = userMessage.toLowerCase().trim();
-  const recentHistoryText = (chatHistory || []).slice(-6).map(h => h.content).join(' ').toLowerCase();
+  const recentHistoryText = (chatHistory || []).slice(-12).map(h => h.content).join(' ').toLowerCase();
   const conversationContext = `${recentHistoryText} ${lowerMsg}`;
 
   const isPureGreeting = /^(hola|buenas|buenos dias|buenas tardes|buenas noches|hey|alo|hi|saludos|pura vida|hola que tal|hola como estas)[s!.,?]*$/i.test(lowerMsg);
@@ -106,6 +110,64 @@ export async function processWhatsAppMessageWithAI(
         `• ${s.name}: ₡${Number(s.price || 0).toLocaleString('es-CR')} (${s.duration || `${s.estimatedMinutes || 45}m`})`
       ).join('\n') + '\n';
     }
+  }
+
+  // 1.5 Real-time Busy Appointment Slots & Specialists Injection
+  let busySlotsText = '';
+  let specialistsText = '';
+  if (asksForServices || !isPureGreeting) {
+    try {
+      const todayStr = new Date().toISOString().split('T')[0];
+      const busySlotsRes = await query(`
+        SELECT date, time, service
+        FROM appointments
+        WHERE tenant_id = $1 AND date >= $2 AND status NOT IN ('cancelled', 'cancelado')
+        ORDER BY date ASC, time ASC
+        LIMIT 40
+      `, [tenantId, todayStr]);
+
+      if (busySlotsRes.rows.length > 0) {
+        const grouped: Record<string, string[]> = {};
+        busySlotsRes.rows.forEach((r: any) => {
+          const d = r.date;
+          if (!grouped[d]) grouped[d] = [];
+          grouped[d].push(r.time);
+        });
+        const busySummary = Object.entries(grouped)
+          .map(([d, times]) => `  • ${d}: ${times.join(', ')} (OCUPADOS)`)
+          .join('\n');
+        busySlotsText = `🚫 HORARIOS YA OCUPADOS (NO OFRECER NI AGENDAR ESTOS HORARIOS):\n${busySummary}\n`;
+      }
+
+      const specialists = await getSpecialistsByTenant(tenantId);
+      if (specialists && specialists.length > 0) {
+        const activeSpecs = specialists.filter(s => s.active);
+        if (activeSpecs.length > 0) {
+          specialistsText = '👥 Especialistas / Equipo:\n' + 
+            activeSpecs.map(s => `• ${s.name}${s.specialty ? ` (${s.specialty})` : ''}`).join('\n') + '\n';
+        }
+      }
+    } catch (slotErr) {
+      console.error('[Agent] Error querying busy slots or specialists:', slotErr);
+    }
+  }
+
+  // 1.6 Sports Courts Injection
+  let courtsText = '';
+  try {
+    const courts = await getCourtsByTenant(tenantId);
+    if (courts && courts.length > 0) {
+      const activeCourts = courts.filter((c: any) => c.active !== false);
+      if (activeCourts.length > 0) {
+        courtsText = '⚽/🎾 CANCHAS DEPORTIVAS DISPONIBLES:\n' + activeCourts.map((c: any) => {
+          let desc = `• *${c.name}* [${c.sportType || 'cancha'}${c.surface ? `, ${c.surface}` : ''}]: ₡${Number(c.basePrice || 0).toLocaleString('es-CR')}/hora`;
+          if (c.hasLighting) desc += ' (iluminación incluida)';
+          return desc;
+        }).join('\n') + '\n';
+      }
+    }
+  } catch (courtErr) {
+    console.error('[Agent] Error fetching courts:', courtErr);
   }
 
   // Smart Filtering for Products with rich details (variants, descriptions, custom options)
@@ -256,13 +318,14 @@ ${agentConfig?.systemPrompt || 'Atiende amablemente a los clientes.'}
 Datos del negocio:
 ${crTime}
 ${(agentConfig?.showBookingLink !== false && bookingUrl) ? `Reservas online: ${bookingUrl}` : ''}${(agentConfig?.showStoreLink !== false && storeUrl) ? ` | Tienda online: ${storeUrl}` : ''}
-${scheduleInfo}${paymentInfo}${relevantServicesText}${relevantProductsText}${activeCustomerBookingsText}${activeCustomerOrdersText}
+${scheduleInfo}${paymentInfo}${relevantServicesText}${relevantProductsText}${courtsText}${specialistsText}${busySlotsText}${activeCustomerBookingsText}${activeCustomerOrdersText}
 REGLAS OBLIGATORIAS:
 1. Responde SOLO en español con un tono cálido, empático, educado y ágil adaptado al público de Costa Rica (*pura vida*, con mucho gusto, claro que sí).
 2. Usa el nombre EXACTO del cliente (${senderName}) cuando sea oportuno. No lo modifiques.
 3. Usa *negrita* para datos clave (precios, productos, horarios) y emojis moderados para dar calidez. Sé conciso y claro (1-2 párrafos máximo).
 4. Solo menciona productos, servicios y precios que aparezcan arriba en los datos del negocio. Si algo no aparece, indica que consultarás con el equipo.
 5. NUNCA inventes URLs, links, procesos ni precios que no estén en la información proporcionada.
+6. POLÍTICA DE PRECIOS Y ANTIRREGATEO: Los precios, tarifas y promociones mostrados arriba son oficiales y fijos. Si el cliente insiste en pedir rebajas, regatea o solicita descuentos no oficiales, declina amablemente con simpatía explicando que nuestros precios son los establecidos y destaca la calidad y valor de lo que ofrecemos.
 
 6. ASESORÍA DE PRODUCTOS Y VENTAS (SÉ UN VENDEDOR CONSULTIVO):
 - Si el producto tiene variantes (tallas, sabores, modelos, presentaciones), preséntalas amablemente y pregunta cuál prefiere: *"¡Claro! Lo tenemos en presentación de [X] (₡...) y [Y] (₡...). ¿Cuál te gustaría?"*.
@@ -282,13 +345,19 @@ REGLAS OBLIGATORIAS:
 - Si el cliente pregunta por su pedido ("¿Cómo va mi orden?", "¿Dónde viene?", "¿Ya salió?"), revisa la sección "PEDIDOS ACTIVOS EN CURSO DE ESTE CLIENTE" y respóndele de inmediato con el número de orden, los ítems y su estado real actual, dándole tranquilidad.
 
 9. GESTIÓN DE CITAS:
-- Para AGENDAR: Cuando el cliente elija servicio, fecha y hora, añade <<<COMMAND_BOOKING: {"service":"nombre","date":"YYYY-MM-DD","time":"HH:MM","customerName":"${senderName}"}>>>.
-- Para CANCELAR: Si el cliente pide cancelar una cita activa, SIEMPRE pregúntale primero para confirmar: "¿Estás seguro de que deseas cancelar tu cita de [Servicio] para el [Fecha] a las [Hora]?". SOLO si el cliente responde confirmando ("sí", "confirmo", "correcto", "cancélala"), añade <<<COMMAND_CANCEL_BOOKING: {"date":"YYYY-MM-DD", "reason":"solicitado por cliente"}>>>.
+- Para AGENDAR: Cuando el cliente elija servicio, fecha y hora (verificando que NO figure en HORARIOS YA OCUPADOS), y opcionalmente elija con quién atenderse, añade <<<COMMAND_BOOKING: {"service":"nombre","date":"YYYY-MM-DD","time":"HH:MM","customerName":"${senderName}","specialistName":"opcional"}>>>.
+- Para CANCELAR: Si el cliente pide cancelar una cita activa, SIEMPRE pregúntale primero para confirmar: "¿Estás seguro de que deseas cancelar tu cita de [Servicio] para el [Fecha] a las [Hora]?". SOLO si el cliente responde confirmando ("sí", "confirmo", "correcto", "cancélala"), añade <<<COMMAND_CANCEL_BOOKING: {"date":"YYYY-MM-DD", "service":"opcional", "reason":"solicitado por cliente"}>>>.
 - Para REAGENDAR: Ofrécele los horarios libres disponibles y cuando confirme la nueva fecha y hora, añade <<<COMMAND_RESCHEDULE_BOOKING: {"newDate":"YYYY-MM-DD", "newTime":"HH:MM"}>>>.
 
+10. RESERVA DE CANCHAS DEPORTIVAS (FÚTBOL / PÁDEL):
+- Si el cliente pregunta por canchas o partidos, ofrécele las canchas del catálogo con sus precios por hora. Pregúntale fecha, hora y modalidad ("full" para cancha completa o "seek_match" si busca rival / partido abierto).
+- Cuando el cliente confirme la reserva de cancha, añade al final:
+  <<<COMMAND_COURT_BOOKING: {"courtName":"nombre cancha", "date":"YYYY-MM-DD", "time":"HH:MM", "bookingMode":"full"|"seek_match", "teamAName":"${senderName}"}>>>
+
 Acciones disponibles (añade al final SOLO cuando el cliente confirme explícitamente):
-Cita: <<<COMMAND_BOOKING: {"service":"nombre","date":"YYYY-MM-DD","time":"HH:MM","customerName":"${senderName}"}>>>
-Cancelar Cita: <<<COMMAND_CANCEL_BOOKING: {"date":"YYYY-MM-DD","reason":"motivo"}>>>
+Cita: <<<COMMAND_BOOKING: {"service":"nombre","date":"YYYY-MM-DD","time":"HH:MM","customerName":"${senderName}","specialistName":"opcional"}>>>
+Cancha: <<<COMMAND_COURT_BOOKING: {"courtName":"nombre", "date":"YYYY-MM-DD", "time":"HH:MM", "bookingMode":"full"|"seek_match", "teamAName":"${senderName}"}>>>
+Cancelar Cita: <<<COMMAND_CANCEL_BOOKING: {"date":"YYYY-MM-DD","service":"opcional","reason":"motivo"}>>>
 Reagendar Cita: <<<COMMAND_RESCHEDULE_BOOKING: {"newDate":"YYYY-MM-DD","newTime":"HH:MM"}>>>
 Compra / Pedido: <<<COMMAND_ORDER: {"items":[{"productName":"nombre","variantName":"opcional","quantity":1}], "deliveryMethod":"delivery"|"pickup", "deliveryAddress":"dirección si aplica", "customerName":"${senderName}"}>>>
 Foto: <<<COMMAND_SEND_MEDIA: {"mediaUrl":"URL","caption":"desc"}>>>
@@ -297,7 +366,7 @@ Humano: <<<COMMAND_HANDOFF: {"reason":"motivo"}>>>`;
   // Structured messages array for clean chat dialogue
   const structuredMessages: Array<{ role: 'system' | 'user' | 'assistant', content: string }> = [];
   if (chatHistory && chatHistory.length > 0) {
-    for (const h of chatHistory.slice(-6)) {
+    for (const h of chatHistory.slice(-12)) {
       structuredMessages.push({
         role: h.role === 'assistant' ? 'assistant' : 'user',
         content: h.content
@@ -310,7 +379,7 @@ Humano: <<<COMMAND_HANDOFF: {"reason":"motivo"}>>>`;
   });
 
   // Flat prompt fallback for models that prefer single string
-  const flatPrompt = `${systemPrompt}\n\n${chatHistory.slice(-6).map(h => `${h.role === 'user' ? 'Cliente' : 'Asistente'}: ${h.content}`).join('\n')}\n\nCliente (${senderName}): ${userMessage}\nAsistente:`;
+  const flatPrompt = `${systemPrompt}\n\n${chatHistory.slice(-12).map(h => `${h.role === 'user' ? 'Cliente' : 'Asistente'}: ${h.content}`).join('\n')}\n\nCliente (${senderName}): ${userMessage}\nAsistente:`;
 
   let apiKey = '';
   let isMarcaBlanca = false;
@@ -372,72 +441,109 @@ Humano: <<<COMMAND_HANDOFF: {"reason":"motivo"}>>>`;
   let cancelBookingData;
   let isRescheduleBookingDetected = false;
   let rescheduleBookingData;
+  let isCourtBookingDetected = false;
+  let courtBookingData;
 
   const bookingRegex = /<<<COMMAND_BOOKING:\s*({.*?})>>>/s;
+  const courtBookingRegex = /<<<COMMAND_COURT_BOOKING:\s*({.*?})>>>/s;
   const orderRegex = /<<<COMMAND_ORDER:\s*({.*?})>>>/s;
   const handoffRegex = /<<<COMMAND_HANDOFF:\s*({.*?})>>>/s;
   const mediaRegex = /<<<COMMAND_SEND_MEDIA:\s*({.*?})>>>/s;
   const cancelRegex = /<<<COMMAND_CANCEL_BOOKING:\s*({.*?})>>>/s;
   const rescheduleRegex = /<<<COMMAND_RESCHEDULE_BOOKING:\s*({.*?})>>>/s;
 
+function safeParseJSON(rawStr: string): any {
+  if (!rawStr || typeof rawStr !== 'string') return null;
+  let cleaned = rawStr.trim();
+  // Normalize quotes and trailing commas
+  cleaned = cleaned
+    .replace(/[\u201C\u201D\u201E\u201F\u2033\u2036]/g, '"')
+    .replace(/[\u2018\u2019\u201A\u201B\u2032\u2035]/g, "'")
+    .replace(/,\s*}/g, '}')
+    .replace(/,\s*]/g, ']');
+
+  try {
+    return JSON.parse(cleaned);
+  } catch (e1) {
+    try {
+      const relaxed = cleaned
+        .replace(/([{,]\s*)([a-zA-Z0-9_]+)\s*:/g, '$1"$2":')
+        .replace(/,\s*}/g, '}')
+        .replace(/,\s*]/g, ']');
+      return JSON.parse(relaxed);
+    } catch (e2) {
+      return null;
+    }
+  }
+}
+
   const bookingMatch = replyText.match(bookingRegex);
   if (bookingMatch && bookingMatch[1]) {
-    try {
-      const parsed = JSON.parse(bookingMatch[1]);
-      if (parsed && parsed.service && (parsed.date || parsed.time)) {
-        isBookingDetected = true;
-        bookingData = parsed;
-      }
-    } catch (e) {}
+    const parsed = safeParseJSON(bookingMatch[1]);
+    if (parsed && parsed.service && (parsed.date || parsed.time)) {
+      isBookingDetected = true;
+      bookingData = parsed;
+    }
+  }
+
+  const courtMatch = replyText.match(courtBookingRegex);
+  if (courtMatch && courtMatch[1]) {
+    const parsed = safeParseJSON(courtMatch[1]);
+    if (parsed && (parsed.courtName || parsed.courtId) && (parsed.date || parsed.time)) {
+      isCourtBookingDetected = true;
+      courtBookingData = parsed;
+    }
   }
 
   const cancelMatch = replyText.match(cancelRegex);
   if (cancelMatch && cancelMatch[1]) {
-    try {
+    const parsed = safeParseJSON(cancelMatch[1]);
+    if (parsed) {
       isCancelBookingDetected = true;
-      cancelBookingData = JSON.parse(cancelMatch[1]);
-    } catch (e) {}
+      cancelBookingData = parsed;
+    }
   }
 
   const rescheduleMatch = replyText.match(rescheduleRegex);
   if (rescheduleMatch && rescheduleMatch[1]) {
-    try {
-      const parsed = JSON.parse(rescheduleMatch[1]);
-      if (parsed && (parsed.newDate || parsed.newTime)) {
-        isRescheduleBookingDetected = true;
-        rescheduleBookingData = parsed;
-      }
-    } catch (e) {}
+    const parsed = safeParseJSON(rescheduleMatch[1]);
+    if (parsed && (parsed.newDate || parsed.newTime)) {
+      isRescheduleBookingDetected = true;
+      rescheduleBookingData = parsed;
+    }
   }
 
   const orderMatch = replyText.match(orderRegex);
   if (orderMatch && orderMatch[1]) {
-    try {
-      const parsed = JSON.parse(orderMatch[1]);
-      if (parsed && Array.isArray(parsed.items) && parsed.items.length > 0) {
-        const validItems = parsed.items.filter((it: any) => it.productName && it.productName.trim().length > 0);
-        if (validItems.length > 0) {
-          isOrderDetected = true;
-          orderData = { ...parsed, items: validItems };
-        }
+    const parsed = safeParseJSON(orderMatch[1]);
+    if (parsed && Array.isArray(parsed.items) && parsed.items.length > 0) {
+      const validItems = parsed.items.filter((it: any) => it.productName && it.productName.trim().length > 0);
+      if (validItems.length > 0) {
+        isOrderDetected = true;
+        orderData = { ...parsed, items: validItems };
       }
-    } catch (e) {}
+    }
   }
 
   const handoffMatch = replyText.match(handoffRegex);
   if (handoffMatch && handoffMatch[1]) {
     isHandoffRequested = true;
-    try { handoffReason = JSON.parse(handoffMatch[1]).reason; } catch (e) {}
+    const parsed = safeParseJSON(handoffMatch[1]);
+    if (parsed?.reason) handoffReason = parsed.reason;
   }
 
   const mediaMatch = replyText.match(mediaRegex);
   if (mediaMatch && mediaMatch[1]) {
-    isMediaDetected = true;
-    try { mediaData = JSON.parse(mediaMatch[1]); } catch (e) {}
+    const parsed = safeParseJSON(mediaMatch[1]);
+    if (parsed && (parsed.mediaUrl || parsed.url)) {
+      isMediaDetected = true;
+      mediaData = { mediaUrl: parsed.mediaUrl || parsed.url, caption: parsed.caption };
+    }
   }
 
   replyText = replyText
     .replace(bookingRegex, '')
+    .replace(courtBookingRegex, '')
     .replace(orderRegex, '')
     .replace(handoffRegex, '')
     .replace(mediaRegex, '')
@@ -450,6 +556,8 @@ Humano: <<<COMMAND_HANDOFF: {"reason":"motivo"}>>>`;
     replyText,
     isBookingDetected,
     bookingData,
+    isCourtBookingDetected,
+    courtBookingData,
     isOrderDetected,
     orderData,
     isHandoffRequested,

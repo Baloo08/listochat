@@ -145,7 +145,7 @@ router.post('/public/:slug/join-match/:bookingId', async (req, res) => {
     if (!tenant) return res.status(404).json({ error: 'Negocio no encontrado' });
     const { bookingId } = req.params;
     
-    const booking = await joinMatch(bookingId, req.body);
+    const booking = await joinMatch(bookingId, tenant.id, req.body);
     if (!booking) return res.status(404).json({ error: 'Match no encontrado' });
 
     if ((req as any).io) {

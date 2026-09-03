@@ -87,15 +87,11 @@ router.get('/:slug.ics', async (req, res) => {
       const duration = serviceDurationMap.get(svcKey) || 45;
       const dtEnd = calculateEndTime(appt.date, appt.time, duration);
 
-      const summary = escapeICSText(`Cita: ${appt.name} (${appt.service})`);
+      const summary = escapeICSText(`Cita reservada: ${appt.service || 'Servicio'}`);
       const descLines = [
-        `👤 Cliente: ${appt.name}`,
-        `📱 WhatsApp: ${appt.whatsapp || 'No especificado'}`,
-        `🛠️ Servicio: ${appt.service}`,
-        `💰 Monto: ₡${Number(appt.amount || 0).toLocaleString('es-CR')}`,
-        appt.vehicleModel ? `🚗 Detalle: ${appt.vehicleModel}` : '',
-        appt.details ? `📝 Notas: ${appt.details}` : '',
-        `📌 Estado: ${appt.status}`
+        `🛠️ Servicio: ${appt.service || 'Servicio'}`,
+        `⏱️ Duración estimada: ${duration} min`,
+        `📌 Estado: ${appt.status === 'confirmed' ? 'Confirmada' : 'Programada'}`
       ].filter(Boolean).join('\n');
 
       const escapedDesc = escapeICSText(descLines);

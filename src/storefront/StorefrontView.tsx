@@ -417,6 +417,7 @@ export default function StorefrontView({ slug }: StorefrontProps) {
 
   const handleCheckout = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
     if (!customerName || !customerPhone) {
       alert('Por favor ingresa tu nombre y número de WhatsApp');
       return;

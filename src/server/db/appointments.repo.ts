@@ -5,7 +5,7 @@ export async function getAppointmentsByTenant(tenantId: string): Promise<Appoint
   const result = await query(`
     SELECT id, tenant_id as "tenantId", name, whatsapp, service, 
            date, time, amount, status, details, vehicle_model as "vehicleModel",
-           selected_variables as "selectedVariables",
+           selected_variables as "selectedVariables", specialist_id as "specialistId",
            created_at as "createdAt"
     FROM appointments 
     WHERE tenant_id = $1
@@ -18,7 +18,7 @@ export async function getAppointmentById(id: string, tenantId: string): Promise<
   const result = await query(`
     SELECT id, tenant_id as "tenantId", name, whatsapp, service, 
            date, time, amount, status, details, vehicle_model as "vehicleModel",
-           selected_variables as "selectedVariables",
+           selected_variables as "selectedVariables", specialist_id as "specialistId",
            created_at as "createdAt"
     FROM appointments 
     WHERE id = $1 AND tenant_id = $2
@@ -29,16 +29,17 @@ export async function getAppointmentById(id: string, tenantId: string): Promise<
 export async function createAppointment(tenantId: string, data: Partial<Appointment>): Promise<Appointment> {
   const result = await query(`
     INSERT INTO appointments (
-      tenant_id, name, whatsapp, service, date, time, amount, status, details, vehicle_model, selected_variables
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      tenant_id, name, whatsapp, service, date, time, amount, status, details, vehicle_model, selected_variables, specialist_id
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
     RETURNING id, tenant_id as "tenantId", name, whatsapp, service, 
            date, time, amount, status, details, vehicle_model as "vehicleModel",
-           selected_variables as "selectedVariables",
+           selected_variables as "selectedVariables", specialist_id as "specialistId",
            created_at as "createdAt"
   `, [
     tenantId, data.name, data.whatsapp, data.service, data.date, data.time, data.amount, 
     data.status || 'scheduled', data.details, data.vehicleModel,
-    data.selectedVariables ? JSON.stringify(data.selectedVariables) : null
+    data.selectedVariables ? JSON.stringify(data.selectedVariables) : null,
+    data.specialistId || null
   ]);
   return result.rows[0];
 }
@@ -48,7 +49,7 @@ export async function updateAppointment(id: string, tenantId: string, data: Part
   const params: any[] = [id, tenantId];
   let paramIdx = 3;
 
-  const fields = ['name', 'whatsapp', 'service', 'date', 'time', 'amount', 'status', 'details', 'vehicleModel', 'selectedVariables'];
+  const fields = ['name', 'whatsapp', 'service', 'date', 'time', 'amount', 'status', 'details', 'vehicleModel', 'selectedVariables', 'specialistId'];
   for (const field of fields) {
     if ((data as any)[field] !== undefined) {
       const dbField = field.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
@@ -65,7 +66,7 @@ export async function updateAppointment(id: string, tenantId: string, data: Part
     WHERE id = $1 AND tenant_id = $2
     RETURNING id, tenant_id as "tenantId", name, whatsapp, service, 
            date, time, amount, status, details, vehicle_model as "vehicleModel",
-           selected_variables as "selectedVariables",
+           selected_variables as "selectedVariables", specialist_id as "specialistId",
            created_at as "createdAt"
   `, params);
 

@@ -196,7 +196,7 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             {isLoggedIn ? (
               <button
-                onClick={onGoToDashboard || (() => { window.location.href = '/panel'; })}
+                onClick={onGoToDashboard || (() => { window.location.href = '/app'; })}
                 style={{
                   padding: '10px 20px',
                   background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',

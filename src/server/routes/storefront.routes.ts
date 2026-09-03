@@ -130,24 +130,85 @@ router.post('/:slug/checkout', async (req, res) => {
       return;
     }
 
-    const subtotal = items.reduce((acc: number, item: any) => {
-      const price = Number(item.unitPrice || item.price || 0);
-      const qty = parseInt(item.quantity || '1', 10);
-      return acc + (price * qty);
-    }, 0);
+    const productIds = items
+      .map((item: any) => item.productId || item.id)
+      .filter((id: any) => typeof id === 'string' && id.length > 10);
+
+    if (productIds.length === 0) {
+      res.status(400).json({ error: 'La orden no contiene productos válidos' });
+      return;
+    }
+
+    const dbProductsRes = await query(`
+      SELECT p.id, p.name, p.price, p.custom_variables as "customVariables",
+             COALESCE((
+               SELECT json_agg(json_build_object('id', pv.id, 'name', pv.name, 'priceOverride', pv.price_override))
+               FROM product_variants pv WHERE pv.product_id = p.id
+             ), '[]'::json) as variants
+      FROM products p
+      WHERE p.tenant_id = $1 AND p.id = ANY($2::uuid[]) AND p.active = TRUE
+    `, [tenant.id, productIds]);
+
+    const dbProductsMap = new Map<string, any>(dbProductsRes.rows.map((p: any) => [p.id, p]));
+
+    const formattedItems = [];
+    let subtotal = 0;
+
+    for (const item of items) {
+      const pid = item.productId || item.id;
+      const dbProduct = dbProductsMap.get(pid);
+      if (!dbProduct) {
+        res.status(400).json({ error: `El producto "${item.productName || item.name || 'solicitado'}" no está disponible o no existe en esta tienda.` });
+        return;
+      }
+
+      let verifiedPrice = Number(dbProduct.price || 0);
+
+      // Verificar sobreescritura de precio de variante
+      if (item.variantId || item.variantName) {
+        const matchedVariant = (dbProduct.variants || []).find((v: any) =>
+          (item.variantId && v.id === item.variantId) ||
+          (item.variantName && v.name.toLowerCase() === item.variantName.toLowerCase())
+        );
+        if (matchedVariant && matchedVariant.priceOverride !== null && matchedVariant.priceOverride !== undefined) {
+          verifiedPrice = Number(matchedVariant.priceOverride);
+        }
+      }
+
+      // Verificar costos adicionales de opciones personalizables
+      if (item.selectedVariables && Array.isArray(dbProduct.customVariables)) {
+        for (const cv of dbProduct.customVariables) {
+          const selectedVal = item.selectedVariables[cv.name];
+          if (selectedVal && Array.isArray(cv.options)) {
+            const vals = Array.isArray(selectedVal) ? selectedVal : [selectedVal];
+            for (const v of vals) {
+              const opt = cv.options.find((o: any) => o.name === v);
+              if (opt && opt.price && Number(opt.price) > 0) {
+                verifiedPrice += Number(opt.price);
+              }
+            }
+          }
+        }
+      }
+
+      const qty = Math.max(1, parseInt(item.quantity || '1', 10));
+      const lineTotal = verifiedPrice * qty;
+      subtotal += lineTotal;
+
+      formattedItems.push({
+        productId: dbProduct.id,
+        productName: item.productName || item.name || dbProduct.name,
+        variantName: item.variantName || null,
+        selectedVariables: item.selectedVariables || undefined,
+        quantity: qty,
+        unitPrice: verifiedPrice,
+        totalPrice: lineTotal
+      });
+    }
 
     const isDelivery = consumptionMode === 'delivery' || deliveryMethod === 'delivery';
     const deliveryFee = (isDelivery && store?.deliveryEnabled) ? Number(store.deliveryFee || 0) : 0;
     const total = subtotal + deliveryFee;
-
-    const formattedItems = items.map((item: any) => ({
-      productId: item.productId || item.id,
-      productName: item.productName || item.name || 'Producto',
-      variantName: item.variantName || null,
-      quantity: parseInt(item.quantity || '1', 10),
-      unitPrice: Number(item.unitPrice || item.price || 0),
-      totalPrice: Number(item.unitPrice || item.price || 0) * parseInt(item.quantity || '1', 10)
-    }));
 
     const order = await createOrder(
       tenant.id,

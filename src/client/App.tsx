@@ -271,6 +271,15 @@ export default function App() {
     socket.on('appointment:created', () => {
       playBookingNotificationSound();
     });
+    socket.on('appointment:updated', () => {
+      playBookingNotificationSound();
+    });
+    socket.on('courtBooking:created', () => {
+      playBookingNotificationSound();
+    });
+    socket.on('courtBooking:matched', () => {
+      playBookingNotificationSound();
+    });
 
     const interval = setInterval(checkUnread, 15000);
     return () => {
@@ -290,7 +299,7 @@ export default function App() {
       localStorage.removeItem('superadmin_token');
       localStorage.removeItem('impersonated_tenant');
       localStorage.removeItem('impersonated_tenant_name');
-      window.location.href = '/panel';
+      window.location.href = '/app';
     }
   };
 
@@ -299,7 +308,7 @@ export default function App() {
   // 1. General Login Route (/login, /superadmin, /ingreso, /acceso)
   if (pathname === '/login' || pathname === '/superadmin' || pathname === '/ingreso' || pathname === '/acceso' || pathname === '/acceso/') {
     if (isAuthenticated && user) {
-      window.location.href = '/panel';
+      window.location.href = '/app';
       return null;
     }
     const lastSlug = localStorage.getItem('last_tenant_slug');

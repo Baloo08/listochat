@@ -8,7 +8,6 @@ import {
   CheckCircle,
   XCircle,
   AlertCircle,
-  RefreshCw,
   MessageCircle,
   Copy,
   ExternalLink,
@@ -342,7 +341,7 @@ export default function Bookings() {
 
   const handleStatusChange = async (id: string, newStatus: string) => {
     try {
-      await api.put(`/api/appointments/${id}`, { status: newStatus });
+      await api.put(`/api/appointments/${id}/status`, { status: newStatus });
       fetchAppointments();
       if (selectedAppointment && selectedAppointment.id === id) {
         setSelectedAppointment({ ...selectedAppointment, status: newStatus as any });

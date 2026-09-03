@@ -73,8 +73,8 @@ export function useAuth() {
         if (data.user) {
           setUser(data.user);
         }
-        // Navigate cleanly to /panel
-        window.location.href = '/panel';
+        // Navigate cleanly to /app
+        window.location.href = '/app';
         return true;
       }
       return false;
