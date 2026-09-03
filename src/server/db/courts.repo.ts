@@ -51,6 +51,12 @@ function mapBookingRow(row: any): CourtBooking {
     totalPrice: Number(row.total_price),
     pricePerTeam: row.price_per_team ? Number(row.price_per_team) : undefined,
     paymentMode: row.payment_mode,
+    paymentMethod: row.payment_method,
+    paymentReference: row.payment_reference,
+    tilopayTransactionIdA: row.tilopay_transaction_id_a,
+    tilopayAuthCodeA: row.tilopay_auth_code_a,
+    tilopayTransactionIdB: row.tilopay_transaction_id_b,
+    tilopayAuthCodeB: row.tilopay_auth_code_b,
     sportType: row.sport_type,
     skillLevel: row.skill_level,
     notes: row.notes,
@@ -176,10 +182,12 @@ export async function createBooking(tenantId: string, data: Partial<CourtBooking
       team_a_phone, team_a_players, team_a_extra_players, team_a_paid,
       team_b_name, team_b_captain, team_b_phone, team_b_players,
       team_b_extra_players, team_b_paid, total_price, price_per_team,
-      payment_mode, sport_type, skill_level, notes, status
+      payment_mode, sport_type, skill_level, notes, status,
+      payment_method, payment_reference
     ) VALUES (
       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
-      $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27
+      $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27,
+      $28, $29
     ) RETURNING *
   `, [
     tenantId, data.courtId, data.date, data.time, durationMinutes,
@@ -189,7 +197,8 @@ export async function createBooking(tenantId: string, data: Partial<CourtBooking
     data.teamBName, data.teamBCaptain, data.teamBPhone, data.teamBPlayers || 5,
     data.teamBExtraPlayers || 0, data.teamBPaid || false, totalPrice,
     pricePerTeam, data.paymentMode || 'both', sportType, data.skillLevel,
-    data.notes, data.status || 'confirmed'
+    data.notes, data.status || 'confirmed',
+    data.paymentMethod || 'cash', data.paymentReference || null
   ]);
 
   const booking = mapBookingRow(res.rows[0]);
@@ -209,6 +218,9 @@ export async function updateBooking(id: string, tenantId: string, data: Partial<
     teamBName: 'team_b_name', teamBCaptain: 'team_b_captain', teamBPhone: 'team_b_phone',
     teamBPlayers: 'team_b_players', teamBExtraPlayers: 'team_b_extra_players', teamBPaid: 'team_b_paid',
     totalPrice: 'total_price', pricePerTeam: 'price_per_team', paymentMode: 'payment_mode',
+    paymentMethod: 'payment_method', paymentReference: 'payment_reference',
+    tilopayTransactionIdA: 'tilopay_transaction_id_a', tilopayAuthCodeA: 'tilopay_auth_code_a',
+    tilopayTransactionIdB: 'tilopay_transaction_id_b', tilopayAuthCodeB: 'tilopay_auth_code_b',
     sportType: 'sport_type', skillLevel: 'skill_level', notes: 'notes', status: 'status'
   };
 
@@ -222,6 +234,57 @@ export async function updateBooking(id: string, tenantId: string, data: Partial<
     UPDATE court_bookings SET ${setClause}, updated_at = CURRENT_TIMESTAMP 
     WHERE id = $1 AND tenant_id = $2 RETURNING *
   `, [id, tenantId, ...values]);
+
+  return res.rows[0] ? mapBookingRow(res.rows[0]) : null;
+}
+
+export async function updateCourtBookingPayment(id: string, team: 'a' | 'b', data: {
+  tilopayTxId?: string;
+  tilopayAuth?: string;
+  paymentMethod?: string;
+  paymentReference?: string;
+}) {
+  const updates: string[] = [];
+  const params: any[] = [id];
+  let paramIdx = 2;
+
+  if (team === 'a') {
+    updates.push(`team_a_paid = true`);
+    if (data.tilopayTxId) {
+      updates.push(`tilopay_transaction_id_a = $${paramIdx++}`);
+      params.push(data.tilopayTxId);
+    }
+    if (data.tilopayAuth) {
+      updates.push(`tilopay_auth_code_a = $${paramIdx++}`);
+      params.push(data.tilopayAuth);
+    }
+  } else {
+    updates.push(`team_b_paid = true`);
+    if (data.tilopayTxId) {
+      updates.push(`tilopay_transaction_id_b = $${paramIdx++}`);
+      params.push(data.tilopayTxId);
+    }
+    if (data.tilopayAuth) {
+      updates.push(`tilopay_auth_code_b = $${paramIdx++}`);
+      params.push(data.tilopayAuth);
+    }
+  }
+
+  if (data.paymentMethod) {
+    updates.push(`payment_method = $${paramIdx++}`);
+    params.push(data.paymentMethod);
+  }
+  if (data.paymentReference) {
+    updates.push(`payment_reference = $${paramIdx++}`);
+    params.push(data.paymentReference);
+  }
+
+  updates.push(`updated_at = CURRENT_TIMESTAMP`);
+
+  const res = await query(`
+    UPDATE court_bookings SET ${updates.join(', ')}
+    WHERE id = $1 RETURNING *
+  `, params);
 
   return res.rows[0] ? mapBookingRow(res.rows[0]) : null;
 }

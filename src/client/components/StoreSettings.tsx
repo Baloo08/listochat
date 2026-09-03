@@ -51,6 +51,7 @@ export default function StoreSettings() {
 
   // Payments
   const [acceptSinpe, setAcceptSinpe] = useState(true);
+  const [acceptSinpeTilopay, setAcceptSinpeTilopay] = useState(false);
   const [sinpePhone, setSinpePhone] = useState('');
   const [sinpeName, setSinpeName] = useState('');
   const [acceptTransfer, setAcceptTransfer] = useState(true);
@@ -300,6 +301,7 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
           setStoreBannerUrl(data.storeBannerUrl || data.storeTheme?.bannerUrl || '');
           setCurrency(data.currency || 'CRC');
           setAcceptSinpe(data.acceptSinpe !== false);
+          setAcceptSinpeTilopay(data.acceptSinpeTilopay === true);
           setSinpePhone(data.sinpePhone || '');
           setSinpeName(data.sinpeName || '');
           setAcceptTransfer(data.acceptTransfer !== false);
@@ -510,6 +512,7 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
         },
         currency,
         acceptSinpe,
+        acceptSinpeTilopay,
         sinpePhone,
         sinpeName,
         acceptTransfer,
@@ -565,6 +568,7 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
         storeTheme: theme,
         currency,
         acceptSinpe,
+        acceptSinpeTilopay,
         sinpePhone,
         sinpeName,
         acceptTransfer,
@@ -1031,7 +1035,7 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
                 </select>
               </div>
 
-              {/* 1. SINPE Móvil */}
+              {/* 1. SINPE Móvil Manual */}
               <div style={{
                 padding: '16px', borderRadius: '10px',
                 border: `2px solid ${acceptSinpe ? 'var(--primary)' : 'var(--border, #e2e8f0)'}`,
@@ -1048,10 +1052,10 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
                     />
                     <div>
                       <strong style={{ fontSize: '0.95rem', color: 'var(--text)', display: 'block' }}>
-                        📱 SINPE Móvil
+                        📱 SINPE Móvil Manual (Comprobante)
                       </strong>
                       <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                        Transferencias directas por número de teléfono
+                        El cliente transfiere a tu número y te envía el comprobante para confirmación visual en tu panel
                       </span>
                     </div>
                   </label>
@@ -1090,7 +1094,72 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
                 )}
               </div>
 
-              {/* 2. Transferencia Bancaria */}
+              {/* 2. SINPE Móvil Automático (Tilopay) */}
+              <div style={{
+                padding: '16px', borderRadius: '10px',
+                border: `2px solid ${acceptSinpeTilopay && tiloIsConfigured ? '#059669' : 'var(--border, #e2e8f0)'}`,
+                backgroundColor: acceptSinpeTilopay && tiloIsConfigured ? 'rgba(5, 150, 105, 0.04)' : 'var(--bg-elevated, #f8fafc)',
+                transition: 'all 0.15s ease'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: tiloIsConfigured ? 'pointer' : 'not-allowed', margin: 0, opacity: tiloIsConfigured ? 1 : 0.7 }}>
+                    <input
+                      type="checkbox"
+                      checked={acceptSinpeTilopay && tiloIsConfigured}
+                      disabled={!tiloIsConfigured}
+                      onChange={(e) => {
+                        if (!tiloIsConfigured) return;
+                        setAcceptSinpeTilopay(e.target.checked);
+                      }}
+                      style={{ width: '18px', height: '18px', accentColor: '#059669', cursor: tiloIsConfigured ? 'pointer' : 'not-allowed' }}
+                    />
+                    <div>
+                      <strong style={{ fontSize: '0.95rem', color: 'var(--text)', display: 'block' }}>
+                        ⚡ SINPE Móvil Automático (Verificación Inmediata con Tilopay)
+                      </strong>
+                      <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                        Verificación bancaria automática al instante sin revisar comprobantes. El pedido o cita queda confirmado de inmediato.
+                      </span>
+                    </div>
+                  </label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{
+                      fontSize: '0.75rem', fontWeight: 'bold', padding: '3px 8px', borderRadius: '6px',
+                      backgroundColor: acceptSinpeTilopay && tiloIsConfigured ? '#d1fae5' : '#f1f5f9',
+                      color: acceptSinpeTilopay && tiloIsConfigured ? '#047857' : '#64748b'
+                    }}>
+                      {acceptSinpeTilopay && tiloIsConfigured ? 'Habilitado' : 'Deshabilitado'}
+                    </span>
+                    {!tiloIsConfigured && (
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('tilopay')}
+                        style={{
+                          padding: '5px 12px', fontSize: '0.78rem', fontWeight: '700',
+                          backgroundColor: '#fef3c7', color: '#92400e', border: '1px solid #fde68a',
+                          borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px'
+                        }}
+                      >
+                        🔑 Requiere Tilopay
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div style={{ fontSize: '0.8rem', marginTop: '10px', paddingTop: '8px', borderTop: '1px dashed var(--border, #e2e8f0)' }}>
+                  {tiloIsConfigured ? (
+                    <span style={{ color: '#047857', fontSize: '0.78rem' }}>
+                      💡 Utiliza las credenciales activas de Tilopay ({tiloEnv}). El cobro se procesa en colones y se deposita directamente en tu cuenta bancaria.
+                    </span>
+                  ) : (
+                    <span style={{ color: '#b45309', fontSize: '0.78rem' }}>
+                      ⚠️ Para habilitar la verificación automática de SINPE Móvil, primero debes configurar tus credenciales de Tilopay en la sección de <button type="button" onClick={() => setActiveTab('tilopay')} style={{ background: 'none', border: 'none', color: '#2563eb', textDecoration: 'underline', cursor: 'pointer', padding: 0, font: 'inherit', fontWeight: 'bold' }}>Pasarela de Pagos</button>.
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* 3. Transferencia Bancaria */}
               <div style={{
                 padding: '16px', borderRadius: '10px',
                 border: `2px solid ${acceptTransfer ? '#2563eb' : 'var(--border, #e2e8f0)'}`,
@@ -1139,7 +1208,7 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
                 )}
               </div>
 
-              {/* 3. Efectivo / Pago al Recibir */}
+              {/* 4. Efectivo / Pago al Recibir */}
               <div style={{
                 padding: '16px', borderRadius: '10px',
                 border: `2px solid ${acceptCashOnDelivery ? '#ea580c' : 'var(--border, #e2e8f0)'}`,
@@ -1173,7 +1242,7 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
                 </div>
               </div>
 
-              {/* 4. Tarjeta de Crédito / Débito (Tilopay) */}
+              {/* 5. Tarjeta de Crédito / Débito (Tilopay) */}
               <div style={{
                 padding: '16px', borderRadius: '10px',
                 border: `2px solid ${tiloEnabled ? '#2563eb' : 'var(--border, #e2e8f0)'}`,

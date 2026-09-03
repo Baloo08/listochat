@@ -732,5 +732,26 @@ export async function runMigrations() {
     ALTER TABLE tenant_websites ADD COLUMN IF NOT EXISTS courts_button_text VARCHAR(255) DEFAULT 'Reservar Cancha';
   `).catch(() => {});
 
+  // Payment integration columns for store_settings, appointments and court_bookings
+  await query(`
+    ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS accept_sinpe_tilopay BOOLEAN DEFAULT false;
+
+    ALTER TABLE appointments ADD COLUMN IF NOT EXISTS payment_method VARCHAR(50);
+    ALTER TABLE appointments ADD COLUMN IF NOT EXISTS payment_status VARCHAR(50) DEFAULT 'pending';
+    ALTER TABLE appointments ADD COLUMN IF NOT EXISTS payment_reference VARCHAR(255);
+    ALTER TABLE appointments ADD COLUMN IF NOT EXISTS payment_proof_url TEXT;
+    ALTER TABLE appointments ADD COLUMN IF NOT EXISTS tilopay_transaction_id VARCHAR(100);
+    ALTER TABLE appointments ADD COLUMN IF NOT EXISTS tilopay_auth_code VARCHAR(100);
+
+    ALTER TABLE court_bookings ADD COLUMN IF NOT EXISTS payment_method VARCHAR(50);
+    ALTER TABLE court_bookings ADD COLUMN IF NOT EXISTS payment_reference VARCHAR(255);
+    ALTER TABLE court_bookings ADD COLUMN IF NOT EXISTS tilopay_transaction_id_a VARCHAR(100);
+    ALTER TABLE court_bookings ADD COLUMN IF NOT EXISTS tilopay_auth_code_a VARCHAR(100);
+    ALTER TABLE court_bookings ADD COLUMN IF NOT EXISTS tilopay_transaction_id_b VARCHAR(100);
+    ALTER TABLE court_bookings ADD COLUMN IF NOT EXISTS tilopay_auth_code_b VARCHAR(100);
+  `).catch((err) => {
+    console.warn('[Migrations] Payment columns warning:', err?.message || err);
+  });
+
   console.log('Migrations completed successfully.');
 }

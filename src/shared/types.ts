@@ -84,6 +84,12 @@ export interface Appointment {
   time: string;
   amount: number;
   status: 'pending' | 'scheduled' | 'confirmed' | 'completed' | 'cancelled';
+  paymentMethod?: 'cash' | 'sinpe' | 'card' | 'sinpe_tilopay' | string;
+  paymentStatus?: 'pending' | 'proof_sent' | 'paid' | 'refunded';
+  paymentReference?: string;
+  paymentProofUrl?: string;
+  tilopayTransactionId?: string;
+  tilopayAuthCode?: string;
   details?: string;
   vehicleModel?: string;
   selectedVariables?: Record<string, string | string[]>;
@@ -252,6 +258,7 @@ export interface StoreSettings {
   storeTheme?: StoreTheme;
   currency: string;
   acceptSinpe: boolean;
+  acceptSinpeTilopay?: boolean;
   sinpePhone?: string;
   sinpeName?: string;
   acceptTransfer: boolean;
@@ -491,6 +498,12 @@ export interface CourtBooking {
   totalPrice: number;
   pricePerTeam?: number;
   paymentMode: 'online' | 'on_site' | 'both';
+  paymentMethod?: string;
+  paymentReference?: string;
+  tilopayTransactionIdA?: string;
+  tilopayAuthCodeA?: string;
+  tilopayTransactionIdB?: string;
+  tilopayAuthCodeB?: string;
   sportType: string;
   skillLevel?: string;
   notes?: string;

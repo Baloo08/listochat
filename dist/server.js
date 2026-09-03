@@ -2148,6 +2148,25 @@ async function runMigrations() {
     ALTER TABLE tenant_websites ADD COLUMN IF NOT EXISTS courts_button_text VARCHAR(255) DEFAULT 'Reservar Cancha';
   `).catch(() => {
   });
+  await query(`
+    ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS accept_sinpe_tilopay BOOLEAN DEFAULT false;
+
+    ALTER TABLE appointments ADD COLUMN IF NOT EXISTS payment_method VARCHAR(50);
+    ALTER TABLE appointments ADD COLUMN IF NOT EXISTS payment_status VARCHAR(50) DEFAULT 'pending';
+    ALTER TABLE appointments ADD COLUMN IF NOT EXISTS payment_reference VARCHAR(255);
+    ALTER TABLE appointments ADD COLUMN IF NOT EXISTS payment_proof_url TEXT;
+    ALTER TABLE appointments ADD COLUMN IF NOT EXISTS tilopay_transaction_id VARCHAR(100);
+    ALTER TABLE appointments ADD COLUMN IF NOT EXISTS tilopay_auth_code VARCHAR(100);
+
+    ALTER TABLE court_bookings ADD COLUMN IF NOT EXISTS payment_method VARCHAR(50);
+    ALTER TABLE court_bookings ADD COLUMN IF NOT EXISTS payment_reference VARCHAR(255);
+    ALTER TABLE court_bookings ADD COLUMN IF NOT EXISTS tilopay_transaction_id_a VARCHAR(100);
+    ALTER TABLE court_bookings ADD COLUMN IF NOT EXISTS tilopay_auth_code_a VARCHAR(100);
+    ALTER TABLE court_bookings ADD COLUMN IF NOT EXISTS tilopay_transaction_id_b VARCHAR(100);
+    ALTER TABLE court_bookings ADD COLUMN IF NOT EXISTS tilopay_auth_code_b VARCHAR(100);
+  `).catch((err) => {
+    console.warn("[Migrations] Payment columns warning:", err?.message || err);
+  });
   console.log("Migrations completed successfully.");
 }
 
@@ -3168,6 +3187,7 @@ async function getStoreSettings(tenantId) {
            store_name as "storeName", store_slug as "storeSlug", store_description as "storeDescription",
            store_logo_url as "storeLogoUrl", store_banner_url as "storeBannerUrl",
            store_theme as "storeTheme", currency, accept_sinpe as "acceptSinpe",
+           accept_sinpe_tilopay as "acceptSinpeTilopay",
            sinpe_phone as "sinpePhone", sinpe_name as "sinpeName", accept_transfer as "acceptTransfer",
            bank_account_info as "bankAccountInfo", accept_cash_on_delivery as "acceptCashOnDelivery",
            delivery_enabled as "deliveryEnabled", delivery_fee as "deliveryFee",
@@ -3223,10 +3243,10 @@ async function upsertStoreSettings(tenantId, data) {
       tenant_id, store_enabled, store_mode, store_modules, restaurant_config, delivery_config,
       correos_cr_config, local_delivery_config, store_schedule, custom_stages, notification_templates,
       store_name, store_slug, store_description, store_logo_url,
-      store_banner_url, store_theme, currency, accept_sinpe, sinpe_phone, sinpe_name,
+      store_banner_url, store_theme, currency, accept_sinpe, accept_sinpe_tilopay, sinpe_phone, sinpe_name,
       accept_transfer, bank_account_info, accept_cash_on_delivery, delivery_enabled,
       delivery_fee, pickup_enabled, whatsapp_checkout, min_order_amount, store_message
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30)
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31)
     ON CONFLICT (tenant_id) DO UPDATE SET
       store_enabled = EXCLUDED.store_enabled,
       store_mode = EXCLUDED.store_mode,
@@ -3260,6 +3280,7 @@ async function upsertStoreSettings(tenantId, data) {
       END,
       currency = EXCLUDED.currency,
       accept_sinpe = EXCLUDED.accept_sinpe,
+      accept_sinpe_tilopay = EXCLUDED.accept_sinpe_tilopay,
       sinpe_phone = EXCLUDED.sinpe_phone,
       sinpe_name = EXCLUDED.sinpe_name,
       accept_transfer = EXCLUDED.accept_transfer,
@@ -3280,6 +3301,7 @@ async function upsertStoreSettings(tenantId, data) {
               store_name as "storeName", store_slug as "storeSlug", store_description as "storeDescription",
               store_logo_url as "storeLogoUrl", store_banner_url as "storeBannerUrl",
               store_theme as "storeTheme", currency, accept_sinpe as "acceptSinpe",
+              accept_sinpe_tilopay as "acceptSinpeTilopay",
               sinpe_phone as "sinpePhone", sinpe_name as "sinpeName", accept_transfer as "acceptTransfer",
               bank_account_info as "bankAccountInfo", accept_cash_on_delivery as "acceptCashOnDelivery",
               delivery_enabled as "deliveryEnabled", delivery_fee as "deliveryFee",
@@ -3305,6 +3327,7 @@ async function upsertStoreSettings(tenantId, data) {
     JSON.stringify(data.storeTheme || { primaryColor: "#16a34a", cardRadius: "rounded", cardShadow: "md", fontFamily: "Inter" }),
     data.currency || "CRC",
     data.acceptSinpe !== false,
+    data.acceptSinpeTilopay === true,
     data.sinpePhone || "",
     data.sinpeName || "",
     data.acceptTransfer !== false,
@@ -3630,6 +3653,12 @@ function mapBookingRow(row) {
     totalPrice: Number(row.total_price),
     pricePerTeam: row.price_per_team ? Number(row.price_per_team) : void 0,
     paymentMode: row.payment_mode,
+    paymentMethod: row.payment_method,
+    paymentReference: row.payment_reference,
+    tilopayTransactionIdA: row.tilopay_transaction_id_a,
+    tilopayAuthCodeA: row.tilopay_auth_code_a,
+    tilopayTransactionIdB: row.tilopay_transaction_id_b,
+    tilopayAuthCodeB: row.tilopay_auth_code_b,
     sportType: row.sport_type,
     skillLevel: row.skill_level,
     notes: row.notes,
@@ -3756,10 +3785,12 @@ async function createBooking(tenantId, data) {
       team_a_phone, team_a_players, team_a_extra_players, team_a_paid,
       team_b_name, team_b_captain, team_b_phone, team_b_players,
       team_b_extra_players, team_b_paid, total_price, price_per_team,
-      payment_mode, sport_type, skill_level, notes, status
+      payment_mode, sport_type, skill_level, notes, status,
+      payment_method, payment_reference
     ) VALUES (
       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
-      $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27
+      $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27,
+      $28, $29
     ) RETURNING *
   `, [
     tenantId,
@@ -3788,7 +3819,9 @@ async function createBooking(tenantId, data) {
     sportType,
     data.skillLevel,
     data.notes,
-    data.status || "confirmed"
+    data.status || "confirmed",
+    data.paymentMethod || "cash",
+    data.paymentReference || null
   ]);
   const booking = mapBookingRow(res.rows[0]);
   if (data.courtId) {
@@ -3820,6 +3853,12 @@ async function updateBooking(id, tenantId, data) {
     totalPrice: "total_price",
     pricePerTeam: "price_per_team",
     paymentMode: "payment_mode",
+    paymentMethod: "payment_method",
+    paymentReference: "payment_reference",
+    tilopayTransactionIdA: "tilopay_transaction_id_a",
+    tilopayAuthCodeA: "tilopay_auth_code_a",
+    tilopayTransactionIdB: "tilopay_transaction_id_b",
+    tilopayAuthCodeB: "tilopay_auth_code_b",
     sportType: "sport_type",
     skillLevel: "skill_level",
     notes: "notes",
@@ -4548,6 +4587,9 @@ async function getAppointmentsByTenant(tenantId) {
     SELECT id, tenant_id as "tenantId", name, whatsapp, service, 
            date, time, amount, status, details, vehicle_model as "vehicleModel",
            selected_variables as "selectedVariables", specialist_id as "specialistId",
+           payment_method as "paymentMethod", payment_status as "paymentStatus",
+           payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
+           tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
            created_at as "createdAt"
     FROM appointments 
     WHERE tenant_id = $1
@@ -4556,24 +4598,33 @@ async function getAppointmentsByTenant(tenantId) {
   return result.rows;
 }
 async function getAppointmentById(id, tenantId) {
+  const whereClause = tenantId ? "WHERE id = $1 AND tenant_id = $2" : "WHERE id = $1";
+  const params = tenantId ? [id, tenantId] : [id];
   const result = await query(`
     SELECT id, tenant_id as "tenantId", name, whatsapp, service, 
            date, time, amount, status, details, vehicle_model as "vehicleModel",
            selected_variables as "selectedVariables", specialist_id as "specialistId",
+           payment_method as "paymentMethod", payment_status as "paymentStatus",
+           payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
+           tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
            created_at as "createdAt"
     FROM appointments 
-    WHERE id = $1 AND tenant_id = $2
-  `, [id, tenantId]);
+    ${whereClause}
+  `, params);
   return result.rows[0] || null;
 }
 async function createAppointment(tenantId, data) {
   const result = await query(`
     INSERT INTO appointments (
-      tenant_id, name, whatsapp, service, date, time, amount, status, details, vehicle_model, selected_variables, specialist_id
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      tenant_id, name, whatsapp, service, date, time, amount, status, details, vehicle_model, selected_variables, specialist_id,
+      payment_method, payment_status, payment_reference, payment_proof_url, tilopay_transaction_id, tilopay_auth_code
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
     RETURNING id, tenant_id as "tenantId", name, whatsapp, service, 
            date, time, amount, status, details, vehicle_model as "vehicleModel",
            selected_variables as "selectedVariables", specialist_id as "specialistId",
+           payment_method as "paymentMethod", payment_status as "paymentStatus",
+           payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
+           tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
            created_at as "createdAt"
   `, [
     tenantId,
@@ -4587,7 +4638,13 @@ async function createAppointment(tenantId, data) {
     data.details,
     data.vehicleModel,
     data.selectedVariables ? JSON.stringify(data.selectedVariables) : null,
-    data.specialistId || null
+    data.specialistId || null,
+    data.paymentMethod || null,
+    data.paymentStatus || "pending",
+    data.paymentReference || null,
+    data.paymentProofUrl || null,
+    data.tilopayTransactionId || null,
+    data.tilopayAuthCode || null
   ]);
   return result.rows[0];
 }
@@ -4595,7 +4652,25 @@ async function updateAppointment(id, tenantId, data) {
   const updates = [];
   const params = [id, tenantId];
   let paramIdx = 3;
-  const fields = ["name", "whatsapp", "service", "date", "time", "amount", "status", "details", "vehicleModel", "selectedVariables", "specialistId"];
+  const fields = [
+    "name",
+    "whatsapp",
+    "service",
+    "date",
+    "time",
+    "amount",
+    "status",
+    "details",
+    "vehicleModel",
+    "selectedVariables",
+    "specialistId",
+    "paymentMethod",
+    "paymentStatus",
+    "paymentReference",
+    "paymentProofUrl",
+    "tilopayTransactionId",
+    "tilopayAuthCode"
+  ];
   for (const field of fields) {
     if (data[field] !== void 0) {
       const dbField = field.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
@@ -4611,6 +4686,9 @@ async function updateAppointment(id, tenantId, data) {
     RETURNING id, tenant_id as "tenantId", name, whatsapp, service, 
            date, time, amount, status, details, vehicle_model as "vehicleModel",
            selected_variables as "selectedVariables", specialist_id as "specialistId",
+           payment_method as "paymentMethod", payment_status as "paymentStatus",
+           payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
+           tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
            created_at as "createdAt"
   `, params);
   return result.rows[0] || null;
