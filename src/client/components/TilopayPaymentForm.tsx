@@ -121,10 +121,8 @@ export default function TilopayPaymentForm({
     setLoading(true);
 
     try {
-      // Direct tokenized checkout via Tilopay SDK or secure endpoint
-      const baseUrl = environment === 'PRODUCTION'
-        ? 'https://app.tilopay.net/api/v1'
-        : 'https://sandbox.tilopay.net/api/v1';
+      // Direct checkout via official Tilopay API
+      const baseUrl = 'https://app.tilopay.com/api/v1';
 
       const [expMonth, expYear] = expiry.split('/');
       const cleanCard = cardNumber.replace(/\s/g, '');
