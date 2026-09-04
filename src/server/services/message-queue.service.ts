@@ -1,5 +1,5 @@
 import { Server as SocketServer } from 'socket.io';
-import { takeNextPending, markDone, markFailed, consumePendingForChat } from '../db/message-queue.repo.js';
+import { takeNextPending, markDone, markFailed, consumePendingForChat, recoverStaleProcessingMessages } from '../db/message-queue.repo.js';
 import { processWhatsAppMessageWithAI } from './agent.js';
 import { getChatMessagesByTenant, getChatSession, setChatHumanMode, saveChatMessage } from '../db/chats.repo.js';
 import { getAgentConfig } from '../db/agent-config.repo.js';
@@ -19,6 +19,23 @@ let isPolling = false;
 export function startQueueWorker(socketIo: SocketServer) {
   io = socketIo;
   console.log('[Queue] Worker started. Multi-tenant concurrent worker active (up to 5 parallel)...');
+  
+  // Auto-recover stale orphaned messages on startup (ISO 25010 Confiabilidad)
+  recoverStaleProcessingMessages(5)
+    .then(count => {
+      if (count > 0) console.log(`[Queue] Auto-recuperados ${count} mensajes huérfanos atascados en processing`);
+    })
+    .catch(err => console.error('[Queue] Error al recuperar mensajes atascados:', err));
+
+  // Run cleanup maintenance every 2 minutes
+  setInterval(() => {
+    recoverStaleProcessingMessages(5)
+      .then(count => {
+        if (count > 0) console.log(`[Queue Maintenance] Auto-recuperados ${count} mensajes huérfanos`);
+      })
+      .catch(err => console.error('[Queue Maintenance] Error:', err));
+  }, 2 * 60 * 1000);
+
   setInterval(tickQueue, 1500);
 }
 

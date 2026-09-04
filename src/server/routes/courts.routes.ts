@@ -165,9 +165,10 @@ router.post('/public/:slug/book', async (req, res) => {
       paymentSession,
       paymentUrl: paymentSession?.paymentUrl || null
     });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Error al crear reserva' });
+  } catch (error: any) {
+    console.error('Error creating court booking:', error);
+    const status = error?.statusCode || 500;
+    res.status(status).json({ error: error?.message || 'Error al crear reserva' });
   }
 });
 

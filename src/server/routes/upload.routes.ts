@@ -33,13 +33,16 @@ const storage = multer.diskStorage({
   }
 });
 
+const allowedExts = ['.jpg', '.jpeg', '.png', '.webp'];
+const allowedMimes = ['image/jpeg', 'image/png', 'image/webp'];
+
 const fileFilter = (req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
-  const allowed = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.svg'];
   const ext = path.extname(file.originalname).toLowerCase();
-  if (allowed.includes(ext)) {
+  const mime = (file.mimetype || '').toLowerCase();
+  if (allowedExts.includes(ext) && (allowedMimes.includes(mime) || !file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new Error('Solo se permiten imágenes (jpg, png, webp, gif, svg)'));
+    cb(new Error('Solo se permiten imágenes rasterizadas seguras (jpg, png, webp). Archivos SVG u otros formatos potencialmente ejecutables no están permitidos por seguridad (OWASP ASVS V12.1).'));
   }
 };
 

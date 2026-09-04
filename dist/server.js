@@ -1465,11 +1465,11 @@ init_env();
 import express from "express";
 import http from "http";
 import { Server as SocketIOServer } from "socket.io";
-import jwt2 from "jsonwebtoken";
+import jwt4 from "jsonwebtoken";
 import cors from "cors";
 import helmet from "helmet";
 import compression from "compression";
-import rateLimit2 from "express-rate-limit";
+import rateLimit4 from "express-rate-limit";
 import path2 from "path";
 import { fileURLToPath } from "url";
 import fs2 from "fs";
@@ -2190,6 +2190,7 @@ async function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_courts_tenant ON courts(tenant_id, active);
     CREATE INDEX IF NOT EXISTS idx_cb_tenant_date ON court_bookings(tenant_id, date, time);
     CREATE INDEX IF NOT EXISTS idx_cb_open_matches ON court_bookings(match_status, date) WHERE match_status = 'open';
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_active_court_slot ON court_bookings(tenant_id, court_id, date, time) WHERE status NOT IN ('cancelled', 'rejected');
   `);
   await query(`
     ALTER TABLE tenant_websites ADD COLUMN IF NOT EXISTS show_courts_button BOOLEAN DEFAULT false;
@@ -3036,12 +3037,12 @@ var TilopaySubscriptionService = class {
     if (/^4/.test(cleanCardNumber)) brand = "VISA";
     else if (/^5[1-5]/.test(cleanCardNumber)) brand = "MASTERCARD";
     else if (/^3[47]/.test(cleanCardNumber)) brand = "AMEX";
-    const jwt3 = await this.getPlatformJwt(platformCfg);
+    const jwt5 = await this.getPlatformJwt(platformCfg);
     const baseUrl = this.getBaseUrl(platformCfg.environment);
     const tokenizeRes = await fetch(`${baseUrl}/tokenize`, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${jwt3}`,
+        "Authorization": `Bearer ${jwt5}`,
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
@@ -3103,7 +3104,7 @@ var TilopaySubscriptionService = class {
     if (!platformCfg) {
       throw new Error("Credenciales de Tilopay de la plataforma no configuradas.");
     }
-    const jwt3 = await this.getPlatformJwt(platformCfg);
+    const jwt5 = await this.getPlatformJwt(platformCfg);
     const baseUrl = this.getBaseUrl(platformCfg.environment);
     const orderNumber = `SUB-${tenant.slug.substring(0, 8)}-${Date.now()}`;
     const cleanPhone = (tenant.whatsappNumber || "88888888").replace(/\D/g, "") || "88888888";
@@ -3141,7 +3142,7 @@ var TilopaySubscriptionService = class {
       chargeRes = await fetch(`${baseUrl}/charge`, {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${jwt3}`,
+          "Authorization": `Bearer ${jwt5}`,
           "Content-Type": "application/json"
         },
         body: JSON.stringify(chargePayload)
@@ -3559,6 +3560,17 @@ async function getQueueStats(tenantId) {
     if (row.status === "failed") stats.failed = parseInt(row.count, 10);
   }
   return stats;
+}
+async function recoverStaleProcessingMessages(timeoutMinutes = 5) {
+  const sql = `
+    UPDATE message_queue 
+    SET status = 'pending', processed_at = NULL
+    WHERE status = 'processing' 
+      AND processed_at < NOW() - (INTERVAL '1 minute' * $1)
+    RETURNING id;
+  `;
+  const result = await query(sql, [timeoutMinutes]);
+  return result.rows.length;
 }
 function mapToQueueMessage(row) {
   return {
@@ -4503,57 +4515,66 @@ async function createBooking(tenantId, data) {
     }
   }
   const pricePerTeam = data.pricePerTeam ? Number(data.pricePerTeam) : totalPrice > 0 ? totalPrice / 2 : void 0;
-  const res = await query(`
-    INSERT INTO court_bookings (
-      tenant_id, court_id, date, time, duration_minutes, booking_mode,
-      match_status, match_expiry_hours, team_a_name, team_a_captain,
-      team_a_phone, team_a_players, team_a_extra_players, team_a_paid,
-      team_b_name, team_b_captain, team_b_phone, team_b_players,
-      team_b_extra_players, team_b_paid, total_price, price_per_team,
-      payment_mode, sport_type, skill_level, notes, status,
-      payment_method, payment_reference
-    ) VALUES (
-      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
-      $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27,
-      $28, $29
-    ) RETURNING *
-  `, [
-    tenantId,
-    data.courtId,
-    data.date,
-    data.time,
-    durationMinutes,
-    bookingMode,
-    matchStatus,
-    data.matchExpiryHours || 1,
-    data.teamAName || "Equipo A",
-    data.teamACaptain,
-    data.teamAPhone,
-    data.teamAPlayers || 5,
-    data.teamAExtraPlayers || 0,
-    data.teamAPaid || false,
-    data.teamBName,
-    data.teamBCaptain,
-    data.teamBPhone,
-    data.teamBPlayers || 5,
-    data.teamBExtraPlayers || 0,
-    data.teamBPaid || false,
-    totalPrice,
-    pricePerTeam,
-    data.paymentMode || "both",
-    sportType,
-    data.skillLevel,
-    data.notes,
-    data.status || "confirmed",
-    data.paymentMethod || "cash",
-    data.paymentReference || null
-  ]);
-  const booking = mapBookingRow(res.rows[0]);
-  if (data.courtId) {
-    const cRes = await query("SELECT name FROM courts WHERE id = $1", [data.courtId]);
-    booking.courtName = cRes.rows[0]?.name || booking.courtName;
+  try {
+    const res = await query(`
+      INSERT INTO court_bookings (
+        tenant_id, court_id, date, time, duration_minutes, booking_mode,
+        match_status, match_expiry_hours, team_a_name, team_a_captain,
+        team_a_phone, team_a_players, team_a_extra_players, team_a_paid,
+        team_b_name, team_b_captain, team_b_phone, team_b_players,
+        team_b_extra_players, team_b_paid, total_price, price_per_team,
+        payment_mode, sport_type, skill_level, notes, status,
+        payment_method, payment_reference
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
+        $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27,
+        $28, $29
+      ) RETURNING *
+    `, [
+      tenantId,
+      data.courtId,
+      data.date,
+      data.time,
+      durationMinutes,
+      bookingMode,
+      matchStatus,
+      data.matchExpiryHours || 1,
+      data.teamAName || "Equipo A",
+      data.teamACaptain,
+      data.teamAPhone,
+      data.teamAPlayers || 5,
+      data.teamAExtraPlayers || 0,
+      data.teamAPaid || false,
+      data.teamBName,
+      data.teamBCaptain,
+      data.teamBPhone,
+      data.teamBPlayers || 5,
+      data.teamBExtraPlayers || 0,
+      data.teamBPaid || false,
+      totalPrice,
+      pricePerTeam,
+      data.paymentMode || "both",
+      sportType,
+      data.skillLevel,
+      data.notes,
+      data.status || "confirmed",
+      data.paymentMethod || "cash",
+      data.paymentReference || null
+    ]);
+    const booking = mapBookingRow(res.rows[0]);
+    if (data.courtId) {
+      const cRes = await query("SELECT name FROM courts WHERE id = $1", [data.courtId]);
+      booking.courtName = cRes.rows[0]?.name || booking.courtName;
+    }
+    return booking;
+  } catch (err) {
+    if (err?.code === "23505") {
+      const conflictErr = new Error("El horario seleccionado ya ha sido reservado por otro cliente. Por favor elige otro turno.");
+      conflictErr.statusCode = 409;
+      throw conflictErr;
+    }
+    throw err;
   }
-  return booking;
 }
 async function updateBooking(id, tenantId, data) {
   const allowed = {
@@ -6082,6 +6103,14 @@ var isPolling = false;
 function startQueueWorker(socketIo) {
   io = socketIo;
   console.log("[Queue] Worker started. Multi-tenant concurrent worker active (up to 5 parallel)...");
+  recoverStaleProcessingMessages(5).then((count) => {
+    if (count > 0) console.log(`[Queue] Auto-recuperados ${count} mensajes hu\xE9rfanos atascados en processing`);
+  }).catch((err) => console.error("[Queue] Error al recuperar mensajes atascados:", err));
+  setInterval(() => {
+    recoverStaleProcessingMessages(5).then((count) => {
+      if (count > 0) console.log(`[Queue Maintenance] Auto-recuperados ${count} mensajes hu\xE9rfanos`);
+    }).catch((err) => console.error("[Queue Maintenance] Error:", err));
+  }, 2 * 60 * 1e3);
   setInterval(tickQueue, 1500);
 }
 async function tickQueue() {
@@ -8313,6 +8342,26 @@ router5.post("/public/:slug/book", async (req, res) => {
     const finalAmount = req.body.amount !== void 0 ? Number(req.body.amount) : amount;
     const paymentMethod = req.body.paymentMethod || "cash";
     const isOnlinePayment = (paymentMethod === "card" || paymentMethod === "sinpe_tilopay") && paymentMethod !== "solo_reserva";
+    const schedule = await getScheduleSettings(tenant.id);
+    let maxParallelSlots = schedule?.globalParallelSlots || 1;
+    const targetServiceId = serviceId || matchedService?.id;
+    if (targetServiceId) {
+      const srvRes = await query(`SELECT parallel_slots as "parallelSlots" FROM services WHERE id = $1 AND tenant_id = $2`, [targetServiceId, tenant.id]);
+      if (srvRes.rows[0]?.parallelSlots) {
+        maxParallelSlots = srvRes.rows[0].parallelSlots;
+      }
+    }
+    const countRes = await query(`
+      SELECT COUNT(*)::int as count 
+      FROM appointments 
+      WHERE tenant_id = $1 AND date = $2 AND time = $3 AND status IN ('pending', 'scheduled', 'confirmed')
+    `, [tenant.id, date, time]);
+    if ((countRes.rows[0]?.count || 0) >= maxParallelSlots) {
+      res.status(409).json({
+        error: "El horario seleccionado ya no cuenta con cupos disponibles. Por favor selecciona otro turno."
+      });
+      return;
+    }
     const appt = await createAppointment(tenant.id, {
       name: customerName,
       whatsapp: customerPhone,
@@ -9496,13 +9545,15 @@ var storage = multer2.diskStorage({
     cb(null, `${uuidv4()}${ext}`);
   }
 });
+var allowedExts = [".jpg", ".jpeg", ".png", ".webp"];
+var allowedMimes = ["image/jpeg", "image/png", "image/webp"];
 var fileFilter = (req, file, cb) => {
-  const allowed = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg"];
   const ext = path.extname(file.originalname).toLowerCase();
-  if (allowed.includes(ext)) {
+  const mime = (file.mimetype || "").toLowerCase();
+  if (allowedExts.includes(ext) && (allowedMimes.includes(mime) || !file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new Error("Solo se permiten im\xE1genes (jpg, png, webp, gif, svg)"));
+    cb(new Error("Solo se permiten im\xE1genes rasterizadas seguras (jpg, png, webp). Archivos SVG u otros formatos potencialmente ejecutables no est\xE1n permitidos por seguridad (OWASP ASVS V12.1)."));
   }
 };
 var upload2 = multer2({
@@ -10031,6 +10082,7 @@ _Gestiona este pedido en tiempo real desde tu Panel de Betico._`;
 var storefront_routes_default = router16;
 
 // src/server/routes/webhook.routes.ts
+init_env();
 import { Router as Router17 } from "express";
 init_evolution();
 init_pool();
@@ -10137,6 +10189,13 @@ async function transcribeAudio(base64Audio, mimetype = "audio/ogg", apiKey) {
 // src/server/routes/webhook.routes.ts
 var router17 = Router17();
 router17.post("/", async (req, res) => {
+  const incomingApiKey = req.headers["apikey"] || req.headers["x-api-key"] || req.query["apikey"] || req.query["token"];
+  const expectedKey = env.EVOLUTION_API_KEY;
+  if (expectedKey && incomingApiKey && incomingApiKey !== expectedKey) {
+    console.warn(`[Security Alert] Rechazado webhook de WhatsApp con apikey no autorizada desde IP ${req.ip}`);
+    res.status(401).json({ error: "Unauthorized webhook" });
+    return;
+  }
   res.status(200).json({ status: "received" });
   try {
     const payload = req.body || {};
@@ -10463,11 +10522,39 @@ router18.get("/:slug", (req, res) => {
 var calendar_routes_default = router18;
 
 // src/server/routes/drivers.routes.ts
+init_env();
 import { Router as Router19 } from "express";
+import jwt2 from "jsonwebtoken";
+import rateLimit2 from "express-rate-limit";
 init_drivers_repo();
 init_evolution();
 init_pool();
 var router19 = Router19();
+var driverPortalLoginLimiter = rateLimit2({
+  windowMs: 5 * 60 * 1e3,
+  max: 5,
+  message: { error: "Demasiados intentos de acceso fallidos con PIN. Por favor espera 5 minutos." },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+async function resolveDriverFromRequest(req) {
+  const authHeader = req.headers["authorization"];
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    const rawToken = authHeader.substring(7);
+    try {
+      const decoded = jwt2.verify(rawToken, env.JWT_SECRET);
+      if (decoded?.driverId && decoded?.tenantId) {
+        return await getDriverById(decoded.driverId, decoded.tenantId);
+      }
+    } catch (e) {
+    }
+  }
+  const pin = req.headers["x-driver-pin"] || req.body?.pin || req.query?.pin;
+  if (pin) {
+    return await getDriverByPin(pin);
+  }
+  return null;
+}
 function normalizeCostaRicaPhone2(phone) {
   let clean = (phone || "").replace(/\D/g, "");
   if (clean.length === 8) {
@@ -10484,7 +10571,7 @@ async function resolveInstanceName2(tenantId) {
   }
   return void 0;
 }
-router19.post("/portal/login", async (req, res) => {
+router19.post("/portal/login", driverPortalLoginLimiter, async (req, res) => {
   try {
     const { pin, phone, tenantSlug } = req.body;
     if (!pin) {
@@ -10503,8 +10590,14 @@ router19.post("/portal/login", async (req, res) => {
     }
     const tenant = await getTenantById(driver.tenantId);
     const storeSettings = await getStoreSettings(driver.tenantId);
+    const token = jwt2.sign(
+      { driverId: driver.id, tenantId: driver.tenantId, role: "driver" },
+      env.JWT_SECRET,
+      { expiresIn: "24h" }
+    );
     res.json({
       success: true,
+      token,
       driver: {
         id: driver.id,
         tenantId: driver.tenantId,
@@ -10523,14 +10616,9 @@ router19.post("/portal/login", async (req, res) => {
 });
 router19.get("/portal/orders", async (req, res) => {
   try {
-    const pin = req.headers["x-driver-pin"] || req.query.pin;
-    if (!pin) {
-      res.status(401).json({ error: "PIN de repartidor no provisto" });
-      return;
-    }
-    const driver = await getDriverByPin(pin);
+    const driver = await resolveDriverFromRequest(req);
     if (!driver) {
-      res.status(401).json({ error: "PIN inv\xE1lido" });
+      res.status(401).json({ error: "Credenciales de repartidor no provistas o inv\xE1lidas" });
       return;
     }
     const orders = await getActiveOrdersForDriver(driver.id);
@@ -10542,15 +10630,10 @@ router19.get("/portal/orders", async (req, res) => {
 });
 router19.get("/portal/history", async (req, res) => {
   try {
-    const pin = req.headers["x-driver-pin"] || req.query.pin;
     const { fromDate, toDate } = req.query;
-    if (!pin) {
-      res.status(401).json({ error: "PIN no provisto" });
-      return;
-    }
-    const driver = await getDriverByPin(pin);
+    const driver = await resolveDriverFromRequest(req);
     if (!driver) {
-      res.status(401).json({ error: "PIN inv\xE1lido" });
+      res.status(401).json({ error: "Credenciales de repartidor no provistas o inv\xE1lidas" });
       return;
     }
     const { getCompletedOrdersForDriver: getCompletedOrdersForDriver2 } = await Promise.resolve().then(() => (init_drivers_repo(), drivers_repo_exports));
@@ -10569,14 +10652,9 @@ router19.get("/portal/history", async (req, res) => {
 });
 router19.post("/portal/orders/:id/deliver", async (req, res) => {
   try {
-    const pin = req.headers["x-driver-pin"] || req.body.pin;
-    if (!pin) {
-      res.status(401).json({ error: "PIN de repartidor no provisto" });
-      return;
-    }
-    const driver = await getDriverByPin(pin);
+    const driver = await resolveDriverFromRequest(req);
     if (!driver) {
-      res.status(401).json({ error: "PIN inv\xE1lido" });
+      res.status(401).json({ error: "Credenciales de repartidor no provistas o inv\xE1lidas" });
       return;
     }
     const orderId = req.params.id;
@@ -12152,10 +12230,48 @@ router23.delete("/:id", async (req, res) => {
 var branches_routes_default = router23;
 
 // src/server/routes/specialists.routes.ts
+init_env();
 import { Router as Router24 } from "express";
+import jwt3 from "jsonwebtoken";
+import rateLimit3 from "express-rate-limit";
 init_pool();
 var router24 = Router24();
-router24.post("/portal/login", async (req, res) => {
+var specialistPortalLoginLimiter = rateLimit3({
+  windowMs: 5 * 60 * 1e3,
+  max: 5,
+  message: { error: "Demasiados intentos de acceso fallidos con PIN. Por favor espera 5 minutos." },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+async function resolveSpecialistFromRequest(req) {
+  const authHeader = req.headers["authorization"];
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    const rawToken = authHeader.substring(7);
+    try {
+      const decoded = jwt3.verify(rawToken, env.JWT_SECRET);
+      if (decoded?.specialistId) {
+        const res = await query("SELECT * FROM specialists WHERE id = $1", [decoded.specialistId]);
+        if (res.rows[0]) {
+          return {
+            id: res.rows[0].id,
+            tenantId: res.rows[0].tenant_id,
+            name: res.rows[0].name,
+            phone: res.rows[0].phone,
+            specialty: res.rows[0].specialty,
+            accessPin: res.rows[0].access_pin
+          };
+        }
+      }
+    } catch (e) {
+    }
+  }
+  const pin = req.headers["x-specialist-pin"] || req.body?.pin || req.query?.pin;
+  if (pin) {
+    return await getSpecialistByPin(pin);
+  }
+  return null;
+}
+router24.post("/portal/login", specialistPortalLoginLimiter, async (req, res) => {
   try {
     const { pin, phone, tenantSlug } = req.body;
     if (!pin) {
@@ -12173,8 +12289,14 @@ router24.post("/portal/login", async (req, res) => {
       return;
     }
     const tenant = await getTenantById(specialist.tenantId);
+    const token = jwt3.sign(
+      { specialistId: specialist.id, tenantId: specialist.tenantId, role: "specialist" },
+      env.JWT_SECRET,
+      { expiresIn: "24h" }
+    );
     res.json({
       success: true,
+      token,
       specialist: {
         id: specialist.id,
         tenantId: specialist.tenantId,
@@ -12191,14 +12313,9 @@ router24.post("/portal/login", async (req, res) => {
 });
 router24.get("/portal/appointments", async (req, res) => {
   try {
-    const pin = req.headers["x-specialist-pin"] || req.query.pin;
-    if (!pin) {
-      res.status(401).json({ error: "PIN no provisto" });
-      return;
-    }
-    const specialist = await getSpecialistByPin(pin);
+    const specialist = await resolveSpecialistFromRequest(req);
     if (!specialist) {
-      res.status(401).json({ error: "PIN inv\xE1lido" });
+      res.status(401).json({ error: "Credenciales de especialista no provistas o inv\xE1lidas" });
       return;
     }
     const appointments = await getActiveAppointmentsForSpecialist(specialist.id);
@@ -12209,15 +12326,10 @@ router24.get("/portal/appointments", async (req, res) => {
 });
 router24.post("/portal/appointments/:id/status", async (req, res) => {
   try {
-    const pin = req.headers["x-specialist-pin"] || req.body.pin;
     const { status } = req.body;
-    if (!pin) {
-      res.status(401).json({ error: "PIN no provisto" });
-      return;
-    }
-    const specialist = await getSpecialistByPin(pin);
+    const specialist = await resolveSpecialistFromRequest(req);
     if (!specialist) {
-      res.status(401).json({ error: "PIN inv\xE1lido" });
+      res.status(401).json({ error: "Credenciales de especialista no provistas o inv\xE1lidas" });
       return;
     }
     await query("UPDATE appointments SET status = $1 WHERE id = $2 AND specialist_id = $3", [status || "completed", req.params.id, specialist.id]);
@@ -12228,15 +12340,10 @@ router24.post("/portal/appointments/:id/status", async (req, res) => {
 });
 router24.get("/portal/history", async (req, res) => {
   try {
-    const pin = req.headers["x-specialist-pin"] || req.query.pin;
     const { fromDate, toDate } = req.query;
-    if (!pin) {
-      res.status(401).json({ error: "PIN no provisto" });
-      return;
-    }
-    const specialist = await getSpecialistByPin(pin);
+    const specialist = await resolveSpecialistFromRequest(req);
     if (!specialist) {
-      res.status(401).json({ error: "PIN inv\xE1lido" });
+      res.status(401).json({ error: "Credenciales de especialista no provistas o inv\xE1lidas" });
       return;
     }
     const appointments = await getCompletedAppointmentsForSpecialist(specialist.id, fromDate, toDate);
@@ -12577,8 +12684,9 @@ Tu reserva de cancha para el equipo *${booking.teamAName}* ha sido confirmada.
       paymentUrl: paymentSession?.paymentUrl || null
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Error al crear reserva" });
+    console.error("Error creating court booking:", error);
+    const status = error?.statusCode || 500;
+    res.status(status).json({ error: error?.message || "Error al crear reserva" });
   }
 });
 router28.get("/public/:slug/open-matches", async (req, res) => {
@@ -13679,7 +13787,7 @@ router32.post("/create-card-session", async (req, res) => {
     if (!loginRes.ok || !loginData.access_token) {
       throw new Error(loginData.message || "No fue posible autenticar con la pasarela bancaria.");
     }
-    const jwt3 = loginData.access_token;
+    const jwt5 = loginData.access_token;
     const cleanPhone = (tenant.whatsappNumber || "88888888").replace(/\D/g, "") || "88888888";
     const appUrl = (env.APP_URL || "https://betico.tech").replace(/\/$/, "");
     const orderNumber = `SUB-CARD-${tenant.id}-${Date.now()}`;
@@ -13704,7 +13812,7 @@ router32.post("/create-card-session", async (req, res) => {
     const sessionRes = await fetch(`${baseUrl}/processPayment`, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${jwt3}`,
+        "Authorization": `Bearer ${jwt5}`,
         "Content-Type": "application/json"
       },
       body: JSON.stringify(sessionPayload)
@@ -13823,7 +13931,7 @@ async function startServer() {
       return next();
     }
     try {
-      const decoded = jwt2.verify(String(token), env.JWT_SECRET);
+      const decoded = jwt4.verify(String(token), env.JWT_SECRET);
       socket.data.user = decoded;
       next();
     } catch (err) {
@@ -13862,7 +13970,7 @@ async function startServer() {
   app.use(cors());
   app.use(express.json({ limit: "25mb" }));
   app.use(express.urlencoded({ extended: true, limit: "25mb" }));
-  const authLimiter = rateLimit2({
+  const authLimiter = rateLimit4({
     windowMs: 15 * 60 * 1e3,
     // 15 minutes window
     max: 20,
@@ -13871,7 +13979,7 @@ async function startServer() {
     standardHeaders: true,
     legacyHeaders: false
   });
-  const publicLimiter = rateLimit2({
+  const publicLimiter = rateLimit4({
     windowMs: 1 * 60 * 1e3,
     // 1 minute
     max: 200,

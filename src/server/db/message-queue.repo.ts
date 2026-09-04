@@ -166,6 +166,18 @@ export async function getQueueStats(tenantId?: string): Promise<{pending: number
   return stats;
 }
 
+export async function recoverStaleProcessingMessages(timeoutMinutes: number = 5): Promise<number> {
+  const sql = `
+    UPDATE message_queue 
+    SET status = 'pending', processed_at = NULL
+    WHERE status = 'processing' 
+      AND processed_at < NOW() - (INTERVAL '1 minute' * $1)
+    RETURNING id;
+  `;
+  const result = await query(sql, [timeoutMinutes]);
+  return result.rows.length;
+}
+
 function mapToQueueMessage(row: any): QueueMessage {
   return {
     id: row.id,

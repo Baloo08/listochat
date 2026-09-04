@@ -271,6 +271,30 @@ router.post('/public/:slug/book', async (req, res) => {
     // solo_reserva = book without payment; does not trigger Tilopay
     const isOnlinePayment = (paymentMethod === 'card' || paymentMethod === 'sinpe_tilopay') && paymentMethod !== 'solo_reserva';
 
+    // Atomic capacity check (Concurrency control - ISO 25010)
+    const schedule = await getScheduleSettings(tenant.id);
+    let maxParallelSlots = schedule?.globalParallelSlots || 1;
+    const targetServiceId = serviceId || matchedService?.id;
+    if (targetServiceId) {
+      const srvRes = await query(`SELECT parallel_slots as "parallelSlots" FROM services WHERE id = $1 AND tenant_id = $2`, [targetServiceId, tenant.id]);
+      if (srvRes.rows[0]?.parallelSlots) {
+        maxParallelSlots = srvRes.rows[0].parallelSlots;
+      }
+    }
+
+    const countRes = await query(`
+      SELECT COUNT(*)::int as count 
+      FROM appointments 
+      WHERE tenant_id = $1 AND date = $2 AND time = $3 AND status IN ('pending', 'scheduled', 'confirmed')
+    `, [tenant.id, date, time]);
+
+    if ((countRes.rows[0]?.count || 0) >= maxParallelSlots) {
+      res.status(409).json({
+        error: 'El horario seleccionado ya no cuenta con cupos disponibles. Por favor selecciona otro turno.'
+      });
+      return;
+    }
+
     const appt = await createAppointment(tenant.id, {
       name: customerName,
       whatsapp: customerPhone,

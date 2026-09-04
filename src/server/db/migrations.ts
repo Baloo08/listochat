@@ -727,6 +727,7 @@ export async function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_courts_tenant ON courts(tenant_id, active);
     CREATE INDEX IF NOT EXISTS idx_cb_tenant_date ON court_bookings(tenant_id, date, time);
     CREATE INDEX IF NOT EXISTS idx_cb_open_matches ON court_bookings(match_status, date) WHERE match_status = 'open';
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_active_court_slot ON court_bookings(tenant_id, court_id, date, time) WHERE status NOT IN ('cancelled', 'rejected');
   `);
 
   // Add courts button columns to tenant_websites

@@ -1,4 +1,7 @@
 import { Router } from 'express';
+import jwt from 'jsonwebtoken';
+import rateLimit from 'express-rate-limit';
+import { env } from '../config/env.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { tenantContext } from '../middleware/tenantContext.js';
 import { getDriversByTenant, createDriver, updateDriver, deleteDriver, getDriverById, getDriverByPin, getActiveOrdersForDriver } from '../db/drivers.repo.js';
@@ -9,6 +12,36 @@ import { sendMessage } from '../services/evolution.js';
 import { query } from '../db/pool.js';
 
 const router = Router();
+
+const driverPortalLoginLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 5,
+  message: { error: 'Demasiados intentos de acceso fallidos con PIN. Por favor espera 5 minutos.' },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+async function resolveDriverFromRequest(req: any) {
+  const authHeader = req.headers['authorization'];
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const rawToken = authHeader.substring(7);
+    try {
+      const decoded = jwt.verify(rawToken, env.JWT_SECRET) as any;
+      if (decoded?.driverId && decoded?.tenantId) {
+        return await getDriverById(decoded.driverId, decoded.tenantId);
+      }
+    } catch (e) {
+      // fallback to PIN if present
+    }
+  }
+
+  const pin = (req.headers['x-driver-pin'] || req.body?.pin || req.query?.pin) as string;
+  if (pin) {
+    return await getDriverByPin(pin);
+  }
+
+  return null;
+}
 
 function normalizeCostaRicaPhone(phone: string): string {
   let clean = (phone || '').replace(/\D/g, '');
@@ -30,11 +63,11 @@ async function resolveInstanceName(tenantId: string): Promise<string | undefined
 }
 
 // =======================================================
-// PUBLIC DRIVER PORTAL ROUTES (Authenticated via PIN)
+// PUBLIC DRIVER PORTAL ROUTES (Authenticated via PIN / JWT)
 // =======================================================
 
-// 1. PIN Login / Verification
-router.post('/portal/login', async (req, res) => {
+// 1. PIN Login / Verification (Rate-limited & JWT issued)
+router.post('/portal/login', driverPortalLoginLimiter, async (req, res) => {
   try {
     const { pin, phone, tenantSlug } = req.body;
     if (!pin) {
@@ -57,8 +90,15 @@ router.post('/portal/login', async (req, res) => {
     const tenant = await getTenantById(driver.tenantId);
     const storeSettings = await getStoreSettings(driver.tenantId);
 
+    const token = jwt.sign(
+      { driverId: driver.id, tenantId: driver.tenantId, role: 'driver' },
+      env.JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
     res.json({
       success: true,
+      token,
       driver: {
         id: driver.id,
         tenantId: driver.tenantId,
@@ -79,15 +119,9 @@ router.post('/portal/login', async (req, res) => {
 // 2. Get active orders for this driver
 router.get('/portal/orders', async (req, res) => {
   try {
-    const pin = (req.headers['x-driver-pin'] || req.query.pin) as string;
-    if (!pin) {
-      res.status(401).json({ error: 'PIN de repartidor no provisto' });
-      return;
-    }
-
-    const driver = await getDriverByPin(pin);
+    const driver = await resolveDriverFromRequest(req);
     if (!driver) {
-      res.status(401).json({ error: 'PIN inválido' });
+      res.status(401).json({ error: 'Credenciales de repartidor no provistas o inválidas' });
       return;
     }
 
@@ -102,17 +136,10 @@ router.get('/portal/orders', async (req, res) => {
 // 2.1 Get completed orders history with date filters
 router.get('/portal/history', async (req, res) => {
   try {
-    const pin = (req.headers['x-driver-pin'] || req.query.pin) as string;
     const { fromDate, toDate } = req.query as { fromDate?: string; toDate?: string };
-
-    if (!pin) {
-      res.status(401).json({ error: 'PIN no provisto' });
-      return;
-    }
-
-    const driver = await getDriverByPin(pin);
+    const driver = await resolveDriverFromRequest(req);
     if (!driver) {
-      res.status(401).json({ error: 'PIN inválido' });
+      res.status(401).json({ error: 'Credenciales de repartidor no provistas o inválidas' });
       return;
     }
 
@@ -135,15 +162,9 @@ router.get('/portal/history', async (req, res) => {
 // 3. Mark order as delivered by driver
 router.post('/portal/orders/:id/deliver', async (req, res) => {
   try {
-    const pin = (req.headers['x-driver-pin'] || req.body.pin) as string;
-    if (!pin) {
-      res.status(401).json({ error: 'PIN de repartidor no provisto' });
-      return;
-    }
-
-    const driver = await getDriverByPin(pin);
+    const driver = await resolveDriverFromRequest(req);
     if (!driver) {
-      res.status(401).json({ error: 'PIN inválido' });
+      res.status(401).json({ error: 'Credenciales de repartidor no provistas o inválidas' });
       return;
     }
 

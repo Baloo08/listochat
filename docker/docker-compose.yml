@@ -38,7 +38,7 @@ services:
       - POSTGRES_PASSWORD=changeme
       - POSTGRES_DB=whatsapp_saas
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -51,7 +51,7 @@ services:
     image: redis:7-alpine
     command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redisdata:/data
 
@@ -66,7 +66,7 @@ services:
       - DATABASE_SAVE_DATA_NEW_MESSAGE=true
       - DATABASE_SAVE_DATA_CONTACTS=true
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     volumes:
       - evolution_instances:/evolution/instances
       - evolution_store:/evolution/store

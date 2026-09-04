@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { env } from '../config/env.js';
 import { getTenantByEvolutionInstance, getAllTenants } from '../db/tenant.repo.js';
 import { sendMessage, sendMedia, getBase64FromMediaMessage } from '../services/evolution.js';
 import { saveChatMessage, getChatMessagesByTenant, getChatSession, setChatHumanMode } from '../db/chats.repo.js';
@@ -10,6 +11,15 @@ import { enqueueMessage } from '../db/message-queue.repo.js';
 const router = Router();
 
 router.post('/', async (req, res) => {
+  // Validate authentication if provided or configured (OWASP ASVS V13.1)
+  const incomingApiKey = (req.headers['apikey'] || req.headers['x-api-key'] || req.query['apikey'] || req.query['token']) as string;
+  const expectedKey = env.EVOLUTION_API_KEY;
+  if (expectedKey && incomingApiKey && incomingApiKey !== expectedKey) {
+    console.warn(`[Security Alert] Rechazado webhook de WhatsApp con apikey no autorizada desde IP ${req.ip}`);
+    res.status(401).json({ error: 'Unauthorized webhook' });
+    return;
+  }
+
   // Always return immediate 200 OK to WhatsApp/Evolution API
   res.status(200).json({ status: 'received' });
 

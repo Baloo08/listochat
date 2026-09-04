@@ -185,38 +185,47 @@ export async function createBooking(tenantId: string, data: Partial<CourtBooking
 
   const pricePerTeam = data.pricePerTeam ? Number(data.pricePerTeam) : (totalPrice > 0 ? totalPrice / 2 : undefined);
 
-  const res = await query(`
-    INSERT INTO court_bookings (
-      tenant_id, court_id, date, time, duration_minutes, booking_mode,
-      match_status, match_expiry_hours, team_a_name, team_a_captain,
-      team_a_phone, team_a_players, team_a_extra_players, team_a_paid,
-      team_b_name, team_b_captain, team_b_phone, team_b_players,
-      team_b_extra_players, team_b_paid, total_price, price_per_team,
-      payment_mode, sport_type, skill_level, notes, status,
-      payment_method, payment_reference
-    ) VALUES (
-      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
-      $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27,
-      $28, $29
-    ) RETURNING *
-  `, [
-    tenantId, data.courtId, data.date, data.time, durationMinutes,
-    bookingMode, matchStatus, data.matchExpiryHours || 1,
-    data.teamAName || 'Equipo A', data.teamACaptain, data.teamAPhone,
-    data.teamAPlayers || 5, data.teamAExtraPlayers || 0, data.teamAPaid || false,
-    data.teamBName, data.teamBCaptain, data.teamBPhone, data.teamBPlayers || 5,
-    data.teamBExtraPlayers || 0, data.teamBPaid || false, totalPrice,
-    pricePerTeam, data.paymentMode || 'both', sportType, data.skillLevel,
-    data.notes, data.status || 'confirmed',
-    data.paymentMethod || 'cash', data.paymentReference || null
-  ]);
+  try {
+    const res = await query(`
+      INSERT INTO court_bookings (
+        tenant_id, court_id, date, time, duration_minutes, booking_mode,
+        match_status, match_expiry_hours, team_a_name, team_a_captain,
+        team_a_phone, team_a_players, team_a_extra_players, team_a_paid,
+        team_b_name, team_b_captain, team_b_phone, team_b_players,
+        team_b_extra_players, team_b_paid, total_price, price_per_team,
+        payment_mode, sport_type, skill_level, notes, status,
+        payment_method, payment_reference
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
+        $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27,
+        $28, $29
+      ) RETURNING *
+    `, [
+      tenantId, data.courtId, data.date, data.time, durationMinutes,
+      bookingMode, matchStatus, data.matchExpiryHours || 1,
+      data.teamAName || 'Equipo A', data.teamACaptain, data.teamAPhone,
+      data.teamAPlayers || 5, data.teamAExtraPlayers || 0, data.teamAPaid || false,
+      data.teamBName, data.teamBCaptain, data.teamBPhone, data.teamBPlayers || 5,
+      data.teamBExtraPlayers || 0, data.teamBPaid || false, totalPrice,
+      pricePerTeam, data.paymentMode || 'both', sportType, data.skillLevel,
+      data.notes, data.status || 'confirmed',
+      data.paymentMethod || 'cash', data.paymentReference || null
+    ]);
 
-  const booking = mapBookingRow(res.rows[0]);
-  if (data.courtId) {
-    const cRes = await query('SELECT name FROM courts WHERE id = $1', [data.courtId]);
-    booking.courtName = cRes.rows[0]?.name || booking.courtName;
+    const booking = mapBookingRow(res.rows[0]);
+    if (data.courtId) {
+      const cRes = await query('SELECT name FROM courts WHERE id = $1', [data.courtId]);
+      booking.courtName = cRes.rows[0]?.name || booking.courtName;
+    }
+    return booking;
+  } catch (err: any) {
+    if (err?.code === '23505') {
+      const conflictErr = new Error('El horario seleccionado ya ha sido reservado por otro cliente. Por favor elige otro turno.');
+      (conflictErr as any).statusCode = 409;
+      throw conflictErr;
+    }
+    throw err;
   }
-  return booking;
 }
 
 export async function updateBooking(id: string, tenantId: string, data: Partial<CourtBooking>) {
