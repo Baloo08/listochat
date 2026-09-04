@@ -10,6 +10,7 @@ import { getTenantPaymentConfigRaw } from '../db/tenant-payment.repo.js';
 import { TilopayTenantService } from '../services/tilopay-tenant.service.js';
 import { sendMessage } from '../services/evolution.js';
 import { query } from '../db/pool.js';
+import { logAuditEvent } from '../db/audit.repo.js';
 
 const router = Router();
 
@@ -465,6 +466,20 @@ router.put('/:id', async (req, res) => {
     if ((req as any).io) {
       (req as any).io.to(`tenant_${req.tenantId}`).emit('appointment:updated', updated);
     }
+
+    if (req.body.paymentStatus === 'paid' || req.body.status === 'confirmed') {
+      await logAuditEvent(
+        req.tenantId!,
+        (req as any).user?.userId || 'system',
+        'appointment_status_updated',
+        'appointment',
+        req.params.id,
+        { clientName: updated.name, service: updated.service, status: updated.status, paymentStatus: updated.paymentStatus, amount: updated.amount },
+        req.ip,
+        req.headers['user-agent']
+      );
+    }
+
     res.json(updated);
   } catch (error) {
     console.error('Error al actualizar cita:', error);

@@ -6,6 +6,7 @@ import { getTenantById } from '../db/tenant.repo.js';
 import { getStoreSettings } from '../db/store-settings.repo.js';
 import { sendMessage } from '../services/evolution.js';
 import { query } from '../db/pool.js';
+import { logAuditEvent } from '../db/audit.repo.js';
 
 const router = Router();
 router.use(authenticateToken);
@@ -133,6 +134,19 @@ router.put('/:id/proof-status', async (req, res) => {
       SET payment_proof_status = $1, payment_status = $2, updated_at = CURRENT_TIMESTAMP
       WHERE id = $3 AND (tenant_id = $4 OR $5 = 'superadmin')
     `, [proofStatus, paymentStatus, req.params.id, req.tenantId, (req as any).user?.role || 'user']);
+
+    if (proofStatus === 'verified') {
+      await logAuditEvent(
+        order.tenantId,
+        (req as any).user?.userId || 'system',
+        'payment_proof_verified',
+        'order',
+        req.params.id,
+        { orderNumber: order.orderNumber, total: order.total, customerName: order.customerName },
+        req.ip,
+        req.headers['user-agent']
+      );
+    }
 
     // Emit real-time update
     if ((req as any).io) {
@@ -267,6 +281,22 @@ router.post('/:id/confirm-payment', async (req, res) => {
         // ignore
       }
     }
+
+    await logAuditEvent(
+      req.tenantId!,
+      (req as any).user?.userId || 'system',
+      'order_payment_confirmed',
+      'order',
+      req.params.id,
+      {
+        orderNumber: order?.orderNumber,
+        reference: reference || null,
+        total: order?.total,
+        customerName: order?.customerName
+      },
+      req.ip,
+      req.headers['user-agent']
+    );
 
     // Emit real-time WebSocket event
     if ((req as any).io) {

@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import { generateToken, authenticateToken } from '../middleware/auth.js';
 import { getUserByEmail, getUserById, verifyPassword } from '../db/users.repo.js';
 import { getTenantById, getTenantBySlug } from '../db/tenant.repo.js';
@@ -11,6 +12,14 @@ import { query } from '../db/pool.js';
 import { logAuditEvent } from '../db/audit.repo.js';
 
 const router = Router();
+
+const otpLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutos
+  max: 5, // Máximo 5 intentos por IP cada 15 min
+  message: { error: 'Demasiados intentos con códigos de verificación. Por favor espera 15 minutos.' },
+  standardHeaders: true,
+  legacyHeaders: false
+});
 
 // In-memory rate limiting for brute-force protection
 interface LoginAttempt {
@@ -372,7 +381,7 @@ router.get('/me', authenticateToken, async (req: any, res) => {
 // ==========================================
 // PASSWORD RECOVERY VIA WHATSAPP (OTP)
 // ==========================================
-router.post('/forgot-password', async (req, res) => {
+router.post('/forgot-password', otpLimiter, async (req, res) => {
   try {
     const { identifier } = req.body;
     if (!identifier || typeof identifier !== 'string') {
@@ -449,7 +458,7 @@ router.post('/forgot-password', async (req, res) => {
   }
 });
 
-router.post('/verify-reset-otp', async (req, res) => {
+router.post('/verify-reset-otp', otpLimiter, async (req, res) => {
   try {
     const { identifier, otpCode } = req.body;
     if (!identifier || !otpCode) {
@@ -486,7 +495,7 @@ router.post('/verify-reset-otp', async (req, res) => {
   }
 });
 
-router.post('/reset-password', async (req, res) => {
+router.post('/reset-password', otpLimiter, async (req, res) => {
   try {
     const { identifier, otpCode, newPassword } = req.body;
     if (!identifier || !otpCode || !newPassword) {

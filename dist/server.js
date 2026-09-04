@@ -61,7 +61,10 @@ var init_pool = __esm({
     init_env();
     ({ Pool } = pg);
     pool = new Pool({
-      connectionString: env.DATABASE_URL
+      connectionString: env.DATABASE_URL,
+      max: 25,
+      idleTimeoutMillis: 3e4,
+      connectionTimeoutMillis: 5e3
     });
     pool.on("error", (err) => {
       console.error("Unexpected error on idle client", err);
@@ -1469,7 +1472,7 @@ import jwt4 from "jsonwebtoken";
 import cors from "cors";
 import helmet from "helmet";
 import compression from "compression";
-import rateLimit4 from "express-rate-limit";
+import rateLimit5 from "express-rate-limit";
 import path2 from "path";
 import { fileURLToPath } from "url";
 import fs2 from "fs";
@@ -6515,14 +6518,16 @@ ${payload.tilopayAuthCode ? `\u{1F511} *C\xF3digo de Autorizaci\xF3n:* ${payload
 
 // src/server/routes/auth.routes.ts
 import { Router } from "express";
+import rateLimit from "express-rate-limit";
 
 // src/server/middleware/auth.ts
 init_env();
+init_users_repo();
 import jwt from "jsonwebtoken";
 function generateToken(userId, tenantId, role) {
   return jwt.sign({ userId, tenantId, role }, env.JWT_SECRET, { expiresIn: "7d" });
 }
-function authenticateToken(req, res, next) {
+async function authenticateToken(req, res, next) {
   const authHeader = req.headers["authorization"];
   const token = authHeader && authHeader.split(" ")[1];
   if (!token) {
@@ -6531,10 +6536,17 @@ function authenticateToken(req, res, next) {
   }
   try {
     const decoded = jwt.verify(token, env.JWT_SECRET);
+    if (decoded.userId && decoded.role !== "superadmin") {
+      const user = await getUserById(decoded.userId);
+      if (!user || user.active === false) {
+        res.status(403).json({ error: "Tu cuenta ha sido desactivada o suspendida. Por favor contacta al administrador." });
+        return;
+      }
+    }
     req.user = decoded;
     next();
   } catch (err) {
-    res.status(403).json({ error: "Forbidden" });
+    res.status(403).json({ error: "Forbidden: Token inv\xE1lido o expirado" });
   }
 }
 function requireRole(...roles) {
@@ -6832,6 +6844,15 @@ async function getAuditLogs(tenantId, filters = {}) {
 
 // src/server/routes/auth.routes.ts
 var router = Router();
+var otpLimiter = rateLimit({
+  windowMs: 15 * 60 * 1e3,
+  // 15 minutos
+  max: 5,
+  // Máximo 5 intentos por IP cada 15 min
+  message: { error: "Demasiados intentos con c\xF3digos de verificaci\xF3n. Por favor espera 15 minutos." },
+  standardHeaders: true,
+  legacyHeaders: false
+});
 var loginAttempts = /* @__PURE__ */ new Map();
 function checkRateLimit(key) {
   const now = Date.now();
@@ -7119,7 +7140,7 @@ router.get("/me", authenticateToken, async (req, res) => {
     res.status(500).json({ error: "Error al obtener perfil de usuario" });
   }
 });
-router.post("/forgot-password", async (req, res) => {
+router.post("/forgot-password", otpLimiter, async (req, res) => {
   try {
     const { identifier } = req.body;
     if (!identifier || typeof identifier !== "string") {
@@ -7184,7 +7205,7 @@ Tu c\xF3digo de verificaci\xF3n es:
     res.status(500).json({ error: "Error del servidor al procesar la solicitud" });
   }
 });
-router.post("/verify-reset-otp", async (req, res) => {
+router.post("/verify-reset-otp", otpLimiter, async (req, res) => {
   try {
     const { identifier, otpCode } = req.body;
     if (!identifier || !otpCode) {
@@ -7216,7 +7237,7 @@ router.post("/verify-reset-otp", async (req, res) => {
     res.status(500).json({ error: "Error al verificar el c\xF3digo" });
   }
 });
-router.post("/reset-password", async (req, res) => {
+router.post("/reset-password", otpLimiter, async (req, res) => {
   try {
     const { identifier, otpCode, newPassword } = req.body;
     if (!identifier || !otpCode || !newPassword) {
@@ -8509,6 +8530,18 @@ router5.put("/:id", async (req, res) => {
     if (req.io) {
       req.io.to(`tenant_${req.tenantId}`).emit("appointment:updated", updated);
     }
+    if (req.body.paymentStatus === "paid" || req.body.status === "confirmed") {
+      await logAuditEvent(
+        req.tenantId,
+        req.user?.userId || "system",
+        "appointment_status_updated",
+        "appointment",
+        req.params.id,
+        { clientName: updated.name, service: updated.service, status: updated.status, paymentStatus: updated.paymentStatus, amount: updated.amount },
+        req.ip,
+        req.headers["user-agent"]
+      );
+    }
     res.json(updated);
   } catch (error) {
     console.error("Error al actualizar cita:", error);
@@ -9315,6 +9348,18 @@ router12.put("/:id/proof-status", async (req, res) => {
       SET payment_proof_status = $1, payment_status = $2, updated_at = CURRENT_TIMESTAMP
       WHERE id = $3 AND (tenant_id = $4 OR $5 = 'superadmin')
     `, [proofStatus, paymentStatus, req.params.id, req.tenantId, req.user?.role || "user"]);
+    if (proofStatus === "verified") {
+      await logAuditEvent(
+        order.tenantId,
+        req.user?.userId || "system",
+        "payment_proof_verified",
+        "order",
+        req.params.id,
+        { orderNumber: order.orderNumber, total: order.total, customerName: order.customerName },
+        req.ip,
+        req.headers["user-agent"]
+      );
+    }
     if (req.io) {
       req.io.to(`tenant_${order.tenantId}`).emit("order:updated", {
         id: req.params.id,
@@ -9437,6 +9482,21 @@ Estamos procesando tu orden de inmediato. \xA1Gracias!`;
       } catch (e) {
       }
     }
+    await logAuditEvent(
+      req.tenantId,
+      req.user?.userId || "system",
+      "order_payment_confirmed",
+      "order",
+      req.params.id,
+      {
+        orderNumber: order?.orderNumber,
+        reference: reference || null,
+        total: order?.total,
+        customerName: order?.customerName
+      },
+      req.ip,
+      req.headers["user-agent"]
+    );
     if (req.io) {
       req.io.to(`tenant_${req.tenantId}`).emit("order:updated", updated || order);
     }
@@ -9523,9 +9583,9 @@ import fs from "fs";
 import { v4 as uuidv4 } from "uuid";
 init_env();
 init_pool();
-import rateLimit from "express-rate-limit";
+import rateLimit2 from "express-rate-limit";
 var router15 = Router15();
-var publicUploadLimiter = rateLimit({
+var publicUploadLimiter = rateLimit2({
   windowMs: 5 * 60 * 1e3,
   // 5 minutos
   max: 15,
@@ -10525,12 +10585,12 @@ var calendar_routes_default = router18;
 init_env();
 import { Router as Router19 } from "express";
 import jwt2 from "jsonwebtoken";
-import rateLimit2 from "express-rate-limit";
+import rateLimit3 from "express-rate-limit";
 init_drivers_repo();
 init_evolution();
 init_pool();
 var router19 = Router19();
-var driverPortalLoginLimiter = rateLimit2({
+var driverPortalLoginLimiter = rateLimit3({
   windowMs: 5 * 60 * 1e3,
   max: 5,
   message: { error: "Demasiados intentos de acceso fallidos con PIN. Por favor espera 5 minutos." },
@@ -12233,10 +12293,10 @@ var branches_routes_default = router23;
 init_env();
 import { Router as Router24 } from "express";
 import jwt3 from "jsonwebtoken";
-import rateLimit3 from "express-rate-limit";
+import rateLimit4 from "express-rate-limit";
 init_pool();
 var router24 = Router24();
-var specialistPortalLoginLimiter = rateLimit3({
+var specialistPortalLoginLimiter = rateLimit4({
   windowMs: 5 * 60 * 1e3,
   max: 5,
   message: { error: "Demasiados intentos de acceso fallidos con PIN. Por favor espera 5 minutos." },
@@ -13970,7 +14030,7 @@ async function startServer() {
   app.use(cors());
   app.use(express.json({ limit: "25mb" }));
   app.use(express.urlencoded({ extended: true, limit: "25mb" }));
-  const authLimiter = rateLimit4({
+  const authLimiter = rateLimit5({
     windowMs: 15 * 60 * 1e3,
     // 15 minutes window
     max: 20,
@@ -13979,7 +14039,7 @@ async function startServer() {
     standardHeaders: true,
     legacyHeaders: false
   });
-  const publicLimiter = rateLimit4({
+  const publicLimiter = rateLimit5({
     windowMs: 1 * 60 * 1e3,
     // 1 minute
     max: 200,

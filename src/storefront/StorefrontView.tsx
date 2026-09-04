@@ -678,6 +678,7 @@ export default function StorefrontView({ slug }: StorefrontProps) {
             <input
               type="text"
               placeholder="Buscar platillo o producto..."
+              aria-label="Buscar platillo o producto en el catálogo"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               style={{
@@ -690,10 +691,13 @@ export default function StorefrontView({ slug }: StorefrontProps) {
             />
           </div>
 
-          <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px' }}>
+          <div role="tablist" aria-label="Categorías del catálogo" style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px' }}>
             {categories.map(cat => (
               <button
                 key={cat}
+                role="tab"
+                aria-selected={activeCategory === cat}
+                aria-label={`Filtrar por categoría ${cat}`}
                 onClick={() => setActiveCategory(cat)}
                 style={{
                   padding: '8px 16px', borderRadius: '20px',
@@ -729,7 +733,16 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                   }}
                 >
                   <div
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Ver detalles de ${prod.name}`}
                     onClick={() => handleOpenProductModal(prod)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        handleOpenProductModal(prod);
+                      }
+                    }}
                     style={{ height: '180px', backgroundColor: isDark ? '#0f172a' : '#f1f5f9', cursor: 'pointer', overflow: 'hidden', position: 'relative' }}
                   >
                     <img
@@ -751,24 +764,41 @@ export default function StorefrontView({ slug }: StorefrontProps) {
 
                   <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', flex: 1 }}>
                     <h3
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Ver detalles de ${prod.name}`}
                       onClick={() => handleOpenProductModal(prod)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          handleOpenProductModal(prod);
+                        }
+                      }}
                       style={{ margin: '0 0 6px 0', fontSize: '1rem', fontWeight: titleFontWeight, color: titleColor, cursor: 'pointer' }}
                     >
                       {prod.name}
                     </h3>
 
                     {prod.description && (
-                      <p style={{ margin: '0 0 12px 0', fontSize: '0.8rem', fontWeight: bodyFontWeight, color: bodyTextColor, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                      <p style={{ margin: '0 0 12px 0', fontSize: '0.85rem', fontWeight: bodyFontWeight, color: bodyTextColor, lineHeight: 1.4, flex: 1 }}>
                         {prod.description}
                       </p>
                     )}
 
-                    <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '10px', borderTop: isDark ? '1px solid #334155' : '1px solid #f1f5f9' }}>
-                      <span style={{ fontSize: '1.15rem', fontWeight: 'bold', color: primaryColor }}>
-                        ₡{Number(prod.price || 0).toLocaleString('es-CR')}
-                      </span>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto', paddingTop: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+                        <span style={{ fontSize: '1.15rem', fontWeight: 'bold', color: primaryColor }}>
+                          ₡{Number(prod.price).toLocaleString('es-CR')}
+                        </span>
+                        {prod.compareAtPrice && Number(prod.compareAtPrice) > Number(prod.price) && (
+                          <span style={{ fontSize: '0.85rem', textDecoration: 'line-through', color: bodyTextColor }}>
+                            ₡{Number(prod.compareAtPrice).toLocaleString('es-CR')}
+                          </span>
+                        )}
+                      </div>
 
                       <button
+                        aria-label={hasVars ? `Configurar opciones de ${prod.name}` : `Agregar ${prod.name} al pedido`}
                         onClick={() => handleCardQuickAdd(prod)}
                         style={{ padding: '8px 14px', backgroundColor: primaryColor, color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '4px' }}
                       >
@@ -788,6 +818,7 @@ export default function StorefrontView({ slug }: StorefrontProps) {
       {totalItemsCount > 0 && !isCartOpen && (
         <div style={{ position: 'fixed', bottom: '20px', left: '50%', transform: 'translateX(-50%)', zIndex: 40, width: '90%', maxWidth: '480px' }}>
           <button
+            aria-label={`Ver pedido con ${totalItemsCount} productos por total de ₡${cartTotal.toLocaleString('es-CR')}`}
             onClick={() => setIsCartOpen(true)}
             style={{ width: '100%', padding: '14px 20px', backgroundColor: primaryColor, color: 'white', border: 'none', borderRadius: '30px', fontWeight: 'bold', fontSize: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.3)', cursor: 'pointer' }}
           >
@@ -813,7 +844,11 @@ export default function StorefrontView({ slug }: StorefrontProps) {
               <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: titleFontWeight, color: titleColor, display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <ShoppingBag size={20} color={primaryColor} /> {isRestaurant ? 'Tu Orden' : 'Tu Carrito'} ({totalItemsCount})
               </h2>
-              <button onClick={() => setIsCartOpen(false)} style={{ border: 'none', background: 'none', cursor: 'pointer', padding: '4px', color: bodyTextColor }}>
+              <button 
+                aria-label="Cerrar carrito y volver a la tienda"
+                onClick={() => setIsCartOpen(false)} 
+                style={{ border: 'none', background: 'none', cursor: 'pointer', padding: '4px', color: bodyTextColor }}
+              >
                 <X size={20} />
               </button>
             </div>

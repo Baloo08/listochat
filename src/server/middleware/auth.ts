@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
+import { getUserById } from '../db/users.repo.js';
 
 export interface JwtPayload {
   userId: string;
@@ -20,7 +21,7 @@ export function generateToken(userId: string, tenantId: string, role: string): s
   return jwt.sign({ userId, tenantId, role }, env.JWT_SECRET, { expiresIn: '7d' });
 }
 
-export function authenticateToken(req: Request, res: Response, next: NextFunction): void {
+export async function authenticateToken(req: Request, res: Response, next: NextFunction): Promise<void> {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
 
@@ -31,10 +32,20 @@ export function authenticateToken(req: Request, res: Response, next: NextFunctio
 
   try {
     const decoded = jwt.verify(token, env.JWT_SECRET) as JwtPayload;
+
+    // Check if account is still active (OWASP ASVS V4.1 / H-04)
+    if (decoded.userId && decoded.role !== 'superadmin') {
+      const user = await getUserById(decoded.userId);
+      if (!user || user.active === false) {
+        res.status(403).json({ error: 'Tu cuenta ha sido desactivada o suspendida. Por favor contacta al administrador.' });
+        return;
+      }
+    }
+
     req.user = decoded;
     next();
   } catch (err) {
-    res.status(403).json({ error: 'Forbidden' });
+    res.status(403).json({ error: 'Forbidden: Token inválido o expirado' });
   }
 }
 
