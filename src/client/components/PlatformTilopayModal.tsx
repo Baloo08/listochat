@@ -105,7 +105,7 @@ export default function PlatformTilopayModal({
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!apiUser.trim()) {
-      setError('El correo / API User de Tilopay es obligatorio.');
+      setError('El API User de Tilopay es obligatorio.');
       return;
     }
     if (!apiKey.trim()) {
@@ -388,11 +388,11 @@ export default function PlatformTilopayModal({
               {/* API User */}
               <div>
                 <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
-                  API User / Correo de Tilopay:
+                  API User (Usuario Tilopay):
                 </label>
                 <input
-                  type="email"
-                  placeholder="ej. pagos@betico.cr"
+                  type="text"
+                  placeholder="ej. Z9iUbB o tu_usuario"
                   value={apiUser}
                   onChange={(e) => setApiUser(e.target.value)}
                   style={{
@@ -406,7 +406,7 @@ export default function PlatformTilopayModal({
                   required
                 />
                 <span style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '4px', display: 'block' }}>
-                  El correo con el que ingresas a tu portal en <code>app.tilopay.com</code>
+                  Tu código de API User o usuario de acceso registrado en <code>app.tilopay.com</code>
                 </span>
               </div>
 
