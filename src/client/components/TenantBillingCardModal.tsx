@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { CreditCard, Lock, X, CheckCircle, AlertCircle, ShieldCheck } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
 
@@ -77,6 +77,24 @@ export default function TenantBillingCardModal({
     }
   };
 
+  const handleGenerateSession = async () => {
+    try {
+      setSubmitting(true);
+      setError(null);
+      const res = await api.post(`/api/superadmin/billing/cards/${tenantId}/session`, {});
+      if (res?.paymentUrl) {
+        window.open(res.paymentUrl, '_blank');
+        setSuccessMsg('Se ha abierto la pasarela bancaria segura de Tilopay en una nueva pestaña.');
+      } else {
+        throw new Error(res?.error || 'No se pudo generar la sesión segura.');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Error al generar enlace seguro de Tilopay');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <div
       style={{
@@ -134,9 +152,40 @@ export default function TenantBillingCardModal({
           </div>
         </div>
 
-        <div style={{ padding: '10px 12px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', margin: '14px 0', fontSize: '0.78rem', color: '#475569', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <ShieldCheck size={18} color="#16a34a" style={{ flexShrink: 0 }} />
-          <span>La tarjeta se tokeniza de forma segura en Tilopay. El número completo nunca se guarda en el servidor.</span>
+        {/* Option 1: Hosted Tilopay Session (Recommended - SAQ A) */}
+        <div style={{ padding: '14px', backgroundColor: '#f0fdf4', borderRadius: '12px', border: '1px solid #bbf7d0', margin: '14px 0', textAlign: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontWeight: 'bold', fontSize: '0.85rem', color: '#166534', marginBottom: '4px' }}>
+            <ShieldCheck size={16} /> Pasarela Hospedada Tilopay (Recomendado)
+          </div>
+          <p style={{ fontSize: '0.78rem', color: '#15803d', margin: '0 0 10px 0' }}>
+            Abre la pasarela bancaria oficial de Tilopay sin que los datos de la tarjeta toquen este servidor.
+          </p>
+          <button
+            type="button"
+            onClick={handleGenerateSession}
+            disabled={submitting}
+            style={{
+              padding: '9px 16px',
+              backgroundColor: '#16a34a',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              fontWeight: 'bold',
+              fontSize: '0.82rem',
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+          >
+            <Lock size={14} /> Abrir Pasarela Bancaria Tilopay
+          </button>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '10px 0', color: '#94a3b8', fontSize: '0.78rem' }}>
+          <div style={{ flex: 1, height: '1px', backgroundColor: '#e2e8f0' }} />
+          <span>O ingresar datos manualmente</span>
+          <div style={{ flex: 1, height: '1px', backgroundColor: '#e2e8f0' }} />
         </div>
 
         {error && (

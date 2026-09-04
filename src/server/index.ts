@@ -1,6 +1,7 @@
 import express from 'express';
 import http from 'http';
 import { Server as SocketIOServer } from 'socket.io';
+import jwt from 'jsonwebtoken';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
@@ -50,6 +51,7 @@ import courtsRoutes from './routes/courts.routes.js';
 import tilopayWebhookRoutes from './routes/tilopay-webhook.routes.js';
 import superadminBillingRoutes from './routes/superadmin-billing.routes.js';
 import tenantPaymentRoutes from './routes/tenant-payment.routes.js';
+import tenantSubscriptionRoutes from './routes/tenant-subscription.routes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -59,15 +61,42 @@ async function startServer() {
   app.set('trust proxy', 1); // Trust reverse proxy headers (Nginx/Cloudflare)
   const server = http.createServer(app);
 
-  // Setup Real-time WebSockets
+  // Setup Real-time WebSockets with JWT Authentication and Multi-Tenant Isolation
   const io = new SocketIOServer(server, {
     cors: { origin: '*', methods: ['GET', 'POST'] }
   });
 
+  io.use((socket, next) => {
+    const token = socket.handshake.auth?.token ||
+                  socket.handshake.headers?.authorization?.replace(/^Bearer\s+/i, '') ||
+                  socket.handshake.query?.token;
+    if (!token) {
+      // Connect without authenticated user data (cannot join private tenant rooms)
+      return next();
+    }
+    try {
+      const decoded = jwt.verify(String(token), env.JWT_SECRET) as { userId: string; tenantId: string; role: string };
+      socket.data.user = decoded;
+      next();
+    } catch (err) {
+      // Reject connection if invalid or tampered token was provided
+      return next(new Error('Authentication error: Token inválido o expirado'));
+    }
+  });
+
   io.on('connection', (socket) => {
     socket.on('join_tenant', (tenantId: string) => {
-      if (tenantId) {
+      if (!tenantId) return;
+      const user = socket.data.user;
+      if (!user) {
+        console.warn(`[Security Alert] Intento no autenticado a sala tenant_${tenantId} desde socket ${socket.id}`);
+        return;
+      }
+      // Strict multi-tenant isolation: Only allow if superadmin or user belongs to requested tenant
+      if (user.role === 'superadmin' || user.tenantId === tenantId) {
         socket.join(`tenant_${tenantId}`);
+      } else {
+        console.warn(`[Security Alert] Acceso denegado: Usuario ${user.userId} (Tenant: ${user.tenantId}, Rol: ${user.role}) intentó unirse a sala tenant_${tenantId}`);
       }
     });
   });
@@ -182,6 +211,7 @@ async function startServer() {
   app.use('/api/storefront', publicLimiter, storefrontRoutes);
   app.use('/api/calendar', calendarRoutes);
   app.use('/api/tenant/payment-config', tenantPaymentRoutes);
+  app.use('/api/tenant/subscription', tenantSubscriptionRoutes);
   app.use('/api/webhooks/tilopay', tilopayWebhookRoutes);
   app.use('/api/webhook/evolution', webhookRoutes);
   app.use('/api/webhook', webhookRoutes);

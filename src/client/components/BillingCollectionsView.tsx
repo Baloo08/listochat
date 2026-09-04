@@ -244,21 +244,25 @@ export default function BillingCollectionsView() {
 
                   <td style={{ padding: '12px 14px' }}>
                     <div style={{ fontWeight: '800', color: 'var(--text)' }}>
-                      {c.currency === 'USD' ? '$' : '₡'} {Number(c.monthlyPrice).toLocaleString('es-CR')}
+                      {c.plan?.toLowerCase() === 'aliado' ? '₡0' : `${c.currency === 'USD' ? '$' : '₡'} ${Number(c.monthlyPrice).toLocaleString('es-CR')}`}
                     </div>
                     <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                      {c.plan}
+                      {c.plan?.toLowerCase() === 'aliado' ? <strong style={{ color: '#b45309' }}>🌟 ALIADO (₡0)</strong> : c.plan}
                     </div>
                   </td>
 
                   <td style={{ padding: '12px 14px' }}>
                     <div style={{ fontWeight: 'bold' }}>
-                      {new Date(c.nextBillingDate).toLocaleDateString('es-CR', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      {c.plan?.toLowerCase() === 'aliado' ? 'Exento Permanente' : new Date(c.nextBillingDate).toLocaleDateString('es-CR', { month: 'short', day: 'numeric', year: 'numeric' })}
                     </div>
                   </td>
 
                   <td style={{ padding: '12px 14px' }}>
-                    {c.diffDays > 0 ? (
+                    {c.plan?.toLowerCase() === 'aliado' ? (
+                      <span style={{ color: '#16a34a', fontWeight: 'bold', fontSize: '0.78rem' }}>
+                        🌟 Plan Aliado Activo
+                      </span>
+                    ) : c.diffDays > 0 ? (
                       <span style={{ color: '#16a34a', fontWeight: 'bold', fontSize: '0.78rem' }}>
                         En {c.diffDays} {c.diffDays === 1 ? 'día' : 'días'}
                       </span>

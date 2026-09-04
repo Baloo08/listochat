@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { getTenantBySlug } from '../db/tenant.repo.js';
 import { getProductsByTenant, getProductBySlug } from '../db/products.repo.js';
 import { getStoreSettings } from '../db/store-settings.repo.js';
-import { createOrder, executeOrderPaymentConfirmation } from '../db/orders.repo.js';
+import { createOrder } from '../db/orders.repo.js';
 import { sendMessage } from '../services/evolution.js';
 import { query } from '../db/pool.js';
 import { getTenantPaymentConfig } from '../db/tenant-payment.repo.js';
@@ -79,32 +79,7 @@ router.get('/order-public/:orderId', async (req, res) => {
 
     const orderRow = result.rows[0];
 
-    // Doble garantía de confirmación inmediata si el cliente regresa de Tilopay con parámetros de aprobación
-    const resultCode = String(req.query.code || req.query.result_code || req.query.result || '');
-    const statusParam = String(req.query.status || '').toLowerCase();
-    const isApprovedParam =
-      resultCode === '1' ||
-      resultCode === '00' ||
-      statusParam === 'approved' ||
-      statusParam === 'success' ||
-      statusParam === 'paid';
-
-    if (isApprovedParam && orderRow.paymentStatus !== 'paid') {
-      const txId = String(req.query.transaction_id || req.query.id || req.query.auth || `tilo_${Date.now()}`);
-      const authCode = String(req.query.auth_code || req.query.auth || '');
-      await executeOrderPaymentConfirmation(orderRow.tenantId, orderRow.id, {
-        tilopayTransactionId: txId,
-        tilopayAuthCode: authCode,
-        paymentMethod: 'card',
-        paymentReference: txId
-      });
-      orderRow.paymentStatus = 'paid';
-      orderRow.paymentMethod = 'card';
-      if (orderRow.status === 'pending' || orderRow.status === 'pedido_recibido') {
-        orderRow.status = 'pedido_aceptado';
-      }
-    }
-
+    // Resumen público en modo solo lectura (la confirmación ocurre exclusivamente vía webhook verificado)
     res.json(orderRow);
   } catch (error) {
     console.error('Error fetching public order summary:', error);

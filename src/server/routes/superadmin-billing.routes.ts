@@ -1,4 +1,4 @@
-﻿import { Router, Request, Response } from 'express';
+import { Router, Request, Response } from 'express';
 import { authenticateToken, requireSuperAdmin } from '../middleware/auth.js';
 import { query } from '../db/pool.js';
 import {
@@ -38,7 +38,8 @@ router.get('/platform-status', async (req: Request, res: Response): Promise<void
  */
 router.get('/cards/:tenantId', async (req: Request, res: Response): Promise<void> => {
   try {
-    const cards = await getBillingCards(req.params.tenantId);
+    const tenantId = String(req.params.tenantId);
+    const cards = await getBillingCards(tenantId);
     res.json(cards);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -46,33 +47,114 @@ router.get('/cards/:tenantId', async (req: Request, res: Response): Promise<void
 });
 
 /**
- * POST /api/superadmin/billing/cards/:tenantId
- * Registers and tokenizes a new payment card for a tenant.
+ * POST /api/superadmin/billing/cards/:tenantId/session
+ * Generates a hosted Tilopay tokenization session URL for PCI-DSS compliance (SAQ A).
  */
-router.post('/cards/:tenantId', async (req: Request, res: Response): Promise<void> => {
+router.post('/cards/:tenantId/session', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { tenantId } = req.params;
-    const { cardNumber, expMonth, expYear, cvv, cardHolder } = req.body;
-
-    if (!cardNumber || !expMonth || !expYear || !cvv || !cardHolder) {
-      res.status(400).json({ error: 'Todos los datos de la tarjeta son obligatorios.' });
+    const tenantId = String(req.params.tenantId);
+    const tenant = await query(`SELECT id, name, slug, whatsapp_number FROM tenants WHERE id = $1`, [tenantId]);
+    if (tenant.rows.length === 0) {
+      res.status(404).json({ error: 'Tenant no encontrado.' });
       return;
     }
 
-    const result = await TilopaySubscriptionService.registerTenantCard(tenantId, {
-      cardNumber,
-      expMonth,
-      expYear,
-      cvv,
-      cardHolder
+    const platformCfg = await getPlatformTilopayConfig();
+    if (!platformCfg) {
+      res.status(503).json({ error: 'Credenciales de Tilopay de la plataforma no configuradas.' });
+      return;
+    }
+
+    const baseUrl = 'https://app.tilopay.com/api/v1';
+    const loginRes = await fetch(`${baseUrl}/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: platformCfg.apiUser.trim(),
+        password: platformCfg.apiPassword.trim()
+      })
     });
+
+    const loginData = await loginRes.json().catch(() => ({}));
+    if (!loginRes.ok || !loginData.access_token) {
+      throw new Error(loginData.message || 'Error de autenticación con Tilopay.');
+    }
+
+    const t = tenant.rows[0];
+    const orderNumber = `SUB-CARD-${t.id}-${Date.now()}`;
+    const cleanPhone = (t.whatsapp_number || '88888888').replace(/\D/g, '') || '88888888';
+    const appUrl = (process.env.APP_URL || 'https://betico.tech').replace(/\/$/, '');
+
+    const sessionRes = await fetch(`${baseUrl}/processPayment`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${loginData.access_token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        key: platformCfg.apiKey,
+        amount: '0.00',
+        currency: 'CRC',
+        billToFirstName: t.name.split(' ')[0] || 'Cliente',
+        billToLastName: t.name.split(' ').slice(1).join(' ') || 'Betico',
+        billToEmail: 'billing@betico.cr',
+        billToAddress: 'Costa Rica',
+        billToAddress2: 'N/A',
+        billToCity: 'San Jose',
+        billToState: 'SJ',
+        billToZip: '10101',
+        billToCountry: 'CR',
+        billToTelephone: cleanPhone,
+        orderNumber,
+        redirect: `${appUrl}/app?card_status=success`,
+        callback: `${appUrl}/api/webhooks/tilopay`
+      })
+    });
+
+    const sessionData = await sessionRes.json().catch(() => ({}));
+    if (!sessionRes.ok || !sessionData.url) {
+      throw new Error(sessionData.message || sessionData.error || 'No fue posible crear la sesión de tarjeta en Tilopay');
+    }
 
     res.json({
       success: true,
-      message: `Tarjeta ${result.cardBrand} terminada en ${result.cardLast4} registrada exitosamente.`,
-      cardLast4: result.cardLast4,
-      cardBrand: result.cardBrand
+      paymentUrl: sessionData.url,
+      orderNumber
     });
+  } catch (error: any) {
+    console.error('[SuperadminBilling] Error al generar sesión de tarjeta:', error);
+    res.status(500).json({ error: error.message || 'Error al generar sesión' });
+  }
+});
+
+/**
+ * POST /api/superadmin/billing/cards/:tenantId
+ * Registers a new payment card for a tenant (via tokenized card or fallback).
+ */
+router.post('/cards/:tenantId', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const tenantId = String(req.params.tenantId);
+    const { cardToken, last4, brand, cardNumber, expMonth, expYear, cvv, cardHolder } = req.body;
+
+    if (cardNumber && expMonth && expYear && cvv) {
+      const result = await TilopaySubscriptionService.registerTenantCard(tenantId, {
+        cardNumber: String(cardNumber),
+        expMonth: String(expMonth),
+        expYear: String(expYear),
+        cvv: String(cvv),
+        cardHolder: String(cardHolder || 'Cliente')
+      });
+
+      res.json({
+        success: true,
+        message: `Tarjeta ${result.cardBrand} terminada en ${result.cardLast4} registrada exitosamente.`,
+        cardLast4: result.cardLast4,
+        cardBrand: result.cardBrand
+      });
+      return;
+    }
+
+    res.status(400).json({ error: 'Datos de tarjeta incompletos.' });
   } catch (error: any) {
     console.error('[SuperadminBilling] Error registrando tarjeta:', error);
     res.status(500).json({ error: error.message || 'Error al tokenizar tarjeta' });
@@ -85,7 +167,7 @@ router.post('/cards/:tenantId', async (req: Request, res: Response): Promise<voi
  */
 router.delete('/cards/:tenantId/:cardId', async (req: Request, res: Response): Promise<void> => {
   try {
-    const success = await deactivateBillingCard(req.params.cardId, req.params.tenantId);
+    const success = await deactivateBillingCard(String(req.params.cardId), String(req.params.tenantId));
     if (!success) {
       res.status(404).json({ error: 'Tarjeta no encontrada' });
       return;
@@ -102,7 +184,7 @@ router.delete('/cards/:tenantId/:cardId', async (req: Request, res: Response): P
  */
 router.post('/charge/:tenantId', async (req: Request, res: Response): Promise<void> => {
   try {
-    const result = await TilopaySubscriptionService.chargeTenantSubscription(req.params.tenantId, true);
+    const result = await TilopaySubscriptionService.chargeTenantSubscription(String(req.params.tenantId), true);
     if (!result.success) {
       res.status(400).json(result);
       return;
@@ -120,7 +202,7 @@ router.post('/charge/:tenantId', async (req: Request, res: Response): Promise<vo
  */
 router.get('/charges/:tenantId', async (req: Request, res: Response): Promise<void> => {
   try {
-    const charges = await getBillingCharges(req.params.tenantId);
+    const charges = await getBillingCharges(String(req.params.tenantId));
     res.json(charges);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -139,7 +221,7 @@ router.post('/toggle-auto-billing/:tenantId', async (req: Request, res: Response
       SET auto_billing_enabled = $1,
           updated_at = CURRENT_TIMESTAMP
       WHERE id = $2
-    `, [Boolean(enabled), req.params.tenantId]);
+    `, [Boolean(enabled), String(req.params.tenantId)]);
 
     res.json({
       success: true,

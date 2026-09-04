@@ -71,7 +71,16 @@ export default function KDSFullscreen() {
     fetchDrivers();
 
     // Connect to WebSocket for instant 0ms real-time order arrival
-    const socket = io(window.location.origin);
+    const token = localStorage.getItem('token');
+    const socket = io(window.location.origin, { auth: { token } });
+    if (token) {
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        if (payload.tenantId) {
+          socket.emit('join_tenant', payload.tenantId);
+        }
+      } catch (e) {}
+    }
     
     socket.on('order:created', (newOrder: Order) => {
       const isMatch = selectedBranchId === 'all' || (newOrder as any).branchId === selectedBranchId;

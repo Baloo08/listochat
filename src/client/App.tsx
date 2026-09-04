@@ -34,6 +34,7 @@ import PrivacyPolicyView from './components/PrivacyPolicyView';
 import TermsOfServiceView from './components/TermsOfServiceView';
 import WebsiteBuilder from './components/WebsiteBuilder';
 import WebsitePublicView from '../storefront/WebsitePublicView';
+import TenantSubscriptionView from './components/TenantSubscriptionView';
 import { io } from 'socket.io-client';
 import { playOrderNotificationSound, playBookingNotificationSound } from './utils/sound';
 
@@ -276,7 +277,8 @@ function MainApp({ pathname }: { pathname: string }) {
     fetchTenantStoreConfig();
     checkUnread();
 
-    const socket = io(window.location.origin);
+    const token = localStorage.getItem('token');
+    const socket = io(window.location.origin, { auth: { token } });
     if (user.tenantId) {
       socket.emit('join_tenant', user.tenantId);
     }
@@ -465,6 +467,7 @@ function MainApp({ pathname }: { pathname: string }) {
         { id: 'sucursales', label: 'Sedes & Sucursales', icon: <Building2 size={18} /> },
         { id: 'agente', label: 'Personalidad Agente IA', icon: <Bot size={18} /> },
         { id: 'usuarios', label: 'Equipo & Usuarios', icon: <Users size={18} /> },
+        { id: 'suscripcion', label: 'Mi Suscripción & Pagos', icon: <CreditCard size={18} /> },
         { id: 'configuracion', label: 'Ajustes Generales', icon: <Settings size={18} /> }
       ]
     }
@@ -521,6 +524,7 @@ function MainApp({ pathname }: { pathname: string }) {
         case 'whatsapp': return <EvolutionManager />;
         case 'notificaciones': return <NotificationsCenter />;
         case 'usuarios': return <UsersManagement />;
+        case 'suscripcion': return <TenantSubscriptionView />;
         case 'configuracion': return <TenantSettings />;
         default: return <Dashboard />;
       }

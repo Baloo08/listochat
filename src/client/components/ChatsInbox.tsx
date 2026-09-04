@@ -108,9 +108,19 @@ export default function ChatsInbox() {
 
   useEffect(() => {
     loadChats();
-    const socket = io(window.location.origin);
-    const auth = JSON.parse(localStorage.getItem('auth') || '{}');
-    const tenantId = auth.tenantId || auth.user?.tenantId;
+    const token = localStorage.getItem('token');
+    const socket = io(window.location.origin, { auth: { token } });
+    let tenantId = null;
+    if (token) {
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        tenantId = payload.tenantId;
+      } catch (e) {}
+    }
+    if (!tenantId) {
+      const auth = JSON.parse(localStorage.getItem('auth') || '{}');
+      tenantId = auth.tenantId || auth.user?.tenantId;
+    }
     if (tenantId) {
       socket.emit('join_tenant', tenantId);
     }

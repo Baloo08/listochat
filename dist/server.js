@@ -10,11 +10,20 @@ var __export = (target, all) => {
 
 // src/server/config/env.ts
 import dotenv from "dotenv";
-var env;
+var isProduction, env;
 var init_env = __esm({
   "src/server/config/env.ts"() {
     "use strict";
     dotenv.config();
+    isProduction = process.env.NODE_ENV === "production";
+    if (isProduction) {
+      const missingCriticalVars = [];
+      if (!process.env.DATABASE_URL) missingCriticalVars.push("DATABASE_URL");
+      if (!process.env.JWT_SECRET) missingCriticalVars.push("JWT_SECRET");
+      if (missingCriticalVars.length > 0) {
+        console.warn(`[Security Warning] Variables de entorno cr\xEDticas no definidas en producci\xF3n: ${missingCriticalVars.join(", ")}. Usando configuraci\xF3n predeterminada.`);
+      }
+    }
     env = {
       PORT: process.env.PORT ? parseInt(process.env.PORT, 10) : 3e3,
       JWT_SECRET: process.env.JWT_SECRET || "betico_jwt_secret_64_chars_super_safe_key_cr_2026",
@@ -31,7 +40,7 @@ var init_env = __esm({
       SUPERADMIN_PASSWORD: process.env.SUPERADMIN_PASSWORD || "BeticoAdmin2026!",
       UPLOAD_DIR: process.env.UPLOAD_DIR || "./uploads",
       NODE_ENV: process.env.NODE_ENV || "production",
-      GEMINI_API_KEY: process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY || "AQ.Ab8RN6IHcdDKDITkdIOjt8SznSc6lS_1grotOA6SQ6fjZnd2SQ"
+      GEMINI_API_KEY: process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY || ""
     };
   }
 });
@@ -1456,6 +1465,7 @@ init_env();
 import express from "express";
 import http from "http";
 import { Server as SocketIOServer } from "socket.io";
+import jwt2 from "jsonwebtoken";
 import cors from "cors";
 import helmet from "helmet";
 import compression from "compression";
@@ -2230,6 +2240,8 @@ async function runMigrations() {
     ALTER TABLE tenants ADD COLUMN IF NOT EXISTS auto_billing_enabled BOOLEAN DEFAULT false;
     ALTER TABLE tenants ADD COLUMN IF NOT EXISTS last_auto_charge_at TIMESTAMP WITH TIME ZONE;
     ALTER TABLE tenants ADD COLUMN IF NOT EXISTS last_auto_charge_status VARCHAR(50);
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS trial_reminder_sent BOOLEAN DEFAULT false;
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_reminder_sent_at TIMESTAMP WITH TIME ZONE;
     ALTER TABLE tenants ADD COLUMN IF NOT EXISTS calendar_token VARCHAR(64) DEFAULT md5(random()::text || clock_timestamp()::text);
 
     CREATE TABLE IF NOT EXISTS tenant_billing_cards (
@@ -3024,12 +3036,12 @@ var TilopaySubscriptionService = class {
     if (/^4/.test(cleanCardNumber)) brand = "VISA";
     else if (/^5[1-5]/.test(cleanCardNumber)) brand = "MASTERCARD";
     else if (/^3[47]/.test(cleanCardNumber)) brand = "AMEX";
-    const jwt2 = await this.getPlatformJwt(platformCfg);
+    const jwt3 = await this.getPlatformJwt(platformCfg);
     const baseUrl = this.getBaseUrl(platformCfg.environment);
     const tokenizeRes = await fetch(`${baseUrl}/tokenize`, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${jwt2}`,
+        "Authorization": `Bearer ${jwt3}`,
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
@@ -3091,7 +3103,7 @@ var TilopaySubscriptionService = class {
     if (!platformCfg) {
       throw new Error("Credenciales de Tilopay de la plataforma no configuradas.");
     }
-    const jwt2 = await this.getPlatformJwt(platformCfg);
+    const jwt3 = await this.getPlatformJwt(platformCfg);
     const baseUrl = this.getBaseUrl(platformCfg.environment);
     const orderNumber = `SUB-${tenant.slug.substring(0, 8)}-${Date.now()}`;
     const cleanPhone = (tenant.whatsappNumber || "88888888").replace(/\D/g, "") || "88888888";
@@ -3129,7 +3141,7 @@ var TilopaySubscriptionService = class {
       chargeRes = await fetch(`${baseUrl}/charge`, {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${jwt2}`,
+          "Authorization": `Bearer ${jwt3}`,
           "Content-Type": "application/json"
         },
         body: JSON.stringify(chargePayload)
@@ -3247,6 +3259,79 @@ async function checkSubscriptionLifecycles() {
     } catch (billingErr) {
       console.error("[Subscription] Error en lote de cobro recurrente Tilopay:", billingErr.message);
     }
+    try {
+      const trialReminders = await query(`
+        SELECT id, name, slug, whatsapp_number as "whatsappNumber",
+               custom_monthly_price as "monthlyPrice", billing_currency as "currency",
+               plan, evolution_instance as "evolutionInstance"
+        FROM tenants
+        WHERE subscription_status = 'trial'
+          AND trial_ends_at IS NOT NULL
+          AND trial_ends_at <= CURRENT_TIMESTAMP + INTERVAL '24 hours'
+          AND COALESCE(trial_reminder_sent, false) = false
+          AND LOWER(COALESCE(plan, '')) != 'aliado'
+          AND COALESCE(custom_monthly_price, 29) > 0
+      `);
+      for (const t of trialReminders.rows) {
+        const price = Number(t.monthlyPrice || 55e3);
+        const currency = t.currency || "CRC";
+        const formattedPrice = currency === "USD" ? `$${price}` : `\u20A1${price.toLocaleString("es-CR")}`;
+        if (t.whatsappNumber) {
+          const cleanPhone = t.whatsappNumber.replace(/\D/g, "");
+          const reminderMsg = `\u{1F514} *[Recordatorio de Suscripci\xF3n Betico]*
+
+Hola *${t.name}*, te recordamos que ma\xF1ana concluye tu periodo de prueba gratis de 15 d\xEDas en Betico.
+
+Se realizar\xE1 la activaci\xF3n y d\xE9bito mensual de tu plan *${t.plan || "Pro"}* (*${formattedPrice}*) con tu tarjeta registrada.
+
+Si deseas cancelar tu suscripci\xF3n y evitar el cobro, puedes hacerlo desde tu panel en la secci\xF3n *Mi Suscripci\xF3n* antes de que termine el plazo.
+
+\xA1Gracias por confiar en Betico! \u{1F680}`;
+          try {
+            const instance = t.evolutionInstance || "betico_soporte";
+            await sendMessage(instance, cleanPhone, reminderMsg);
+          } catch (e) {
+          }
+        }
+        await query(`UPDATE tenants SET trial_reminder_sent = true WHERE id = $1`, [t.id]);
+      }
+      const billingReminders = await query(`
+        SELECT id, name, slug, whatsapp_number as "whatsappNumber",
+               custom_monthly_price as "monthlyPrice", billing_currency as "currency",
+               plan, evolution_instance as "evolutionInstance"
+        FROM tenants
+        WHERE subscription_status = 'active'
+          AND auto_billing_enabled = true
+          AND next_billing_date IS NOT NULL
+          AND next_billing_date <= CURRENT_TIMESTAMP + INTERVAL '24 hours'
+          AND (billing_reminder_sent_at IS NULL OR billing_reminder_sent_at < CURRENT_TIMESTAMP - INTERVAL '25 days')
+          AND LOWER(COALESCE(plan, '')) != 'aliado'
+          AND COALESCE(custom_monthly_price, 29) > 0
+      `);
+      for (const t of billingReminders.rows) {
+        const price = Number(t.monthlyPrice || 55e3);
+        const currency = t.currency || "CRC";
+        const formattedPrice = currency === "USD" ? `$${price}` : `\u20A1${price.toLocaleString("es-CR")}`;
+        if (t.whatsappNumber) {
+          const cleanPhone = t.whatsappNumber.replace(/\D/g, "");
+          const reminderMsg = `\u{1F514} *[Pr\xF3xima Renovaci\xF3n Mensual - Betico]*
+
+Hola *${t.name}*, te recordamos que en 24 horas se procesar\xE1 el cobro autom\xE1tico de tu plan *${t.plan || "Pro"}* (*${formattedPrice}*) con tu tarjeta vinculada.
+
+Puedes consultar tu factura o gestionar tu suscripci\xF3n en cualquier momento desde tu panel en la secci\xF3n *Mi Suscripci\xF3n*.
+
+\xA1Gracias por tu confianza! \u2B50`;
+          try {
+            const instance = t.evolutionInstance || "betico_soporte";
+            await sendMessage(instance, cleanPhone, reminderMsg);
+          } catch (e) {
+          }
+        }
+        await query(`UPDATE tenants SET billing_reminder_sent_at = CURRENT_TIMESTAMP WHERE id = $1`, [t.id]);
+      }
+    } catch (reminderErr) {
+      console.error("[Subscription] Error en escaneo de recordatorios:", reminderErr.message);
+    }
     const expiredTrials = await query(`
       SELECT id, name, slug, whatsapp_number as "whatsappNumber", 
              custom_monthly_price as "monthlyPrice", billing_currency as "currency",
@@ -3255,6 +3340,8 @@ async function checkSubscriptionLifecycles() {
       WHERE subscription_status = 'trial' 
         AND trial_ends_at IS NOT NULL 
         AND trial_ends_at <= CURRENT_TIMESTAMP
+        AND LOWER(COALESCE(plan, '')) != 'aliado'
+        AND COALESCE(custom_monthly_price, 29) > 0
     `);
     for (const t of expiredTrials.rows) {
       console.log(`[Subscription] Tenant ${t.name} trial has ended. Moving to 15-day grace period...`);
@@ -3298,6 +3385,8 @@ Cuenta con un *per\xEDodo de gracia de 15 d\xEDas* para realizar tu pago por SIN
       WHERE subscription_status = 'grace_period'
         AND grace_period_ends_at IS NOT NULL
         AND grace_period_ends_at <= CURRENT_TIMESTAMP
+        AND LOWER(COALESCE(plan, '')) != 'aliado'
+        AND COALESCE(custom_monthly_price, 29) > 0
     `);
     for (const t of expiredGrace.rows) {
       console.log(`[Subscription] Tenant ${t.name} grace period ended. Suspending account...`);
@@ -4385,6 +4474,15 @@ async function getBookingById(id, tenantId) {
     JOIN courts c ON c.id = cb.court_id
     WHERE cb.id = $1 AND cb.tenant_id = $2
   `, [id, tenantId]);
+  return res.rows[0] ? mapBookingRow(res.rows[0]) : null;
+}
+async function getBookingByIdUnsafe(id) {
+  const res = await query(`
+    SELECT cb.*, c.name as court_name 
+    FROM court_bookings cb
+    JOIN courts c ON c.id = cb.court_id
+    WHERE cb.id = $1
+  `, [id]);
   return res.rows[0] ? mapBookingRow(res.rows[0]) : null;
 }
 async function createBooking(tenantId, data) {
@@ -9565,24 +9663,6 @@ router16.get("/order-public/:orderId", async (req, res) => {
       return;
     }
     const orderRow = result.rows[0];
-    const resultCode = String(req.query.code || req.query.result_code || req.query.result || "");
-    const statusParam = String(req.query.status || "").toLowerCase();
-    const isApprovedParam = resultCode === "1" || resultCode === "00" || statusParam === "approved" || statusParam === "success" || statusParam === "paid";
-    if (isApprovedParam && orderRow.paymentStatus !== "paid") {
-      const txId = String(req.query.transaction_id || req.query.id || req.query.auth || `tilo_${Date.now()}`);
-      const authCode = String(req.query.auth_code || req.query.auth || "");
-      await executeOrderPaymentConfirmation(orderRow.tenantId, orderRow.id, {
-        tilopayTransactionId: txId,
-        tilopayAuthCode: authCode,
-        paymentMethod: "card",
-        paymentReference: txId
-      });
-      orderRow.paymentStatus = "paid";
-      orderRow.paymentMethod = "card";
-      if (orderRow.status === "pending" || orderRow.status === "pedido_recibido") {
-        orderRow.status = "pedido_aceptado";
-      }
-    }
     res.json(orderRow);
   } catch (error) {
     console.error("Error fetching public order summary:", error);
@@ -12839,6 +12919,7 @@ var courts_routes_default = router28;
 init_pool();
 import { Router as Router29 } from "express";
 init_evolution();
+init_crypto_service();
 var router29 = Router29();
 router29.post("/", async (req, res) => {
   res.status(200).json({ received: true, timestamp: (/* @__PURE__ */ new Date()).toISOString() });
@@ -12859,6 +12940,64 @@ router29.post("/", async (req, res) => {
     const isSinpe = String(payload.payment_type || payload.type || payload.method || "").toLowerCase().includes("sinpe");
     const paymentMethod = isSinpe ? "sinpe_tilopay" : "card";
     const paymentLabel = isSinpe ? "SINPE M\xF3vil Verificado" : "Tarjeta D\xE9bito/Cr\xE9dito";
+    if (orderStr.startsWith("SUB-CARD-")) {
+      const parts = orderStr.split("-");
+      const tenantId2 = parts[2];
+      if (!tenantId2) {
+        console.warn(`[TilopayWebhook] ID de tenant inv\xE1lido en orden de tokenizaci\xF3n: ${orderStr}`);
+        return;
+      }
+      const tenant = await getTenantById(tenantId2);
+      if (!tenant) {
+        console.warn(`[TilopayWebhook] Tenant ${tenantId2} no encontrado para tokenizaci\xF3n`);
+        return;
+      }
+      const token = payload.token || payload.card_token || payload.id || payload.token_id;
+      const last4 = String(payload.card_last4 || payload.last4 || payload.pan?.slice(-4) || "4242").slice(-4);
+      const brand = String(payload.brand || payload.card_brand || "VISA").toUpperCase();
+      const holder = String(payload.cardholder || payload.holder || payload.bill_to || tenant.name).trim();
+      if (isApproved && token) {
+        console.log(`[TilopayWebhook] Tarjeta tokenizada exitosamente para tenant ${tenant.name} (${tenant.id})`);
+        const encryptedToken = CryptoService.encryptForTenant(tenant.id, token);
+        await saveBillingCard(tenant.id, {
+          last4,
+          brand,
+          holder,
+          tokenEncrypted: encryptedToken,
+          isDefault: true
+        });
+        await query(`
+          UPDATE tenants
+          SET auto_billing_enabled = true,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = $1
+        `, [tenant.id]);
+        await logAuditEvent(tenant.id, null, "tilopay_card_tokenized", "billing", orderStr, {
+          cardLast4: last4,
+          cardBrand: brand,
+          transactionId
+        }, req.ip, req.headers["user-agent"]);
+        if (tenant.whatsappNumber) {
+          const cleanPhone = tenant.whatsappNumber.replace(/\D/g, "");
+          const msg = `\u{1F4B3} *[Tarjeta Vinculada Exitosamente - Betico]*
+
+Hola *${tenant.name}*, tu tarjeta *${brand}* terminada en *${last4}* ha sido vinculada de forma 100% segura para tus cobros recurrentes de Betico.
+
+Recuerda que dispones de tus 15 d\xEDas de prueba gratis y recibir\xE1s un aviso antes de cualquier cobro. \xA1Gracias por tu confianza! \u{1F680}`;
+          try {
+            await sendMessage("betico_soporte", cleanPhone, msg);
+          } catch (e) {
+          }
+        }
+      } else {
+        console.warn(`[TilopayWebhook] Tokenizaci\xF3n de tarjeta rechazada o sin token para tenant ${tenantId2}`);
+        await logAuditEvent(tenant.id, null, "tilopay_card_tokenization_failed", "billing", orderStr, {
+          resultCode,
+          status
+        }, req.ip, req.headers["user-agent"]);
+      }
+      return;
+    }
     if (orderStr.startsWith("SUB-")) {
       const charge = await getChargeByOrderNumber(orderStr);
       if (!charge) {
@@ -12881,6 +13020,7 @@ router29.post("/", async (req, res) => {
               last_payment_ref = $2,
               last_auto_charge_at = CURRENT_TIMESTAMP,
               last_auto_charge_status = 'success',
+              auto_billing_enabled = true,
               active = true,
               updated_at = CURRENT_TIMESTAMP
           WHERE id = $3
@@ -12889,6 +13029,12 @@ router29.post("/", async (req, res) => {
           INSERT INTO tenant_payments (tenant_id, amount, currency, payment_method, reference, notes, status)
           VALUES ($1, $2, $3, 'card', $4, $5, 'approved')
         `, [charge.tenantId, charge.amount, charge.currency, transactionId || orderStr, "Cobro de suscripci\xF3n recurrente aprobado por Tilopay"]);
+        await logAuditEvent(charge.tenantId, null, "tilopay_subscription_renewed", "billing", orderStr, {
+          amount: charge.amount,
+          currency: charge.currency,
+          transactionId,
+          authCode
+        }, req.ip, req.headers["user-agent"]);
         const tenant = await getTenantById(charge.tenantId);
         if (tenant?.whatsappNumber) {
           const cleanPhone = tenant.whatsappNumber.replace(/\D/g, "");
@@ -12915,6 +13061,10 @@ Tu cuenta se encuentra *Activa* y al d\xEDa hasta el *${new Date(Date.now() + 30
               updated_at = CURRENT_TIMESTAMP
           WHERE id = $1
         `, [charge.tenantId]);
+        await logAuditEvent(charge.tenantId, null, "tilopay_subscription_charge_failed", "billing", orderStr, {
+          resultCode,
+          status
+        }, req.ip, req.headers["user-agent"]);
       }
       return;
     }
@@ -12970,7 +13120,7 @@ Hola *${apt.name}*, tu cita en *${tenant.name}* ha sido confirmada con \xE9xito.
       const match = orderStr.match(/^CRT-([AB])-(.+)$/i);
       const team = match ? match[1].toLowerCase() : "a";
       const cleanBookingId = match ? match[2].trim() : orderStr.replace(/^CRT-/i, "").trim();
-      const booking = await getBookingById(cleanBookingId);
+      const booking = await getBookingByIdUnsafe(cleanBookingId);
       if (!booking) {
         console.warn(`[TilopayWebhook] No se encontr\xF3 reserva de cancha para ID: ${cleanBookingId}`);
         return;
@@ -13046,6 +13196,12 @@ Hola *${captainName}*, el pago para la reserva de cancha ha sido confirmado con 
         return;
       }
       const updatedOrder = result.order;
+      await logAuditEvent(tenantId, null, "tilopay_order_paid", "order", String(updatedOrder.id), {
+        orderNumber: updatedOrder.orderNumber,
+        total: updatedOrder.total,
+        transactionId,
+        authCode
+      }, req.ip, req.headers["user-agent"]);
       emitOrderPaidEvent({
         tenantId,
         orderId: updatedOrder.id,
@@ -13079,6 +13235,11 @@ Hola *${captainName}*, el pago para la reserva de cancha ha sido confirmado con 
             updated_at = CURRENT_TIMESTAMP
         WHERE id = $1 AND payment_status = 'pending'
       `, [order.id]);
+      await logAuditEvent(tenantId, null, "tilopay_order_payment_failed", "order", String(order.id), {
+        orderNumber: order.orderNumber,
+        resultCode,
+        status
+      }, req.ip, req.headers["user-agent"]);
       if (req.io) {
         req.io.to(`tenant_${tenantId}`).emit("order:updated", { id: order.id, paymentStatus: "failed" });
       }
@@ -13107,33 +13268,103 @@ router30.get("/platform-status", async (req, res) => {
 });
 router30.get("/cards/:tenantId", async (req, res) => {
   try {
-    const cards = await getBillingCards(req.params.tenantId);
+    const tenantId = String(req.params.tenantId);
+    const cards = await getBillingCards(tenantId);
     res.json(cards);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
-router30.post("/cards/:tenantId", async (req, res) => {
+router30.post("/cards/:tenantId/session", async (req, res) => {
   try {
-    const { tenantId } = req.params;
-    const { cardNumber, expMonth, expYear, cvv, cardHolder } = req.body;
-    if (!cardNumber || !expMonth || !expYear || !cvv || !cardHolder) {
-      res.status(400).json({ error: "Todos los datos de la tarjeta son obligatorios." });
+    const tenantId = String(req.params.tenantId);
+    const tenant = await query(`SELECT id, name, slug, whatsapp_number FROM tenants WHERE id = $1`, [tenantId]);
+    if (tenant.rows.length === 0) {
+      res.status(404).json({ error: "Tenant no encontrado." });
       return;
     }
-    const result = await TilopaySubscriptionService.registerTenantCard(tenantId, {
-      cardNumber,
-      expMonth,
-      expYear,
-      cvv,
-      cardHolder
+    const platformCfg = await getPlatformTilopayConfig();
+    if (!platformCfg) {
+      res.status(503).json({ error: "Credenciales de Tilopay de la plataforma no configuradas." });
+      return;
+    }
+    const baseUrl = "https://app.tilopay.com/api/v1";
+    const loginRes = await fetch(`${baseUrl}/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: platformCfg.apiUser.trim(),
+        password: platformCfg.apiPassword.trim()
+      })
     });
+    const loginData = await loginRes.json().catch(() => ({}));
+    if (!loginRes.ok || !loginData.access_token) {
+      throw new Error(loginData.message || "Error de autenticaci\xF3n con Tilopay.");
+    }
+    const t = tenant.rows[0];
+    const orderNumber = `SUB-CARD-${t.id}-${Date.now()}`;
+    const cleanPhone = (t.whatsapp_number || "88888888").replace(/\D/g, "") || "88888888";
+    const appUrl = (process.env.APP_URL || "https://betico.tech").replace(/\/$/, "");
+    const sessionRes = await fetch(`${baseUrl}/processPayment`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${loginData.access_token}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        key: platformCfg.apiKey,
+        amount: "0.00",
+        currency: "CRC",
+        billToFirstName: t.name.split(" ")[0] || "Cliente",
+        billToLastName: t.name.split(" ").slice(1).join(" ") || "Betico",
+        billToEmail: "billing@betico.cr",
+        billToAddress: "Costa Rica",
+        billToAddress2: "N/A",
+        billToCity: "San Jose",
+        billToState: "SJ",
+        billToZip: "10101",
+        billToCountry: "CR",
+        billToTelephone: cleanPhone,
+        orderNumber,
+        redirect: `${appUrl}/app?card_status=success`,
+        callback: `${appUrl}/api/webhooks/tilopay`
+      })
+    });
+    const sessionData = await sessionRes.json().catch(() => ({}));
+    if (!sessionRes.ok || !sessionData.url) {
+      throw new Error(sessionData.message || sessionData.error || "No fue posible crear la sesi\xF3n de tarjeta en Tilopay");
+    }
     res.json({
       success: true,
-      message: `Tarjeta ${result.cardBrand} terminada en ${result.cardLast4} registrada exitosamente.`,
-      cardLast4: result.cardLast4,
-      cardBrand: result.cardBrand
+      paymentUrl: sessionData.url,
+      orderNumber
     });
+  } catch (error) {
+    console.error("[SuperadminBilling] Error al generar sesi\xF3n de tarjeta:", error);
+    res.status(500).json({ error: error.message || "Error al generar sesi\xF3n" });
+  }
+});
+router30.post("/cards/:tenantId", async (req, res) => {
+  try {
+    const tenantId = String(req.params.tenantId);
+    const { cardToken, last4, brand, cardNumber, expMonth, expYear, cvv, cardHolder } = req.body;
+    if (cardNumber && expMonth && expYear && cvv) {
+      const result = await TilopaySubscriptionService.registerTenantCard(tenantId, {
+        cardNumber: String(cardNumber),
+        expMonth: String(expMonth),
+        expYear: String(expYear),
+        cvv: String(cvv),
+        cardHolder: String(cardHolder || "Cliente")
+      });
+      res.json({
+        success: true,
+        message: `Tarjeta ${result.cardBrand} terminada en ${result.cardLast4} registrada exitosamente.`,
+        cardLast4: result.cardLast4,
+        cardBrand: result.cardBrand
+      });
+      return;
+    }
+    res.status(400).json({ error: "Datos de tarjeta incompletos." });
   } catch (error) {
     console.error("[SuperadminBilling] Error registrando tarjeta:", error);
     res.status(500).json({ error: error.message || "Error al tokenizar tarjeta" });
@@ -13141,7 +13372,7 @@ router30.post("/cards/:tenantId", async (req, res) => {
 });
 router30.delete("/cards/:tenantId/:cardId", async (req, res) => {
   try {
-    const success = await deactivateBillingCard(req.params.cardId, req.params.tenantId);
+    const success = await deactivateBillingCard(String(req.params.cardId), String(req.params.tenantId));
     if (!success) {
       res.status(404).json({ error: "Tarjeta no encontrada" });
       return;
@@ -13153,7 +13384,7 @@ router30.delete("/cards/:tenantId/:cardId", async (req, res) => {
 });
 router30.post("/charge/:tenantId", async (req, res) => {
   try {
-    const result = await TilopaySubscriptionService.chargeTenantSubscription(req.params.tenantId, true);
+    const result = await TilopaySubscriptionService.chargeTenantSubscription(String(req.params.tenantId), true);
     if (!result.success) {
       res.status(400).json(result);
       return;
@@ -13166,7 +13397,7 @@ router30.post("/charge/:tenantId", async (req, res) => {
 });
 router30.get("/charges/:tenantId", async (req, res) => {
   try {
-    const charges = await getBillingCharges(req.params.tenantId);
+    const charges = await getBillingCharges(String(req.params.tenantId));
     res.json(charges);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -13180,7 +13411,7 @@ router30.post("/toggle-auto-billing/:tenantId", async (req, res) => {
       SET auto_billing_enabled = $1,
           updated_at = CURRENT_TIMESTAMP
       WHERE id = $2
-    `, [Boolean(enabled), req.params.tenantId]);
+    `, [Boolean(enabled), String(req.params.tenantId)]);
     res.json({
       success: true,
       autoBillingEnabled: Boolean(enabled),
@@ -13326,6 +13557,256 @@ router31.post("/submit-payment-proof", async (req, res) => {
 });
 var tenant_payment_routes_default = router31;
 
+// src/server/routes/tenant-subscription.routes.ts
+import { Router as Router32 } from "express";
+init_pool();
+init_evolution();
+init_env();
+var router32 = Router32();
+router32.use(authenticateToken);
+router32.get("/", async (req, res) => {
+  try {
+    const tenantId = req.user?.tenantId;
+    if (!tenantId) {
+      res.status(400).json({ error: "Contexto de inquilino requerido." });
+      return;
+    }
+    const tenant = await getTenantById(tenantId);
+    if (!tenant) {
+      res.status(404).json({ error: "Negocio no encontrado." });
+      return;
+    }
+    const tenantBillingRes = await query(`
+      SELECT custom_monthly_price as "customMonthlyPrice",
+             billing_currency as "billingCurrency",
+             subscription_status as "subscriptionStatus",
+             trial_ends_at as "trialEndsAt",
+             next_billing_date as "nextBillingDate",
+             grace_period_ends_at as "gracePeriodEndsAt",
+             auto_billing_enabled as "autoBillingEnabled",
+             plan,
+             active
+      FROM tenants
+      WHERE id = $1
+    `, [tenantId]);
+    const billingData = tenantBillingRes.rows[0] || {};
+    const plan = tenant.plan || billingData.plan || "pro";
+    const isAliado = plan.toLowerCase() === "aliado" || Number(billingData.customMonthlyPrice) === 0;
+    const monthlyPrice = Number(billingData.customMonthlyPrice || (plan === "enterprise" ? 85e3 : 55e3));
+    const currency = billingData.billingCurrency || "CRC";
+    const subscriptionStatus = billingData.subscriptionStatus || (isAliado ? "active" : "trial");
+    const autoBillingEnabled = Boolean(billingData.autoBillingEnabled);
+    const now = Date.now();
+    let daysRemaining = 0;
+    let targetDate = null;
+    if (subscriptionStatus === "trial" && billingData.trialEndsAt) {
+      targetDate = new Date(billingData.trialEndsAt);
+    } else if (billingData.nextBillingDate) {
+      targetDate = new Date(billingData.nextBillingDate);
+    } else if (billingData.trialEndsAt) {
+      targetDate = new Date(billingData.trialEndsAt);
+    }
+    if (targetDate) {
+      const diffMs = targetDate.getTime() - now;
+      daysRemaining = Math.max(0, Math.ceil(diffMs / (1e3 * 60 * 60 * 24)));
+    }
+    const card = await getDefaultBillingCard(tenantId);
+    const cardInfo = card ? {
+      id: card.id,
+      cardLast4: card.cardLast4,
+      cardBrand: card.cardBrand,
+      cardHolder: card.cardHolder,
+      createdAt: card.createdAt
+    } : null;
+    const paymentsRes = await query(`
+      SELECT id, amount, currency, payment_method as "paymentMethod",
+             reference, notes, status, created_at as "createdAt"
+      FROM tenant_payments
+      WHERE tenant_id = $1
+      ORDER BY created_at DESC
+      LIMIT 12
+    `, [tenantId]);
+    res.json({
+      tenantId,
+      tenantName: tenant.name,
+      plan,
+      isAliado,
+      subscriptionStatus,
+      active: tenant.active,
+      daysRemaining,
+      targetDate: targetDate ? targetDate.toISOString() : null,
+      trialEndsAt: billingData.trialEndsAt,
+      nextBillingDate: billingData.nextBillingDate,
+      gracePeriodEndsAt: billingData.gracePeriodEndsAt,
+      monthlyPrice,
+      currency,
+      autoBillingEnabled,
+      card: cardInfo,
+      paymentHistory: paymentsRes.rows
+    });
+  } catch (error) {
+    console.error("[TenantSubscription] Error al consultar suscripci\xF3n:", error);
+    res.status(500).json({ error: error.message || "Error al obtener estado de suscripci\xF3n" });
+  }
+});
+router32.post("/create-card-session", async (req, res) => {
+  try {
+    const tenantId = req.user?.tenantId;
+    if (!tenantId) {
+      res.status(400).json({ error: "Contexto de inquilino requerido." });
+      return;
+    }
+    const tenant = await getTenantById(tenantId);
+    if (!tenant) {
+      res.status(404).json({ error: "Negocio no encontrado." });
+      return;
+    }
+    const platformCfg = await getPlatformTilopayConfig();
+    if (!platformCfg) {
+      res.status(503).json({ error: "La pasarela de suscripciones a\xFAn no est\xE1 configurada por el administrador." });
+      return;
+    }
+    const baseUrl = "https://app.tilopay.com/api/v1";
+    const loginRes = await fetch(`${baseUrl}/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: platformCfg.apiUser.trim(),
+        password: platformCfg.apiPassword.trim()
+      })
+    });
+    const loginData = await loginRes.json().catch(() => ({}));
+    if (!loginRes.ok || !loginData.access_token) {
+      throw new Error(loginData.message || "No fue posible autenticar con la pasarela bancaria.");
+    }
+    const jwt3 = loginData.access_token;
+    const cleanPhone = (tenant.whatsappNumber || "88888888").replace(/\D/g, "") || "88888888";
+    const appUrl = (env.APP_URL || "https://betico.tech").replace(/\/$/, "");
+    const orderNumber = `SUB-CARD-${tenant.id}-${Date.now()}`;
+    const sessionPayload = {
+      key: platformCfg.apiKey,
+      amount: "0.00",
+      currency: "CRC",
+      billToFirstName: tenant.name.split(" ")[0] || "Comercio",
+      billToLastName: tenant.name.split(" ").slice(1).join(" ") || "Betico",
+      billToEmail: "billing@betico.cr",
+      billToAddress: "Costa Rica",
+      billToAddress2: "N/A",
+      billToCity: "San Jose",
+      billToState: "SJ",
+      billToZip: "10101",
+      billToCountry: "CR",
+      billToTelephone: cleanPhone,
+      orderNumber,
+      redirect: `${appUrl}/app?card_status=success`,
+      callback: `${appUrl}/api/webhooks/tilopay`
+    };
+    const sessionRes = await fetch(`${baseUrl}/processPayment`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${jwt3}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(sessionPayload)
+    });
+    const sessionData = await sessionRes.json().catch(() => ({}));
+    if (!sessionRes.ok || !sessionData.url) {
+      console.error("[TenantSubscription] Fall\xF3 creaci\xF3n de pasarela para vincular tarjeta:", sessionData);
+      throw new Error(sessionData.message || sessionData.error || "No fue posible generar la sesi\xF3n de tarjeta en Tilopay");
+    }
+    res.json({
+      success: true,
+      paymentUrl: sessionData.url,
+      orderNumber
+    });
+  } catch (error) {
+    console.error("[TenantSubscription] Error al crear sesi\xF3n de tarjeta:", error);
+    res.status(500).json({ error: error.message || "Error al iniciar vinculaci\xF3n de tarjeta" });
+  }
+});
+router32.post("/cancel", async (req, res) => {
+  try {
+    const tenantId = req.user?.tenantId;
+    const userId = req.user?.userId || null;
+    if (!tenantId) {
+      res.status(400).json({ error: "Contexto de inquilino requerido." });
+      return;
+    }
+    const tenant = await getTenantById(tenantId);
+    if (!tenant) {
+      res.status(404).json({ error: "Negocio no encontrado." });
+      return;
+    }
+    const isAliado = tenant.plan?.toLowerCase() === "aliado";
+    if (isAliado) {
+      res.json({
+        success: true,
+        isAliado: true,
+        message: "Tu cuenta cuenta con el Plan Aliado Estrat\xE9gico (\u20A10/mes). Este plan es gratuito de por vida y no genera ning\xFAn cobro recurrente."
+      });
+      return;
+    }
+    const { reason } = req.body;
+    await query(`
+      UPDATE tenants
+      SET subscription_status = 'cancelled',
+          auto_billing_enabled = false,
+          active = false,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+    `, [tenantId]);
+    await logAuditEvent(tenantId, userId, "subscription_cancelled", "billing", tenantId, {
+      previousStatus: tenant.subscriptionStatus,
+      reason: reason || "Cancelaci\xF3n voluntaria por el usuario"
+    }, req.ip, req.headers["user-agent"]);
+    try {
+      const superadminPhone = "50688888888";
+      const alertMsg = `\u26A0\uFE0F *[Alerta de Cancelaci\xF3n de Suscripci\xF3n - Betico]*
+
+El comercio *${tenant.name}* (${tenant.slug}) ha cancelado su suscripci\xF3n.
+\u{1F464} *Usuario:* ${req.user?.userId}
+\u{1F4DD} *Motivo:* ${reason || "Sin motivo especificado"}
+\u{1F4C5} *Fecha:* ${(/* @__PURE__ */ new Date()).toLocaleString("es-CR")}`;
+      await sendMessage("betico_soporte", superadminPhone, alertMsg);
+    } catch (msgErr) {
+    }
+    res.json({
+      success: true,
+      message: "Tu suscripci\xF3n ha sido cancelada exitosamente. Tu cuenta y asistentes han sido pausados."
+    });
+  } catch (error) {
+    console.error("[TenantSubscription] Error al cancelar suscripci\xF3n:", error);
+    res.status(500).json({ error: error.message || "Error al procesar cancelaci\xF3n" });
+  }
+});
+router32.post("/reactivate", async (req, res) => {
+  try {
+    const tenantId = req.user?.tenantId;
+    if (!tenantId) {
+      res.status(400).json({ error: "Contexto de inquilino requerido." });
+      return;
+    }
+    await query(`
+      UPDATE tenants
+      SET subscription_status = 'trial',
+          trial_ends_at = CURRENT_TIMESTAMP + INTERVAL '15 days',
+          next_billing_date = CURRENT_TIMESTAMP + INTERVAL '15 days',
+          active = true,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+    `, [tenantId]);
+    await logAuditEvent(tenantId, req.user?.userId || null, "subscription_reactivated", "billing", tenantId, {}, req.ip, req.headers["user-agent"]);
+    res.json({
+      success: true,
+      message: "Cuenta reactivada exitosamente. Se han restablecido tus 15 d\xEDas."
+    });
+  } catch (error) {
+    console.error("[TenantSubscription] Error al reactivar suscripci\xF3n:", error);
+    res.status(500).json({ error: error.message || "Error al reactivar cuenta" });
+  }
+});
+var tenant_subscription_routes_default = router32;
+
 // src/server/index.ts
 var __filename = fileURLToPath(import.meta.url);
 var __dirname = path2.dirname(__filename);
@@ -13336,10 +13817,31 @@ async function startServer() {
   const io2 = new SocketIOServer(server, {
     cors: { origin: "*", methods: ["GET", "POST"] }
   });
+  io2.use((socket, next) => {
+    const token = socket.handshake.auth?.token || socket.handshake.headers?.authorization?.replace(/^Bearer\s+/i, "") || socket.handshake.query?.token;
+    if (!token) {
+      return next();
+    }
+    try {
+      const decoded = jwt2.verify(String(token), env.JWT_SECRET);
+      socket.data.user = decoded;
+      next();
+    } catch (err) {
+      return next(new Error("Authentication error: Token inv\xE1lido o expirado"));
+    }
+  });
   io2.on("connection", (socket) => {
     socket.on("join_tenant", (tenantId) => {
-      if (tenantId) {
+      if (!tenantId) return;
+      const user = socket.data.user;
+      if (!user) {
+        console.warn(`[Security Alert] Intento no autenticado a sala tenant_${tenantId} desde socket ${socket.id}`);
+        return;
+      }
+      if (user.role === "superadmin" || user.tenantId === tenantId) {
         socket.join(`tenant_${tenantId}`);
+      } else {
+        console.warn(`[Security Alert] Acceso denegado: Usuario ${user.userId} (Tenant: ${user.tenantId}, Rol: ${user.role}) intent\xF3 unirse a sala tenant_${tenantId}`);
       }
     });
   });
@@ -13436,6 +13938,7 @@ async function startServer() {
   app.use("/api/storefront", publicLimiter, storefront_routes_default);
   app.use("/api/calendar", calendar_routes_default);
   app.use("/api/tenant/payment-config", tenant_payment_routes_default);
+  app.use("/api/tenant/subscription", tenant_subscription_routes_default);
   app.use("/api/webhooks/tilopay", tilopay_webhook_routes_default);
   app.use("/api/webhook/evolution", webhook_routes_default);
   app.use("/api/webhook", webhook_routes_default);

@@ -3,10 +3,12 @@ import { query } from '../db/pool.js';
 import { executeOrderPaymentConfirmation } from '../db/orders.repo.js';
 import { emitOrderPaidEvent } from '../services/event-bus.service.js';
 import { getAppointmentByIdUnsafeForWebhook, updateAppointmentPayment } from '../db/appointments.repo.js';
-import { getBookingById, updateCourtBookingPayment } from '../db/courts.repo.js';
+import { getBookingByIdUnsafe, updateCourtBookingPayment } from '../db/courts.repo.js';
 import { getTenantById } from '../db/tenant.repo.js';
 import { sendMessage } from '../services/evolution.js';
-import { getChargeByOrderNumber, updateBillingCharge } from '../db/tenant-billing.repo.js';
+import { getChargeByOrderNumber, updateBillingCharge, saveBillingCard } from '../db/tenant-billing.repo.js';
+import { CryptoService } from '../services/crypto.service.js';
+import { logAuditEvent } from '../db/audit.repo.js';
 
 const router = Router();
 
@@ -15,6 +17,8 @@ const router = Router();
  * Mounted at /api/webhooks/tilopay.
  * Fast response (< 2s) and idempotent transaction processing.
  * Supports Multi-Entity:
+ * - SUB-CARD-*: Tenant Card Tokenization Registration
+ * - SUB-*: Tenant Subscriptions (Platform recurring billing)
  * - ORD-*: Orders (Store & Restaurant)
  * - APT-*: Appointments (Citas y Reservas)
  * - CRT-*: Court Bookings (Canchas Deportivas & Busca Rival)
@@ -65,7 +69,73 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
     const paymentLabel = isSinpe ? 'SINPE Móvil Verificado' : 'Tarjeta Débito/Crédito';
 
     // =========================================================================
-    // ROUTING CASE 0: SUSCRIPCIONES DE TENANTS (Prefix: SUB-)
+    // ROUTING CASE 0A: REGISTRO/TOKENIZACIÓN DE TARJETA (Prefix: SUB-CARD-)
+    // =========================================================================
+    if (orderStr.startsWith('SUB-CARD-')) {
+      const parts = orderStr.split('-');
+      // Format: SUB-CARD-<tenantId>-<timestamp>
+      const tenantId = parts[2];
+      if (!tenantId) {
+        console.warn(`[TilopayWebhook] ID de tenant inválido en orden de tokenización: ${orderStr}`);
+        return;
+      }
+
+      const tenant = await getTenantById(tenantId);
+      if (!tenant) {
+        console.warn(`[TilopayWebhook] Tenant ${tenantId} no encontrado para tokenización`);
+        return;
+      }
+
+      const token = payload.token || payload.card_token || payload.id || payload.token_id;
+      const last4 = String(payload.card_last4 || payload.last4 || payload.pan?.slice(-4) || '4242').slice(-4);
+      const brand = String(payload.brand || payload.card_brand || 'VISA').toUpperCase();
+      const holder = String(payload.cardholder || payload.holder || payload.bill_to || tenant.name).trim();
+
+      if (isApproved && token) {
+        console.log(`[TilopayWebhook] Tarjeta tokenizada exitosamente para tenant ${tenant.name} (${tenant.id})`);
+        const encryptedToken = CryptoService.encryptForTenant(tenant.id, token);
+        
+        await saveBillingCard(tenant.id, {
+          last4,
+          brand,
+          holder,
+          tokenEncrypted: encryptedToken,
+          isDefault: true
+        });
+
+        await query(`
+          UPDATE tenants
+          SET auto_billing_enabled = true,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = $1
+        `, [tenant.id]);
+
+        await logAuditEvent(tenant.id, null, 'tilopay_card_tokenized', 'billing', orderStr, {
+          cardLast4: last4,
+          cardBrand: brand,
+          transactionId
+        }, req.ip, req.headers['user-agent'] as string);
+
+        // Notify tenant via WhatsApp
+        if (tenant.whatsappNumber) {
+          const cleanPhone = tenant.whatsappNumber.replace(/\D/g, '');
+          const msg = `💳 *[Tarjeta Vinculada Exitosamente - Betico]*\n\nHola *${tenant.name}*, tu tarjeta *${brand}* terminada en *${last4}* ha sido vinculada de forma 100% segura para tus cobros recurrentes de Betico.\n\nRecuerda que dispones de tus 15 días de prueba gratis y recibirás un aviso antes de cualquier cobro. ¡Gracias por tu confianza! 🚀`;
+          try {
+            await sendMessage('betico_soporte', cleanPhone, msg);
+          } catch (e) {}
+        }
+      } else {
+        console.warn(`[TilopayWebhook] Tokenización de tarjeta rechazada o sin token para tenant ${tenantId}`);
+        await logAuditEvent(tenant.id, null, 'tilopay_card_tokenization_failed', 'billing', orderStr, {
+          resultCode,
+          status
+        }, req.ip, req.headers['user-agent'] as string);
+      }
+      return;
+    }
+
+    // =========================================================================
+    // ROUTING CASE 0B: SUSCRIPCIONES DE TENANTS (Prefix: SUB-)
     // =========================================================================
     if (orderStr.startsWith('SUB-')) {
       const charge = await getChargeByOrderNumber(orderStr);
@@ -92,6 +162,7 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
               last_payment_ref = $2,
               last_auto_charge_at = CURRENT_TIMESTAMP,
               last_auto_charge_status = 'success',
+              auto_billing_enabled = true,
               active = true,
               updated_at = CURRENT_TIMESTAMP
           WHERE id = $3
@@ -102,6 +173,13 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
           INSERT INTO tenant_payments (tenant_id, amount, currency, payment_method, reference, notes, status)
           VALUES ($1, $2, $3, 'card', $4, $5, 'approved')
         `, [charge.tenantId, charge.amount, charge.currency, transactionId || orderStr, 'Cobro de suscripción recurrente aprobado por Tilopay']);
+
+        await logAuditEvent(charge.tenantId, null, 'tilopay_subscription_renewed', 'billing', orderStr, {
+          amount: charge.amount,
+          currency: charge.currency,
+          transactionId,
+          authCode
+        }, req.ip, req.headers['user-agent'] as string);
 
         const tenant = await getTenantById(charge.tenantId);
         if (tenant?.whatsappNumber) {
@@ -124,6 +202,11 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
               updated_at = CURRENT_TIMESTAMP
           WHERE id = $1
         `, [charge.tenantId]);
+
+        await logAuditEvent(charge.tenantId, null, 'tilopay_subscription_charge_failed', 'billing', orderStr, {
+          resultCode,
+          status
+        }, req.ip, req.headers['user-agent'] as string);
       }
       return;
     }
@@ -182,7 +265,7 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       const team = match ? (match[1].toLowerCase() as 'a' | 'b') : 'a';
       const cleanBookingId = match ? match[2].trim() : orderStr.replace(/^CRT-/i, '').trim();
 
-      const booking = await getBookingById(cleanBookingId);
+      const booking = await getBookingByIdUnsafe(cleanBookingId);
       if (!booking) {
         console.warn(`[TilopayWebhook] No se encontró reserva de cancha para ID: ${cleanBookingId}`);
         return;
@@ -267,6 +350,13 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
 
       const updatedOrder = result.order!;
 
+      await logAuditEvent(tenantId, null, 'tilopay_order_paid', 'order', String(updatedOrder.id), {
+        orderNumber: updatedOrder.orderNumber,
+        total: updatedOrder.total,
+        transactionId,
+        authCode
+      }, req.ip, req.headers['user-agent'] as string);
+
       // 2. Emitir evento desacoplado OrderPaidEvent hacia el EventBus
       emitOrderPaidEvent({
         tenantId,
@@ -303,6 +393,12 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
             updated_at = CURRENT_TIMESTAMP
         WHERE id = $1 AND payment_status = 'pending'
       `, [order.id]);
+
+      await logAuditEvent(tenantId, null, 'tilopay_order_payment_failed', 'order', String(order.id), {
+        orderNumber: order.orderNumber,
+        resultCode,
+        status
+      }, req.ip, req.headers['user-agent'] as string);
 
       if ((req as any).io) {
         (req as any).io.to(`tenant_${tenantId}`).emit('order:updated', { id: order.id, paymentStatus: 'failed' });

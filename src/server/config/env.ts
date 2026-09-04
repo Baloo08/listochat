@@ -1,6 +1,19 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+const isProduction = process.env.NODE_ENV === 'production';
+
+// Critical environment validation for production deployment (OWASP ASVS / ISO 25010)
+if (isProduction) {
+  const missingCriticalVars: string[] = [];
+  if (!process.env.DATABASE_URL) missingCriticalVars.push('DATABASE_URL');
+  if (!process.env.JWT_SECRET) missingCriticalVars.push('JWT_SECRET');
+
+  if (missingCriticalVars.length > 0) {
+    console.warn(`[Security Warning] Variables de entorno críticas no definidas en producción: ${missingCriticalVars.join(', ')}. Usando configuración predeterminada.`);
+  }
+}
+
 export const env = {
   PORT: process.env.PORT ? parseInt(process.env.PORT, 10) : 3000,
   JWT_SECRET: process.env.JWT_SECRET || 'betico_jwt_secret_64_chars_super_safe_key_cr_2026',
@@ -17,5 +30,5 @@ export const env = {
   SUPERADMIN_PASSWORD: process.env.SUPERADMIN_PASSWORD || 'BeticoAdmin2026!',
   UPLOAD_DIR: process.env.UPLOAD_DIR || './uploads',
   NODE_ENV: process.env.NODE_ENV || 'production',
-  GEMINI_API_KEY: process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY || 'AQ.Ab8RN6IHcdDKDITkdIOjt8SznSc6lS_1grotOA6SQ6fjZnd2SQ',
+  GEMINI_API_KEY: process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY || '',
 };

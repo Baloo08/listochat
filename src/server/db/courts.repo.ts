@@ -153,6 +153,16 @@ export async function getBookingById(id: string, tenantId: string) {
   return res.rows[0] ? mapBookingRow(res.rows[0]) : null;
 }
 
+export async function getBookingByIdUnsafe(id: string) {
+  const res = await query(`
+    SELECT cb.*, c.name as court_name 
+    FROM court_bookings cb
+    JOIN courts c ON c.id = cb.court_id
+    WHERE cb.id = $1
+  `, [id]);
+  return res.rows[0] ? mapBookingRow(res.rows[0]) : null;
+}
+
 export async function createBooking(tenantId: string, data: Partial<CourtBooking>) {
   const bookingMode = data.bookingMode || 'full';
   const matchStatus = data.matchStatus || (bookingMode === 'seek_match' ? 'open' : 'confirmed');

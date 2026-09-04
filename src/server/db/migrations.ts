@@ -780,6 +780,8 @@ export async function runMigrations() {
     ALTER TABLE tenants ADD COLUMN IF NOT EXISTS auto_billing_enabled BOOLEAN DEFAULT false;
     ALTER TABLE tenants ADD COLUMN IF NOT EXISTS last_auto_charge_at TIMESTAMP WITH TIME ZONE;
     ALTER TABLE tenants ADD COLUMN IF NOT EXISTS last_auto_charge_status VARCHAR(50);
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS trial_reminder_sent BOOLEAN DEFAULT false;
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_reminder_sent_at TIMESTAMP WITH TIME ZONE;
     ALTER TABLE tenants ADD COLUMN IF NOT EXISTS calendar_token VARCHAR(64) DEFAULT md5(random()::text || clock_timestamp()::text);
 
     CREATE TABLE IF NOT EXISTS tenant_billing_cards (
