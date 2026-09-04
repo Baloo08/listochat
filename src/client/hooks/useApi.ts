@@ -26,7 +26,16 @@ export function useApi() {
     
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(errorText || 'API Error');
+      let errorMsg = errorText || 'API Error';
+      try {
+        const parsed = JSON.parse(errorText);
+        if (parsed && typeof parsed === 'object') {
+          errorMsg = parsed.error || parsed.message || errorText;
+        }
+      } catch (_) {
+        // Not JSON, keep raw errorText
+      }
+      throw new Error(errorMsg);
     }
     
     const contentType = response.headers.get('content-type');

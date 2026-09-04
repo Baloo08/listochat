@@ -8,8 +8,16 @@ import {
 } from '../db/tenant-billing.repo.js';
 import {
   TilopaySubscriptionService,
-  getPlatformTilopayConfig
+  getPlatformTilopayConfig,
+  getOrCreateSuperadminTenantId
 } from '../services/tilopay-subscription.service.js';
+import {
+  getTenantPaymentConfig,
+  getTenantPaymentConfigRaw,
+  saveTenantPaymentConfig
+} from '../db/tenant-payment.repo.js';
+import { TilopayTenantService } from '../services/tilopay-tenant.service.js';
+import { env } from '../config/env.js';
 
 const router = Router();
 
@@ -29,6 +37,159 @@ router.get('/platform-status', async (req: Request, res: Response): Promise<void
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/superadmin/billing/platform-config
+ * Retrieves full platform Tilopay configuration with masked secrets for SuperAdmin UI.
+ */
+router.get('/platform-config', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const superadminTenantId = await getOrCreateSuperadminTenantId();
+    const config = await getTenantPaymentConfig(superadminTenantId);
+
+    const hasEnvConfig = Boolean(
+      process.env.TILOPAY_PLATFORM_KEY &&
+      process.env.TILOPAY_PLATFORM_USER &&
+      process.env.TILOPAY_PLATFORM_PASSWORD
+    );
+
+    const appUrl = (env.APP_URL || 'https://betico.tech').replace(/\/$/, '');
+    const webhookUrl = `${appUrl}/api/webhooks/tilopay`;
+
+    if (config && (config.apiKeyMasked || config.apiUser)) {
+      res.json({
+        isConfigured: Boolean(config.isConfigured && config.isEnabled),
+        isEnabled: Boolean(config.isEnabled),
+        apiKeyMasked: config.apiKeyMasked || '',
+        apiUser: config.apiUser || '',
+        apiPasswordMasked: config.apiPasswordMasked || '',
+        environment: config.environment || 'PRODUCTION',
+        captureMode: config.captureMode || 'IMMEDIATE',
+        source: 'database',
+        webhookUrl
+      });
+      return;
+    }
+
+    if (hasEnvConfig) {
+      const maskedKey = process.env.TILOPAY_PLATFORM_KEY!.length > 8
+        ? `${process.env.TILOPAY_PLATFORM_KEY!.slice(0, 4)}••••••••${process.env.TILOPAY_PLATFORM_KEY!.slice(-4)}`
+        : '••••••••';
+      res.json({
+        isConfigured: true,
+        isEnabled: true,
+        apiKeyMasked: maskedKey,
+        apiUser: process.env.TILOPAY_PLATFORM_USER || '',
+        apiPasswordMasked: '••••••••',
+        environment: process.env.TILOPAY_PLATFORM_ENV === 'SANDBOX' ? 'SANDBOX' : 'PRODUCTION',
+        captureMode: 'IMMEDIATE',
+        source: 'environment',
+        webhookUrl
+      });
+      return;
+    }
+
+    res.json({
+      isConfigured: false,
+      isEnabled: false,
+      apiKeyMasked: '',
+      apiUser: '',
+      apiPasswordMasked: '',
+      environment: 'PRODUCTION',
+      captureMode: 'IMMEDIATE',
+      source: 'none',
+      webhookUrl
+    });
+  } catch (error: any) {
+    console.error('[SuperadminBilling] Error al obtener configuración de plataforma:', error);
+    res.status(500).json({ error: error.message || 'Error al obtener configuración de plataforma' });
+  }
+});
+
+/**
+ * POST /api/superadmin/billing/test-platform-config
+ * Diagnostic connection test against Tilopay using provided or stored credentials.
+ */
+router.post('/test-platform-config', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { apiKey, apiUser, apiPassword, environment = 'PRODUCTION' } = req.body;
+
+    let testKey = apiKey;
+    let testPass = apiPassword;
+
+    // Re-use existing decrypted credentials if masked placeholders were sent
+    if ((!testKey || testKey.includes('••••')) || (!testPass || testPass.includes('••••'))) {
+      const superadminTenantId = await getOrCreateSuperadminTenantId();
+      const existing = await getTenantPaymentConfigRaw(superadminTenantId);
+      if (existing) {
+        testKey = (!testKey || testKey.includes('••••')) ? existing.apiKey : testKey;
+        testPass = (!testPass || testPass.includes('••••')) ? existing.apiPassword : testPass;
+      } else if (process.env.TILOPAY_PLATFORM_KEY) {
+        testKey = (!testKey || testKey.includes('••••')) ? process.env.TILOPAY_PLATFORM_KEY : testKey;
+        testPass = (!testPass || testPass.includes('••••')) ? process.env.TILOPAY_PLATFORM_PASSWORD : testPass;
+      }
+    }
+
+    if (!testKey || !apiUser || !testPass) {
+      res.status(400).json({ success: false, error: 'Todos los campos (API Key, Usuario y Contraseña) son requeridos para la prueba.' });
+      return;
+    }
+
+    const testResult = await TilopayTenantService.verifyCredentials(
+      testKey,
+      apiUser,
+      testPass,
+      environment
+    );
+
+    if (testResult.success) {
+      res.json({ success: true, message: testResult.message });
+    } else {
+      res.status(400).json({ success: false, error: testResult.message });
+    }
+  } catch (error: any) {
+    console.error('[SuperadminBilling] Error en prueba de credenciales de plataforma:', error);
+    res.status(500).json({ error: error.message || 'Error en prueba de conexión con Tilopay' });
+  }
+});
+
+/**
+ * POST /api/superadmin/billing/platform-config
+ * Saves or updates platform Tilopay credentials encrypted with AES-256-GCM.
+ */
+router.post('/platform-config', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { apiKey, apiUser, apiPassword, environment = 'PRODUCTION', isEnabled = true } = req.body;
+    const changedBy = req.user?.userId || 'superadmin';
+
+    const superadminTenantId = await getOrCreateSuperadminTenantId();
+
+    // Clear token cache
+    TilopayTenantService.clearTokenCache(superadminTenantId);
+
+    const updated = await saveTenantPaymentConfig(
+      superadminTenantId,
+      {
+        apiKey,
+        apiUser,
+        apiPassword,
+        environment,
+        isEnabled: isEnabled !== false,
+        captureMode: 'IMMEDIATE'
+      },
+      changedBy
+    );
+
+    res.json({
+      success: true,
+      message: 'Credenciales de Tilopay de la plataforma guardadas con éxito.',
+      config: updated
+    });
+  } catch (error: any) {
+    console.error('[SuperadminBilling] Error al guardar credenciales de plataforma:', error);
+    res.status(500).json({ error: error.message || 'Error al guardar credenciales de plataforma' });
   }
 });
 

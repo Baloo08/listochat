@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useApi } from '../hooks/useApi';
-import { CreditCard, Search, RefreshCw, Send, FileText, CheckCircle, AlertTriangle, Phone, ExternalLink, Key } from 'lucide-react';
+import { CreditCard, Search, RefreshCw, Send, FileText, CheckCircle, AlertTriangle, Phone, ExternalLink, Key, ShieldCheck } from 'lucide-react';
 import TenantDossierModal from './TenantDossierModal';
 import TenantBillingCardModal from './TenantBillingCardModal';
+import PlatformTilopayModal from './PlatformTilopayModal';
 
 export default function BillingCollectionsView() {
   const [data, setData] = useState<any>(null);
@@ -11,14 +12,20 @@ export default function BillingCollectionsView() {
   const [search, setSearch] = useState('');
   const [selectedDossierId, setSelectedDossierId] = useState<string | null>(null);
   const [selectedCardTenant, setSelectedCardTenant] = useState<{ id: string; name: string } | null>(null);
+  const [showPlatformModal, setShowPlatformModal] = useState(false);
+  const [platformStatus, setPlatformStatus] = useState<{ configured: boolean; environment?: string } | null>(null);
 
   const api = useApi();
 
   const loadCollections = async () => {
     try {
       setLoading(true);
-      const res = await api.get('/api/tenants/billing/collections');
+      const [res, pStatus] = await Promise.all([
+        api.get('/api/tenants/billing/collections'),
+        api.get('/api/superadmin/billing/platform-status').catch(() => null)
+      ]);
       if (res) setData(res);
+      if (pStatus) setPlatformStatus(pStatus);
     } catch (e: any) {
       console.error('Error loading collections:', e);
     } finally {
@@ -114,6 +121,26 @@ export default function BillingCollectionsView() {
 
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           <button
+            onClick={() => setShowPlatformModal(true)}
+            style={{
+              padding: '8px 14px',
+              backgroundColor: platformStatus?.configured ? '#f0fdf4' : '#fef2f2',
+              color: platformStatus?.configured ? '#15803d' : '#b91c1c',
+              border: `1px solid ${platformStatus?.configured ? '#bbf7d0' : '#fecaca'}`,
+              borderRadius: '8px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontSize: '0.82rem',
+              fontWeight: 'bold'
+            }}
+            title="Configurar credenciales maestras de Tilopay para recibir pagos de suscripciones"
+          >
+            <ShieldCheck size={16} />
+            {platformStatus?.configured ? '🟢 Tilopay Plataforma' : '🔴 Configurar Tilopay'}
+          </button>
+          <button
             onClick={handleRunAutoBilling}
             style={{ padding: '8px 14px', backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', fontWeight: 'bold' }}
             title="Ejecutar lote de cobro automático vía Tilopay para clientes vencidos"
@@ -128,6 +155,48 @@ export default function BillingCollectionsView() {
           </button>
         </div>
       </div>
+
+      {/* WARNING BANNER IF PLATFORM GATEWAY NOT CONFIGURED */}
+      {platformStatus && !platformStatus.configured && (
+        <div style={{
+          padding: '14px 18px',
+          backgroundColor: '#fffbeb',
+          border: '1px solid #fde68a',
+          borderRadius: '12px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '12px',
+          flexWrap: 'wrap'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <AlertTriangle size={20} color="#d97706" style={{ flexShrink: 0 }} />
+            <div>
+              <div style={{ fontSize: '0.88rem', fontWeight: 'bold', color: '#92400e' }}>
+                Pasarela Tilopay de la Plataforma pendiente de configurar
+              </div>
+              <div style={{ fontSize: '0.78rem', color: '#b45309' }}>
+                Los clientes no podrán vincular tarjetas para sus suscripciones recurrentes hasta que configures tus credenciales de Tilopay.
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={() => setShowPlatformModal(true)}
+            style={{
+              padding: '8px 14px',
+              backgroundColor: '#b45309',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              fontWeight: 'bold',
+              fontSize: '0.8rem',
+              cursor: 'pointer'
+            }}
+          >
+            Configurar Ahora
+          </button>
+        </div>
+      )}
 
       {/* 4 SUMMARY METRIC CARDS */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '14px' }}>
@@ -348,6 +417,15 @@ export default function BillingCollectionsView() {
           onSuccess={loadCollections}
         />
       )}
+
+      {/* PLATFORM TILOPAY CONFIG MODAL */}
+      <PlatformTilopayModal
+        isOpen={showPlatformModal}
+        onClose={() => setShowPlatformModal(false)}
+        onSuccess={() => {
+          loadCollections();
+        }}
+      />
 
     </div>
   );

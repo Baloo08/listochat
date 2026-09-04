@@ -1,4 +1,4 @@
-﻿import { query } from '../db/pool.js';
+import { query } from '../db/pool.js';
 import { getTenantPaymentConfigRaw } from '../db/tenant-payment.repo.js';
 import { CryptoService } from './crypto.service.js';
 import {
@@ -19,6 +19,22 @@ interface PlatformTilopayConfig {
 }
 
 /**
+ * Ensures the superadmin tenant exists in database and returns its UUID.
+ */
+export async function getOrCreateSuperadminTenantId(): Promise<string> {
+  const superadminTenant = await query(`SELECT id FROM tenants WHERE slug = 'superadmin' LIMIT 1`);
+  if (superadminTenant.rows.length > 0) {
+    return superadminTenant.rows[0].id;
+  }
+  const created = await query(`
+    INSERT INTO tenants (name, slug, active, plan)
+    VALUES ('Betico Superadmin', 'superadmin', true, 'enterprise')
+    RETURNING id
+  `);
+  return created.rows[0].id;
+}
+
+/**
  * Retrieves Tilopay credentials for the platform (SuperAdmin billing to tenants).
  */
 export async function getPlatformTilopayConfig(): Promise<PlatformTilopayConfig | null> {
@@ -32,43 +48,21 @@ export async function getPlatformTilopayConfig(): Promise<PlatformTilopayConfig 
     };
   }
 
-  // 2. Check superadmin tenant in tenant_payment_configs
+  // 2. Check superadmin tenant in tenant_payment_configs (Primary source)
   try {
-    const superadminTenant = await query(`SELECT id FROM tenants WHERE slug = 'superadmin' LIMIT 1`);
-    if (superadminTenant.rows.length > 0) {
-      const config = await getTenantPaymentConfigRaw(superadminTenant.rows[0].id);
-      if (config && config.isEnabled && config.apiKey && config.apiUser && config.apiPassword) {
-        return {
-          apiKey: config.apiKey,
-          apiUser: config.apiUser,
-          apiPassword: config.apiPassword,
-          environment: config.environment || 'SANDBOX'
-        };
-      }
-    }
-  } catch (e) {}
-
-  // 3. Fallback: Any active tenant payment config with isEnabled
-  try {
-    const anyConfigRes = await query(`
-      SELECT t.id, c.api_key, c.api_user, c.api_password_encrypted, c.environment
-      FROM tenant_payment_configs c
-      JOIN tenants t ON t.id = c.tenant_id
-      WHERE c.is_enabled = true AND c.api_key IS NOT NULL
-      ORDER BY t.created_at ASC
-      LIMIT 1
-    `);
-    if (anyConfigRes.rows.length > 0) {
-      const r = anyConfigRes.rows[0];
-      const apiPassword = CryptoService.decryptForTenant(r.id, r.api_password_encrypted);
+    const superadminId = await getOrCreateSuperadminTenantId();
+    const config = await getTenantPaymentConfigRaw(superadminId);
+    if (config && config.isEnabled && config.apiKey && config.apiUser && config.apiPassword) {
       return {
-        apiKey: r.api_key,
-        apiUser: r.api_user,
-        apiPassword,
-        environment: r.environment || 'SANDBOX'
+        apiKey: config.apiKey,
+        apiUser: config.apiUser,
+        apiPassword: config.apiPassword,
+        environment: config.environment || 'PRODUCTION'
       };
     }
-  } catch (e) {}
+  } catch (e) {
+    console.error('[PlatformTilopay] Error al consultar configuración de superadmin:', e);
+  }
 
   return null;
 }

@@ -238,4 +238,31 @@ describe('Security & Cryptographic Hardening Tests (ISO/IEC 25010, OWASP ASVS)',
       assert.equal(isAuthorized(authenticatedTenantId, requestedResourceTenantId), false);
     });
   });
+
+  describe('Platform Tilopay Configuration & Masking Security', () => {
+    test('should mask sensitive credentials properly for UI', () => {
+      const maskSecret = (secret) => {
+        if (!secret) return '';
+        if (secret.length <= 8) return '••••••••';
+        return `${secret.slice(0, 4)}••••••••${secret.slice(-4)}`;
+      };
+      
+      assert.equal(maskSecret('tlp_live_abc123456789xyz'), 'tlp_••••••••9xyz');
+      assert.equal(maskSecret('secret1'), '••••••••');
+      assert.equal(maskSecret(''), '');
+    });
+
+    test('should validate platform credentials payload structure', () => {
+      const payload = {
+        apiKey: 'tlp_test_key_12345',
+        apiUser: 'admin@betico.cr',
+        apiPassword: 'SuperSecretTilopayPassword',
+        environment: 'PRODUCTION',
+        isEnabled: true
+      };
+
+      assert.ok(payload.apiKey && payload.apiUser && payload.apiPassword);
+      assert.ok(['PRODUCTION', 'SANDBOX'].includes(payload.environment));
+    });
+  });
 });

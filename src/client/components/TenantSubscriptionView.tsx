@@ -178,9 +178,32 @@ export default function TenantSubscriptionView() {
       )}
 
       {errorMsg && (
-        <div style={{ backgroundColor: '#fef2f2', border: '1px solid #fecaca', padding: '14px 16px', borderRadius: '12px', color: '#b91c1c', display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px', fontWeight: '500' }}>
-          <AlertCircle size={20} style={{ flexShrink: 0 }} />
-          <span>{errorMsg}</span>
+        <div style={{ backgroundColor: '#fef2f2', border: '1px solid #fecaca', padding: '14px 16px', borderRadius: '12px', color: '#b91c1c', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', marginBottom: '20px', fontWeight: '500', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <AlertCircle size={20} style={{ flexShrink: 0 }} />
+            <span>{errorMsg}</span>
+          </div>
+          {errorMsg.toLowerCase().includes('pasarela') && (
+            <a
+              href="https://wa.me/50688888888?text=Hola%20Betico,%20necesito%20asistencia%20con%20la%20vinculaci%C3%B3n%20de%20mi%20tarjeta%20de%20suscripci%C3%B3n."
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                backgroundColor: '#10b981',
+                color: 'white',
+                padding: '6px 12px',
+                borderRadius: '8px',
+                fontSize: '0.8rem',
+                fontWeight: '700',
+                textDecoration: 'none',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              Contactar Soporte
+            </a>
+          )}
         </div>
       )}
 

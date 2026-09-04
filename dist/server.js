@@ -2956,6 +2956,18 @@ async function getTenantsDueForAutoBilling() {
 // src/server/services/tilopay-subscription.service.ts
 init_evolution();
 init_env();
+async function getOrCreateSuperadminTenantId() {
+  const superadminTenant = await query(`SELECT id FROM tenants WHERE slug = 'superadmin' LIMIT 1`);
+  if (superadminTenant.rows.length > 0) {
+    return superadminTenant.rows[0].id;
+  }
+  const created = await query(`
+    INSERT INTO tenants (name, slug, active, plan)
+    VALUES ('Betico Superadmin', 'superadmin', true, 'enterprise')
+    RETURNING id
+  `);
+  return created.rows[0].id;
+}
 async function getPlatformTilopayConfig() {
   if (process.env.TILOPAY_PLATFORM_KEY && process.env.TILOPAY_PLATFORM_USER && process.env.TILOPAY_PLATFORM_PASSWORD) {
     return {
@@ -2966,40 +2978,18 @@ async function getPlatformTilopayConfig() {
     };
   }
   try {
-    const superadminTenant = await query(`SELECT id FROM tenants WHERE slug = 'superadmin' LIMIT 1`);
-    if (superadminTenant.rows.length > 0) {
-      const config = await getTenantPaymentConfigRaw(superadminTenant.rows[0].id);
-      if (config && config.isEnabled && config.apiKey && config.apiUser && config.apiPassword) {
-        return {
-          apiKey: config.apiKey,
-          apiUser: config.apiUser,
-          apiPassword: config.apiPassword,
-          environment: config.environment || "SANDBOX"
-        };
-      }
-    }
-  } catch (e) {
-  }
-  try {
-    const anyConfigRes = await query(`
-      SELECT t.id, c.api_key, c.api_user, c.api_password_encrypted, c.environment
-      FROM tenant_payment_configs c
-      JOIN tenants t ON t.id = c.tenant_id
-      WHERE c.is_enabled = true AND c.api_key IS NOT NULL
-      ORDER BY t.created_at ASC
-      LIMIT 1
-    `);
-    if (anyConfigRes.rows.length > 0) {
-      const r = anyConfigRes.rows[0];
-      const apiPassword = CryptoService.decryptForTenant(r.id, r.api_password_encrypted);
+    const superadminId = await getOrCreateSuperadminTenantId();
+    const config = await getTenantPaymentConfigRaw(superadminId);
+    if (config && config.isEnabled && config.apiKey && config.apiUser && config.apiPassword) {
       return {
-        apiKey: r.api_key,
-        apiUser: r.api_user,
-        apiPassword,
-        environment: r.environment || "SANDBOX"
+        apiKey: config.apiKey,
+        apiUser: config.apiUser,
+        apiPassword: config.apiPassword,
+        environment: config.environment || "PRODUCTION"
       };
     }
   } catch (e) {
+    console.error("[PlatformTilopay] Error al consultar configuraci\xF3n de superadmin:", e);
   }
   return null;
 }
@@ -13421,6 +13411,8 @@ var tilopay_webhook_routes_default = router29;
 // src/server/routes/superadmin-billing.routes.ts
 import { Router as Router30 } from "express";
 init_pool();
+init_tenant_payment_repo();
+init_env();
 var router30 = Router30();
 router30.use(authenticateToken, requireSuperAdmin);
 router30.get("/platform-status", async (req, res) => {
@@ -13432,6 +13424,124 @@ router30.get("/platform-status", async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+router30.get("/platform-config", async (req, res) => {
+  try {
+    const superadminTenantId = await getOrCreateSuperadminTenantId();
+    const config = await getTenantPaymentConfig(superadminTenantId);
+    const hasEnvConfig = Boolean(
+      process.env.TILOPAY_PLATFORM_KEY && process.env.TILOPAY_PLATFORM_USER && process.env.TILOPAY_PLATFORM_PASSWORD
+    );
+    const appUrl = (env.APP_URL || "https://betico.tech").replace(/\/$/, "");
+    const webhookUrl = `${appUrl}/api/webhooks/tilopay`;
+    if (config && (config.apiKeyMasked || config.apiUser)) {
+      res.json({
+        isConfigured: Boolean(config.isConfigured && config.isEnabled),
+        isEnabled: Boolean(config.isEnabled),
+        apiKeyMasked: config.apiKeyMasked || "",
+        apiUser: config.apiUser || "",
+        apiPasswordMasked: config.apiPasswordMasked || "",
+        environment: config.environment || "PRODUCTION",
+        captureMode: config.captureMode || "IMMEDIATE",
+        source: "database",
+        webhookUrl
+      });
+      return;
+    }
+    if (hasEnvConfig) {
+      const maskedKey = process.env.TILOPAY_PLATFORM_KEY.length > 8 ? `${process.env.TILOPAY_PLATFORM_KEY.slice(0, 4)}\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022${process.env.TILOPAY_PLATFORM_KEY.slice(-4)}` : "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022";
+      res.json({
+        isConfigured: true,
+        isEnabled: true,
+        apiKeyMasked: maskedKey,
+        apiUser: process.env.TILOPAY_PLATFORM_USER || "",
+        apiPasswordMasked: "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022",
+        environment: process.env.TILOPAY_PLATFORM_ENV === "SANDBOX" ? "SANDBOX" : "PRODUCTION",
+        captureMode: "IMMEDIATE",
+        source: "environment",
+        webhookUrl
+      });
+      return;
+    }
+    res.json({
+      isConfigured: false,
+      isEnabled: false,
+      apiKeyMasked: "",
+      apiUser: "",
+      apiPasswordMasked: "",
+      environment: "PRODUCTION",
+      captureMode: "IMMEDIATE",
+      source: "none",
+      webhookUrl
+    });
+  } catch (error) {
+    console.error("[SuperadminBilling] Error al obtener configuraci\xF3n de plataforma:", error);
+    res.status(500).json({ error: error.message || "Error al obtener configuraci\xF3n de plataforma" });
+  }
+});
+router30.post("/test-platform-config", async (req, res) => {
+  try {
+    const { apiKey, apiUser, apiPassword, environment = "PRODUCTION" } = req.body;
+    let testKey = apiKey;
+    let testPass = apiPassword;
+    if (!testKey || testKey.includes("\u2022\u2022\u2022\u2022") || (!testPass || testPass.includes("\u2022\u2022\u2022\u2022"))) {
+      const superadminTenantId = await getOrCreateSuperadminTenantId();
+      const existing = await getTenantPaymentConfigRaw(superadminTenantId);
+      if (existing) {
+        testKey = !testKey || testKey.includes("\u2022\u2022\u2022\u2022") ? existing.apiKey : testKey;
+        testPass = !testPass || testPass.includes("\u2022\u2022\u2022\u2022") ? existing.apiPassword : testPass;
+      } else if (process.env.TILOPAY_PLATFORM_KEY) {
+        testKey = !testKey || testKey.includes("\u2022\u2022\u2022\u2022") ? process.env.TILOPAY_PLATFORM_KEY : testKey;
+        testPass = !testPass || testPass.includes("\u2022\u2022\u2022\u2022") ? process.env.TILOPAY_PLATFORM_PASSWORD : testPass;
+      }
+    }
+    if (!testKey || !apiUser || !testPass) {
+      res.status(400).json({ success: false, error: "Todos los campos (API Key, Usuario y Contrase\xF1a) son requeridos para la prueba." });
+      return;
+    }
+    const testResult = await TilopayTenantService.verifyCredentials(
+      testKey,
+      apiUser,
+      testPass,
+      environment
+    );
+    if (testResult.success) {
+      res.json({ success: true, message: testResult.message });
+    } else {
+      res.status(400).json({ success: false, error: testResult.message });
+    }
+  } catch (error) {
+    console.error("[SuperadminBilling] Error en prueba de credenciales de plataforma:", error);
+    res.status(500).json({ error: error.message || "Error en prueba de conexi\xF3n con Tilopay" });
+  }
+});
+router30.post("/platform-config", async (req, res) => {
+  try {
+    const { apiKey, apiUser, apiPassword, environment = "PRODUCTION", isEnabled = true } = req.body;
+    const changedBy = req.user?.userId || "superadmin";
+    const superadminTenantId = await getOrCreateSuperadminTenantId();
+    TilopayTenantService.clearTokenCache(superadminTenantId);
+    const updated = await saveTenantPaymentConfig(
+      superadminTenantId,
+      {
+        apiKey,
+        apiUser,
+        apiPassword,
+        environment,
+        isEnabled: isEnabled !== false,
+        captureMode: "IMMEDIATE"
+      },
+      changedBy
+    );
+    res.json({
+      success: true,
+      message: "Credenciales de Tilopay de la plataforma guardadas con \xE9xito.",
+      config: updated
+    });
+  } catch (error) {
+    console.error("[SuperadminBilling] Error al guardar credenciales de plataforma:", error);
+    res.status(500).json({ error: error.message || "Error al guardar credenciales de plataforma" });
   }
 });
 router30.get("/cards/:tenantId", async (req, res) => {
