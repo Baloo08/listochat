@@ -2,10 +2,11 @@ import { Router, Request, Response } from 'express';
 import { query } from '../db/pool.js';
 import { executeOrderPaymentConfirmation } from '../db/orders.repo.js';
 import { emitOrderPaidEvent } from '../services/event-bus.service.js';
-import { getAppointmentById, updateAppointmentPayment } from '../db/appointments.repo.js';
+import { getAppointmentByIdUnsafeForWebhook, updateAppointmentPayment } from '../db/appointments.repo.js';
 import { getBookingById, updateCourtBookingPayment } from '../db/courts.repo.js';
 import { getTenantById } from '../db/tenant.repo.js';
 import { sendMessage } from '../services/evolution.js';
+import { getChargeByOrderNumber, updateBillingCharge } from '../db/tenant-billing.repo.js';
 
 const router = Router();
 
@@ -64,11 +65,75 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
     const paymentLabel = isSinpe ? 'SINPE Móvil Verificado' : 'Tarjeta Débito/Crédito';
 
     // =========================================================================
+    // ROUTING CASE 0: SUSCRIPCIONES DE TENANTS (Prefix: SUB-)
+    // =========================================================================
+    if (orderStr.startsWith('SUB-')) {
+      const charge = await getChargeByOrderNumber(orderStr);
+      if (!charge) {
+        console.warn(`[TilopayWebhook] No se encontró cargo de suscripción en BD para orden: ${orderStr}`);
+        return;
+      }
+
+      if (isApproved) {
+        console.log(`[TilopayWebhook] Cobro de suscripción aprobado para tenant ${charge.tenantId} (Orden: ${orderStr})`);
+        await updateBillingCharge(orderStr, {
+          status: 'success',
+          transactionId,
+          authCode
+        });
+
+        // Renew tenant subscription +30 days
+        await query(`
+          UPDATE tenants
+          SET subscription_status = 'active',
+              next_billing_date = CURRENT_TIMESTAMP + INTERVAL '30 days',
+              grace_period_ends_at = null,
+              last_payment_amount = $1,
+              last_payment_ref = $2,
+              last_auto_charge_at = CURRENT_TIMESTAMP,
+              last_auto_charge_status = 'success',
+              active = true,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = $3
+        `, [charge.amount, `Tilopay #${transactionId || orderStr}`, charge.tenantId]);
+
+        // Insert payment history
+        await query(`
+          INSERT INTO tenant_payments (tenant_id, amount, currency, payment_method, reference, notes, status)
+          VALUES ($1, $2, $3, 'card', $4, $5, 'approved')
+        `, [charge.tenantId, charge.amount, charge.currency, transactionId || orderStr, 'Cobro de suscripción recurrente aprobado por Tilopay']);
+
+        const tenant = await getTenantById(charge.tenantId);
+        if (tenant?.whatsappNumber) {
+          const cleanPhone = tenant.whatsappNumber.replace(/\D/g, '');
+          const priceStr = charge.currency === 'USD' ? `$${charge.amount}` : `₡${Number(charge.amount).toLocaleString('es-CR')}`;
+          const msg = `✅ *[Suscripción Renovada - Betico]*\n\nHola *${tenant.name}*, hemos recibido la confirmación de tu pago mensual de *${priceStr}*.\n\nTu cuenta se encuentra *Activa* y al día hasta el *${new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString('es-CR')}*. ¡Gracias por confiar en Betico!`;
+          try {
+            await sendMessage('betico_soporte', cleanPhone, msg);
+          } catch (e) {}
+        }
+      } else {
+        console.warn(`[TilopayWebhook] Cobro de suscripción fallido para orden ${orderStr}`);
+        await updateBillingCharge(orderStr, {
+          status: 'failed',
+          failureReason: `Transacción no aprobada por Tilopay (${status || resultCode})`
+        });
+        await query(`
+          UPDATE tenants
+          SET last_auto_charge_status = 'failed',
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = $1
+        `, [charge.tenantId]);
+      }
+      return;
+    }
+
+    // =========================================================================
     // ROUTING CASE 1: CITAS / APPOINTMENTS (Prefix: APT-)
     // =========================================================================
     if (orderStr.startsWith('APT-')) {
       const cleanAptId = orderStr.replace(/^APT-/i, '').trim();
-      const apt = await getAppointmentById(cleanAptId);
+      const apt = await getAppointmentByIdUnsafeForWebhook(cleanAptId);
       if (!apt) {
         console.warn(`[TilopayWebhook] No se encontró cita en BD para ID: ${cleanAptId}`);
         return;

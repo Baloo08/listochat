@@ -849,9 +849,10 @@ export default function CourtsManager() {
                 </label>
                 <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
                   {[
-                    { id: 'both', label: 'Ambas opciones (Pago en línea / En sitio)' },
-                    { id: 'online', label: 'Solo Pago previo (SINPE Móvil / Transferencia)' },
-                    { id: 'on_site', label: 'Solo Cobro en sitio (Al llegar)' }
+                    { id: 'both', label: '✅ Ambas opciones (Pago en línea / En sitio)' },
+                    { id: 'online', label: '💳 Solo Pago previo (SINPE Móvil / Tilopay)' },
+                    { id: 'on_site', label: '💵 Solo Cobro en sitio (Al llegar)' },
+                    { id: 'solo_reserva', label: '🏷️ Solo Reserva (sin cobro, gestión manual)' }
                   ].map(m => (
                     <label 
                       key={m.id}

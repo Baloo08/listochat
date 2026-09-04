@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useApi } from '../hooks/useApi';
 import { CreditCard, Search, RefreshCw, Send, FileText, CheckCircle, AlertTriangle, Phone, ExternalLink, Key } from 'lucide-react';
 import TenantDossierModal from './TenantDossierModal';
+import TenantBillingCardModal from './TenantBillingCardModal';
 
 export default function BillingCollectionsView() {
   const [data, setData] = useState<any>(null);
@@ -9,6 +10,7 @@ export default function BillingCollectionsView() {
   const [filter, setFilter] = useState<'all' | 'paid' | 'due_soon' | 'grace' | 'overdue'>('all');
   const [search, setSearch] = useState('');
   const [selectedDossierId, setSelectedDossierId] = useState<string | null>(null);
+  const [selectedCardTenant, setSelectedCardTenant] = useState<{ id: string; name: string } | null>(null);
 
   const api = useApi();
 
@@ -41,6 +43,33 @@ export default function BillingCollectionsView() {
       loadCollections();
     } catch (e: any) {
       alert('Error registrando pago: ' + e.message);
+    }
+  };
+
+  const handleTilopayCharge = async (c: any) => {
+    const symbol = c.currency === 'USD' ? '$' : '₡';
+    if (!confirm(`¿Ejecutar cobro de ${symbol}${Number(c.monthlyPrice).toLocaleString('es-CR')} con la tarjeta registrada en Tilopay para ${c.name}?`)) return;
+    try {
+      const res = await api.post(`/api/superadmin/billing/charge/${c.id}`, {});
+      if (res?.success) {
+        alert(`✅ ¡Cobro exitoso! ${res.message}`);
+        loadCollections();
+      } else {
+        alert(`❌ Fallo en el cobro: ${res?.message || 'Rechazado por el banco'}`);
+      }
+    } catch (e: any) {
+      alert(`Error cobrando con Tilopay: ${e.message}`);
+    }
+  };
+
+  const handleRunAutoBilling = async () => {
+    if (!confirm('¿Ejecutar ahora el lote de cobro automático para todos los clientes con tarjeta activa y fecha vencida?')) return;
+    try {
+      const res = await api.post('/api/superadmin/billing/run-auto-billing', {});
+      alert(`Lote completado: ${res.processed} suscripciones evaluadas (${res.successCount} cobros exitosos, ${res.failedCount} fallidos).`);
+      loadCollections();
+    } catch (e: any) {
+      alert(`Error ejecutando cobro automático: ${e.message}`);
     }
   };
 
@@ -83,12 +112,21 @@ export default function BillingCollectionsView() {
           </p>
         </div>
 
-        <button
-          onClick={loadCollections}
-          style={{ padding: '8px 16px', backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', fontWeight: 'bold', color: 'var(--text)' }}
-        >
-          <RefreshCw size={15} /> Actualizar Cartera
-        </button>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <button
+            onClick={handleRunAutoBilling}
+            style={{ padding: '8px 14px', backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', fontWeight: 'bold' }}
+            title="Ejecutar lote de cobro automático vía Tilopay para clientes vencidos"
+          >
+            ⚡ Cobros Automáticos
+          </button>
+          <button
+            onClick={loadCollections}
+            style={{ padding: '8px 16px', backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', fontWeight: 'bold', color: 'var(--text)' }}
+          >
+            <RefreshCw size={15} /> Actualizar Cartera
+          </button>
+        </div>
       </div>
 
       {/* 4 SUMMARY METRIC CARDS */}
@@ -247,6 +285,22 @@ export default function BillingCollectionsView() {
                       </button>
 
                       <button
+                        onClick={() => handleTilopayCharge(c)}
+                        style={{ padding: '6px 10px', backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                        title="Cobrar suscripción con la tarjeta registrada en Tilopay"
+                      >
+                        💳 Tilopay
+                      </button>
+
+                      <button
+                        onClick={() => setSelectedCardTenant({ id: c.id, name: c.name })}
+                        style={{ padding: '6px 9px', backgroundColor: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' }}
+                        title="Registrar o actualizar tarjeta de cobro en Tilopay"
+                      >
+                        🔑 Tarjeta
+                      </button>
+
+                      <button
                         onClick={() => handleRecordPayment(c)}
                         style={{ padding: '6px 10px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' }}
                         title="Registrar pago manual (+30 días)"
@@ -278,6 +332,16 @@ export default function BillingCollectionsView() {
           tenantId={selectedDossierId}
           onClose={() => setSelectedDossierId(null)}
           onRefresh={loadCollections}
+        />
+      )}
+
+      {/* TILOPAY CARD MODAL */}
+      {selectedCardTenant && (
+        <TenantBillingCardModal
+          tenantId={selectedCardTenant.id}
+          tenantName={selectedCardTenant.name}
+          onClose={() => setSelectedCardTenant(null)}
+          onSuccess={loadCollections}
         />
       )}
 

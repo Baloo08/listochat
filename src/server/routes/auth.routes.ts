@@ -271,8 +271,19 @@ router.post('/login', async (req, res) => {
       if (targetTenant) {
         user = await getUserByEmail(targetTenant.id, email);
       }
-    }
-    if (!user) {
+    } else {
+      const countRes = await query(
+        "SELECT COUNT(DISTINCT tenant_id) as count FROM users WHERE LOWER(email) = $1 AND active = TRUE AND role != 'superadmin'",
+        [email.toLowerCase().trim()]
+      );
+      const tenantCount = parseInt(countRes.rows[0]?.count || '0', 10);
+      if (tenantCount > 1) {
+        res.status(400).json({
+          error: 'Este correo está registrado en múltiples negocios. Por favor ingresa el identificador (slug) de tu comercio.',
+          requiresTenantSlug: true
+        });
+        return;
+      }
       user = await getUserByEmail(null, email);
     }
 
@@ -349,7 +360,8 @@ router.get('/me', authenticateToken, async (req: any, res) => {
       role: activeRole,
       tenantId: activeTenantId,
       tenantName: tenant?.name || 'Mi Negocio',
-      tenantSlug: tenant?.slug || ''
+      tenantSlug: tenant?.slug || '',
+      calendarToken: (tenant as any)?.calendarToken || (tenant as any)?.calendar_token || ''
     });
   } catch (err) {
     console.error('Error fetching user profile in /me:', err);

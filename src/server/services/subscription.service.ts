@@ -1,6 +1,7 @@
 import { query } from '../db/pool.js';
 import { sendMessage } from './evolution.js';
 import { notifyGracePeriodStarted, notifyAccountSuspended } from './superadmin-notify.service.js';
+import { TilopaySubscriptionService } from './tilopay-subscription.service.js';
 
 /**
  * Checks all tenant subscriptions and executes transitions for trials, grace periods, and suspensions.
@@ -8,6 +9,13 @@ import { notifyGracePeriodStarted, notifyAccountSuspended } from './superadmin-n
 export async function checkSubscriptionLifecycles() {
   try {
     const now = new Date();
+
+    // 0. Automatic Recurring Billing via Tilopay (for tenants with auto_billing_enabled = true)
+    try {
+      await TilopaySubscriptionService.processRecurringBillingBatch();
+    } catch (billingErr: any) {
+      console.error('[Subscription] Error en lote de cobro recurrente Tilopay:', billingErr.message);
+    }
 
     // 1. Check expired trials -> Move to grace_period (moroso)
     const expiredTrials = await query(`

@@ -40,6 +40,7 @@ router.get('/public/:slug/info', async (req, res) => {
       theme: store?.storeTheme,
       services: services.filter((s: any) => s.active !== false),
       scheduleMode: schedule?.scheduleMode || 'jornada',
+      bookingPaymentMode: schedule?.bookingPaymentMode || 'all',
       customFields: schedule?.customFields || [],
       vacationConfig: schedule?.vacationConfig,
       paymentSettings: {
@@ -49,6 +50,8 @@ router.get('/public/:slug/info', async (req, res) => {
         sinpeName: store?.sinpeName || '',
         acceptCard: tiloAvailable,
         acceptCash: store?.acceptCashOnDelivery !== false,
+        acceptTransfer: store?.acceptTransfer === true,
+        bankAccountInfo: store?.bankAccountInfo || '',
         currency: store?.currency || 'CRC'
       }
     });
@@ -265,7 +268,8 @@ router.post('/public/:slug/book', async (req, res) => {
 
     const finalAmount = req.body.amount !== undefined ? Number(req.body.amount) : amount;
     const paymentMethod = req.body.paymentMethod || 'cash';
-    const isOnlinePayment = paymentMethod === 'card' || paymentMethod === 'sinpe_tilopay';
+    // solo_reserva = book without payment; does not trigger Tilopay
+    const isOnlinePayment = (paymentMethod === 'card' || paymentMethod === 'sinpe_tilopay') && paymentMethod !== 'solo_reserva';
 
     const appt = await createAppointment(tenant.id, {
       name: customerName,
@@ -275,7 +279,7 @@ router.post('/public/:slug/book', async (req, res) => {
       time,
       amount: finalAmount,
       status: 'scheduled',
-      paymentMethod,
+      paymentMethod: paymentMethod === 'solo_reserva' ? 'pending' : paymentMethod,
       paymentStatus: paymentMethod === 'sinpe' ? 'proof_sent' : 'pending',
       paymentReference: req.body.paymentReference || null,
       details: combinedDetails,
@@ -447,7 +451,16 @@ router.put('/:id', async (req, res) => {
 router.put('/:id/status', async (req, res) => {
   try {
     const { status, notifyCustomer = true } = req.body;
+    const validStatuses = ['pending', 'scheduled', 'confirmed', 'completed', 'cancelled'];
+    if (!status || !validStatuses.includes(status)) {
+      res.status(400).json({ error: `Estado inválido. Estados permitidos: ${validStatuses.join(', ')}` });
+      return;
+    }
     const updated = await updateAppointmentStatus(req.params.id, req.tenantId!, status);
+    if (!updated) {
+      res.status(404).json({ error: 'Cita no encontrada o no pertenece a este comercio' });
+      return;
+    }
     const tenant = await getTenantById(req.tenantId!);
 
     // If changing to confirmed, send confirmation

@@ -48,6 +48,7 @@ import websitePublicRoutes from './routes/website-public.routes.js';
 import queueRoutes from './routes/queue.routes.js';
 import courtsRoutes from './routes/courts.routes.js';
 import tilopayWebhookRoutes from './routes/tilopay-webhook.routes.js';
+import superadminBillingRoutes from './routes/superadmin-billing.routes.js';
 import tenantPaymentRoutes from './routes/tenant-payment.routes.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -170,6 +171,7 @@ async function startServer() {
   app.use('/api/audit-logs', auditRoutes);
   app.use('/api/superadmin', superadminMetricsRoutes);
   app.use('/api/superadmin/platform', superadminPlatformRoutes);
+  app.use('/api/superadmin/billing', superadminBillingRoutes);
   app.use('/api/upload', uploadRoutes);
   app.use('/api/campaigns', campaignsRoutes);
   app.use('/api/branches', branchesRoutes);

@@ -357,6 +357,7 @@ export async function runMigrations() {
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_link_expires_at TIMESTAMP WITH TIME ZONE;
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS tilopay_transaction_id VARCHAR(100);
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS tilopay_auth_code VARCHAR(100);
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS stock_deducted BOOLEAN DEFAULT false;
     ALTER TABLE products ADD COLUMN IF NOT EXISTS custom_variables JSONB;
     ALTER TABLE services ADD COLUMN IF NOT EXISTS custom_variables JSONB;
     ALTER TABLE order_items ADD COLUMN IF NOT EXISTS selected_variables JSONB;
@@ -774,6 +775,46 @@ export async function runMigrations() {
     );
     CREATE INDEX IF NOT EXISTS idx_mq_status ON message_queue(status, created_at);
     CREATE INDEX IF NOT EXISTS idx_mq_tenant ON message_queue(tenant_id, status);
+
+    -- Tenant Subscription Billing Tables (Tilopay Tokenization & Recurring Charges)
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS auto_billing_enabled BOOLEAN DEFAULT false;
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS last_auto_charge_at TIMESTAMP WITH TIME ZONE;
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS last_auto_charge_status VARCHAR(50);
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS calendar_token VARCHAR(64) DEFAULT md5(random()::text || clock_timestamp()::text);
+
+    CREATE TABLE IF NOT EXISTS tenant_billing_cards (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+      card_last4 VARCHAR(4) NOT NULL,
+      card_brand VARCHAR(20),
+      card_holder VARCHAR(255),
+      tilopay_token_encrypted TEXT NOT NULL,
+      is_default BOOLEAN DEFAULT true,
+      is_active BOOLEAN DEFAULT true,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_tenant_billing_cards_tenant ON tenant_billing_cards(tenant_id, is_active);
+
+    CREATE TABLE IF NOT EXISTS tenant_billing_charges (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+      billing_card_id UUID REFERENCES tenant_billing_cards(id),
+      amount NUMERIC(10, 2) NOT NULL,
+      currency VARCHAR(10) DEFAULT 'CRC',
+      period_start DATE,
+      period_end DATE,
+      status VARCHAR(50) DEFAULT 'pending',
+      tilopay_order_number VARCHAR(100) UNIQUE,
+      tilopay_transaction_id VARCHAR(255),
+      tilopay_auth_code VARCHAR(100),
+      failure_reason TEXT,
+      attempt_count INT DEFAULT 1,
+      last_attempt_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_tenant_billing_charges_tenant ON tenant_billing_charges(tenant_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_tenant_billing_charges_order ON tenant_billing_charges(tilopay_order_number);
   `).catch((err) => {
     console.warn('[Migrations] Payment columns warning:', err?.message || err);
   });

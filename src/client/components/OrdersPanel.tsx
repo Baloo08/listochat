@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { ShoppingCart, Camera, Image, CheckCircle2, Clock, CheckCircle, Truck, Package, XCircle, Eye, MessageCircle, AlertCircle, RefreshCw, Send, Check, Utensils, LayoutGrid, List, Navigation, Bike, MapPin, User, Phone, Store, Maximize, ExternalLink, Building2 } from 'lucide-react';
+import { ShoppingCart, Camera, Image, CheckCircle2, Clock, CheckCircle, Truck, Package, XCircle, Eye, MessageCircle, AlertCircle, RefreshCw, Send, Check, Utensils, LayoutGrid, List, Navigation, Bike, MapPin, User, Phone, Store, Maximize, ExternalLink, Building2, Zap, CreditCard, Smartphone, DollarSign, FileText } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
 import { Order, OrderStatus, DeliveryDriver } from '../../shared/types';
+import InteractiveMapPicker from './InteractiveMapPicker';
 
 export default function OrdersPanel() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [drivers, setDrivers] = useState<DeliveryDriver[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
   const [selectedBranchId, setSelectedBranchId] = useState<string>('all');
+  const [customStages, setCustomStages] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<'kanban' | 'list'>('kanban');
   const [filterStatus, setFilterStatus] = useState<string>('all');
@@ -50,10 +52,20 @@ export default function OrdersPanel() {
     }
   };
 
+  const fetchStoreSettings = async () => {
+    try {
+      const data = await api.get('/api/store');
+      if (data?.customStages) setCustomStages(data.customStages);
+    } catch (err) {
+      console.error('Error fetching store settings in OrdersPanel:', err);
+    }
+  };
+
   useEffect(() => {
     fetchOrders();
     fetchDrivers();
     fetchBranches();
+    fetchStoreSettings();
     const timer = setInterval(fetchOrders, 6000);
     return () => clearInterval(timer);
   }, []);
@@ -115,24 +127,24 @@ export default function OrdersPanel() {
   };
 
   const STATUS_CONFIG: Record<string, { label: string; bg: string; color: string; border: string }> = {
-    pedido_recibido: { label: 'Pedido Recibido', bg: '#eff6ff', color: '#1d4ed8', border: '#bfdbfe' },
-    pending: { label: 'Pedido Recibido', bg: '#eff6ff', color: '#1d4ed8', border: '#bfdbfe' },
-    pedido_aceptado: { label: 'Pedido Aceptado', bg: '#eef2ff', color: '#4338ca', border: '#c7d2fe' },
-    confirmed: { label: 'Pedido Aceptado', bg: '#eef2ff', color: '#4338ca', border: '#c7d2fe' },
-    procesando: { label: 'En Preparación', bg: '#fefce8', color: '#a16207', border: '#fef08a' },
-    preparing: { label: 'En Preparación', bg: '#fefce8', color: '#a16207', border: '#fef08a' },
-    listo_entrega: { label: 'Listo para Entregar', bg: '#faf5ff', color: '#7e22ce', border: '#e9d5ff' },
-    en_camino: { label: 'En Camino', bg: '#e0f2fe', color: '#0369a1', border: '#bae6fd' },
-    shipped: { label: 'En Camino', bg: '#e0f2fe', color: '#0369a1', border: '#bae6fd' },
-    entregado: { label: 'Entregado', bg: '#f0fdf4', color: '#15803d', border: '#bbf7d0' },
-    delivered: { label: 'Entregado', bg: '#f0fdf4', color: '#15803d', border: '#bbf7d0' },
+    pedido_recibido: { label: customStages.fase_1 || 'Pedido Recibido', bg: '#eff6ff', color: '#1d4ed8', border: '#bfdbfe' },
+    pending: { label: customStages.fase_1 || 'Pedido Recibido', bg: '#eff6ff', color: '#1d4ed8', border: '#bfdbfe' },
+    pedido_aceptado: { label: customStages.fase_2 || 'Pedido Aceptado', bg: '#eef2ff', color: '#4338ca', border: '#c7d2fe' },
+    confirmed: { label: customStages.fase_2 || 'Pedido Aceptado', bg: '#eef2ff', color: '#4338ca', border: '#c7d2fe' },
+    procesando: { label: customStages.fase_2 || 'En Preparación', bg: '#fefce8', color: '#a16207', border: '#fef08a' },
+    preparing: { label: customStages.fase_2 || 'En Preparación', bg: '#fefce8', color: '#a16207', border: '#fef08a' },
+    listo_entrega: { label: customStages.fase_3 || 'Listo para Entregar', bg: '#faf5ff', color: '#7e22ce', border: '#e9d5ff' },
+    en_camino: { label: customStages.fase_4 || 'En Camino', bg: '#e0f2fe', color: '#0369a1', border: '#bae6fd' },
+    shipped: { label: customStages.fase_4 || 'En Camino', bg: '#e0f2fe', color: '#0369a1', border: '#bae6fd' },
+    entregado: { label: customStages.fase_5 || 'Entregado', bg: '#f0fdf4', color: '#15803d', border: '#bbf7d0' },
+    delivered: { label: customStages.fase_5 || 'Entregado', bg: '#f0fdf4', color: '#15803d', border: '#bbf7d0' },
     cancelado: { label: 'Cancelado', bg: '#fef2f2', color: '#b91c1c', border: '#fecaca' }
   };
 
   const KANBAN_COLUMNS = [
     {
       id: 'nuevos',
-      title: 'Nuevos / Recibidos',
+      title: customStages.fase_1 || 'Nuevos / Recibidos',
       statuses: ['pedido_recibido', 'pending'],
       borderColor: '#3b82f6',
       badgeBg: '#eff6ff',
@@ -140,7 +152,7 @@ export default function OrdersPanel() {
     },
     {
       id: 'cocina',
-      title: 'En Cocina / Preparación',
+      title: customStages.fase_2 || 'En Cocina / Preparación',
       statuses: ['pedido_aceptado', 'confirmed', 'procesando', 'preparing'],
       borderColor: '#f59e0b',
       badgeBg: '#fefce8',
@@ -148,7 +160,7 @@ export default function OrdersPanel() {
     },
     {
       id: 'listo',
-      title: 'Listo / Para Despacho',
+      title: customStages.fase_3 || 'Listo / Para Despacho',
       statuses: ['listo_entrega'],
       borderColor: '#8b5cf6',
       badgeBg: '#faf5ff',
@@ -156,7 +168,7 @@ export default function OrdersPanel() {
     },
     {
       id: 'en_camino',
-      title: 'En Camino (Delivery)',
+      title: customStages.fase_4 || 'En Camino (Delivery)',
       statuses: ['en_camino', 'shipped'],
       borderColor: '#0284c7',
       badgeBg: '#e0f2fe',
@@ -164,7 +176,7 @@ export default function OrdersPanel() {
     },
     {
       id: 'entregados',
-      title: 'Entregados',
+      title: customStages.fase_5 || 'Entregados',
       statuses: ['entregado', 'delivered'],
       borderColor: '#10b981',
       badgeBg: '#f0fdf4',
@@ -214,7 +226,7 @@ export default function OrdersPanel() {
                 onChange={(e) => setSelectedBranchId(e.target.value)}
                 style={{ border: 'none', background: 'none', fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--text)', outline: 'none', cursor: 'pointer' }}
               >
-                <option value="all">🏢 Todas las Sedes ({branches.length})</option>
+                <option value="all">Todas las Sedes ({branches.length})</option>
                 {branches.map(b => (
                   <option key={b.id} value={b.id}>Sede: {b.name} {b.isMain ? '(Matriz)' : ''}</option>
                 ))}
@@ -326,24 +338,24 @@ export default function OrdersPanel() {
                                 
                                 {/* Payment Method Badge */}
                                 {order.paymentMethod === 'sinpe_tilopay' ? (
-                                  <span style={{ fontSize: '0.68rem', padding: '1px 6px', backgroundColor: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', borderRadius: '4px', fontWeight: 'bold' }}>
-                                    ⚡ SINPE Auto {order.paymentStatus === 'paid' ? '✓ Verificado' : '⏳ Pend.'}
+                                  <span style={{ fontSize: '0.68rem', padding: '1px 6px', backgroundColor: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', borderRadius: '4px', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                    <Zap size={10} /> SINPE Auto {order.paymentStatus === 'paid' ? 'Verif.' : 'Pend.'}
                                   </span>
                                 ) : order.paymentMethod === 'card' || order.paymentMethod === 'tilopay' ? (
-                                  <span style={{ fontSize: '0.68rem', padding: '1px 6px', backgroundColor: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', borderRadius: '4px', fontWeight: 'bold' }}>
-                                    💳 Tarjeta {order.paymentStatus === 'paid' ? '✓ Pagado' : '⏳ Pend.'}
+                                  <span style={{ fontSize: '0.68rem', padding: '1px 6px', backgroundColor: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', borderRadius: '4px', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                    <CreditCard size={10} /> Tarjeta {order.paymentStatus === 'paid' ? 'Pagado' : 'Pend.'}
                                   </span>
                                 ) : order.paymentMethod === 'sinpe' ? (
-                                  <span style={{ fontSize: '0.68rem', padding: '1px 6px', backgroundColor: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: '4px', fontWeight: 'bold' }}>
-                                    📱 SINPE {order.paymentStatus === 'proof_sent' ? '✓ Comp.' : ''}
+                                  <span style={{ fontSize: '0.68rem', padding: '1px 6px', backgroundColor: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: '4px', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                    <Smartphone size={10} /> SINPE {order.paymentStatus === 'paid' ? 'Pagado' : order.paymentStatus === 'proof_sent' ? 'Comp.' : ''}
                                   </span>
                                 ) : order.paymentMethod === 'transfer' ? (
-                                  <span style={{ fontSize: '0.68rem', padding: '1px 6px', backgroundColor: '#faf5ff', color: '#7e22ce', border: '1px solid #e9d5ff', borderRadius: '4px', fontWeight: 'bold' }}>
-                                    🏦 Transf.
+                                  <span style={{ fontSize: '0.68rem', padding: '1px 6px', backgroundColor: '#faf5ff', color: '#7e22ce', border: '1px solid #e9d5ff', borderRadius: '4px', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                    <Building2 size={10} /> Transf.
                                   </span>
                                 ) : (
-                                  <span style={{ fontSize: '0.68rem', padding: '1px 6px', backgroundColor: '#fefce8', color: '#a16207', border: '1px solid #fef08a', borderRadius: '4px', fontWeight: 'bold' }}>
-                                    💵 Contra Entrega
+                                  <span style={{ fontSize: '0.68rem', padding: '1px 6px', backgroundColor: '#fefce8', color: '#a16207', border: '1px solid #fef08a', borderRadius: '4px', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                    <DollarSign size={10} /> Contra Entrega
                                   </span>
                                 )}
                                 {(order as any).branchName && (
@@ -357,16 +369,16 @@ export default function OrdersPanel() {
 
                             {/* Consumption Badge */}
                             {order.consumptionMode === 'dine_in' ? (
-                              <span style={{ padding: '2px 8px', borderRadius: '6px', fontSize: '0.7rem', fontWeight: 'bold', backgroundColor: '#ffedd5', color: '#ea580c' }}>
-                                Mesa #{order.tableNumber || 1}
+                              <span style={{ padding: '2px 8px', borderRadius: '6px', fontSize: '0.7rem', fontWeight: 'bold', backgroundColor: '#ffedd5', color: '#ea580c', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                <Utensils size={11} /> Mesa #{order.tableNumber || 1}
                               </span>
                             ) : order.deliveryMethod === 'delivery' ? (
-                              <span style={{ padding: '2px 8px', borderRadius: '6px', fontSize: '0.7rem', fontWeight: 'bold', backgroundColor: '#dbeafe', color: '#1d4ed8' }}>
-                                Delivery
+                              <span style={{ padding: '2px 8px', borderRadius: '6px', fontSize: '0.7rem', fontWeight: 'bold', backgroundColor: '#dbeafe', color: '#1d4ed8', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                <Bike size={11} /> Delivery
                               </span>
                             ) : (
-                              <span style={{ padding: '2px 8px', borderRadius: '6px', fontSize: '0.7rem', fontWeight: 'bold', backgroundColor: '#f1f5f9', color: '#475569' }}>
-                                Para Llevar
+                              <span style={{ padding: '2px 8px', borderRadius: '6px', fontSize: '0.7rem', fontWeight: 'bold', backgroundColor: '#f1f5f9', color: '#475569', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                <Package size={11} /> Para Llevar
                               </span>
                             )}
                           </div>
@@ -395,8 +407,8 @@ export default function OrdersPanel() {
                             )}
 
                             {order.notes && (
-                              <div style={{ marginTop: '4px', paddingTop: '4px', borderTop: '1px dashed #e2e8f0', fontSize: '0.72rem', color: '#ea580c', fontWeight: '600' }}>
-                                📝 Nota: {order.notes}
+                              <div style={{ marginTop: '4px', paddingTop: '4px', borderTop: '1px dashed #e2e8f0', fontSize: '0.72rem', color: '#ea580c', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <FileText size={12} /> <span>Nota: {order.notes}</span>
                               </div>
                             )}
                           </div>
@@ -434,12 +446,28 @@ export default function OrdersPanel() {
                             )}
 
                             {col.id === 'listo' && (
-                              <button
-                                onClick={() => handleStatusChange(order.id, 'en_camino')}
-                                style={{ flex: 1, padding: '6px 10px', backgroundColor: '#0284c7', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold' }}
-                              >
-                                En Camino
-                              </button>
+                              order.consumptionMode === 'dine_in' ? (
+                                <button
+                                  onClick={() => handleStatusChange(order.id, 'entregado')}
+                                  style={{ flex: 1, padding: '6px 10px', backgroundColor: '#10b981', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                                >
+                                  <Utensils size={13} /> Servir
+                                </button>
+                              ) : order.deliveryMethod === 'delivery' ? (
+                                <button
+                                  onClick={() => handleStatusChange(order.id, 'en_camino')}
+                                  style={{ flex: 1, padding: '6px 10px', backgroundColor: '#0284c7', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                                >
+                                  <Bike size={13} /> En Camino
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => handleStatusChange(order.id, 'entregado')}
+                                  style={{ flex: 1, padding: '6px 10px', backgroundColor: '#10b981', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                                >
+                                  <Package size={13} /> Entregar
+                                </button>
+                              )
                             )}
 
                             {col.id === 'en_camino' && (
@@ -503,8 +531,8 @@ export default function OrdersPanel() {
                       <div style={{ fontWeight: '600', fontSize: '0.9rem' }}>{order.customerName}</div>
                       <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{order.customerPhone || 'Sin teléfono'}</div>
                       {order.items && order.items.length > 0 && (
-                        <div style={{ fontSize: '0.75rem', color: '#475569', marginTop: '4px', fontWeight: '500', maxWidth: '320px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          📦 {order.items.map(i => `${i.quantity}x ${i.productName}`).join(', ')}
+                        <div style={{ fontSize: '0.75rem', color: '#475569', marginTop: '4px', fontWeight: '500', maxWidth: '320px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <Package size={12} style={{ flexShrink: 0 }} /> <span>{order.items.map(i => `${i.quantity}x ${i.productName}`).join(', ')}</span>
                         </div>
                       )}
                     </td>
@@ -523,18 +551,19 @@ export default function OrdersPanel() {
                       <span style={{
                         padding: '3px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold',
                         backgroundColor: order.paymentStatus === 'paid' ? '#dcfce7' : '#fef9c3',
-                        color: order.paymentStatus === 'paid' ? '#15803d' : '#854d0e'
+                        color: order.paymentStatus === 'paid' ? '#15803d' : '#854d0e',
+                        display: 'inline-flex', alignItems: 'center', gap: '3px'
                       }}>
                         {order.paymentStatus === 'paid'
                           ? (order.paymentMethod === 'sinpe_tilopay'
-                              ? '⚡ SINPE Verificado'
+                              ? <><Zap size={11} /> SINPE Verificado</>
                               : order.paymentMethod === 'card' || order.paymentMethod === 'tilopay'
-                                ? '💳 Tarjeta Verificada'
-                                : '✅ Pagado')
+                                ? <><CreditCard size={11} /> Tarjeta Verificada</>
+                                : <><CheckCircle size={11} /> Pagado</>)
                           : (order.paymentMethod === 'sinpe_tilopay'
-                              ? '⚡ SINPE Auto (Pend.)'
+                              ? <><Zap size={11} /> SINPE Auto (Pend.)</>
                               : order.paymentMethod === 'card' || order.paymentMethod === 'tilopay'
-                                ? '💳 Tarjeta (Pendiente)'
+                                ? <><CreditCard size={11} /> Tarjeta (Pendiente)</>
                                 : order.paymentMethod.toUpperCase())}
                       </span>
                     </td>
@@ -583,11 +612,13 @@ export default function OrdersPanel() {
                   disabled={updatingStatus}
                   style={{ flex: 1, padding: '9px 12px', borderRadius: '6px', border: '1px solid #93c5fd', backgroundColor: 'white', fontSize: '0.9rem', fontWeight: 'bold', color: '#1e3a8a' }}
                 >
-                  <option value="pedido_recibido">1. Pedido Recibido</option>
-                  <option value="procesando">2. En Preparación / Cocina</option>
-                  <option value="listo_entrega">3. Listo para Entregar / Retirar</option>
-                  <option value="en_camino">4. En Camino (Con Repartidor)</option>
-                  <option value="entregado">5. Entregado con Éxito</option>
+                  <option value="pedido_recibido">1. {customStages.fase_1 || 'Pedido Recibido'}</option>
+                  <option value="procesando">2. {customStages.fase_2 || 'En Preparación / Cocina'}</option>
+                  <option value="listo_entrega">3. {customStages.fase_3 || 'Listo para Entregar / Retirar'}</option>
+                  {selectedOrder.deliveryMethod === 'delivery' && (
+                    <option value="en_camino">4. {customStages.fase_4 || 'En Camino (Con Repartidor)'}</option>
+                  )}
+                  <option value="entregado">5. {customStages.fase_5 || 'Entregado con Éxito'}</option>
                   <option value="cancelado">6. Cancelado</option>
                 </select>
 
@@ -608,24 +639,31 @@ export default function OrdersPanel() {
               <div><strong>Teléfono:</strong> {selectedOrder.customerPhone || 'No registrado'}</div>
               <div>
                 <strong>Método de Pago:</strong>{' '}
-                {selectedOrder.paymentMethod === 'sinpe_tilopay'
-                  ? '⚡ SINPE Móvil Automático (Verificado con Tilopay)'
-                  : selectedOrder.paymentMethod === 'card' || selectedOrder.paymentMethod === 'tilopay'
-                    ? '💳 Tarjeta de Crédito / Débito (Tilopay)'
-                    : selectedOrder.paymentMethod === 'sinpe'
-                      ? '📱 SINPE Móvil Manual'
-                      : selectedOrder.paymentMethod === 'transfer'
-                        ? '🏦 Transferencia Bancaria'
-                        : '💵 Contra Entrega'}
+                {selectedOrder.paymentMethod === 'sinpe_tilopay' ? (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}><Zap size={13} color="#047857" /> SINPE Móvil Automático (Tilopay)</span>
+                ) : selectedOrder.paymentMethod === 'card' || selectedOrder.paymentMethod === 'tilopay' ? (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}><CreditCard size={13} color="#047857" /> Tarjeta (Tilopay)</span>
+                ) : selectedOrder.paymentMethod === 'sinpe' ? (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}><Smartphone size={13} color="#1d4ed8" /> SINPE Móvil Manual</span>
+                ) : selectedOrder.paymentMethod === 'transfer' ? (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}><Building2 size={13} color="#7e22ce" /> Transferencia Bancaria</span>
+                ) : (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}><DollarSign size={13} color="#a16207" /> Contra Entrega</span>
+                )}
               </div>
               <div>
                 <strong>Estado del Pago:</strong>{' '}
                 <span style={{
                   padding: '2px 8px', borderRadius: '4px', fontSize: '0.78rem', fontWeight: 'bold',
                   backgroundColor: selectedOrder.paymentStatus === 'paid' ? '#dcfce7' : '#fef9c3',
-                  color: selectedOrder.paymentStatus === 'paid' ? '#15803d' : '#854d0e'
+                  color: selectedOrder.paymentStatus === 'paid' ? '#15803d' : '#854d0e',
+                  display: 'inline-flex', alignItems: 'center', gap: '3px'
                 }}>
-                  {selectedOrder.paymentStatus === 'paid' ? '✅ Pago Verificado' : '⏳ Pendiente de Verificación'}
+                  {selectedOrder.paymentStatus === 'paid' ? (
+                    <><CheckCircle size={12} /> Pago Verificado</>
+                  ) : (
+                    <><Clock size={12} /> Pendiente de Verificación</>
+                  )}
                 </span>
               </div>
               {selectedOrder.customerAddress && (
@@ -662,14 +700,13 @@ export default function OrdersPanel() {
                   </div>
                 </div>
                 
-                <iframe
-                  title="Mapa de Entrega"
-                  width="100%"
-                  height="180"
-                  style={{ border: 0 }}
-                  loading="lazy"
-                  src={`https://maps.google.com/maps?q=${selectedOrder.customerLocation.lat},${selectedOrder.customerLocation.lng}&z=15&output=embed`}
-                />
+                <div style={{ height: 200, width: '100%' }}>
+                  <InteractiveMapPicker
+                    initialLocation={{ lat: selectedOrder.customerLocation.lat, lng: selectedOrder.customerLocation.lng }}
+                    readonly={true}
+                    height={200}
+                  />
+                </div>
               </div>
             )}
 

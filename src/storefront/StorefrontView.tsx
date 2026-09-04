@@ -2,12 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { 
   ShoppingBag, Search, Camera, Upload, Image, CheckCircle, FileCheck, Plus, Minus, X, Check, ArrowRight, MessageCircle, 
   AlertCircle, Trash2, MapPin, Truck, Store, ShieldCheck, Tag, Utensils, 
-  Navigation, Package, User, Palette, Sliders, CheckCircle2, Building2 
+  Navigation, Package, User, Palette, Sliders, CheckCircle2, Building2,
+  Bike, Smartphone, CreditCard, DollarSign, Info, Lock, Zap
 } from 'lucide-react';
 import { Product, StoreSettings, DeliveryConfig, CustomVariable, CustomVariableOption } from '../shared/types.js';
 import { getCRProvincias, getCRCantones, getCRDistritos } from '../shared/costaRicaDivisions.js';
 import { loadGoogleFont, getFontFamilyCss } from '../client/utils/fontLoader.js';
 import TilopayPaymentForm from '../client/components/TilopayPaymentForm.js';
+import InteractiveMapPicker from '../client/components/InteractiveMapPicker.js';
 
 interface StorefrontProps {
   slug: string;
@@ -363,7 +365,6 @@ export default function StorefrontView({ slug }: StorefrontProps) {
           setCalculatedKm(km);
         }
 
-        setCustomerAddress(prev => prev ? `${prev} (GPS: ${mapsUrl})` : `Ubicación GPS: ${mapsUrl}`);
         setFetchingGps(false);
       },
       (error) => {
@@ -424,9 +425,25 @@ export default function StorefrontView({ slug }: StorefrontProps) {
       alert('Por favor ingresa tu nombre y número de WhatsApp');
       return;
     }
-    if ((consumptionMode === 'delivery' || consumptionMode === 'correos_cr') && !customerAddress && !customerGps.mapsUrl) {
-      alert('Por favor ingresa la dirección de entrega');
-      return;
+    if (consumptionMode === 'delivery') {
+      if (!customerGps.lat || !customerGps.lng) {
+        alert('Para entrega a domicilio express, es obligatorio confirmar tu ubicación en el mapa.');
+        return;
+      }
+      if (!exactAddress && !customerAddress) {
+        alert('Por favor ingresa las señas exactas de tu dirección de entrega.');
+        return;
+      }
+    } else if (consumptionMode === 'correos_cr') {
+      if (!selectedProvincia || !selectedCanton || !selectedDistrito || !exactAddress) {
+        alert('Para envíos por Correos de Costa Rica, debes seleccionar Provincia, Cantón, Distrito y Señas exactas.');
+        return;
+      }
+    } else if (consumptionMode === 'dine_in') {
+      if (restConfig.allowTableNumber && dineInSubMode === 'table' && !tableNumber) {
+        alert('Por favor selecciona o ingresa el número de tu mesa.');
+        return;
+      }
     }
 
     setIsSubmitting(true);
@@ -986,6 +1003,86 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                       />
                     </div>
 
+                    {/* Dine-In Table Selection (Requirement 4) */}
+                    {consumptionMode === 'dine_in' && (
+                      <div style={{ backgroundColor: isDark ? '#1e293b' : '#f8fafc', padding: '14px', borderRadius: '10px', border: isDark ? '1px solid #334155' : '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <label style={{ fontSize: '0.85rem', fontWeight: 'bold', color: titleColor, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <Utensils size={16} color={primaryColor} /> Modalidad de Consumo en Restaurante *
+                        </label>
+
+                        {restConfig.allowTableNumber && restConfig.allowCallByName && (
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                            <button
+                              type="button"
+                              onClick={() => setDineInSubMode('table')}
+                              style={{
+                                padding: '8px 10px', borderRadius: '6px',
+                                border: `2px solid ${dineInSubMode === 'table' ? primaryColor : (isDark ? '#475569' : '#cbd5e1')}`,
+                                backgroundColor: dineInSubMode === 'table' ? `${primaryColor}15` : (isDark ? '#0f172a' : 'white'),
+                                color: dineInSubMode === 'table' ? primaryColor : titleColor,
+                                fontWeight: '600', fontSize: '0.8rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'
+                              }}
+                            >
+                              <Utensils size={14} /> En Mesa
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setDineInSubMode('name')}
+                              style={{
+                                padding: '8px 10px', borderRadius: '6px',
+                                border: `2px solid ${dineInSubMode === 'name' ? primaryColor : (isDark ? '#475569' : '#cbd5e1')}`,
+                                backgroundColor: dineInSubMode === 'name' ? `${primaryColor}15` : (isDark ? '#0f172a' : 'white'),
+                                color: dineInSubMode === 'name' ? primaryColor : titleColor,
+                                fontWeight: '600', fontSize: '0.8rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'
+                              }}
+                            >
+                              <User size={14} /> Llamar por Nombre
+                            </button>
+                          </div>
+                        )}
+
+                        {dineInSubMode === 'table' && restConfig.allowTableNumber && (
+                          <div>
+                            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 'bold', color: bodyTextColor, marginBottom: '6px' }}>
+                              Selecciona tu Número de Mesa *:
+                            </label>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(46px, 1fr))', gap: '6px', maxHeight: '160px', overflowY: 'auto', padding: '4px' }}>
+                              {Array.from({ length: restConfig.tableCount || 15 }, (_, i) => String(i + 1)).map(num => (
+                                <button
+                                  key={num}
+                                  type="button"
+                                  onClick={() => setTableNumber(num)}
+                                  style={{
+                                    padding: '8px 4px',
+                                    borderRadius: '6px',
+                                    border: `2px solid ${tableNumber === num ? primaryColor : (isDark ? '#475569' : '#cbd5e1')}`,
+                                    backgroundColor: tableNumber === num ? primaryColor : (isDark ? '#0f172a' : 'white'),
+                                    color: tableNumber === num ? 'white' : titleColor,
+                                    fontWeight: 'bold',
+                                    fontSize: '0.85rem',
+                                    cursor: 'pointer',
+                                    textAlign: 'center'
+                                  }}
+                                >
+                                  #{num}
+                                </button>
+                              ))}
+                            </div>
+                            <div style={{ fontSize: '0.75rem', color: isDark ? '#94a3b8' : '#64748b', marginTop: '6px' }}>
+                              Mesa seleccionada: <strong>Mesa #{tableNumber || '1'}</strong>
+                            </div>
+                          </div>
+                        )}
+
+                        {dineInSubMode === 'name' && (
+                          <div style={{ fontSize: '0.78rem', color: isDark ? '#cbd5e1' : '#475569', backgroundColor: isDark ? '#0f172a' : '#f1f5f9', padding: '10px 12px', borderRadius: '6px' }}>
+                            Te llamaremos por tu nombre <strong>{customerName || '(tu nombre)'}</strong> cuando tus alimentos estén listos en barra.
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     {/* Delivery Address if Express or Correos */}
                     {(consumptionMode === 'delivery' || consumptionMode === 'correos_cr') && (
                       <div style={{ backgroundColor: isDark ? '#1e293b' : '#f8fafc', padding: '14px', borderRadius: '10px', border: isDark ? '1px solid #334155' : '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -1006,7 +1103,7 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                               disabled={fetchingGps}
                               style={{ border: 'none', background: 'none', color: primaryColor, fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px', borderRadius: '6px', backgroundColor: `${primaryColor}15` }}
                             >
-                              <Navigation size={13} /> {fetchingGps ? 'Obteniendo...' : '📍 Usar GPS'}
+                              <Navigation size={13} /> {fetchingGps ? 'Obteniendo...' : 'Usar GPS'}
                             </button>
                           )}
                         </div>
@@ -1089,53 +1186,39 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                           />
                         </div>
 
-                        {/* Interactive Embedded GPS Map Preview (Cero Coordenadas, Pin Movible) */}
+                        {/* Interactive GPS Map with Draggable Pin (Requirements 1, 2, 5) */}
                         {consumptionMode === 'delivery' && (
-                          <div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                              <button
-                                type="button"
-                                onClick={() => setShowMapPreview(!showMapPreview)}
-                                style={{ border: 'none', background: 'none', color: primaryColor, fontSize: '0.78rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', padding: 0 }}
-                              >
-                                <MapPin size={14} /> {showMapPreview ? 'Ocultar mapa interactivo' : 'Ver mapa de entrega'}
-                              </button>
+                          <div style={{ marginTop: '8px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                              <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: titleColor, display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                <MapPin size={14} color={primaryColor} /> Ubicación en Mapa (Pin Arrastrable) *
+                              </span>
                               {customerGps.lat && customerGps.lng && (
-                                <span style={{ fontSize: '0.75rem', color: '#16a34a', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                  <CheckCircle size={13} color="#16a34a" /> Ubicación fijada en el mapa
+                                <span style={{ fontSize: '0.72rem', color: '#16a34a', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  <CheckCircle size={12} color="#16a34a" /> Ubicación Fijada
                                 </span>
                               )}
                             </div>
 
-                            {showMapPreview && (
-                              <div style={{ borderRadius: '10px', overflow: 'hidden', border: isDark ? '1px solid #475569' : '1px solid #cbd5e1', marginTop: '6px', position: 'relative' }}>
-                                <iframe
-                                  title="Selector de Mapa"
-                                  width="100%"
-                                  height="220"
-                                  style={{ border: 0, display: 'block' }}
-                                  loading="lazy"
-                                  src={`https://www.openstreetmap.org/export/embed.html?bbox=${(customerGps.lng || -84.0907) - 0.008}%2C${(customerGps.lat || 9.9281) - 0.008}%2C${(customerGps.lng || -84.0907) + 0.008}%2C${(customerGps.lat || 9.9281) + 0.008}&layer=mapnik&marker=${customerGps.lat || 9.9281}%2C${customerGps.lng || -84.0907}`}
-                                />
-                                
-                                {/* Overlay Bar with Pin Movement Controls */}
-                                <div style={{ padding: '8px 12px', backgroundColor: isDark ? '#0f172a' : '#f8fafc', borderTop: isDark ? '1px solid #334155' : '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-                                  <span style={{ fontSize: '0.75rem', color: isDark ? '#cbd5e1' : '#64748b' }}>
-                                    💡 Ajusta la ubicación precisa para el repartidor
-                                  </span>
-                                  
-                                  <div style={{ display: 'flex', gap: '6px' }}>
-                                    <button
-                                      type="button"
-                                      onClick={handleGetGpsLocation}
-                                      style={{ padding: '4px 10px', borderRadius: '6px', backgroundColor: primaryColor, color: 'white', border: 'none', fontSize: '0.72rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
-                                    >
-                                      <Navigation size={12} /> Recentrar GPS
-                                    </button>
-                                  </div>
-                                </div>
-                              </div>
-                            )}
+                            <InteractiveMapPicker
+                              initialLat={customerGps.lat || store?.deliveryConfig?.storeLocation?.lat || 9.9333}
+                              initialLng={customerGps.lng || store?.deliveryConfig?.storeLocation?.lng || -84.0833}
+                              storeLat={store?.deliveryConfig?.storeLocation?.lat}
+                              storeLng={store?.deliveryConfig?.storeLocation?.lng}
+                              storeName={store?.storeName}
+                              isDark={isDark}
+                              primaryColor={primaryColor}
+                              onLocationChange={(loc) => {
+                                setCustomerGps(loc);
+                                if (store?.deliveryConfig?.storeLocation?.lat && store?.deliveryConfig?.storeLocation?.lng) {
+                                  const sLat = store.deliveryConfig.storeLocation.lat;
+                                  const sLng = store.deliveryConfig.storeLocation.lng;
+                                  const km = calculateDistanceKm(sLat, sLng, loc.lat, loc.lng);
+                                  setCalculatedKm(km);
+                                }
+                              }}
+                              height={230}
+                            />
                           </div>
                         )}
 
@@ -1145,7 +1228,7 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                     {/* PAYMENT METHOD SELECTOR (Habilitados según la configuración del comercio) */}
                     <div style={{ backgroundColor: isDark ? '#1e293b' : '#f8fafc', padding: '14px', borderRadius: '10px', border: isDark ? '1px solid #334155' : '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                       <label style={{ fontSize: '0.85rem', fontWeight: 'bold', color: titleColor, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        💳 Selecciona tu Forma de Pago *
+                        <CreditCard size={16} color={primaryColor} /> Selecciona tu Forma de Pago *
                       </label>
 
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '8px' }}>
@@ -1159,10 +1242,11 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                               backgroundColor: paymentMethod === 'sinpe' ? `${primaryColor}15` : (isDark ? '#0f172a' : '#ffffff'),
                               color: paymentMethod === 'sinpe' ? primaryColor : titleColor,
                               fontWeight: paymentMethod === 'sinpe' ? '800' : '600',
-                              fontSize: '0.82rem', cursor: 'pointer', textAlign: 'center', transition: 'all 0.15s'
+                              fontSize: '0.82rem', cursor: 'pointer', textAlign: 'center', transition: 'all 0.15s',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'
                             }}
                           >
-                            📱 SINPE Móvil
+                            <Smartphone size={15} /> SINPE Móvil
                           </button>
                         )}
 
@@ -1176,10 +1260,11 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                               backgroundColor: paymentMethod === 'transfer' ? `${primaryColor}15` : (isDark ? '#0f172a' : '#ffffff'),
                               color: paymentMethod === 'transfer' ? primaryColor : titleColor,
                               fontWeight: paymentMethod === 'transfer' ? '800' : '600',
-                              fontSize: '0.82rem', cursor: 'pointer', textAlign: 'center', transition: 'all 0.15s'
+                              fontSize: '0.82rem', cursor: 'pointer', textAlign: 'center', transition: 'all 0.15s',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'
                             }}
                           >
-                            🏦 Transferencia
+                            <Building2 size={15} /> Transferencia
                           </button>
                         )}
 
@@ -1193,10 +1278,11 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                               backgroundColor: paymentMethod === 'cash' ? `${primaryColor}15` : (isDark ? '#0f172a' : '#ffffff'),
                               color: paymentMethod === 'cash' ? primaryColor : titleColor,
                               fontWeight: paymentMethod === 'cash' ? '800' : '600',
-                              fontSize: '0.82rem', cursor: 'pointer', textAlign: 'center', transition: 'all 0.15s'
+                              fontSize: '0.82rem', cursor: 'pointer', textAlign: 'center', transition: 'all 0.15s',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'
                             }}
                           >
-                            💵 Contra Entrega
+                            <DollarSign size={15} /> Contra Entrega
                           </button>
                         )}
 
@@ -1210,10 +1296,11 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                               backgroundColor: paymentMethod === 'card' ? `${primaryColor}15` : (isDark ? '#0f172a' : '#ffffff'),
                               color: paymentMethod === 'card' ? primaryColor : titleColor,
                               fontWeight: paymentMethod === 'card' ? '800' : '600',
-                              fontSize: '0.82rem', cursor: 'pointer', textAlign: 'center', transition: 'all 0.15s'
+                              fontSize: '0.82rem', cursor: 'pointer', textAlign: 'center', transition: 'all 0.15s',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'
                             }}
                           >
-                            💳 Tarjeta (Tilopay)
+                            <CreditCard size={15} /> Tarjeta (Tilopay)
                           </button>
                         )}
 
@@ -1227,10 +1314,11 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                               backgroundColor: paymentMethod === 'sinpe_tilopay' ? (isDark ? 'rgba(5, 150, 105, 0.2)' : '#ecfdf5') : (isDark ? '#0f172a' : '#ffffff'),
                               color: paymentMethod === 'sinpe_tilopay' ? '#059669' : titleColor,
                               fontWeight: paymentMethod === 'sinpe_tilopay' ? '800' : '600',
-                              fontSize: '0.82rem', cursor: 'pointer', textAlign: 'center', transition: 'all 0.15s'
+                              fontSize: '0.82rem', cursor: 'pointer', textAlign: 'center', transition: 'all 0.15s',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'
                             }}
                           >
-                            ⚡ SINPE Auto (Tilopay)
+                            <Zap size={15} /> SINPE Auto (Tilopay)
                           </button>
                         )}
                       </div>
@@ -1238,12 +1326,12 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                       {/* DETALLE SEGÚN MÉTODO DE PAGO */}
                       {paymentMethod === 'sinpe_tilopay' && (
                         <div style={{ backgroundColor: isDark ? '#0f172a' : '#f0fdf4', padding: '12px', borderRadius: '8px', border: isDark ? '1px solid #166534' : '1px solid #bbf7d0', fontSize: '0.82rem', color: isDark ? '#86efac' : '#166534', lineHeight: '1.5' }}>
-                          ⚡ <strong>SINPE Móvil Automático (Verificación Inmediata):</strong> Al presionar "Confirmar Pedido", se procesará tu pago a través de Tilopay con comprobación instantánea sin esperas ni demoras.
+                          <Zap size={14} style={{ display: 'inline', verticalAlign: 'text-bottom', marginRight: '4px' }} /><strong>SINPE Móvil Automático (Verificación Inmediata):</strong> Al presionar "Confirmar Pedido", se procesará tu pago a través de Tilopay con comprobación instantánea sin esperas ni demoras.
                         </div>
                       )}
                       {paymentMethod === 'card' && (
                         <div style={{ backgroundColor: isDark ? '#0f172a' : '#f0fdf4', padding: '12px', borderRadius: '8px', border: isDark ? '1px solid #166534' : '1px solid #bbf7d0', fontSize: '0.82rem', color: isDark ? '#86efac' : '#166534', lineHeight: '1.5' }}>
-                          🔒 <strong>Pago Seguro con Tarjeta (Tilopay):</strong> Al presionar "Confirmar Pedido", se desplegará el formulario seguro para ingresar tu tarjeta de crédito o débito con autenticación bancaria 3D Secure.
+                          <Lock size={14} style={{ display: 'inline', verticalAlign: 'text-bottom', marginRight: '4px' }} /><strong>Pago Seguro con Tarjeta (Tilopay):</strong> Al presionar "Confirmar Pedido", se desplegará el formulario seguro para ingresar tu tarjeta de crédito o débito con autenticación bancaria 3D Secure.
                         </div>
                       )}
                       {paymentMethod === 'sinpe' && (
@@ -1251,12 +1339,12 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                           <div style={{ fontWeight: 'bold', color: isDark ? '#93c5fd' : '#1e40af', marginBottom: '4px' }}>
                             Datos para SINPE Móvil:
                           </div>
-                          <div style={{ color: titleColor }}>
-                            📱 Teléfono: <strong>{store.sinpePhone || store.whatsappNumber || 'Consultar por WhatsApp'}</strong>
+                          <div style={{ color: titleColor, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <Smartphone size={13} /> <span>Teléfono: <strong>{store.sinpePhone || store.whatsappNumber || 'Consultar por WhatsApp'}</strong></span>
                           </div>
                           {store.sinpeName && (
-                            <div style={{ color: titleColor, marginTop: '2px' }}>
-                              👤 Titular: <strong>{store.sinpeName}</strong>
+                            <div style={{ color: titleColor, marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <User size={13} /> <span>Titular: <strong>{store.sinpeName}</strong></span>
                             </div>
                           )}
                           <div style={{ marginTop: '8px' }}>
@@ -1273,13 +1361,13 @@ export default function StorefrontView({ slug }: StorefrontProps) {
 
                             {/* Subida de Imagen del Comprobante */}
                             <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '4px', color: isDark ? '#93c5fd' : '#1e40af' }}>
-                              📷 Foto o Captura del Comprobante:
+                              Foto o Captura del Comprobante:
                             </label>
                             {paymentProofUrl ? (
                               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', backgroundColor: isDark ? '#1e293b' : '#ffffff', padding: '8px', borderRadius: '8px', border: '1px solid #93c5fd' }}>
                                 <img src={paymentProofUrl} alt="Comprobante" style={{ width: '48px', height: '48px', objectFit: 'cover', borderRadius: '6px' }} />
-                                <div style={{ flex: 1, fontSize: '0.75rem', color: '#16a34a', fontWeight: 'bold' }}>
-                                  ✓ Comprobante adjunto
+                                <div style={{ flex: 1, fontSize: '0.75rem', color: '#16a34a', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  <CheckCircle size={13} /> Comprobante adjunto
                                 </div>
                                 <button
                                   type="button"
@@ -1326,13 +1414,13 @@ export default function StorefrontView({ slug }: StorefrontProps) {
 
                             {/* Subida de Imagen del Comprobante */}
                             <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '4px', color: isDark ? '#93c5fd' : '#1e40af' }}>
-                              📷 Foto o Captura del Comprobante:
+                              Foto o Captura del Comprobante:
                             </label>
                             {paymentProofUrl ? (
                               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', backgroundColor: isDark ? '#1e293b' : '#ffffff', padding: '8px', borderRadius: '8px', border: '1px solid #93c5fd' }}>
                                 <img src={paymentProofUrl} alt="Comprobante" style={{ width: '48px', height: '48px', objectFit: 'cover', borderRadius: '6px' }} />
-                                <div style={{ flex: 1, fontSize: '0.75rem', color: '#16a34a', fontWeight: 'bold' }}>
-                                  ✓ Comprobante adjunto
+                                <div style={{ flex: 1, fontSize: '0.75rem', color: '#16a34a', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  <CheckCircle size={13} /> Comprobante adjunto
                                 </div>
                                 <button
                                   type="button"
@@ -1359,7 +1447,7 @@ export default function StorefrontView({ slug }: StorefrontProps) {
 
                       {paymentMethod === 'cash' && (
                         <div style={{ backgroundColor: isDark ? '#0f172a' : '#f0fdf4', padding: '10px 12px', borderRadius: '8px', border: isDark ? '1px solid #166534' : '1px solid #bbf7d0', fontSize: '0.82rem', color: isDark ? '#86efac' : '#166534' }}>
-                          💵 <strong>Pago al Recibir o Retirar:</strong> Cancelas en efectivo o tarjeta contra entrega con el repartidor o en el local.
+                          <DollarSign size={14} style={{ display: 'inline', verticalAlign: 'text-bottom', marginRight: '4px' }} /><strong>Pago al Recibir o Retirar:</strong> Cancelas en efectivo o tarjeta contra entrega con el repartidor o en el local.
                         </div>
                       )}
 

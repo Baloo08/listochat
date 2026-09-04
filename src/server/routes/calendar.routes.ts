@@ -43,11 +43,19 @@ function escapeICSText(text: string): string {
     .replace(/\n/g, '\\n');
 }
 
-router.get('/:slug.ics', async (req, res) => {
+async function handleICSRequest(req: any, res: any, slug: string, tokenParam?: string) {
   try {
-    const tenant = await getTenantBySlug(req.params.slug);
+    const tenant = await getTenantBySlug(slug);
     if (!tenant) {
       res.status(404).send('Negocio no encontrado');
+      return;
+    }
+
+    const expectedToken = (tenant as any).calendarToken || (tenant as any).calendar_token;
+    const providedToken = tokenParam || (req.query.token as string) || (req.headers['x-calendar-token'] as string);
+
+    if (expectedToken && providedToken !== expectedToken) {
+      res.status(403).send('Acceso no autorizado al feed de calendario. Token inválido o ausente.');
       return;
     }
 
@@ -119,11 +127,22 @@ router.get('/:slug.ics', async (req, res) => {
     console.error('Error generating iCal feed:', error);
     res.status(500).send('Error generando calendario');
   }
+}
+
+// Ruta con token en la ruta: /api/calendar/:slug/:token.ics
+router.get('/:slug/:token.ics', async (req, res) => {
+  await handleICSRequest(req, res, req.params.slug, req.params.token);
+});
+
+// Ruta con slug y token en query string: /api/calendar/:slug.ics?token=...
+router.get('/:slug.ics', async (req, res) => {
+  await handleICSRequest(req, res, req.params.slug, req.query.token as string);
 });
 
 // Also support route without .ics extension
 router.get('/:slug', (req, res) => {
-  res.redirect(`/api/calendar/${req.params.slug}.ics`);
+  const tokenQuery = req.query.token ? `?token=${encodeURIComponent(req.query.token as string)}` : '';
+  res.redirect(`/api/calendar/${req.params.slug}.ics${tokenQuery}`);
 });
 
 export default router;

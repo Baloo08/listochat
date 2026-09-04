@@ -578,19 +578,28 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
       });
 
       // Sincronizar estado habilitado de Tilopay si está configurado
-      try {
-        await api.post('/api/tenant/payment-config', {
-          isEnabled: tiloEnabled,
-          environment: tiloEnv,
-          captureMode: tiloCaptureMode
-        });
-      } catch (e) {
-        // Silencioso si aún no se han configurado llaves
+      let tiloWarning = false;
+      if (tiloEnabled || acceptSinpeTilopay) {
+        try {
+          await api.post('/api/tenant/payment-config', {
+            isEnabled: tiloEnabled,
+            environment: tiloEnv,
+            captureMode: tiloCaptureMode
+          });
+        } catch (e: any) {
+          tiloWarning = true;
+          console.warn('[StoreSettings] No se pudo activar Tilopay porque faltan credenciales:', e);
+        }
       }
 
       setStoreSlug(cleanSlug || storeSlug);
-      setSaveMessage(true);
-      setTimeout(() => setSaveMessage(false), 3000);
+      if (tiloWarning) {
+        setErrorMessage('Configuración guardada, pero Tilopay permanece inactivo porque faltan las credenciales requeridas (API Key / User / Password).');
+        setTimeout(() => setErrorMessage(null), 8000);
+      } else {
+        setSaveMessage(true);
+        setTimeout(() => setSaveMessage(false), 3000);
+      }
     } catch (err: any) {
       const msg = err?.message || 'Error al guardar configuración. Verifique los datos o la conexión.';
       setErrorMessage(msg);
@@ -755,7 +764,7 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
             fontWeight: 'bold', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap'
           }}
         >
-          <Utensils size={17} /> Modo {storeMode === 'restaurant' ? 'Restaurante & Comandas' : 'Tienda & Fases'}
+          <Utensils size={17} /> Consumo en Local, Mesas & Fases
         </button>
 
         <button
@@ -768,7 +777,7 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
             fontWeight: 'bold', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap'
           }}
         >
-          <Truck size={17} /> Envíos (Express / Domicilio / Correos CR)
+          <Truck size={17} /> Envíos & Delivery a Domicilio
         </button>
 
         <button

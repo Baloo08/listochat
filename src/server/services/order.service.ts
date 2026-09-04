@@ -2,35 +2,38 @@ import { createOrder, updateOrderStatus as updateOrderRepoStatus, confirmPayment
 import { getProductsByTenant, updateProduct } from '../db/products.repo.js';
 import { getStoreSettings } from '../db/store-settings.repo.js';
 import { sendMessage } from './evolution.js';
-import { query } from '../db/pool.js';
+import { query, getClient } from '../db/pool.js';
 
 export async function createOrderFromWhatsApp(tenantId: string, orderData: any): Promise<any> {
-  try {
-    const allProducts = await getProductsByTenant(tenantId, true);
-    const items = [];
-    let subtotal = 0;
+  const allProducts = await getProductsByTenant(tenantId, true);
+  const items = [];
+  let subtotal = 0;
 
-    // 1. Pre-validate stock for all requested items
-    for (const item of (orderData.items || [])) {
-      const product = allProducts.find(p => 
-        p.name.toLowerCase().includes((item.productName || '').toLowerCase()) ||
-        (item.productName || '').toLowerCase().includes(p.name.toLowerCase())
-      );
-      const qty = item.quantity || 1;
-      if (product && product.trackStock) {
-        if (item.variantName && product.variants && product.variants.length > 0) {
-          const matchedVariant = product.variants.find((v: any) => 
-            v.name.toLowerCase().includes(item.variantName.toLowerCase()) ||
-            item.variantName.toLowerCase().includes(v.name.toLowerCase())
-          );
-          if (matchedVariant && (matchedVariant.stock ?? 0) < qty) {
-            throw new Error(`Stock insuficiente para la variante "${matchedVariant.name}" de "${product.name}". Disponible: ${matchedVariant.stock ?? 0}`);
-          }
-        } else if ((product.stock ?? 0) < qty) {
-          throw new Error(`Stock insuficiente para "${product.name}". Disponible: ${product.stock ?? 0}`);
+  // 1. Pre-validate stock for all requested items
+  for (const item of (orderData.items || [])) {
+    const product = allProducts.find(p => 
+      p.name.toLowerCase().includes((item.productName || '').toLowerCase()) ||
+      (item.productName || '').toLowerCase().includes(p.name.toLowerCase())
+    );
+    const qty = item.quantity || 1;
+    if (product && product.trackStock) {
+      if (item.variantName && product.variants && product.variants.length > 0) {
+        const matchedVariant = product.variants.find((v: any) => 
+          v.name.toLowerCase().includes(item.variantName.toLowerCase()) ||
+          item.variantName.toLowerCase().includes(v.name.toLowerCase())
+        );
+        if (matchedVariant && (matchedVariant.stock ?? 0) < qty) {
+          throw new Error(`Stock insuficiente para la variante "${matchedVariant.name}" de "${product.name}". Disponible: ${matchedVariant.stock ?? 0}`);
         }
+      } else if ((product.stock ?? 0) < qty) {
+        throw new Error(`Stock insuficiente para "${product.name}". Disponible: ${product.stock ?? 0}`);
       }
     }
+  }
+
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
 
     for (const item of (orderData.items || [])) {
       const product = allProducts.find(p => 
@@ -71,12 +74,12 @@ export async function createOrderFromWhatsApp(tenantId: string, orderData: any):
       });
 
       if (product && product.trackStock) {
-        await query(
+        await client.query(
           'UPDATE products SET stock = GREATEST(0, stock - $1), updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND tenant_id = $3',
           [qty, product.id, tenantId]
         );
         if (variantId) {
-          await query(
+          await client.query(
             'UPDATE product_variants SET stock = GREATEST(0, stock - $1) WHERE id = $2 AND product_id = $3',
             [qty, variantId, product.id]
           );
@@ -107,15 +110,21 @@ export async function createOrderFromWhatsApp(tenantId: string, orderData: any):
         status: 'pedido_recibido',
         paymentMethod: orderData.paymentMethod || 'sinpe',
         paymentStatus: 'pending',
+        stockDeducted: true,
         notes: orderData.notes || (deliveryMethod === 'delivery' && customerAddress ? `Entrega a: ${customerAddress}` : undefined)
       },
-      items
+      items,
+      client
     );
 
+    await client.query('COMMIT');
     return order;
   } catch (error) {
+    await client.query('ROLLBACK');
     console.error('Error creating order from WhatsApp:', error);
     throw error;
+  } finally {
+    client.release();
   }
 }
 

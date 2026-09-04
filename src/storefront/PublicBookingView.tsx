@@ -29,7 +29,7 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [customAnswers, setCustomAnswers] = useState<Record<string, string>>({});
-  const [paymentMethod, setPaymentMethod] = useState<'pay_on_site' | 'sinpe' | 'sinpe_tilopay' | 'card'>('pay_on_site');
+  const [paymentMethod, setPaymentMethod] = useState<'pay_on_site' | 'sinpe' | 'sinpe_tilopay' | 'card' | 'solo_reserva'>('pay_on_site');
   const [manualSinpeReference, setManualSinpeReference] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [bookingSuccess, setBookingSuccess] = useState<any>(null);
@@ -42,6 +42,9 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
         const data = await res.json();
         setBusinessInfo(data);
         setServices(data.services || []);
+        if (data.bookingPaymentMode === 'solo_reserva') {
+          setPaymentMethod('solo_reserva');
+        }
       } catch (err: any) {
         setError(err.message || 'Error al cargar información');
       } finally {
@@ -193,6 +196,7 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
 
     setSubmitting(true);
     try {
+      const resolvedPaymentMethod = paymentMethod === 'pay_on_site' ? 'cash' : paymentMethod;
       const res = await fetch(`/api/appointments/public/${slug}/book`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -204,7 +208,7 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
           amount: totalBookingPrice,
           customerName,
           customerPhone,
-          paymentMethod: paymentMethod === 'pay_on_site' ? 'cash' : paymentMethod,
+          paymentMethod: resolvedPaymentMethod,
           paymentReference: paymentMethod === 'sinpe' ? manualSinpeReference : null,
           returnUrl: window.location.href,
           selectedVariables: serviceVariables,
@@ -218,6 +222,12 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
       }
 
       const data = await res.json();
+      const paymentUrl = data.paymentUrl || data.paymentSession?.paymentUrl || null;
+      // Auto-redirect to Tilopay for online payments
+      if (paymentUrl && (resolvedPaymentMethod === 'card' || resolvedPaymentMethod === 'sinpe_tilopay')) {
+        window.location.href = paymentUrl;
+        return;
+      }
       setBookingSuccess(data);
     } catch (err: any) {
       alert(err.message || 'Error al procesar la reserva. Intenta de nuevo.');
@@ -325,7 +335,7 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
             <div><strong>Hora:</strong> {selectedTime}</div>
             <div><strong>Cliente:</strong> {customerName} ({customerPhone})</div>
             {totalBookingPrice > 0 && <div><strong>Monto estimado:</strong> ₡{totalBookingPrice.toLocaleString('es-CR')}</div>}
-            <div><strong>Método de pago:</strong> {paymentMethod === 'card' ? '💳 Tarjeta Débito/Crédito' : paymentMethod === 'sinpe_tilopay' ? '⚡ SINPE Móvil Automático' : paymentMethod === 'sinpe' ? '📱 SINPE Móvil (Manual)' : '💵 Efectivo en el local'}</div>
+            <div><strong>Método de pago:</strong> {paymentMethod === 'card' ? '💳 Tarjeta Débito/Crédito' : paymentMethod === 'sinpe_tilopay' ? '⚡ SINPE Móvil Automático' : paymentMethod === 'sinpe' ? '📱 SINPE Móvil (Manual)' : paymentMethod === 'solo_reserva' ? '🏷️ Solo Reserva (Sin pago)' : '💵 Efectivo en el local'}</div>
           </div>
 
           {bookingSuccess.paymentUrl && (
@@ -761,98 +771,140 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
               ))}
 
               {/* Selector de Método de Pago */}
-              {totalBookingPrice > 0 && (
-                <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: '1px solid #e2e8f0' }}>
-                  <label style={{ display: 'block', fontSize: '0.88rem', fontWeight: 'bold', marginBottom: '8px' }}>
-                    Forma de Pago
-                  </label>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '8px', marginBottom: '10px' }}>
-                    <button
-                      type="button"
-                      onClick={() => setPaymentMethod('pay_on_site')}
-                      style={{
-                        padding: '10px', borderRadius: '8px', border: `2px solid ${paymentMethod === 'pay_on_site' ? primaryColor : '#e2e8f0'}`,
-                        backgroundColor: paymentMethod === 'pay_on_site' ? 'rgba(22, 163, 74, 0.06)' : 'white',
-                        cursor: 'pointer', textAlign: 'center', fontSize: '0.82rem', fontWeight: '600'
-                      }}
-                    >
-                      💵 En el local
-                      <span style={{ display: 'block', fontSize: '0.72rem', color: '#64748b', fontWeight: 'normal' }}>Pagar al llegar</span>
-                    </button>
-
-                    {businessInfo?.paymentSettings?.acceptSinpe && (
-                      <button
-                        type="button"
-                        onClick={() => setPaymentMethod('sinpe')}
-                        style={{
-                          padding: '10px', borderRadius: '8px', border: `2px solid ${paymentMethod === 'sinpe' ? primaryColor : '#e2e8f0'}`,
-                          backgroundColor: paymentMethod === 'sinpe' ? 'rgba(22, 163, 74, 0.06)' : 'white',
-                          cursor: 'pointer', textAlign: 'center', fontSize: '0.82rem', fontWeight: '600'
-                        }}
-                      >
-                        📱 SINPE Móvil
-                        <span style={{ display: 'block', fontSize: '0.72rem', color: '#64748b', fontWeight: 'normal' }}>Manual</span>
-                      </button>
-                    )}
-
-                    {businessInfo?.paymentSettings?.acceptSinpeTilopay && (
-                      <button
-                        type="button"
-                        onClick={() => setPaymentMethod('sinpe_tilopay')}
-                        style={{
-                          padding: '10px', borderRadius: '8px', border: `2px solid ${paymentMethod === 'sinpe_tilopay' ? '#059669' : '#e2e8f0'}`,
-                          backgroundColor: paymentMethod === 'sinpe_tilopay' ? '#ecfdf5' : 'white',
-                          cursor: 'pointer', textAlign: 'center', fontSize: '0.82rem', fontWeight: '600'
-                        }}
-                      >
-                        ⚡ SINPE Auto
-                        <span style={{ display: 'block', fontSize: '0.72rem', color: '#047857', fontWeight: 'normal' }}>Verificado</span>
-                      </button>
-                    )}
-
-                    {businessInfo?.paymentSettings?.acceptCard && (
-                      <button
-                        type="button"
-                        onClick={() => setPaymentMethod('card')}
-                        style={{
-                          padding: '10px', borderRadius: '8px', border: `2px solid ${paymentMethod === 'card' ? '#2563eb' : '#e2e8f0'}`,
-                          backgroundColor: paymentMethod === 'card' ? '#eff6ff' : 'white',
-                          cursor: 'pointer', textAlign: 'center', fontSize: '0.82rem', fontWeight: '600'
-                        }}
-                      >
-                        💳 Tarjeta
-                        <span style={{ display: 'block', fontSize: '0.72rem', color: '#1d4ed8', fontWeight: 'normal' }}>Débito / Crédito</span>
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Manual SINPE Details Box */}
-                  {paymentMethod === 'sinpe' && (
-                    <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '12px', fontSize: '0.82rem', color: '#166534', marginTop: '8px' }}>
-                      <p style={{ margin: '0 0 6px 0', fontWeight: 'bold' }}>Datos de SINPE Móvil:</p>
-                      {businessInfo?.paymentSettings?.sinpePhone && <div>• Teléfono: <strong>{businessInfo.paymentSettings.sinpePhone}</strong></div>}
-                      {businessInfo?.paymentSettings?.sinpeName && <div>• Titular: <strong>{businessInfo.paymentSettings.sinpeName}</strong></div>}
-                      <div style={{ marginTop: '8px' }}>
-                        <label style={{ display: 'block', fontWeight: '600', marginBottom: '3px' }}>Número de Comprobante / Referencia (Opcional):</label>
-                        <input
-                          type="text"
-                          placeholder="Ej: #123456"
-                          value={manualSinpeReference}
-                          onChange={(e) => setManualSinpeReference(e.target.value)}
-                          style={{ width: '100%', padding: '7px 10px', borderRadius: '6px', border: '1px solid #86efac', fontSize: '0.85rem' }}
-                        />
+              {(() => {
+                const bpm = businessInfo?.bookingPaymentMode || 'all';
+                if (bpm === 'solo_reserva') {
+                  return (
+                    <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: '1px solid #e2e8f0' }}>
+                      <div style={{ backgroundColor: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: '8px', padding: '12px', fontSize: '0.85rem', color: '#5b21b6' }}>
+                        🏷️ <strong>Modalidad Solo Reserva:</strong> Tu cita quedará agendada sin requerir pago previo. El negocio coordinará contigo cualquier detalle.
                       </div>
                     </div>
-                  )}
+                  );
+                }
 
-                  {/* Online Gateway Notice */}
-                  {(paymentMethod === 'card' || paymentMethod === 'sinpe_tilopay') && (
-                    <div style={{ backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '10px 12px', fontSize: '0.8rem', color: '#1e40af', marginTop: '6px' }}>
-                      🔒 Al confirmar tu cita, serás redirigido a la pasarela segura de pago de Tilopay para verificar tu transacción al instante.
+                return (
+                  <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: '1px solid #e2e8f0' }}>
+                    <label style={{ display: 'block', fontSize: '0.88rem', fontWeight: 'bold', marginBottom: '8px' }}>
+                      Forma de Pago
+                    </label>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '8px', marginBottom: '10px' }}>
+                      {/* Opción Solo Reservar */}
+                      <button
+                        type="button"
+                        onClick={() => setPaymentMethod('solo_reserva')}
+                        style={{
+                          padding: '10px', borderRadius: '8px', border: `2px solid ${paymentMethod === 'solo_reserva' ? '#7c3aed' : '#e2e8f0'}`,
+                          backgroundColor: paymentMethod === 'solo_reserva' ? '#f5f3ff' : 'white',
+                          cursor: 'pointer', textAlign: 'center', fontSize: '0.82rem', fontWeight: '600'
+                        }}
+                      >
+                        🏷️ Solo Reservar
+                        <span style={{ display: 'block', fontSize: '0.72rem', color: '#6d28d9', fontWeight: 'normal' }}>Sin pago previo</span>
+                      </button>
+
+                      {bpm !== 'online' && (
+                        <button
+                          type="button"
+                          onClick={() => setPaymentMethod('pay_on_site')}
+                          style={{
+                            padding: '10px', borderRadius: '8px', border: `2px solid ${paymentMethod === 'pay_on_site' ? primaryColor : '#e2e8f0'}`,
+                            backgroundColor: paymentMethod === 'pay_on_site' ? 'rgba(22, 163, 74, 0.06)' : 'white',
+                            cursor: 'pointer', textAlign: 'center', fontSize: '0.82rem', fontWeight: '600'
+                          }}
+                        >
+                          💵 En el local
+                          <span style={{ display: 'block', fontSize: '0.72rem', color: '#64748b', fontWeight: 'normal' }}>Pagar al llegar</span>
+                        </button>
+                      )}
+
+                      {businessInfo?.paymentSettings?.acceptSinpe && bpm !== 'on_site' && (
+                        <button
+                          type="button"
+                          onClick={() => setPaymentMethod('sinpe')}
+                          style={{
+                            padding: '10px', borderRadius: '8px', border: `2px solid ${paymentMethod === 'sinpe' ? primaryColor : '#e2e8f0'}`,
+                            backgroundColor: paymentMethod === 'sinpe' ? 'rgba(22, 163, 74, 0.06)' : 'white',
+                            cursor: 'pointer', textAlign: 'center', fontSize: '0.82rem', fontWeight: '600'
+                          }}
+                        >
+                          📱 SINPE Móvil
+                          <span style={{ display: 'block', fontSize: '0.72rem', color: '#64748b', fontWeight: 'normal' }}>Manual</span>
+                        </button>
+                      )}
+
+                      {businessInfo?.paymentSettings?.acceptSinpeTilopay && bpm !== 'on_site' && (
+                        <button
+                          type="button"
+                          onClick={() => setPaymentMethod('sinpe_tilopay')}
+                          style={{
+                            padding: '10px', borderRadius: '8px', border: `2px solid ${paymentMethod === 'sinpe_tilopay' ? '#059669' : '#e2e8f0'}`,
+                            backgroundColor: paymentMethod === 'sinpe_tilopay' ? '#ecfdf5' : 'white',
+                            cursor: 'pointer', textAlign: 'center', fontSize: '0.82rem', fontWeight: '600'
+                          }}
+                        >
+                          ⚡ SINPE Auto
+                          <span style={{ display: 'block', fontSize: '0.72rem', color: '#047857', fontWeight: 'normal' }}>Tilopay</span>
+                        </button>
+                      )}
+
+                      {businessInfo?.paymentSettings?.acceptCard && bpm !== 'on_site' && (
+                        <button
+                          type="button"
+                          onClick={() => setPaymentMethod('card')}
+                          style={{
+                            padding: '10px', borderRadius: '8px', border: `2px solid ${paymentMethod === 'card' ? '#2563eb' : '#e2e8f0'}`,
+                            backgroundColor: paymentMethod === 'card' ? '#eff6ff' : 'white',
+                            cursor: 'pointer', textAlign: 'center', fontSize: '0.82rem', fontWeight: '600'
+                          }}
+                        >
+                          💳 Tarjeta
+                          <span style={{ display: 'block', fontSize: '0.72rem', color: '#1d4ed8', fontWeight: 'normal' }}>Débito / Crédito</span>
+                        </button>
+                      )}
                     </div>
-                  )}
-                </div>
-              )}
+
+                    {/* Manual SINPE Details Box */}
+                    {paymentMethod === 'sinpe' && (
+                      <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '12px', fontSize: '0.82rem', color: '#166534', marginTop: '8px' }}>
+                        <p style={{ margin: '0 0 6px 0', fontWeight: 'bold' }}>Datos de SINPE Móvil:</p>
+                        {businessInfo?.paymentSettings?.sinpePhone && <div>• Teléfono: <strong>{businessInfo.paymentSettings.sinpePhone}</strong></div>}
+                        {businessInfo?.paymentSettings?.sinpeName && <div>• Titular: <strong>{businessInfo.paymentSettings.sinpeName}</strong></div>}
+                        <div style={{ marginTop: '8px' }}>
+                          <label style={{ display: 'block', fontWeight: '600', marginBottom: '3px' }}>Número de Comprobante / Referencia (Opcional):</label>
+                          <input
+                            type="text"
+                            placeholder="Ej: #123456"
+                            value={manualSinpeReference}
+                            onChange={(e) => setManualSinpeReference(e.target.value)}
+                            style={{ width: '100%', padding: '7px 10px', borderRadius: '6px', border: '1px solid #86efac', fontSize: '0.85rem' }}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* SINPE Auto Tip */}
+                    {paymentMethod === 'sinpe_tilopay' && (
+                      <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #6ee7b7', borderRadius: '8px', padding: '10px 12px', fontSize: '0.8rem', color: '#065f46', marginTop: '6px' }}>
+                        ⚡ <strong>¿Cómo funciona SINPE Auto?</strong> Al confirmar, serás redirigido a Tilopay. Dentro de la pasarela, selecciona la pestaña <strong>SINPE Móvil</strong> para pagar con tu número. <em>Requiere que tu banco tenga habilitado el cobro SINPE desde Tilopay.</em>
+                      </div>
+                    )}
+
+                    {/* Online Gateway Notice */}
+                    {(paymentMethod === 'card' || paymentMethod === 'sinpe_tilopay') && (
+                      <div style={{ backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '10px 12px', fontSize: '0.8rem', color: '#1e40af', marginTop: '6px' }}>
+                        🔒 Al confirmar tu cita, serás redirigido automáticamente a la pasarela segura de Tilopay.
+                      </div>
+                    )}
+
+                    {paymentMethod === 'solo_reserva' && (
+                      <div style={{ backgroundColor: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: '8px', padding: '10px 12px', fontSize: '0.8rem', color: '#4c1d95', marginTop: '6px' }}>
+                        🏷️ Tu cita quedará reservada sin cargo. El comercio coordinará contigo cualquier pago en el local o previo a la atención.
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               <div style={{ marginTop: '10px' }}>
                 <button
@@ -871,7 +923,7 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
                     boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)'
                   }}
                 >
-                  {submitting ? 'Agendando cita...' : `Confirmar Cita • ₡${totalBookingPrice.toLocaleString('es-CR')}`}
+                  {submitting ? 'Agendando cita...' : paymentMethod === 'solo_reserva' ? '🏷️ Reservar Cita (Sin Pago)' : `Confirmar Cita • ₡${totalBookingPrice.toLocaleString('es-CR')}`}
                 </button>
               </div>
 

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Bike, Navigation, MapPin, Phone, MessageSquare, CheckCircle, Package, RefreshCw, LogOut, AlertCircle, Clock, ShieldCheck, DollarSign, Eye, EyeOff, Lock, Calendar, Filter } from 'lucide-react';
+import { Bike, Navigation, MapPin, Phone, MessageSquare, CheckCircle, Package, RefreshCw, LogOut, AlertCircle, Clock, ShieldCheck, DollarSign, Eye, EyeOff, Lock, Calendar, Filter, FileText, ExternalLink } from 'lucide-react';
 import { Order } from '../../shared/types';
+import InteractiveMapPicker from './InteractiveMapPicker';
 
 export default function DriverPortal({ tenantSlug }: { tenantSlug?: string }) {
   const [pin, setPin] = useState('');
@@ -311,20 +312,22 @@ export default function DriverPortal({ tenantSlug }: { tenantSlug?: string }) {
             style={{
               flex: 1, padding: '9px', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.85rem',
               cursor: 'pointer', backgroundColor: activeTab === 'active' ? '#ffffff' : 'transparent',
-              color: activeTab === 'active' ? '#16a34a' : '#64748b', boxShadow: activeTab === 'active' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+              color: activeTab === 'active' ? '#16a34a' : '#64748b', boxShadow: activeTab === 'active' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'
             }}
           >
-            🛵 Pedidos Asignados ({orders.length})
+            <Bike size={16} /> Pedidos Asignados ({orders.length})
           </button>
           <button
             onClick={() => setActiveTab('history')}
             style={{
               flex: 1, padding: '9px', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.85rem',
               cursor: 'pointer', backgroundColor: activeTab === 'history' ? '#ffffff' : 'transparent',
-              color: activeTab === 'history' ? '#16a34a' : '#64748b', boxShadow: activeTab === 'history' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+              color: activeTab === 'history' ? '#16a34a' : '#64748b', boxShadow: activeTab === 'history' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'
             }}
           >
-            📦 Historial de Entregas
+            <Package size={16} /> Historial de Entregas
           </button>
         </div>
 
@@ -344,8 +347,29 @@ export default function DriverPortal({ tenantSlug }: { tenantSlug?: string }) {
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                 {orders.map(o => {
-                  const cleanPhone = (o.customerPhone || '').replace(/\\D/g, '');
+                  const cleanPhone = (o.customerPhone || '').replace(/\D/g, '');
                   const waUrl = `https://wa.me/${cleanPhone}?text=Hola%20${encodeURIComponent(o.customerName)},%20te%20escribe%20${encodeURIComponent(driver.name)}%20tu%20repartidor%20de%20${encodeURIComponent(driver.businessName)}%20con%20tu%20pedido%20%23${o.orderNumber}.`;
+
+                  // Parse coordinates from customerLocation or address
+                  let lat = o.customerLocation?.lat;
+                  let lng = o.customerLocation?.lng;
+                  if ((!lat || !lng) && o.customerAddress) {
+                    const match = o.customerAddress.match(/q=(-?\d+\.\d+),(-?\d+\.\d+)/);
+                    if (match) {
+                      lat = parseFloat(match[1]);
+                      lng = parseFloat(match[2]);
+                    }
+                  }
+
+                  // Sane address (Requirement 1): remove raw Google Maps URLs and GPS tags
+                  const cleanAddress = (o.customerAddress || '')
+                    .replace(/Ubicación GPS:\s*https:\/\/[^\s)]+/gi, '')
+                    .replace(/\(GPS:\s*https:\/\/[^\s)]+\)/gi, '')
+                    .replace(/\(GPS:\s*-?\d+\.\d+,\s*-?\d+\.\d+\)/gi, '')
+                    .trim();
+
+                  const gmapsUrl = lat && lng ? `https://maps.google.com/?q=${lat},${lng}` : undefined;
+                  const wazeNavUrl = o.wazeUrl || (lat && lng ? `https://waze.com/ul?ll=${lat},${lng}&navigate=yes` : undefined);
 
                   return (
                     <div key={o.id} style={{
@@ -365,49 +389,88 @@ export default function DriverPortal({ tenantSlug }: { tenantSlug?: string }) {
                           <div style={{ fontSize: '1.15rem', fontWeight: 'bold', color: '#0f172a' }}>
                             ₡{Number(o.total || 0).toLocaleString('es-CR')}
                           </div>
-                          <span style={{ fontSize: '0.7rem', color: o.paymentStatus === 'paid' ? '#15803d' : '#b45309', fontWeight: 'bold' }}>
-                            {o.paymentStatus === 'paid'
-                              ? (o.paymentMethod === 'card' || o.paymentMethod === 'tilopay' ? '🟢 Pagado con Tarjeta' : '🟢 Pagado')
-                              : (o.paymentMethod === 'card' || o.paymentMethod === 'tilopay' ? '🟠 Tarjeta Pendiente' : '🟠 Cobrar al entregar')}
+                          <span style={{ fontSize: '0.7rem', color: o.paymentStatus === 'paid' ? '#15803d' : '#b45309', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                            {o.paymentStatus === 'paid' ? (
+                              <>
+                                <CheckCircle size={12} color="#15803d" />
+                                {o.paymentMethod === 'card' || o.paymentMethod === 'tilopay' ? 'Pagado con Tarjeta' : 'Pagado'}
+                              </>
+                            ) : (
+                              <>
+                                <Clock size={12} color="#b45309" />
+                                {o.paymentMethod === 'card' || o.paymentMethod === 'tilopay' ? 'Tarjeta Pendiente' : 'Cobrar al entregar'}
+                              </>
+                            )}
                           </span>
                         </div>
                       </div>
 
-                      {/* Address & GPS */}
-                      <div style={{ backgroundColor: '#f8fafc', padding: '12px', borderRadius: '8px', marginBottom: '12px', border: '1px solid #f1f5f9' }}>
-                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px', fontSize: '0.85rem', color: '#334155' }}>
+                      {/* Address & Interactive Map (Requirement 1 & 5) */}
+                      <div style={{ backgroundColor: '#f8fafc', padding: '12px', borderRadius: '10px', marginBottom: '12px', border: '1px solid #f1f5f9' }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px', fontSize: '0.85rem', color: '#334155', marginBottom: (lat && lng) ? '10px' : '6px' }}>
                           <MapPin size={16} color="#ef4444" style={{ flexShrink: 0, marginTop: '2px' }} />
                           <div>
-                            <strong>Dirección:</strong> {o.customerAddress || 'Ubicación GPS'}
-                            {o.notes && <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '4px' }}>📝 Nota: {o.notes}</div>}
+                            <strong>Dirección:</strong> {cleanAddress || (lat && lng ? 'Ubicación fijada en el mapa' : 'Ubicación registrada')}
+                            {o.notes && (
+                              <div style={{ fontSize: '0.78rem', color: '#b45309', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <FileText size={12} /> <strong>Nota:</strong> {o.notes}
+                              </div>
+                            )}
                           </div>
                         </div>
 
-                        {/* Navigation Links */}
-                        <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
-                          {o.wazeUrl ? (
+                        {/* Visual Map with Pin (Requirement 1) */}
+                        {lat && lng && (
+                          <div style={{ marginBottom: '10px', borderRadius: '8px', overflow: 'hidden' }}>
+                            <InteractiveMapPicker
+                              initialLat={lat}
+                              initialLng={lng}
+                              readonly={true}
+                              height={180}
+                            />
+                          </div>
+                        )}
+
+                        {/* Clean Navigation Links with SVG icons */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: '8px' }}>
+                          {wazeNavUrl && (
                             <a
-                              href={o.wazeUrl}
+                              href={wazeNavUrl}
                               target="_blank"
                               rel="noreferrer"
                               style={{
-                                flex: 1, padding: '7px', backgroundColor: '#33ccff', color: '#003366',
+                                padding: '8px', backgroundColor: '#33ccff', color: '#003366',
                                 borderRadius: '6px', textDecoration: 'none', fontWeight: 'bold', fontSize: '0.75rem',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px'
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px'
                               }}
                             >
                               <Navigation size={13} /> Abrir en Waze
                             </a>
-                          ) : null}
+                          )}
+
+                          {gmapsUrl && (
+                            <a
+                              href={gmapsUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{
+                                padding: '8px', backgroundColor: '#ea4335', color: 'white',
+                                borderRadius: '6px', textDecoration: 'none', fontWeight: 'bold', fontSize: '0.75rem',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px'
+                              }}
+                            >
+                              <MapPin size={13} /> Google Maps
+                            </a>
+                          )}
 
                           <a
                             href={waUrl}
                             target="_blank"
                             rel="noreferrer"
                             style={{
-                              flex: 1, padding: '7px', backgroundColor: '#25D366', color: 'white',
+                              padding: '8px', backgroundColor: '#25D366', color: 'white',
                               borderRadius: '6px', textDecoration: 'none', fontWeight: 'bold', fontSize: '0.75rem',
-                              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px'
+                              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px'
                             }}
                           >
                             <MessageSquare size={13} /> WhatsApp
@@ -429,7 +492,7 @@ export default function DriverPortal({ tenantSlug }: { tenantSlug?: string }) {
                         </div>
                       )}
 
-                      {/* Deliver Button */}
+                      {/* Deliver Button with SVG */}
                       <button
                         onClick={() => handleMarkDelivered(o.id)}
                         disabled={deliveringId === o.id}
@@ -440,7 +503,8 @@ export default function DriverPortal({ tenantSlug }: { tenantSlug?: string }) {
                           alignItems: 'center', justifyContent: 'center', gap: '6px'
                         }}
                       >
-                        {deliveringId === o.id ? 'Confirmando...' : '✅ Marcar como Entregado'}
+                        <CheckCircle size={16} />
+                        {deliveringId === o.id ? 'Confirmando...' : 'Marcar como Entregado'}
                       </button>
 
                     </div>

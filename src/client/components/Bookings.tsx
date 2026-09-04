@@ -52,12 +52,14 @@ export default function Bookings() {
   const [copiedBookingLink, setCopiedBookingLink] = useState(false);
   const [copiedCalendarLink, setCopiedCalendarLink] = useState(false);
   const [tenantSlug, setTenantSlug] = useState('clinicasonrisas');
+  const [calendarToken, setCalendarToken] = useState('');
 
   // Calendar View State
   const [currentCalDate, setCurrentCalDate] = useState<Date>(new Date());
 
   // Schedule Settings State
   const [scheduleMode, setScheduleMode] = useState<'jornada' | 'fechas' | 'bloques'>('jornada');
+  const [bookingPaymentMode, setBookingPaymentMode] = useState<'all' | 'solo_reserva' | 'on_site' | 'online'>('all');
   const [startHour, setStartHour] = useState('08:00');
   const [endHour, setEndHour] = useState('17:00');
   const [slotMinutes, setSlotMinutes] = useState(45);
@@ -191,6 +193,7 @@ export default function Bookings() {
       const sch = await api.get('/api/appointments/schedule');
       if (sch) {
         setScheduleMode(sch.scheduleMode || 'jornada');
+        if (sch.bookingPaymentMode) setBookingPaymentMode(sch.bookingPaymentMode);
         if (sch.globalParallelSlots) setGlobalParallelSlots(sch.globalParallelSlots);
         if (sch.jornadaConfig) {
           setStartHour(sch.jornadaConfig.startHour || '08:00');
@@ -226,6 +229,9 @@ export default function Bookings() {
       const tenantRes = await api.get('/api/auth/me');
       if (tenantRes?.tenantSlug) {
         setTenantSlug(tenantRes.tenantSlug);
+      }
+      if (tenantRes?.calendarToken) {
+        setCalendarToken(tenantRes.calendarToken);
       }
 
       // Fetch Store/Booking Theme
@@ -367,6 +373,7 @@ export default function Bookings() {
     try {
       await api.post('/api/appointments/schedule', {
         scheduleMode,
+        bookingPaymentMode,
         globalParallelSlots: Number(globalParallelSlots),
         jornadaConfig: {
           startHour,
@@ -512,8 +519,12 @@ export default function Bookings() {
 
   const publicBookingUrl = `${window.location.origin}/reservas/${tenantSlug}`;
   const hostNoProtocol = window.location.host;
-  const calendarIcsUrl = `${window.location.origin}/api/calendar/${tenantSlug}.ics`;
-  const calendarWebcalUrl = `webcal://${hostNoProtocol}/api/calendar/${tenantSlug}.ics`;
+  const calendarIcsUrl = calendarToken 
+    ? `${window.location.origin}/api/calendar/${tenantSlug}/${calendarToken}.ics`
+    : `${window.location.origin}/api/calendar/${tenantSlug}.ics`;
+  const calendarWebcalUrl = calendarToken
+    ? `webcal://${hostNoProtocol}/api/calendar/${tenantSlug}/${calendarToken}.ics`
+    : `webcal://${hostNoProtocol}/api/calendar/${tenantSlug}.ics`;
 
   const copyBookingLink = () => {
     navigator.clipboard.writeText(publicBookingUrl);
@@ -1046,6 +1057,42 @@ export default function Bookings() {
                 <span style={{ fontSize: '0.75rem', color: '#64748b', display: 'block', marginTop: '3px' }}>
                   Ej: Si tienes 3 especialistas o sillas disponibles, pon 3 para aceptar hasta 3 citas a la misma hora.
                 </span>
+              </div>
+            </div>
+
+            {/* Modalidad de Cobro Selector */}
+            <div style={{ marginBottom: '22px', padding: '16px', backgroundColor: '#f8fafc', borderRadius: '10px', border: '1px solid var(--border)' }}>
+              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '8px', color: 'var(--text)' }}>
+                💳 Modalidad de Cobro para Reservas en Línea
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px' }}>
+                {[
+                  { id: 'all', label: '✅ Todas las opciones', desc: 'En el local, SINPE, Tarjeta y Solo Reserva' },
+                  { id: 'solo_reserva', label: '🏷️ Solo Reserva', desc: 'Sin pedir pagos en línea, solo agenda la cita' },
+                  { id: 'on_site', label: '💵 Solo en el local', desc: 'Cobro únicamente presencial al llegar' },
+                  { id: 'online', label: '💳 Solo pago previo', desc: 'Exigir SINPE Móvil o Tarjeta en línea' }
+                ].map(opt => (
+                  <label
+                    key={opt.id}
+                    style={{
+                      display: 'flex', flexDirection: 'column', padding: '10px 12px',
+                      borderRadius: '8px', border: bookingPaymentMode === opt.id ? '2px solid var(--primary)' : '1px solid var(--border)',
+                      backgroundColor: bookingPaymentMode === opt.id ? 'rgba(22, 163, 74, 0.05)' : 'white',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <input
+                        type="radio"
+                        name="bookingPaymentMode"
+                        checked={bookingPaymentMode === opt.id}
+                        onChange={() => setBookingPaymentMode(opt.id as any)}
+                      />
+                      <span style={{ fontWeight: 'bold', fontSize: '0.85rem' }}>{opt.label}</span>
+                    </div>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px', paddingLeft: '22px' }}>{opt.desc}</span>
+                  </label>
+                ))}
               </div>
             </div>
 

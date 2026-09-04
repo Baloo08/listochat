@@ -124,6 +124,7 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
     
     setSubmitting(true);
     try {
+      const resolvedPaymentMethod = courtPaymentMethod === 'on_site' ? 'cash' : courtPaymentMethod;
       const payload = {
         courtId: selectedCourt.id,
         date: selectedDate,
@@ -139,7 +140,7 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
         teamBPhone,
         teamBExtraPlayers: bookingMode === 'full' ? extraPlayers : 0,
         skillLevel: bookingMode === 'seek_match' ? skillLevel : undefined,
-        paymentMethod: courtPaymentMethod === 'on_site' ? 'cash' : courtPaymentMethod,
+        paymentMethod: resolvedPaymentMethod,
         paymentReference: courtPaymentMethod === 'sinpe' ? courtSinpeRef : null,
         returnUrl: window.location.href
       };
@@ -147,10 +148,16 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
       const created = await api.post(`/api/courts/public/${slug}/book`, payload);
       
       if (created) {
+        const paymentUrl = created.paymentUrl || created.paymentSession?.paymentUrl || null;
+        // Auto-redirect to Tilopay for online payments
+        if (paymentUrl && (resolvedPaymentMethod === 'card' || resolvedPaymentMethod === 'sinpe_tilopay')) {
+          window.location.href = paymentUrl;
+          return;
+        }
         setConfirmedBooking({
           ...created,
           courtName: selectedCourt.name,
-          paymentUrl: created.paymentUrl || created.paymentSession?.paymentUrl || null
+          paymentUrl
         });
         fetchOpenMatches();
       }
@@ -167,12 +174,13 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
     
     setSubmitting(true);
     try {
+      const resolvedPaymentMethod = courtPaymentMethod === 'on_site' ? 'cash' : courtPaymentMethod;
       const payload = {
         teamBName,
         teamBCaptain,
         teamBPhone,
         teamBExtraPlayers: extraPlayers,
-        paymentMethod: courtPaymentMethod === 'on_site' ? 'cash' : courtPaymentMethod,
+        paymentMethod: resolvedPaymentMethod,
         paymentReference: courtPaymentMethod === 'sinpe' ? courtSinpeRef : null,
         returnUrl: window.location.href
       };
@@ -180,10 +188,16 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
       const updated = await api.post(`/api/courts/public/${slug}/join-match/${joiningMatch.id}`, payload);
       
       if (updated) {
+        const paymentUrl = updated.paymentUrl || updated.paymentSession?.paymentUrl || null;
+        // Auto-redirect to Tilopay for online payments
+        if (paymentUrl && (resolvedPaymentMethod === 'card' || resolvedPaymentMethod === 'sinpe_tilopay')) {
+          window.location.href = paymentUrl;
+          return;
+        }
         setConfirmedBooking({
           ...updated,
           courtName: joiningMatch.courtName,
-          paymentUrl: updated.paymentUrl || updated.paymentSession?.paymentUrl || null
+          paymentUrl
         });
         setJoiningMatch(null);
         fetchOpenMatches();
@@ -499,89 +513,129 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
                     </div>
                   </div>
 
+
                   {/* Selector de Método de Pago */}
-                  <div style={{ marginTop: '6px', paddingTop: '12px', borderTop: '1px solid #e2e8f0' }}>
-                    <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '800', marginBottom: '8px', color: '#1e293b' }}>
-                      Método de Pago
-                    </label>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(125px, 1fr))', gap: '8px', marginBottom: '10px' }}>
-                      <button
-                        type="button"
-                        onClick={() => setCourtPaymentMethod('on_site')}
-                        style={{
-                          padding: '10px', borderRadius: '8px', border: `2px solid ${courtPaymentMethod === 'on_site' ? primaryColor : '#e2e8f0'}`,
-                          backgroundColor: courtPaymentMethod === 'on_site' ? `${primaryColor}15` : 'white',
-                          cursor: 'pointer', textAlign: 'center', fontSize: '0.82rem', fontWeight: '700'
-                        }}
-                      >
-                        💵 En Cancha
-                        <span style={{ display: 'block', fontSize: '0.72rem', color: '#64748b', fontWeight: 'normal' }}>Pagar al llegar</span>
-                      </button>
+                  {(() => {
+                    const pm = publicData?.paymentSettings?.paymentMode || 'both';
+                    // In solo_reserva mode: skip payment selection entirely
+                    if (pm === 'solo_reserva') return null;
+                    // In on_site mode: no selector, cash is implicit
+                    if (pm === 'on_site') return null;
+                    return (
+                      <div style={{ marginTop: '6px', paddingTop: '12px', borderTop: '1px solid #e2e8f0' }}>
+                        <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '800', marginBottom: '8px', color: '#1e293b' }}>
+                          Método de Pago
+                        </label>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '8px', marginBottom: '10px' }}>
+                          {/* Solo Reservar — always visible */}
+                          <button
+                            type="button"
+                            onClick={() => setCourtPaymentMethod('solo_reserva')}
+                            style={{
+                              padding: '10px', borderRadius: '8px', border: `2px solid ${courtPaymentMethod === 'solo_reserva' ? '#7c3aed' : '#e2e8f0'}`,
+                              backgroundColor: courtPaymentMethod === 'solo_reserva' ? '#f5f3ff' : 'white',
+                              cursor: 'pointer', textAlign: 'center', fontSize: '0.82rem', fontWeight: '700'
+                            }}
+                          >
+                            🏷️ Solo Reservar
+                            <span style={{ display: 'block', fontSize: '0.72rem', color: '#6d28d9', fontWeight: 'normal' }}>Sin cobro ahora</span>
+                          </button>
 
-                      {publicData?.paymentSettings?.acceptSinpe && (
-                        <button
-                          type="button"
-                          onClick={() => setCourtPaymentMethod('sinpe')}
-                          style={{
-                            padding: '10px', borderRadius: '8px', border: `2px solid ${courtPaymentMethod === 'sinpe' ? primaryColor : '#e2e8f0'}`,
-                            backgroundColor: courtPaymentMethod === 'sinpe' ? `${primaryColor}15` : 'white',
-                            cursor: 'pointer', textAlign: 'center', fontSize: '0.82rem', fontWeight: '700'
-                          }}
-                        >
-                          📱 SINPE Móvil
-                          <span style={{ display: 'block', fontSize: '0.72rem', color: '#64748b', fontWeight: 'normal' }}>Manual</span>
-                        </button>
-                      )}
+                          {/* En Cancha — visible in both/on_site */}
+                          {pm !== 'online' && (
+                            <button
+                              type="button"
+                              onClick={() => setCourtPaymentMethod('on_site')}
+                              style={{
+                                padding: '10px', borderRadius: '8px', border: `2px solid ${courtPaymentMethod === 'on_site' ? primaryColor : '#e2e8f0'}`,
+                                backgroundColor: courtPaymentMethod === 'on_site' ? `${primaryColor}15` : 'white',
+                                cursor: 'pointer', textAlign: 'center', fontSize: '0.82rem', fontWeight: '700'
+                              }}
+                            >
+                              💵 En Cancha
+                              <span style={{ display: 'block', fontSize: '0.72rem', color: '#64748b', fontWeight: 'normal' }}>Pagar al llegar</span>
+                            </button>
+                          )}
 
-                      {publicData?.paymentSettings?.acceptSinpeTilopay && (
-                        <button
-                          type="button"
-                          onClick={() => setCourtPaymentMethod('sinpe_tilopay')}
-                          style={{
-                            padding: '10px', borderRadius: '8px', border: `2px solid ${courtPaymentMethod === 'sinpe_tilopay' ? '#059669' : '#e2e8f0'}`,
-                            backgroundColor: courtPaymentMethod === 'sinpe_tilopay' ? '#ecfdf5' : 'white',
-                            cursor: 'pointer', textAlign: 'center', fontSize: '0.82rem', fontWeight: '700'
-                          }}
-                        >
-                          ⚡ SINPE Auto
-                          <span style={{ display: 'block', fontSize: '0.72rem', color: '#047857', fontWeight: 'normal' }}>Verificado</span>
-                        </button>
-                      )}
+                          {/* SINPE Manual */}
+                          {publicData?.paymentSettings?.acceptSinpe && pm !== 'on_site' && (
+                            <button
+                              type="button"
+                              onClick={() => setCourtPaymentMethod('sinpe')}
+                              style={{
+                                padding: '10px', borderRadius: '8px', border: `2px solid ${courtPaymentMethod === 'sinpe' ? primaryColor : '#e2e8f0'}`,
+                                backgroundColor: courtPaymentMethod === 'sinpe' ? `${primaryColor}15` : 'white',
+                                cursor: 'pointer', textAlign: 'center', fontSize: '0.82rem', fontWeight: '700'
+                              }}
+                            >
+                              📱 SINPE Móvil
+                              <span style={{ display: 'block', fontSize: '0.72rem', color: '#64748b', fontWeight: 'normal' }}>Manual</span>
+                            </button>
+                          )}
 
-                      {publicData?.paymentSettings?.acceptCard && (
-                        <button
-                          type="button"
-                          onClick={() => setCourtPaymentMethod('card')}
-                          style={{
-                            padding: '10px', borderRadius: '8px', border: `2px solid ${courtPaymentMethod === 'card' ? '#2563eb' : '#e2e8f0'}`,
-                            backgroundColor: courtPaymentMethod === 'card' ? '#eff6ff' : 'white',
-                            cursor: 'pointer', textAlign: 'center', fontSize: '0.82rem', fontWeight: '700'
-                          }}
-                        >
-                          💳 Tarjeta
-                          <span style={{ display: 'block', fontSize: '0.72rem', color: '#1d4ed8', fontWeight: 'normal' }}>Débito / Crédito</span>
-                        </button>
-                      )}
-                    </div>
+                          {/* SINPE Tilopay */}
+                          {publicData?.paymentSettings?.acceptSinpeTilopay && pm !== 'on_site' && (
+                            <button
+                              type="button"
+                              onClick={() => setCourtPaymentMethod('sinpe_tilopay')}
+                              style={{
+                                padding: '10px', borderRadius: '8px', border: `2px solid ${courtPaymentMethod === 'sinpe_tilopay' ? '#059669' : '#e2e8f0'}`,
+                                backgroundColor: courtPaymentMethod === 'sinpe_tilopay' ? '#ecfdf5' : 'white',
+                                cursor: 'pointer', textAlign: 'center', fontSize: '0.82rem', fontWeight: '700'
+                              }}
+                            >
+                              ⚡ SINPE Auto
+                              <span style={{ display: 'block', fontSize: '0.72rem', color: '#047857', fontWeight: 'normal' }}>Tilopay</span>
+                            </button>
+                          )}
 
-                    {courtPaymentMethod === 'sinpe' && (
-                      <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '10px 12px', fontSize: '0.82rem', color: '#166534', marginBottom: '10px' }}>
-                        <div>• SINPE: <strong>{publicData?.paymentSettings?.sinpePhone || publicData?.sinpePhone}</strong> ({publicData?.paymentSettings?.sinpeName || publicData?.sinpeName})</div>
-                        <input
-                          type="text"
-                          placeholder="Número de comprobante (opcional)"
-                          value={courtSinpeRef}
-                          onChange={e => setCourtSinpeRef(e.target.value)}
-                          style={{ width: '100%', padding: '6px 10px', borderRadius: '6px', border: '1px solid #86efac', marginTop: '6px', fontSize: '0.82rem', boxSizing: 'border-box' }}
-                        />
+                          {/* Tarjeta Tilopay */}
+                          {publicData?.paymentSettings?.acceptCard && pm !== 'on_site' && (
+                            <button
+                              type="button"
+                              onClick={() => setCourtPaymentMethod('card')}
+                              style={{
+                                padding: '10px', borderRadius: '8px', border: `2px solid ${courtPaymentMethod === 'card' ? '#2563eb' : '#e2e8f0'}`,
+                                backgroundColor: courtPaymentMethod === 'card' ? '#eff6ff' : 'white',
+                                cursor: 'pointer', textAlign: 'center', fontSize: '0.82rem', fontWeight: '700'
+                              }}
+                            >
+                              💳 Tarjeta
+                              <span style={{ display: 'block', fontSize: '0.72rem', color: '#1d4ed8', fontWeight: 'normal' }}>Débito / Crédito</span>
+                            </button>
+                          )}
+                        </div>
+
+                        {courtPaymentMethod === 'sinpe' && (
+                          <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '10px 12px', fontSize: '0.82rem', color: '#166534', marginBottom: '10px' }}>
+                            <div>• SINPE: <strong>{publicData?.paymentSettings?.sinpePhone || publicData?.sinpePhone}</strong> ({publicData?.paymentSettings?.sinpeName || publicData?.sinpeName})</div>
+                            <input
+                              type="text"
+                              placeholder="Número de comprobante (opcional)"
+                              value={courtSinpeRef}
+                              onChange={e => setCourtSinpeRef(e.target.value)}
+                              style={{ width: '100%', padding: '6px 10px', borderRadius: '6px', border: '1px solid #86efac', marginTop: '6px', fontSize: '0.82rem', boxSizing: 'border-box' }}
+                            />
+                          </div>
+                        )}
+                        {courtPaymentMethod === 'sinpe_tilopay' && (
+                          <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #6ee7b7', borderRadius: '8px', padding: '10px 12px', fontSize: '0.8rem', color: '#065f46', marginBottom: '10px' }}>
+                            ⚡ <strong>¿Cómo funciona SINPE Auto?</strong> Al confirmar, se abrirá la pasarela segura de Tilopay. Dentro de la pasarela, selecciona la pestaña <strong>SINPE Móvil</strong> para pagar con tu número. <em>Requiere que tu banco tenga habilitado el cobro SINPE desde Tilopay.</em>
+                          </div>
+                        )}
+                        {(courtPaymentMethod === 'card' || courtPaymentMethod === 'sinpe_tilopay') && (
+                          <div style={{ backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '10px 12px', fontSize: '0.8rem', color: '#1e40af', marginBottom: '10px' }}>
+                            🔒 Al confirmar serás redirigido automáticamente a Tilopay para completar el pago de forma segura.
+                          </div>
+                        )}
+                        {courtPaymentMethod === 'solo_reserva' && (
+                          <div style={{ backgroundColor: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: '8px', padding: '10px 12px', fontSize: '0.8rem', color: '#4c1d95', marginBottom: '10px' }}>
+                            🏷️ Tu reserva quedará registrada sin cargo. El negocio coordinará el pago contigo directamente.
+                          </div>
+                        )}
                       </div>
-                    )}
-                    {(courtPaymentMethod === 'card' || courtPaymentMethod === 'sinpe_tilopay') && (
-                      <div style={{ backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '10px 12px', fontSize: '0.8rem', color: '#1e40af', marginBottom: '10px' }}>
-                        🔒 Al confirmar, podrás realizar el pago de inmediato y de forma segura mediante Tilopay.
-                      </div>
-                    )}
-                  </div>
+                    );
+                  })()}
 
                   <button 
                     type="submit" 
@@ -592,8 +646,9 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
                       cursor: 'pointer', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' 
                     }}
                   >
-                    {submitting ? 'Registrando Reserva...' : 'Confirmar Reserva'}
+                    {submitting ? 'Registrando Reserva...' : courtPaymentMethod === 'solo_reserva' ? '🏷️ Reservar Sin Pago' : 'Confirmar Reserva'}
                   </button>
+
 
                 </form>
               </div>
@@ -632,87 +687,117 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
                   <input type="tel" placeholder="Tu WhatsApp (Ej: 8888-8888)" required value={teamBPhone} onChange={e => setTeamBPhone(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }} />
                   
                   {/* Selector de Método de Pago para Equipo B */}
-                  <div style={{ paddingTop: '8px', borderTop: '1px solid #e2e8f0' }}>
-                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '800', marginBottom: '6px', color: '#1e293b' }}>
-                      Método de Pago para tu cuota (50%)
-                    </label>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(115px, 1fr))', gap: '6px', marginBottom: '8px' }}>
-                      <button
-                        type="button"
-                        onClick={() => setCourtPaymentMethod('on_site')}
-                        style={{
-                          padding: '8px', borderRadius: '8px', border: `2px solid ${courtPaymentMethod === 'on_site' ? '#d97706' : '#e2e8f0'}`,
-                          backgroundColor: courtPaymentMethod === 'on_site' ? '#fef3c7' : 'white',
-                          cursor: 'pointer', textAlign: 'center', fontSize: '0.78rem', fontWeight: '700'
-                        }}
-                      >
-                        💵 En Cancha
-                      </button>
+                  {(() => {
+                    const pm = publicData?.paymentSettings?.paymentMode || 'both';
+                    if (pm === 'solo_reserva' || pm === 'on_site') return null;
+                    return (
+                      <div style={{ paddingTop: '8px', borderTop: '1px solid #e2e8f0' }}>
+                        <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '800', marginBottom: '6px', color: '#1e293b' }}>
+                          Método de Pago para tu cuota (50%)
+                        </label>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(115px, 1fr))', gap: '6px', marginBottom: '8px' }}>
+                          <button
+                            type="button"
+                            onClick={() => setCourtPaymentMethod('solo_reserva')}
+                            style={{
+                              padding: '8px', borderRadius: '8px', border: `2px solid ${courtPaymentMethod === 'solo_reserva' ? '#7c3aed' : '#e2e8f0'}`,
+                              backgroundColor: courtPaymentMethod === 'solo_reserva' ? '#f5f3ff' : 'white',
+                              cursor: 'pointer', textAlign: 'center', fontSize: '0.78rem', fontWeight: '700'
+                            }}
+                          >
+                            🏷️ Solo Reservar
+                          </button>
 
-                      {publicData?.paymentSettings?.acceptSinpe && (
-                        <button
-                          type="button"
-                          onClick={() => setCourtPaymentMethod('sinpe')}
-                          style={{
-                            padding: '8px', borderRadius: '8px', border: `2px solid ${courtPaymentMethod === 'sinpe' ? '#d97706' : '#e2e8f0'}`,
-                            backgroundColor: courtPaymentMethod === 'sinpe' ? '#fef3c7' : 'white',
-                            cursor: 'pointer', textAlign: 'center', fontSize: '0.78rem', fontWeight: '700'
-                          }}
-                        >
-                          📱 SINPE
-                        </button>
-                      )}
+                          {pm !== 'online' && (
+                            <button
+                              type="button"
+                              onClick={() => setCourtPaymentMethod('on_site')}
+                              style={{
+                                padding: '8px', borderRadius: '8px', border: `2px solid ${courtPaymentMethod === 'on_site' ? '#d97706' : '#e2e8f0'}`,
+                                backgroundColor: courtPaymentMethod === 'on_site' ? '#fef3c7' : 'white',
+                                cursor: 'pointer', textAlign: 'center', fontSize: '0.78rem', fontWeight: '700'
+                              }}
+                            >
+                              💵 En Cancha
+                            </button>
+                          )}
 
-                      {publicData?.paymentSettings?.acceptSinpeTilopay && (
-                        <button
-                          type="button"
-                          onClick={() => setCourtPaymentMethod('sinpe_tilopay')}
-                          style={{
-                            padding: '8px', borderRadius: '8px', border: `2px solid ${courtPaymentMethod === 'sinpe_tilopay' ? '#059669' : '#e2e8f0'}`,
-                            backgroundColor: courtPaymentMethod === 'sinpe_tilopay' ? '#ecfdf5' : 'white',
-                            cursor: 'pointer', textAlign: 'center', fontSize: '0.78rem', fontWeight: '700'
-                          }}
-                        >
-                          ⚡ SINPE Auto
-                        </button>
-                      )}
+                          {publicData?.paymentSettings?.acceptSinpe && pm !== 'on_site' && (
+                            <button
+                              type="button"
+                              onClick={() => setCourtPaymentMethod('sinpe')}
+                              style={{
+                                padding: '8px', borderRadius: '8px', border: `2px solid ${courtPaymentMethod === 'sinpe' ? '#d97706' : '#e2e8f0'}`,
+                                backgroundColor: courtPaymentMethod === 'sinpe' ? '#fef3c7' : 'white',
+                                cursor: 'pointer', textAlign: 'center', fontSize: '0.78rem', fontWeight: '700'
+                              }}
+                            >
+                              📱 SINPE
+                            </button>
+                          )}
 
-                      {publicData?.paymentSettings?.acceptCard && (
-                        <button
-                          type="button"
-                          onClick={() => setCourtPaymentMethod('card')}
-                          style={{
-                            padding: '8px', borderRadius: '8px', border: `2px solid ${courtPaymentMethod === 'card' ? '#2563eb' : '#e2e8f0'}`,
-                            backgroundColor: courtPaymentMethod === 'card' ? '#eff6ff' : 'white',
-                            cursor: 'pointer', textAlign: 'center', fontSize: '0.78rem', fontWeight: '700'
-                          }}
-                        >
-                          💳 Tarjeta
-                        </button>
-                      )}
-                    </div>
+                          {publicData?.paymentSettings?.acceptSinpeTilopay && pm !== 'on_site' && (
+                            <button
+                              type="button"
+                              onClick={() => setCourtPaymentMethod('sinpe_tilopay')}
+                              style={{
+                                padding: '8px', borderRadius: '8px', border: `2px solid ${courtPaymentMethod === 'sinpe_tilopay' ? '#059669' : '#e2e8f0'}`,
+                                backgroundColor: courtPaymentMethod === 'sinpe_tilopay' ? '#ecfdf5' : 'white',
+                                cursor: 'pointer', textAlign: 'center', fontSize: '0.78rem', fontWeight: '700'
+                              }}
+                            >
+                              ⚡ SINPE Auto
+                            </button>
+                          )}
 
-                    {courtPaymentMethod === 'sinpe' && (
-                      <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '8px 10px', fontSize: '0.78rem', color: '#166534', marginBottom: '8px' }}>
-                        <div>• SINPE: <strong>{publicData?.paymentSettings?.sinpePhone || publicData?.sinpePhone}</strong> ({publicData?.paymentSettings?.sinpeName || publicData?.sinpeName})</div>
-                        <input
-                          type="text"
-                          placeholder="Número de comprobante (opcional)"
-                          value={courtSinpeRef}
-                          onChange={e => setCourtSinpeRef(e.target.value)}
-                          style={{ width: '100%', padding: '5px 8px', borderRadius: '6px', border: '1px solid #86efac', marginTop: '4px', fontSize: '0.78rem', boxSizing: 'border-box' }}
-                        />
+                          {publicData?.paymentSettings?.acceptCard && pm !== 'on_site' && (
+                            <button
+                              type="button"
+                              onClick={() => setCourtPaymentMethod('card')}
+                              style={{
+                                padding: '8px', borderRadius: '8px', border: `2px solid ${courtPaymentMethod === 'card' ? '#2563eb' : '#e2e8f0'}`,
+                                backgroundColor: courtPaymentMethod === 'card' ? '#eff6ff' : 'white',
+                                cursor: 'pointer', textAlign: 'center', fontSize: '0.78rem', fontWeight: '700'
+                              }}
+                            >
+                              💳 Tarjeta
+                            </button>
+                          )}
+                        </div>
+
+                        {courtPaymentMethod === 'sinpe' && (
+                          <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '8px 10px', fontSize: '0.78rem', color: '#166534', marginBottom: '8px' }}>
+                            <div>• SINPE: <strong>{publicData?.paymentSettings?.sinpePhone || publicData?.sinpePhone}</strong> ({publicData?.paymentSettings?.sinpeName || publicData?.sinpeName})</div>
+                            <input
+                              type="text"
+                              placeholder="Número de comprobante (opcional)"
+                              value={courtSinpeRef}
+                              onChange={e => setCourtSinpeRef(e.target.value)}
+                              style={{ width: '100%', padding: '5px 8px', borderRadius: '6px', border: '1px solid #86efac', marginTop: '4px', fontSize: '0.78rem', boxSizing: 'border-box' }}
+                            />
+                          </div>
+                        )}
+                        {courtPaymentMethod === 'sinpe_tilopay' && (
+                          <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #6ee7b7', borderRadius: '8px', padding: '8px 10px', fontSize: '0.78rem', color: '#065f46', marginBottom: '8px' }}>
+                            ⚡ Al confirmar se abrirá Tilopay. Selecciona la pestaña <strong>SINPE Móvil</strong> dentro de la pasarela.
+                          </div>
+                        )}
+                        {(courtPaymentMethod === 'card' || courtPaymentMethod === 'sinpe_tilopay') && (
+                          <div style={{ backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '8px 10px', fontSize: '0.78rem', color: '#1e40af', marginBottom: '8px' }}>
+                            🔒 Serás redirigido a Tilopay para completar el pago de forma segura.
+                          </div>
+                        )}
+                        {courtPaymentMethod === 'solo_reserva' && (
+                          <div style={{ backgroundColor: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: '8px', padding: '8px 10px', fontSize: '0.78rem', color: '#4c1d95', marginBottom: '8px' }}>
+                            🏷️ Tu lugar quedará reservado sin cargo inmediato.
+                          </div>
+                        )}
                       </div>
-                    )}
-                    {(courtPaymentMethod === 'card' || courtPaymentMethod === 'sinpe_tilopay') && (
-                      <div style={{ backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '8px 10px', fontSize: '0.78rem', color: '#1e40af', marginBottom: '8px' }}>
-                        🔒 Al confirmar, podrás pagar tu cuota con verificación inmediata mediante Tilopay.
-                      </div>
-                    )}
-                  </div>
+                    );
+                  })()}
 
                   <button type="submit" disabled={submitting} style={{ width: '100%', padding: '14px', borderRadius: '8px', border: 'none', backgroundColor: '#d97706', color: 'white', fontWeight: '800', fontSize: '1.05rem', cursor: 'pointer', marginTop: '6px' }}>
-                    {submitting ? 'Procesando...' : '¡Aceptar Reto y Jugar!'}
+                    {submitting ? 'Procesando...' : courtPaymentMethod === 'solo_reserva' ? '🏷️ Reservar Sin Pago' : '¡Aceptar Reto y Jugar!'}
                   </button>
                 </form>
               </div>

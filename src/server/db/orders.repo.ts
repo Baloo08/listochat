@@ -67,13 +67,14 @@ export async function getOrderById(id: string, tenantId: string): Promise<Order 
   return order;
 }
 
-export async function createOrder(tenantId: string, data: Partial<Order>, items?: OrderItem[]): Promise<Order> {
+export async function createOrder(tenantId: string, data: Partial<Order>, items?: OrderItem[], dbClient?: any): Promise<Order> {
+  const runQuery = dbClient ? dbClient.query.bind(dbClient) : query;
   const insertSql = `
     INSERT INTO orders (
       tenant_id, customer_name, customer_phone, customer_email, customer_address, whatsapp_jid,
       source, subtotal, delivery_fee, discount, total, currency, status, payment_method, 
-      payment_status, payment_reference, payment_proof_url, payment_proof_status, notes, delivery_method, consumption_mode, table_number, customer_location
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+      payment_status, payment_reference, payment_proof_url, payment_proof_status, notes, delivery_method, consumption_mode, table_number, customer_location, stock_deducted
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
     RETURNING id
   `;
 
@@ -82,20 +83,22 @@ export async function createOrder(tenantId: string, data: Partial<Order>, items?
     data.source || 'store', data.subtotal, data.deliveryFee || 0, data.discount || 0, data.total, data.currency || 'CRC',
     data.status || 'pedido_recibido', data.paymentMethod, data.paymentStatus || 'pending', data.paymentReference || null,
     data.paymentProofUrl || null, data.paymentProofStatus || (data.paymentProofUrl ? 'received' : 'pending'), data.notes || null, data.deliveryMethod || 'pickup', data.consumptionMode || null, data.tableNumber || null,
-    data.customerLocation ? JSON.stringify(data.customerLocation) : null
+    data.customerLocation ? JSON.stringify(data.customerLocation) : null,
+    Boolean(data.stockDeducted)
   ];
 
   let result;
   try {
-    result = await query(insertSql, params);
+    result = await runQuery(insertSql, params);
   } catch (err: any) {
-    if (err && (err.message?.includes('payment_proof_url') || err.message?.includes('payment_proof_status') || err.code === '42703')) {
+    if (err && (err.message?.includes('payment_proof_url') || err.message?.includes('payment_proof_status') || err.message?.includes('stock_deducted') || err.code === '42703')) {
       console.log('[createOrder] Column missing detected, auto-migrating orders table...');
       await query(`
         ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_proof_url TEXT;
         ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_proof_status VARCHAR(50) DEFAULT 'pending';
+        ALTER TABLE orders ADD COLUMN IF NOT EXISTS stock_deducted BOOLEAN DEFAULT false;
       `);
-      result = await query(insertSql, params);
+      result = await runQuery(insertSql, params);
     } else {
       throw err;
     }
@@ -106,7 +109,7 @@ export async function createOrder(tenantId: string, data: Partial<Order>, items?
   
   if (orderItems && orderItems.length > 0) {
     for (const item of orderItems) {
-      await query(`
+      await runQuery(`
         INSERT INTO order_items (
           order_id, product_id, variant_id, tenant_id, product_name, variant_name, selected_variables, quantity, unit_price, total_price
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
@@ -211,6 +214,7 @@ export async function executeOrderPaymentConfirmation(
           tilopay_auth_code = $4,
           payment_reference = COALESCE($5, payment_reference),
           payment_method = COALESCE($6, payment_method),
+          stock_deducted = true,
           updated_at = CURRENT_TIMESTAMP
       WHERE id = $7 AND tenant_id = $8
     `, [
@@ -224,29 +228,31 @@ export async function executeOrderPaymentConfirmation(
       tenantId
     ]);
 
-    // 3. Descuento atómico de inventario para todos los ítems de la orden
-    const itemsRes = await client.query(`
-      SELECT product_id as "productId", variant_id as "variantId", quantity
-      FROM order_items
-      WHERE order_id = $1 AND tenant_id = $2
-    `, [orderId, tenantId]);
+    // 3. Descuento atómico de inventario para todos los ítems de la orden (solo si no se había descontado previamente)
+    if (!currentOrder.stock_deducted) {
+      const itemsRes = await client.query(`
+        SELECT product_id as "productId", variant_id as "variantId", quantity
+        FROM order_items
+        WHERE order_id = $1 AND tenant_id = $2
+      `, [orderId, tenantId]);
 
-    for (const item of itemsRes.rows) {
-      const qty = Number(item.quantity || 1);
-      if (item.productId) {
-        await client.query(`
-          UPDATE products
-          SET stock = GREATEST(0, stock - $1),
-              updated_at = CURRENT_TIMESTAMP
-          WHERE id = $2 AND tenant_id = $3 AND track_stock = true
-        `, [qty, item.productId, tenantId]);
-
-        if (item.variantId) {
+      for (const item of itemsRes.rows) {
+        const qty = Number(item.quantity || 1);
+        if (item.productId) {
           await client.query(`
-            UPDATE product_variants
-            SET stock = GREATEST(0, stock - $1)
-            WHERE id = $2 AND product_id = $3
-          `, [qty, item.variantId, item.productId]);
+            UPDATE products
+            SET stock = GREATEST(0, stock - $1),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = $2 AND tenant_id = $3 AND track_stock = true
+          `, [qty, item.productId, tenantId]);
+
+          if (item.variantId) {
+            await client.query(`
+              UPDATE product_variants
+              SET stock = GREATEST(0, stock - $1)
+              WHERE id = $2 AND product_id = $3
+            `, [qty, item.variantId, item.productId]);
+          }
         }
       }
     }

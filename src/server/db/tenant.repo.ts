@@ -17,6 +17,31 @@ export async function getAllTenants(): Promise<any[]> {
   return result.rows;
 }
 
+export async function getAllTenantsWithAdmin(): Promise<any[]> {
+  const result = await query(`
+    SELECT t.id, t.name, t.slug, t.custom_domain as "customDomain", 
+           t.ai_provider as "aiProvider", t.ai_model as "aiModel", 
+           t.evolution_instance as "evolutionInstance", t.whatsapp_number as "whatsappNumber",
+           t.plan, t.active, t.subscription_status as "subscriptionStatus",
+           t.billing_currency as "billingCurrency", t.custom_monthly_price as "customMonthlyPrice",
+           t.trial_ends_at as "trialEndsAt", t.next_billing_date as "nextBillingDate",
+           t.grace_period_ends_at as "gracePeriodEndsAt", t.settings_json as "settingsJson", 
+           t.created_at as "createdAt",
+           COALESCE(u.email, 'Sin registrar') as "adminEmail",
+           u.id as "adminId"
+    FROM tenants t
+    LEFT JOIN LATERAL (
+      SELECT id, email
+      FROM users
+      WHERE tenant_id = t.id AND role IN ('admin', 'tenant_admin')
+      ORDER BY created_at ASC
+      LIMIT 1
+    ) u ON true
+    ORDER BY t.created_at DESC
+  `);
+  return result.rows;
+}
+
 export async function getTenantById(id: string): Promise<any | null> {
   const result = await query(`
     SELECT id, name, slug, custom_domain as "customDomain", 
@@ -26,6 +51,7 @@ export async function getTenantById(id: string): Promise<any | null> {
            subscription_status as "subscriptionStatus", billing_currency as "billingCurrency", 
            custom_monthly_price as "customMonthlyPrice", trial_ends_at as "trialEndsAt", 
            next_billing_date as "nextBillingDate", grace_period_ends_at as "gracePeriodEndsAt",
+           calendar_token as "calendarToken",
            settings_json as "settingsJson", created_at as "createdAt"
     FROM tenants WHERE id = $1
   `, [id]);
@@ -41,6 +67,7 @@ export async function getTenantBySlug(slug: string): Promise<Tenant | null> {
            t.whatsapp_number as "whatsappNumber", t.plan, t.active, 
            t.subscription_status as "subscriptionStatus", t.billing_currency as "billingCurrency",
            t.custom_monthly_price as "customMonthlyPrice", t.trial_ends_at as "trialEndsAt",
+           t.calendar_token as "calendarToken",
            t.settings_json as "settingsJson", t.created_at as "createdAt"
     FROM tenants t
     LEFT JOIN store_settings ss ON ss.tenant_id = t.id

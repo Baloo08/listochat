@@ -7,6 +7,8 @@ import {
   getPaymentAuditLogs
 } from '../db/tenant-payment.repo.js';
 import { TilopayTenantService } from '../services/tilopay-tenant.service.js';
+import { query } from '../db/pool.js';
+import { notifyPaymentProofUploaded } from '../services/superadmin-notify.service.js';
 
 const router = Router();
 router.use(authenticateToken);
@@ -108,6 +110,47 @@ router.get('/audit', async (req: Request, res: Response): Promise<void> => {
   } catch (error: any) {
     console.error('[TenantPaymentRoutes] Error al obtener auditoría de pagos:', error);
     res.status(500).json({ error: 'Error al obtener registros de auditoría' });
+  }
+});
+
+// 5. Tenant Submit Subscription Payment Proof
+router.post('/submit-payment-proof', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const tenantId = req.tenantId!;
+    const { reference, proofUrl, amount, notes } = req.body;
+
+    const tenantRes = await query(`SELECT id, name, slug, billing_currency as currency FROM tenants WHERE id = $1`, [tenantId]);
+    if (tenantRes.rows.length === 0) {
+      res.status(404).json({ error: 'Tenant no encontrado' });
+      return;
+    }
+    const tenant = tenantRes.rows[0];
+
+    await query(`
+      UPDATE tenants
+      SET last_payment_proof = $1,
+          last_payment_ref = $2,
+          last_payment_amount = $3,
+          payment_notes = $4,
+          subscription_status = CASE WHEN subscription_status = 'suspended' THEN 'grace_period' ELSE subscription_status END,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $5
+    `, [proofUrl || null, reference || null, amount ? Number(amount) : null, notes || null, tenantId]);
+
+    // Notify Superadmin
+    await notifyPaymentProofUploaded({
+      tenantName: tenant.name,
+      slug: tenant.slug,
+      amount: Number(amount || 0),
+      currency: tenant.currency || 'CRC',
+      reference: reference || '',
+      notes: notes || ''
+    });
+
+    res.json({ success: true, message: 'Comprobante recibido con éxito. En breve será revisado y aprobado.' });
+  } catch (error) {
+    console.error('[TenantPaymentRoutes] Error submitting payment proof:', error);
+    res.status(500).json({ error: 'Error al enviar comprobante de pago' });
   }
 });
 

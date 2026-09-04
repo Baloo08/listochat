@@ -14,6 +14,7 @@ export async function getScheduleSettings(tenantId: string): Promise<ScheduleSet
       tenantId,
       scheduleMode: 'jornada',
       globalParallelSlots: 1,
+      bookingPaymentMode: 'all',
       jornadaConfig: {
         startHour: '08:00',
         endHour: '17:00',
@@ -40,6 +41,7 @@ export async function getScheduleSettings(tenantId: string): Promise<ScheduleSet
     tenantId: row.tenantId,
     scheduleMode: row.scheduleMode || 'jornada',
     globalParallelSlots: Math.max(1, Number(config.globalParallelSlots) || 1),
+    bookingPaymentMode: (config.bookingPaymentMode as ScheduleSettings['bookingPaymentMode']) || 'all',
     jornadaConfig: config.jornadaConfig,
     fechasConfig: config.fechasConfig,
     bloquesConfig: config.bloquesConfig,
@@ -57,6 +59,7 @@ export async function getScheduleSettings(tenantId: string): Promise<ScheduleSet
 export async function saveScheduleSettings(tenantId: string, data: Partial<ScheduleSettings>): Promise<ScheduleSettings> {
   const configJson = {
     globalParallelSlots: Math.max(1, Number(data.globalParallelSlots) || 1),
+    bookingPaymentMode: data.bookingPaymentMode || 'all',
     jornadaConfig: data.jornadaConfig,
     fechasConfig: data.fechasConfig,
     bloquesConfig: data.bloquesConfig,
@@ -81,6 +84,7 @@ export async function saveScheduleSettings(tenantId: string, data: Partial<Sched
     tenantId: row.tenantId,
     scheduleMode: row.scheduleMode,
     globalParallelSlots: Math.max(1, Number(config.globalParallelSlots) || 1),
+    bookingPaymentMode: (config.bookingPaymentMode as ScheduleSettings['bookingPaymentMode']) || 'all',
     jornadaConfig: config.jornadaConfig,
     fechasConfig: config.fechasConfig,
     bloquesConfig: config.bloquesConfig,

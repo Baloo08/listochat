@@ -27,17 +27,33 @@ export async function getSpecialistById(id: string): Promise<Specialist | null> 
   return res.rows[0] || null;
 }
 
-export async function getSpecialistByPin(pin: string, phone?: string): Promise<Specialist | null> {
+export async function getSpecialistByPin(pin: string, phone?: string, tenantId?: string): Promise<Specialist | null> {
   const cleanPin = (pin || '').trim();
   let sql = 'SELECT id, tenant_id as "tenantId", name, phone, specialty, access_pin as "accessPin", active, created_at as "createdAt" FROM specialists WHERE TRIM(access_pin) = $1 AND active = TRUE';
-  const params = [cleanPin];
+  const params: any[] = [cleanPin];
+
+  if (tenantId) {
+    sql += ` AND tenant_id = $${params.length + 1}`;
+    params.push(tenantId);
+  }
+
   if (phone) {
     const clean = phone.replace(/\D/g, '');
-    sql += ' AND (REPLACE(phone, \'-\', \'\') LIKE \'%\' || $2 OR phone LIKE \'%\' || $2)';
-    params.push(clean.slice(-8));
+    if (clean.length >= 8) {
+      sql += ` AND (REPLACE(phone, '-', '') LIKE '%' || $${params.length + 1} OR phone LIKE '%' || $${params.length + 1})`;
+      params.push(clean.slice(-8));
+    }
   }
-  sql += ' LIMIT 1';
+
+  sql += ' LIMIT 2';
   const res = await query(sql, params);
+
+  // Si hay más de 1 resultado y no se especificó tenantId ni phone, hay colisión entre inquilinos
+  if (res.rows.length > 1 && !tenantId && !phone) {
+    console.warn(`[getSpecialistByPin] Colisión de PIN ${cleanPin} detectada entre múltiples comercios. Se requiere teléfono o tenantId para desambiguar.`);
+    return null;
+  }
+
   return res.rows[0] || null;
 }
 

@@ -62,11 +62,14 @@ router.get('/public/:slug/info', async (req, res) => {
       currency: s.currency || 'CRC',
       courtsConfig,
       paymentSettings: {
+        paymentMode: courtsConfig.paymentMode || 'both',
         acceptSinpe: s.accept_sinpe !== false,
         acceptSinpeTilopay: s.accept_sinpe_tilopay === true && tiloAvailable,
         acceptCard: tiloAvailable,
+        acceptCash: true,
         sinpePhone: s.sinpe_phone || '',
         sinpeName: s.sinpe_name || '',
+        bankAccountInfo: s.bank_account_info || '',
         currency: s.currency || 'CRC'
       }
     });
@@ -110,11 +113,12 @@ router.post('/public/:slug/book', async (req, res) => {
     
     const data = req.body;
     const paymentMethod = data.paymentMethod || 'cash';
-    const isOnlinePayment = paymentMethod === 'card' || paymentMethod === 'sinpe_tilopay';
+    // solo_reserva = book without payment; does not trigger Tilopay
+    const isOnlinePayment = (paymentMethod === 'card' || paymentMethod === 'sinpe_tilopay') && paymentMethod !== 'solo_reserva';
 
     const booking = await createBooking(tenant.id, {
       ...data,
-      paymentMethod,
+      paymentMethod: paymentMethod === 'solo_reserva' ? 'pending' : paymentMethod,
       paymentReference: data.paymentReference || null
     });
 
@@ -186,9 +190,13 @@ router.post('/public/:slug/join-match/:bookingId', async (req, res) => {
     const { bookingId } = req.params;
     
     const paymentMethod = req.body.paymentMethod || 'cash';
-    const isOnlinePayment = paymentMethod === 'card' || paymentMethod === 'sinpe_tilopay';
+    // solo_reserva = book without payment; does not trigger Tilopay
+    const isOnlinePayment = (paymentMethod === 'card' || paymentMethod === 'sinpe_tilopay') && paymentMethod !== 'solo_reserva';
 
-    const booking = await joinMatch(bookingId, tenant.id, req.body);
+    const booking = await joinMatch(bookingId, tenant.id, {
+      ...req.body,
+      paymentMethod: paymentMethod === 'solo_reserva' ? 'pending' : paymentMethod
+    });
     if (!booking) return res.status(404).json({ error: 'Match no encontrado' });
 
     let paymentSession: any = null;
@@ -288,6 +296,10 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const court = await updateCourt(req.params.id, req.tenantId, req.body);
+    if (!court) {
+      res.status(404).json({ error: 'Cancha no encontrada o no pertenece a este comercio' });
+      return;
+    }
     res.json(court);
   } catch (error) {
     console.error(error);

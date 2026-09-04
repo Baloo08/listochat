@@ -12,9 +12,15 @@ import { env } from '../config/env.js';
 const router = Router();
 
 // ========================================================
-// 1. PUBLIC / TENANT ENDPOINT: SUBMIT PAYMENT PROOF
+// SUPERADMIN PROTECTED ROUTES (Root middleware)
 // ========================================================
-router.post('/submit-payment-proof', authenticateToken, async (req: any, res) => {
+router.use(authenticateToken);
+router.use(requireSuperAdmin);
+
+// ========================================================
+// 1. SUBMIT PAYMENT PROOF (SuperAdmin / Fallback)
+// ========================================================
+router.post('/submit-payment-proof', async (req: any, res) => {
   try {
     const tenantId = req.user?.tenantId;
     const { reference, proofUrl, amount, notes } = req.body;
@@ -58,12 +64,6 @@ router.post('/submit-payment-proof', authenticateToken, async (req: any, res) =>
     res.status(500).json({ error: 'Error al enviar comprobante de pago' });
   }
 });
-
-// ========================================================
-// 2. SUPERADMIN PROTECTED ROUTES
-// ========================================================
-router.use(authenticateToken);
-router.use(requireSuperAdmin);
 
 // PLATFORM SETTINGS (AI MASTER KEY & NOTIFY PHONE)
 // PLATFORM SETTINGS (LOCALAI MARCA BLANCA, AI MASTER KEY, NOTIFY PHONE & DEPLOYMENTS)

@@ -17,9 +17,7 @@ export async function getAppointmentsByTenant(tenantId: string): Promise<Appoint
   return result.rows;
 }
 
-export async function getAppointmentById(id: string, tenantId?: string): Promise<Appointment | null> {
-  const whereClause = tenantId ? 'WHERE id = $1 AND tenant_id = $2' : 'WHERE id = $1';
-  const params = tenantId ? [id, tenantId] : [id];
+export async function getAppointmentById(id: string, tenantId: string): Promise<Appointment | null> {
   const result = await query(`
     SELECT id, tenant_id as "tenantId", name, whatsapp, service, 
            date, time, amount, status, details, vehicle_model as "vehicleModel",
@@ -29,8 +27,27 @@ export async function getAppointmentById(id: string, tenantId?: string): Promise
            tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
            created_at as "createdAt"
     FROM appointments 
-    ${whereClause}
-  `, params);
+    WHERE id = $1 AND tenant_id = $2
+  `, [id, tenantId]);
+  return result.rows[0] || null;
+}
+
+/**
+ * Consulta de cita sin restricción de tenant, EXCLUSIVA para el webhook de Tilopay
+ * que recibe únicamente el identificador APT-{id}.
+ */
+export async function getAppointmentByIdUnsafeForWebhook(id: string): Promise<Appointment | null> {
+  const result = await query(`
+    SELECT id, tenant_id as "tenantId", name, whatsapp, service, 
+           date, time, amount, status, details, vehicle_model as "vehicleModel",
+           selected_variables as "selectedVariables", specialist_id as "specialistId",
+           payment_method as "paymentMethod", payment_status as "paymentStatus",
+           payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
+           tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
+           created_at as "createdAt"
+    FROM appointments 
+    WHERE id = $1
+  `, [id]);
   return result.rows[0] || null;
 }
 

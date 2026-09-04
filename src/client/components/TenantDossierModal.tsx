@@ -3,8 +3,9 @@ import { useApi } from '../hooks/useApi';
 import {
   X, User, Calendar, CreditCard, Bot, ShoppingBag, MessageSquare, 
   Clock, DollarSign, FileText, CheckCircle, AlertTriangle, Send, 
-  ExternalLink, Key, Plus, RefreshCw, Phone, Mail, ShieldCheck, Tag
+  ExternalLink, Key, Plus, RefreshCw, Phone, Mail, ShieldCheck, Tag, Zap, Lock
 } from 'lucide-react';
+import TenantBillingCardModal from './TenantBillingCardModal';
 
 interface Props {
   tenantId: string;
@@ -29,6 +30,12 @@ export default function TenantDossierModal({ tenantId, onClose, onRefresh }: Pro
   const [payNotes, setPayNotes] = useState('');
   const [savingPay, setSavingPay] = useState(false);
 
+  // Tilopay recurring billing states
+  const [showCardModal, setShowCardModal] = useState(false);
+  const [billingCards, setBillingCards] = useState<any[]>([]);
+  const [autoBillingEnabled, setAutoBillingEnabled] = useState(false);
+  const [chargingTilopay, setChargingTilopay] = useState(false);
+
   const api = useApi();
 
   const loadDossier = async () => {
@@ -42,11 +49,51 @@ export default function TenantDossierModal({ tenantId, onClose, onRefresh }: Pro
           setSelectedDate(res.tenant.nextBillingDate.split('T')[0]);
         }
         setPayAmount(Number(res.tenant?.customMonthlyPrice) || 55000);
+        setAutoBillingEnabled(Boolean(res.tenant?.auto_billing_enabled || res.tenant?.autoBillingEnabled));
       }
+
+      // Load registered Tilopay cards
+      try {
+        const cards = await api.get(`/api/superadmin/billing/cards/${tenantId}`);
+        if (Array.isArray(cards)) setBillingCards(cards);
+      } catch (cErr) {}
     } catch (err: any) {
       alert('Error cargando expediente: ' + err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleTilopayCharge = async () => {
+    const symbol = data?.tenant?.billingCurrency === 'USD' ? '$' : '₡';
+    const amountStr = `${symbol}${(Number(data?.tenant?.customMonthlyPrice) || 55000).toLocaleString('es-CR')}`;
+    if (!confirm(`¿Ejecutar cobro de ${amountStr} con la tarjeta guardada en Tilopay para ${data?.tenant?.name}?`)) return;
+
+    setChargingTilopay(true);
+    try {
+      const res = await api.post(`/api/superadmin/billing/charge/${tenantId}`, {});
+      if (res?.success) {
+        alert(`✅ ¡Cobro exitoso! ${res.message}`);
+        loadDossier();
+        if (onRefresh) onRefresh();
+      } else {
+        alert(`❌ Fallo en el cobro: ${res?.message || 'Rechazado'}`);
+      }
+    } catch (e: any) {
+      alert(`Error cobrando con Tilopay: ${e.message}`);
+    } finally {
+      setChargingTilopay(false);
+    }
+  };
+
+  const handleToggleAutoBilling = async () => {
+    const newState = !autoBillingEnabled;
+    try {
+      await api.post(`/api/superadmin/billing/toggle-auto-billing/${tenantId}`, { enabled: newState });
+      setAutoBillingEnabled(newState);
+      alert(newState ? '✅ Cobro automático mensual ACTIVADO' : 'Cobro automático DESACTIVADO');
+    } catch (e: any) {
+      alert('Error cambiando estado de cobro automático: ' + e.message);
     }
   };
 
@@ -397,6 +444,64 @@ export default function TenantDossierModal({ tenantId, onClose, onRefresh }: Pro
               </div>
 
             </div>
+
+            {/* TILOPAY RECURRING BILLING PANEL */}
+            <div style={{ marginTop: '18px', paddingTop: '16px', borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px' }}>
+              <div>
+                <div style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 'bold', letterSpacing: '0.5px' }}>
+                  Tarjeta de Cobro Tilopay (Tokenizada)
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+                  {billingCards.length > 0 ? (
+                    <span style={{ fontSize: '0.9rem', color: '#38bdf8', fontWeight: 'bold' }}>
+                      💳 {billingCards[0].cardBrand} terminada en •••• {billingCards[0].cardLast4} ({billingCards[0].cardHolder})
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>
+                      ⚠️ No hay tarjeta registrada para este comercio
+                    </span>
+                  )}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '8px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', color: '#cbd5e1', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={autoBillingEnabled}
+                      onChange={handleToggleAutoBilling}
+                      style={{ cursor: 'pointer' }}
+                    />
+                    <span>Cobro Automático Recurrente cada 30 días</span>
+                  </label>
+                  {tenant.lastAutoChargeStatus && (
+                    <span style={{ fontSize: '0.72rem', padding: '2px 6px', borderRadius: '4px', backgroundColor: tenant.lastAutoChargeStatus === 'success' ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)', color: tenant.lastAutoChargeStatus === 'success' ? '#34d399' : '#f87171' }}>
+                      Último cobro: {tenant.lastAutoChargeStatus === 'success' ? 'Aprobado' : 'Rechazado'}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowCardModal(true)}
+                  style={{ padding: '8px 12px', backgroundColor: '#334155', color: 'white', border: 'none', borderRadius: '8px', fontSize: '0.78rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <Key size={14} /> {billingCards.length > 0 ? 'Cambiar Tarjeta' : 'Registrar Tarjeta'}
+                </button>
+
+                {billingCards.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleTilopayCharge}
+                    disabled={chargingTilopay}
+                    style={{ padding: '8px 14px', backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', fontSize: '0.78rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <CreditCard size={14} /> {chargingTilopay ? 'Procesando...' : 'Cobrar con Tilopay'}
+                  </button>
+                )}
+              </div>
+            </div>
+
           </div>
 
           {/* PAYMENT HISTORY TABLE */}
@@ -541,6 +646,16 @@ export default function TenantDossierModal({ tenantId, onClose, onRefresh }: Pro
               </form>
             </div>
           </div>
+        )}
+
+        {/* MODAL INTERNO: REGISTRAR TARJETA TILOPAY */}
+        {showCardModal && (
+          <TenantBillingCardModal
+            tenantId={tenantId}
+            tenantName={tenant.name}
+            onClose={() => setShowCardModal(false)}
+            onSuccess={loadDossier}
+          />
         )}
 
       </div>

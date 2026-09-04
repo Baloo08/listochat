@@ -40,8 +40,8 @@ router.post('/simulate', async (req, res) => {
     );
     res.json(result);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Error al simular agente: ' + String(error) });
+    console.error('Error al simular agente:', error);
+    res.status(500).json({ error: 'Error al simular la respuesta del agente IA. Verifica la configuración de tu proveedor.' });
   }
 });
 

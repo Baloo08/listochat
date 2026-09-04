@@ -399,61 +399,69 @@ export default function App() {
 
   const tenantNavGroups: NavGroup[] = [
     {
-      title: 'GENERAL & CLIENTES',
+      title: 'OPERACIONES EN VIVO',
       items: [
         { id: 'dashboard', label: 'Dashboard', icon: <Home size={18} /> },
         { id: 'chats', label: 'Chats en Vivo', icon: <MessageSquare size={18} /> },
-        { id: 'queue', label: 'Mensajes por contestar', icon: <Clock size={18} /> },
-        { id: 'whatsapp', label: 'Conexión WhatsApp', icon: <Phone size={18} /> }
-      ]
-    },
-    ...(storeModules.storeEnabled !== false ? [{
-      title: storeMode === 'restaurant' ? 'RESTAURANTE & COCINA' : 'TIENDA & VENTAS',
-      items: [
-        { 
-          id: 'ordenes', 
-          label: storeMode === 'restaurant' ? 'Comandas' : 'Pedidos', 
-          icon: <ClipboardList size={18} />, 
-          badge: unreadOrdersCount > 0 ? unreadOrdersCount : undefined 
-        },
-        { id: 'productos', label: storeMode === 'restaurant' ? 'Menú / Platillos' : 'Catálogo Productos', icon: <Package size={18} /> },
-        { id: 'tienda', label: 'Tienda & Envíos', icon: <ShoppingBag size={18} /> },
-        { id: 'sitio', label: 'Mi Sitio Web', icon: <Globe size={18} /> }
-      ]
-    }] : [{
-      title: 'PRESENCIA ONLINE',
-      items: [
-        { id: 'sitio', label: 'Mi Sitio Web', icon: <Globe size={18} /> }
-      ]
-    }]),
-    ...(storeModules.bookingsEnabled !== false ? [{
-      title: 'AGENDA & CITAS',
-      items: [
-        { id: 'reservas', label: 'Reservas & Agenda', icon: <Calendar size={18} /> },
-        { id: 'servicios', label: 'Servicios', icon: <Wrench size={18} /> }
-      ]
-    }] : []),
-    ...(storeModules.courtsEnabled ? [{
-      title: 'CANCHAS & DEPORTES',
-      items: [
-        { id: 'canchas', label: 'Gestión de Canchas', icon: <Trophy size={18} /> },
-        { id: 'canchas_reservas', label: 'Reservas Deportivas', icon: <CalendarCheck size={18} /> }
-      ]
-    }] : []),
-    {
-      title: 'MARKETING & DIFUSIÓN',
-      items: [
-        { id: 'campaigns', label: 'Difusión & CRM', icon: <Send size={18} /> }
+        { id: 'queue', label: 'Cola de Mensajes', icon: <Clock size={18} /> },
+        ...(storeModules.storeEnabled !== false ? [{
+          id: 'ordenes',
+          label: storeMode === 'restaurant' ? 'Comandas & Cocina' : 'Pedidos & Despacho',
+          icon: <ClipboardList size={18} />,
+          badge: unreadOrdersCount > 0 ? unreadOrdersCount : undefined
+        }] : []),
+        ...(storeModules.bookingsEnabled !== false ? [{
+          id: 'reservas',
+          label: 'Reservas & Citas',
+          icon: <Calendar size={18} />
+        }] : []),
+        ...(storeModules.courtsEnabled ? [{
+          id: 'canchas_reservas',
+          label: 'Reservas Canchas',
+          icon: <CalendarCheck size={18} />
+        }] : [])
       ]
     },
     {
-      title: 'SISTEMA & AJUSTES',
+      title: 'CATÁLOGO & SERVICIOS',
       items: [
-        { id: 'sucursales', label: 'Sucursales', icon: <Building2 size={18} /> },
-        { id: 'agente', label: 'Agente IA', icon: <Bot size={18} /> },
-        { id: 'notificaciones', label: 'Historial Envíos', icon: <Bell size={18} /> },
-        { id: 'usuarios', label: 'Usuarios', icon: <Users size={18} /> },
-        { id: 'configuracion', label: 'Configuración', icon: <Settings size={18} /> }
+        ...(storeModules.storeEnabled !== false ? [{
+          id: 'productos',
+          label: storeMode === 'restaurant' ? 'Menú & Platillos' : 'Productos & Catálogo',
+          icon: <Package size={18} />
+        }] : []),
+        ...(storeModules.bookingsEnabled !== false ? [{
+          id: 'servicios',
+          label: 'Servicios Profesionales',
+          icon: <Wrench size={18} />
+        }] : []),
+        ...(storeModules.courtsEnabled ? [{
+          id: 'canchas',
+          label: 'Gestión de Canchas',
+          icon: <Trophy size={18} />
+        }] : []),
+        { id: 'campaigns', label: 'Difusión & Campañas', icon: <Send size={18} /> }
+      ]
+    },
+    {
+      title: 'CANALES DIGITALES',
+      items: [
+        { id: 'whatsapp', label: 'WhatsApp & Bots', icon: <Phone size={18} /> },
+        { id: 'sitio', label: 'Sitio Web & Tienda', icon: <Globe size={18} /> }
+      ]
+    },
+    {
+      title: 'CONFIGURACIÓN DEL NEGOCIO',
+      items: [
+        ...(storeModules.storeEnabled !== false ? [{
+          id: 'tienda',
+          label: 'Ajustes Tienda & Pagos',
+          icon: <ShoppingBag size={18} />
+        }] : []),
+        { id: 'sucursales', label: 'Sedes & Sucursales', icon: <Building2 size={18} /> },
+        { id: 'agente', label: 'Personalidad Agente IA', icon: <Bot size={18} /> },
+        { id: 'usuarios', label: 'Equipo & Usuarios', icon: <Users size={18} /> },
+        { id: 'configuracion', label: 'Ajustes Generales', icon: <Settings size={18} /> }
       ]
     }
   ];

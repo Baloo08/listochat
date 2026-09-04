@@ -3,7 +3,7 @@ import { authenticateToken } from '../middleware/auth.js';
 import { tenantContext } from '../middleware/tenantContext.js';
 import { getDriversByTenant, createDriver, updateDriver, deleteDriver, getDriverById, getDriverByPin, getActiveOrdersForDriver } from '../db/drivers.repo.js';
 import { getOrderById, updateOrder } from '../db/orders.repo.js';
-import { getTenantById } from '../db/tenant.repo.js';
+import { getTenantById, getTenantBySlug } from '../db/tenant.repo.js';
 import { getStoreSettings } from '../db/store-settings.repo.js';
 import { sendMessage } from '../services/evolution.js';
 import { query } from '../db/pool.js';
@@ -36,15 +36,21 @@ async function resolveInstanceName(tenantId: string): Promise<string | undefined
 // 1. PIN Login / Verification
 router.post('/portal/login', async (req, res) => {
   try {
-    const { pin, phone } = req.body;
+    const { pin, phone, tenantSlug } = req.body;
     if (!pin) {
       res.status(400).json({ error: 'PIN requerido' });
       return;
     }
 
-    const driver = await getDriverByPin(pin, phone);
+    let targetTenantId: string | undefined;
+    if (tenantSlug) {
+      const targetTenant = await getTenantBySlug(String(tenantSlug).toLowerCase().trim());
+      if (targetTenant) targetTenantId = targetTenant.id;
+    }
+
+    const driver = await getDriverByPin(pin, phone, targetTenantId);
     if (!driver) {
-      res.status(401).json({ error: 'Código PIN no encontrado o incorrecto' });
+      res.status(401).json({ error: 'Código PIN no encontrado o requiere número de teléfono para validar el comercio.' });
       return;
     }
 

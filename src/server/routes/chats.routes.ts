@@ -50,10 +50,12 @@ router.post('/reply', async (req, res) => {
     const { remoteJid, messageText, pushName } = req.body;
     let tenantId = req.tenantId!;
     
-    // If superadmin, find tenant associated with this message if possible
-    const checkTenant = await query(`SELECT tenant_id FROM chat_messages WHERE remote_jid = $1 LIMIT 1`, [remoteJid]);
-    if (checkTenant.rows.length > 0) {
-      tenantId = checkTenant.rows[0].tenant_id;
+    // Only if superadmin without specific tenant, find tenant associated with this message
+    if ((req as any).user?.role === 'superadmin' && !req.tenantId) {
+      const checkTenant = await query(`SELECT tenant_id FROM chat_messages WHERE remote_jid = $1 LIMIT 1`, [remoteJid]);
+      if (checkTenant.rows.length > 0) {
+        tenantId = checkTenant.rows[0].tenant_id;
+      }
     }
 
     const tenant = await getTenantById(tenantId);
@@ -83,9 +85,11 @@ router.post('/toggle-ai', async (req, res) => {
   try {
     const { remoteJid, isHumanMode } = req.body;
     let tenantId = req.tenantId!;
-    const checkTenant = await query(`SELECT tenant_id FROM chat_messages WHERE remote_jid = $1 LIMIT 1`, [remoteJid]);
-    if (checkTenant.rows.length > 0) {
-      tenantId = checkTenant.rows[0].tenant_id;
+    if ((req as any).user?.role === 'superadmin' && !req.tenantId) {
+      const checkTenant = await query(`SELECT tenant_id FROM chat_messages WHERE remote_jid = $1 LIMIT 1`, [remoteJid]);
+      if (checkTenant.rows.length > 0) {
+        tenantId = checkTenant.rows[0].tenant_id;
+      }
     }
 
     if (remoteJid) {

@@ -6,7 +6,7 @@ import {
   getSpecialistByPin, getActiveAppointmentsForSpecialist,
   getCompletedAppointmentsForSpecialist
 } from '../db/specialists.repo.js';
-import { getTenantById } from '../db/tenant.repo.js';
+import { getTenantById, getTenantBySlug } from '../db/tenant.repo.js';
 import { query } from '../db/pool.js';
 
 const router = Router();
@@ -14,14 +14,19 @@ const router = Router();
 // 1. Public Specialist Portal (Login & View by PIN)
 router.post('/portal/login', async (req, res) => {
   try {
-    const { pin, phone } = req.body;
+    const { pin, phone, tenantSlug } = req.body;
     if (!pin) {
       res.status(400).json({ error: 'PIN requerido' });
       return;
     }
-    const specialist = await getSpecialistByPin(pin, phone);
+    let targetTenantId: string | undefined;
+    if (tenantSlug) {
+      const targetTenant = await getTenantBySlug(String(tenantSlug).toLowerCase().trim());
+      if (targetTenant) targetTenantId = targetTenant.id;
+    }
+    const specialist = await getSpecialistByPin(pin, phone, targetTenantId);
     if (!specialist) {
-      res.status(401).json({ error: 'Código PIN no encontrado o incorrecto' });
+      res.status(401).json({ error: 'Código PIN no encontrado o requiere número de teléfono para validar el comercio.' });
       return;
     }
     const tenant = await getTenantById(specialist.tenantId);

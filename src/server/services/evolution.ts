@@ -14,9 +14,23 @@ function getHeaders() {
   };
 }
 
+async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs: number = 15000): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: options.signal || controller.signal
+    });
+    return response;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function createInstance(instanceName: string): Promise<EvolutionResponse> {
   try {
-    const response = await fetch(`${EVOLUTION_API_URL}/instance/create`, {
+    const response = await fetchWithTimeout(`${EVOLUTION_API_URL}/instance/create`, {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify({
@@ -25,7 +39,7 @@ export async function createInstance(instanceName: string): Promise<EvolutionRes
         qrcode: true,
         integration: 'WHATSAPP-BAILEYS'
       })
-    });
+    }, 15000);
     const data = await response.json();
     return { success: response.ok, data };
   } catch (error) {
@@ -35,10 +49,10 @@ export async function createInstance(instanceName: string): Promise<EvolutionRes
 
 export async function getInstanceStatus(instanceName: string): Promise<EvolutionResponse> {
   try {
-    const response = await fetch(`${EVOLUTION_API_URL}/instance/connectionState/${instanceName}`, {
+    const response = await fetchWithTimeout(`${EVOLUTION_API_URL}/instance/connectionState/${instanceName}`, {
       method: 'GET',
       headers: getHeaders()
-    });
+    }, 15000);
     const data = await response.json();
     return { success: response.ok, data };
   } catch (error) {
@@ -48,10 +62,10 @@ export async function getInstanceStatus(instanceName: string): Promise<Evolution
 
 export async function connectInstance(instanceName: string): Promise<EvolutionResponse> {
   try {
-    const response = await fetch(`${EVOLUTION_API_URL}/instance/connect/${instanceName}`, {
+    const response = await fetchWithTimeout(`${EVOLUTION_API_URL}/instance/connect/${instanceName}`, {
       method: 'GET',
       headers: getHeaders()
-    });
+    }, 15000);
     const data = await response.json();
     return { success: response.ok, data };
   } catch (error) {
@@ -61,10 +75,10 @@ export async function connectInstance(instanceName: string): Promise<EvolutionRe
 
 export async function disconnectInstance(instanceName: string): Promise<EvolutionResponse> {
   try {
-    const response = await fetch(`${EVOLUTION_API_URL}/instance/logout/${instanceName}`, {
+    const response = await fetchWithTimeout(`${EVOLUTION_API_URL}/instance/logout/${instanceName}`, {
       method: 'DELETE',
       headers: getHeaders()
-    });
+    }, 15000);
     const data = await response.json();
     return { success: response.ok, data };
   } catch (error) {
@@ -75,7 +89,7 @@ export async function disconnectInstance(instanceName: string): Promise<Evolutio
 export async function sendMessage(instanceName: string, number: string, text: string): Promise<EvolutionResponse> {
   try {
     const cleanNumber = (number || '').replace(/@.+$/, '').replace(/\D/g, '');
-    const response = await fetch(`${EVOLUTION_API_URL}/message/sendText/${instanceName}`, {
+    const response = await fetchWithTimeout(`${EVOLUTION_API_URL}/message/sendText/${instanceName}`, {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify({
@@ -83,7 +97,7 @@ export async function sendMessage(instanceName: string, number: string, text: st
         text: text,
         delay: 1000
       })
-    });
+    }, 15000);
     const data = await response.json();
     return { success: response.ok, data };
   } catch (error) {
@@ -93,7 +107,7 @@ export async function sendMessage(instanceName: string, number: string, text: st
 
 export async function setWebhook(instanceName: string, webhookUrl: string): Promise<EvolutionResponse> {
   try {
-    const response = await fetch(`${EVOLUTION_API_URL}/webhook/set/${instanceName}`, {
+    const response = await fetchWithTimeout(`${EVOLUTION_API_URL}/webhook/set/${instanceName}`, {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify({
@@ -109,7 +123,7 @@ export async function setWebhook(instanceName: string, webhookUrl: string): Prom
           ]
         }
       })
-    });
+    }, 15000);
     const data = await response.json();
     return { success: response.ok, data };
   } catch (error) {
@@ -119,7 +133,7 @@ export async function setWebhook(instanceName: string, webhookUrl: string): Prom
 
 export async function markAsRead(instanceName: string, remoteJid: string, messageId: string): Promise<EvolutionResponse> {
   try {
-    const response = await fetch(`${EVOLUTION_API_URL}/chat/markMessageAsRead/${instanceName}`, {
+    const response = await fetchWithTimeout(`${EVOLUTION_API_URL}/chat/markMessageAsRead/${instanceName}`, {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify({
@@ -129,7 +143,7 @@ export async function markAsRead(instanceName: string, remoteJid: string, messag
           fromMe: false
         }]
       })
-    });
+    }, 15000);
     const data = await response.json();
     return { success: response.ok, data };
   } catch (error) {
@@ -140,7 +154,7 @@ export async function markAsRead(instanceName: string, remoteJid: string, messag
 export async function sendMedia(instanceName: string, number: string, mediaUrl: string, caption?: string): Promise<EvolutionResponse> {
   try {
     const cleanNumber = (number || '').replace(/@.+$/, '').replace(/\D/g, '');
-    const response = await fetch(`${EVOLUTION_API_URL}/message/sendMedia/${instanceName}`, {
+    const response = await fetchWithTimeout(`${EVOLUTION_API_URL}/message/sendMedia/${instanceName}`, {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify({
@@ -150,7 +164,7 @@ export async function sendMedia(instanceName: string, number: string, mediaUrl: 
         caption: caption || '',
         delay: 1200
       })
-    });
+    }, 20000);
     const data = await response.json();
     return { success: response.ok, data };
   } catch (error) {
@@ -160,7 +174,7 @@ export async function sendMedia(instanceName: string, number: string, mediaUrl: 
 
 export async function getBase64FromMediaMessage(instanceName: string, messageKey: any, messageData: any): Promise<{ base64?: string; mimetype?: string; error?: any }> {
   try {
-    const response = await fetch(`${EVOLUTION_API_URL}/chat/getBase64FromMediaMessage/${instanceName}`, {
+    const response = await fetchWithTimeout(`${EVOLUTION_API_URL}/chat/getBase64FromMediaMessage/${instanceName}`, {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify({
@@ -170,7 +184,7 @@ export async function getBase64FromMediaMessage(instanceName: string, messageKey
         },
         convertToMp4: false
       })
-    });
+    }, 30000);
     if (!response.ok) {
       const errText = await response.text();
       return { error: errText };
@@ -194,11 +208,11 @@ export async function fetchWhatsAppContacts(instanceName: string): Promise<Array
 
     for (const url of endpoints) {
       try {
-        const response = await fetch(url, {
+        const response = await fetchWithTimeout(url, {
           method: 'POST',
           headers: getHeaders(),
           body: JSON.stringify({})
-        });
+        }, 15000);
         if (response.ok) {
           const list = await response.json();
           const items = Array.isArray(list) ? list : (list.data || []);

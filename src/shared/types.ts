@@ -363,6 +363,7 @@ export interface Order {
   paymentLinkExpiresAt?: Date | string;
   tilopayTransactionId?: string;
   tilopayAuthCode?: string;
+  stockDeducted?: boolean;
   estimatedDelivery?: Date;
   chatMessageId?: string;
   createdAt: Date;
@@ -528,7 +529,7 @@ export interface CourtsTheme {
 }
 
 export interface CourtsConfig {
-  paymentMode: 'online' | 'on_site' | 'both';
+  paymentMode: 'online' | 'on_site' | 'both' | 'solo_reserva';
   matchExpiryHours: number;
   allowSeekMatch: boolean;
   sportTypes: string[];
@@ -555,6 +556,7 @@ export interface ScheduleSettings {
   tenantId: string;
   scheduleMode: 'jornada' | 'custom' | string;
   globalParallelSlots?: number;
+  bookingPaymentMode?: 'all' | 'solo_reserva' | 'on_site' | 'online';
   jornadaConfig?: {
     startHour: string;
     endHour: string;

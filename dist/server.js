@@ -92,6 +92,7 @@ __export(users_repo_exports, {
   getAdminUserByTenant: () => getAdminUserByTenant,
   getUserByEmail: () => getUserByEmail,
   getUserById: () => getUserById,
+  getUserByIdAndTenant: () => getUserByIdAndTenant,
   getUsersByTenant: () => getUsersByTenant,
   hashPassword: () => hashPassword,
   resetTenantAdminPassword: () => resetTenantAdminPassword,
@@ -172,6 +173,15 @@ async function getUserById(id) {
            created_at as "createdAt", updated_at as "updatedAt"
     FROM users WHERE id = $1
   `, [id]);
+  return result.rows[0] || null;
+}
+async function getUserByIdAndTenant(id, tenantId) {
+  const result = await query(`
+    SELECT id, tenant_id as "tenantId", name, email, role, 
+           avatar_url as "avatarUrl", provider, active, 
+           created_at as "createdAt", updated_at as "updatedAt"
+    FROM users WHERE id = $1 AND tenant_id = $2
+  `, [id, tenantId]);
   return result.rows[0] || null;
 }
 async function getAdminUserByTenant(tenantId) {
@@ -302,9 +312,22 @@ function getHeaders() {
     "apikey": EVOLUTION_API_KEY
   };
 }
+async function fetchWithTimeout(url, options = {}, timeoutMs = 15e3) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: options.signal || controller.signal
+    });
+    return response;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 async function createInstance(instanceName) {
   try {
-    const response = await fetch(`${EVOLUTION_API_URL}/instance/create`, {
+    const response = await fetchWithTimeout(`${EVOLUTION_API_URL}/instance/create`, {
       method: "POST",
       headers: getHeaders(),
       body: JSON.stringify({
@@ -313,7 +336,7 @@ async function createInstance(instanceName) {
         qrcode: true,
         integration: "WHATSAPP-BAILEYS"
       })
-    });
+    }, 15e3);
     const data = await response.json();
     return { success: response.ok, data };
   } catch (error) {
@@ -322,10 +345,10 @@ async function createInstance(instanceName) {
 }
 async function getInstanceStatus(instanceName) {
   try {
-    const response = await fetch(`${EVOLUTION_API_URL}/instance/connectionState/${instanceName}`, {
+    const response = await fetchWithTimeout(`${EVOLUTION_API_URL}/instance/connectionState/${instanceName}`, {
       method: "GET",
       headers: getHeaders()
-    });
+    }, 15e3);
     const data = await response.json();
     return { success: response.ok, data };
   } catch (error) {
@@ -334,10 +357,10 @@ async function getInstanceStatus(instanceName) {
 }
 async function connectInstance(instanceName) {
   try {
-    const response = await fetch(`${EVOLUTION_API_URL}/instance/connect/${instanceName}`, {
+    const response = await fetchWithTimeout(`${EVOLUTION_API_URL}/instance/connect/${instanceName}`, {
       method: "GET",
       headers: getHeaders()
-    });
+    }, 15e3);
     const data = await response.json();
     return { success: response.ok, data };
   } catch (error) {
@@ -346,10 +369,10 @@ async function connectInstance(instanceName) {
 }
 async function disconnectInstance(instanceName) {
   try {
-    const response = await fetch(`${EVOLUTION_API_URL}/instance/logout/${instanceName}`, {
+    const response = await fetchWithTimeout(`${EVOLUTION_API_URL}/instance/logout/${instanceName}`, {
       method: "DELETE",
       headers: getHeaders()
-    });
+    }, 15e3);
     const data = await response.json();
     return { success: response.ok, data };
   } catch (error) {
@@ -359,7 +382,7 @@ async function disconnectInstance(instanceName) {
 async function sendMessage(instanceName, number, text) {
   try {
     const cleanNumber = (number || "").replace(/@.+$/, "").replace(/\D/g, "");
-    const response = await fetch(`${EVOLUTION_API_URL}/message/sendText/${instanceName}`, {
+    const response = await fetchWithTimeout(`${EVOLUTION_API_URL}/message/sendText/${instanceName}`, {
       method: "POST",
       headers: getHeaders(),
       body: JSON.stringify({
@@ -367,7 +390,7 @@ async function sendMessage(instanceName, number, text) {
         text,
         delay: 1e3
       })
-    });
+    }, 15e3);
     const data = await response.json();
     return { success: response.ok, data };
   } catch (error) {
@@ -376,7 +399,7 @@ async function sendMessage(instanceName, number, text) {
 }
 async function setWebhook(instanceName, webhookUrl) {
   try {
-    const response = await fetch(`${EVOLUTION_API_URL}/webhook/set/${instanceName}`, {
+    const response = await fetchWithTimeout(`${EVOLUTION_API_URL}/webhook/set/${instanceName}`, {
       method: "POST",
       headers: getHeaders(),
       body: JSON.stringify({
@@ -392,7 +415,7 @@ async function setWebhook(instanceName, webhookUrl) {
           ]
         }
       })
-    });
+    }, 15e3);
     const data = await response.json();
     return { success: response.ok, data };
   } catch (error) {
@@ -401,7 +424,7 @@ async function setWebhook(instanceName, webhookUrl) {
 }
 async function markAsRead(instanceName, remoteJid, messageId) {
   try {
-    const response = await fetch(`${EVOLUTION_API_URL}/chat/markMessageAsRead/${instanceName}`, {
+    const response = await fetchWithTimeout(`${EVOLUTION_API_URL}/chat/markMessageAsRead/${instanceName}`, {
       method: "POST",
       headers: getHeaders(),
       body: JSON.stringify({
@@ -411,7 +434,7 @@ async function markAsRead(instanceName, remoteJid, messageId) {
           fromMe: false
         }]
       })
-    });
+    }, 15e3);
     const data = await response.json();
     return { success: response.ok, data };
   } catch (error) {
@@ -421,7 +444,7 @@ async function markAsRead(instanceName, remoteJid, messageId) {
 async function sendMedia(instanceName, number, mediaUrl, caption) {
   try {
     const cleanNumber = (number || "").replace(/@.+$/, "").replace(/\D/g, "");
-    const response = await fetch(`${EVOLUTION_API_URL}/message/sendMedia/${instanceName}`, {
+    const response = await fetchWithTimeout(`${EVOLUTION_API_URL}/message/sendMedia/${instanceName}`, {
       method: "POST",
       headers: getHeaders(),
       body: JSON.stringify({
@@ -431,7 +454,7 @@ async function sendMedia(instanceName, number, mediaUrl, caption) {
         caption: caption || "",
         delay: 1200
       })
-    });
+    }, 2e4);
     const data = await response.json();
     return { success: response.ok, data };
   } catch (error) {
@@ -440,7 +463,7 @@ async function sendMedia(instanceName, number, mediaUrl, caption) {
 }
 async function getBase64FromMediaMessage(instanceName, messageKey, messageData) {
   try {
-    const response = await fetch(`${EVOLUTION_API_URL}/chat/getBase64FromMediaMessage/${instanceName}`, {
+    const response = await fetchWithTimeout(`${EVOLUTION_API_URL}/chat/getBase64FromMediaMessage/${instanceName}`, {
       method: "POST",
       headers: getHeaders(),
       body: JSON.stringify({
@@ -450,7 +473,7 @@ async function getBase64FromMediaMessage(instanceName, messageKey, messageData) 
         },
         convertToMp4: false
       })
-    });
+    }, 3e4);
     if (!response.ok) {
       const errText = await response.text();
       return { error: errText };
@@ -472,11 +495,11 @@ async function fetchWhatsAppContacts(instanceName) {
     ];
     for (const url of endpoints) {
       try {
-        const response = await fetch(url, {
+        const response = await fetchWithTimeout(url, {
           method: "POST",
           headers: getHeaders(),
           body: JSON.stringify({})
-        });
+        }, 15e3);
         if (response.ok) {
           const list = await response.json();
           const items = Array.isArray(list) ? list : list.data || [];
@@ -611,14 +634,273 @@ var init_superadmin_notify_service = __esm({
   }
 });
 
-// src/server/services/encryption.ts
+// src/server/services/crypto.service.ts
 import crypto2 from "crypto";
+function getMasterKey() {
+  const secret = process.env.APP_ENCRYPTION_KEY || process.env.ENCRYPTION_KEY || env.ENCRYPTION_KEY || "betico_master_encryption_key_default_32bytes";
+  return crypto2.scryptSync(secret, "betico_envelope_salt_2026", 32);
+}
+function getTenantDataKey(tenantId) {
+  const masterKey = getMasterKey();
+  return crypto2.createHmac("sha256", masterKey).update(`tenant_dek_${tenantId}`).digest();
+}
+function encryptWithKey(key, plaintext) {
+  if (!plaintext) return "";
+  const iv = crypto2.randomBytes(IV_LENGTH);
+  const cipher = crypto2.createCipheriv(ALGORITHM, key, iv);
+  let encrypted = cipher.update(plaintext, "utf8", "base64");
+  encrypted += cipher.final("base64");
+  const authTag = cipher.getAuthTag().toString("base64");
+  return `${iv.toString("base64")}:${authTag}:${encrypted}`;
+}
+function decryptWithKey(key, cipherText) {
+  if (!cipherText || !cipherText.includes(":")) return cipherText || "";
+  const parts = cipherText.split(":");
+  if (parts.length !== 3) {
+    throw new Error("Formato de texto cifrado inv\xE1lido");
+  }
+  const [ivBase64, authTagBase64, encryptedBase64] = parts;
+  const iv = Buffer.from(ivBase64, "base64");
+  const authTag = Buffer.from(authTagBase64, "base64");
+  const decipher = crypto2.createDecipheriv(ALGORITHM, key, iv);
+  decipher.setAuthTag(authTag);
+  let decrypted = decipher.update(encryptedBase64, "base64", "utf8");
+  decrypted += decipher.final("utf8");
+  return decrypted;
+}
+var ALGORITHM, IV_LENGTH, CryptoService;
+var init_crypto_service = __esm({
+  "src/server/services/crypto.service.ts"() {
+    "use strict";
+    init_env();
+    ALGORITHM = "aes-256-gcm";
+    IV_LENGTH = 16;
+    CryptoService = class {
+      /**
+       * Encrypts tenant sensitive data (e.g. Tilopay API Key, API Password)
+       * using the tenant's derived unique Data Encryption Key (Envelope Encryption).
+       */
+      static encryptForTenant(tenantId, plaintext) {
+        if (!tenantId) throw new Error("tenantId es requerido para el cifrado de sobre");
+        const dek = getTenantDataKey(tenantId);
+        return encryptWithKey(dek, plaintext);
+      }
+      /**
+       * Decrypts tenant sensitive data using the tenant's derived Data Encryption Key.
+       */
+      static decryptForTenant(tenantId, cipherText) {
+        if (!tenantId || !cipherText) return "";
+        const dek = getTenantDataKey(tenantId);
+        try {
+          return decryptWithKey(dek, cipherText);
+        } catch (err) {
+          try {
+            const legacyKey = crypto2.scryptSync(process.env.ENCRYPTION_KEY || env.ENCRYPTION_KEY || "legacy_key", "salt", 32);
+            return decryptWithKey(legacyKey, cipherText);
+          } catch (fallbackErr) {
+            console.error(`[CryptoService] Error descifrando datos para tenant ${tenantId}`);
+            throw new Error("Fallo al descifrar credenciales de pago");
+          }
+        }
+      }
+      /**
+       * General purpose encryption using the Master Key.
+       */
+      static encrypt(plaintext) {
+        const masterKey = getMasterKey();
+        return encryptWithKey(masterKey, plaintext);
+      }
+      /**
+       * General purpose decryption using the Master Key.
+       */
+      static decrypt(cipherText) {
+        const masterKey = getMasterKey();
+        return decryptWithKey(masterKey, cipherText);
+      }
+      /**
+       * Safely masks a sensitive secret for UI display (e.g. '••••••••abcd').
+       * Never exposes the full plaintext.
+       */
+      static maskSecret(secret, visibleChars = 4) {
+        if (!secret) return "";
+        const trimmed = String(secret).trim();
+        if (trimmed.length <= visibleChars) return "\u2022\u2022\u2022\u2022";
+        const tail = trimmed.slice(-visibleChars);
+        return `\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022${tail}`;
+      }
+    };
+  }
+});
+
+// src/server/db/tenant-payment.repo.ts
+var tenant_payment_repo_exports = {};
+__export(tenant_payment_repo_exports, {
+  getPaymentAuditLogs: () => getPaymentAuditLogs,
+  getTenantPaymentConfig: () => getTenantPaymentConfig,
+  getTenantPaymentConfigRaw: () => getTenantPaymentConfigRaw,
+  saveTenantPaymentConfig: () => saveTenantPaymentConfig
+});
+async function getTenantPaymentConfig(tenantId) {
+  const res = await query(`
+    SELECT id, tenant_id as "tenantId", provider, is_enabled as "isEnabled",
+           environment, api_key_encrypted as "apiKeyEncrypted", api_user as "apiUser",
+           api_password_encrypted as "apiPasswordEncrypted", capture_mode as "captureMode",
+           created_at as "createdAt", updated_at as "updatedAt"
+    FROM tenant_payment_configs
+    WHERE tenant_id = $1 AND provider = 'TILOPAY'
+  `, [tenantId]);
+  if (res.rows.length === 0) return null;
+  const row = res.rows[0];
+  let rawKey = "";
+  let rawPass = "";
+  if (row.apiKeyEncrypted) {
+    try {
+      rawKey = CryptoService.decryptForTenant(tenantId, row.apiKeyEncrypted);
+    } catch (e) {
+    }
+  }
+  if (row.apiPasswordEncrypted) {
+    try {
+      rawPass = CryptoService.decryptForTenant(tenantId, row.apiPasswordEncrypted);
+    } catch (e) {
+    }
+  }
+  return {
+    id: row.id,
+    tenantId: row.tenantId,
+    provider: row.provider,
+    isEnabled: Boolean(row.isEnabled),
+    environment: row.environment || "SANDBOX",
+    apiUser: row.apiUser || "",
+    apiKeyMasked: rawKey ? CryptoService.maskSecret(rawKey) : "",
+    apiPasswordMasked: rawPass ? CryptoService.maskSecret(rawPass) : "",
+    captureMode: row.captureMode || "IMMEDIATE",
+    isConfigured: Boolean(rawKey && row.apiUser && rawPass),
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt
+  };
+}
+async function getTenantPaymentConfigRaw(tenantId) {
+  const res = await query(`
+    SELECT is_enabled as "isEnabled", environment, api_key_encrypted, api_user,
+           api_password_encrypted, capture_mode as "captureMode"
+    FROM tenant_payment_configs
+    WHERE tenant_id = $1 AND provider = 'TILOPAY'
+  `, [tenantId]);
+  if (res.rows.length === 0) return null;
+  const row = res.rows[0];
+  let apiKey = "";
+  let apiPassword = "";
+  if (row.api_key_encrypted) {
+    apiKey = CryptoService.decryptForTenant(tenantId, row.api_key_encrypted);
+  }
+  if (row.api_password_encrypted) {
+    apiPassword = CryptoService.decryptForTenant(tenantId, row.api_password_encrypted);
+  }
+  return {
+    apiKey,
+    apiUser: row.api_user || "",
+    apiPassword,
+    environment: row.environment || "SANDBOX",
+    isEnabled: Boolean(row.isEnabled),
+    captureMode: row.captureMode || "IMMEDIATE"
+  };
+}
+async function saveTenantPaymentConfig(tenantId, data, changedBy = "system") {
+  const existing = await query(`
+    SELECT * FROM tenant_payment_configs WHERE tenant_id = $1 AND provider = 'TILOPAY'
+  `, [tenantId]);
+  const prevRow = existing.rows[0] || null;
+  let newEncryptedKey = prevRow?.api_key_encrypted || null;
+  let newEncryptedPass = prevRow?.api_password_encrypted || null;
+  if (data.apiKey && !data.apiKey.includes("\u2022\u2022\u2022\u2022")) {
+    newEncryptedKey = CryptoService.encryptForTenant(tenantId, data.apiKey.trim());
+  }
+  if (data.apiPassword && !data.apiPassword.includes("\u2022\u2022\u2022\u2022")) {
+    newEncryptedPass = CryptoService.encryptForTenant(tenantId, data.apiPassword.trim());
+  }
+  const isEnabled = data.isEnabled !== void 0 ? data.isEnabled : prevRow ? prevRow.is_enabled : false;
+  const environment = data.environment || prevRow?.environment || "SANDBOX";
+  const apiUser = data.apiUser !== void 0 ? data.apiUser.trim() : prevRow?.api_user || "";
+  const captureMode = data.captureMode || prevRow?.capture_mode || "IMMEDIATE";
+  const upsertSql = `
+    INSERT INTO tenant_payment_configs (
+      tenant_id, provider, is_enabled, environment, api_key_encrypted, api_user, api_password_encrypted, capture_mode, updated_at
+    ) VALUES ($1, 'TILOPAY', $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
+    ON CONFLICT (tenant_id, provider) DO UPDATE SET
+      is_enabled = EXCLUDED.is_enabled,
+      environment = EXCLUDED.environment,
+      api_key_encrypted = COALESCE(EXCLUDED.api_key_encrypted, tenant_payment_configs.api_key_encrypted),
+      api_user = EXCLUDED.api_user,
+      api_password_encrypted = COALESCE(EXCLUDED.api_password_encrypted, tenant_payment_configs.api_password_encrypted),
+      capture_mode = EXCLUDED.capture_mode,
+      updated_at = CURRENT_TIMESTAMP
+    RETURNING id
+  `;
+  await query(upsertSql, [
+    tenantId,
+    isEnabled,
+    environment,
+    newEncryptedKey,
+    apiUser,
+    newEncryptedPass,
+    captureMode
+  ]);
+  const auditDiffs = [];
+  if (prevRow) {
+    if (prevRow.is_enabled !== isEnabled) {
+      auditDiffs.push({ field: "is_enabled", oldVal: String(prevRow.is_enabled), newVal: String(isEnabled) });
+    }
+    if (prevRow.environment !== environment) {
+      auditDiffs.push({ field: "environment", oldVal: prevRow.environment, newVal: environment });
+    }
+    if (data.apiKey && !data.apiKey.includes("\u2022\u2022\u2022\u2022")) {
+      auditDiffs.push({ field: "api_key", oldVal: "\u2022\u2022\u2022\u2022", newVal: CryptoService.maskSecret(data.apiKey) });
+    }
+    if (data.apiPassword && !data.apiPassword.includes("\u2022\u2022\u2022\u2022")) {
+      auditDiffs.push({ field: "api_password", oldVal: "\u2022\u2022\u2022\u2022", newVal: CryptoService.maskSecret(data.apiPassword) });
+    }
+    if (prevRow.api_user !== apiUser) {
+      auditDiffs.push({ field: "api_user", oldVal: prevRow.api_user, newVal: apiUser });
+    }
+  } else {
+    auditDiffs.push({ field: "created", oldVal: void 0, newVal: `provider=TILOPAY, env=${environment}` });
+  }
+  for (const diff of auditDiffs) {
+    await query(`
+      INSERT INTO payment_config_audit_log (tenant_id, changed_by, field_changed, old_value_masked, new_value_masked)
+      VALUES ($1, $2, $3, $4, $5)
+    `, [tenantId, changedBy, diff.field, diff.oldVal || null, diff.newVal || null]);
+  }
+  return await getTenantPaymentConfig(tenantId);
+}
+async function getPaymentAuditLogs(tenantId, limit = 20) {
+  const res = await query(`
+    SELECT id, tenant_id as "tenantId", changed_by as "changedBy", field_changed as "fieldChanged",
+           old_value_masked as "oldValueMasked", new_value_masked as "newValueMasked", timestamp
+    FROM payment_config_audit_log
+    WHERE tenant_id = $1
+    ORDER BY timestamp DESC
+    LIMIT $2
+  `, [tenantId, limit]);
+  return res.rows;
+}
+var init_tenant_payment_repo = __esm({
+  "src/server/db/tenant-payment.repo.ts"() {
+    "use strict";
+    init_pool();
+    init_crypto_service();
+  }
+});
+
+// src/server/services/encryption.ts
+import crypto3 from "crypto";
 function encrypt(plaintext) {
   if (!plaintext) return plaintext;
   try {
-    const iv = crypto2.randomBytes(IV_LENGTH);
+    const iv = crypto3.randomBytes(IV_LENGTH2);
     const key = getEncryptionKey();
-    const cipher = crypto2.createCipheriv(ALGORITHM, key, iv);
+    const cipher = crypto3.createCipheriv(ALGORITHM2, key, iv);
     let encrypted = cipher.update(plaintext, "utf8", "base64");
     encrypted += cipher.final("base64");
     const authTag = cipher.getAuthTag().toString("base64");
@@ -639,7 +921,7 @@ function decrypt(encryptedData) {
     const iv = Buffer.from(ivBase64, "base64");
     const authTag = Buffer.from(authTagBase64, "base64");
     const key = getEncryptionKey();
-    const decipher = crypto2.createDecipheriv(ALGORITHM, key, iv);
+    const decipher = crypto3.createDecipheriv(ALGORITHM2, key, iv);
     decipher.setAuthTag(authTag);
     let decrypted = decipher.update(encryptedBase64, "base64", "utf8");
     decrypted += decipher.final("utf8");
@@ -649,16 +931,16 @@ function decrypt(encryptedData) {
     throw new Error("Failed to decrypt data");
   }
 }
-var ALGORITHM, IV_LENGTH, getEncryptionKey;
+var ALGORITHM2, IV_LENGTH2, getEncryptionKey;
 var init_encryption = __esm({
   "src/server/services/encryption.ts"() {
     "use strict";
     init_env();
-    ALGORITHM = "aes-256-gcm";
-    IV_LENGTH = 16;
+    ALGORITHM2 = "aes-256-gcm";
+    IV_LENGTH2 = 16;
     getEncryptionKey = () => {
       const key = process.env.ENCRYPTION_KEY || env.ENCRYPTION_KEY || "e8a1b2c3d4e5f60718293a4b5c6d7e8f";
-      return crypto2.scryptSync(key, "salt", 32);
+      return crypto3.scryptSync(key, "salt", 32);
     };
   }
 });
@@ -871,265 +1153,6 @@ var init_ai_provider = __esm({
   }
 });
 
-// src/server/services/crypto.service.ts
-import crypto4 from "crypto";
-function getMasterKey() {
-  const secret = process.env.APP_ENCRYPTION_KEY || process.env.ENCRYPTION_KEY || env.ENCRYPTION_KEY || "betico_master_encryption_key_default_32bytes";
-  return crypto4.scryptSync(secret, "betico_envelope_salt_2026", 32);
-}
-function getTenantDataKey(tenantId) {
-  const masterKey = getMasterKey();
-  return crypto4.createHmac("sha256", masterKey).update(`tenant_dek_${tenantId}`).digest();
-}
-function encryptWithKey(key, plaintext) {
-  if (!plaintext) return "";
-  const iv = crypto4.randomBytes(IV_LENGTH2);
-  const cipher = crypto4.createCipheriv(ALGORITHM2, key, iv);
-  let encrypted = cipher.update(plaintext, "utf8", "base64");
-  encrypted += cipher.final("base64");
-  const authTag = cipher.getAuthTag().toString("base64");
-  return `${iv.toString("base64")}:${authTag}:${encrypted}`;
-}
-function decryptWithKey(key, cipherText) {
-  if (!cipherText || !cipherText.includes(":")) return cipherText || "";
-  const parts = cipherText.split(":");
-  if (parts.length !== 3) {
-    throw new Error("Formato de texto cifrado inv\xE1lido");
-  }
-  const [ivBase64, authTagBase64, encryptedBase64] = parts;
-  const iv = Buffer.from(ivBase64, "base64");
-  const authTag = Buffer.from(authTagBase64, "base64");
-  const decipher = crypto4.createDecipheriv(ALGORITHM2, key, iv);
-  decipher.setAuthTag(authTag);
-  let decrypted = decipher.update(encryptedBase64, "base64", "utf8");
-  decrypted += decipher.final("utf8");
-  return decrypted;
-}
-var ALGORITHM2, IV_LENGTH2, CryptoService;
-var init_crypto_service = __esm({
-  "src/server/services/crypto.service.ts"() {
-    "use strict";
-    init_env();
-    ALGORITHM2 = "aes-256-gcm";
-    IV_LENGTH2 = 16;
-    CryptoService = class {
-      /**
-       * Encrypts tenant sensitive data (e.g. Tilopay API Key, API Password)
-       * using the tenant's derived unique Data Encryption Key (Envelope Encryption).
-       */
-      static encryptForTenant(tenantId, plaintext) {
-        if (!tenantId) throw new Error("tenantId es requerido para el cifrado de sobre");
-        const dek = getTenantDataKey(tenantId);
-        return encryptWithKey(dek, plaintext);
-      }
-      /**
-       * Decrypts tenant sensitive data using the tenant's derived Data Encryption Key.
-       */
-      static decryptForTenant(tenantId, cipherText) {
-        if (!tenantId || !cipherText) return "";
-        const dek = getTenantDataKey(tenantId);
-        try {
-          return decryptWithKey(dek, cipherText);
-        } catch (err) {
-          try {
-            const legacyKey = crypto4.scryptSync(process.env.ENCRYPTION_KEY || env.ENCRYPTION_KEY || "legacy_key", "salt", 32);
-            return decryptWithKey(legacyKey, cipherText);
-          } catch (fallbackErr) {
-            console.error(`[CryptoService] Error descifrando datos para tenant ${tenantId}`);
-            throw new Error("Fallo al descifrar credenciales de pago");
-          }
-        }
-      }
-      /**
-       * General purpose encryption using the Master Key.
-       */
-      static encrypt(plaintext) {
-        const masterKey = getMasterKey();
-        return encryptWithKey(masterKey, plaintext);
-      }
-      /**
-       * General purpose decryption using the Master Key.
-       */
-      static decrypt(cipherText) {
-        const masterKey = getMasterKey();
-        return decryptWithKey(masterKey, cipherText);
-      }
-      /**
-       * Safely masks a sensitive secret for UI display (e.g. '••••••••abcd').
-       * Never exposes the full plaintext.
-       */
-      static maskSecret(secret, visibleChars = 4) {
-        if (!secret) return "";
-        const trimmed = String(secret).trim();
-        if (trimmed.length <= visibleChars) return "\u2022\u2022\u2022\u2022";
-        const tail = trimmed.slice(-visibleChars);
-        return `\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022${tail}`;
-      }
-    };
-  }
-});
-
-// src/server/db/tenant-payment.repo.ts
-var tenant_payment_repo_exports = {};
-__export(tenant_payment_repo_exports, {
-  getPaymentAuditLogs: () => getPaymentAuditLogs,
-  getTenantPaymentConfig: () => getTenantPaymentConfig,
-  getTenantPaymentConfigRaw: () => getTenantPaymentConfigRaw,
-  saveTenantPaymentConfig: () => saveTenantPaymentConfig
-});
-async function getTenantPaymentConfig(tenantId) {
-  const res = await query(`
-    SELECT id, tenant_id as "tenantId", provider, is_enabled as "isEnabled",
-           environment, api_key_encrypted as "apiKeyEncrypted", api_user as "apiUser",
-           api_password_encrypted as "apiPasswordEncrypted", capture_mode as "captureMode",
-           created_at as "createdAt", updated_at as "updatedAt"
-    FROM tenant_payment_configs
-    WHERE tenant_id = $1 AND provider = 'TILOPAY'
-  `, [tenantId]);
-  if (res.rows.length === 0) return null;
-  const row = res.rows[0];
-  let rawKey = "";
-  let rawPass = "";
-  if (row.apiKeyEncrypted) {
-    try {
-      rawKey = CryptoService.decryptForTenant(tenantId, row.apiKeyEncrypted);
-    } catch (e) {
-    }
-  }
-  if (row.apiPasswordEncrypted) {
-    try {
-      rawPass = CryptoService.decryptForTenant(tenantId, row.apiPasswordEncrypted);
-    } catch (e) {
-    }
-  }
-  return {
-    id: row.id,
-    tenantId: row.tenantId,
-    provider: row.provider,
-    isEnabled: Boolean(row.isEnabled),
-    environment: row.environment || "SANDBOX",
-    apiUser: row.apiUser || "",
-    apiKeyMasked: rawKey ? CryptoService.maskSecret(rawKey) : "",
-    apiPasswordMasked: rawPass ? CryptoService.maskSecret(rawPass) : "",
-    captureMode: row.captureMode || "IMMEDIATE",
-    isConfigured: Boolean(rawKey && row.apiUser && rawPass),
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt
-  };
-}
-async function getTenantPaymentConfigRaw(tenantId) {
-  const res = await query(`
-    SELECT is_enabled as "isEnabled", environment, api_key_encrypted, api_user,
-           api_password_encrypted, capture_mode as "captureMode"
-    FROM tenant_payment_configs
-    WHERE tenant_id = $1 AND provider = 'TILOPAY'
-  `, [tenantId]);
-  if (res.rows.length === 0) return null;
-  const row = res.rows[0];
-  let apiKey = "";
-  let apiPassword = "";
-  if (row.api_key_encrypted) {
-    apiKey = CryptoService.decryptForTenant(tenantId, row.api_key_encrypted);
-  }
-  if (row.api_password_encrypted) {
-    apiPassword = CryptoService.decryptForTenant(tenantId, row.api_password_encrypted);
-  }
-  return {
-    apiKey,
-    apiUser: row.api_user || "",
-    apiPassword,
-    environment: row.environment || "SANDBOX",
-    isEnabled: Boolean(row.isEnabled),
-    captureMode: row.captureMode || "IMMEDIATE"
-  };
-}
-async function saveTenantPaymentConfig(tenantId, data, changedBy = "system") {
-  const existing = await query(`
-    SELECT * FROM tenant_payment_configs WHERE tenant_id = $1 AND provider = 'TILOPAY'
-  `, [tenantId]);
-  const prevRow = existing.rows[0] || null;
-  let newEncryptedKey = prevRow?.api_key_encrypted || null;
-  let newEncryptedPass = prevRow?.api_password_encrypted || null;
-  if (data.apiKey && !data.apiKey.includes("\u2022\u2022\u2022\u2022")) {
-    newEncryptedKey = CryptoService.encryptForTenant(tenantId, data.apiKey.trim());
-  }
-  if (data.apiPassword && !data.apiPassword.includes("\u2022\u2022\u2022\u2022")) {
-    newEncryptedPass = CryptoService.encryptForTenant(tenantId, data.apiPassword.trim());
-  }
-  const isEnabled = data.isEnabled !== void 0 ? data.isEnabled : prevRow ? prevRow.is_enabled : false;
-  const environment = data.environment || prevRow?.environment || "SANDBOX";
-  const apiUser = data.apiUser !== void 0 ? data.apiUser.trim() : prevRow?.api_user || "";
-  const captureMode = data.captureMode || prevRow?.capture_mode || "IMMEDIATE";
-  const upsertSql = `
-    INSERT INTO tenant_payment_configs (
-      tenant_id, provider, is_enabled, environment, api_key_encrypted, api_user, api_password_encrypted, capture_mode, updated_at
-    ) VALUES ($1, 'TILOPAY', $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
-    ON CONFLICT (tenant_id, provider) DO UPDATE SET
-      is_enabled = EXCLUDED.is_enabled,
-      environment = EXCLUDED.environment,
-      api_key_encrypted = COALESCE(EXCLUDED.api_key_encrypted, tenant_payment_configs.api_key_encrypted),
-      api_user = EXCLUDED.api_user,
-      api_password_encrypted = COALESCE(EXCLUDED.api_password_encrypted, tenant_payment_configs.api_password_encrypted),
-      capture_mode = EXCLUDED.capture_mode,
-      updated_at = CURRENT_TIMESTAMP
-    RETURNING id
-  `;
-  await query(upsertSql, [
-    tenantId,
-    isEnabled,
-    environment,
-    newEncryptedKey,
-    apiUser,
-    newEncryptedPass,
-    captureMode
-  ]);
-  const auditDiffs = [];
-  if (prevRow) {
-    if (prevRow.is_enabled !== isEnabled) {
-      auditDiffs.push({ field: "is_enabled", oldVal: String(prevRow.is_enabled), newVal: String(isEnabled) });
-    }
-    if (prevRow.environment !== environment) {
-      auditDiffs.push({ field: "environment", oldVal: prevRow.environment, newVal: environment });
-    }
-    if (data.apiKey && !data.apiKey.includes("\u2022\u2022\u2022\u2022")) {
-      auditDiffs.push({ field: "api_key", oldVal: "\u2022\u2022\u2022\u2022", newVal: CryptoService.maskSecret(data.apiKey) });
-    }
-    if (data.apiPassword && !data.apiPassword.includes("\u2022\u2022\u2022\u2022")) {
-      auditDiffs.push({ field: "api_password", oldVal: "\u2022\u2022\u2022\u2022", newVal: CryptoService.maskSecret(data.apiPassword) });
-    }
-    if (prevRow.api_user !== apiUser) {
-      auditDiffs.push({ field: "api_user", oldVal: prevRow.api_user, newVal: apiUser });
-    }
-  } else {
-    auditDiffs.push({ field: "created", oldVal: void 0, newVal: `provider=TILOPAY, env=${environment}` });
-  }
-  for (const diff of auditDiffs) {
-    await query(`
-      INSERT INTO payment_config_audit_log (tenant_id, changed_by, field_changed, old_value_masked, new_value_masked)
-      VALUES ($1, $2, $3, $4, $5)
-    `, [tenantId, changedBy, diff.field, diff.oldVal || null, diff.newVal || null]);
-  }
-  return await getTenantPaymentConfig(tenantId);
-}
-async function getPaymentAuditLogs(tenantId, limit = 20) {
-  const res = await query(`
-    SELECT id, tenant_id as "tenantId", changed_by as "changedBy", field_changed as "fieldChanged",
-           old_value_masked as "oldValueMasked", new_value_masked as "newValueMasked", timestamp
-    FROM payment_config_audit_log
-    WHERE tenant_id = $1
-    ORDER BY timestamp DESC
-    LIMIT $2
-  `, [tenantId, limit]);
-  return res.rows;
-}
-var init_tenant_payment_repo = __esm({
-  "src/server/db/tenant-payment.repo.ts"() {
-    "use strict";
-    init_pool();
-    init_crypto_service();
-  }
-});
-
 // src/server/services/superadmin-bot.service.ts
 var superadmin_bot_service_exports = {};
 __export(superadmin_bot_service_exports, {
@@ -1296,7 +1319,7 @@ async function getDriverById(id, tenantId) {
   `, [id]);
   return res.rows[0] || null;
 }
-async function getDriverByPin(pin, phone) {
+async function getDriverByPin(pin, phone, tenantId) {
   const cleanPin = (pin || "").trim();
   let sql = `
     SELECT id, tenant_id as "tenantId", name, phone, access_pin as "accessPin",
@@ -1305,13 +1328,23 @@ async function getDriverByPin(pin, phone) {
     WHERE TRIM(access_pin) = $1 AND active = TRUE
   `;
   const params = [cleanPin];
+  if (tenantId) {
+    sql += ` AND tenant_id = $${params.length + 1}`;
+    params.push(tenantId);
+  }
   if (phone) {
     const clean = phone.replace(/\D/g, "");
-    sql += ` AND (REPLACE(phone, '-', '') LIKE '%' || $2 OR phone LIKE '%' || $2)`;
-    params.push(clean.slice(-8));
+    if (clean.length >= 8) {
+      sql += ` AND (REPLACE(phone, '-', '') LIKE '%' || $${params.length + 1} OR phone LIKE '%' || $${params.length + 1})`;
+      params.push(clean.slice(-8));
+    }
   }
-  sql += ` LIMIT 1`;
+  sql += ` LIMIT 2`;
   const res = await query(sql, params);
+  if (res.rows.length > 1 && !tenantId && !phone) {
+    console.warn(`[getDriverByPin] Colisi\xF3n de PIN ${cleanPin} detectada entre m\xFAltiples comercios. Se requiere tel\xE9fono o tenantId.`);
+    return null;
+  }
   return res.rows[0] || null;
 }
 async function createDriver(tenantId, data) {
@@ -1788,6 +1821,7 @@ async function runMigrations() {
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_link_expires_at TIMESTAMP WITH TIME ZONE;
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS tilopay_transaction_id VARCHAR(100);
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS tilopay_auth_code VARCHAR(100);
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS stock_deducted BOOLEAN DEFAULT false;
     ALTER TABLE products ADD COLUMN IF NOT EXISTS custom_variables JSONB;
     ALTER TABLE services ADD COLUMN IF NOT EXISTS custom_variables JSONB;
     ALTER TABLE order_items ADD COLUMN IF NOT EXISTS selected_variables JSONB;
@@ -2191,6 +2225,46 @@ async function runMigrations() {
     );
     CREATE INDEX IF NOT EXISTS idx_mq_status ON message_queue(status, created_at);
     CREATE INDEX IF NOT EXISTS idx_mq_tenant ON message_queue(tenant_id, status);
+
+    -- Tenant Subscription Billing Tables (Tilopay Tokenization & Recurring Charges)
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS auto_billing_enabled BOOLEAN DEFAULT false;
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS last_auto_charge_at TIMESTAMP WITH TIME ZONE;
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS last_auto_charge_status VARCHAR(50);
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS calendar_token VARCHAR(64) DEFAULT md5(random()::text || clock_timestamp()::text);
+
+    CREATE TABLE IF NOT EXISTS tenant_billing_cards (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+      card_last4 VARCHAR(4) NOT NULL,
+      card_brand VARCHAR(20),
+      card_holder VARCHAR(255),
+      tilopay_token_encrypted TEXT NOT NULL,
+      is_default BOOLEAN DEFAULT true,
+      is_active BOOLEAN DEFAULT true,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_tenant_billing_cards_tenant ON tenant_billing_cards(tenant_id, is_active);
+
+    CREATE TABLE IF NOT EXISTS tenant_billing_charges (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+      billing_card_id UUID REFERENCES tenant_billing_cards(id),
+      amount NUMERIC(10, 2) NOT NULL,
+      currency VARCHAR(10) DEFAULT 'CRC',
+      period_start DATE,
+      period_end DATE,
+      status VARCHAR(50) DEFAULT 'pending',
+      tilopay_order_number VARCHAR(100) UNIQUE,
+      tilopay_transaction_id VARCHAR(255),
+      tilopay_auth_code VARCHAR(100),
+      failure_reason TEXT,
+      attempt_count INT DEFAULT 1,
+      last_attempt_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_tenant_billing_charges_tenant ON tenant_billing_charges(tenant_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_tenant_billing_charges_order ON tenant_billing_charges(tilopay_order_number);
   `).catch((err) => {
     console.warn("[Migrations] Payment columns warning:", err?.message || err);
   });
@@ -2304,6 +2378,30 @@ async function getAllTenants() {
   `);
   return result.rows;
 }
+async function getAllTenantsWithAdmin() {
+  const result = await query(`
+    SELECT t.id, t.name, t.slug, t.custom_domain as "customDomain", 
+           t.ai_provider as "aiProvider", t.ai_model as "aiModel", 
+           t.evolution_instance as "evolutionInstance", t.whatsapp_number as "whatsappNumber",
+           t.plan, t.active, t.subscription_status as "subscriptionStatus",
+           t.billing_currency as "billingCurrency", t.custom_monthly_price as "customMonthlyPrice",
+           t.trial_ends_at as "trialEndsAt", t.next_billing_date as "nextBillingDate",
+           t.grace_period_ends_at as "gracePeriodEndsAt", t.settings_json as "settingsJson", 
+           t.created_at as "createdAt",
+           COALESCE(u.email, 'Sin registrar') as "adminEmail",
+           u.id as "adminId"
+    FROM tenants t
+    LEFT JOIN LATERAL (
+      SELECT id, email
+      FROM users
+      WHERE tenant_id = t.id AND role IN ('admin', 'tenant_admin')
+      ORDER BY created_at ASC
+      LIMIT 1
+    ) u ON true
+    ORDER BY t.created_at DESC
+  `);
+  return result.rows;
+}
 async function getTenantById(id) {
   const result = await query(`
     SELECT id, name, slug, custom_domain as "customDomain", 
@@ -2313,6 +2411,7 @@ async function getTenantById(id) {
            subscription_status as "subscriptionStatus", billing_currency as "billingCurrency", 
            custom_monthly_price as "customMonthlyPrice", trial_ends_at as "trialEndsAt", 
            next_billing_date as "nextBillingDate", grace_period_ends_at as "gracePeriodEndsAt",
+           calendar_token as "calendarToken",
            settings_json as "settingsJson", created_at as "createdAt"
     FROM tenants WHERE id = $1
   `, [id]);
@@ -2327,6 +2426,7 @@ async function getTenantBySlug(slug) {
            t.whatsapp_number as "whatsappNumber", t.plan, t.active, 
            t.subscription_status as "subscriptionStatus", t.billing_currency as "billingCurrency",
            t.custom_monthly_price as "customMonthlyPrice", t.trial_ends_at as "trialEndsAt",
+           t.calendar_token as "calendarToken",
            t.settings_json as "settingsJson", t.created_at as "createdAt"
     FROM tenants t
     LEFT JOIN store_settings ss ON ss.tenant_id = t.id
@@ -2658,9 +2758,495 @@ function startScheduledCampaignScanner() {
 init_pool();
 init_evolution();
 init_superadmin_notify_service();
+
+// src/server/services/tilopay-subscription.service.ts
+init_pool();
+init_tenant_payment_repo();
+init_crypto_service();
+
+// src/server/db/tenant-billing.repo.ts
+init_pool();
+async function getBillingCards(tenantId) {
+  const res = await query(`
+    SELECT id, tenant_id as "tenantId", card_last4 as "cardLast4",
+           card_brand as "cardBrand", card_holder as "cardHolder",
+           is_default as "isDefault", is_active as "isActive",
+           created_at as "createdAt"
+    FROM tenant_billing_cards
+    WHERE tenant_id = $1 AND is_active = true
+    ORDER BY is_default DESC, created_at DESC
+  `, [tenantId]);
+  return res.rows;
+}
+async function saveBillingCard(tenantId, data) {
+  if (data.isDefault !== false) {
+    await query(`
+      UPDATE tenant_billing_cards
+      SET is_default = false
+      WHERE tenant_id = $1
+    `, [tenantId]);
+  }
+  const res = await query(`
+    INSERT INTO tenant_billing_cards (
+      tenant_id, card_last4, card_brand, card_holder,
+      tilopay_token_encrypted, is_default, is_active
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, true)
+    RETURNING id, tenant_id as "tenantId", card_last4 as "cardLast4",
+              card_brand as "cardBrand", card_holder as "cardHolder",
+              is_default as "isDefault", is_active as "isActive",
+              created_at as "createdAt"
+  `, [
+    tenantId,
+    data.last4,
+    data.brand || "CARD",
+    data.holder || "Cliente",
+    data.tokenEncrypted,
+    data.isDefault !== false
+  ]);
+  return res.rows[0];
+}
+async function getDefaultBillingCard(tenantId) {
+  const res = await query(`
+    SELECT id, tenant_id as "tenantId", card_last4 as "cardLast4",
+           card_brand as "cardBrand", card_holder as "cardHolder",
+           tilopay_token_encrypted as "tilopayTokenEncrypted",
+           is_default as "isDefault", is_active as "isActive",
+           created_at as "createdAt"
+    FROM tenant_billing_cards
+    WHERE tenant_id = $1 AND is_active = true
+    ORDER BY is_default DESC, created_at DESC
+    LIMIT 1
+  `, [tenantId]);
+  return res.rows[0] || null;
+}
+async function deactivateBillingCard(cardId, tenantId) {
+  const res = await query(`
+    UPDATE tenant_billing_cards
+    SET is_active = false, updated_at = CURRENT_TIMESTAMP
+    WHERE id = $1 AND tenant_id = $2
+  `, [cardId, tenantId]);
+  return (res.rowCount ?? 0) > 0;
+}
+async function createBillingCharge(data) {
+  const res = await query(`
+    INSERT INTO tenant_billing_charges (
+      tenant_id, billing_card_id, amount, currency,
+      period_start, period_end, status, tilopay_order_number,
+      tilopay_transaction_id, tilopay_auth_code, failure_reason
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    RETURNING id, tenant_id as "tenantId", billing_card_id as "billingCardId",
+              amount, currency, period_start as "periodStart", period_end as "periodEnd",
+              status, tilopay_order_number as "tilopayOrderNumber",
+              tilopay_transaction_id as "tilopayTransactionId",
+              tilopay_auth_code as "tilopayAuthCode",
+              failure_reason as "failureReason",
+              attempt_count as "attemptCount",
+              last_attempt_at as "lastAttemptAt",
+              created_at as "createdAt"
+  `, [
+    data.tenantId,
+    data.billingCardId || null,
+    data.amount,
+    data.currency || "CRC",
+    data.periodStart || null,
+    data.periodEnd || null,
+    data.status,
+    data.tilopayOrderNumber,
+    data.tilopayTransactionId || null,
+    data.tilopayAuthCode || null,
+    data.failureReason || null
+  ]);
+  return res.rows[0];
+}
+async function updateBillingCharge(orderNumber, update) {
+  const res = await query(`
+    UPDATE tenant_billing_charges
+    SET status = $1,
+        tilopay_transaction_id = COALESCE($2, tilopay_transaction_id),
+        tilopay_auth_code = COALESCE($3, tilopay_auth_code),
+        failure_reason = COALESCE($4, failure_reason),
+        last_attempt_at = CURRENT_TIMESTAMP
+    WHERE tilopay_order_number = $5
+    RETURNING id, tenant_id as "tenantId", billing_card_id as "billingCardId",
+              amount, currency, period_start as "periodStart", period_end as "periodEnd",
+              status, tilopay_order_number as "tilopayOrderNumber",
+              tilopay_transaction_id as "tilopayTransactionId",
+              tilopay_auth_code as "tilopayAuthCode",
+              failure_reason as "failureReason",
+              attempt_count as "attemptCount",
+              last_attempt_at as "lastAttemptAt",
+              created_at as "createdAt"
+  `, [
+    update.status,
+    update.transactionId || null,
+    update.authCode || null,
+    update.failureReason || null,
+    orderNumber
+  ]);
+  return res.rows[0] || null;
+}
+async function getBillingCharges(tenantId, limit = 20) {
+  const res = await query(`
+    SELECT id, tenant_id as "tenantId", billing_card_id as "billingCardId",
+           amount, currency, period_start as "periodStart", period_end as "periodEnd",
+           status, tilopay_order_number as "tilopayOrderNumber",
+           tilopay_transaction_id as "tilopayTransactionId",
+           tilopay_auth_code as "tilopayAuthCode",
+           failure_reason as "failureReason",
+           attempt_count as "attemptCount",
+           last_attempt_at as "lastAttemptAt",
+           created_at as "createdAt"
+    FROM tenant_billing_charges
+    WHERE tenant_id = $1
+    ORDER BY created_at DESC
+    LIMIT $2
+  `, [tenantId, limit]);
+  return res.rows;
+}
+async function getChargeByOrderNumber(orderNumber) {
+  const res = await query(`
+    SELECT id, tenant_id as "tenantId", billing_card_id as "billingCardId",
+           amount, currency, period_start as "periodStart", period_end as "periodEnd",
+           status, tilopay_order_number as "tilopayOrderNumber",
+           tilopay_transaction_id as "tilopayTransactionId",
+           tilopay_auth_code as "tilopayAuthCode",
+           failure_reason as "failureReason",
+           attempt_count as "attemptCount",
+           last_attempt_at as "lastAttemptAt",
+           created_at as "createdAt"
+    FROM tenant_billing_charges
+    WHERE tilopay_order_number = $1
+  `, [orderNumber]);
+  return res.rows[0] || null;
+}
+async function getTenantsDueForAutoBilling() {
+  const res = await query(`
+    SELECT id, name, slug, whatsapp_number as "whatsappNumber",
+           custom_monthly_price as "customMonthlyPrice",
+           billing_currency as "billingCurrency",
+           evolution_instance as "evolutionInstance",
+           subscription_status as "subscriptionStatus"
+    FROM tenants
+    WHERE auto_billing_enabled = true
+      AND active = true
+      AND next_billing_date IS NOT NULL
+      AND next_billing_date <= CURRENT_TIMESTAMP
+  `);
+  return res.rows;
+}
+
+// src/server/services/tilopay-subscription.service.ts
+init_evolution();
+init_env();
+async function getPlatformTilopayConfig() {
+  if (process.env.TILOPAY_PLATFORM_KEY && process.env.TILOPAY_PLATFORM_USER && process.env.TILOPAY_PLATFORM_PASSWORD) {
+    return {
+      apiKey: process.env.TILOPAY_PLATFORM_KEY,
+      apiUser: process.env.TILOPAY_PLATFORM_USER,
+      apiPassword: process.env.TILOPAY_PLATFORM_PASSWORD,
+      environment: process.env.TILOPAY_PLATFORM_ENV === "PRODUCTION" ? "PRODUCTION" : "SANDBOX"
+    };
+  }
+  try {
+    const superadminTenant = await query(`SELECT id FROM tenants WHERE slug = 'superadmin' LIMIT 1`);
+    if (superadminTenant.rows.length > 0) {
+      const config = await getTenantPaymentConfigRaw(superadminTenant.rows[0].id);
+      if (config && config.isEnabled && config.apiKey && config.apiUser && config.apiPassword) {
+        return {
+          apiKey: config.apiKey,
+          apiUser: config.apiUser,
+          apiPassword: config.apiPassword,
+          environment: config.environment || "SANDBOX"
+        };
+      }
+    }
+  } catch (e) {
+  }
+  try {
+    const anyConfigRes = await query(`
+      SELECT t.id, c.api_key, c.api_user, c.api_password_encrypted, c.environment
+      FROM tenant_payment_configs c
+      JOIN tenants t ON t.id = c.tenant_id
+      WHERE c.is_enabled = true AND c.api_key IS NOT NULL
+      ORDER BY t.created_at ASC
+      LIMIT 1
+    `);
+    if (anyConfigRes.rows.length > 0) {
+      const r = anyConfigRes.rows[0];
+      const apiPassword = CryptoService.decryptForTenant(r.id, r.api_password_encrypted);
+      return {
+        apiKey: r.api_key,
+        apiUser: r.api_user,
+        apiPassword,
+        environment: r.environment || "SANDBOX"
+      };
+    }
+  } catch (e) {
+  }
+  return null;
+}
+var TilopaySubscriptionService = class {
+  static getBaseUrl(envType) {
+    return "https://app.tilopay.com/api/v1";
+  }
+  /**
+   * Gets SDK JWT token for platform Tilopay account.
+   */
+  static async getPlatformJwt(cfg) {
+    const baseUrl = this.getBaseUrl(cfg.environment);
+    const res = await fetch(`${baseUrl}/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: cfg.apiUser.trim(),
+        password: cfg.apiPassword.trim()
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.access_token) {
+      throw new Error(data.message || data.error || "Fallo de autenticaci\xF3n con Tilopay (Plataforma).");
+    }
+    return data.access_token;
+  }
+  /**
+   * Tokenizes a credit/debit card and stores the encrypted token in DB.
+   */
+  static async registerTenantCard(tenantId, cardData) {
+    const platformCfg = await getPlatformTilopayConfig();
+    if (!platformCfg) {
+      throw new Error("La plataforma no tiene credenciales de Tilopay configuradas para cobro de suscripciones.");
+    }
+    const cleanCardNumber = cardData.cardNumber.replace(/\s+/g, "");
+    const last4 = cleanCardNumber.slice(-4);
+    let brand = "CARD";
+    if (/^4/.test(cleanCardNumber)) brand = "VISA";
+    else if (/^5[1-5]/.test(cleanCardNumber)) brand = "MASTERCARD";
+    else if (/^3[47]/.test(cleanCardNumber)) brand = "AMEX";
+    const jwt2 = await this.getPlatformJwt(platformCfg);
+    const baseUrl = this.getBaseUrl(platformCfg.environment);
+    const tokenizeRes = await fetch(`${baseUrl}/tokenize`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${jwt2}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        key: platformCfg.apiKey,
+        cardNumber: cleanCardNumber,
+        expMonth: cardData.expMonth.padStart(2, "0"),
+        expYear: cardData.expYear.length === 2 ? `20${cardData.expYear}` : cardData.expYear,
+        cvv: cardData.cvv,
+        cardHolder: cardData.cardHolder.trim()
+      })
+    });
+    const tokenizeData = await tokenizeRes.json().catch(() => ({}));
+    const token = tokenizeData.token || tokenizeData.card_token || tokenizeData.id;
+    if (!tokenizeRes.ok || !token) {
+      console.error("[TilopaySubscription] Fall\xF3 tokenizaci\xF3n:", tokenizeData);
+      throw new Error(tokenizeData.message || tokenizeData.error || "Tilopay no pudo tokenizar la tarjeta. Verifica los datos.");
+    }
+    const encryptedToken = CryptoService.encryptForTenant(tenantId, token);
+    await saveBillingCard(tenantId, {
+      last4,
+      brand: tokenizeData.brand || brand,
+      holder: cardData.cardHolder.trim(),
+      tokenEncrypted: encryptedToken,
+      isDefault: true
+    });
+    return {
+      success: true,
+      cardLast4: last4,
+      cardBrand: tokenizeData.brand || brand
+    };
+  }
+  /**
+   * Executes a subscription charge for a tenant using their saved card token.
+   */
+  static async chargeTenantSubscription(tenantId, isManual = false) {
+    const tenantRes = await query(`
+      SELECT id, name, slug, whatsapp_number as "whatsappNumber",
+             custom_monthly_price as "customMonthlyPrice",
+             billing_currency as "billingCurrency",
+             evolution_instance as "evolutionInstance"
+      FROM tenants
+      WHERE id = $1
+    `, [tenantId]);
+    if (tenantRes.rows.length === 0) {
+      throw new Error("Tenant no encontrado.");
+    }
+    const tenant = tenantRes.rows[0];
+    const amount = Number(tenant.customMonthlyPrice || 29);
+    const currency = tenant.billingCurrency || "CRC";
+    const card = await getDefaultBillingCard(tenantId);
+    if (!card) {
+      throw new Error("El tenant no tiene ninguna tarjeta de pago registrada.");
+    }
+    const cardToken = CryptoService.decryptForTenant(tenantId, card.tilopayTokenEncrypted);
+    if (!cardToken) {
+      throw new Error("No fue posible recuperar el token de la tarjeta.");
+    }
+    const platformCfg = await getPlatformTilopayConfig();
+    if (!platformCfg) {
+      throw new Error("Credenciales de Tilopay de la plataforma no configuradas.");
+    }
+    const jwt2 = await this.getPlatformJwt(platformCfg);
+    const baseUrl = this.getBaseUrl(platformCfg.environment);
+    const orderNumber = `SUB-${tenant.slug.substring(0, 8)}-${Date.now()}`;
+    const cleanPhone = (tenant.whatsappNumber || "88888888").replace(/\D/g, "") || "88888888";
+    const appUrl = (env.APP_URL || "https://betico.tech").replace(/\/$/, "");
+    const charge = await createBillingCharge({
+      tenantId,
+      billingCardId: card.id,
+      amount,
+      currency,
+      status: "pending",
+      tilopayOrderNumber: orderNumber
+    });
+    const chargePayload = {
+      key: platformCfg.apiKey,
+      token: cardToken,
+      amount: amount.toFixed(2),
+      currency,
+      billToFirstName: tenant.name.split(" ")[0] || "Cliente",
+      billToLastName: tenant.name.split(" ").slice(1).join(" ") || "Tenant",
+      billToEmail: "billing@betico.cr",
+      billToAddress: "Costa Rica",
+      billToAddress2: "N/A",
+      billToCity: "San Jose",
+      billToState: "SJ",
+      billToZip: "10101",
+      billToCountry: "CR",
+      billToTelephone: cleanPhone,
+      orderNumber,
+      redirect: `${appUrl}/admin`,
+      callback: `${appUrl}/api/webhooks/tilopay`
+    };
+    let chargeRes;
+    let chargeData = {};
+    try {
+      chargeRes = await fetch(`${baseUrl}/charge`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${jwt2}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(chargePayload)
+      });
+      chargeData = await chargeRes.json().catch(() => ({}));
+    } catch (netErr) {
+      await updateBillingCharge(orderNumber, {
+        status: "failed",
+        failureReason: `Error de red: ${netErr.message}`
+      });
+      throw new Error(`Error de conexi\xF3n con Tilopay: ${netErr.message}`);
+    }
+    const isApproved = chargeRes.ok && (chargeData.status === "approved" || chargeData.status === "success" || chargeData.result_code === "1" || chargeData.result_code === "00" || chargeData.approved === true);
+    const transactionId = chargeData.transaction_id || chargeData.transactionId || chargeData.id;
+    const authCode = chargeData.auth_code || chargeData.authCode;
+    if (isApproved) {
+      await updateBillingCharge(orderNumber, {
+        status: "success",
+        transactionId: String(transactionId || ""),
+        authCode: String(authCode || "")
+      });
+      await query(`
+        UPDATE tenants
+        SET subscription_status = 'active',
+            next_billing_date = CURRENT_TIMESTAMP + INTERVAL '30 days',
+            grace_period_ends_at = null,
+            last_payment_amount = $1,
+            last_payment_ref = $2,
+            last_auto_charge_at = CURRENT_TIMESTAMP,
+            last_auto_charge_status = 'success',
+            active = true,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $3
+      `, [amount, `Tilopay #${transactionId || orderNumber}`, tenantId]);
+      await query(`
+        INSERT INTO tenant_payments (tenant_id, amount, currency, payment_method, reference, notes, status)
+        VALUES ($1, $2, $3, 'card', $4, $5, 'approved')
+      `, [tenantId, amount, currency, String(transactionId || orderNumber), `Cobro autom\xE1tico de suscripci\xF3n (Tarjeta termina en ${card.cardLast4})`]);
+      if (tenant.whatsappNumber) {
+        const priceStr = currency === "USD" ? `$${amount}` : `\u20A1${amount.toLocaleString("es-CR")}`;
+        const receiptMsg = `\u2705 *[Pago de Suscripci\xF3n Exitoso - Betico]*
+
+Hola *${tenant.name}*, tu mensualidad de *${priceStr}* ha sido cobrada exitosamente a tu tarjeta terminada en *${card.cardLast4}*.
+
+\u{1F4CB} *Referencia:* ${transactionId || orderNumber}
+\u{1F4C5} *Pr\xF3ximo cobro:* ${new Date(Date.now() + 30 * 24 * 60 * 60 * 1e3).toLocaleDateString("es-CR")}
+
+\xA1Gracias por seguir impulsando tu negocio con Betico! \u{1F680}`;
+        try {
+          await sendMessage("betico_soporte", cleanPhone, receiptMsg);
+        } catch (e) {
+        }
+      }
+      return {
+        success: true,
+        message: "Cobro procesado exitosamente y suscripci\xF3n renovada por 30 d\xEDas.",
+        transactionId: String(transactionId || ""),
+        orderNumber
+      };
+    } else {
+      const reason = chargeData.message || chargeData.error || `HTTP ${chargeRes.status}: Transacci\xF3n rechazada por el banco emisor.`;
+      await updateBillingCharge(orderNumber, {
+        status: "failed",
+        failureReason: reason
+      });
+      await query(`
+        UPDATE tenants
+        SET last_auto_charge_status = 'failed',
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1
+      `, [tenantId]);
+      return {
+        success: false,
+        message: `Cobro rechazado: ${reason}`,
+        orderNumber
+      };
+    }
+  }
+  /**
+   * Background batch worker for automatic recurring billing.
+   * Scans for tenants with auto_billing_enabled = true and next_billing_date <= NOW().
+   */
+  static async processRecurringBillingBatch() {
+    console.log("[TilopayAutoBilling] Escaneando suscripciones vencidas para cobro autom\xE1tico...");
+    const dueTenants = await getTenantsDueForAutoBilling();
+    console.log(`[TilopayAutoBilling] Encontrados ${dueTenants.length} tenants listos para cobro autom\xE1tico.`);
+    let successCount = 0;
+    let failedCount = 0;
+    for (const t of dueTenants) {
+      try {
+        console.log(`[TilopayAutoBilling] Procesando cobro autom\xE1tico para: ${t.name} (${t.slug})...`);
+        const res = await this.chargeTenantSubscription(t.id, false);
+        if (res.success) {
+          successCount++;
+          console.log(`[TilopayAutoBilling] \u2705 Cobro exitoso para ${t.name}: ${res.transactionId}`);
+        } else {
+          failedCount++;
+          console.warn(`[TilopayAutoBilling] \u274C Cobro rechazado para ${t.name}: ${res.message}`);
+        }
+      } catch (err) {
+        failedCount++;
+        console.error(`[TilopayAutoBilling] Error procesando cobro para ${t.name}:`, err.message);
+      }
+    }
+    return { processed: dueTenants.length, successCount, failedCount };
+  }
+};
+
+// src/server/services/subscription.service.ts
 async function checkSubscriptionLifecycles() {
   try {
     const now = /* @__PURE__ */ new Date();
+    try {
+      await TilopaySubscriptionService.processRecurringBillingBatch();
+    } catch (billingErr) {
+      console.error("[Subscription] Error en lote de cobro recurrente Tilopay:", billingErr.message);
+    }
     const expiredTrials = await query(`
       SELECT id, name, slug, whatsapp_number as "whatsappNumber", 
              custom_monthly_price as "monthlyPrice", billing_currency as "currency",
@@ -3384,6 +3970,7 @@ async function getScheduleSettings(tenantId) {
       tenantId,
       scheduleMode: "jornada",
       globalParallelSlots: 1,
+      bookingPaymentMode: "all",
       jornadaConfig: {
         startHour: "08:00",
         endHour: "17:00",
@@ -3410,6 +3997,7 @@ async function getScheduleSettings(tenantId) {
     tenantId: row.tenantId,
     scheduleMode: row.scheduleMode || "jornada",
     globalParallelSlots: Math.max(1, Number(config.globalParallelSlots) || 1),
+    bookingPaymentMode: config.bookingPaymentMode || "all",
     jornadaConfig: config.jornadaConfig,
     fechasConfig: config.fechasConfig,
     bloquesConfig: config.bloquesConfig,
@@ -3426,6 +4014,7 @@ async function getScheduleSettings(tenantId) {
 async function saveScheduleSettings(tenantId, data) {
   const configJson = {
     globalParallelSlots: Math.max(1, Number(data.globalParallelSlots) || 1),
+    bookingPaymentMode: data.bookingPaymentMode || "all",
     jornadaConfig: data.jornadaConfig,
     fechasConfig: data.fechasConfig,
     bloquesConfig: data.bloquesConfig,
@@ -3448,6 +4037,7 @@ async function saveScheduleSettings(tenantId, data) {
     tenantId: row.tenantId,
     scheduleMode: row.scheduleMode,
     globalParallelSlots: Math.max(1, Number(config.globalParallelSlots) || 1),
+    bookingPaymentMode: config.bookingPaymentMode || "all",
     jornadaConfig: config.jornadaConfig,
     fechasConfig: config.fechasConfig,
     bloquesConfig: config.bloquesConfig,
@@ -3573,17 +4163,27 @@ async function getSpecialistsByTenant(tenantId) {
   );
   return res.rows;
 }
-async function getSpecialistByPin(pin, phone) {
+async function getSpecialistByPin(pin, phone, tenantId) {
   const cleanPin = (pin || "").trim();
   let sql = 'SELECT id, tenant_id as "tenantId", name, phone, specialty, access_pin as "accessPin", active, created_at as "createdAt" FROM specialists WHERE TRIM(access_pin) = $1 AND active = TRUE';
   const params = [cleanPin];
+  if (tenantId) {
+    sql += ` AND tenant_id = $${params.length + 1}`;
+    params.push(tenantId);
+  }
   if (phone) {
     const clean = phone.replace(/\D/g, "");
-    sql += " AND (REPLACE(phone, '-', '') LIKE '%' || $2 OR phone LIKE '%' || $2)";
-    params.push(clean.slice(-8));
+    if (clean.length >= 8) {
+      sql += ` AND (REPLACE(phone, '-', '') LIKE '%' || $${params.length + 1} OR phone LIKE '%' || $${params.length + 1})`;
+      params.push(clean.slice(-8));
+    }
   }
-  sql += " LIMIT 1";
+  sql += " LIMIT 2";
   const res = await query(sql, params);
+  if (res.rows.length > 1 && !tenantId && !phone) {
+    console.warn(`[getSpecialistByPin] Colisi\xF3n de PIN ${cleanPin} detectada entre m\xFAltiples comercios. Se requiere tel\xE9fono o tenantId para desambiguar.`);
+    return null;
+  }
   return res.rows[0] || null;
 }
 async function createSpecialist(tenantId, data) {
@@ -4665,8 +5265,6 @@ async function getAppointmentsByTenant(tenantId) {
   return result.rows;
 }
 async function getAppointmentById(id, tenantId) {
-  const whereClause = tenantId ? "WHERE id = $1 AND tenant_id = $2" : "WHERE id = $1";
-  const params = tenantId ? [id, tenantId] : [id];
   const result = await query(`
     SELECT id, tenant_id as "tenantId", name, whatsapp, service, 
            date, time, amount, status, details, vehicle_model as "vehicleModel",
@@ -4676,8 +5274,22 @@ async function getAppointmentById(id, tenantId) {
            tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
            created_at as "createdAt"
     FROM appointments 
-    ${whereClause}
-  `, params);
+    WHERE id = $1 AND tenant_id = $2
+  `, [id, tenantId]);
+  return result.rows[0] || null;
+}
+async function getAppointmentByIdUnsafeForWebhook(id) {
+  const result = await query(`
+    SELECT id, tenant_id as "tenantId", name, whatsapp, service, 
+           date, time, amount, status, details, vehicle_model as "vehicleModel",
+           selected_variables as "selectedVariables", specialist_id as "specialistId",
+           payment_method as "paymentMethod", payment_status as "paymentStatus",
+           payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
+           tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
+           created_at as "createdAt"
+    FROM appointments 
+    WHERE id = $1
+  `, [id]);
   return result.rows[0] || null;
 }
 async function createAppointment(tenantId, data) {
@@ -5003,13 +5615,14 @@ async function getOrderById(id, tenantId) {
   order.items = itemsRes.rows;
   return order;
 }
-async function createOrder(tenantId, data, items) {
+async function createOrder(tenantId, data, items, dbClient) {
+  const runQuery = dbClient ? dbClient.query.bind(dbClient) : query;
   const insertSql = `
     INSERT INTO orders (
       tenant_id, customer_name, customer_phone, customer_email, customer_address, whatsapp_jid,
       source, subtotal, delivery_fee, discount, total, currency, status, payment_method, 
-      payment_status, payment_reference, payment_proof_url, payment_proof_status, notes, delivery_method, consumption_mode, table_number, customer_location
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+      payment_status, payment_reference, payment_proof_url, payment_proof_status, notes, delivery_method, consumption_mode, table_number, customer_location, stock_deducted
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
     RETURNING id
   `;
   const params = [
@@ -5035,19 +5648,21 @@ async function createOrder(tenantId, data, items) {
     data.deliveryMethod || "pickup",
     data.consumptionMode || null,
     data.tableNumber || null,
-    data.customerLocation ? JSON.stringify(data.customerLocation) : null
+    data.customerLocation ? JSON.stringify(data.customerLocation) : null,
+    Boolean(data.stockDeducted)
   ];
   let result;
   try {
-    result = await query(insertSql, params);
+    result = await runQuery(insertSql, params);
   } catch (err) {
-    if (err && (err.message?.includes("payment_proof_url") || err.message?.includes("payment_proof_status") || err.code === "42703")) {
+    if (err && (err.message?.includes("payment_proof_url") || err.message?.includes("payment_proof_status") || err.message?.includes("stock_deducted") || err.code === "42703")) {
       console.log("[createOrder] Column missing detected, auto-migrating orders table...");
       await query(`
         ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_proof_url TEXT;
         ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_proof_status VARCHAR(50) DEFAULT 'pending';
+        ALTER TABLE orders ADD COLUMN IF NOT EXISTS stock_deducted BOOLEAN DEFAULT false;
       `);
-      result = await query(insertSql, params);
+      result = await runQuery(insertSql, params);
     } else {
       throw err;
     }
@@ -5056,7 +5671,7 @@ async function createOrder(tenantId, data, items) {
   const orderItems = items || data.items || [];
   if (orderItems && orderItems.length > 0) {
     for (const item of orderItems) {
-      await query(`
+      await runQuery(`
         INSERT INTO order_items (
           order_id, product_id, variant_id, tenant_id, product_name, variant_name, selected_variables, quantity, unit_price, total_price
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
@@ -5149,6 +5764,7 @@ async function executeOrderPaymentConfirmation(tenantId, orderId, paymentData) {
           tilopay_auth_code = $4,
           payment_reference = COALESCE($5, payment_reference),
           payment_method = COALESCE($6, payment_method),
+          stock_deducted = true,
           updated_at = CURRENT_TIMESTAMP
       WHERE id = $7 AND tenant_id = $8
     `, [
@@ -5161,26 +5777,28 @@ async function executeOrderPaymentConfirmation(tenantId, orderId, paymentData) {
       orderId,
       tenantId
     ]);
-    const itemsRes = await client.query(`
-      SELECT product_id as "productId", variant_id as "variantId", quantity
-      FROM order_items
-      WHERE order_id = $1 AND tenant_id = $2
-    `, [orderId, tenantId]);
-    for (const item of itemsRes.rows) {
-      const qty = Number(item.quantity || 1);
-      if (item.productId) {
-        await client.query(`
-          UPDATE products
-          SET stock = GREATEST(0, stock - $1),
-              updated_at = CURRENT_TIMESTAMP
-          WHERE id = $2 AND tenant_id = $3 AND track_stock = true
-        `, [qty, item.productId, tenantId]);
-        if (item.variantId) {
+    if (!currentOrder.stock_deducted) {
+      const itemsRes = await client.query(`
+        SELECT product_id as "productId", variant_id as "variantId", quantity
+        FROM order_items
+        WHERE order_id = $1 AND tenant_id = $2
+      `, [orderId, tenantId]);
+      for (const item of itemsRes.rows) {
+        const qty = Number(item.quantity || 1);
+        if (item.productId) {
           await client.query(`
-            UPDATE product_variants
-            SET stock = GREATEST(0, stock - $1)
-            WHERE id = $2 AND product_id = $3
-          `, [qty, item.variantId, item.productId]);
+            UPDATE products
+            SET stock = GREATEST(0, stock - $1),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = $2 AND tenant_id = $3 AND track_stock = true
+          `, [qty, item.productId, tenantId]);
+          if (item.variantId) {
+            await client.query(`
+              UPDATE product_variants
+              SET stock = GREATEST(0, stock - $1)
+              WHERE id = $2 AND product_id = $3
+            `, [qty, item.variantId, item.productId]);
+          }
         }
       }
     }
@@ -5199,28 +5817,30 @@ async function executeOrderPaymentConfirmation(tenantId, orderId, paymentData) {
 // src/server/services/order.service.ts
 init_pool();
 async function createOrderFromWhatsApp(tenantId, orderData) {
-  try {
-    const allProducts = await getProductsByTenant(tenantId, true);
-    const items = [];
-    let subtotal = 0;
-    for (const item of orderData.items || []) {
-      const product = allProducts.find(
-        (p) => p.name.toLowerCase().includes((item.productName || "").toLowerCase()) || (item.productName || "").toLowerCase().includes(p.name.toLowerCase())
-      );
-      const qty = item.quantity || 1;
-      if (product && product.trackStock) {
-        if (item.variantName && product.variants && product.variants.length > 0) {
-          const matchedVariant = product.variants.find(
-            (v) => v.name.toLowerCase().includes(item.variantName.toLowerCase()) || item.variantName.toLowerCase().includes(v.name.toLowerCase())
-          );
-          if (matchedVariant && (matchedVariant.stock ?? 0) < qty) {
-            throw new Error(`Stock insuficiente para la variante "${matchedVariant.name}" de "${product.name}". Disponible: ${matchedVariant.stock ?? 0}`);
-          }
-        } else if ((product.stock ?? 0) < qty) {
-          throw new Error(`Stock insuficiente para "${product.name}". Disponible: ${product.stock ?? 0}`);
+  const allProducts = await getProductsByTenant(tenantId, true);
+  const items = [];
+  let subtotal = 0;
+  for (const item of orderData.items || []) {
+    const product = allProducts.find(
+      (p) => p.name.toLowerCase().includes((item.productName || "").toLowerCase()) || (item.productName || "").toLowerCase().includes(p.name.toLowerCase())
+    );
+    const qty = item.quantity || 1;
+    if (product && product.trackStock) {
+      if (item.variantName && product.variants && product.variants.length > 0) {
+        const matchedVariant = product.variants.find(
+          (v) => v.name.toLowerCase().includes(item.variantName.toLowerCase()) || item.variantName.toLowerCase().includes(v.name.toLowerCase())
+        );
+        if (matchedVariant && (matchedVariant.stock ?? 0) < qty) {
+          throw new Error(`Stock insuficiente para la variante "${matchedVariant.name}" de "${product.name}". Disponible: ${matchedVariant.stock ?? 0}`);
         }
+      } else if ((product.stock ?? 0) < qty) {
+        throw new Error(`Stock insuficiente para "${product.name}". Disponible: ${product.stock ?? 0}`);
       }
     }
+  }
+  const client = await getClient();
+  try {
+    await client.query("BEGIN");
     for (const item of orderData.items || []) {
       const product = allProducts.find(
         (p) => p.name.toLowerCase().includes((item.productName || "").toLowerCase()) || (item.productName || "").toLowerCase().includes(p.name.toLowerCase())
@@ -5253,12 +5873,12 @@ async function createOrderFromWhatsApp(tenantId, orderData) {
         totalPrice
       });
       if (product && product.trackStock) {
-        await query(
+        await client.query(
           "UPDATE products SET stock = GREATEST(0, stock - $1), updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND tenant_id = $3",
           [qty, product.id, tenantId]
         );
         if (variantId) {
-          await query(
+          await client.query(
             "UPDATE product_variants SET stock = GREATEST(0, stock - $1) WHERE id = $2 AND product_id = $3",
             [qty, variantId, product.id]
           );
@@ -5286,14 +5906,20 @@ async function createOrderFromWhatsApp(tenantId, orderData) {
         status: "pedido_recibido",
         paymentMethod: orderData.paymentMethod || "sinpe",
         paymentStatus: "pending",
+        stockDeducted: true,
         notes: orderData.notes || (deliveryMethod === "delivery" && customerAddress ? `Entrega a: ${customerAddress}` : void 0)
       },
-      items
+      items,
+      client
     );
+    await client.query("COMMIT");
     return order;
   } catch (error) {
+    await client.query("ROLLBACK");
     console.error("Error creating order from WhatsApp:", error);
     throw error;
+  } finally {
+    client.release();
   }
 }
 
@@ -5602,7 +6228,7 @@ async function processSingleMessage(msg) {
 
 // src/server/services/evolution-api.service.ts
 init_evolution();
-import crypto3 from "crypto";
+import crypto4 from "crypto";
 
 // src/server/services/event-bus.service.ts
 import { EventEmitter } from "events";
@@ -5670,7 +6296,7 @@ var EvolutionApiService = class {
    * dynamic payment link and a 60-minute TTL.
    */
   static async createOrderAndGeneratePaymentLink(tenantId, orderData) {
-    const paymentLinkToken = crypto3.randomUUID();
+    const paymentLinkToken = crypto4.randomUUID();
     const expiresAt = new Date(Date.now() + 60 * 60 * 1e3);
     const store = await getStoreSettings(tenantId);
     const tenant = await getTenantById(tenantId);
@@ -6283,8 +6909,19 @@ router.post("/login", async (req, res) => {
       if (targetTenant) {
         user = await getUserByEmail(targetTenant.id, email);
       }
-    }
-    if (!user) {
+    } else {
+      const countRes = await query(
+        "SELECT COUNT(DISTINCT tenant_id) as count FROM users WHERE LOWER(email) = $1 AND active = TRUE AND role != 'superadmin'",
+        [email.toLowerCase().trim()]
+      );
+      const tenantCount = parseInt(countRes.rows[0]?.count || "0", 10);
+      if (tenantCount > 1) {
+        res.status(400).json({
+          error: "Este correo est\xE1 registrado en m\xFAltiples negocios. Por favor ingresa el identificador (slug) de tu comercio.",
+          requiresTenantSlug: true
+        });
+        return;
+      }
       user = await getUserByEmail(null, email);
     }
     if (!user) {
@@ -6347,7 +6984,8 @@ router.get("/me", authenticateToken, async (req, res) => {
       role: activeRole,
       tenantId: activeTenantId,
       tenantName: tenant?.name || "Mi Negocio",
-      tenantSlug: tenant?.slug || ""
+      tenantSlug: tenant?.slug || "",
+      calendarToken: tenant?.calendarToken || tenant?.calendar_token || ""
     });
   } catch (err) {
     console.error("Error fetching user profile in /me:", err);
@@ -6465,9 +7103,9 @@ router.post("/reset-password", async (req, res) => {
     const cleanInput = identifier.trim();
     const cleanPhone = cleanInput.replace(/\D/g, "");
     const cleanOtp = (otpCode || "").toString().trim();
-    const { query: query2 } = await Promise.resolve().then(() => (init_pool(), pool_exports));
+    const { query: query3 } = await Promise.resolve().then(() => (init_pool(), pool_exports));
     const { hashPassword: hashPassword2 } = await Promise.resolve().then(() => (init_users_repo(), users_repo_exports));
-    const result = await query2(`
+    const result = await query3(`
       SELECT prt.id as "tokenId", u.id as "userId", u.name, u.email
       FROM password_reset_tokens prt
       JOIN users u ON prt.user_id = u.id
@@ -6485,10 +7123,10 @@ router.post("/reset-password", async (req, res) => {
     }
     const { tokenId, userId } = result.rows[0];
     const newHash = hashPassword2(newPassword);
-    await query2(`
+    await query3(`
       UPDATE users SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2
     `, [newHash, userId]);
-    await query2(`
+    await query3(`
       UPDATE password_reset_tokens SET used = true WHERE id = $1
     `, [tokenId]);
     res.json({ success: true, message: "\xA1Tu contrase\xF1a ha sido restablecida exitosamente! Ya puedes iniciar sesi\xF3n." });
@@ -6507,16 +7145,8 @@ router2.use(authenticateToken);
 router2.use(requireSuperAdmin);
 router2.get("/", async (req, res) => {
   try {
-    const tenants = await getAllTenants();
-    const enriched = await Promise.all(tenants.map(async (t) => {
-      const admin = await getAdminUserByTenant(t.id);
-      return {
-        ...t,
-        adminEmail: admin?.email || "Sin registrar",
-        adminId: admin?.id || null
-      };
-    }));
-    res.json(enriched);
+    const tenants = await getAllTenantsWithAdmin();
+    res.json(tenants);
   } catch (error) {
     console.error("Error al obtener inquilinos:", error);
     res.status(500).json({ error: "Error al obtener inquilinos" });
@@ -6753,16 +7383,16 @@ router2.get("/:id/dossier", async (req, res) => {
       return;
     }
     const adminUser = await getAdminUserByTenant(id);
-    const { query: query2 } = await Promise.resolve().then(() => (init_pool(), pool_exports));
+    const { query: query3 } = await Promise.resolve().then(() => (init_pool(), pool_exports));
     const now = /* @__PURE__ */ new Date();
     const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
     const [ordersRes, apptsRes, chatsRes, aiRes, paymentsRes, storeSettingsRes] = await Promise.all([
-      query2("SELECT COUNT(*) as count FROM orders WHERE tenant_id = $1", [id]),
-      query2("SELECT COUNT(*) as count FROM appointments WHERE tenant_id = $1", [id]),
-      query2("SELECT COUNT(*) as count FROM chat_messages WHERE tenant_id = $1", [id]),
-      query2('SELECT tokens_used as "tokensUsed", requests_count as "requestsCount" FROM tenant_ai_usage WHERE tenant_id = $1 AND month_year = $2', [id, currentMonth]),
-      query2('SELECT id, amount, currency, payment_method as "paymentMethod", reference, proof_url as "proofUrl", notes, status, created_at as "createdAt" FROM tenant_payments WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT 50', [id]),
-      query2("SELECT store_modules FROM store_settings WHERE tenant_id = $1", [id])
+      query3("SELECT COUNT(*) as count FROM orders WHERE tenant_id = $1", [id]),
+      query3("SELECT COUNT(*) as count FROM appointments WHERE tenant_id = $1", [id]),
+      query3("SELECT COUNT(*) as count FROM chat_messages WHERE tenant_id = $1", [id]),
+      query3('SELECT tokens_used as "tokensUsed", requests_count as "requestsCount" FROM tenant_ai_usage WHERE tenant_id = $1 AND month_year = $2', [id, currentMonth]),
+      query3('SELECT id, amount, currency, payment_method as "paymentMethod", reference, proof_url as "proofUrl", notes, status, created_at as "createdAt" FROM tenant_payments WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT 50', [id]),
+      query3("SELECT store_modules FROM store_settings WHERE tenant_id = $1", [id])
     ]);
     const ordersCount = parseInt(ordersRes.rows[0]?.count || "0", 10);
     const appointmentsCount = parseInt(apptsRes.rows[0]?.count || "0", 10);
@@ -6797,7 +7427,7 @@ router2.post("/:id/record-payment", async (req, res) => {
   try {
     const { id } = req.params;
     const { amount, currency, paymentMethod, reference, proofUrl, notes, extendDays } = req.body;
-    const { query: query2 } = await Promise.resolve().then(() => (init_pool(), pool_exports));
+    const { query: query3 } = await Promise.resolve().then(() => (init_pool(), pool_exports));
     const tenant = await getTenantById(id);
     if (!tenant) {
       res.status(404).json({ error: "Inquilino no encontrado" });
@@ -6806,12 +7436,12 @@ router2.post("/:id/record-payment", async (req, res) => {
     const payAmount = Number(amount) || Number(tenant.customMonthlyPrice) || 55e3;
     const payCurrency = currency || tenant.billingCurrency || "CRC";
     const daysToExtend = Number(extendDays) || 30;
-    await query2(
+    await query3(
       `INSERT INTO tenant_payments (tenant_id, amount, currency, payment_method, reference, proof_url, notes, status)
        VALUES ($1, $2, $3, $4, $5, $6, $7, 'approved')`,
       [id, payAmount, payCurrency, paymentMethod || "sinpe", reference || "", proofUrl || null, notes || ""]
     );
-    await query2(
+    await query3(
       `UPDATE tenants SET 
          subscription_status = 'active',
          next_billing_date = COALESCE(GREATEST(next_billing_date, NOW()), NOW()) + ($1 || ' days')::INTERVAL,
@@ -6838,8 +7468,8 @@ router2.put("/:id/next-billing-date", async (req, res) => {
       res.status(400).json({ error: "Fecha requerida" });
       return;
     }
-    const { query: query2 } = await Promise.resolve().then(() => (init_pool(), pool_exports));
-    await query2("UPDATE tenants SET next_billing_date = $1 WHERE id = $2", [new Date(nextBillingDate), id]);
+    const { query: query3 } = await Promise.resolve().then(() => (init_pool(), pool_exports));
+    await query3("UPDATE tenants SET next_billing_date = $1 WHERE id = $2", [new Date(nextBillingDate), id]);
     await logAuditEvent(id, req.user.userId, "update_billing_date", "tenant", id, { nextBillingDate }, req.ip, req.headers["user-agent"]);
     res.json({ success: true, nextBillingDate });
   } catch (error) {
@@ -6851,8 +7481,8 @@ router2.put("/:id/internal-notes", async (req, res) => {
   try {
     const { id } = req.params;
     const { notes } = req.body;
-    const { query: query2 } = await Promise.resolve().then(() => (init_pool(), pool_exports));
-    await query2("UPDATE tenants SET internal_notes = $1 WHERE id = $2", [notes || "", id]);
+    const { query: query3 } = await Promise.resolve().then(() => (init_pool(), pool_exports));
+    await query3("UPDATE tenants SET internal_notes = $1 WHERE id = $2", [notes || "", id]);
     res.json({ success: true, notes });
   } catch (error) {
     console.error("Error saving notes:", error);
@@ -6862,7 +7492,7 @@ router2.put("/:id/internal-notes", async (req, res) => {
 router2.get("/billing/collections", async (req, res) => {
   try {
     const tenants = await getAllTenants();
-    const { query: query2 } = await Promise.resolve().then(() => (init_pool(), pool_exports));
+    const { query: query3 } = await Promise.resolve().then(() => (init_pool(), pool_exports));
     const now = /* @__PURE__ */ new Date();
     const in3Days = new Date(Date.now() + 3 * 864e5);
     const in7Days = new Date(Date.now() + 7 * 864e5);
@@ -7396,6 +8026,7 @@ router5.get("/public/:slug/info", async (req, res) => {
       theme: store?.storeTheme,
       services: services.filter((s) => s.active !== false),
       scheduleMode: schedule?.scheduleMode || "jornada",
+      bookingPaymentMode: schedule?.bookingPaymentMode || "all",
       customFields: schedule?.customFields || [],
       vacationConfig: schedule?.vacationConfig,
       paymentSettings: {
@@ -7405,6 +8036,8 @@ router5.get("/public/:slug/info", async (req, res) => {
         sinpeName: store?.sinpeName || "",
         acceptCard: tiloAvailable,
         acceptCash: store?.acceptCashOnDelivery !== false,
+        acceptTransfer: store?.acceptTransfer === true,
+        bankAccountInfo: store?.bankAccountInfo || "",
         currency: store?.currency || "CRC"
       }
     });
@@ -7581,7 +8214,7 @@ router5.post("/public/:slug/book", async (req, res) => {
     }
     const finalAmount = req.body.amount !== void 0 ? Number(req.body.amount) : amount;
     const paymentMethod = req.body.paymentMethod || "cash";
-    const isOnlinePayment = paymentMethod === "card" || paymentMethod === "sinpe_tilopay";
+    const isOnlinePayment = (paymentMethod === "card" || paymentMethod === "sinpe_tilopay") && paymentMethod !== "solo_reserva";
     const appt = await createAppointment(tenant.id, {
       name: customerName,
       whatsapp: customerPhone,
@@ -7590,7 +8223,7 @@ router5.post("/public/:slug/book", async (req, res) => {
       time,
       amount: finalAmount,
       status: "scheduled",
-      paymentMethod,
+      paymentMethod: paymentMethod === "solo_reserva" ? "pending" : paymentMethod,
       paymentStatus: paymentMethod === "sinpe" ? "proof_sent" : "pending",
       paymentReference: req.body.paymentReference || null,
       details: combinedDetails,
@@ -7738,7 +8371,16 @@ router5.put("/:id", async (req, res) => {
 router5.put("/:id/status", async (req, res) => {
   try {
     const { status, notifyCustomer = true } = req.body;
+    const validStatuses = ["pending", "scheduled", "confirmed", "completed", "cancelled"];
+    if (!status || !validStatuses.includes(status)) {
+      res.status(400).json({ error: `Estado inv\xE1lido. Estados permitidos: ${validStatuses.join(", ")}` });
+      return;
+    }
     const updated = await updateAppointmentStatus(req.params.id, req.tenantId, status);
+    if (!updated) {
+      res.status(404).json({ error: "Cita no encontrada o no pertenece a este comercio" });
+      return;
+    }
     const tenant = await getTenantById(req.tenantId);
     if (notifyCustomer && updated?.whatsapp && tenant?.evolutionInstance) {
       let statusText = status === "confirmed" ? "\u2705 Confirmada" : status === "scheduled" ? "\u{1F552} Programada" : status === "completed" ? "\u{1F389} Completada" : status === "cancelled" ? "\u274C Cancelada" : status;
@@ -7806,9 +8448,11 @@ router6.post("/reply", async (req, res) => {
   try {
     const { remoteJid, messageText, pushName } = req.body;
     let tenantId = req.tenantId;
-    const checkTenant = await query(`SELECT tenant_id FROM chat_messages WHERE remote_jid = $1 LIMIT 1`, [remoteJid]);
-    if (checkTenant.rows.length > 0) {
-      tenantId = checkTenant.rows[0].tenant_id;
+    if (req.user?.role === "superadmin" && !req.tenantId) {
+      const checkTenant = await query(`SELECT tenant_id FROM chat_messages WHERE remote_jid = $1 LIMIT 1`, [remoteJid]);
+      if (checkTenant.rows.length > 0) {
+        tenantId = checkTenant.rows[0].tenant_id;
+      }
     }
     const tenant = await getTenantById(tenantId);
     const instanceName = tenant?.evolutionInstance || `tenant_${tenantId.slice(0, 8)}`;
@@ -7834,9 +8478,11 @@ router6.post("/toggle-ai", async (req, res) => {
   try {
     const { remoteJid, isHumanMode } = req.body;
     let tenantId = req.tenantId;
-    const checkTenant = await query(`SELECT tenant_id FROM chat_messages WHERE remote_jid = $1 LIMIT 1`, [remoteJid]);
-    if (checkTenant.rows.length > 0) {
-      tenantId = checkTenant.rows[0].tenant_id;
+    if (req.user?.role === "superadmin" && !req.tenantId) {
+      const checkTenant = await query(`SELECT tenant_id FROM chat_messages WHERE remote_jid = $1 LIMIT 1`, [remoteJid]);
+      if (checkTenant.rows.length > 0) {
+        tenantId = checkTenant.rows[0].tenant_id;
+      }
     }
     if (remoteJid) {
       await setChatHumanMode(tenantId, remoteJid, Boolean(isHumanMode));
@@ -7884,8 +8530,8 @@ router7.post("/simulate", async (req, res) => {
     );
     res.json(result);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Error al simular agente: " + String(error) });
+    console.error("Error al simular agente:", error);
+    res.status(500).json({ error: "Error al simular la respuesta del agente IA. Verifica la configuraci\xF3n de tu proveedor." });
   }
 });
 router7.get("/ai-quota", async (req, res) => {
@@ -9459,10 +10105,6 @@ router17.post("/", async (req, res) => {
     if (instanceName) {
       tenant = await getTenantByEvolutionInstance(instanceName);
     }
-    if (!tenant) {
-      const all = await getAllTenants();
-      tenant = all.find((t) => t.slug !== "superadmin") || all[0] || null;
-    }
     if (!tenant || !tenant.active) {
       console.warn(`[Webhook] No active tenant found for instance: ${instanceName}`);
       return;
@@ -9490,15 +10132,16 @@ router17.post("/", async (req, res) => {
     const isImageMsg = data?.message?.imageMessage || data?.messageType === "imageMessage";
     if (isImageMsg && !fromMe) {
       console.log(`[Webhook] Detected Image from ${remoteJid}!`);
+      const phonePattern = cleanPhone && cleanPhone.length >= 8 ? `%${cleanPhone.slice(-8)}%` : null;
       const pendingOrderRes = await query(`
         SELECT id, order_number as "orderNumber", total, customer_name as "customerName", status, payment_status as "paymentStatus"
         FROM orders
         WHERE tenant_id = $1 
-          AND (whatsapp_jid = $2 OR customer_phone LIKE $3)
+          AND (whatsapp_jid = $2 OR ($3::text IS NOT NULL AND customer_phone LIKE $3))
           AND payment_status IN ('pending', 'proof_sent')
         ORDER BY created_at DESC
         LIMIT 1
-      `, [tenant.id, remoteJid, `%${cleanPhone.slice(-8)}%`]);
+      `, [tenant.id, remoteJid, phonePattern]);
       if (pendingOrderRes.rows.length > 0) {
         const pendingOrder = pendingOrderRes.rows[0];
         console.log(`[Webhook] Found pending order #${pendingOrder.orderNumber} for ${cleanPhone}. Marking proof_sent for manual verification.`);
@@ -9657,11 +10300,17 @@ function escapeICSText(text) {
   if (!text) return "";
   return String(text).replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\n/g, "\\n");
 }
-router18.get("/:slug.ics", async (req, res) => {
+async function handleICSRequest(req, res, slug, tokenParam) {
   try {
-    const tenant = await getTenantBySlug(req.params.slug);
+    const tenant = await getTenantBySlug(slug);
     if (!tenant) {
       res.status(404).send("Negocio no encontrado");
+      return;
+    }
+    const expectedToken = tenant.calendarToken || tenant.calendar_token;
+    const providedToken = tokenParam || req.query.token || req.headers["x-calendar-token"];
+    if (expectedToken && providedToken !== expectedToken) {
+      res.status(403).send("Acceso no autorizado al feed de calendario. Token inv\xE1lido o ausente.");
       return;
     }
     const appointments = await getAppointmentsByTenant(tenant.id);
@@ -9720,9 +10369,16 @@ router18.get("/:slug.ics", async (req, res) => {
     console.error("Error generating iCal feed:", error);
     res.status(500).send("Error generando calendario");
   }
+}
+router18.get("/:slug/:token.ics", async (req, res) => {
+  await handleICSRequest(req, res, req.params.slug, req.params.token);
+});
+router18.get("/:slug.ics", async (req, res) => {
+  await handleICSRequest(req, res, req.params.slug, req.query.token);
 });
 router18.get("/:slug", (req, res) => {
-  res.redirect(`/api/calendar/${req.params.slug}.ics`);
+  const tokenQuery = req.query.token ? `?token=${encodeURIComponent(req.query.token)}` : "";
+  res.redirect(`/api/calendar/${req.params.slug}.ics${tokenQuery}`);
 });
 var calendar_routes_default = router18;
 
@@ -9750,14 +10406,19 @@ async function resolveInstanceName2(tenantId) {
 }
 router19.post("/portal/login", async (req, res) => {
   try {
-    const { pin, phone } = req.body;
+    const { pin, phone, tenantSlug } = req.body;
     if (!pin) {
       res.status(400).json({ error: "PIN requerido" });
       return;
     }
-    const driver = await getDriverByPin(pin, phone);
+    let targetTenantId;
+    if (tenantSlug) {
+      const targetTenant = await getTenantBySlug(String(tenantSlug).toLowerCase().trim());
+      if (targetTenant) targetTenantId = targetTenant.id;
+    }
+    const driver = await getDriverByPin(pin, phone, targetTenantId);
     if (!driver) {
-      res.status(401).json({ error: "C\xF3digo PIN no encontrado o incorrecto" });
+      res.status(401).json({ error: "C\xF3digo PIN no encontrado o requiere n\xFAmero de tel\xE9fono para validar el comercio." });
       return;
     }
     const tenant = await getTenantById(driver.tenantId);
@@ -10357,7 +11018,9 @@ init_users_repo();
 init_ai_provider();
 init_env();
 var router21 = Router21();
-router21.post("/submit-payment-proof", authenticateToken, async (req, res) => {
+router21.use(authenticateToken);
+router21.use(requireSuperAdmin);
+router21.post("/submit-payment-proof", async (req, res) => {
   try {
     const tenantId = req.user?.tenantId;
     const { reference, proofUrl, amount, notes } = req.body;
@@ -10395,8 +11058,6 @@ router21.post("/submit-payment-proof", authenticateToken, async (req, res) => {
     res.status(500).json({ error: "Error al enviar comprobante de pago" });
   }
 });
-router21.use(authenticateToken);
-router21.use(requireSuperAdmin);
 router21.get("/settings", async (req, res) => {
   try {
     const result = await query(`SELECT key, value, value_encrypted FROM platform_settings`);
@@ -11416,14 +12077,19 @@ init_pool();
 var router24 = Router24();
 router24.post("/portal/login", async (req, res) => {
   try {
-    const { pin, phone } = req.body;
+    const { pin, phone, tenantSlug } = req.body;
     if (!pin) {
       res.status(400).json({ error: "PIN requerido" });
       return;
     }
-    const specialist = await getSpecialistByPin(pin, phone);
+    let targetTenantId;
+    if (tenantSlug) {
+      const targetTenant = await getTenantBySlug(String(tenantSlug).toLowerCase().trim());
+      if (targetTenant) targetTenantId = targetTenant.id;
+    }
+    const specialist = await getSpecialistByPin(pin, phone, targetTenantId);
     if (!specialist) {
-      res.status(401).json({ error: "C\xF3digo PIN no encontrado o incorrecto" });
+      res.status(401).json({ error: "C\xF3digo PIN no encontrado o requiere n\xFAmero de tel\xE9fono para validar el comercio." });
       return;
     }
     const tenant = await getTenantById(specialist.tenantId);
@@ -11708,11 +12374,14 @@ router28.get("/public/:slug/info", async (req, res) => {
       currency: s.currency || "CRC",
       courtsConfig,
       paymentSettings: {
+        paymentMode: courtsConfig.paymentMode || "both",
         acceptSinpe: s.accept_sinpe !== false,
         acceptSinpeTilopay: s.accept_sinpe_tilopay === true && tiloAvailable,
         acceptCard: tiloAvailable,
+        acceptCash: true,
         sinpePhone: s.sinpe_phone || "",
         sinpeName: s.sinpe_name || "",
+        bankAccountInfo: s.bank_account_info || "",
         currency: s.currency || "CRC"
       }
     });
@@ -11751,10 +12420,10 @@ router28.post("/public/:slug/book", async (req, res) => {
     if (!tenant) return res.status(404).json({ error: "Negocio no encontrado" });
     const data = req.body;
     const paymentMethod = data.paymentMethod || "cash";
-    const isOnlinePayment = paymentMethod === "card" || paymentMethod === "sinpe_tilopay";
+    const isOnlinePayment = (paymentMethod === "card" || paymentMethod === "sinpe_tilopay") && paymentMethod !== "solo_reserva";
     const booking = await createBooking(tenant.id, {
       ...data,
-      paymentMethod,
+      paymentMethod: paymentMethod === "solo_reserva" ? "pending" : paymentMethod,
       paymentReference: data.paymentReference || null
     });
     let paymentSession = null;
@@ -11841,8 +12510,11 @@ router28.post("/public/:slug/join-match/:bookingId", async (req, res) => {
     if (!tenant) return res.status(404).json({ error: "Negocio no encontrado" });
     const { bookingId } = req.params;
     const paymentMethod = req.body.paymentMethod || "cash";
-    const isOnlinePayment = paymentMethod === "card" || paymentMethod === "sinpe_tilopay";
-    const booking = await joinMatch(bookingId, tenant.id, req.body);
+    const isOnlinePayment = (paymentMethod === "card" || paymentMethod === "sinpe_tilopay") && paymentMethod !== "solo_reserva";
+    const booking = await joinMatch(bookingId, tenant.id, {
+      ...req.body,
+      paymentMethod: paymentMethod === "solo_reserva" ? "pending" : paymentMethod
+    });
     if (!booking) return res.status(404).json({ error: "Match no encontrado" });
     let paymentSession = null;
     if (isOnlinePayment) {
@@ -11947,6 +12619,10 @@ router28.post("/", async (req, res) => {
 router28.put("/:id", async (req, res) => {
   try {
     const court = await updateCourt(req.params.id, req.tenantId, req.body);
+    if (!court) {
+      res.status(404).json({ error: "Cancha no encontrada o no pertenece a este comercio" });
+      return;
+    }
     res.json(court);
   } catch (error) {
     console.error(error);
@@ -12175,9 +12851,68 @@ router29.post("/", async (req, res) => {
     const isSinpe = String(payload.payment_type || payload.type || payload.method || "").toLowerCase().includes("sinpe");
     const paymentMethod = isSinpe ? "sinpe_tilopay" : "card";
     const paymentLabel = isSinpe ? "SINPE M\xF3vil Verificado" : "Tarjeta D\xE9bito/Cr\xE9dito";
+    if (orderStr.startsWith("SUB-")) {
+      const charge = await getChargeByOrderNumber(orderStr);
+      if (!charge) {
+        console.warn(`[TilopayWebhook] No se encontr\xF3 cargo de suscripci\xF3n en BD para orden: ${orderStr}`);
+        return;
+      }
+      if (isApproved) {
+        console.log(`[TilopayWebhook] Cobro de suscripci\xF3n aprobado para tenant ${charge.tenantId} (Orden: ${orderStr})`);
+        await updateBillingCharge(orderStr, {
+          status: "success",
+          transactionId,
+          authCode
+        });
+        await query(`
+          UPDATE tenants
+          SET subscription_status = 'active',
+              next_billing_date = CURRENT_TIMESTAMP + INTERVAL '30 days',
+              grace_period_ends_at = null,
+              last_payment_amount = $1,
+              last_payment_ref = $2,
+              last_auto_charge_at = CURRENT_TIMESTAMP,
+              last_auto_charge_status = 'success',
+              active = true,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = $3
+        `, [charge.amount, `Tilopay #${transactionId || orderStr}`, charge.tenantId]);
+        await query(`
+          INSERT INTO tenant_payments (tenant_id, amount, currency, payment_method, reference, notes, status)
+          VALUES ($1, $2, $3, 'card', $4, $5, 'approved')
+        `, [charge.tenantId, charge.amount, charge.currency, transactionId || orderStr, "Cobro de suscripci\xF3n recurrente aprobado por Tilopay"]);
+        const tenant = await getTenantById(charge.tenantId);
+        if (tenant?.whatsappNumber) {
+          const cleanPhone = tenant.whatsappNumber.replace(/\D/g, "");
+          const priceStr = charge.currency === "USD" ? `$${charge.amount}` : `\u20A1${Number(charge.amount).toLocaleString("es-CR")}`;
+          const msg = `\u2705 *[Suscripci\xF3n Renovada - Betico]*
+
+Hola *${tenant.name}*, hemos recibido la confirmaci\xF3n de tu pago mensual de *${priceStr}*.
+
+Tu cuenta se encuentra *Activa* y al d\xEDa hasta el *${new Date(Date.now() + 30 * 24 * 60 * 60 * 1e3).toLocaleDateString("es-CR")}*. \xA1Gracias por confiar en Betico!`;
+          try {
+            await sendMessage("betico_soporte", cleanPhone, msg);
+          } catch (e) {
+          }
+        }
+      } else {
+        console.warn(`[TilopayWebhook] Cobro de suscripci\xF3n fallido para orden ${orderStr}`);
+        await updateBillingCharge(orderStr, {
+          status: "failed",
+          failureReason: `Transacci\xF3n no aprobada por Tilopay (${status || resultCode})`
+        });
+        await query(`
+          UPDATE tenants
+          SET last_auto_charge_status = 'failed',
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = $1
+        `, [charge.tenantId]);
+      }
+      return;
+    }
     if (orderStr.startsWith("APT-")) {
       const cleanAptId = orderStr.replace(/^APT-/i, "").trim();
-      const apt = await getAppointmentById(cleanAptId);
+      const apt = await getAppointmentByIdUnsafeForWebhook(cleanAptId);
       if (!apt) {
         console.warn(`[TilopayWebhook] No se encontr\xF3 cita en BD para ID: ${cleanAptId}`);
         return;
@@ -12346,13 +13081,126 @@ Hola *${captainName}*, el pago para la reserva de cancha ha sido confirmado con 
 });
 var tilopay_webhook_routes_default = router29;
 
-// src/server/routes/tenant-payment.routes.ts
+// src/server/routes/superadmin-billing.routes.ts
 import { Router as Router30 } from "express";
-init_tenant_payment_repo();
+init_pool();
 var router30 = Router30();
-router30.use(authenticateToken);
-router30.use(tenantContext);
-router30.get("/", async (req, res) => {
+router30.use(authenticateToken, requireSuperAdmin);
+router30.get("/platform-status", async (req, res) => {
+  try {
+    const config = await getPlatformTilopayConfig();
+    res.json({
+      configured: Boolean(config && config.apiKey && config.apiUser),
+      environment: config?.environment || "SANDBOX"
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router30.get("/cards/:tenantId", async (req, res) => {
+  try {
+    const cards = await getBillingCards(req.params.tenantId);
+    res.json(cards);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router30.post("/cards/:tenantId", async (req, res) => {
+  try {
+    const { tenantId } = req.params;
+    const { cardNumber, expMonth, expYear, cvv, cardHolder } = req.body;
+    if (!cardNumber || !expMonth || !expYear || !cvv || !cardHolder) {
+      res.status(400).json({ error: "Todos los datos de la tarjeta son obligatorios." });
+      return;
+    }
+    const result = await TilopaySubscriptionService.registerTenantCard(tenantId, {
+      cardNumber,
+      expMonth,
+      expYear,
+      cvv,
+      cardHolder
+    });
+    res.json({
+      success: true,
+      message: `Tarjeta ${result.cardBrand} terminada en ${result.cardLast4} registrada exitosamente.`,
+      cardLast4: result.cardLast4,
+      cardBrand: result.cardBrand
+    });
+  } catch (error) {
+    console.error("[SuperadminBilling] Error registrando tarjeta:", error);
+    res.status(500).json({ error: error.message || "Error al tokenizar tarjeta" });
+  }
+});
+router30.delete("/cards/:tenantId/:cardId", async (req, res) => {
+  try {
+    const success = await deactivateBillingCard(req.params.cardId, req.params.tenantId);
+    if (!success) {
+      res.status(404).json({ error: "Tarjeta no encontrada" });
+      return;
+    }
+    res.json({ success: true, message: "Tarjeta desactivada exitosamente" });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router30.post("/charge/:tenantId", async (req, res) => {
+  try {
+    const result = await TilopaySubscriptionService.chargeTenantSubscription(req.params.tenantId, true);
+    if (!result.success) {
+      res.status(400).json(result);
+      return;
+    }
+    res.json(result);
+  } catch (error) {
+    console.error("[SuperadminBilling] Error al cobrar suscripci\xF3n:", error);
+    res.status(500).json({ error: error.message || "Error al procesar cobro" });
+  }
+});
+router30.get("/charges/:tenantId", async (req, res) => {
+  try {
+    const charges = await getBillingCharges(req.params.tenantId);
+    res.json(charges);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router30.post("/toggle-auto-billing/:tenantId", async (req, res) => {
+  try {
+    const { enabled } = req.body;
+    await query(`
+      UPDATE tenants
+      SET auto_billing_enabled = $1,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $2
+    `, [Boolean(enabled), req.params.tenantId]);
+    res.json({
+      success: true,
+      autoBillingEnabled: Boolean(enabled),
+      message: enabled ? "Cobro autom\xE1tico activado" : "Cobro autom\xE1tico desactivado"
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router30.post("/run-auto-billing", async (req, res) => {
+  try {
+    const result = await TilopaySubscriptionService.processRecurringBillingBatch();
+    res.json({ success: true, ...result });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+var superadmin_billing_routes_default = router30;
+
+// src/server/routes/tenant-payment.routes.ts
+import { Router as Router31 } from "express";
+init_tenant_payment_repo();
+init_pool();
+init_superadmin_notify_service();
+var router31 = Router31();
+router31.use(authenticateToken);
+router31.use(tenantContext);
+router31.get("/", async (req, res) => {
   try {
     const config = await getTenantPaymentConfig(req.tenantId);
     res.json(config || {
@@ -12370,7 +13218,7 @@ router30.get("/", async (req, res) => {
     res.status(500).json({ error: "Error al obtener configuraci\xF3n de pagos" });
   }
 });
-router30.post("/test", async (req, res) => {
+router31.post("/test", async (req, res) => {
   try {
     const { apiKey, apiUser, apiPassword, environment = "SANDBOX" } = req.body;
     let testKey = apiKey;
@@ -12398,7 +13246,7 @@ router30.post("/test", async (req, res) => {
     res.status(500).json({ error: error.message || "Error en prueba de conexi\xF3n" });
   }
 });
-router30.post("/", async (req, res) => {
+router31.post("/", async (req, res) => {
   try {
     const { apiKey, apiUser, apiPassword, environment, isEnabled, captureMode } = req.body;
     const changedBy = req.user?.userId || req.user?.role || "admin";
@@ -12425,7 +13273,7 @@ router30.post("/", async (req, res) => {
     res.status(500).json({ error: error.message || "Error al guardar configuraci\xF3n de pagos" });
   }
 });
-router30.get("/audit", async (req, res) => {
+router31.get("/audit", async (req, res) => {
   try {
     const logs = await getPaymentAuditLogs(req.tenantId, 20);
     res.json(logs);
@@ -12434,7 +13282,41 @@ router30.get("/audit", async (req, res) => {
     res.status(500).json({ error: "Error al obtener registros de auditor\xEDa" });
   }
 });
-var tenant_payment_routes_default = router30;
+router31.post("/submit-payment-proof", async (req, res) => {
+  try {
+    const tenantId = req.tenantId;
+    const { reference, proofUrl, amount, notes } = req.body;
+    const tenantRes = await query(`SELECT id, name, slug, billing_currency as currency FROM tenants WHERE id = $1`, [tenantId]);
+    if (tenantRes.rows.length === 0) {
+      res.status(404).json({ error: "Tenant no encontrado" });
+      return;
+    }
+    const tenant = tenantRes.rows[0];
+    await query(`
+      UPDATE tenants
+      SET last_payment_proof = $1,
+          last_payment_ref = $2,
+          last_payment_amount = $3,
+          payment_notes = $4,
+          subscription_status = CASE WHEN subscription_status = 'suspended' THEN 'grace_period' ELSE subscription_status END,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $5
+    `, [proofUrl || null, reference || null, amount ? Number(amount) : null, notes || null, tenantId]);
+    await notifyPaymentProofUploaded({
+      tenantName: tenant.name,
+      slug: tenant.slug,
+      amount: Number(amount || 0),
+      currency: tenant.currency || "CRC",
+      reference: reference || "",
+      notes: notes || ""
+    });
+    res.json({ success: true, message: "Comprobante recibido con \xE9xito. En breve ser\xE1 revisado y aprobado." });
+  } catch (error) {
+    console.error("[TenantPaymentRoutes] Error submitting payment proof:", error);
+    res.status(500).json({ error: "Error al enviar comprobante de pago" });
+  }
+});
+var tenant_payment_routes_default = router31;
 
 // src/server/index.ts
 var __filename = fileURLToPath(import.meta.url);
@@ -12535,6 +13417,7 @@ async function startServer() {
   app.use("/api/audit-logs", audit_routes_default);
   app.use("/api/superadmin", superadmin_metrics_routes_default);
   app.use("/api/superadmin/platform", superadmin_platform_routes_default);
+  app.use("/api/superadmin/billing", superadmin_billing_routes_default);
   app.use("/api/upload", upload_routes_default);
   app.use("/api/campaigns", campaigns_routes_default);
   app.use("/api/branches", branches_routes_default);

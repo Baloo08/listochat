@@ -103,6 +103,16 @@ export async function getUserById(id: string): Promise<User | null> {
   return result.rows[0] || null;
 }
 
+export async function getUserByIdAndTenant(id: string, tenantId: string): Promise<User | null> {
+  const result = await query(`
+    SELECT id, tenant_id as "tenantId", name, email, role, 
+           avatar_url as "avatarUrl", provider, active, 
+           created_at as "createdAt", updated_at as "updatedAt"
+    FROM users WHERE id = $1 AND tenant_id = $2
+  `, [id, tenantId]);
+  return result.rows[0] || null;
+}
+
 export async function getAdminUserByTenant(tenantId: string): Promise<User | null> {
   const result = await query(`
     SELECT id, tenant_id as "tenantId", name, email, role, 

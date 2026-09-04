@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { authenticateToken, requireSuperAdmin, generateToken } from '../middleware/auth.js';
-import { getAllTenants, getTenantById, createTenant, updateTenant, deleteTenant } from '../db/tenant.repo.js';
+import { getAllTenants, getAllTenantsWithAdmin, getTenantById, createTenant, updateTenant, deleteTenant } from '../db/tenant.repo.js';
 import { createUser, updateUser, getUsersByTenant, getAdminUserByTenant, resetTenantAdminPassword } from '../db/users.repo.js';
 import { saveAgentConfig } from '../db/agent-config.repo.js';
 import { saveStoreSettings } from '../db/store-settings.repo.js';
@@ -13,17 +13,8 @@ router.use(requireSuperAdmin);
 
 router.get('/', async (req, res) => {
   try {
-    const tenants = await getAllTenants();
-    // Enrich with admin user email
-    const enriched = await Promise.all(tenants.map(async (t) => {
-      const admin = await getAdminUserByTenant(t.id);
-      return {
-        ...t,
-        adminEmail: admin?.email || 'Sin registrar',
-        adminId: admin?.id || null
-      };
-    }));
-    res.json(enriched);
+    const tenants = await getAllTenantsWithAdmin();
+    res.json(tenants);
   } catch (error) {
     console.error('Error al obtener inquilinos:', error);
     res.status(500).json({ error: 'Error al obtener inquilinos' });

@@ -86,10 +86,6 @@ router.post('/', async (req, res) => {
     if (instanceName) {
       tenant = await getTenantByEvolutionInstance(instanceName);
     }
-    if (!tenant) {
-      const all = await getAllTenants();
-      tenant = all.find(t => t.slug !== 'superadmin') || all[0] || null;
-    }
 
     if (!tenant || !tenant.active) {
       console.warn(`[Webhook] No active tenant found for instance: ${instanceName}`);
@@ -127,15 +123,16 @@ router.post('/', async (req, res) => {
       console.log(`[Webhook] Detected Image from ${remoteJid}!`);
 
       // Check if there's a pending order for this customer
+      const phonePattern = cleanPhone && cleanPhone.length >= 8 ? `%${cleanPhone.slice(-8)}%` : null;
       const pendingOrderRes = await query(`
         SELECT id, order_number as "orderNumber", total, customer_name as "customerName", status, payment_status as "paymentStatus"
         FROM orders
         WHERE tenant_id = $1 
-          AND (whatsapp_jid = $2 OR customer_phone LIKE $3)
+          AND (whatsapp_jid = $2 OR ($3::text IS NOT NULL AND customer_phone LIKE $3))
           AND payment_status IN ('pending', 'proof_sent')
         ORDER BY created_at DESC
         LIMIT 1
-      `, [tenant.id, remoteJid, `%${cleanPhone.slice(-8)}%`]);
+      `, [tenant.id, remoteJid, phonePattern]);
 
       if (pendingOrderRes.rows.length > 0) {
         const pendingOrder = pendingOrderRes.rows[0];

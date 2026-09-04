@@ -22,7 +22,7 @@ export async function getDriverById(id: string, tenantId?: string): Promise<Deli
   return res.rows[0] || null;
 }
 
-export async function getDriverByPin(pin: string, phone?: string): Promise<DeliveryDriver | null> {
+export async function getDriverByPin(pin: string, phone?: string, tenantId?: string): Promise<DeliveryDriver | null> {
   const cleanPin = (pin || '').trim();
   let sql = `
     SELECT id, tenant_id as "tenantId", name, phone, access_pin as "accessPin",
@@ -31,13 +31,29 @@ export async function getDriverByPin(pin: string, phone?: string): Promise<Deliv
     WHERE TRIM(access_pin) = $1 AND active = TRUE
   `;
   const params: any[] = [cleanPin];
+
+  if (tenantId) {
+    sql += ` AND tenant_id = $${params.length + 1}`;
+    params.push(tenantId);
+  }
+
   if (phone) {
     const clean = phone.replace(/\D/g, '');
-    sql += ` AND (REPLACE(phone, '-', '') LIKE '%' || $2 OR phone LIKE '%' || $2)`;
-    params.push(clean.slice(-8));
+    if (clean.length >= 8) {
+      sql += ` AND (REPLACE(phone, '-', '') LIKE '%' || $${params.length + 1} OR phone LIKE '%' || $${params.length + 1})`;
+      params.push(clean.slice(-8));
+    }
   }
-  sql += ` LIMIT 1`;
+
+  sql += ` LIMIT 2`;
   const res = await query(sql, params);
+
+  // Si hay más de 1 resultado y no se especificó tenantId ni phone, hay colisión entre inquilinos
+  if (res.rows.length > 1 && !tenantId && !phone) {
+    console.warn(`[getDriverByPin] Colisión de PIN ${cleanPin} detectada entre múltiples comercios. Se requiere teléfono o tenantId.`);
+    return null;
+  }
+
   return res.rows[0] || null;
 }
 
