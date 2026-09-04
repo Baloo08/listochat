@@ -794,7 +794,7 @@ async function getTenantPaymentConfig(tenantId) {
 }
 async function getTenantPaymentConfigRaw(tenantId) {
   const res = await query(`
-    SELECT is_enabled as "isEnabled", environment, api_key_encrypted, api_user,
+    SELECT is_enabled as "isEnabled", environment, api_key_encrypted, api_user as "apiUser",
            api_password_encrypted, capture_mode as "captureMode"
     FROM tenant_payment_configs
     WHERE tenant_id = $1 AND provider = 'TILOPAY'
@@ -804,14 +804,22 @@ async function getTenantPaymentConfigRaw(tenantId) {
   let apiKey = "";
   let apiPassword = "";
   if (row.api_key_encrypted) {
-    apiKey = CryptoService.decryptForTenant(tenantId, row.api_key_encrypted);
+    try {
+      apiKey = CryptoService.decryptForTenant(tenantId, row.api_key_encrypted);
+    } catch (e) {
+      console.error(`[TenantPaymentRepo] Error desencriptando api_key para tenant ${tenantId}:`, e);
+    }
   }
   if (row.api_password_encrypted) {
-    apiPassword = CryptoService.decryptForTenant(tenantId, row.api_password_encrypted);
+    try {
+      apiPassword = CryptoService.decryptForTenant(tenantId, row.api_password_encrypted);
+    } catch (e) {
+      console.error(`[TenantPaymentRepo] Error desencriptando api_password para tenant ${tenantId}:`, e);
+    }
   }
   return {
     apiKey,
-    apiUser: row.api_user || "",
+    apiUser: row.apiUser || row.api_user || "",
     apiPassword,
     environment: row.environment || "SANDBOX",
     isEnabled: Boolean(row.isEnabled),
@@ -831,7 +839,7 @@ async function saveTenantPaymentConfig(tenantId, data, changedBy = "system") {
   if (data.apiPassword && !data.apiPassword.includes("\u2022\u2022\u2022\u2022")) {
     newEncryptedPass = CryptoService.encryptForTenant(tenantId, data.apiPassword.trim());
   }
-  const isEnabled = data.isEnabled !== void 0 ? data.isEnabled : prevRow ? prevRow.is_enabled : false;
+  const isEnabled = data.isEnabled !== void 0 ? Boolean(data.isEnabled) : prevRow ? Boolean(prevRow.is_enabled) : true;
   const environment = data.environment || prevRow?.environment || "SANDBOX";
   const apiUser = data.apiUser !== void 0 ? data.apiUser.trim() : prevRow?.api_user || "";
   const captureMode = data.captureMode || prevRow?.capture_mode || "IMMEDIATE";
@@ -13418,9 +13426,14 @@ router30.use(authenticateToken, requireSuperAdmin);
 router30.get("/platform-status", async (req, res) => {
   try {
     const config = await getPlatformTilopayConfig();
+    const superadminTenantId = await getOrCreateSuperadminTenantId();
+    const raw = await getTenantPaymentConfigRaw(superadminTenantId);
+    const isPlatformReady = Boolean(
+      config && config.apiKey && config.apiUser || raw && raw.apiKey && raw.apiUser && raw.isEnabled
+    );
     res.json({
-      configured: Boolean(config && config.apiKey && config.apiUser),
-      environment: config?.environment || "SANDBOX"
+      configured: isPlatformReady,
+      environment: config?.environment || raw?.environment || "SANDBOX"
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -13437,7 +13450,7 @@ router30.get("/platform-config", async (req, res) => {
     const webhookUrl = `${appUrl}/api/webhooks/tilopay`;
     if (config && (config.apiKeyMasked || config.apiUser)) {
       res.json({
-        isConfigured: Boolean(config.isConfigured && config.isEnabled),
+        isConfigured: Boolean(config.isConfigured),
         isEnabled: Boolean(config.isEnabled),
         apiKeyMasked: config.apiKeyMasked || "",
         apiUser: config.apiUser || "",
@@ -13466,7 +13479,7 @@ router30.get("/platform-config", async (req, res) => {
     }
     res.json({
       isConfigured: false,
-      isEnabled: false,
+      isEnabled: true,
       apiKeyMasked: "",
       apiUser: "",
       apiPasswordMasked: "",

@@ -31,9 +31,17 @@ router.use(authenticateToken, requireSuperAdmin);
 router.get('/platform-status', async (req: Request, res: Response): Promise<void> => {
   try {
     const config = await getPlatformTilopayConfig();
+    const superadminTenantId = await getOrCreateSuperadminTenantId();
+    const raw = await getTenantPaymentConfigRaw(superadminTenantId);
+
+    const isPlatformReady = Boolean(
+      (config && config.apiKey && config.apiUser) ||
+      (raw && raw.apiKey && raw.apiUser && raw.isEnabled)
+    );
+
     res.json({
-      configured: Boolean(config && config.apiKey && config.apiUser),
-      environment: config?.environment || 'SANDBOX'
+      configured: isPlatformReady,
+      environment: config?.environment || raw?.environment || 'SANDBOX'
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -60,7 +68,7 @@ router.get('/platform-config', async (req: Request, res: Response): Promise<void
 
     if (config && (config.apiKeyMasked || config.apiUser)) {
       res.json({
-        isConfigured: Boolean(config.isConfigured && config.isEnabled),
+        isConfigured: Boolean(config.isConfigured),
         isEnabled: Boolean(config.isEnabled),
         apiKeyMasked: config.apiKeyMasked || '',
         apiUser: config.apiUser || '',
@@ -93,7 +101,7 @@ router.get('/platform-config', async (req: Request, res: Response): Promise<void
 
     res.json({
       isConfigured: false,
-      isEnabled: false,
+      isEnabled: true,
       apiKeyMasked: '',
       apiUser: '',
       apiPasswordMasked: '',

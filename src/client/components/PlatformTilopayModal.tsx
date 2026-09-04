@@ -45,7 +45,8 @@ export default function PlatformTilopayModal({
       const res = await api.get('/api/superadmin/billing/platform-config');
       if (res) {
         setIsConfigured(Boolean(res.isConfigured));
-        setIsEnabled(res.isEnabled !== false);
+        // Default to true if configuring for first time or if enabled
+        setIsEnabled(res.isEnabled !== undefined ? Boolean(res.isEnabled) : true);
         setApiKey(res.apiKeyMasked || '');
         setApiUser(res.apiUser || '');
         setApiPassword(res.apiPasswordMasked || '');
@@ -253,9 +254,9 @@ export default function PlatformTilopayModal({
               ) : (
                 <AlertCircle size={18} color="#d97706" />
               )}
-              <span style={{ fontSize: '0.85rem', fontWeight: '700', color: isConfigured ? '#15803d' : '#b45309' }}>
+              <span style={{ fontSize: '0.85rem', fontWeight: '700', color: isConfigured && isEnabled ? '#15803d' : isConfigured ? '#d97706' : '#b45309' }}>
                 {isConfigured 
-                  ? 'Pasarela Maestra Configurada y Activa' 
+                  ? (isEnabled ? 'Pasarela Maestra Configurada y Activa' : 'Pasarela Configurada (Pausada)') 
                   : 'Pasarela Pendiente de Configurar'}
               </span>
             </div>
@@ -542,6 +543,71 @@ export default function PlatformTilopayModal({
                 <span style={{ fontSize: '0.7rem', color: '#64748b', lineHeight: '1.3' }}>
                   Copia y pega esta URL en tu panel de Tilopay (Configuración → Webhooks) para recibir confirmaciones automáticas de vinculación de tarjetas.
                 </span>
+              </div>
+
+              {/* Active Toggle Switch */}
+              <div 
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '14px 16px',
+                  backgroundColor: isEnabled ? '#f0fdf4' : '#f8fafc',
+                  border: `1px solid ${isEnabled ? '#bbf7d0' : '#e2e8f0'}`,
+                  borderRadius: '12px',
+                  cursor: 'pointer',
+                  userSelect: 'none'
+                }}
+                onClick={() => setIsEnabled(!isEnabled)}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div style={{
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '8px',
+                    backgroundColor: isEnabled ? '#dcfce7' : '#e2e8f0',
+                    color: isEnabled ? '#15803d' : '#64748b',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
+                    <ShieldCheck size={18} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '0.86rem', fontWeight: '800', color: isEnabled ? '#15803d' : '#334155' }}>
+                      {isEnabled ? '🟢 Pasarela Habilitada para Cobros' : '⚪ Pasarela Deshabilitada (Pausada)'}
+                    </div>
+                    <div style={{ fontSize: '0.74rem', color: '#64748b' }}>
+                      {isEnabled 
+                        ? 'Los comercios pueden vincular sus tarjetas y renovar suscripciones' 
+                        : 'Pausa temporalmente las vinculaciones y cobros de tarjeta'}
+                    </div>
+                  </div>
+                </div>
+
+                <div 
+                  style={{
+                    position: 'relative',
+                    width: '46px',
+                    height: '24px',
+                    backgroundColor: isEnabled ? '#16a34a' : '#cbd5e1',
+                    borderRadius: '24px',
+                    transition: 'background-color 0.2s',
+                    flexShrink: 0
+                  }}
+                >
+                  <div style={{
+                    position: 'absolute',
+                    top: '2px',
+                    left: isEnabled ? '24px' : '2px',
+                    width: '20px',
+                    height: '20px',
+                    backgroundColor: '#ffffff',
+                    borderRadius: '50%',
+                    transition: 'left 0.2s',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
+                  }} />
+                </div>
               </div>
 
               {/* Action Buttons */}

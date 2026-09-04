@@ -421,7 +421,10 @@ export default function BillingCollectionsView() {
       {/* PLATFORM TILOPAY CONFIG MODAL */}
       <PlatformTilopayModal
         isOpen={showPlatformModal}
-        onClose={() => setShowPlatformModal(false)}
+        onClose={() => {
+          setShowPlatformModal(false);
+          loadCollections();
+        }}
         onSuccess={() => {
           loadCollections();
         }}

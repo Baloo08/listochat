@@ -53,7 +53,7 @@ export async function getTenantPaymentConfigRaw(tenantId: string): Promise<{
   captureMode: 'IMMEDIATE' | 'AUTH_ONLY';
 } | null> {
   const res = await query(`
-    SELECT is_enabled as "isEnabled", environment, api_key_encrypted, api_user,
+    SELECT is_enabled as "isEnabled", environment, api_key_encrypted, api_user as "apiUser",
            api_password_encrypted, capture_mode as "captureMode"
     FROM tenant_payment_configs
     WHERE tenant_id = $1 AND provider = 'TILOPAY'
@@ -66,15 +66,23 @@ export async function getTenantPaymentConfigRaw(tenantId: string): Promise<{
   let apiPassword = '';
 
   if (row.api_key_encrypted) {
-    apiKey = CryptoService.decryptForTenant(tenantId, row.api_key_encrypted);
+    try {
+      apiKey = CryptoService.decryptForTenant(tenantId, row.api_key_encrypted);
+    } catch (e) {
+      console.error(`[TenantPaymentRepo] Error desencriptando api_key para tenant ${tenantId}:`, e);
+    }
   }
   if (row.api_password_encrypted) {
-    apiPassword = CryptoService.decryptForTenant(tenantId, row.api_password_encrypted);
+    try {
+      apiPassword = CryptoService.decryptForTenant(tenantId, row.api_password_encrypted);
+    } catch (e) {
+      console.error(`[TenantPaymentRepo] Error desencriptando api_password para tenant ${tenantId}:`, e);
+    }
   }
 
   return {
     apiKey,
-    apiUser: row.api_user || '',
+    apiUser: row.apiUser || row.api_user || '',
     apiPassword,
     environment: row.environment || 'SANDBOX',
     isEnabled: Boolean(row.isEnabled),
@@ -112,7 +120,7 @@ export async function saveTenantPaymentConfig(
     newEncryptedPass = CryptoService.encryptForTenant(tenantId, data.apiPassword.trim());
   }
 
-  const isEnabled = data.isEnabled !== undefined ? data.isEnabled : (prevRow ? prevRow.is_enabled : false);
+  const isEnabled = data.isEnabled !== undefined ? Boolean(data.isEnabled) : (prevRow ? Boolean(prevRow.is_enabled) : true);
   const environment = data.environment || prevRow?.environment || 'SANDBOX';
   const apiUser = data.apiUser !== undefined ? data.apiUser.trim() : (prevRow?.api_user || '');
   const captureMode = data.captureMode || prevRow?.capture_mode || 'IMMEDIATE';
