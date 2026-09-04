@@ -12275,6 +12275,11 @@ router26.get("/:slug", async (req, res) => {
       category: p.category || "General"
     }));
     const featuredProducts = allProducts;
+    const finalWebsite = {
+      ...website,
+      bannerImageUrl: website?.bannerImageUrl || store?.storeBannerUrl || void 0,
+      logoUrl: website?.logoUrl || store?.storeLogoUrl || void 0
+    };
     res.json({
       success: true,
       tenant: {
@@ -12284,9 +12289,12 @@ router26.get("/:slug", async (req, res) => {
         whatsappNumber: tenant.whatsappNumber,
         evolutionInstance: tenant.evolutionInstance
       },
-      website,
+      website: finalWebsite,
       store: store ? {
         storeEnabled: store.storeEnabled,
+        storeName: store.storeName,
+        storeLogoUrl: store.storeLogoUrl,
+        storeBannerUrl: store.storeBannerUrl,
         currency: store.currency || "CRC",
         sinpePhone: store.sinpePhone,
         sinpeName: store.sinpeName

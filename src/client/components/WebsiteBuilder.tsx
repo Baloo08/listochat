@@ -31,7 +31,8 @@ import {
   Clock,
   Square,
   CircleDot,
-  MousePointer
+  MousePointer,
+  Image as ImageIcon
 } from 'lucide-react';
 
 // Official Brand SVG Icons (100% Vector, No Emojis)
@@ -262,7 +263,14 @@ export default function WebsiteBuilder() {
       });
       const data = await res.json();
       if (data && data.url) {
-        setFormData(prev => ({ ...prev, [fieldName]: data.url }));
+        const nextData = { ...formData, [fieldName]: data.url };
+        setFormData(nextData);
+        // Auto-save to database immediately so the uploaded image is never lost
+        try {
+          await api.post('/api/website', nextData);
+        } catch (saveErr) {
+          console.warn('Auto-save background notice:', saveErr);
+        }
       }
     } catch (err) {
       alert('Error al subir imagen');
@@ -557,6 +565,27 @@ export default function WebsiteBuilder() {
                   </p>
                 </div>
 
+                {/* Opción 3: Banner Top / Panorámico Superior */}
+                <div
+                  onClick={() => setFormData({ ...formData, headerLayout: 'banner_top' })}
+                  style={{
+                    padding: '14px', borderRadius: '10px', cursor: 'pointer',
+                    border: formData.headerLayout === 'banner_top' ? '2px solid #2563eb' : '1px solid #cbd5e1',
+                    backgroundColor: formData.headerLayout === 'banner_top' ? '#eff6ff' : '#ffffff',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                    <ImageIcon size={18} color={formData.headerLayout === 'banner_top' ? '#2563eb' : '#64748b'} />
+                    <strong style={{ fontSize: '0.88rem', color: formData.headerLayout === 'banner_top' ? '#1e40af' : '#334155' }}>
+                      Banner Superior Panorámico
+                    </strong>
+                  </div>
+                  <p style={{ margin: 0, fontSize: '0.78rem', color: '#64748b' }}>
+                    La foto del banner va arriba a todo lo ancho, con el título y botones centrados abajo.
+                  </p>
+                </div>
+
               </div>
 
               {/* CONTROLES DE OVERLAY SI ESTÁ EN MODO OVERLAY */}
@@ -769,6 +798,25 @@ export default function WebsiteBuilder() {
                 </div>
 
               </div>
+            </div>
+
+            {/* Botón Guardar Cambios de Portada */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: '10px' }}>
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={saving}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '8px',
+                  padding: '11px 24px', borderRadius: '10px',
+                  backgroundColor: '#2563eb', color: 'white', border: 'none',
+                  fontWeight: '700', fontSize: '0.9rem', cursor: 'pointer',
+                  boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)'
+                }}
+              >
+                <Save size={18} />
+                {saving ? 'Guardando...' : 'Guardar Cambios de Portada'}
+              </button>
             </div>
 
           </div>

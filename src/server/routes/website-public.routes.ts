@@ -47,6 +47,13 @@ router.get('/:slug', async (req, res) => {
     }));
     const featuredProducts = allProducts;
 
+    // Smart fallback: If website banner/logo is not configured, inherit from store_settings
+    const finalWebsite = {
+      ...website,
+      bannerImageUrl: website?.bannerImageUrl || store?.storeBannerUrl || undefined,
+      logoUrl: website?.logoUrl || store?.storeLogoUrl || undefined
+    };
+
     res.json({
       success: true,
       tenant: {
@@ -56,9 +63,12 @@ router.get('/:slug', async (req, res) => {
         whatsappNumber: tenant.whatsappNumber,
         evolutionInstance: tenant.evolutionInstance
       },
-      website,
+      website: finalWebsite,
       store: store ? {
         storeEnabled: store.storeEnabled,
+        storeName: store.storeName,
+        storeLogoUrl: store.storeLogoUrl,
+        storeBannerUrl: store.storeBannerUrl,
         currency: store.currency || 'CRC',
         sinpePhone: store.sinpePhone,
         sinpeName: store.sinpeName

@@ -39,6 +39,7 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
   const [activeProductCategory, setActiveProductCategory] = useState<string>("all");
   const [currentProductPage, setCurrentProductPage] = useState<number>(1);
   const [error, setError] = useState('');
+  const [bannerError, setBannerError] = useState(false);
 
   useEffect(() => {
     loadPublicData();
@@ -53,6 +54,7 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
   const loadPublicData = async () => {
     try {
       setLoading(true);
+      setBannerError(false);
       let res = await fetch(`/api/website-public/${slug}`);
       if (!res.ok) {
         res = await fetch(`/api/website/public/${slug}`);
@@ -159,6 +161,7 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
   const headerLayout = website.headerLayout || 'split';
   const overlayOpacity = (website.overlayOpacity !== undefined ? Number(website.overlayOpacity) : 0) / 100;
   const overlayColor = website.overlayColor || '#0f172a';
+  const activeBanner = !bannerError ? (website.bannerImageUrl || store?.storeBannerUrl || null) : null;
 
   // Helper to convert hex to rgba
   const hexToRgba = (hex: string, alpha: number) => {
@@ -466,7 +469,122 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
       </nav>
 
       {/* 2. HERO / PORTADA */}
-      {headerLayout === 'split' ? (
+      {headerLayout === 'banner_top' ? (
+        /* MODO BANNER TOP: IMAGEN PANORÁMICA ARRIBA, TEXTO Y BOTONES ABAJO */
+        <section style={{ backgroundColor: '#ffffff', borderBottom: '1px solid #e2e8f0', overflow: 'hidden' }}>
+          {activeBanner && (
+            <div style={{ width: '100%', aspectRatio: '16 / 5', minHeight: '180px', maxHeight: '380px', overflow: 'hidden', position: 'relative', backgroundColor: '#0f172a' }}>
+              <img
+                src={activeBanner}
+                alt={tenant.name}
+                onError={() => setBannerError(true)}
+                style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center' }}
+              />
+              <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, transparent 60%, rgba(0,0,0,0.4))' }} />
+            </div>
+          )}
+          <div style={{ maxWidth: '900px', margin: '0 auto', padding: '48px 24px 60px 24px', textAlign: 'center' }}>
+            <h1 style={{
+              fontSize: 'clamp(2.2rem, 5vw, 3.6rem)',
+              fontWeight: '900',
+              lineHeight: '1.15',
+              letterSpacing: '-1px',
+              color: '#0f172a',
+              margin: '0 0 16px 0'
+            }}>
+              {website.headline || `Bienvenido a ${tenant.name}`}
+            </h1>
+
+            <p style={{
+              fontSize: 'clamp(1rem, 2vw, 1.2rem)',
+              color: '#475569',
+              lineHeight: '1.6',
+              maxWidth: '750px',
+              margin: '0 auto 32px auto'
+            }}>
+              {website.subheadline || 'Calidad, confianza y la mejor atención personalizada directo a tu WhatsApp.'}
+            </p>
+
+            {/* Botones de Acción */}
+            <div style={{ display: 'flex', justifyContent: 'center', flexWrap: 'wrap', gap: '12px' }}>
+              {website.showStoreButton && (
+                <a
+                  href={storeUrl}
+                  className={buttonHoverEffect ? 'btn-interactive' : ''}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: '8px',
+                    padding: '13px 24px', borderRadius: btnRadius,
+                    backgroundColor: primaryColor, color: 'white',
+                    textDecoration: 'none', fontWeight: '800', fontSize: '0.95rem',
+                    boxShadow: `0 6px 18px ${primaryColor}40`,
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  <ShoppingBag size={18} />
+                  <span>{website.storeButtonText || 'Ver Menú y Productos'}</span>
+                  <ArrowRight size={16} />
+                </a>
+              )}
+
+              {website.showBookingButton && (
+                <a
+                  href={bookingUrl}
+                  className={buttonHoverEffect ? 'btn-interactive' : ''}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: '8px',
+                    padding: '13px 24px', borderRadius: btnRadius,
+                    backgroundColor: '#ffffff', color: '#0f172a',
+                    border: '1.5px solid #cbd5e1',
+                    textDecoration: 'none', fontWeight: '800', fontSize: '0.95rem',
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  <Calendar size={18} color={primaryColor} />
+                  <span>{website.bookingButtonText || 'Agendar Cita en Línea'}</span>
+                </a>
+              )}
+
+              {website.showCourtsButton && (
+                <a
+                  href={courtsUrl}
+                  className={buttonHoverEffect ? 'btn-interactive' : ''}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: '8px',
+                    padding: '13px 24px', borderRadius: btnRadius,
+                    backgroundColor: '#ffffff', color: '#16a34a',
+                    border: '1.5px solid #16a34a',
+                    textDecoration: 'none', fontWeight: '800', fontSize: '0.95rem',
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+                  <span>{website.courtsButtonText || 'Reservar Cancha'}</span>
+                </a>
+              )}
+
+              {website.showWhatsappButton !== false && cleanPhone && (
+                <a
+                  href={waUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className={buttonHoverEffect ? 'btn-interactive' : ''}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: '8px',
+                    padding: '13px 22px', borderRadius: btnRadius,
+                    backgroundColor: '#16a34a', color: 'white',
+                    textDecoration: 'none', fontWeight: '800', fontSize: '0.95rem',
+                    boxShadow: '0 6px 18px rgba(22, 163, 74, 0.3)',
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  <WhatsAppIcon size={18} color="white" />
+                  <span>{website.whatsappButtonText || 'WhatsApp Directo'}</span>
+                </a>
+              )}
+            </div>
+          </div>
+        </section>
+      ) : headerLayout === 'split' ? (
         /* MODO SPLIT: TEXTO A LA IZQUIERDA, IMAGEN LIMPIA A LA DERECHA */
         <section style={{
           padding: '60px 24px 80px 24px',
@@ -478,7 +596,7 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
             maxWidth: '1200px',
             margin: '0 auto',
             display: 'grid',
-            gridTemplateColumns: website.bannerImageUrl ? 'repeat(auto-fit, minmax(340px, 1fr))' : '1fr',
+            gridTemplateColumns: activeBanner ? 'repeat(auto-fit, minmax(340px, 1fr))' : '1fr',
             gap: '40px',
             alignItems: 'center'
           }}>
@@ -585,11 +703,12 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
             </div>
 
             {/* Imagen Limpia a la Derecha */}
-            {website.bannerImageUrl && (
+            {activeBanner && (
               <div style={{ display: 'flex', justifyContent: 'center' }}>
                 <img
-                  src={website.bannerImageUrl}
+                  src={activeBanner}
                   alt={tenant.name}
+                  onError={() => setBannerError(true)}
                   style={{
                     width: '100%',
                     maxHeight: '420px',
@@ -609,9 +728,9 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
           position: 'relative',
           padding: '90px 20px 100px 20px',
           textAlign: 'center',
-          background: website.bannerImageUrl
-            ? `${overlayOpacity > 0 ? `linear-gradient(${hexToRgba(overlayColor, overlayOpacity)}, ${hexToRgba(overlayColor, overlayOpacity)}), ` : ''}url(${website.bannerImageUrl}) center/cover no-repeat`
-            : `linear-gradient(135deg, #0f172a 0%, #1e293b 100%)`,
+          background: activeBanner
+            ? `${overlayOpacity > 0 ? `linear-gradient(${hexToRgba(overlayColor, overlayOpacity)}, ${hexToRgba(overlayColor, overlayOpacity)}), ` : ''}url(${activeBanner}) center/cover no-repeat`
+            : `linear-gradient(135deg, ${primaryColor} 0%, #0f172a 100%)`,
           color: '#ffffff',
           overflow: 'hidden'
         }}>
