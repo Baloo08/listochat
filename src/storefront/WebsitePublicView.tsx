@@ -44,6 +44,12 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
     loadPublicData();
   }, [slug]);
 
+  useEffect(() => {
+    if (data?.website?.fontFamily) {
+      loadGoogleFont(data.website.fontFamily);
+    }
+  }, [data?.website?.fontFamily]);
+
   const loadPublicData = async () => {
     try {
       setLoading(true);
@@ -129,11 +135,6 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
     );
   };
 
-  useEffect(() => {
-    if (data?.website?.fontFamily) {
-      loadGoogleFont(data.website.fontFamily);
-    }
-  }, [data?.website?.fontFamily]);
 
   const primaryColor = website.primaryColor || '#2563eb';
   const accentColor = website.accentColor || '#f59e0b';

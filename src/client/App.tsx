@@ -184,6 +184,10 @@ export default function App() {
     return <TermsOfServiceView />;
   }
 
+  return <MainApp pathname={pathname} />;
+}
+
+function MainApp({ pathname }: { pathname: string }) {
   const { isAuthenticated, user, loading, logout } = useAuth();
   const [currentPage, setCurrentPage] = useState<string>('dashboard');
   const [showTourModal, setShowTourModal] = useState<boolean>(() => {
