@@ -13617,7 +13617,7 @@ router30.post("/cards/:tenantId/session", async (req, res) => {
         billToCountry: "CR",
         billToTelephone: cleanPhone,
         orderNumber,
-        redirect: `${appUrl}/app?card_status=success`,
+        redirect: `${appUrl}/panel?sa_tab=cobranza&card_status=success`,
         callback: `${appUrl}/api/webhooks/tilopay`
       })
     });
@@ -13850,10 +13850,70 @@ var tenant_payment_routes_default = router31;
 
 // src/server/routes/tenant-subscription.routes.ts
 import { Router as Router32 } from "express";
+import jwtLib from "jsonwebtoken";
 init_pool();
 init_evolution();
 init_env();
 var router32 = Router32();
+router32.post("/exchange-return-token", async (req, res) => {
+  try {
+    const { session_token } = req.body || {};
+    if (!session_token || typeof session_token !== "string") {
+      res.status(400).json({ error: "Token de retorno requerido" });
+      return;
+    }
+    let decoded;
+    try {
+      decoded = jwtLib.verify(session_token.trim(), env.JWT_SECRET);
+    } catch (err) {
+      res.status(401).json({ error: "El enlace de retorno ha expirado o es inv\xE1lido" });
+      return;
+    }
+    if (!decoded || decoded.action !== "subscription_return" || !decoded.userId || !decoded.tenantId) {
+      res.status(400).json({ error: "Token de retorno con alcance inv\xE1lido" });
+      return;
+    }
+    const userRes = await query(
+      `SELECT id, tenant_id as "tenantId", name, email, role, active 
+       FROM users 
+       WHERE id = $1 AND tenant_id = $2 AND active = true`,
+      [decoded.userId, decoded.tenantId]
+    );
+    if (!userRes.rows || userRes.rows.length === 0) {
+      res.status(403).json({ error: "Usuario no encontrado o cuenta inactiva" });
+      return;
+    }
+    const user = userRes.rows[0];
+    const tenant = await getTenantById(decoded.tenantId);
+    if (!tenant || tenant.active === false) {
+      res.status(403).json({ error: "Negocio no encontrado o suspendido" });
+      return;
+    }
+    const token = generateToken(user.id, tenant.id, user.role);
+    res.json({
+      success: true,
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        tenantId: tenant.id,
+        tenantName: tenant.name,
+        tenantSlug: tenant.slug
+      },
+      tenant: {
+        id: tenant.id,
+        name: tenant.name,
+        slug: tenant.slug,
+        plan: tenant.plan
+      }
+    });
+  } catch (error) {
+    console.error("[TenantSubscription] Error al canjear token de retorno:", error);
+    res.status(500).json({ error: "Error del servidor al restaurar sesi\xF3n" });
+  }
+});
 router32.use(authenticateToken);
 router32.get("/", async (req, res) => {
   try {
@@ -13974,6 +14034,16 @@ router32.post("/create-card-session", async (req, res) => {
     const cleanPhone = (tenant.whatsappNumber || "88888888").replace(/\D/g, "") || "88888888";
     const appUrl = (env.APP_URL || "https://betico.tech").replace(/\/$/, "");
     const orderNumber = `SUB-CARD-${tenant.id}-${Date.now()}`;
+    const sessionToken = jwtLib.sign(
+      {
+        userId: req.user?.userId,
+        tenantId: tenant.id,
+        action: "subscription_return",
+        orderNumber
+      },
+      env.JWT_SECRET,
+      { expiresIn: "30m" }
+    );
     const sessionPayload = {
       key: platformCfg.apiKey,
       amount: "0.00",
@@ -13989,7 +14059,7 @@ router32.post("/create-card-session", async (req, res) => {
       billToCountry: "CR",
       billToTelephone: cleanPhone,
       orderNumber,
-      redirect: `${appUrl}/app?card_status=success`,
+      redirect: `${appUrl}/subscription/return?session_token=${sessionToken}`,
       callback: `${appUrl}/api/webhooks/tilopay`
     };
     const sessionRes = await fetch(`${baseUrl}/processPayment`, {

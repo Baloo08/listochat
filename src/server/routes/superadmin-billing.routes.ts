@@ -275,7 +275,7 @@ router.post('/cards/:tenantId/session', async (req: Request, res: Response): Pro
         billToCountry: 'CR',
         billToTelephone: cleanPhone,
         orderNumber,
-        redirect: `${appUrl}/app?card_status=success`,
+        redirect: `${appUrl}/panel?sa_tab=cobranza&card_status=success`,
         callback: `${appUrl}/api/webhooks/tilopay`
       })
     });

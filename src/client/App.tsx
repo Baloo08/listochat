@@ -35,6 +35,7 @@ import TermsOfServiceView from './components/TermsOfServiceView';
 import WebsiteBuilder from './components/WebsiteBuilder';
 import WebsitePublicView from '../storefront/WebsitePublicView';
 import TenantSubscriptionView from './components/TenantSubscriptionView';
+import SubscriptionReturnView from './components/SubscriptionReturnView';
 import { io } from 'socket.io-client';
 import { playOrderNotificationSound, playBookingNotificationSound } from './utils/sound';
 
@@ -185,12 +186,21 @@ export default function App() {
     return <TermsOfServiceView />;
   }
 
+  if (pathname.startsWith('/subscription/return') || pathname.startsWith('/suscripcion/retorno')) {
+    return <SubscriptionReturnView />;
+  }
+
   return <MainApp pathname={pathname} />;
 }
 
 function MainApp({ pathname }: { pathname: string }) {
   const { isAuthenticated, user, loading, logout } = useAuth();
-  const [currentPage, setCurrentPage] = useState<string>('dashboard');
+  const [currentPage, setCurrentPage] = useState<string>(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('sa_tab') === 'cobranza') return 'sa_collections';
+    if (params.get('card_status') === 'success' || params.get('tab') === 'suscripcion') return 'configuracion';
+    return 'dashboard';
+  });
   const [showTourModal, setShowTourModal] = useState<boolean>(() => {
     return window.location.search.includes('tour=true') || (!localStorage.getItem('betico_tour_dismissed') && localStorage.getItem('betico_tour_active') === 'true');
   });
@@ -229,6 +239,11 @@ function MainApp({ pathname }: { pathname: string }) {
     if (!isAuthenticated || !user) return;
 
     if (user?.role === 'superadmin') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('sa_tab') === 'cobranza') {
+        setCurrentPage('sa_collections');
+        return;
+      }
       if (currentPage === 'dashboard') {
         setCurrentPage('sa_tenants');
       }

@@ -20,10 +20,16 @@ export function useAuth() {
   const api = useApi();
 
   useEffect(() => {
+    let cancelled = false;
+
     if (token) {
       localStorage.setItem('token', token);
-      api.get('/api/auth/me')
-        .then(data => {
+
+      const verifySession = async (retryCount = 0) => {
+        try {
+          const data = await api.get('/api/auth/me');
+          if (cancelled) return;
+
           if (data && (data.id || data.userId)) {
             setUser(data);
             setIsAuthenticated(true);
@@ -33,13 +39,34 @@ export function useAuth() {
           } else {
             logout();
           }
-        })
-        .catch(() => {
-          logout();
-        })
-        .finally(() => {
-          setLoading(false);
-        });
+        } catch (err: any) {
+          if (cancelled) return;
+          const msg = String(err?.message || '').toLowerCase();
+
+          // Only force logout on explicit 401/403 or invalid credentials
+          if (msg.includes('unauthorized') || msg.includes('forbidden') || msg.includes('401') || msg.includes('403')) {
+            logout();
+          } else if (retryCount < 1) {
+            // Retry once after 1.2 seconds for transient gateway / network blips
+            setTimeout(() => {
+              if (!cancelled) verifySession(retryCount + 1);
+            }, 1200);
+            return;
+          } else {
+            logout();
+          }
+        } finally {
+          if (!cancelled) {
+            setLoading(false);
+          }
+        }
+      };
+
+      verifySession();
+
+      return () => {
+        cancelled = true;
+      };
     } else {
       localStorage.removeItem('token');
       setUser(null);
