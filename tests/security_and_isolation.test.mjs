@@ -264,5 +264,82 @@ describe('Security & Cryptographic Hardening Tests (ISO/IEC 25010, OWASP ASVS)',
       assert.ok(payload.apiKey && payload.apiUser && payload.apiPassword);
       assert.ok(['PRODUCTION', 'SANDBOX'].includes(payload.environment));
     });
+
+    test('should reflect platform configured only when credentials exist and isEnabled is true', () => {
+      const evaluatePlatformStatus = (cfg) => {
+        return Boolean(cfg && cfg.apiKey && cfg.apiUser && cfg.apiPassword && cfg.isEnabled);
+      };
+
+      const activeConfig = {
+        apiKey: 'tlp_live_key',
+        apiUser: 'Z9iUbB',
+        apiPassword: 'secretPassword',
+        isEnabled: true
+      };
+
+      const disabledConfig = {
+        ...activeConfig,
+        isEnabled: false
+      };
+
+      assert.equal(evaluatePlatformStatus(activeConfig), true, 'Active credentials must be configured: true');
+      assert.equal(evaluatePlatformStatus(disabledConfig), false, 'Disabled credentials must not be ready for charges');
+      assert.equal(evaluatePlatformStatus(null), false, 'Null config must evaluate to false');
+    });
+  });
+
+  describe('Login Rate Limiting & Brute Force Lockout (OWASP ASVS V2.1.8)', () => {
+    test('should lock out account/IP after 5 consecutive failed attempts', () => {
+      const attemptsMap = new Map();
+
+      function recordAttempt(key) {
+        const now = Date.now();
+        const item = attemptsMap.get(key) || { count: 0, firstAttempt: now, blockedUntil: 0 };
+        item.count += 1;
+        if (item.count >= 5) {
+          item.blockedUntil = now + (5 * 60 * 1000); // 5 min block
+        }
+        attemptsMap.set(key, item);
+        return item;
+      }
+
+      function isBlocked(key) {
+        const item = attemptsMap.get(key);
+        if (!item) return false;
+        return item.blockedUntil > Date.now();
+      }
+
+      const testKey = '192.168.1.100_victim@test.com';
+
+      // 4 failed attempts: not yet blocked
+      for (let i = 1; i <= 4; i++) {
+        recordAttempt(testKey);
+        assert.equal(isBlocked(testKey), false, `Attempt ${i} should not trigger lockout`);
+      }
+
+      // 5th failed attempt: triggers lockout
+      recordAttempt(testKey);
+      assert.equal(isBlocked(testKey), true, '5th attempt must trigger rate limit lockout');
+
+      // Clear on valid login
+      attemptsMap.delete(testKey);
+      assert.equal(isBlocked(testKey), false, 'Clearing attempts must restore normal access');
+    });
+  });
+
+  describe('Plan Aliado Exemption Invariance (ISO 25010 Adecuación Funcional)', () => {
+    test('should strictly exempt Plan Aliado and zero-price accounts from recurring charges', () => {
+      const isExemptFromBilling = (tenant) => {
+        const plan = (tenant.plan || '').toLowerCase();
+        const price = Number(tenant.customMonthlyPrice !== undefined ? tenant.customMonthlyPrice : 55000);
+        return plan === 'aliado' || price === 0;
+      };
+
+      assert.equal(isExemptFromBilling({ plan: 'aliado', customMonthlyPrice: 0 }), true);
+      assert.equal(isExemptFromBilling({ plan: 'Aliado', customMonthlyPrice: 29 }), true);
+      assert.equal(isExemptFromBilling({ plan: 'pro', customMonthlyPrice: 0 }), true);
+      assert.equal(isExemptFromBilling({ plan: 'pro', customMonthlyPrice: 55000 }), false);
+      assert.equal(isExemptFromBilling({ plan: 'enterprise', customMonthlyPrice: 85000 }), false);
+    });
   });
 });

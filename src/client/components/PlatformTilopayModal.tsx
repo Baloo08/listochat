@@ -218,6 +218,7 @@ export default function PlatformTilopayModal({
 
           <button
             onClick={onClose}
+            aria-label="Cerrar modal de configuración de Tilopay"
             style={{
               background: '#ffffff',
               border: '1px solid #e2e8f0',
@@ -436,6 +437,7 @@ export default function PlatformTilopayModal({
                   <button
                     type="button"
                     onClick={() => setShowApiKey(!showApiKey)}
+                    aria-label={showApiKey ? "Ocultar API Key" : "Mostrar API Key"}
                     style={{
                       position: 'absolute',
                       right: '10px',
@@ -478,6 +480,7 @@ export default function PlatformTilopayModal({
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
+                    aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
                     style={{
                       position: 'absolute',
                       right: '10px',
@@ -512,6 +515,7 @@ export default function PlatformTilopayModal({
                   <button
                     type="button"
                     onClick={handleCopyWebhook}
+                    aria-label="Copiar URL del webhook de Tilopay"
                     style={{
                       background: 'none',
                       border: 'none',

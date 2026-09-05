@@ -136,6 +136,7 @@ export default function BillingCollectionsView() {
               fontWeight: 'bold'
             }}
             title="Configurar credenciales maestras de Tilopay para recibir pagos de suscripciones"
+            aria-label="Configurar credenciales maestras de Tilopay de la plataforma"
           >
             <ShieldCheck size={16} />
             {platformStatus?.configured ? '🟢 Tilopay Plataforma' : '🔴 Configurar Tilopay'}
@@ -144,12 +145,14 @@ export default function BillingCollectionsView() {
             onClick={handleRunAutoBilling}
             style={{ padding: '8px 14px', backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', fontWeight: 'bold' }}
             title="Ejecutar lote de cobro automático vía Tilopay para clientes vencidos"
+            aria-label="Ejecutar lote de cobro automático con Tilopay"
           >
             ⚡ Cobros Automáticos
           </button>
           <button
             onClick={loadCollections}
             style={{ padding: '8px 16px', backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', fontWeight: 'bold', color: 'var(--text)' }}
+            aria-label="Actualizar cartera de clientes y cuentas por cobrar"
           >
             <RefreshCw size={15} /> Actualizar Cartera
           </button>

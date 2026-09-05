@@ -124,6 +124,7 @@ export default function TenantBillingCardModal({
         {/* Close button */}
         <button
           onClick={onClose}
+          aria-label="Cerrar modal de tarjeta bancaria"
           style={{
             position: 'absolute',
             top: '18px',

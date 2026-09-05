@@ -113,21 +113,26 @@ async function startServer() {
     fs.mkdirSync(uploadPath, { recursive: true });
   }
 
-  // Security & Performance Middlewares
+  // Security & Performance Middlewares (OWASP ASVS V14.4 / Top 10 A05)
   app.use(helmet({
     contentSecurityPolicy: false, // Don't block external Google Fonts or Unsplash CDN images
-    crossOriginResourcePolicy: { policy: "cross-origin" }
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+    xContentTypeOptions: true,
+    dnsPrefetchControl: { allow: false },
+    frameguard: { action: 'sameorigin' },
+    hidePoweredBy: true,
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' }
   }));
   app.use(compression());
   app.use(cors());
   app.use(express.json({ limit: '25mb' }));
   app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 
-  // Rate limiters for protection against brute-force and DoS
+  // Rate limiters for protection against brute-force and DoS (OWASP ASVS V2.1.8, V13.1.5)
   const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes window
     max: 20, // 20 attempts per 15 minutes per IP
-    message: { error: 'Demasiados intentos de acceso fallidos. Por favor espera 15 minutos.' },
+    message: { error: 'Demasiados intentos de acceso. Por favor espera 15 minutos.' },
     standardHeaders: true,
     legacyHeaders: false
   });
@@ -183,6 +188,9 @@ async function startServer() {
   // API Routes
   app.use('/api/auth/login', authLimiter);
   app.use('/api/auth/register', authLimiter);
+  app.use('/api/auth/forgot-password', authLimiter);
+  app.use('/api/auth/reset-password', authLimiter);
+  app.use('/api/auth/verify-otp', authLimiter);
   app.use('/api/auth', authRoutes);
   app.use('/api/tenants', tenantRoutes);
   app.use('/api/users', usersRoutes);

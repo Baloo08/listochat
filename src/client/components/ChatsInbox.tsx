@@ -543,6 +543,7 @@ export default function ChatsInbox() {
                 </div>
                 <button
                   onClick={() => setCommandAlert(null)}
+                  aria-label="Cerrar alerta de comando de IA"
                   style={{
                     background: 'none',
                     border: 'none',
@@ -570,21 +571,24 @@ export default function ChatsInbox() {
                     key={m.id || idx}
                     style={{
                       alignSelf: isFromMe ? 'flex-end' : 'flex-start',
-                      maxWidth: '75%',
-                      backgroundColor: isFromMe ? '#dcf8c6' : '#ffffff',
-                      borderRadius: isFromMe ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
+                      maxWidth: '80%',
+                      backgroundColor: isFromMe ? (isAI ? '#f0fdf4' : '#e0e7ff') : '#ffffff',
+                      border: `1px solid ${isFromMe ? (isAI ? '#bbf7d0' : '#c7d2fe') : '#e2e8f0'}`,
+                      borderRadius: '12px',
                       padding: '10px 14px',
-                      boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
-                      position: 'relative',
+                      boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
                       display: 'flex',
-                      flexDirection: 'column',
-                      gap: '4px'
+                      flexDirection: 'column'
                     }}
                   >
-                    {/* Header Tag for AI */}
-                    {isFromMe && isAI && (
-                      <div style={{ fontSize: '0.7rem', color: '#16a34a', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <Bot size={12} /> Asistente IA
+                    {isAI && (
+                      <div style={{ fontSize: '0.7rem', color: '#16a34a', fontWeight: 'bold', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <Bot size={12} /> Asistente IA (Automático)
+                      </div>
+                    )}
+                    {isFromMe && !isAI && (
+                      <div style={{ fontSize: '0.7rem', color: '#4338ca', fontWeight: 'bold', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <UserCheck size={12} /> Tú (Manual)
                       </div>
                     )}
 
@@ -606,6 +610,7 @@ export default function ChatsInbox() {
               <input
                 type="text"
                 placeholder={`Escribir respuesta manual a ${selectedConv.pushName}...`}
+                aria-label={`Escribir respuesta manual a ${selectedConv.pushName}`}
                 value={replyText}
                 onChange={(e) => setReplyText(e.target.value)}
                 style={{ flex: 1, padding: '10px 14px', borderRadius: '20px', border: '1px solid #cbd5e1', backgroundColor: '#ffffff', fontSize: '0.9rem', outline: 'none' }}

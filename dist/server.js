@@ -14147,7 +14147,12 @@ async function startServer() {
   app.use(helmet({
     contentSecurityPolicy: false,
     // Don't block external Google Fonts or Unsplash CDN images
-    crossOriginResourcePolicy: { policy: "cross-origin" }
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+    xContentTypeOptions: true,
+    dnsPrefetchControl: { allow: false },
+    frameguard: { action: "sameorigin" },
+    hidePoweredBy: true,
+    referrerPolicy: { policy: "strict-origin-when-cross-origin" }
   }));
   app.use(compression());
   app.use(cors());
@@ -14158,7 +14163,7 @@ async function startServer() {
     // 15 minutes window
     max: 20,
     // 20 attempts per 15 minutes per IP
-    message: { error: "Demasiados intentos de acceso fallidos. Por favor espera 15 minutos." },
+    message: { error: "Demasiados intentos de acceso. Por favor espera 15 minutos." },
     standardHeaders: true,
     legacyHeaders: false
   });
@@ -14201,6 +14206,9 @@ async function startServer() {
   });
   app.use("/api/auth/login", authLimiter);
   app.use("/api/auth/register", authLimiter);
+  app.use("/api/auth/forgot-password", authLimiter);
+  app.use("/api/auth/reset-password", authLimiter);
+  app.use("/api/auth/verify-otp", authLimiter);
   app.use("/api/auth", auth_routes_default);
   app.use("/api/tenants", tenant_routes_default);
   app.use("/api/users", users_routes_default);
