@@ -4,7 +4,7 @@ export type PaymentMethod = 'sinpe' | 'transfer' | 'cash' | 'card';
 export type PaymentStatus = 'pending' | 'proof_sent' | 'paid' | 'refunded' | 'PENDING' | 'PAID' | 'EXPIRED' | 'FAILED';
 export type DeliveryMethod = 'pickup' | 'delivery';
 export type AIProvider = 'gemini' | 'openai' | 'anthropic';
-export type SubscriptionPlan = 'starter' | 'pro' | 'business' | 'enterprise';
+export type SubscriptionPlan = 'starter' | 'pro' | 'business' | 'enterprise' | 'emprendedor' | 'aliado';
 
 export interface Tenant {
   id: string;
@@ -449,8 +449,22 @@ export interface Customer {
 // ===================== COURTS MODULE =====================
 
 export type SportType = 'futbol' | 'padel' | 'tenis' | 'otro';
-export type BookingMode = 'full' | 'seek_match';
+export type BookingMode = 'full' | 'seek_match' | 'split_match';
 export type MatchStatus = 'open' | 'matched' | 'expired' | 'confirmed' | 'cancelled';
+
+export interface CourtScheduleDay {
+  enabled: boolean;
+  startHour: string;
+  endHour: string;
+}
+
+export interface CourtScheduleConfig {
+  useBusinessHours?: boolean;
+  startHour?: string;
+  endHour?: string;
+  daysEnabled?: number[];
+  perDaySchedule?: Record<number, CourtScheduleDay>;
+}
 
 export interface Court {
   id: string;
@@ -468,8 +482,36 @@ export interface Court {
   teamSize: number;
   maxExtraPlayers: number;
   extraPlayerFee: number;
+  imageUrl?: string;
+  scheduleConfig?: CourtScheduleConfig;
   active: boolean;
   sortOrder: number;
+  createdAt?: string;
+}
+
+export type SpecialistScheduleType = 'business_hours' | 'custom_per_day';
+
+export interface SpecialistDaySchedule {
+  enabled: boolean;
+  startHour: string;
+  endHour: string;
+}
+
+export interface SpecialistScheduleConfig {
+  daysEnabled?: number[];
+  perDaySchedule?: Record<number, SpecialistDaySchedule>;
+}
+
+export interface Specialist {
+  id: string;
+  tenantId: string;
+  name: string;
+  phone?: string;
+  specialty?: string;
+  accessPin: string;
+  active: boolean;
+  scheduleType?: SpecialistScheduleType;
+  scheduleConfig?: SpecialistScheduleConfig;
   createdAt?: string;
 }
 
@@ -567,6 +609,8 @@ export interface ScheduleSettings {
     daysEnabled: number[];
     perDayBreaks?: Record<number, DayBreakConfig>;
   };
+  fechasConfig?: any;
+  bloquesConfig?: any;
   customFields?: BookingField[];
   vacationConfig?: {
     enabled: boolean;
@@ -594,14 +638,4 @@ export interface Branch {
   updatedAt?: string;
 }
 
-export interface Specialist {
-  id: string;
-  tenantId: string;
-  name: string;
-  phone?: string;
-  specialty?: string;
-  accessPin: string;
-  active: boolean;
-  createdAt: string;
-}
 

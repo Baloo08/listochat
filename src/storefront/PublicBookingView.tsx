@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Clock, User, Phone, CheckCircle, Sparkles, Sliders, Check, ChevronDown, MessageCircle, AlertCircle, Palmtree, MapPin } from 'lucide-react';
-import { BookingField } from '../shared/types';
+import { BookingField } from '../shared/types.js';
+import { resolveImageUrl } from '../shared/imageHelper.js';
 
 interface PublicBookingViewProps {
   slug: string;
@@ -14,6 +15,7 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
 
   // Booking Flow Steps
   const [selectedServices, setSelectedServices] = useState<any[]>([]);
+  const [selectedSpecialistId, setSelectedSpecialistId] = useState<string>('');
   const [activeCategory, setActiveCategory] = useState<string>("all");
   const [serviceVariables, setServiceVariables] = useState<Record<string, any>>({});
   const [selectedDate, setSelectedDate] = useState<string>(() => {
@@ -24,6 +26,8 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [vacationAlert, setVacationAlert] = useState<string | null>(null);
+  const [logoError, setLogoError] = useState(false);
+  const [bannerError, setBannerError] = useState(false);
 
   // Standard Form Fields
   const [customerName, setCustomerName] = useState('');
@@ -72,7 +76,8 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
       setSelectedTime(null);
       setVacationAlert(null);
       try {
-        const res = await fetch(`/api/appointments/public/${slug}/available-slots?date=${selectedDate}`);
+        const specQuery = selectedSpecialistId ? `&specialistId=${selectedSpecialistId}` : '';
+        const res = await fetch(`/api/appointments/public/${slug}/available-slots?date=${selectedDate}${specQuery}`);
         if (res.ok) {
           const data = await res.json();
           if (data.isVacation) {
@@ -91,7 +96,7 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
       }
     };
     fetchSlots();
-  }, [selectedDate, slug]);
+  }, [selectedDate, slug, selectedSpecialistId]);
 
   const handleToggleService = (svc: any) => {
     setSelectedServices(prev => {
@@ -208,6 +213,7 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
           amount: totalBookingPrice,
           customerName,
           customerPhone,
+          specialistId: selectedSpecialistId || null,
           paymentMethod: resolvedPaymentMethod,
           paymentReference: paymentMethod === 'sinpe' ? manualSinpeReference : null,
           returnUrl: window.location.href,
@@ -402,9 +408,14 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
     <div style={{ minHeight: '100vh', backgroundColor: bgColor, fontFamily, color: textColor, paddingBottom: '60px' }}>
       
       {/* Optional Top Banner */}
-      {businessInfo.bannerUrl && (
+      {businessInfo.bannerUrl && !bannerError && (
         <div style={{ width: '100%', aspectRatio: '16 / 5', minHeight: '140px', maxHeight: '300px', overflow: 'hidden', position: 'relative' }}>
-          <img src={businessInfo.bannerUrl} alt="Banner" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center' }} />
+          <img
+            src={resolveImageUrl(businessInfo.bannerUrl)}
+            alt="Banner"
+            style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center' }}
+            onError={() => setBannerError(true)}
+          />
           <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, transparent 60%, rgba(0,0,0,0.4))' }} />
         </div>
       )}
@@ -414,11 +425,16 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
         
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px', backgroundColor: cardBg, borderRadius: cardRadius, padding: '20px', border: `1px solid ${cardBorderColor}`, boxShadow: cardShadow }}>
-          {businessInfo.logoUrl ? (
-            <img src={businessInfo.logoUrl} alt="Logo" style={{ width: '60px', height: '60px', borderRadius: '12px', objectFit: 'cover' }} />
+          {businessInfo.logoUrl && !logoError ? (
+            <img
+              src={resolveImageUrl(businessInfo.logoUrl)}
+              alt="Logo"
+              style={{ width: '60px', height: '60px', borderRadius: '12px', objectFit: 'cover' }}
+              onError={() => setLogoError(true)}
+            />
           ) : (
             <div style={{ width: '60px', height: '60px', borderRadius: '12px', backgroundColor: primaryColor, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem', fontWeight: 'bold' }}>
-              {businessInfo.name.substring(0, 2).toUpperCase()}
+              {(businessInfo.name || 'B').substring(0, 2).toUpperCase()}
             </div>
           )}
 
@@ -621,6 +637,68 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
           )}
         </div>
 
+        {/* Specialist Selection Step (if business has specialists) */}
+        {businessInfo.specialists && businessInfo.specialists.length > 0 && selectedServices.length > 0 && (
+          <div style={{ backgroundColor: cardBg, borderRadius: cardRadius, padding: '20px 24px', border: `1px solid ${cardBorderColor}`, marginBottom: '20px', boxShadow: cardShadow }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
+              <User size={18} color={primaryColor} />
+              <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 'bold', color: titleColor }}>
+                ¿Deseas atenderte con un profesional en específico? (Opcional)
+              </h3>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '10px' }}>
+              <button
+                type="button"
+                onClick={() => setSelectedSpecialistId('')}
+                style={{
+                  padding: '12px 14px',
+                  borderRadius: '10px',
+                  border: selectedSpecialistId === '' ? `2px solid ${primaryColor}` : '1px solid #cbd5e1',
+                  backgroundColor: selectedSpecialistId === '' ? (isDarkBg ? '#1e293b' : '#f0fdf4') : (isDarkBg ? '#0f172a' : 'white'),
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <div style={{ fontWeight: 'bold', fontSize: '0.88rem', color: selectedSpecialistId === '' ? primaryColor : titleColor }}>
+                  ⭐ Cualquiera disponible
+                </div>
+                <div style={{ fontSize: '0.74rem', color: '#64748b', marginTop: '2px' }}>
+                  Mayor disponibilidad de horarios
+                </div>
+              </button>
+
+              {businessInfo.specialists.map((s: any) => {
+                const isSel = selectedSpecialistId === s.id;
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => setSelectedSpecialistId(s.id)}
+                    style={{
+                      padding: '12px 14px',
+                      borderRadius: '10px',
+                      border: isSel ? `2px solid ${primaryColor}` : '1px solid #cbd5e1',
+                      backgroundColor: isSel ? (isDarkBg ? '#1e293b' : '#f0fdf4') : (isDarkBg ? '#0f172a' : 'white'),
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    <div style={{ fontWeight: 'bold', fontSize: '0.88rem', color: isSel ? primaryColor : titleColor }}>
+                      {s.name}
+                    </div>
+                    <div style={{ fontSize: '0.74rem', color: '#64748b', marginTop: '2px' }}>
+                      {s.specialty || 'Especialista'}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Step 2: Date and Time Slot */}
         {selectedServices.length > 0 && (
           <div style={{ backgroundColor: cardBg, borderRadius: cardRadius, padding: '24px', border: '1px solid #e2e8f0', marginBottom: '20px', boxShadow: cardShadow }}>
@@ -753,7 +831,7 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
                       style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.9rem', backgroundColor: 'white' }}
                     >
                       <option value="">Selecciona una opción...</option>
-                      {field.options?.map(opt => (
+                      {field.options?.map((opt: string) => (
                         <option key={opt} value={opt}>{opt}</option>
                       ))}
                     </select>

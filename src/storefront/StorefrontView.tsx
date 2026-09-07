@@ -10,6 +10,7 @@ import { getCRProvincias, getCRCantones, getCRDistritos } from '../shared/costaR
 import { loadGoogleFont, getFontFamilyCss } from '../client/utils/fontLoader.js';
 import TilopayPaymentForm from '../client/components/TilopayPaymentForm.js';
 import InteractiveMapPicker from '../client/components/InteractiveMapPicker.js';
+import { resolveImageUrl } from '../shared/imageHelper.js';
 
 interface StorefrontProps {
   slug: string;
@@ -113,6 +114,8 @@ export default function StorefrontView({ slug }: StorefrontProps) {
   const [error, setError] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState('Todos');
   const [searchQuery, setSearchQuery] = useState('');
+  const [storeLogoError, setStoreLogoError] = useState(false);
+  const [storeBannerError, setStoreBannerError] = useState(false);
 
   // Cart & Modal State
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -573,11 +576,12 @@ export default function StorefrontView({ slug }: StorefrontProps) {
     <div style={{ minHeight: '100vh', backgroundColor: bgColor, fontFamily, color: isDark ? '#f1f5f9' : '#1e293b', paddingBottom: '90px', transition: 'background-color 0.2s ease' }}>
       
       {/* Top Banner (if uploaded) */}
-      {store.storeBannerUrl && (
+      {!storeBannerError && store.storeBannerUrl && (
         <div style={{ width: '100%', aspectRatio: '16 / 5', minHeight: '140px', maxHeight: '320px', overflow: 'hidden', position: 'relative', backgroundColor: isDark ? '#0f172a' : '#f1f5f9' }}>
           <img
-            src={store.storeBannerUrl}
+            src={resolveImageUrl(store.storeBannerUrl)}
             alt={store.storeName}
+            onError={() => setStoreBannerError(true)}
             style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center' }}
           />
           <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, transparent 60%, rgba(0,0,0,0.5))' }} />
@@ -592,10 +596,11 @@ export default function StorefrontView({ slug }: StorefrontProps) {
         borderBottom: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.06)'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-          {store.storeLogoUrl ? (
+          {!storeLogoError && store.storeLogoUrl ? (
             <img
-              src={store.storeLogoUrl}
+              src={resolveImageUrl(store.storeLogoUrl)}
               alt={store.storeName}
+              onError={() => setStoreLogoError(true)}
               style={{ width: '56px', height: '56px', borderRadius: '12px', objectFit: 'cover', border: '1px solid #e2e8f0', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}
             />
           ) : (
@@ -746,8 +751,11 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                     style={{ height: '180px', backgroundColor: isDark ? '#0f172a' : '#f1f5f9', cursor: 'pointer', overflow: 'hidden', position: 'relative' }}
                   >
                     <img
-                      src={prod.images?.[0]?.url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&auto=format&fit=crop&q=60'}
+                      src={prod.images?.[0]?.url ? resolveImageUrl(prod.images[0].url) : 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&auto=format&fit=crop&q=60'}
                       alt={prod.name}
+                      onError={(e) => {
+                        (e.currentTarget as HTMLImageElement).src = 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&auto=format&fit=crop&q=60';
+                      }}
                       style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                     />
                     {prod.category && (
@@ -866,8 +874,11 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                     {cart.map(item => (
                       <div key={item.id} style={{ display: 'flex', gap: '12px', alignItems: 'center', padding: '12px', backgroundColor: isDark ? '#1e293b' : '#f8fafc', borderRadius: '10px', border: isDark ? '1px solid #334155' : '1px solid #e2e8f0' }}>
                         <img
-                          src={item.product.images?.[0]?.url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=120&auto=format&fit=crop&q=60'}
+                          src={item.product.images?.[0]?.url ? resolveImageUrl(item.product.images[0].url) : 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=120&auto=format&fit=crop&q=60'}
                           alt={item.product.name}
+                          onError={(e) => {
+                            (e.currentTarget as HTMLImageElement).src = 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=120&auto=format&fit=crop&q=60';
+                          }}
                           style={{ width: '48px', height: '48px', borderRadius: '8px', objectFit: 'cover' }}
                         />
                         <div style={{ flex: 1 }}>
@@ -1400,7 +1411,7 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                             </label>
                             {paymentProofUrl ? (
                               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', backgroundColor: isDark ? '#1e293b' : '#ffffff', padding: '8px', borderRadius: '8px', border: '1px solid #93c5fd' }}>
-                                <img src={paymentProofUrl} alt="Comprobante" style={{ width: '48px', height: '48px', objectFit: 'cover', borderRadius: '6px' }} />
+                                <img src={resolveImageUrl(paymentProofUrl)} alt="Comprobante" style={{ width: '48px', height: '48px', objectFit: 'cover', borderRadius: '6px' }} />
                                 <div style={{ flex: 1, fontSize: '0.75rem', color: '#16a34a', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
                                   <CheckCircle size={13} /> Comprobante adjunto
                                 </div>
@@ -1631,8 +1642,11 @@ export default function StorefrontView({ slug }: StorefrontProps) {
             {/* Product Image */}
             <div style={{ width: '100%', height: '250px', backgroundColor: isDark ? '#0f172a' : '#f1f5f9', position: 'relative' }}>
               <img
-                src={selectedProduct.images?.[0]?.url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&auto=format&fit=crop&q=60'}
+                src={selectedProduct.images?.[0]?.url ? resolveImageUrl(selectedProduct.images[0].url) : 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&auto=format&fit=crop&q=60'}
                 alt={selectedProduct.name}
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).src = 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&auto=format&fit=crop&q=60';
+                }}
                 style={{ width: '100%', height: '100%', objectFit: 'cover' }}
               />
               {selectedProduct.category && (

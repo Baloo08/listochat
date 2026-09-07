@@ -6,13 +6,13 @@ import ErrorBoundary from './components/ErrorBoundary';
 const style = document.createElement('style');
 style.textContent = `
   :root {
-    --primary: #2563eb;
-    --primary-hover: #1d4ed8;
-    --primary-light: #eff6ff;
+    --primary: #0b3c3d;
+    --primary-hover: #082c2d;
+    --primary-light: #e6f4f1;
     --secondary: #64748b;
-    --background: #f8fafc;
+    --background: #FAF8F5;
     --surface: #ffffff;
-    --text: #0f172a;
+    --text: #1e293b;
     --text-muted: #64748b;
     --text-subtle: #94a3b8;
     --border: #e2e8f0;
@@ -36,7 +36,7 @@ style.textContent = `
     --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.05);
     --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.07);
     --shadow-lg: 0 12px 24px -4px rgba(0, 0, 0, 0.1);
-    --shadow-glow: 0 0 16px rgba(37, 99, 235, 0.25);
+    --shadow-glow: 0 0 16px rgba(11, 60, 61, 0.2);
   }
   
   * {
@@ -46,7 +46,7 @@ style.textContent = `
   }
   
   body {
-    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    font-family: 'Poppins', 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
     background-color: var(--background);
     color: var(--text);
     line-height: 1.5;

@@ -549,7 +549,7 @@ function MainApp({ pathname }: { pathname: string }) {
   const sidebarWidth = isSidebarCollapsed ? '72px' : '260px';
 
   return (
-    <div style={{ display: 'flex', minHeight: '100dvh', backgroundColor: 'var(--background)', fontFamily: 'system-ui, -apple-system, sans-serif', width: '100%', overflowX: 'hidden' }}>
+    <div style={{ display: 'flex', minHeight: '100dvh', backgroundColor: 'var(--background)', fontFamily: "'Poppins', 'Plus Jakarta Sans', system-ui, sans-serif", width: '100%', overflowX: 'hidden' }}>
 
       {/* Global CSS for Mobile vs Desktop */}
       <style>{`
@@ -610,8 +610,13 @@ function MainApp({ pathname }: { pathname: string }) {
           >
             {/* Drawer Header */}
             <div style={{ padding: '16px 18px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--background)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Bot size={24} color="var(--primary)" />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <img 
+                  src="/logo.png" 
+                  alt="Betico" 
+                  style={{ height: '32px', width: 'auto', objectFit: 'contain' }} 
+                  onError={(e) => { (e.currentTarget as HTMLElement).style.display = 'none'; }}
+                />
                 <div>
                   <div style={{ fontSize: '1.15rem', fontWeight: '800', color: 'var(--primary)', lineHeight: '1.2' }}>Betico</div>
                   <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: '600' }}>WhatsApp AI SaaS</div>
@@ -746,8 +751,13 @@ function MainApp({ pathname }: { pathname: string }) {
           boxSizing: 'border-box'
         }}>
           {!isSidebarCollapsed ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Bot size={24} color="var(--primary)" />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <img 
+                src="/logo.png" 
+                alt="Betico" 
+                style={{ height: '34px', width: 'auto', objectFit: 'contain' }} 
+                onError={(e) => { (e.currentTarget as HTMLElement).style.display = 'none'; }}
+              />
               <div>
                 <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: 'var(--primary)', lineHeight: '1.2' }}>Betico</div>
                 <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: '500' }}>WhatsApp AI SaaS</div>
@@ -759,7 +769,12 @@ function MainApp({ pathname }: { pathname: string }) {
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', background: 'none', cursor: 'pointer', padding: '4px' }}
               title="Expandir barra lateral"
             >
-              <Bot size={26} color="var(--primary)" />
+              <img 
+                src="/logo.png" 
+                alt="Betico" 
+                style={{ height: '28px', width: 'auto', objectFit: 'contain' }} 
+                onError={(e) => { (e.currentTarget as HTMLElement).style.display = 'none'; }}
+              />
             </button>
           )}
 

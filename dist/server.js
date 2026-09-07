@@ -2288,9 +2288,16 @@ async function runMigrations() {
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
     CREATE INDEX IF NOT EXISTS idx_tenant_billing_charges_tenant ON tenant_billing_charges(tenant_id, created_at);
-    CREATE INDEX IF NOT EXISTS idx_tenant_billing_charges_order ON tenant_billing_charges(tilopay_order_number);
+
+    -- Courts: image_url and schedule_config
+    ALTER TABLE courts ADD COLUMN IF NOT EXISTS image_url TEXT;
+    ALTER TABLE courts ADD COLUMN IF NOT EXISTS schedule_config JSONB;
+
+    -- Specialists: schedule_type and schedule_config
+    ALTER TABLE specialists ADD COLUMN IF NOT EXISTS schedule_type VARCHAR(50) DEFAULT 'business_hours';
+    ALTER TABLE specialists ADD COLUMN IF NOT EXISTS schedule_config JSONB;
   `).catch((err) => {
-    console.warn("[Migrations] Payment columns warning:", err?.message || err);
+    console.warn("[Migrations] Columns addition warning:", err?.message || err);
   });
   console.log("Migrations completed successfully.");
 }
@@ -4258,16 +4265,37 @@ async function getAllTenantsMonthlyUsage(monthYearParam) {
 
 // src/server/db/specialists.repo.ts
 init_pool();
+function mapSpecialistRow(row) {
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    name: row.name,
+    phone: row.phone,
+    specialty: row.specialty,
+    accessPin: row.access_pin,
+    active: row.active !== false,
+    scheduleType: row.schedule_type || "business_hours",
+    scheduleConfig: row.schedule_config ? typeof row.schedule_config === "string" ? JSON.parse(row.schedule_config) : row.schedule_config : void 0,
+    createdAt: row.created_at
+  };
+}
 async function getSpecialistsByTenant(tenantId) {
   const res = await query(
-    'SELECT id, tenant_id as "tenantId", name, phone, specialty, access_pin as "accessPin", active, created_at as "createdAt" FROM specialists WHERE tenant_id = $1 ORDER BY name ASC',
+    "SELECT * FROM specialists WHERE tenant_id = $1 ORDER BY name ASC",
     [tenantId]
   );
-  return res.rows;
+  return res.rows.map(mapSpecialistRow);
+}
+async function getSpecialistById(id) {
+  const res = await query(
+    "SELECT * FROM specialists WHERE id = $1",
+    [id]
+  );
+  return res.rows[0] ? mapSpecialistRow(res.rows[0]) : null;
 }
 async function getSpecialistByPin(pin, phone, tenantId) {
   const cleanPin = (pin || "").trim();
-  let sql = 'SELECT id, tenant_id as "tenantId", name, phone, specialty, access_pin as "accessPin", active, created_at as "createdAt" FROM specialists WHERE TRIM(access_pin) = $1 AND active = TRUE';
+  let sql = "SELECT * FROM specialists WHERE TRIM(access_pin) = $1 AND active = TRUE";
   const params = [cleanPin];
   if (tenantId) {
     sql += ` AND tenant_id = $${params.length + 1}`;
@@ -4283,25 +4311,55 @@ async function getSpecialistByPin(pin, phone, tenantId) {
   sql += " LIMIT 2";
   const res = await query(sql, params);
   if (res.rows.length > 1 && !tenantId && !phone) {
-    console.warn(`[getSpecialistByPin] Colisi\xF3n de PIN ${cleanPin} detectada entre m\xFAltiples comercios. Se requiere tel\xE9fono o tenantId para desambiguar.`);
+    console.warn(`[getSpecialistByPin] Colisi\xF3n de PIN ${cleanPin} detectada entre m\xFAltiples comercios.`);
     return null;
   }
-  return res.rows[0] || null;
+  return res.rows[0] ? mapSpecialistRow(res.rows[0]) : null;
 }
 async function createSpecialist(tenantId, data) {
   const pin = data.accessPin || Math.floor(1e3 + Math.random() * 9e3).toString();
+  const scheduleJson = data.scheduleConfig ? JSON.stringify(data.scheduleConfig) : null;
   const res = await query(
-    'INSERT INTO specialists (tenant_id, name, phone, specialty, access_pin, active) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, tenant_id as "tenantId", name, phone, specialty, access_pin as "accessPin", active, created_at as "createdAt"',
-    [tenantId, data.name || "Colaborador", data.phone || "", data.specialty || "General", pin, data.active !== false]
+    `INSERT INTO specialists (
+      tenant_id, name, phone, specialty, access_pin, active, schedule_type, schedule_config
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
+    RETURNING *`,
+    [
+      tenantId,
+      data.name || "Colaborador",
+      data.phone || "",
+      data.specialty || "General",
+      pin,
+      data.active !== false,
+      data.scheduleType || "business_hours",
+      scheduleJson
+    ]
   );
-  return res.rows[0];
+  return mapSpecialistRow(res.rows[0]);
 }
 async function updateSpecialist(id, tenantId, data) {
+  const allowed = {
+    name: "name",
+    phone: "phone",
+    specialty: "specialty",
+    accessPin: "access_pin",
+    active: "active",
+    scheduleType: "schedule_type",
+    scheduleConfig: "schedule_config"
+  };
+  const processedData = { ...data };
+  if (data.scheduleConfig !== void 0) {
+    processedData.scheduleConfig = data.scheduleConfig ? JSON.stringify(data.scheduleConfig) : null;
+  }
+  const entries = Object.entries(processedData).filter(([k, v]) => allowed[k] !== void 0 && v !== void 0);
+  if (entries.length === 0) return getSpecialistById(id);
+  const setClause = entries.map(([k], i) => `${allowed[k]} = $${i + 3}`).join(", ");
+  const values = entries.map((e) => e[1]);
   const res = await query(
-    'UPDATE specialists SET name = COALESCE($3, name), phone = COALESCE($4, phone), specialty = COALESCE($5, specialty), access_pin = COALESCE($6, access_pin), active = COALESCE($7, active) WHERE id = $1 AND tenant_id = $2 RETURNING id, tenant_id as "tenantId", name, phone, specialty, access_pin as "accessPin", active, created_at as "createdAt"',
-    [id, tenantId, data.name, data.phone, data.specialty, data.accessPin, data.active]
+    `UPDATE specialists SET ${setClause} WHERE id = $1 AND tenant_id = $2 RETURNING *`,
+    [id, tenantId, ...values]
   );
-  return res.rows[0] || null;
+  return res.rows[0] ? mapSpecialistRow(res.rows[0]) : null;
 }
 async function deleteSpecialist(id, tenantId) {
   const res = await query("DELETE FROM specialists WHERE id = $1 AND tenant_id = $2", [id, tenantId]);
@@ -4349,6 +4407,8 @@ function mapCourtRow(row) {
     teamSize: row.team_size,
     maxExtraPlayers: row.max_extra_players,
     extraPlayerFee: Number(row.extra_player_fee),
+    imageUrl: row.image_url || void 0,
+    scheduleConfig: row.schedule_config ? typeof row.schedule_config === "string" ? JSON.parse(row.schedule_config) : row.schedule_config : void 0,
     active: row.active,
     sortOrder: row.sort_order,
     createdAt: row.created_at
@@ -4405,13 +4465,15 @@ async function getCourtById(id, tenantId) {
   return res.rows[0] ? mapCourtRow(res.rows[0]) : null;
 }
 async function createCourt(tenantId, data) {
+  const scheduleJson = data.scheduleConfig ? JSON.stringify(data.scheduleConfig) : null;
   const res = await query(`
     INSERT INTO courts (
       tenant_id, name, sport_type, custom_sport_type, description, surface, 
       is_indoor, has_lighting, base_price, price_display, duration_minutes, 
-      team_size, max_extra_players, extra_player_fee, active, sort_order
+      team_size, max_extra_players, extra_player_fee, active, sort_order,
+      image_url, schedule_config
     ) VALUES (
-      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
+      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
     ) RETURNING *
   `, [
     tenantId,
@@ -4429,7 +4491,9 @@ async function createCourt(tenantId, data) {
     data.maxExtraPlayers,
     data.extraPlayerFee,
     data.active !== false,
-    data.sortOrder || 0
+    data.sortOrder || 0,
+    data.imageUrl || null,
+    scheduleJson
   ]);
   return mapCourtRow(res.rows[0]);
 }
@@ -4449,9 +4513,15 @@ async function updateCourt(id, tenantId, data) {
     maxExtraPlayers: "max_extra_players",
     extraPlayerFee: "extra_player_fee",
     active: "active",
-    sortOrder: "sort_order"
+    sortOrder: "sort_order",
+    imageUrl: "image_url",
+    scheduleConfig: "schedule_config"
   };
-  const entries = Object.entries(data).filter(([k, v]) => allowed[k] !== void 0 && v !== void 0);
+  const processedData = { ...data };
+  if (data.scheduleConfig !== void 0) {
+    processedData.scheduleConfig = data.scheduleConfig ? JSON.stringify(data.scheduleConfig) : null;
+  }
+  const entries = Object.entries(processedData).filter(([k, v]) => allowed[k] !== void 0 && v !== void 0);
   if (entries.length === 0) return getCourtById(id, tenantId);
   const setClause = entries.map(([k], i) => `${allowed[k]} = $${i + 3}`).join(", ");
   const values = entries.map((e) => e[1]);
@@ -4710,16 +4780,52 @@ async function getAvailableSlots(tenantId, courtId, date) {
   if (date < todayCR) {
     return [];
   }
-  const tRes = await query("SELECT settings_json FROM tenants WHERE id = $1", [tenantId]);
-  const settingsJson = tRes.rows[0]?.settings_json || {};
-  const scheduleSettings = settingsJson.scheduleSettings || { startHour: 8, endHour: 22, slotMinutes: 60 };
-  const startHour = Number(scheduleSettings.startHour) || 8;
-  const endHour = Number(scheduleSettings.endHour) || 22;
-  const slotMinutes = Number(scheduleSettings.slotMinutes) || 60;
+  const cRes = await query("SELECT * FROM courts WHERE id = $1 AND tenant_id = $2", [courtId, tenantId]);
+  const courtRow = cRes.rows[0];
+  if (!courtRow || courtRow.active === false) {
+    return [];
+  }
+  const selectedDate = /* @__PURE__ */ new Date(`${date}T00:00:00`);
+  const dayOfWeek = selectedDate.getDay() === 0 ? 7 : selectedDate.getDay();
+  let startMinutes = 8 * 60;
+  let endMinutes = 22 * 60;
+  let slotMinutes = Number(courtRow.duration_minutes) || 60;
+  const courtSched = courtRow.schedule_config ? typeof courtRow.schedule_config === "string" ? JSON.parse(courtRow.schedule_config) : courtRow.schedule_config : null;
+  if (courtSched && courtSched.useBusinessHours === false) {
+    if (Array.isArray(courtSched.daysEnabled) && !courtSched.daysEnabled.includes(dayOfWeek)) {
+      return [];
+    }
+    if (courtSched.perDaySchedule && courtSched.perDaySchedule[dayOfWeek]) {
+      const dayConf = courtSched.perDaySchedule[dayOfWeek];
+      if (dayConf.enabled === false) return [];
+      if (dayConf.startHour) {
+        const [sh, sm] = dayConf.startHour.split(":").map(Number);
+        startMinutes = sh * 60 + sm;
+      }
+      if (dayConf.endHour) {
+        const [eh, em] = dayConf.endHour.split(":").map(Number);
+        endMinutes = eh * 60 + em;
+      }
+    } else {
+      if (courtSched.startHour) {
+        const [sh, sm] = courtSched.startHour.split(":").map(Number);
+        startMinutes = sh * 60 + sm;
+      }
+      if (courtSched.endHour) {
+        const [eh, em] = courtSched.endHour.split(":").map(Number);
+        endMinutes = eh * 60 + em;
+      }
+    }
+  } else {
+    const tRes = await query("SELECT settings_json FROM tenants WHERE id = $1", [tenantId]);
+    const settingsJson = tRes.rows[0]?.settings_json || {};
+    const scheduleSettings = settingsJson.scheduleSettings || { startHour: 8, endHour: 22, slotMinutes: 60 };
+    startMinutes = (Number(scheduleSettings.startHour) || 8) * 60;
+    endMinutes = (Number(scheduleSettings.endHour) || 22) * 60;
+  }
   const slots = [];
-  let currentMinutes = startHour * 60;
-  const endMinutes = endHour * 60;
-  while (currentMinutes < endMinutes) {
+  let currentMinutes = startMinutes;
+  while (currentMinutes + slotMinutes <= endMinutes) {
     const h = Math.floor(currentMinutes / 60);
     const m = currentMinutes % 60;
     const timeStr = `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:00`;
@@ -8163,14 +8269,37 @@ router5.get("/public/:slug/info", async (req, res) => {
     const schedule = await getScheduleSettings(tenant.id);
     const tilopayConfig = await getTenantPaymentConfigRaw(tenant.id);
     const tiloAvailable = Boolean(tilopayConfig && tilopayConfig.isEnabled && tilopayConfig.apiKey);
+    let logoUrl = store?.storeLogoUrl || null;
+    let bannerUrl = store?.storeBannerUrl || null;
+    if (!logoUrl || !bannerUrl) {
+      const webRes = await query(`SELECT logo_url, banner_image_url FROM tenant_websites WHERE tenant_id = $1`, [tenant.id]);
+      if (webRes.rows[0]) {
+        if (!logoUrl) logoUrl = webRes.rows[0].logo_url || null;
+        if (!bannerUrl) bannerUrl = webRes.rows[0].banner_image_url || null;
+      }
+    }
+    const specialistsRes = await query(`
+      SELECT id, name, specialty, active, schedule_type as "scheduleType", schedule_config as "scheduleConfig"
+      FROM specialists 
+      WHERE tenant_id = $1 AND active = true 
+      ORDER BY name ASC
+    `, [tenant.id]);
     res.json({
       name: tenant.name,
       slug: tenant.slug,
       whatsappNumber: tenant.whatsappNumber || store?.sinpePhone,
-      logoUrl: store?.storeLogoUrl,
-      bannerUrl: store?.storeBannerUrl,
+      logoUrl,
+      bannerUrl,
       theme: store?.storeTheme,
       services: services.filter((s) => s.active !== false),
+      specialists: specialistsRes.rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        specialty: row.specialty,
+        active: row.active !== false,
+        scheduleType: row.scheduleType || "business_hours",
+        scheduleConfig: row.scheduleConfig ? typeof row.scheduleConfig === "string" ? JSON.parse(row.scheduleConfig) : row.scheduleConfig : void 0
+      })),
       scheduleMode: schedule?.scheduleMode || "jornada",
       bookingPaymentMode: schedule?.bookingPaymentMode || "all",
       customFields: schedule?.customFields || [],
@@ -8194,7 +8323,7 @@ router5.get("/public/:slug/info", async (req, res) => {
 });
 router5.get("/public/:slug/available-slots", async (req, res) => {
   try {
-    const { date, serviceId } = req.query;
+    const { date, serviceId, specialistId } = req.query;
     if (!date) {
       res.status(400).json({ error: "Fecha requerida (YYYY-MM-DD)" });
       return;
@@ -8232,84 +8361,157 @@ router5.get("/public/:slug/available-slots", async (req, res) => {
     }
     const selectedDate = /* @__PURE__ */ new Date(`${dateStr}T00:00:00`);
     const dayOfWeek = selectedDate.getDay() === 0 ? 7 : selectedDate.getDay();
-    let candidateSlots = [];
-    if (schedule?.scheduleMode === "jornada" || !schedule) {
-      const j = schedule?.jornadaConfig || {
-        startHour: "08:00",
-        endHour: "17:00",
-        slotMinutes: 45,
-        hasBreak: true,
-        breakStart: "12:00",
-        breakEnd: "13:00",
-        daysEnabled: [1, 2, 3, 4, 5, 6]
-      };
-      if (!j.daysEnabled.includes(dayOfWeek)) {
-        res.json({ availableSlots: [], message: "Cerrado este d\xEDa" });
+    let specialist = null;
+    if (specialistId) {
+      const specRes = await query(`SELECT * FROM specialists WHERE id = $1 AND tenant_id = $2`, [specialistId, tenant.id]);
+      if (!specRes.rows[0]) {
+        res.status(404).json({ error: "Profesional no encontrado" });
         return;
       }
-      const [startH, startM] = j.startHour.split(":").map(Number);
-      const [endH, endM] = j.endHour.split(":").map(Number);
-      const dayBreak = j.perDayBreaks?.[dayOfWeek];
-      const hasBreakThisDay = dayBreak !== void 0 ? dayBreak.hasBreak : j.hasBreak !== false;
-      const breakStartStr = dayBreak?.breakStart || j.breakStart || "12:00";
-      const breakEndStr = dayBreak?.breakEnd || j.breakEnd || "13:00";
-      const [breakStartH, breakStartM] = breakStartStr.split(":").map(Number);
-      const [breakEndH, breakEndM] = breakEndStr.split(":").map(Number);
-      const slotStep = j.slotMinutes || 45;
-      let currentMinutes = startH * 60 + startM;
+      specialist = specRes.rows[0];
+      if (specialist.active === false) {
+        res.json({
+          date: dateStr,
+          availableSlots: [],
+          maxParallelSlots: 0,
+          totalAvailable: 0,
+          message: "El profesional seleccionado no se encuentra disponible temporalmente"
+        });
+        return;
+      }
+    }
+    let candidateSlots = [];
+    let isCustomSpecialist = false;
+    if (specialist && specialist.schedule_type === "custom_per_day" && specialist.schedule_config) {
+      const specCfg = typeof specialist.schedule_config === "string" ? JSON.parse(specialist.schedule_config) : specialist.schedule_config;
+      const daySchedule = specCfg.perDaySchedule?.[dayOfWeek] || specCfg.perDaySchedule?.[String(dayOfWeek)];
+      if (!daySchedule || daySchedule.enabled === false) {
+        res.json({
+          date: dateStr,
+          availableSlots: [],
+          maxParallelSlots: 0,
+          totalAvailable: 0,
+          message: "El profesional no atiende este d\xEDa"
+        });
+        return;
+      }
+      isCustomSpecialist = true;
+      const slotStep = schedule?.jornadaConfig?.slotMinutes || 45;
+      const [startH, startM] = (daySchedule.startHour || "08:00").split(":").map(Number);
+      const [endH, endM] = (daySchedule.endHour || "17:00").split(":").map(Number);
+      let currM = startH * 60 + startM;
       const endMinutes = endH * 60 + endM;
-      const breakStartMinutes = breakStartH * 60 + breakStartM;
-      const breakEndMinutes = breakEndH * 60 + breakEndM;
-      while (currentMinutes + slotStep <= endMinutes) {
-        if (hasBreakThisDay && currentMinutes >= breakStartMinutes && currentMinutes < breakEndMinutes) {
-          currentMinutes += slotStep;
+      const hasBreak = Boolean(daySchedule.hasBreak && daySchedule.breakStart && daySchedule.breakEnd);
+      let breakStartM = 0;
+      let breakEndM = 0;
+      if (hasBreak) {
+        const [bsh, bsm] = daySchedule.breakStart.split(":").map(Number);
+        const [beh, bem] = daySchedule.breakEnd.split(":").map(Number);
+        breakStartM = bsh * 60 + bsm;
+        breakEndM = beh * 60 + bem;
+      }
+      while (currM + slotStep <= endMinutes) {
+        if (hasBreak && currM >= breakStartM && currM < breakEndM) {
+          currM += slotStep;
           continue;
         }
-        const h = Math.floor(currentMinutes / 60);
-        const m = currentMinutes % 60;
-        const timeStr = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-        candidateSlots.push(timeStr);
-        currentMinutes += slotStep;
+        const h = Math.floor(currM / 60);
+        const m = currM % 60;
+        candidateSlots.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
+        currM += slotStep;
       }
-    } else if (schedule?.scheduleMode === "fechas") {
-      const f = schedule.fechasConfig || { enabledDates: [], slotsByDate: {} };
-      if (!f.enabledDates.includes(dateStr)) {
-        res.json({ availableSlots: [], message: "No hay citas habilitadas para esta fecha" });
-        return;
-      }
-      candidateSlots = f.slotsByDate?.[dateStr] || ["09:00", "10:00", "11:00", "14:00", "15:00", "16:00"];
-    } else if (schedule?.scheduleMode === "bloques") {
-      const b = schedule.bloquesConfig || { days: {}, slotMinutes: 45 };
-      const dayKeys = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
-      const dayKey = dayKeys[selectedDate.getDay()];
-      const blocks = b.days?.[dayKey] || [];
-      const slotStep = b.slotMinutes || 45;
-      for (const block of blocks) {
-        const [bStartH, bStartM] = block.start.split(":").map(Number);
-        const [bEndH, bEndM] = block.end.split(":").map(Number);
-        let curr = bStartH * 60 + bStartM;
-        const end = bEndH * 60 + bEndM;
-        while (curr + slotStep <= end) {
-          const h = Math.floor(curr / 60);
-          const m = curr % 60;
-          candidateSlots.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
-          curr += slotStep;
+    }
+    if (!isCustomSpecialist) {
+      if (schedule?.scheduleMode === "jornada" || !schedule) {
+        const j = schedule?.jornadaConfig || {
+          startHour: "08:00",
+          endHour: "17:00",
+          slotMinutes: 45,
+          hasBreak: true,
+          breakStart: "12:00",
+          breakEnd: "13:00",
+          daysEnabled: [1, 2, 3, 4, 5, 6]
+        };
+        if (!j.daysEnabled.includes(dayOfWeek)) {
+          res.json({ availableSlots: [], message: "Cerrado este d\xEDa" });
+          return;
+        }
+        const [startH, startM] = j.startHour.split(":").map(Number);
+        const [endH, endM] = j.endHour.split(":").map(Number);
+        const dayBreak = j.perDayBreaks?.[dayOfWeek];
+        const hasBreakThisDay = dayBreak !== void 0 ? dayBreak.hasBreak : j.hasBreak !== false;
+        const breakStartStr = dayBreak?.breakStart || j.breakStart || "12:00";
+        const breakEndStr = dayBreak?.breakEnd || j.breakEnd || "13:00";
+        const [breakStartH, breakStartM] = breakStartStr.split(":").map(Number);
+        const [breakEndH, breakEndM] = breakEndStr.split(":").map(Number);
+        const slotStep = j.slotMinutes || 45;
+        let currentMinutes = startH * 60 + startM;
+        const endMinutes = endH * 60 + endM;
+        const breakStartMinutes = breakStartH * 60 + breakStartM;
+        const breakEndMinutes = breakEndH * 60 + breakEndM;
+        while (currentMinutes + slotStep <= endMinutes) {
+          if (hasBreakThisDay && currentMinutes >= breakStartMinutes && currentMinutes < breakEndMinutes) {
+            currentMinutes += slotStep;
+            continue;
+          }
+          const h = Math.floor(currentMinutes / 60);
+          const m = currentMinutes % 60;
+          const timeStr = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+          candidateSlots.push(timeStr);
+          currentMinutes += slotStep;
+        }
+      } else if (schedule?.scheduleMode === "fechas") {
+        const f = schedule.fechasConfig || { enabledDates: [], slotsByDate: {} };
+        if (!f.enabledDates.includes(dateStr)) {
+          res.json({ availableSlots: [], message: "No hay citas habilitadas para esta fecha" });
+          return;
+        }
+        candidateSlots = f.slotsByDate?.[dateStr] || ["09:00", "10:00", "11:00", "14:00", "15:00", "16:00"];
+      } else if (schedule?.scheduleMode === "bloques") {
+        const b = schedule.bloquesConfig || { days: {}, slotMinutes: 45 };
+        const dayKeys = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+        const dayKey = dayKeys[selectedDate.getDay()];
+        const blocks = b.days?.[dayKey] || [];
+        const slotStep = b.slotMinutes || 45;
+        for (const block of blocks) {
+          const [bStartH, bStartM] = block.start.split(":").map(Number);
+          const [bEndH, bEndM] = block.end.split(":").map(Number);
+          let curr = bStartH * 60 + bStartM;
+          const end = bEndH * 60 + bEndM;
+          while (curr + slotStep <= end) {
+            const h = Math.floor(curr / 60);
+            const m = curr % 60;
+            candidateSlots.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
+            curr += slotStep;
+          }
         }
       }
     }
-    let maxParallelSlots = schedule?.globalParallelSlots || 1;
-    if (serviceId) {
-      const srvRes = await query(`SELECT parallel_slots as "parallelSlots" FROM services WHERE id = $1 AND tenant_id = $2`, [serviceId, tenant.id]);
-      if (srvRes.rows[0]?.parallelSlots) {
-        maxParallelSlots = srvRes.rows[0].parallelSlots;
+    let maxParallelSlots = 1;
+    let activeApptsRows = [];
+    if (specialistId) {
+      maxParallelSlots = 1;
+      const activeAppts = await query(`
+        SELECT time FROM appointments 
+        WHERE tenant_id = $1 AND date = $2 AND specialist_id = $3 AND status IN ('pending', 'scheduled', 'confirmed')
+      `, [tenant.id, dateStr, specialistId]);
+      activeApptsRows = activeAppts.rows;
+    } else {
+      maxParallelSlots = schedule?.globalParallelSlots || 1;
+      if (serviceId) {
+        const srvRes = await query(`SELECT parallel_slots as "parallelSlots" FROM services WHERE id = $1 AND tenant_id = $2`, [serviceId, tenant.id]);
+        if (srvRes.rows[0]?.parallelSlots) {
+          maxParallelSlots = srvRes.rows[0].parallelSlots;
+        }
       }
+      const activeAppts = await query(`
+        SELECT time FROM appointments 
+        WHERE tenant_id = $1 AND date = $2 AND status IN ('pending', 'scheduled', 'confirmed')
+      `, [tenant.id, dateStr]);
+      activeApptsRows = activeAppts.rows;
     }
-    const activeAppts = await query(`
-      SELECT time FROM appointments 
-      WHERE tenant_id = $1 AND date = $2 AND status IN ('pending', 'scheduled', 'confirmed')
-    `, [tenant.id, dateStr]);
     const timeCountMap = {};
-    for (const row of activeAppts.rows) {
+    for (const row of activeApptsRows) {
       timeCountMap[row.time] = (timeCountMap[row.time] || 0) + 1;
     }
     const isToday = dateStr === todayCR;
@@ -8335,7 +8537,7 @@ router5.get("/public/:slug/available-slots", async (req, res) => {
 });
 router5.post("/public/:slug/book", async (req, res) => {
   try {
-    const { serviceName, serviceId, date, time, customerName, customerPhone, details, vehicleModel, customAnswers } = req.body;
+    const { serviceName, serviceId, date, time, customerName, customerPhone, details, vehicleModel, customAnswers, specialistId } = req.body;
     if (!serviceName || !date || !time || !customerName || !customerPhone) {
       res.status(400).json({ error: "Servicio, fecha, hora, nombre y WhatsApp son requeridos" });
       return;
@@ -8361,6 +8563,19 @@ router5.post("/public/:slug/book", async (req, res) => {
     const finalAmount = req.body.amount !== void 0 ? Number(req.body.amount) : amount;
     const paymentMethod = req.body.paymentMethod || "cash";
     const isOnlinePayment = (paymentMethod === "card" || paymentMethod === "sinpe_tilopay") && paymentMethod !== "solo_reserva";
+    if (specialistId) {
+      const specCountRes = await query(`
+        SELECT COUNT(*)::int as count 
+        FROM appointments 
+        WHERE tenant_id = $1 AND date = $2 AND time = $3 AND specialist_id = $4 AND status IN ('pending', 'scheduled', 'confirmed')
+      `, [tenant.id, date, time, specialistId]);
+      if ((specCountRes.rows[0]?.count || 0) >= 1) {
+        res.status(409).json({
+          error: "El profesional seleccionado ya cuenta con una cita en este horario. Por favor selecciona otro turno."
+        });
+        return;
+      }
+    }
     const schedule = await getScheduleSettings(tenant.id);
     let maxParallelSlots = schedule?.globalParallelSlots || 1;
     const targetServiceId = serviceId || matchedService?.id;
@@ -8389,6 +8604,7 @@ router5.post("/public/:slug/book", async (req, res) => {
       time,
       amount: finalAmount,
       status: "scheduled",
+      specialistId: specialistId || void 0,
       paymentMethod: paymentMethod === "solo_reserva" ? "pending" : paymentMethod,
       paymentStatus: paymentMethod === "sinpe" ? "proof_sent" : "pending",
       paymentReference: req.body.paymentReference || null,
@@ -8504,7 +8720,7 @@ router5.post("/schedule", async (req, res) => {
 });
 router5.get("/", async (req, res) => {
   try {
-    const list = await getAppointmentsByTenant(req.tenantId, req.query);
+    const list = await getAppointmentsByTenant(req.tenantId);
     res.json(list);
   } catch (error) {
     res.status(500).json({ error: "Error al obtener citas" });
@@ -12600,6 +12816,15 @@ router28.get("/public/:slug/info", async (req, res) => {
       WHERE tenant_id = $1
     `, [tenant.id]);
     const s = storeSettingsRes.rows[0] || {};
+    let storeLogoUrl = s.store_logo_url || null;
+    let storeBannerUrl = s.store_banner_url || null;
+    if (!storeLogoUrl || !storeBannerUrl) {
+      const webRes = await query(`SELECT logo_url, banner_image_url FROM tenant_websites WHERE tenant_id = $1`, [tenant.id]);
+      if (webRes.rows[0]) {
+        if (!storeLogoUrl) storeLogoUrl = webRes.rows[0].logo_url || null;
+        if (!storeBannerUrl) storeBannerUrl = webRes.rows[0].banner_image_url || null;
+      }
+    }
     const courtsConfig = s.store_modules?.courtsConfig || {
       paymentMode: "both",
       matchExpiryHours: 1,
@@ -12618,8 +12843,8 @@ router28.get("/public/:slug/info", async (req, res) => {
       storeName: s.store_name || tenant.name,
       storeSlug: s.store_slug || tenant.slug,
       storeDescription: s.store_description || "",
-      storeLogoUrl: s.store_logo_url,
-      storeBannerUrl: s.store_banner_url,
+      storeLogoUrl,
+      storeBannerUrl,
       storeTheme: s.store_theme || {},
       sinpePhone: s.sinpe_phone,
       sinpeName: s.sinpe_name,

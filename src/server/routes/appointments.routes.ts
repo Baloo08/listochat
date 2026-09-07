@@ -32,14 +32,39 @@ router.get('/public/:slug/info', async (req, res) => {
     const tilopayConfig = await getTenantPaymentConfigRaw(tenant.id);
     const tiloAvailable = Boolean(tilopayConfig && tilopayConfig.isEnabled && tilopayConfig.apiKey);
 
+    let logoUrl = store?.storeLogoUrl || null;
+    let bannerUrl = store?.storeBannerUrl || null;
+    if (!logoUrl || !bannerUrl) {
+      const webRes = await query(`SELECT logo_url, banner_image_url FROM tenant_websites WHERE tenant_id = $1`, [tenant.id]);
+      if (webRes.rows[0]) {
+        if (!logoUrl) logoUrl = webRes.rows[0].logo_url || null;
+        if (!bannerUrl) bannerUrl = webRes.rows[0].banner_image_url || null;
+      }
+    }
+
+    const specialistsRes = await query(`
+      SELECT id, name, specialty, active, schedule_type as "scheduleType", schedule_config as "scheduleConfig"
+      FROM specialists 
+      WHERE tenant_id = $1 AND active = true 
+      ORDER BY name ASC
+    `, [tenant.id]);
+
     res.json({
       name: tenant.name,
       slug: tenant.slug,
       whatsappNumber: tenant.whatsappNumber || store?.sinpePhone,
-      logoUrl: store?.storeLogoUrl,
-      bannerUrl: store?.storeBannerUrl,
+      logoUrl,
+      bannerUrl,
       theme: store?.storeTheme,
       services: services.filter((s: any) => s.active !== false),
+      specialists: specialistsRes.rows.map(row => ({
+        id: row.id,
+        name: row.name,
+        specialty: row.specialty,
+        active: row.active !== false,
+        scheduleType: row.scheduleType || 'business_hours',
+        scheduleConfig: row.scheduleConfig ? (typeof row.scheduleConfig === 'string' ? JSON.parse(row.scheduleConfig) : row.scheduleConfig) : undefined
+      })),
       scheduleMode: schedule?.scheduleMode || 'jornada',
       bookingPaymentMode: schedule?.bookingPaymentMode || 'all',
       customFields: schedule?.customFields || [],
@@ -64,7 +89,7 @@ router.get('/public/:slug/info', async (req, res) => {
 
 router.get('/public/:slug/available-slots', async (req, res) => {
   try {
-    const { date, serviceId } = req.query;
+    const { date, serviceId, specialistId } = req.query;
     if (!date) {
       res.status(400).json({ error: 'Fecha requerida (YYYY-MM-DD)' });
       return;
@@ -111,101 +136,181 @@ router.get('/public/:slug/available-slots', async (req, res) => {
     const selectedDate = new Date(`${dateStr}T00:00:00`);
     const dayOfWeek = selectedDate.getDay() === 0 ? 7 : selectedDate.getDay(); // 1 = Lunes, 7 = Domingo
 
+    // Check specialist if passed
+    let specialist: any = null;
+    if (specialistId) {
+      const specRes = await query(`SELECT * FROM specialists WHERE id = $1 AND tenant_id = $2`, [specialistId, tenant.id]);
+      if (!specRes.rows[0]) {
+        res.status(404).json({ error: 'Profesional no encontrado' });
+        return;
+      }
+      specialist = specRes.rows[0];
+      if (specialist.active === false) {
+        res.json({
+          date: dateStr,
+          availableSlots: [],
+          maxParallelSlots: 0,
+          totalAvailable: 0,
+          message: 'El profesional seleccionado no se encuentra disponible temporalmente'
+        });
+        return;
+      }
+    }
+
     let candidateSlots: string[] = [];
+    let isCustomSpecialist = false;
 
-    if (schedule?.scheduleMode === 'jornada' || !schedule) {
-      const j = schedule?.jornadaConfig || {
-        startHour: '08:00',
-        endHour: '17:00',
-        slotMinutes: 45,
-        hasBreak: true,
-        breakStart: '12:00',
-        breakEnd: '13:00',
-        daysEnabled: [1, 2, 3, 4, 5, 6]
-      };
+    // Check if specialist has custom_per_day schedule
+    if (specialist && specialist.schedule_type === 'custom_per_day' && specialist.schedule_config) {
+      const specCfg = typeof specialist.schedule_config === 'string' ? JSON.parse(specialist.schedule_config) : specialist.schedule_config;
+      const daySchedule = specCfg.perDaySchedule?.[dayOfWeek] || specCfg.perDaySchedule?.[String(dayOfWeek)];
 
-      if (!j.daysEnabled.includes(dayOfWeek)) {
-        res.json({ availableSlots: [], message: 'Cerrado este día' });
+      if (!daySchedule || daySchedule.enabled === false) {
+        res.json({
+          date: dateStr,
+          availableSlots: [],
+          maxParallelSlots: 0,
+          totalAvailable: 0,
+          message: 'El profesional no atiende este día'
+        });
         return;
       }
 
-      const [startH, startM] = j.startHour.split(':').map(Number);
-      const [endH, endM] = j.endHour.split(':').map(Number);
-      
-      // Check per-day break if configured, else global break
-      const dayBreak = j.perDayBreaks?.[dayOfWeek];
-      const hasBreakThisDay = dayBreak !== undefined ? dayBreak.hasBreak : (j.hasBreak !== false);
-      const breakStartStr = dayBreak?.breakStart || j.breakStart || '12:00';
-      const breakEndStr = dayBreak?.breakEnd || j.breakEnd || '13:00';
-
-      const [breakStartH, breakStartM] = breakStartStr.split(':').map(Number);
-      const [breakEndH, breakEndM] = breakEndStr.split(':').map(Number);
-
-      const slotStep = j.slotMinutes || 45;
-      let currentMinutes = (startH * 60) + startM;
+      isCustomSpecialist = true;
+      const slotStep = (schedule?.jornadaConfig?.slotMinutes) || 45;
+      const [startH, startM] = (daySchedule.startHour || '08:00').split(':').map(Number);
+      const [endH, endM] = (daySchedule.endHour || '17:00').split(':').map(Number);
+      let currM = (startH * 60) + startM;
       const endMinutes = (endH * 60) + endM;
-      const breakStartMinutes = (breakStartH * 60) + breakStartM;
-      const breakEndMinutes = (breakEndH * 60) + breakEndM;
 
-      while (currentMinutes + slotStep <= endMinutes) {
-        // Skip if overlaps with break time
-        if (hasBreakThisDay && currentMinutes >= breakStartMinutes && currentMinutes < breakEndMinutes) {
-          currentMinutes += slotStep;
+      const hasBreak = Boolean(daySchedule.hasBreak && daySchedule.breakStart && daySchedule.breakEnd);
+      let breakStartM = 0;
+      let breakEndM = 0;
+      if (hasBreak) {
+        const [bsh, bsm] = daySchedule.breakStart.split(':').map(Number);
+        const [beh, bem] = daySchedule.breakEnd.split(':').map(Number);
+        breakStartM = (bsh * 60) + bsm;
+        breakEndM = (beh * 60) + bem;
+      }
+
+      while (currM + slotStep <= endMinutes) {
+        if (hasBreak && currM >= breakStartM && currM < breakEndM) {
+          currM += slotStep;
           continue;
         }
-
-        const h = Math.floor(currentMinutes / 60);
-        const m = currentMinutes % 60;
-        const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-        candidateSlots.push(timeStr);
-        currentMinutes += slotStep;
+        const h = Math.floor(currM / 60);
+        const m = currM % 60;
+        candidateSlots.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
+        currM += slotStep;
       }
-    } else if (schedule?.scheduleMode === 'fechas') {
-      const f = schedule.fechasConfig || { enabledDates: [], slotsByDate: {} };
-      if (!f.enabledDates.includes(dateStr)) {
-        res.json({ availableSlots: [], message: 'No hay citas habilitadas para esta fecha' });
-        return;
-      }
-      candidateSlots = f.slotsByDate?.[dateStr] || ['09:00', '10:00', '11:00', '14:00', '15:00', '16:00'];
-    } else if (schedule?.scheduleMode === 'bloques') {
-      const b = schedule.bloquesConfig || { days: {}, slotMinutes: 45 };
-      const dayKeys = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-      const dayKey = dayKeys[selectedDate.getDay()];
-      const blocks = b.days?.[dayKey] || [];
+    }
 
-      const slotStep = b.slotMinutes || 45;
-      for (const block of blocks) {
-        const [bStartH, bStartM] = block.start.split(':').map(Number);
-        const [bEndH, bEndM] = block.end.split(':').map(Number);
-        let curr = (bStartH * 60) + bStartM;
-        const end = (bEndH * 60) + bEndM;
+    if (!isCustomSpecialist) {
+      if (schedule?.scheduleMode === 'jornada' || !schedule) {
+        const j = schedule?.jornadaConfig || {
+          startHour: '08:00',
+          endHour: '17:00',
+          slotMinutes: 45,
+          hasBreak: true,
+          breakStart: '12:00',
+          breakEnd: '13:00',
+          daysEnabled: [1, 2, 3, 4, 5, 6]
+        };
 
-        while (curr + slotStep <= end) {
-          const h = Math.floor(curr / 60);
-          const m = curr % 60;
-          candidateSlots.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
-          curr += slotStep;
+        if (!j.daysEnabled.includes(dayOfWeek)) {
+          res.json({ availableSlots: [], message: 'Cerrado este día' });
+          return;
+        }
+
+        const [startH, startM] = j.startHour.split(':').map(Number);
+        const [endH, endM] = j.endHour.split(':').map(Number);
+        
+        // Check per-day break if configured, else global break
+        const dayBreak = j.perDayBreaks?.[dayOfWeek];
+        const hasBreakThisDay = dayBreak !== undefined ? dayBreak.hasBreak : (j.hasBreak !== false);
+        const breakStartStr = dayBreak?.breakStart || j.breakStart || '12:00';
+        const breakEndStr = dayBreak?.breakEnd || j.breakEnd || '13:00';
+
+        const [breakStartH, breakStartM] = breakStartStr.split(':').map(Number);
+        const [breakEndH, breakEndM] = breakEndStr.split(':').map(Number);
+
+        const slotStep = j.slotMinutes || 45;
+        let currentMinutes = (startH * 60) + startM;
+        const endMinutes = (endH * 60) + endM;
+        const breakStartMinutes = (breakStartH * 60) + breakStartM;
+        const breakEndMinutes = (breakEndH * 60) + breakEndM;
+
+        while (currentMinutes + slotStep <= endMinutes) {
+          // Skip if overlaps with break time
+          if (hasBreakThisDay && currentMinutes >= breakStartMinutes && currentMinutes < breakEndMinutes) {
+            currentMinutes += slotStep;
+            continue;
+          }
+
+          const h = Math.floor(currentMinutes / 60);
+          const m = currentMinutes % 60;
+          const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+          candidateSlots.push(timeStr);
+          currentMinutes += slotStep;
+        }
+      } else if (schedule?.scheduleMode === 'fechas') {
+        const f = schedule.fechasConfig || { enabledDates: [], slotsByDate: {} };
+        if (!f.enabledDates.includes(dateStr)) {
+          res.json({ availableSlots: [], message: 'No hay citas habilitadas para esta fecha' });
+          return;
+        }
+        candidateSlots = f.slotsByDate?.[dateStr] || ['09:00', '10:00', '11:00', '14:00', '15:00', '16:00'];
+      } else if (schedule?.scheduleMode === 'bloques') {
+        const b = schedule.bloquesConfig || { days: {}, slotMinutes: 45 };
+        const dayKeys = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+        const dayKey = dayKeys[selectedDate.getDay()];
+        const blocks = b.days?.[dayKey] || [];
+
+        const slotStep = b.slotMinutes || 45;
+        for (const block of blocks) {
+          const [bStartH, bStartM] = block.start.split(':').map(Number);
+          const [bEndH, bEndM] = block.end.split(':').map(Number);
+          let curr = (bStartH * 60) + bStartM;
+          const end = (bEndH * 60) + bEndM;
+
+          while (curr + slotStep <= end) {
+            const h = Math.floor(curr / 60);
+            const m = curr % 60;
+            candidateSlots.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
+            curr += slotStep;
+          }
         }
       }
     }
 
-    // Determine max parallel capacity (global or per-service)
-    let maxParallelSlots = schedule?.globalParallelSlots || 1;
-    if (serviceId) {
-      const srvRes = await query(`SELECT parallel_slots as "parallelSlots" FROM services WHERE id = $1 AND tenant_id = $2`, [serviceId, tenant.id]);
-      if (srvRes.rows[0]?.parallelSlots) {
-        maxParallelSlots = srvRes.rows[0].parallelSlots;
+    // Determine max parallel capacity (specialist is always 1; otherwise global or per-service)
+    let maxParallelSlots = 1;
+    let activeApptsRows: any[] = [];
+
+    if (specialistId) {
+      maxParallelSlots = 1;
+      const activeAppts = await query(`
+        SELECT time FROM appointments 
+        WHERE tenant_id = $1 AND date = $2 AND specialist_id = $3 AND status IN ('pending', 'scheduled', 'confirmed')
+      `, [tenant.id, dateStr, specialistId]);
+      activeApptsRows = activeAppts.rows;
+    } else {
+      maxParallelSlots = schedule?.globalParallelSlots || 1;
+      if (serviceId) {
+        const srvRes = await query(`SELECT parallel_slots as "parallelSlots" FROM services WHERE id = $1 AND tenant_id = $2`, [serviceId, tenant.id]);
+        if (srvRes.rows[0]?.parallelSlots) {
+          maxParallelSlots = srvRes.rows[0].parallelSlots;
+        }
       }
+      const activeAppts = await query(`
+        SELECT time FROM appointments 
+        WHERE tenant_id = $1 AND date = $2 AND status IN ('pending', 'scheduled', 'confirmed')
+      `, [tenant.id, dateStr]);
+      activeApptsRows = activeAppts.rows;
     }
 
-    // Fetch active appointments on that date (completed and cancelled appointments free up the slot immediately!)
-    const activeAppts = await query(`
-      SELECT time FROM appointments 
-      WHERE tenant_id = $1 AND date = $2 AND status IN ('pending', 'scheduled', 'confirmed')
-    `, [tenant.id, dateStr]);
-
     const timeCountMap: Record<string, number> = {};
-    for (const row of activeAppts.rows) {
+    for (const row of activeApptsRows) {
       timeCountMap[row.time] = (timeCountMap[row.time] || 0) + 1;
     }
 
@@ -236,7 +341,7 @@ router.get('/public/:slug/available-slots', async (req, res) => {
 
 router.post('/public/:slug/book', async (req, res) => {
   try {
-    const { serviceName, serviceId, date, time, customerName, customerPhone, details, vehicleModel, customAnswers } = req.body;
+    const { serviceName, serviceId, date, time, customerName, customerPhone, details, vehicleModel, customAnswers, specialistId } = req.body;
     if (!serviceName || !date || !time || !customerName || !customerPhone) {
       res.status(400).json({ error: 'Servicio, fecha, hora, nombre y WhatsApp son requeridos' });
       return;
@@ -273,6 +378,21 @@ router.post('/public/:slug/book', async (req, res) => {
     const isOnlinePayment = (paymentMethod === 'card' || paymentMethod === 'sinpe_tilopay') && paymentMethod !== 'solo_reserva';
 
     // Atomic capacity check (Concurrency control - ISO 25010)
+    if (specialistId) {
+      const specCountRes = await query(`
+        SELECT COUNT(*)::int as count 
+        FROM appointments 
+        WHERE tenant_id = $1 AND date = $2 AND time = $3 AND specialist_id = $4 AND status IN ('pending', 'scheduled', 'confirmed')
+      `, [tenant.id, date, time, specialistId]);
+
+      if ((specCountRes.rows[0]?.count || 0) >= 1) {
+        res.status(409).json({
+          error: 'El profesional seleccionado ya cuenta con una cita en este horario. Por favor selecciona otro turno.'
+        });
+        return;
+      }
+    }
+
     const schedule = await getScheduleSettings(tenant.id);
     let maxParallelSlots = schedule?.globalParallelSlots || 1;
     const targetServiceId = serviceId || matchedService?.id;
@@ -304,6 +424,7 @@ router.post('/public/:slug/book', async (req, res) => {
       time,
       amount: finalAmount,
       status: 'scheduled',
+      specialistId: specialistId || undefined,
       paymentMethod: paymentMethod === 'solo_reserva' ? 'pending' : paymentMethod,
       paymentStatus: paymentMethod === 'sinpe' ? 'proof_sent' : 'pending',
       paymentReference: req.body.paymentReference || null,
@@ -440,7 +561,7 @@ router.post('/schedule', async (req, res) => {
 
 router.get('/', async (req, res) => {
   try {
-    const list = await getAppointmentsByTenant(req.tenantId!, req.query as any);
+    const list = await getAppointmentsByTenant(req.tenantId!);
     res.json(list);
   } catch (error) {
     res.status(500).json({ error: 'Error al obtener citas' });

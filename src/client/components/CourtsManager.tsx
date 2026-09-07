@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
 import { Court, CourtsConfig, CourtsTheme } from '../../shared/types';
+import { resolveImageUrl } from '../../shared/imageHelper';
 
 export default function CourtsManager() {
   const [activeTab, setActiveTab] = useState<'canchas' | 'diseno' | 'reglas'>('canchas');
@@ -20,6 +21,17 @@ export default function CourtsManager() {
   const [uploadingBanner, setUploadingBanner] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
   const bannerInputRef = useRef<HTMLInputElement>(null);
+
+  // Court Image Upload & Ref
+  const [imageUrl, setImageUrl] = useState('');
+  const [uploadingCourtImage, setUploadingCourtImage] = useState(false);
+  const courtImageInputRef = useRef<HTMLInputElement>(null);
+
+  // Independent Schedule State for Court
+  const [useBusinessHours, setUseBusinessHours] = useState(true);
+  const [courtStartHour, setCourtStartHour] = useState('07:00');
+  const [courtEndHour, setCourtEndHour] = useState('23:00');
+  const [courtDaysEnabled, setCourtDaysEnabled] = useState<number[]>([1, 2, 3, 4, 5, 6, 7]);
 
   // Config & Theme state
   const [config, setConfig] = useState<CourtsConfig>({
@@ -165,6 +177,35 @@ export default function CourtsManager() {
     }
   };
 
+  const handleCourtImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadingCourtImage(true);
+    const form = new FormData();
+    form.append('file', file);
+
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: form
+      });
+      const data = await res.json();
+      if (data && data.url) {
+        setImageUrl(data.url);
+      } else {
+        alert('Error al subir la foto de la cancha: ' + (data?.error || 'Respuesta inválida'));
+      }
+    } catch (error) {
+      console.error('Error uploading court image:', error);
+      alert('Error de conexión al subir la imagen.');
+    } finally {
+      setUploadingCourtImage(false);
+    }
+  };
+
   const handleOpenCreateModal = () => {
     setEditingCourt(null);
     setName('Cancha 1');
@@ -179,6 +220,11 @@ export default function CourtsManager() {
     setIsIndoor(false);
     setHasLighting(false);
     setActive(true);
+    setImageUrl('');
+    setUseBusinessHours(true);
+    setCourtStartHour('07:00');
+    setCourtEndHour('23:00');
+    setCourtDaysEnabled([1, 2, 3, 4, 5, 6, 7]);
     setIsModalOpen(true);
   };
 
@@ -196,6 +242,18 @@ export default function CourtsManager() {
     setIsIndoor(c.isIndoor);
     setHasLighting(c.hasLighting);
     setActive(c.active);
+    setImageUrl(c.imageUrl || '');
+    if (c.scheduleConfig) {
+      setUseBusinessHours(c.scheduleConfig.useBusinessHours !== false);
+      setCourtStartHour(c.scheduleConfig.startHour || '07:00');
+      setCourtEndHour(c.scheduleConfig.endHour || '23:00');
+      setCourtDaysEnabled(c.scheduleConfig.daysEnabled || [1, 2, 3, 4, 5, 6, 7]);
+    } else {
+      setUseBusinessHours(true);
+      setCourtStartHour('07:00');
+      setCourtEndHour('23:00');
+      setCourtDaysEnabled([1, 2, 3, 4, 5, 6, 7]);
+    }
     setIsModalOpen(true);
   };
 
@@ -215,7 +273,14 @@ export default function CourtsManager() {
         surface,
         isIndoor,
         hasLighting,
-        active
+        active,
+        imageUrl: imageUrl || undefined,
+        scheduleConfig: {
+          useBusinessHours,
+          startHour: courtStartHour,
+          endHour: courtEndHour,
+          daysEnabled: courtDaysEnabled
+        }
       };
 
       if (editingCourt) {
@@ -295,6 +360,13 @@ export default function CourtsManager() {
         type="file"
         ref={bannerInputRef}
         onChange={e => handleImageUpload(e, 'bannerUrl')}
+        accept="image/*"
+        style={{ display: 'none' }}
+      />
+      <input
+        type="file"
+        ref={courtImageInputRef}
+        onChange={handleCourtImageUpload}
         accept="image/*"
         style={{ display: 'none' }}
       />
@@ -431,6 +503,17 @@ export default function CourtsManager() {
                     opacity: c.active ? 1 : 0.6
                   }}
                 >
+                  {c.imageUrl && (
+                    <div style={{ width: '100%', height: '140px', borderRadius: '8px', overflow: 'hidden', backgroundColor: 'var(--bg-elevated)', marginBottom: '4px' }}>
+                      <img
+                        src={resolveImageUrl(c.imageUrl)}
+                        alt={c.name}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        onError={(e) => { (e.currentTarget as HTMLElement).style.display = 'none'; }}
+                      />
+                    </div>
+                  )}
+
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div>
                       <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: '800', color: 'var(--text)' }}>{c.name}</h3>
@@ -448,6 +531,15 @@ export default function CourtsManager() {
                   </div>
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.84rem', color: 'var(--text)' }}>
+                    {c.scheduleConfig && c.scheduleConfig.useBusinessHours === false ? (
+                      <div style={{ fontSize: '0.74rem', color: '#0284c7', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Clock size={13} /> Horario Propio ({c.scheduleConfig.startHour || '07:00'} - {c.scheduleConfig.endHour || '23:00'})
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Clock size={13} /> Horario del Negocio
+                      </div>
+                    )}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <Clock size={14} color="var(--text-muted)" />
                       <span>{c.durationMinutes} minutos por turno</span>
@@ -961,6 +1053,62 @@ export default function CourtsManager() {
             </div>
 
             <form onSubmit={handleSaveCourt} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              {/* Foto de la Cancha */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', marginBottom: '6px', color: 'var(--text)' }}>
+                  Foto de la Cancha (se mostrará en la página de reservas)
+                </label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '8px' }}>
+                  <div style={{
+                    width: '100px', height: '64px', borderRadius: '8px', backgroundColor: 'var(--background)',
+                    border: '1.5px dashed var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    overflow: 'hidden', flexShrink: 0
+                  }}>
+                    {imageUrl ? (
+                      <img src={resolveImageUrl(imageUrl)} alt="Cancha preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    ) : (
+                      <ImageIcon size={22} color="var(--text-muted)" />
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <button
+                      type="button"
+                      onClick={() => courtImageInputRef.current?.click()}
+                      disabled={uploadingCourtImage}
+                      style={{
+                        padding: '6px 12px', backgroundColor: 'var(--primary)', color: 'white',
+                        border: 'none', borderRadius: '6px', fontSize: '0.78rem', fontWeight: '700',
+                        cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px'
+                      }}
+                    >
+                      <Upload size={13} />
+                      {uploadingCourtImage ? 'Subiendo...' : imageUrl ? 'Cambiar Foto' : 'Subir Foto'}
+                    </button>
+                    {imageUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setImageUrl('')}
+                        style={{
+                          padding: '2px 4px', background: 'none', color: '#e11d48', border: 'none',
+                          fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer', textAlign: 'left'
+                        }}
+                      >
+                        Eliminar foto
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <input
+                  type="text"
+                  placeholder="O URL directa de imagen https://..."
+                  value={imageUrl}
+                  onChange={e => setImageUrl(e.target.value)}
+                  style={{ width: '100%', padding: '7px 10px', borderRadius: '6px', border: '1px solid var(--border)', backgroundColor: 'var(--background)', color: 'var(--text)', fontSize: '0.78rem', boxSizing: 'border-box' }}
+                />
+              </div>
+
               <div>
                 <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', marginBottom: '4px', color: 'var(--text)' }}>
                   Nombre de la Cancha *
@@ -1108,6 +1256,105 @@ export default function CourtsManager() {
                   />
                   <span>Activa para reservas</span>
                 </label>
+              </div>
+
+              {/* Horario de la Cancha */}
+              <div style={{ borderTop: '1px solid var(--border)', paddingTop: '12px' }}>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '800', marginBottom: '8px', color: 'var(--text)' }}>
+                  Horario de Disponibilidad de la Cancha
+                </label>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '10px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem', cursor: 'pointer', color: 'var(--text)' }}>
+                    <input
+                      type="radio"
+                      name="courtScheduleOption"
+                      checked={useBusinessHours}
+                      onChange={() => setUseBusinessHours(true)}
+                    />
+                    <span><strong>Usar horario general del negocio</strong> (toma el horario configurado en Reservas)</span>
+                  </label>
+
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem', cursor: 'pointer', color: 'var(--text)' }}>
+                    <input
+                      type="radio"
+                      name="courtScheduleOption"
+                      checked={!useBusinessHours}
+                      onChange={() => setUseBusinessHours(false)}
+                    />
+                    <span><strong>Horario independiente para esta cancha</strong> (establece horas y días propios)</span>
+                  </label>
+                </div>
+
+                {!useBusinessHours && (
+                  <div style={{ backgroundColor: 'var(--bg-elevated)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px', color: 'var(--text-muted)' }}>
+                          Hora Apertura
+                        </label>
+                        <input
+                          type="time"
+                          value={courtStartHour}
+                          onChange={e => setCourtStartHour(e.target.value)}
+                          style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--border)', backgroundColor: 'var(--background)', color: 'var(--text)', fontSize: '0.82rem', boxSizing: 'border-box' }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px', color: 'var(--text-muted)' }}>
+                          Hora Cierre
+                        </label>
+                        <input
+                          type="time"
+                          value={courtEndHour}
+                          onChange={e => setCourtEndHour(e.target.value)}
+                          style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--border)', backgroundColor: 'var(--background)', color: 'var(--text)', fontSize: '0.82rem', boxSizing: 'border-box' }}
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '6px', color: 'var(--text-muted)' }}>
+                        Días Habilitados para Reserva:
+                      </label>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                        {[
+                          { num: 1, label: 'Lun' },
+                          { num: 2, label: 'Mar' },
+                          { num: 3, label: 'Mié' },
+                          { num: 4, label: 'Jue' },
+                          { num: 5, label: 'Vie' },
+                          { num: 6, label: 'Sáb' },
+                          { num: 7, label: 'Dom' },
+                        ].map(d => {
+                          const isDayOn = courtDaysEnabled.includes(d.num);
+                          return (
+                            <button
+                              key={d.num}
+                              type="button"
+                              onClick={() => {
+                                if (isDayOn) {
+                                  setCourtDaysEnabled(courtDaysEnabled.filter(n => n !== d.num));
+                                } else {
+                                  setCourtDaysEnabled([...courtDaysEnabled, d.num].sort());
+                                }
+                              }}
+                              style={{
+                                padding: '4px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 'bold',
+                                border: isDayOn ? '1px solid var(--primary)' : '1px solid var(--border)',
+                                backgroundColor: isDayOn ? 'var(--primary)' : 'var(--background)',
+                                color: isDayOn ? 'white' : 'var(--text-muted)',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              {d.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>

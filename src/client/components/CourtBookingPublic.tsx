@@ -7,6 +7,7 @@ import {
 import { useApi } from '../hooks/useApi';
 import { Court, CourtBooking, CourtsConfig } from '../../shared/types';
 import { formatFriendlyDate, formatTime12h } from '../utils/dateFormat';
+import { resolveImageUrl } from '../../shared/imageHelper';
 
 export default function CourtBookingPublic({ slug }: { slug: string }) {
   const [activeTab, setActiveTab] = useState<'book' | 'open_matches'>('book');
@@ -42,6 +43,8 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
   const [confirmedBooking, setConfirmedBooking] = useState<CourtBooking | null>(null);
   const [copiedResRef, setCopiedResRef] = useState(false);
   const [copiedSinpe, setCopiedSinpe] = useState(false);
+  const [logoError, setLogoError] = useState(false);
+  const [bannerError, setBannerError] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -103,8 +106,10 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
   const accentColor = theme.accentColor || '#f59e0b';
   const pageTitle = theme.title || publicData?.storeName || 'Reservas Deportivas';
   const pageDescription = theme.description || publicData?.storeDescription || 'Reserva tu turno de cancha o encuentra rivales en línea.';
-  const logoUrl = theme.logoUrl || publicData?.storeLogoUrl;
-  const bannerUrl = theme.bannerUrl || publicData?.storeBannerUrl;
+  const rawLogoUrl = theme.logoUrl || publicData?.storeLogoUrl;
+  const rawBannerUrl = theme.bannerUrl || publicData?.storeBannerUrl;
+  const logoUrl = !logoError && rawLogoUrl ? resolveImageUrl(rawLogoUrl) : null;
+  const bannerUrl = !bannerError && rawBannerUrl ? resolveImageUrl(rawBannerUrl) : null;
   const announcement = theme.announcement;
   const sinpePhone = theme.sinpePhone || publicData?.sinpePhone;
   const sinpeName = theme.sinpeName || publicData?.sinpeName;
@@ -271,8 +276,30 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
         color: 'white', 
         textAlign: 'center' 
       }}>
-        {logoUrl && (
-          <img src={logoUrl} alt="Logo" style={{ height: '65px', maxHeight: '65px', marginBottom: '12px', borderRadius: '10px', objectFit: 'contain', backgroundColor: 'rgba(255,255,255,0.1)', padding: '4px' }} />
+        {logoUrl ? (
+          <img 
+            src={logoUrl} 
+            alt="Logo" 
+            onError={() => setLogoError(true)} 
+            style={{ height: '65px', maxHeight: '65px', marginBottom: '12px', borderRadius: '10px', objectFit: 'contain', backgroundColor: 'rgba(255,255,255,0.1)', padding: '4px' }} 
+          />
+        ) : (
+          <div style={{
+            width: '56px',
+            height: '56px',
+            borderRadius: '12px',
+            backgroundColor: 'rgba(255,255,255,0.2)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            margin: '0 auto 12px auto',
+            fontSize: '1.4rem',
+            fontWeight: '800',
+            color: 'white',
+            backdropFilter: 'blur(4px)'
+          }}>
+            {pageTitle?.charAt(0)?.toUpperCase() || '⚽'}
+          </div>
         )}
         <h1 style={{ margin: '0 0 6px 0', fontSize: '1.75rem', fontWeight: '800', letterSpacing: '-0.02em' }}>
           {pageTitle}
@@ -347,17 +374,53 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
                       type="button"
                       onClick={() => { setSelectedCourt(c); setSelectedSlot(''); }}
                       style={{
-                        padding: '14px 16px', borderRadius: '10px', textAlign: 'left', cursor: 'pointer',
+                        padding: '12px 14px', borderRadius: '10px', textAlign: 'left', cursor: 'pointer',
                         border: selectedCourt?.id === c.id ? `2px solid ${primaryColor}` : '1px solid #cbd5e1',
                         backgroundColor: selectedCourt?.id === c.id ? `${primaryColor}10` : 'white',
-                        transition: 'all 0.15s ease'
+                        transition: 'all 0.15s ease',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '14px'
                       }}
                     >
-                      <div style={{ fontWeight: '800', fontSize: '1.0rem', color: '#0f172a', marginBottom: '4px' }}>{c.name}</div>
-                      <div style={{ fontSize: '0.82rem', color: '#475569', display: 'flex', gap: '14px', flexWrap: 'wrap' }}>
-                        <span><Users size={13} style={{ display: 'inline', verticalAlign: 'middle' }}/> {c.teamSize} vs {c.teamSize}</span>
-                        <span><Clock size={13} style={{ display: 'inline', verticalAlign: 'middle' }}/> {c.durationMinutes} min</span>
-                        <span style={{ fontWeight: '800', color: primaryColor }}>₡{Number(c.basePrice).toLocaleString()}</span>
+                      {c.imageUrl ? (
+                        <img
+                          src={resolveImageUrl(c.imageUrl)}
+                          alt={c.name}
+                          onError={(e) => { (e.currentTarget as HTMLElement).style.display = 'none'; }}
+                          style={{
+                            width: '68px',
+                            height: '68px',
+                            borderRadius: '8px',
+                            objectFit: 'cover',
+                            flexShrink: 0,
+                            border: '1px solid #e2e8f0'
+                          }}
+                        />
+                      ) : (
+                        <div style={{
+                          width: '68px',
+                          height: '68px',
+                          borderRadius: '8px',
+                          backgroundColor: `${primaryColor}15`,
+                          color: primaryColor,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                          fontWeight: '800',
+                          fontSize: '1.3rem'
+                        }}>
+                          ⚽
+                        </div>
+                      )}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: '800', fontSize: '1.0rem', color: '#0f172a', marginBottom: '4px' }}>{c.name}</div>
+                        <div style={{ fontSize: '0.82rem', color: '#475569', display: 'flex', gap: '14px', flexWrap: 'wrap' }}>
+                          <span><Users size={13} style={{ display: 'inline', verticalAlign: 'middle' }}/> {c.teamSize} vs {c.teamSize}</span>
+                          <span><Clock size={13} style={{ display: 'inline', verticalAlign: 'middle' }}/> {c.durationMinutes} min</span>
+                          <span style={{ fontWeight: '800', color: primaryColor }}>₡{Number(c.basePrice).toLocaleString()}</span>
+                        </div>
                       </div>
                     </button>
                   ))

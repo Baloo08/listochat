@@ -127,11 +127,37 @@ export default function Bookings() {
   const [uploadingBanner, setUploadingBanner] = useState(false);
 
   // Specialists Team State
+  const defaultSpecialistPerDay: Record<number, { enabled: boolean; startHour: string; endHour: string; hasBreak?: boolean; breakStart?: string; breakEnd?: string }> = {
+    1: { enabled: true, startHour: '08:00', endHour: '17:00' },
+    2: { enabled: true, startHour: '08:00', endHour: '17:00' },
+    3: { enabled: true, startHour: '08:00', endHour: '17:00' },
+    4: { enabled: true, startHour: '08:00', endHour: '17:00' },
+    5: { enabled: true, startHour: '08:00', endHour: '17:00' },
+    6: { enabled: true, startHour: '08:00', endHour: '14:00' },
+    7: { enabled: false, startHour: '09:00', endHour: '13:00' },
+  };
+
   const [specialists, setSpecialists] = useState<any[]>([]);
   const [loadingSpecialists, setLoadingSpecialists] = useState(false);
   const [showSpecialistModal, setShowSpecialistModal] = useState(false);
   const [editingSpecialist, setEditingSpecialist] = useState<any | null>(null);
-  const [specialistForm, setSpecialistForm] = useState({ name: '', phone: '', specialty: '', accessPin: '' });
+  const [specialistForm, setSpecialistForm] = useState<{
+    name: string;
+    phone: string;
+    specialty: string;
+    accessPin: string;
+    active: boolean;
+    scheduleType: 'business_hours' | 'custom_per_day';
+    perDaySchedule: Record<number, { enabled: boolean; startHour: string; endHour: string; hasBreak?: boolean; breakStart?: string; breakEnd?: string }>;
+  }>({
+    name: '',
+    phone: '',
+    specialty: '',
+    accessPin: '',
+    active: true,
+    scheduleType: 'business_hours',
+    perDaySchedule: defaultSpecialistPerDay
+  });
 
   // Reminders Configuration State
   const [reminderConfig, setReminderConfig] = useState({
@@ -269,17 +295,46 @@ export default function Bookings() {
     e.preventDefault();
     if (!specialistForm.name) return;
     try {
+      const payload = {
+        name: specialistForm.name,
+        phone: specialistForm.phone,
+        specialty: specialistForm.specialty,
+        accessPin: specialistForm.accessPin,
+        active: specialistForm.active,
+        scheduleType: specialistForm.scheduleType,
+        scheduleConfig: {
+          perDaySchedule: specialistForm.perDaySchedule
+        }
+      };
+
       if (editingSpecialist) {
-        await api.put(`/api/specialists/${editingSpecialist.id}`, specialistForm);
+        await api.put(`/api/specialists/${editingSpecialist.id}`, payload);
       } else {
-        await api.post('/api/specialists', specialistForm);
+        await api.post('/api/specialists', payload);
       }
       setShowSpecialistModal(false);
       setEditingSpecialist(null);
-      setSpecialistForm({ name: '', phone: '', specialty: '', accessPin: '' });
+      setSpecialistForm({
+        name: '',
+        phone: '',
+        specialty: '',
+        accessPin: '',
+        active: true,
+        scheduleType: 'business_hours',
+        perDaySchedule: defaultSpecialistPerDay
+      });
       fetchSpecialists();
     } catch (e) {
       alert('Error al guardar colaborador');
+    }
+  };
+
+  const handleToggleSpecialistActive = async (s: any) => {
+    try {
+      await api.put(`/api/specialists/${s.id}`, { active: s.active === false });
+      fetchSpecialists();
+    } catch (err) {
+      alert('Error al cambiar estado del colaborador');
     }
   };
 
@@ -1769,7 +1824,15 @@ export default function Bookings() {
             <button
               onClick={() => {
                 setEditingSpecialist(null);
-                setSpecialistForm({ name: '', phone: '', specialty: '', accessPin: '' });
+                setSpecialistForm({
+                  name: '',
+                  phone: '',
+                  specialty: '',
+                  accessPin: '',
+                  active: true,
+                  scheduleType: 'business_hours',
+                  perDaySchedule: defaultSpecialistPerDay
+                });
                 setShowSpecialistModal(true);
               }}
               style={{ padding: '8px 14px', backgroundColor: '#0284c7', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem' }}
@@ -1790,47 +1853,93 @@ export default function Bookings() {
               </p>
             </div>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '14px' }}>
-              {specialists.map(s => (
-                <div key={s.id} style={{ backgroundColor: 'var(--surface)', borderRadius: '12px', padding: '16px', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                  <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
-                      <div>
-                        <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 'bold' }}>{s.name}</h4>
-                        <span style={{ fontSize: '0.78rem', color: '#0284c7', fontWeight: '600' }}>{s.specialty || 'Especialista General'}</span>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '14px' }}>
+              {specialists.map(s => {
+                const isActive = s.active !== false;
+                const isCustomSchedule = s.scheduleType === 'custom_per_day';
+                return (
+                  <div key={s.id} style={{ backgroundColor: 'var(--surface)', borderRadius: '12px', padding: '16px', border: `1px solid ${isActive ? 'var(--border)' : '#fde68a'}`, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', opacity: isActive ? 1 : 0.85 }}>
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 'bold' }}>{s.name}</h4>
+                            <span style={{
+                              padding: '2px 8px',
+                              borderRadius: '999px',
+                              fontSize: '0.7rem',
+                              fontWeight: 'bold',
+                              backgroundColor: isActive ? '#f0fdf4' : '#fef3c7',
+                              color: isActive ? '#166534' : '#92400e',
+                              border: `1px solid ${isActive ? '#bbf7d0' : '#fde68a'}`
+                            }}>
+                              {isActive ? '● Activo' : '⏸ En pausa'}
+                            </span>
+                          </div>
+                          <span style={{ fontSize: '0.78rem', color: '#0284c7', fontWeight: '600' }}>{s.specialty || 'Especialista General'}</span>
+                        </div>
+                        <span style={{ padding: '2px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 'bold', backgroundColor: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0' }}>
+                          PIN: {s.accessPin}
+                        </span>
                       </div>
-                      <span style={{ padding: '2px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 'bold', backgroundColor: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0' }}>
-                        PIN: {s.accessPin}
-                      </span>
+
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', margin: '8px 0' }}>
+                        <span style={{ fontSize: '0.72rem', padding: '3px 8px', borderRadius: '6px', backgroundColor: '#f1f5f9', color: '#475569', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <Clock size={12} /> {isCustomSchedule ? 'Horario específico por día' : 'Horario del negocio'}
+                        </span>
+                        {s.phone && (
+                          <span style={{ fontSize: '0.72rem', padding: '3px 8px', borderRadius: '6px', backgroundColor: '#f1f5f9', color: '#475569', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <Phone size={12} /> {s.phone}
+                          </span>
+                        )}
+                      </div>
                     </div>
 
-                    {s.phone && (
-                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '6px' }}>
-                        <Phone size={13} /> {s.phone}
-                      </div>
-                    )}
+                    <div style={{ display: 'flex', gap: '8px', marginTop: '14px', borderTop: '1px solid var(--border)', paddingTop: '10px' }}>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleSpecialistActive(s)}
+                        style={{
+                          padding: '6px 10px',
+                          backgroundColor: isActive ? '#fef2f2' : '#f0fdf4',
+                          color: isActive ? '#b91c1c' : '#166534',
+                          border: `1px solid ${isActive ? '#fecaca' : '#bbf7d0'}`,
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          fontSize: '0.78rem',
+                          fontWeight: '600'
+                        }}
+                      >
+                        {isActive ? 'Pausar' : 'Activar'}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setEditingSpecialist(s);
+                          setSpecialistForm({
+                            name: s.name,
+                            phone: s.phone || '',
+                            specialty: s.specialty || '',
+                            accessPin: s.accessPin || '',
+                            active: s.active !== false,
+                            scheduleType: s.scheduleType || 'business_hours',
+                            perDaySchedule: s.scheduleConfig?.perDaySchedule || defaultSpecialistPerDay
+                          });
+                          setShowSpecialistModal(true);
+                        }}
+                        style={{ flex: 1, padding: '6px', backgroundColor: 'transparent', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: '600' }}
+                      >
+                        Editar Horario y Datos
+                      </button>
+                      <button
+                        onClick={() => handleDeleteSpecialist(s.id)}
+                        style={{ padding: '6px 10px', backgroundColor: '#fee2e2', color: '#991b1b', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem' }}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
                   </div>
-
-                  <div style={{ display: 'flex', gap: '8px', marginTop: '14px', borderTop: '1px solid var(--border)', paddingTop: '10px' }}>
-                    <button
-                      onClick={() => {
-                        setEditingSpecialist(s);
-                        setSpecialistForm({ name: s.name, phone: s.phone || '', specialty: s.specialty || '', accessPin: s.accessPin });
-                        setShowSpecialistModal(true);
-                      }}
-                      style={{ flex: 1, padding: '6px', backgroundColor: 'transparent', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: '600' }}
-                    >
-                      Editar
-                    </button>
-                    <button
-                      onClick={() => handleDeleteSpecialist(s.id)}
-                      style={{ padding: '6px 10px', backgroundColor: '#fee2e2', color: '#991b1b', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem' }}
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
@@ -1923,12 +2032,21 @@ export default function Bookings() {
       {/* Specialist Modal */}
       {showSpecialistModal && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-          <div style={{ backgroundColor: 'var(--surface)', borderRadius: '12px', maxWidth: '420px', width: '100%', padding: '24px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }}>
-            <h3 style={{ margin: '0 0 16px 0', fontSize: '1.2rem', fontWeight: 'bold' }}>
-              {editingSpecialist ? 'Editar Colaborador' : 'Nuevo Colaborador'}
-            </h3>
+          <div style={{ backgroundColor: 'var(--surface)', borderRadius: '12px', maxWidth: '560px', width: '100%', maxHeight: '90vh', overflowY: 'auto', padding: '24px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid var(--border)', paddingBottom: '10px' }}>
+              <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'bold' }}>
+                {editingSpecialist ? 'Editar Colaborador' : 'Nuevo Colaborador'}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowSpecialistModal(false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
 
-            <form onSubmit={handleSaveSpecialist} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <form onSubmit={handleSaveSpecialist} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div>
                 <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '4px' }}>Nombre Completo *</label>
                 <input
@@ -1952,30 +2070,213 @@ export default function Bookings() {
                 />
               </div>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '4px' }}>Teléfono WhatsApp</label>
-                <input
-                  type="text"
-                  placeholder="50688888888"
-                  value={specialistForm.phone}
-                  onChange={(e) => setSpecialistForm(prev => ({ ...prev, phone: e.target.value }))}
-                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem', boxSizing: 'border-box' }}
-                />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '4px' }}>Teléfono WhatsApp</label>
+                  <input
+                    type="text"
+                    placeholder="50688888888"
+                    value={specialistForm.phone}
+                    onChange={(e) => setSpecialistForm(prev => ({ ...prev, phone: e.target.value }))}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem', boxSizing: 'border-box' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '4px' }}>PIN de Acceso (4 dígitos)</label>
+                  <input
+                    type="text"
+                    maxLength={6}
+                    placeholder="Ej: 1234 (auto si vacío)"
+                    value={specialistForm.accessPin}
+                    onChange={(e) => setSpecialistForm(prev => ({ ...prev, accessPin: e.target.value }))}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem', boxSizing: 'border-box' }}
+                  />
+                </div>
               </div>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '4px' }}>Código PIN de Acceso (4 dígitos)</label>
-                <input
-                  type="text"
-                  maxLength={6}
-                  placeholder="Ej: 1234 (se genera auto si está vacío)"
-                  value={specialistForm.accessPin}
-                  onChange={(e) => setSpecialistForm(prev => ({ ...prev, accessPin: e.target.value }))}
-                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem', boxSizing: 'border-box' }}
-                />
+              {/* Habilitar / Deshabilitar Temporalmente */}
+              <div style={{ backgroundColor: specialistForm.active ? '#f0fdf4' : '#fffbeb', border: `1px solid ${specialistForm.active ? '#bbf7d0' : '#fde68a'}`, borderRadius: '8px', padding: '12px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem', color: specialistForm.active ? '#166534' : '#92400e' }}>
+                  <input
+                    type="checkbox"
+                    checked={specialistForm.active}
+                    onChange={(e) => setSpecialistForm(prev => ({ ...prev, active: e.target.checked }))}
+                    style={{ width: '16px', height: '16px' }}
+                  />
+                  Habilitado para reservas de clientes
+                </label>
+                <p style={{ margin: '4px 0 0 24px', fontSize: '0.75rem', color: '#64748b' }}>
+                  {specialistForm.active
+                    ? 'El profesional aparecerá en la página de reservas y los clientes podrán agendar turnos con él.'
+                    : 'Pausado temporalmente: no se ofrecerán turnos con este colaborador ni aparecerá disponible en línea.'}
+                </p>
               </div>
 
-              <div style={{ marginTop: '10px', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+              {/* Modalidad de Horario */}
+              <div style={{ borderTop: '1px solid var(--border)', paddingTop: '12px' }}>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '8px' }}>
+                  Horario de Disponibilidad del Profesional
+                </label>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '12px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="scheduleType"
+                      value="business_hours"
+                      checked={specialistForm.scheduleType === 'business_hours'}
+                      onChange={() => setSpecialistForm(prev => ({ ...prev, scheduleType: 'business_hours' }))}
+                    />
+                    <span><strong>Igual a la jornada laboral del negocio</strong> (utiliza el horario general del local)</span>
+                  </label>
+
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="scheduleType"
+                      value="custom_per_day"
+                      checked={specialistForm.scheduleType === 'custom_per_day'}
+                      onChange={() => setSpecialistForm(prev => ({ ...prev, scheduleType: 'custom_per_day' }))}
+                    />
+                    <span><strong>Horario específico por Día</strong> (apertura, cierre y recesos propios)</span>
+                  </label>
+                </div>
+
+                {/* Si es custom_per_day, mostrar configuración de cada día */}
+                {specialistForm.scheduleType === 'custom_per_day' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', backgroundColor: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                    <span style={{ fontSize: '0.78rem', fontWeight: '600', color: '#475569' }}>
+                      Configura la jornada individual de este profesional:
+                    </span>
+                    {DAYS_OF_WEEK.map(day => {
+                      const dayCfg = specialistForm.perDaySchedule[day.num] || { enabled: false, startHour: '08:00', endHour: '17:00' };
+                      return (
+                        <div key={day.num} style={{ border: '1px solid var(--border)', borderRadius: '6px', padding: '8px 10px', backgroundColor: dayCfg.enabled ? 'white' : '#f1f5f9' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontWeight: '600', fontSize: '0.82rem' }}>
+                              <input
+                                type="checkbox"
+                                checked={dayCfg.enabled}
+                                onChange={(e) => {
+                                  const checked = e.target.checked;
+                                  setSpecialistForm(prev => ({
+                                    ...prev,
+                                    perDaySchedule: {
+                                      ...prev.perDaySchedule,
+                                      [day.num]: { ...dayCfg, enabled: checked }
+                                    }
+                                  }));
+                                }}
+                              />
+                              {day.name}
+                            </label>
+                            <span style={{ fontSize: '0.72rem', color: dayCfg.enabled ? '#166534' : '#94a3b8', fontWeight: 'bold' }}>
+                              {dayCfg.enabled ? 'Atiende' : 'No atiende'}
+                            </span>
+                          </div>
+
+                          {dayCfg.enabled && (
+                            <div style={{ marginTop: '6px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Horario:</span>
+                                <input
+                                  type="time"
+                                  value={dayCfg.startHour || '08:00'}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setSpecialistForm(prev => ({
+                                      ...prev,
+                                      perDaySchedule: {
+                                        ...prev.perDaySchedule,
+                                        [day.num]: { ...dayCfg, startHour: val }
+                                      }
+                                    }));
+                                  }}
+                                  style={{ padding: '3px 6px', borderRadius: '4px', border: '1px solid var(--border)', fontSize: '0.78rem' }}
+                                />
+                                <span style={{ fontSize: '0.75rem', color: '#64748b' }}>a</span>
+                                <input
+                                  type="time"
+                                  value={dayCfg.endHour || '17:00'}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setSpecialistForm(prev => ({
+                                      ...prev,
+                                      perDaySchedule: {
+                                        ...prev.perDaySchedule,
+                                        [day.num]: { ...dayCfg, endHour: val }
+                                      }
+                                    }));
+                                  }}
+                                  style={{ padding: '3px 6px', borderRadius: '4px', border: '1px solid var(--border)', fontSize: '0.78rem' }}
+                                />
+                              </div>
+
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '3px', fontSize: '0.72rem', color: '#64748b', cursor: 'pointer' }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={!!dayCfg.hasBreak}
+                                    onChange={(e) => {
+                                      const checked = e.target.checked;
+                                      setSpecialistForm(prev => ({
+                                        ...prev,
+                                        perDaySchedule: {
+                                          ...prev.perDaySchedule,
+                                          [day.num]: { ...dayCfg, hasBreak: checked, breakStart: dayCfg.breakStart || '12:00', breakEnd: dayCfg.breakEnd || '13:00' }
+                                        }
+                                      }));
+                                    }}
+                                  />
+                                  Receso
+                                </label>
+                                {dayCfg.hasBreak && (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                    <input
+                                      type="time"
+                                      value={dayCfg.breakStart || '12:00'}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        setSpecialistForm(prev => ({
+                                          ...prev,
+                                          perDaySchedule: {
+                                            ...prev.perDaySchedule,
+                                            [day.num]: { ...dayCfg, breakStart: val }
+                                          }
+                                        }));
+                                      }}
+                                      style={{ padding: '2px 4px', borderRadius: '4px', border: '1px solid var(--border)', fontSize: '0.72rem' }}
+                                    />
+                                    <span style={{ fontSize: '0.7rem', color: '#64748b' }}>-</span>
+                                    <input
+                                      type="time"
+                                      value={dayCfg.breakEnd || '13:00'}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        setSpecialistForm(prev => ({
+                                          ...prev,
+                                          perDaySchedule: {
+                                            ...prev.perDaySchedule,
+                                            [day.num]: { ...dayCfg, breakEnd: val }
+                                          }
+                                        }));
+                                      }}
+                                      style={{ padding: '2px 4px', borderRadius: '4px', border: '1px solid var(--border)', fontSize: '0.72rem' }}
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ marginTop: '10px', display: 'flex', justifyContent: 'flex-end', gap: '8px', borderTop: '1px solid var(--border)', paddingTop: '12px' }}>
                 <button
                   type="button"
                   onClick={() => setShowSpecialistModal(false)}

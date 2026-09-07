@@ -817,9 +817,16 @@ export async function runMigrations() {
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
     CREATE INDEX IF NOT EXISTS idx_tenant_billing_charges_tenant ON tenant_billing_charges(tenant_id, created_at);
-    CREATE INDEX IF NOT EXISTS idx_tenant_billing_charges_order ON tenant_billing_charges(tilopay_order_number);
+
+    -- Courts: image_url and schedule_config
+    ALTER TABLE courts ADD COLUMN IF NOT EXISTS image_url TEXT;
+    ALTER TABLE courts ADD COLUMN IF NOT EXISTS schedule_config JSONB;
+
+    -- Specialists: schedule_type and schedule_config
+    ALTER TABLE specialists ADD COLUMN IF NOT EXISTS schedule_type VARCHAR(50) DEFAULT 'business_hours';
+    ALTER TABLE specialists ADD COLUMN IF NOT EXISTS schedule_config JSONB;
   `).catch((err) => {
-    console.warn('[Migrations] Payment columns warning:', err?.message || err);
+    console.warn('[Migrations] Columns addition warning:', err?.message || err);
   });
 
   console.log('Migrations completed successfully.');

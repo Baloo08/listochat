@@ -33,6 +33,16 @@ router.get('/public/:slug/info', async (req, res) => {
     `, [tenant.id]);
 
     const s = storeSettingsRes.rows[0] || {};
+    let storeLogoUrl = s.store_logo_url || null;
+    let storeBannerUrl = s.store_banner_url || null;
+    if (!storeLogoUrl || !storeBannerUrl) {
+      const webRes = await query(`SELECT logo_url, banner_image_url FROM tenant_websites WHERE tenant_id = $1`, [tenant.id]);
+      if (webRes.rows[0]) {
+        if (!storeLogoUrl) storeLogoUrl = webRes.rows[0].logo_url || null;
+        if (!storeBannerUrl) storeBannerUrl = webRes.rows[0].banner_image_url || null;
+      }
+    }
+
     const courtsConfig = s.store_modules?.courtsConfig || {
       paymentMode: 'both',
       matchExpiryHours: 1,
@@ -53,8 +63,8 @@ router.get('/public/:slug/info', async (req, res) => {
       storeName: s.store_name || tenant.name,
       storeSlug: s.store_slug || tenant.slug,
       storeDescription: s.store_description || '',
-      storeLogoUrl: s.store_logo_url,
-      storeBannerUrl: s.store_banner_url,
+      storeLogoUrl,
+      storeBannerUrl,
       storeTheme: s.store_theme || {},
       sinpePhone: s.sinpe_phone,
       sinpeName: s.sinpe_name,

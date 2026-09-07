@@ -1,35 +1,42 @@
 import { query } from './pool.js';
+import { Specialist, SpecialistScheduleType, SpecialistScheduleConfig } from '../../shared/types.js';
 
-export interface Specialist {
-  id: string;
-  tenantId: string;
-  name: string;
-  phone?: string;
-  specialty?: string;
-  accessPin: string;
-  active: boolean;
-  createdAt: string;
+export { Specialist, SpecialistScheduleType, SpecialistScheduleConfig };
+
+function mapSpecialistRow(row: any): Specialist {
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    name: row.name,
+    phone: row.phone,
+    specialty: row.specialty,
+    accessPin: row.access_pin,
+    active: row.active !== false,
+    scheduleType: row.schedule_type || 'business_hours',
+    scheduleConfig: row.schedule_config ? (typeof row.schedule_config === 'string' ? JSON.parse(row.schedule_config) : row.schedule_config) : undefined,
+    createdAt: row.created_at
+  };
 }
 
 export async function getSpecialistsByTenant(tenantId: string): Promise<Specialist[]> {
   const res = await query(
-    'SELECT id, tenant_id as "tenantId", name, phone, specialty, access_pin as "accessPin", active, created_at as "createdAt" FROM specialists WHERE tenant_id = $1 ORDER BY name ASC',
+    'SELECT * FROM specialists WHERE tenant_id = $1 ORDER BY name ASC',
     [tenantId]
   );
-  return res.rows;
+  return res.rows.map(mapSpecialistRow);
 }
 
 export async function getSpecialistById(id: string): Promise<Specialist | null> {
   const res = await query(
-    'SELECT id, tenant_id as "tenantId", name, phone, specialty, access_pin as "accessPin", active, created_at as "createdAt" FROM specialists WHERE id = $1',
+    'SELECT * FROM specialists WHERE id = $1',
     [id]
   );
-  return res.rows[0] || null;
+  return res.rows[0] ? mapSpecialistRow(res.rows[0]) : null;
 }
 
 export async function getSpecialistByPin(pin: string, phone?: string, tenantId?: string): Promise<Specialist | null> {
   const cleanPin = (pin || '').trim();
-  let sql = 'SELECT id, tenant_id as "tenantId", name, phone, specialty, access_pin as "accessPin", active, created_at as "createdAt" FROM specialists WHERE TRIM(access_pin) = $1 AND active = TRUE';
+  let sql = 'SELECT * FROM specialists WHERE TRIM(access_pin) = $1 AND active = TRUE';
   const params: any[] = [cleanPin];
 
   if (tenantId) {
@@ -48,30 +55,57 @@ export async function getSpecialistByPin(pin: string, phone?: string, tenantId?:
   sql += ' LIMIT 2';
   const res = await query(sql, params);
 
-  // Si hay más de 1 resultado y no se especificó tenantId ni phone, hay colisión entre inquilinos
   if (res.rows.length > 1 && !tenantId && !phone) {
-    console.warn(`[getSpecialistByPin] Colisión de PIN ${cleanPin} detectada entre múltiples comercios. Se requiere teléfono o tenantId para desambiguar.`);
+    console.warn(`[getSpecialistByPin] Colisión de PIN ${cleanPin} detectada entre múltiples comercios.`);
     return null;
   }
 
-  return res.rows[0] || null;
+  return res.rows[0] ? mapSpecialistRow(res.rows[0]) : null;
 }
 
 export async function createSpecialist(tenantId: string, data: Partial<Specialist>): Promise<Specialist> {
   const pin = data.accessPin || Math.floor(1000 + Math.random() * 9000).toString();
+  const scheduleJson = data.scheduleConfig ? JSON.stringify(data.scheduleConfig) : null;
   const res = await query(
-    'INSERT INTO specialists (tenant_id, name, phone, specialty, access_pin, active) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, tenant_id as "tenantId", name, phone, specialty, access_pin as "accessPin", active, created_at as "createdAt"',
-    [tenantId, data.name || 'Colaborador', data.phone || '', data.specialty || 'General', pin, data.active !== false]
+    `INSERT INTO specialists (
+      tenant_id, name, phone, specialty, access_pin, active, schedule_type, schedule_config
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
+    RETURNING *`,
+    [
+      tenantId, data.name || 'Colaborador', data.phone || '', data.specialty || 'General',
+      pin, data.active !== false, data.scheduleType || 'business_hours', scheduleJson
+    ]
   );
-  return res.rows[0];
+  return mapSpecialistRow(res.rows[0]);
 }
 
 export async function updateSpecialist(id: string, tenantId: string, data: Partial<Specialist>): Promise<Specialist | null> {
+  const allowed: Record<string, string> = {
+    name: 'name',
+    phone: 'phone',
+    specialty: 'specialty',
+    accessPin: 'access_pin',
+    active: 'active',
+    scheduleType: 'schedule_type',
+    scheduleConfig: 'schedule_config'
+  };
+
+  const processedData: any = { ...data };
+  if (data.scheduleConfig !== undefined) {
+    processedData.scheduleConfig = data.scheduleConfig ? JSON.stringify(data.scheduleConfig) : null;
+  }
+
+  const entries = Object.entries(processedData).filter(([k, v]) => allowed[k] !== undefined && v !== undefined);
+  if (entries.length === 0) return getSpecialistById(id);
+
+  const setClause = entries.map(([k], i) => `${allowed[k]} = $${i + 3}`).join(', ');
+  const values = entries.map(e => e[1]);
+
   const res = await query(
-    'UPDATE specialists SET name = COALESCE($3, name), phone = COALESCE($4, phone), specialty = COALESCE($5, specialty), access_pin = COALESCE($6, access_pin), active = COALESCE($7, active) WHERE id = $1 AND tenant_id = $2 RETURNING id, tenant_id as "tenantId", name, phone, specialty, access_pin as "accessPin", active, created_at as "createdAt"',
-    [id, tenantId, data.name, data.phone, data.specialty, data.accessPin, data.active]
+    `UPDATE specialists SET ${setClause} WHERE id = $1 AND tenant_id = $2 RETURNING *`,
+    [id, tenantId, ...values]
   );
-  return res.rows[0] || null;
+  return res.rows[0] ? mapSpecialistRow(res.rows[0]) : null;
 }
 
 export async function deleteSpecialist(id: string, tenantId: string): Promise<boolean> {

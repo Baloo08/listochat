@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { loadGoogleFont, getFontFamilyCss } from '../client/utils/fontLoader';
+import { loadGoogleFont, getFontFamilyCss } from '../client/utils/fontLoader.js';
 import {
   ShoppingBag,
   Calendar,
@@ -24,7 +24,7 @@ import {
   FileText,
   Layers
 } from 'lucide-react';
-import { WhatsAppIcon, InstagramIcon, FacebookIcon, TikTokIcon } from '../client/components/WebsiteBuilder';
+import { WhatsAppIcon, InstagramIcon, FacebookIcon, TikTokIcon } from '../client/components/WebsiteBuilder.js';
 
 interface WebsitePublicViewProps {
   slug: string;
@@ -924,7 +924,7 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
 
       {/* 5. PRODUCTOS / MENÚ CON FILTROS Y PAGINACIÓN */}
       {website.showProductsSection !== false && featuredProducts && featuredProducts.length > 0 && (() => {
-        const productCategories = ['all', ...Array.from(new Set(featuredProducts.map((p: any) => p.category || 'General').filter(Boolean)))];
+        const productCategories: string[] = ['all', ...Array.from(new Set(featuredProducts.map((p: any) => p.category || 'General').filter(Boolean))) as string[]];
         const displayedProducts = activeProductCategory === 'all'
           ? featuredProducts
           : featuredProducts.filter((p: any) => (p.category || 'General') === activeProductCategory);
@@ -1120,7 +1120,7 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
 
       {/* 6. SERVICIOS COMPLETOS CON FILTRO DE CATEGORÍAS Y PAGINACIÓN */}
       {website.showServicesSection !== false && featuredServices && featuredServices.length > 0 && (() => {
-        const serviceCategories = ['all', ...Array.from(new Set(featuredServices.map((s: any) => s.category || 'General').filter(Boolean)))];
+        const serviceCategories: string[] = ['all', ...Array.from(new Set(featuredServices.map((s: any) => s.category || 'General').filter(Boolean))) as string[]];
         const displayedServices = activeServiceCategory === 'all'
           ? featuredServices
           : featuredServices.filter((s: any) => (s.category || 'General') === activeServiceCategory);

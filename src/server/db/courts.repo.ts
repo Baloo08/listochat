@@ -18,6 +18,8 @@ function mapCourtRow(row: any): Court {
     teamSize: row.team_size,
     maxExtraPlayers: row.max_extra_players,
     extraPlayerFee: Number(row.extra_player_fee),
+    imageUrl: row.image_url || undefined,
+    scheduleConfig: row.schedule_config ? (typeof row.schedule_config === 'string' ? JSON.parse(row.schedule_config) : row.schedule_config) : undefined,
     active: row.active,
     sortOrder: row.sort_order,
     createdAt: row.created_at
@@ -79,19 +81,21 @@ export async function getCourtById(id: string, tenantId: string) {
 }
 
 export async function createCourt(tenantId: string, data: Partial<Court>) {
+  const scheduleJson = data.scheduleConfig ? JSON.stringify(data.scheduleConfig) : null;
   const res = await query(`
     INSERT INTO courts (
       tenant_id, name, sport_type, custom_sport_type, description, surface, 
       is_indoor, has_lighting, base_price, price_display, duration_minutes, 
-      team_size, max_extra_players, extra_player_fee, active, sort_order
+      team_size, max_extra_players, extra_player_fee, active, sort_order,
+      image_url, schedule_config
     ) VALUES (
-      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
+      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
     ) RETURNING *
   `, [
     tenantId, data.name, data.sportType, data.customSportType, data.description,
     data.surface, data.isIndoor, data.hasLighting, data.basePrice, data.priceDisplay,
     data.durationMinutes, data.teamSize, data.maxExtraPlayers, data.extraPlayerFee,
-    data.active !== false, data.sortOrder || 0
+    data.active !== false, data.sortOrder || 0, data.imageUrl || null, scheduleJson
   ]);
   return mapCourtRow(res.rows[0]);
 }
@@ -103,10 +107,16 @@ export async function updateCourt(id: string, tenantId: string, data: Partial<Co
     hasLighting: 'has_lighting', basePrice: 'base_price', priceDisplay: 'price_display',
     durationMinutes: 'duration_minutes', teamSize: 'team_size', 
     maxExtraPlayers: 'max_extra_players', extraPlayerFee: 'extra_player_fee',
-    active: 'active', sortOrder: 'sort_order'
+    active: 'active', sortOrder: 'sort_order',
+    imageUrl: 'image_url', scheduleConfig: 'schedule_config'
   };
 
-  const entries = Object.entries(data).filter(([k, v]) => (allowed as any)[k] !== undefined && v !== undefined);
+  const processedData: any = { ...data };
+  if (data.scheduleConfig !== undefined) {
+    processedData.scheduleConfig = data.scheduleConfig ? JSON.stringify(data.scheduleConfig) : null;
+  }
+
+  const entries = Object.entries(processedData).filter(([k, v]) => (allowed as any)[k] !== undefined && v !== undefined);
   if (entries.length === 0) return getCourtById(id, tenantId);
 
   const setClause = entries.map(([k], i) => `${(allowed as any)[k]} = $${i + 3}`).join(', ');
@@ -368,21 +378,66 @@ export async function getAvailableSlots(tenantId: string, courtId: string, date:
     return [];
   }
 
-  // 1. Get tenant settings
-  const tRes = await query('SELECT settings_json FROM tenants WHERE id = $1', [tenantId]);
-  const settingsJson = tRes.rows[0]?.settings_json || {};
-  const scheduleSettings = settingsJson.scheduleSettings || { startHour: 8, endHour: 22, slotMinutes: 60 };
+  // 1. Fetch court to verify if active and check independent schedule config
+  const cRes = await query('SELECT * FROM courts WHERE id = $1 AND tenant_id = $2', [courtId, tenantId]);
+  const courtRow = cRes.rows[0];
+  if (!courtRow || courtRow.active === false) {
+    return [];
+  }
 
-  const startHour = Number(scheduleSettings.startHour) || 8;
-  const endHour = Number(scheduleSettings.endHour) || 22;
-  const slotMinutes = Number(scheduleSettings.slotMinutes) || 60;
+  const selectedDate = new Date(`${date}T00:00:00`);
+  const dayOfWeek = selectedDate.getDay() === 0 ? 7 : selectedDate.getDay(); // 1 = Lunes, 7 = Domingo
+
+  let startMinutes = 8 * 60;
+  let endMinutes = 22 * 60;
+  let slotMinutes = Number(courtRow.duration_minutes) || 60;
+
+  const courtSched: any = courtRow.schedule_config ? (
+    typeof courtRow.schedule_config === 'string' ? JSON.parse(courtRow.schedule_config) : courtRow.schedule_config
+  ) : null;
+
+  if (courtSched && courtSched.useBusinessHours === false) {
+    // Independent court hours configured!
+    if (Array.isArray(courtSched.daysEnabled) && !courtSched.daysEnabled.includes(dayOfWeek)) {
+      return []; // Closed this day of week
+    }
+
+    if (courtSched.perDaySchedule && courtSched.perDaySchedule[dayOfWeek]) {
+      const dayConf = courtSched.perDaySchedule[dayOfWeek];
+      if (dayConf.enabled === false) return [];
+      if (dayConf.startHour) {
+        const [sh, sm] = dayConf.startHour.split(':').map(Number);
+        startMinutes = (sh * 60) + sm;
+      }
+      if (dayConf.endHour) {
+        const [eh, em] = dayConf.endHour.split(':').map(Number);
+        endMinutes = (eh * 60) + em;
+      }
+    } else {
+      if (courtSched.startHour) {
+        const [sh, sm] = courtSched.startHour.split(':').map(Number);
+        startMinutes = (sh * 60) + sm;
+      }
+      if (courtSched.endHour) {
+        const [eh, em] = courtSched.endHour.split(':').map(Number);
+        endMinutes = (eh * 60) + em;
+      }
+    }
+  } else {
+    // Fallback to business hours from tenant scheduleSettings
+    const tRes = await query('SELECT settings_json FROM tenants WHERE id = $1', [tenantId]);
+    const settingsJson = tRes.rows[0]?.settings_json || {};
+    const scheduleSettings = settingsJson.scheduleSettings || { startHour: 8, endHour: 22, slotMinutes: 60 };
+
+    startMinutes = (Number(scheduleSettings.startHour) || 8) * 60;
+    endMinutes = (Number(scheduleSettings.endHour) || 22) * 60;
+  }
 
   // 2. Generate all slots for the day
   const slots: string[] = [];
-  let currentMinutes = startHour * 60;
-  const endMinutes = endHour * 60;
+  let currentMinutes = startMinutes;
 
-  while (currentMinutes < endMinutes) {
+  while (currentMinutes + slotMinutes <= endMinutes) {
     const h = Math.floor(currentMinutes / 60);
     const m = currentMinutes % 60;
     const timeStr = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:00`;
