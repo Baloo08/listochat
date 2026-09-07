@@ -36,6 +36,7 @@ export async function getSpecialistById(id: string): Promise<Specialist | null> 
 
 export async function getSpecialistByPin(pin: string, phone?: string, tenantId?: string): Promise<Specialist | null> {
   const cleanPin = (pin || '').trim();
+  if (!cleanPin) return null;
   let sql = 'SELECT * FROM specialists WHERE TRIM(access_pin) = $1 AND active = TRUE';
   const params: any[] = [cleanPin];
 

@@ -1978,6 +1978,8 @@ async function runMigrations() {
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE INDEX IF NOT EXISTS idx_specialists_tenant_pin ON specialists(tenant_id, access_pin);
+
     CREATE TABLE IF NOT EXISTS tenant_ai_usage (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
@@ -4295,6 +4297,7 @@ async function getSpecialistById(id) {
 }
 async function getSpecialistByPin(pin, phone, tenantId) {
   const cleanPin = (pin || "").trim();
+  if (!cleanPin) return null;
   let sql = "SELECT * FROM specialists WHERE TRIM(access_pin) = $1 AND active = TRUE";
   const params = [cleanPin];
   if (tenantId) {
@@ -12524,7 +12527,7 @@ async function resolveSpecialistFromRequest(req) {
     try {
       const decoded = jwt3.verify(rawToken, env.JWT_SECRET);
       if (decoded?.specialistId) {
-        const res = await query("SELECT * FROM specialists WHERE id = $1", [decoded.specialistId]);
+        const res = await query("SELECT * FROM specialists WHERE id = $1 AND active = TRUE", [decoded.specialistId]);
         if (res.rows[0]) {
           return {
             id: res.rows[0].id,
@@ -12541,10 +12544,58 @@ async function resolveSpecialistFromRequest(req) {
   }
   const pin = req.headers["x-specialist-pin"] || req.body?.pin || req.query?.pin;
   if (pin) {
-    return await getSpecialistByPin(pin);
+    let tenantId = req.headers["x-tenant-id"] || req.query?.tenantId;
+    const tenantSlug = req.headers["x-tenant-slug"] || req.query?.tenantSlug;
+    if (!tenantId && tenantSlug) {
+      const tenant = await getTenantBySlug(String(tenantSlug).toLowerCase().trim());
+      if (tenant) tenantId = tenant.id;
+    }
+    return await getSpecialistByPin(pin, void 0, tenantId);
   }
   return null;
 }
+router24.get("/portal/info/:slug", async (req, res) => {
+  try {
+    const rawSlug = (req.params.slug || "").toLowerCase().trim();
+    if (!rawSlug) {
+      res.status(400).json({ error: "Identificador de negocio requerido" });
+      return;
+    }
+    const tenant = await getTenantBySlug(rawSlug);
+    if (!tenant || !tenant.active) {
+      res.status(404).json({ error: "Negocio no encontrado o inactivo" });
+      return;
+    }
+    let businessName = tenant.name;
+    let logoUrl = null;
+    let primaryColor = "#0284c7";
+    try {
+      const storeRes = await query("SELECT store_name, store_logo_url, store_theme FROM store_settings WHERE tenant_id = $1", [tenant.id]);
+      if (storeRes.rows[0]) {
+        const store = storeRes.rows[0];
+        if (store.store_name) businessName = store.store_name;
+        if (store.store_logo_url) logoUrl = store.store_logo_url;
+        if (store.store_theme) {
+          const theme = typeof store.store_theme === "string" ? JSON.parse(store.store_theme) : store.store_theme;
+          if (theme?.primaryColor) primaryColor = theme.primaryColor;
+          if (!logoUrl && theme?.logoUrl) logoUrl = theme.logoUrl;
+        }
+      }
+    } catch (e) {
+    }
+    res.json({
+      success: true,
+      tenantId: tenant.id,
+      tenantSlug: tenant.slug,
+      businessName,
+      logoUrl,
+      primaryColor
+    });
+  } catch (error) {
+    console.error("Error fetching specialist portal info:", error);
+    res.status(500).json({ error: "Error al obtener informaci\xF3n del negocio" });
+  }
+});
 router24.post("/portal/login", specialistPortalLoginLimiter, async (req, res) => {
   try {
     const { pin, phone, tenantSlug } = req.body;
@@ -12552,21 +12603,31 @@ router24.post("/portal/login", specialistPortalLoginLimiter, async (req, res) =>
       res.status(400).json({ error: "PIN requerido" });
       return;
     }
+    let targetTenant = null;
     let targetTenantId;
     if (tenantSlug) {
-      const targetTenant = await getTenantBySlug(String(tenantSlug).toLowerCase().trim());
-      if (targetTenant) targetTenantId = targetTenant.id;
+      const cleanSlug = String(tenantSlug).toLowerCase().trim();
+      targetTenant = await getTenantBySlug(cleanSlug);
+      if (!targetTenant || !targetTenant.active) {
+        res.status(404).json({ error: "El negocio especificado no existe o est\xE1 inactivo" });
+        return;
+      }
+      targetTenantId = targetTenant.id;
     }
     const specialist = await getSpecialistByPin(pin, phone, targetTenantId);
     if (!specialist) {
-      res.status(401).json({ error: "C\xF3digo PIN no encontrado o requiere n\xFAmero de tel\xE9fono para validar el comercio." });
+      if (targetTenantId) {
+        res.status(401).json({ error: "C\xF3digo PIN no v\xE1lido para este negocio" });
+      } else {
+        res.status(401).json({ error: "C\xF3digo PIN no encontrado o requiere n\xFAmero de tel\xE9fono para validar el comercio." });
+      }
       return;
     }
-    const tenant = await getTenantById(specialist.tenantId);
+    const tenant = targetTenant || await getTenantById(specialist.tenantId);
     const token = jwt3.sign(
       { specialistId: specialist.id, tenantId: specialist.tenantId, role: "specialist" },
       env.JWT_SECRET,
-      { expiresIn: "24h" }
+      { expiresIn: "30d" }
     );
     res.json({
       success: true,
@@ -12574,6 +12635,7 @@ router24.post("/portal/login", specialistPortalLoginLimiter, async (req, res) =>
       specialist: {
         id: specialist.id,
         tenantId: specialist.tenantId,
+        tenantSlug: tenant?.slug || tenantSlug || "",
         name: specialist.name,
         phone: specialist.phone,
         specialty: specialist.specialty,
@@ -12582,6 +12644,7 @@ router24.post("/portal/login", specialistPortalLoginLimiter, async (req, res) =>
       }
     });
   } catch (error) {
+    console.error("Specialist login error:", error);
     res.status(500).json({ error: "Error al iniciar sesi\xF3n" });
   }
 });

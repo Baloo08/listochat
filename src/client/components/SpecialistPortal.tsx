@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, User, Phone, CheckCircle2, Clock, Play, Check, Search, Filter, DollarSign, LogOut, MessageSquare, AlertCircle, Sparkles } from 'lucide-react';
+import { Calendar, User, Phone, CheckCircle2, Clock, Play, Check, Search, Filter, DollarSign, LogOut, MessageSquare, AlertCircle, Sparkles, Building2 } from 'lucide-react';
 
 interface SpecialistInfo {
   id: string;
   tenantId: string;
+  tenantSlug?: string;
   name: string;
   phone?: string;
   specialty?: string;
@@ -25,12 +26,23 @@ interface AppointmentItem {
   createdAt?: string;
 }
 
+interface BusinessInfo {
+  tenantId: string;
+  tenantSlug: string;
+  businessName: string;
+  logoUrl?: string | null;
+  primaryColor?: string;
+}
+
 export default function SpecialistPortal({ tenantSlug }: { tenantSlug?: string }) {
   const [specialist, setSpecialist] = useState<SpecialistInfo | null>(null);
   const [pin, setPin] = useState('');
   const [phone, setPhone] = useState('');
+  const [customSlugInput, setCustomSlugInput] = useState('');
   const [loginError, setLoginError] = useState('');
   const [loggingIn, setLoggingIn] = useState(false);
+  const [businessInfo, setBusinessInfo] = useState<BusinessInfo | null>(null);
+  const [loadingInfo, setLoadingInfo] = useState(false);
 
   const [activeTab, setActiveTab] = useState<'active' | 'history'>('active');
   const [appointments, setAppointments] = useState<AppointmentItem[]>([]);
@@ -44,39 +56,112 @@ export default function SpecialistPortal({ tenantSlug }: { tenantSlug?: string }
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
 
-  // Auto-restore session from localStorage
+  // 1. Fetch public business branding if slug exists
   useEffect(() => {
-    const saved = localStorage.getItem('betico_specialist_session');
-    if (saved) {
+    const slugToFetch = tenantSlug || customSlugInput || localStorage.getItem('betico_specialist_tenant_slug');
+    if (!slugToFetch) return;
+
+    let cancelled = false;
+    const fetchInfo = async () => {
+      setLoadingInfo(true);
       try {
-        const parsed = JSON.parse(saved);
+        const res = await fetch(`/api/specialists/portal/info/${encodeURIComponent(slugToFetch.trim())}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (!cancelled && data.success) {
+            setBusinessInfo(data);
+          }
+        }
+      } catch (err) {
+        console.warn('Error fetching business info for portal:', err);
+      } finally {
+        if (!cancelled) setLoadingInfo(false);
+      }
+    };
+
+    fetchInfo();
+    return () => { cancelled = true; };
+  }, [tenantSlug, customSlugInput]);
+
+  // 2. Auto-restore session from localStorage & check 1-click URL pin
+  useEffect(() => {
+    const savedSession = localStorage.getItem('betico_specialist_session');
+    const savedToken = localStorage.getItem('betico_specialist_token');
+
+    if (savedSession && savedToken) {
+      try {
+        const parsed = JSON.parse(savedSession);
         setSpecialist(parsed);
       } catch (e) {}
     }
+
+    // Check URL parameters for 1-click login: ?pin=1234
+    const urlParams = new URLSearchParams(window.location.search);
+    const pinFromUrl = urlParams.get('pin');
+    if (pinFromUrl && !specialist) {
+      const cleanPin = pinFromUrl.trim();
+      setPin(cleanPin);
+      handleLogin(cleanPin);
+    }
   }, []);
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const getAuthHeaders = (): Record<string, string> => {
+    const token = localStorage.getItem('betico_specialist_token');
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json'
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    if (specialist?.accessPin) {
+      headers['x-specialist-pin'] = specialist.accessPin;
+    }
+    const currentSlug = tenantSlug || specialist?.tenantSlug || localStorage.getItem('betico_specialist_tenant_slug');
+    if (currentSlug) {
+      headers['x-tenant-slug'] = currentSlug;
+    }
+    return headers;
+  };
+
+  const handleLogin = async (pinOverride?: string) => {
+    const pinToUse = (typeof pinOverride === 'string' ? pinOverride : pin).trim();
     setLoginError('');
-    if (!pin.trim()) {
+    if (!pinToUse) {
       setLoginError('Por favor ingresa tu código PIN');
       return;
     }
+
+    const currentSlug = (tenantSlug || customSlugInput || localStorage.getItem('betico_specialist_tenant_slug') || '').toLowerCase().trim();
 
     setLoggingIn(true);
     try {
       const res = await fetch('/api/specialists/portal/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin: pin.trim(), phone: phone.trim() })
+        body: JSON.stringify({
+          pin: pinToUse,
+          phone: phone.trim() || undefined,
+          tenantSlug: currentSlug || undefined
+        })
       });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'PIN incorrecto');
+        throw new Error(data.error || 'PIN incorrecto o no autorizado');
       }
 
       setSpecialist(data.specialist);
+      if (data.token) {
+        localStorage.setItem('betico_specialist_token', data.token);
+      }
       localStorage.setItem('betico_specialist_session', JSON.stringify(data.specialist));
+      if (data.specialist.tenantSlug || currentSlug) {
+        localStorage.setItem('betico_specialist_tenant_slug', data.specialist.tenantSlug || currentSlug);
+      }
+
+      // Clean ?pin= from address bar for security
+      if (window.location.search.includes('pin=')) {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
     } catch (err: any) {
       setLoginError(err.message || 'Error al iniciar sesión');
     } finally {
@@ -86,9 +171,11 @@ export default function SpecialistPortal({ tenantSlug }: { tenantSlug?: string }
 
   const handleLogout = () => {
     localStorage.removeItem('betico_specialist_session');
+    localStorage.removeItem('betico_specialist_token');
     setSpecialist(null);
     setPin('');
     setAppointments([]);
+    setHistoryAppts([]);
   };
 
   const loadActiveAppointments = async () => {
@@ -96,14 +183,14 @@ export default function SpecialistPortal({ tenantSlug }: { tenantSlug?: string }
     setLoadingAppts(true);
     try {
       const res = await fetch('/api/specialists/portal/appointments', {
-        headers: { 'x-specialist-pin': specialist.accessPin }
+        headers: getAuthHeaders()
       });
       const data = await res.json();
       if (Array.isArray(data.appointments)) {
         setAppointments(data.appointments);
       }
     } catch (e) {
-      console.error(e);
+      console.error('Error loading active appointments:', e);
     } finally {
       setLoadingAppts(false);
     }
@@ -138,7 +225,7 @@ export default function SpecialistPortal({ tenantSlug }: { tenantSlug?: string }
       if (to) url += `${from ? '&' : '?'}toDate=${to}`;
 
       const res = await fetch(url, {
-        headers: { 'x-specialist-pin': specialist.accessPin }
+        headers: getAuthHeaders()
       });
       const data = await res.json();
       if (Array.isArray(data.appointments)) {
@@ -149,7 +236,7 @@ export default function SpecialistPortal({ tenantSlug }: { tenantSlug?: string }
         });
       }
     } catch (e) {
-      console.error(e);
+      console.error('Error loading history appointments:', e);
     } finally {
       setLoadingHistory(false);
     }
@@ -170,17 +257,17 @@ export default function SpecialistPortal({ tenantSlug }: { tenantSlug?: string }
     try {
       await fetch(`/api/specialists/portal/appointments/${apptId}/status`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-specialist-pin': specialist.accessPin
-        },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ status })
       });
       loadActiveAppointments();
     } catch (e) {
-      alert('Error al actualizar cita');
+      alert('Error al actualizar estado de la cita');
     }
   };
+
+  const primaryColor = businessInfo?.primaryColor || '#0284c7';
+  const brandName = businessInfo?.businessName || specialist?.businessName || (effectiveSlug ? `Comercio (${effectiveSlug})` : 'Tu Negocio');
 
   // LOGIN SCREEN
   if (!specialist) {
@@ -190,41 +277,86 @@ export default function SpecialistPortal({ tenantSlug }: { tenantSlug?: string }
         backgroundColor: '#0f172a', padding: '20px', fontFamily: 'system-ui, -apple-system, sans-serif'
       }}>
         <div style={{
-          backgroundColor: '#ffffff', borderRadius: '20px', padding: '36px 28px',
-          maxWidth: '400px', width: '100%', boxShadow: '0 20px 40px rgba(0,0,0,0.3)',
+          backgroundColor: '#ffffff', borderRadius: '24px', padding: '36px 28px',
+          maxWidth: '420px', width: '100%', boxShadow: '0 20px 40px rgba(0,0,0,0.3)',
           border: '1px solid #e2e8f0'
         }}>
           <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-            <div style={{
-              width: '64px', height: '64px', backgroundColor: '#e0f2fe',
-              borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              margin: '0 auto 12px auto', border: '1px solid #bae6fd'
-            }}>
-              <Calendar size={32} color="#0284c7" />
-            </div>
-            <h1 style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#0f172a', margin: '0 0 4px 0' }}>
-              Portal de Especialistas
+            {businessInfo?.logoUrl ? (
+              <img
+                src={businessInfo.logoUrl}
+                alt={brandName}
+                style={{
+                  maxHeight: '64px',
+                  maxWidth: '180px',
+                  objectFit: 'contain',
+                  margin: '0 auto 14px auto',
+                  display: 'block'
+                }}
+              />
+            ) : (
+              <div style={{
+                width: '64px', height: '64px', backgroundColor: `${primaryColor}15`,
+                borderRadius: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                margin: '0 auto 12px auto', border: `1px solid ${primaryColor}30`
+              }}>
+                <Calendar size={32} color={primaryColor} />
+              </div>
+            )}
+
+            <h1 style={{ fontSize: '1.4rem', fontWeight: '800', color: '#0f172a', margin: '0 0 4px 0' }}>
+              Portal de Colaboradores
             </h1>
-            <p style={{ margin: 0, color: '#64748b', fontSize: '0.85rem' }}>
-              Ingresa con tu código PIN asignado
+            <p style={{ margin: 0, color: '#64748b', fontSize: '0.88rem' }}>
+              {brandName}
             </p>
+
+            {effectiveSlug && (
+              <div style={{
+                display: 'inline-flex', alignItems: 'center', gap: '4px',
+                marginTop: '8px', padding: '3px 10px', backgroundColor: '#f1f5f9',
+                borderRadius: '999px', fontSize: '0.75rem', color: '#475569', fontWeight: '600'
+              }}>
+                <Building2 size={12} color="#64748b" /> {effectiveSlug}
+              </div>
+            )}
           </div>
 
           {loginError && (
             <div style={{
               backgroundColor: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b',
-              padding: '10px 14px', borderRadius: '8px', marginBottom: '16px', fontSize: '0.85rem',
+              padding: '10px 14px', borderRadius: '10px', marginBottom: '16px', fontSize: '0.85rem',
               display: 'flex', alignItems: 'center', gap: '8px'
             }}>
-              <AlertCircle size={16} />
+              <AlertCircle size={16} style={{ flexShrink: 0 }} />
               <span>{loginError}</span>
             </div>
           )}
 
-          <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <form onSubmit={(e) => { e.preventDefault(); handleLogin(); }} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            
+            {/* If accessed via generic /especialista without slug, allow specifying business */}
+            {!tenantSlug && !localStorage.getItem('betico_specialist_tenant_slug') && (
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', color: '#334155', marginBottom: '4px' }}>
+                  Identificador del Negocio (Slug)
+                </label>
+                <input
+                  type="text"
+                  placeholder="ej: barberia-elite"
+                  value={customSlugInput}
+                  onChange={(e) => setCustomSlugInput(e.target.value.toLowerCase().trim())}
+                  style={{
+                    width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1',
+                    fontSize: '0.9rem', boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+            )}
+
             <div>
               <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', color: '#334155', marginBottom: '4px' }}>
-                Código PIN (4 dígitos)
+                Código PIN de Acceso
               </label>
               <input
                 type="password"
@@ -235,7 +367,7 @@ export default function SpecialistPortal({ tenantSlug }: { tenantSlug?: string }
                 onChange={(e) => setPin(e.target.value)}
                 style={{
                   width: '100%', padding: '12px', textAlign: 'center', letterSpacing: '6px',
-                  fontSize: '1.3rem', fontWeight: 'bold', borderRadius: '8px', border: '1px solid #cbd5e1',
+                  fontSize: '1.4rem', fontWeight: 'bold', borderRadius: '10px', border: '1px solid #cbd5e1',
                   boxSizing: 'border-box'
                 }}
               />
@@ -243,7 +375,7 @@ export default function SpecialistPortal({ tenantSlug }: { tenantSlug?: string }
 
             <div>
               <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', color: '#334155', marginBottom: '4px' }}>
-                Teléfono (Opcional si compartes PIN)
+                Teléfono (Opcional)
               </label>
               <input
                 type="text"
@@ -261,12 +393,13 @@ export default function SpecialistPortal({ tenantSlug }: { tenantSlug?: string }
               type="submit"
               disabled={loggingIn}
               style={{
-                width: '100%', padding: '12px', backgroundColor: '#0284c7', color: 'white',
-                border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.95rem',
-                cursor: loggingIn ? 'not-allowed' : 'pointer', marginTop: '6px'
+                width: '100%', padding: '13px', backgroundColor: primaryColor, color: 'white',
+                border: 'none', borderRadius: '10px', fontWeight: 'bold', fontSize: '0.95rem',
+                cursor: loggingIn ? 'not-allowed' : 'pointer', marginTop: '6px',
+                boxShadow: `0 4px 12px ${primaryColor}40`, transition: 'all 0.2s'
               }}
             >
-              {loggingIn ? 'Accediendo...' : 'Ingresar al Portal'}
+              {loggingIn ? 'Validando credenciales...' : 'Ingresar a mi Agenda'}
             </button>
           </form>
         </div>
@@ -281,13 +414,22 @@ export default function SpecialistPortal({ tenantSlug }: { tenantSlug?: string }
       {/* Top Header */}
       <header style={{ backgroundColor: '#ffffff', borderBottom: '1px solid #e2e8f0', padding: '14px 20px', position: 'sticky', top: 0, zIndex: 30 }}>
         <div style={{ maxWidth: '800px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <div style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '600' }}>{specialist.businessName}</div>
-            <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <User size={18} color="#0284c7" /> {specialist.name}
-              <span style={{ fontSize: '0.75rem', backgroundColor: '#e0f2fe', color: '#0369a1', padding: '2px 8px', borderRadius: '12px' }}>
-                {specialist.specialty || 'Especialista'}
-              </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            {businessInfo?.logoUrl && (
+              <img
+                src={businessInfo.logoUrl}
+                alt={specialist.businessName}
+                style={{ height: '36px', width: 'auto', objectFit: 'contain' }}
+              />
+            )}
+            <div>
+              <div style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '600' }}>{specialist.businessName}</div>
+              <div style={{ fontSize: '1.05rem', fontWeight: 'bold', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <User size={18} color={primaryColor} /> {specialist.name}
+                <span style={{ fontSize: '0.72rem', backgroundColor: `${primaryColor}15`, color: primaryColor, padding: '2px 8px', borderRadius: '12px', fontWeight: '700' }}>
+                  {specialist.specialty || 'Especialista'}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -312,7 +454,7 @@ export default function SpecialistPortal({ tenantSlug }: { tenantSlug?: string }
             style={{
               flex: 1, padding: '9px', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.85rem',
               cursor: 'pointer', backgroundColor: activeTab === 'active' ? '#ffffff' : 'transparent',
-              color: activeTab === 'active' ? '#0284c7' : '#64748b', boxShadow: activeTab === 'active' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+              color: activeTab === 'active' ? primaryColor : '#64748b', boxShadow: activeTab === 'active' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
             }}
           >
             📋 Citas Asignadas ({appointments.length})
@@ -322,7 +464,7 @@ export default function SpecialistPortal({ tenantSlug }: { tenantSlug?: string }
             style={{
               flex: 1, padding: '9px', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.85rem',
               cursor: 'pointer', backgroundColor: activeTab === 'history' ? '#ffffff' : 'transparent',
-              color: activeTab === 'history' ? '#0284c7' : '#64748b', boxShadow: activeTab === 'history' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+              color: activeTab === 'history' ? primaryColor : '#64748b', boxShadow: activeTab === 'history' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
             }}
           >
             📊 Historial de Atenciones
@@ -347,7 +489,7 @@ export default function SpecialistPortal({ tenantSlug }: { tenantSlug?: string }
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                 {appointments.map(a => {
-                  const cleanPhone = (a.whatsapp || '').replace(/\\D/g, '');
+                  const cleanPhone = (a.whatsapp || '').replace(/\D/g, '');
                   const waUrl = `https://wa.me/${cleanPhone}?text=Hola%20${encodeURIComponent(a.name)},%20te%20escribo%20de%20${encodeURIComponent(specialist.businessName)}%20sobre%20tu%20cita%20de%20${encodeURIComponent(a.service)}.`;
 
                   return (
@@ -360,7 +502,7 @@ export default function SpecialistPortal({ tenantSlug }: { tenantSlug?: string }
                           <h4 style={{ margin: '0 0 4px 0', fontSize: '1.05rem', fontWeight: 'bold', color: '#0f172a' }}>
                             {a.name}
                           </h4>
-                          <span style={{ fontSize: '0.8rem', color: '#0284c7', fontWeight: 'bold' }}>
+                          <span style={{ fontSize: '0.8rem', color: primaryColor, fontWeight: 'bold' }}>
                             {a.service}
                           </span>
                         </div>
@@ -415,7 +557,7 @@ export default function SpecialistPortal({ tenantSlug }: { tenantSlug?: string }
                           <button
                             onClick={() => handleUpdateStatus(a.id, 'in_progress')}
                             style={{
-                              flex: 1, padding: '8px', backgroundColor: '#0284c7', color: 'white',
+                              flex: 1, padding: '8px', backgroundColor: primaryColor, color: 'white',
                               border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.8rem',
                               cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px'
                             }}
@@ -457,7 +599,7 @@ export default function SpecialistPortal({ tenantSlug }: { tenantSlug?: string }
                     style={{
                       padding: '6px 12px', borderRadius: '6px', border: '1px solid #cbd5e1',
                       fontSize: '0.78rem', fontWeight: 'bold', cursor: 'pointer',
-                      backgroundColor: dateFilter === mode ? '#0284c7' : '#f8fafc',
+                      backgroundColor: dateFilter === mode ? primaryColor : '#f8fafc',
                       color: dateFilter === mode ? '#ffffff' : '#475569'
                     }}
                   >

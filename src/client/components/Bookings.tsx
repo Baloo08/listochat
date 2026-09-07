@@ -51,6 +51,8 @@ export default function Bookings() {
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [copiedBookingLink, setCopiedBookingLink] = useState(false);
   const [copiedCalendarLink, setCopiedCalendarLink] = useState(false);
+  const [copiedSpecialistLink, setCopiedSpecialistLink] = useState(false);
+  const [copiedPinSpecialistId, setCopiedPinSpecialistId] = useState<string | null>(null);
   const [tenantSlug, setTenantSlug] = useState('clinicasonrisas');
   const [calendarToken, setCalendarToken] = useState('');
 
@@ -1809,36 +1811,83 @@ export default function Bookings() {
           
           {/* Header & Portal Link */}
           <div style={{ backgroundColor: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '12px', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <div style={{ width: '40px', height: '40px', backgroundColor: '#e0f2fe', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Users size={20} color="#0284c7" />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ width: '42px', height: '42px', backgroundColor: '#e0f2fe', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Users size={22} color="#0284c7" />
               </div>
               <div>
-                <h3 style={{ margin: '0 0 2px 0', fontSize: '1rem', fontWeight: 'bold', color: '#0369a1' }}>Portal Móvil de Especialistas</h3>
-                <p style={{ margin: 0, fontSize: '0.8rem', color: '#0284c7' }}>
-                  Tus colaboradores pueden ingresar a <strong>{window.location.origin}/especialista</strong> con su código PIN asignado.
+                <h3 style={{ margin: '0 0 4px 0', fontSize: '1.05rem', fontWeight: 'bold', color: '#0369a1' }}>Portal Móvil de Especialistas</h3>
+                <p style={{ margin: 0, fontSize: '0.84rem', color: '#0369a1', lineHeight: '1.4' }}>
+                  Enlace exclusivo para tus colaboradores: <strong style={{ textDecoration: 'underline' }}>{window.location.origin}/especialista/{tenantSlug}</strong>
                 </p>
               </div>
             </div>
 
-            <button
-              onClick={() => {
-                setEditingSpecialist(null);
-                setSpecialistForm({
-                  name: '',
-                  phone: '',
-                  specialty: '',
-                  accessPin: '',
-                  active: true,
-                  scheduleType: 'business_hours',
-                  perDaySchedule: defaultSpecialistPerDay
-                });
-                setShowSpecialistModal(true);
-              }}
-              style={{ padding: '8px 14px', backgroundColor: '#0284c7', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem' }}
-            >
-              <Plus size={16} /> Agregar Colaborador
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(`${window.location.origin}/especialista/${tenantSlug}`);
+                  setCopiedSpecialistLink(true);
+                  setTimeout(() => setCopiedSpecialistLink(false), 2500);
+                }}
+                style={{
+                  padding: '8px 14px',
+                  backgroundColor: copiedSpecialistLink ? '#dcfce7' : '#ffffff',
+                  color: copiedSpecialistLink ? '#166534' : '#0369a1',
+                  border: `1px solid ${copiedSpecialistLink ? '#86efac' : '#bae6fd'}`,
+                  borderRadius: '8px',
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  fontSize: '0.84rem'
+                }}
+              >
+                <Copy size={15} /> {copiedSpecialistLink ? '¡Enlace Copiado!' : 'Copiar Enlace'}
+              </button>
+
+              <a
+                href={`${window.location.origin}/especialista/${tenantSlug}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  padding: '8px 12px',
+                  backgroundColor: '#f0f9ff',
+                  color: '#0284c7',
+                  border: '1px solid #bae6fd',
+                  borderRadius: '8px',
+                  fontWeight: '600',
+                  textDecoration: 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  fontSize: '0.84rem'
+                }}
+              >
+                <ExternalLink size={14} /> Abrir
+              </a>
+
+              <button
+                onClick={() => {
+                  setEditingSpecialist(null);
+                  setSpecialistForm({
+                    name: '',
+                    phone: '',
+                    specialty: '',
+                    accessPin: '',
+                    active: true,
+                    scheduleType: 'business_hours',
+                    perDaySchedule: defaultSpecialistPerDay
+                  });
+                  setShowSpecialistModal(true);
+                }}
+                style={{ padding: '8px 14px', backgroundColor: '#0284c7', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.84rem' }}
+              >
+                <Plus size={16} /> Agregar Colaborador
+              </button>
+            </div>
           </div>
 
           {/* Specialists List */}
@@ -1895,7 +1944,63 @@ export default function Bookings() {
                       </div>
                     </div>
 
-                    <div style={{ display: 'flex', gap: '8px', marginTop: '14px', borderTop: '1px solid var(--border)', paddingTop: '10px' }}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '14px', borderTop: '1px solid var(--border)', paddingTop: '10px' }}>
+                      {/* WhatsApp Share Button */}
+                      {s.phone && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const cleanPhone = String(s.phone).replace(/\D/g, '');
+                            const directUrl = `${window.location.origin}/especialista/${tenantSlug}?pin=${s.accessPin}`;
+                            const msg = `👋 Hola *${s.name}*, aquí tienes tu enlace directo para gestionar tus citas y agenda en nuestro negocio:\n\n🔗 ${directUrl}\n\n🔑 Tu código PIN de acceso: *${s.accessPin}*`;
+                            window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`, '_blank');
+                          }}
+                          style={{
+                            padding: '6px 10px',
+                            backgroundColor: '#25D366',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            fontSize: '0.78rem',
+                            fontWeight: 'bold',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}
+                          title="Compartir link y PIN por WhatsApp"
+                        >
+                          <MessageCircle size={13} /> WhatsApp
+                        </button>
+                      )}
+
+                      {/* Copy Link With PIN */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const directUrl = `${window.location.origin}/especialista/${tenantSlug}?pin=${s.accessPin}`;
+                          navigator.clipboard.writeText(directUrl);
+                          setCopiedPinSpecialistId(s.id);
+                          setTimeout(() => setCopiedPinSpecialistId(null), 2500);
+                        }}
+                        style={{
+                          padding: '6px 10px',
+                          backgroundColor: copiedPinSpecialistId === s.id ? '#dcfce7' : '#f1f5f9',
+                          color: copiedPinSpecialistId === s.id ? '#166534' : '#475569',
+                          border: `1px solid ${copiedPinSpecialistId === s.id ? '#86efac' : '#cbd5e1'}`,
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          fontSize: '0.78rem',
+                          fontWeight: '600',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px'
+                        }}
+                        title="Copiar enlace con PIN para auto-ingreso"
+                      >
+                        <Copy size={13} /> {copiedPinSpecialistId === s.id ? '¡Copiado!' : 'Link con PIN'}
+                      </button>
+
                       <button
                         type="button"
                         onClick={() => handleToggleSpecialistActive(s)}
@@ -1926,9 +2031,9 @@ export default function Bookings() {
                           });
                           setShowSpecialistModal(true);
                         }}
-                        style={{ flex: 1, padding: '6px', backgroundColor: 'transparent', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: '600' }}
+                        style={{ flex: 1, padding: '6px', backgroundColor: 'transparent', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: '600', minWidth: '80px' }}
                       >
-                        Editar Horario y Datos
+                        Editar
                       </button>
                       <button
                         onClick={() => handleDeleteSpecialist(s.id)}

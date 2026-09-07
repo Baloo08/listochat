@@ -493,6 +493,8 @@ export async function runMigrations() {
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE INDEX IF NOT EXISTS idx_specialists_tenant_pin ON specialists(tenant_id, access_pin);
+
     CREATE TABLE IF NOT EXISTS tenant_ai_usage (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,

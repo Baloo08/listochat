@@ -169,9 +169,11 @@ export default function App() {
     return <DriverPortal tenantSlug={slug || undefined} />;
   }
 
-  if (pathname.startsWith('/especialista') || pathname.startsWith('/colaborador')) {
-    const slug = pathname.replace('/especialista/', '').replace('/especialista', '').replace('/colaborador/', '').replace('/colaborador', '').split('/')[0];
-    return <SpecialistPortal tenantSlug={slug || undefined} />;
+  if (pathname.startsWith('/especialista') || pathname.startsWith('/colaborador') || pathname.startsWith('/equipo')) {
+    const cleanPath = pathname.split('?')[0].split('#')[0];
+    const match = cleanPath.match(/^\/(?:especialista|colaborador|equipo)(?:\/([a-zA-Z0-9_-]+))?/i);
+    const slug = (match && match[1]) ? match[1].toLowerCase().trim() : undefined;
+    return <SpecialistPortal tenantSlug={slug} />;
   }
 
   if (pathname.startsWith('/kds')) {

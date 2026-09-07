@@ -29,7 +29,7 @@ async function resolveSpecialistFromRequest(req: any) {
     try {
       const decoded = jwt.verify(rawToken, env.JWT_SECRET) as any;
       if (decoded?.specialistId) {
-        const res = await query('SELECT * FROM specialists WHERE id = $1', [decoded.specialistId]);
+        const res = await query('SELECT * FROM specialists WHERE id = $1 AND active = TRUE', [decoded.specialistId]);
         if (res.rows[0]) {
           return {
             id: res.rows[0].id,
@@ -48,11 +48,65 @@ async function resolveSpecialistFromRequest(req: any) {
 
   const pin = (req.headers['x-specialist-pin'] || req.body?.pin || req.query?.pin) as string;
   if (pin) {
-    return await getSpecialistByPin(pin);
+    let tenantId = (req.headers['x-tenant-id'] || req.query?.tenantId) as string | undefined;
+    const tenantSlug = (req.headers['x-tenant-slug'] || req.query?.tenantSlug) as string | undefined;
+    if (!tenantId && tenantSlug) {
+      const tenant = await getTenantBySlug(String(tenantSlug).toLowerCase().trim());
+      if (tenant) tenantId = tenant.id;
+    }
+    return await getSpecialistByPin(pin, undefined, tenantId);
   }
 
   return null;
 }
+
+// 0. Public Specialist Portal Info (Brand, Logo, Colors by Slug)
+router.get('/portal/info/:slug', async (req, res) => {
+  try {
+    const rawSlug = (req.params.slug || '').toLowerCase().trim();
+    if (!rawSlug) {
+      res.status(400).json({ error: 'Identificador de negocio requerido' });
+      return;
+    }
+    const tenant = await getTenantBySlug(rawSlug);
+    if (!tenant || !tenant.active) {
+      res.status(404).json({ error: 'Negocio no encontrado o inactivo' });
+      return;
+    }
+
+    let businessName = tenant.name;
+    let logoUrl: string | null = null;
+    let primaryColor = '#0284c7';
+
+    try {
+      const storeRes = await query('SELECT store_name, store_logo_url, store_theme FROM store_settings WHERE tenant_id = $1', [tenant.id]);
+      if (storeRes.rows[0]) {
+        const store = storeRes.rows[0];
+        if (store.store_name) businessName = store.store_name;
+        if (store.store_logo_url) logoUrl = store.store_logo_url;
+        if (store.store_theme) {
+          const theme = typeof store.store_theme === 'string' ? JSON.parse(store.store_theme) : store.store_theme;
+          if (theme?.primaryColor) primaryColor = theme.primaryColor;
+          if (!logoUrl && theme?.logoUrl) logoUrl = theme.logoUrl;
+        }
+      }
+    } catch (e) {
+      // ignore optional theme lookup failure
+    }
+
+    res.json({
+      success: true,
+      tenantId: tenant.id,
+      tenantSlug: tenant.slug,
+      businessName,
+      logoUrl,
+      primaryColor
+    });
+  } catch (error) {
+    console.error('Error fetching specialist portal info:', error);
+    res.status(500).json({ error: 'Error al obtener información del negocio' });
+  }
+});
 
 // 1. Public Specialist Portal (Login & View by PIN / JWT)
 router.post('/portal/login', specialistPortalLoginLimiter, async (req, res) => {
@@ -62,22 +116,36 @@ router.post('/portal/login', specialistPortalLoginLimiter, async (req, res) => {
       res.status(400).json({ error: 'PIN requerido' });
       return;
     }
+
+    let targetTenant: any = null;
     let targetTenantId: string | undefined;
+
     if (tenantSlug) {
-      const targetTenant = await getTenantBySlug(String(tenantSlug).toLowerCase().trim());
-      if (targetTenant) targetTenantId = targetTenant.id;
+      const cleanSlug = String(tenantSlug).toLowerCase().trim();
+      targetTenant = await getTenantBySlug(cleanSlug);
+      if (!targetTenant || !targetTenant.active) {
+        res.status(404).json({ error: 'El negocio especificado no existe o está inactivo' });
+        return;
+      }
+      targetTenantId = targetTenant.id;
     }
+
     const specialist = await getSpecialistByPin(pin, phone, targetTenantId);
     if (!specialist) {
-      res.status(401).json({ error: 'Código PIN no encontrado o requiere número de teléfono para validar el comercio.' });
+      if (targetTenantId) {
+        res.status(401).json({ error: 'Código PIN no válido para este negocio' });
+      } else {
+        res.status(401).json({ error: 'Código PIN no encontrado o requiere número de teléfono para validar el comercio.' });
+      }
       return;
     }
-    const tenant = await getTenantById(specialist.tenantId);
+
+    const tenant = targetTenant || (await getTenantById(specialist.tenantId));
 
     const token = jwt.sign(
       { specialistId: specialist.id, tenantId: specialist.tenantId, role: 'specialist' },
       env.JWT_SECRET,
-      { expiresIn: '24h' }
+      { expiresIn: '30d' }
     );
 
     res.json({
@@ -86,6 +154,7 @@ router.post('/portal/login', specialistPortalLoginLimiter, async (req, res) => {
       specialist: {
         id: specialist.id,
         tenantId: specialist.tenantId,
+        tenantSlug: tenant?.slug || tenantSlug || '',
         name: specialist.name,
         phone: specialist.phone,
         specialty: specialist.specialty,
@@ -94,6 +163,7 @@ router.post('/portal/login', specialistPortalLoginLimiter, async (req, res) => {
       }
     });
   } catch (error) {
+    console.error('Specialist login error:', error);
     res.status(500).json({ error: 'Error al iniciar sesión' });
   }
 });
