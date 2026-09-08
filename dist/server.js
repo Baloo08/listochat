@@ -1213,6 +1213,7 @@ function mapRecordRow(row) {
     emergencyContactPhone: row.emergency_contact_phone || "",
     notes: row.notes || "",
     metadata: row.metadata ? typeof row.metadata === "string" ? JSON.parse(row.metadata) : row.metadata : {},
+    billingInfo: row.metadata ? (typeof row.metadata === "string" ? JSON.parse(row.metadata) : row.metadata)?.billingInfo || void 0 : void 0,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     totalAppointments: row.total_appointments ? Number(row.total_appointments) : void 0,
@@ -1341,7 +1342,10 @@ async function createRecord(tenantId, data) {
     data.emergencyContactName || null,
     data.emergencyContactPhone || null,
     data.notes || null,
-    data.metadata ? JSON.stringify(data.metadata) : "{}"
+    JSON.stringify({
+      ...data.metadata || {},
+      ...data.billingInfo ? { billingInfo: data.billingInfo } : {}
+    })
   ]);
   const newRecord = mapRecordRow(res.rows[0]);
   if (newRecord.phone) {
@@ -1387,9 +1391,23 @@ async function updateRecord(id, tenantId, data) {
       params.push(data[key] === "" ? null : data[key]);
     }
   }
-  if (data.metadata !== void 0) {
+  if (data.billingInfo !== void 0 || data.metadata !== void 0) {
+    const existing = await query("SELECT metadata FROM customer_records WHERE id = $1 AND tenant_id = $2", [id, tenantId]);
+    let currentMeta = existing.rows[0]?.metadata || {};
+    if (typeof currentMeta === "string") {
+      try {
+        currentMeta = JSON.parse(currentMeta);
+      } catch (_) {
+        currentMeta = {};
+      }
+    }
+    const mergedMeta = {
+      ...currentMeta,
+      ...data.metadata || {},
+      ...data.billingInfo !== void 0 ? { billingInfo: data.billingInfo } : {}
+    };
     updates.push(`metadata = $${pIdx++}`);
-    params.push(JSON.stringify(data.metadata));
+    params.push(JSON.stringify(mergedMeta));
   }
   const sql = `
     UPDATE customer_records
@@ -2702,7 +2720,7 @@ async function runMigrations() {
       tax_id_number VARCHAR(20),
       legal_name VARCHAR(255),
       commercial_name VARCHAR(255),
-      economic_activity_code VARCHAR(10),
+      economic_activity_code VARCHAR(30),
       branch_code VARCHAR(3) DEFAULT '001',
       pos_code VARCHAR(5) DEFAULT '00001',
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -2742,6 +2760,12 @@ async function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_vouchers_tenant ON electronic_vouchers(tenant_id);
     CREATE INDEX IF NOT EXISTS idx_vouchers_key ON electronic_vouchers(numeric_key);
     CREATE INDEX IF NOT EXISTS idx_vouchers_status ON electronic_vouchers(status);
+
+    -- Electronic Invoicing and Billing Info Extension
+    ALTER TABLE tenant_almendro_configs ALTER COLUMN economic_activity_code TYPE VARCHAR(30);
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS billing_info JSONB;
+    ALTER TABLE appointments ADD COLUMN IF NOT EXISTS billing_info JSONB;
+    ALTER TABLE court_bookings ADD COLUMN IF NOT EXISTS billing_info JSONB;
   `).catch((err) => {
     console.warn("[Migrations] Columns addition warning:", err?.message || err);
   });
@@ -4919,6 +4943,7 @@ function mapBookingRow(row) {
     skillLevel: row.skill_level,
     notes: row.notes,
     status: row.status,
+    billingInfo: row.billing_info,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -5062,11 +5087,11 @@ async function createBooking(tenantId, data) {
         team_b_name, team_b_captain, team_b_phone, team_b_players,
         team_b_extra_players, team_b_paid, total_price, price_per_team,
         payment_mode, sport_type, skill_level, notes, status,
-        payment_method, payment_reference
+        payment_method, payment_reference, billing_info
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
         $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27,
-        $28, $29
+        $28, $29, $30
       ) RETURNING *
     `, [
       tenantId,
@@ -5097,7 +5122,8 @@ async function createBooking(tenantId, data) {
       data.notes,
       data.status || "confirmed",
       data.paymentMethod || "cash",
-      data.paymentReference || null
+      data.paymentReference || null,
+      data.billingInfo ? JSON.stringify(data.billingInfo) : null
     ]);
     const booking = mapBookingRow(res.rows[0]);
     if (data.courtId) {
@@ -5146,12 +5172,13 @@ async function updateBooking(id, tenantId, data) {
     sportType: "sport_type",
     skillLevel: "skill_level",
     notes: "notes",
-    status: "status"
+    status: "status",
+    billingInfo: "billing_info"
   };
   const entries = Object.entries(data).filter(([k, v]) => allowed[k] !== void 0 && v !== void 0);
   if (entries.length === 0) return getBookingById(id, tenantId);
-  const setClause = entries.map(([k], i) => `${allowed[k]} = $${i + 3}`).join(", ");
-  const values = entries.map((e) => e[1]);
+  const setClause = entries.map(([k], i) => k === "billingInfo" ? `${allowed[k]} = $${i + 3}::jsonb` : `${allowed[k]} = $${i + 3}`).join(", ");
+  const values = entries.map(([k, v]) => k === "billingInfo" && v ? JSON.stringify(v) : v);
   const res = await query(`
     UPDATE court_bookings SET ${setClause}, updated_at = CURRENT_TIMESTAMP 
     WHERE id = $1 AND tenant_id = $2 RETURNING *
@@ -5979,6 +6006,7 @@ async function getAppointmentsByTenant(tenantId) {
            date, time, amount, status, details, vehicle_model as "vehicleModel",
            selected_variables as "selectedVariables", specialist_id as "specialistId",
            record_id as "recordId",
+           billing_info as "billingInfo",
            payment_method as "paymentMethod", payment_status as "paymentStatus",
            payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
            tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
@@ -5995,6 +6023,7 @@ async function getAppointmentById(id, tenantId) {
            date, time, amount, status, details, vehicle_model as "vehicleModel",
            selected_variables as "selectedVariables", specialist_id as "specialistId",
            record_id as "recordId",
+           billing_info as "billingInfo",
            payment_method as "paymentMethod", payment_status as "paymentStatus",
            payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
            tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
@@ -6010,6 +6039,7 @@ async function getAppointmentByIdUnsafeForWebhook(id) {
            date, time, amount, status, details, vehicle_model as "vehicleModel",
            selected_variables as "selectedVariables", specialist_id as "specialistId",
            record_id as "recordId",
+           billing_info as "billingInfo",
            payment_method as "paymentMethod", payment_status as "paymentStatus",
            payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
            tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
@@ -6023,12 +6053,13 @@ async function createAppointment(tenantId, data) {
   const result = await query(`
     INSERT INTO appointments (
       tenant_id, name, whatsapp, service, date, time, amount, status, details, vehicle_model, selected_variables, specialist_id,
-      record_id, payment_method, payment_status, payment_reference, payment_proof_url, tilopay_transaction_id, tilopay_auth_code
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+      record_id, payment_method, payment_status, payment_reference, payment_proof_url, tilopay_transaction_id, tilopay_auth_code, billing_info
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
     RETURNING id, tenant_id as "tenantId", name, whatsapp, service, 
            date, time, amount, status, details, vehicle_model as "vehicleModel",
            selected_variables as "selectedVariables", specialist_id as "specialistId",
            record_id as "recordId",
+           billing_info as "billingInfo",
            payment_method as "paymentMethod", payment_status as "paymentStatus",
            payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
            tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
@@ -6052,7 +6083,8 @@ async function createAppointment(tenantId, data) {
     data.paymentReference || null,
     data.paymentProofUrl || null,
     data.tilopayTransactionId || null,
-    data.tilopayAuthCode || null
+    data.tilopayAuthCode || null,
+    data.billingInfo ? JSON.stringify(data.billingInfo) : null
   ]);
   return result.rows[0];
 }
@@ -6078,14 +6110,20 @@ async function updateAppointment(id, tenantId, data) {
     "paymentReference",
     "paymentProofUrl",
     "tilopayTransactionId",
-    "tilopayAuthCode"
+    "tilopayAuthCode",
+    "billingInfo"
   ];
   for (const field of fields) {
     if (data[field] !== void 0) {
       const dbField = field.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
-      updates.push(`${dbField} = $${paramIdx++}`);
-      const val = field === "selectedVariables" ? JSON.stringify(data[field]) : data[field];
-      params.push(val);
+      if (field === "billingInfo") {
+        updates.push(`${dbField} = $${paramIdx++}::jsonb`);
+        params.push(data[field] ? JSON.stringify(data[field]) : null);
+      } else {
+        updates.push(`${dbField} = $${paramIdx++}`);
+        const val = field === "selectedVariables" ? JSON.stringify(data[field]) : data[field];
+        params.push(val);
+      }
     }
   }
   if (updates.length === 0) return getAppointmentById(id, tenantId);
@@ -6096,6 +6134,7 @@ async function updateAppointment(id, tenantId, data) {
            date, time, amount, status, details, vehicle_model as "vehicleModel",
            selected_variables as "selectedVariables", specialist_id as "specialistId",
            record_id as "recordId",
+           billing_info as "billingInfo",
            payment_method as "paymentMethod", payment_status as "paymentStatus",
            payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
            tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
@@ -6337,6 +6376,7 @@ async function getOrdersByTenant(tenantId, filters) {
            o.payment_reference as "paymentReference", o.payment_proof_url as "paymentProofUrl", o.payment_proof_status as "paymentProofStatus", o.notes, o.delivery_method as "deliveryMethod",
            o.consumption_mode as "consumptionMode", o.table_number as "tableNumber", o.customer_location as "customerLocation",
            o.chat_message_id as "chatMessageId", o.driver_id as "driverId", o.waze_url as "wazeUrl",
+           o.billing_info as "billingInfo",
            o.branch_id as "branchId", b.name as "branchName",
            o.created_at as "createdAt", o.updated_at as "updatedAt",
            COALESCE(
@@ -6375,6 +6415,7 @@ async function getOrderById(id, tenantId) {
            payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl", payment_proof_status as "paymentProofStatus", notes, delivery_method as "deliveryMethod",
            consumption_mode as "consumptionMode", table_number as "tableNumber", customer_location as "customerLocation",
            chat_message_id as "chatMessageId", driver_id as "driverId", waze_url as "wazeUrl",
+           billing_info as "billingInfo",
            created_at as "createdAt", updated_at as "updatedAt"
     FROM orders 
     WHERE id = $1 AND tenant_id = $2
@@ -6395,8 +6436,8 @@ async function createOrder(tenantId, data, items, dbClient) {
     INSERT INTO orders (
       tenant_id, customer_name, customer_phone, customer_email, customer_address, whatsapp_jid,
       source, subtotal, delivery_fee, discount, total, currency, status, payment_method, 
-      payment_status, payment_reference, payment_proof_url, payment_proof_status, notes, delivery_method, consumption_mode, table_number, customer_location, stock_deducted
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
+      payment_status, payment_reference, payment_proof_url, payment_proof_status, notes, delivery_method, consumption_mode, table_number, customer_location, stock_deducted, billing_info
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
     RETURNING id
   `;
   const params = [
@@ -6423,7 +6464,8 @@ async function createOrder(tenantId, data, items, dbClient) {
     data.consumptionMode || null,
     data.tableNumber || null,
     data.customerLocation ? JSON.stringify(data.customerLocation) : null,
-    Boolean(data.stockDeducted)
+    Boolean(data.stockDeducted),
+    data.billingInfo ? JSON.stringify(data.billingInfo) : null
   ];
   const client = dbClient || await getClient();
   const isInternalClient = !dbClient;
@@ -6485,14 +6527,15 @@ async function updateOrder(id, tenantId, data) {
     "deliveryMethod",
     "deliveryFee",
     "total",
-    "customerAddress"
+    "customerAddress",
+    "billingInfo"
   ];
   for (const field of fields) {
     if (data[field] !== void 0) {
       const dbField = field.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
-      if (field === "customerLocation") {
+      if (field === "customerLocation" || field === "billingInfo") {
         updates.push(`${dbField} = $${paramIdx++}::jsonb`);
-        params.push(JSON.stringify(data[field]));
+        params.push(data[field] ? JSON.stringify(data[field]) : null);
       } else {
         updates.push(`${dbField} = $${paramIdx++}`);
         params.push(data[field]);
@@ -9089,7 +9132,7 @@ router5.get("/public/:slug/available-slots", async (req, res) => {
 });
 router5.post("/public/:slug/book", async (req, res) => {
   try {
-    const { serviceName, serviceId, date, time, customerName, customerPhone, details, vehicleModel, customAnswers, specialistId } = req.body;
+    const { serviceName, serviceId, date, time, customerName, customerPhone, details, vehicleModel, customAnswers, specialistId, billingInfo } = req.body;
     if (!serviceName || !date || !time || !customerName || !customerPhone) {
       res.status(400).json({ error: "Servicio, fecha, hora, nombre y WhatsApp son requeridos" });
       return;
@@ -9172,7 +9215,8 @@ router5.post("/public/:slug/book", async (req, res) => {
       paymentReference: req.body.paymentReference || null,
       details: combinedDetails,
       vehicleModel: vehicleModel || "",
-      selectedVariables: req.body.selectedVariables
+      selectedVariables: req.body.selectedVariables,
+      billingInfo: billingInfo?.requiresInvoice ? billingInfo : void 0
     });
     if (matchedRecordId) {
       try {
@@ -10793,6 +10837,7 @@ router16.post("/:slug/checkout", async (req, res) => {
       paymentReference,
       paymentProofUrl,
       deliveryMethod = "pickup",
+      billingInfo,
       notes
     } = req.body;
     if (!customerName || !customerPhone || items.length === 0) {
@@ -10883,6 +10928,7 @@ router16.post("/:slug/checkout", async (req, res) => {
         paymentProofStatus: paymentProofUrl ? "received" : "pending",
         deliveryMethod: isDelivery ? "delivery" : "pickup",
         notes: notes || null,
+        billingInfo: billingInfo?.requiresInvoice ? billingInfo : null,
         status: "pedido_recibido"
       },
       formattedItems
@@ -13837,7 +13883,8 @@ router28.post("/public/:slug/book", async (req, res) => {
     const booking = await createBooking(tenant.id, {
       ...data,
       paymentMethod: paymentMethod === "solo_reserva" ? "pending" : paymentMethod,
-      paymentReference: data.paymentReference || null
+      paymentReference: data.paymentReference || null,
+      billingInfo: data.billingInfo?.requiresInvoice ? data.billingInfo : void 0
     });
     let paymentSession = null;
     if (isOnlinePayment && booking.totalPrice > 0) {
@@ -15984,7 +16031,35 @@ var AlmendroService = class {
 };
 
 // src/server/routes/almendro.routes.ts
+init_records_repo();
 var router34 = Router34();
+router34.get("/public-config/:slug", async (req, res) => {
+  try {
+    const { slug } = req.params;
+    const module = req.query.module || "store";
+    const tenant = await getTenantBySlug(slug);
+    if (!tenant) {
+      res.status(404).json({ error: "Comercio no encontrado" });
+      return;
+    }
+    const config = await getTenantAlmendroConfig(tenant.id);
+    if (!config || !config.isEnabled || !config.isConfigured) {
+      res.json({ isEnabled: false, defaultDocType: "04" });
+      return;
+    }
+    let isModuleEnabled = false;
+    if (module === "store") isModuleEnabled = Boolean(config.moduleToggles.storeEnabled);
+    else if (module === "bookings") isModuleEnabled = Boolean(config.moduleToggles.bookingsEnabled);
+    else if (module === "courts") isModuleEnabled = Boolean(config.moduleToggles.courtsEnabled);
+    else if (module === "restaurant") isModuleEnabled = Boolean(config.moduleToggles.restaurantEnabled);
+    res.json({
+      isEnabled: isModuleEnabled,
+      defaultDocType: config.defaultDocType || "04"
+    });
+  } catch (err) {
+    res.json({ isEnabled: false, defaultDocType: "04" });
+  }
+});
 router34.use(authenticateToken, tenantContext);
 router34.get("/config", async (req, res) => {
   try {
@@ -16102,6 +16177,117 @@ router34.get("/vouchers", async (req, res) => {
   } catch (error) {
     console.error("[AlmendroRoutes] Error al listar comprobantes:", error);
     res.status(500).json({ error: error.message });
+  }
+});
+router34.post("/emit-appointment-invoice/:appointmentId", async (req, res) => {
+  try {
+    const tenantId = req.tenantId;
+    const { appointmentId } = req.params;
+    const { docType, receiver, cabysCode, taxRateCode } = req.body;
+    const appointment = await getAppointmentById(appointmentId, tenantId);
+    if (!appointment) {
+      res.status(404).json({ error: "Cita no encontrada" });
+      return;
+    }
+    let patientRecord = null;
+    if (appointment.recordId) {
+      patientRecord = await getRecordById(appointment.recordId, tenantId);
+    }
+    const customerBilling = appointment.billingInfo || patientRecord?.metadata?.billingInfo;
+    const receiverIdType = receiver?.idType || customerBilling?.idType || (patientRecord?.identification ? "01" : void 0);
+    const receiverIdNumber = receiver?.idNumber || customerBilling?.idNumber || patientRecord?.identification || void 0;
+    const receiverName = receiver?.name || customerBilling?.legalName || patientRecord?.fullName || appointment.name;
+    const receiverEmail = receiver?.email || customerBilling?.email || patientRecord?.email || void 0;
+    const finalDocType = docType || (receiverIdNumber ? "01" : "04");
+    const unitPrice = Number(appointment.amount) || 0;
+    const result = await AlmendroService.emitVoucher(tenantId, {
+      docType: finalDocType,
+      appointmentId: appointment.id,
+      receiver: receiverIdNumber ? {
+        idType: receiverIdType,
+        idNumber: receiverIdNumber,
+        name: receiverName,
+        email: receiverEmail
+      } : void 0,
+      items: [
+        {
+          cabysCode: cabysCode || "8311100000000",
+          description: `Servicio: ${appointment.service}${appointment.vehicleModel ? ` (${appointment.vehicleModel})` : ""}`,
+          quantity: 1,
+          unitPrice,
+          taxRateCode: taxRateCode || "08"
+          // 13% IVA
+        }
+      ]
+    });
+    if (!result.success) {
+      res.status(400).json({ success: false, message: result.message });
+      return;
+    }
+    res.json({
+      success: true,
+      numericKey: result.numericKey,
+      pdfUrl: result.pdfUrl,
+      message: result.message
+    });
+  } catch (error) {
+    console.error("[AlmendroRoutes] Error emitiendo factura de cita:", error);
+    res.status(500).json({ error: error.message || "Error interno al emitir comprobante" });
+  }
+});
+router34.post("/emit-record-invoice/:recordId", async (req, res) => {
+  try {
+    const tenantId = req.tenantId;
+    const { recordId } = req.params;
+    const { docType, serviceName, amount, cabysCode, taxRateCode, receiver, notes } = req.body;
+    const record = await getRecordById(recordId, tenantId);
+    if (!record) {
+      res.status(404).json({ error: "Expediente no encontrado" });
+      return;
+    }
+    const patientBilling = record.metadata?.billingInfo;
+    const receiverIdType = receiver?.idType || patientBilling?.idType || "01";
+    const receiverIdNumber = receiver?.idNumber || patientBilling?.idNumber || record.identification || void 0;
+    const receiverName = receiver?.name || patientBilling?.legalName || record.fullName;
+    const receiverEmail = receiver?.email || patientBilling?.email || record.email || void 0;
+    const finalDocType = docType || (receiverIdNumber ? "01" : "04");
+    const unitPrice = Number(amount) || 0;
+    if (unitPrice <= 0) {
+      res.status(400).json({ error: "El monto a facturar debe ser mayor a 0" });
+      return;
+    }
+    const result = await AlmendroService.emitVoucher(tenantId, {
+      docType: finalDocType,
+      receiver: receiverIdNumber ? {
+        idType: receiverIdType,
+        idNumber: receiverIdNumber,
+        name: receiverName,
+        email: receiverEmail
+      } : void 0,
+      items: [
+        {
+          cabysCode: cabysCode || "8311100000000",
+          description: serviceName || notes || `Consulta / Atenci\xF3n M\xE9dica - ${record.fullName}`,
+          quantity: 1,
+          unitPrice,
+          taxRateCode: taxRateCode || "04"
+          // 4% IVA en salud o 13% general
+        }
+      ]
+    });
+    if (!result.success) {
+      res.status(400).json({ success: false, message: result.message });
+      return;
+    }
+    res.json({
+      success: true,
+      numericKey: result.numericKey,
+      pdfUrl: result.pdfUrl,
+      message: result.message
+    });
+  } catch (error) {
+    console.error("[AlmendroRoutes] Error emitiendo factura desde expediente:", error);
+    res.status(500).json({ error: error.message || "Error interno al emitir comprobante" });
   }
 });
 var almendro_routes_default = router34;

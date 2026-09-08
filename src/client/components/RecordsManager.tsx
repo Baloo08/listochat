@@ -3,7 +3,7 @@ import {
   FileText, User, Phone, Mail, MapPin, Calendar, Plus, Search, Filter,
   CheckCircle, AlertCircle, Edit, Trash2, Heart, Activity, Pill, ShieldAlert,
   Clock, MessageCircle, ExternalLink, X, Save, AlertTriangle, Eye, ChevronRight,
-  Stethoscope, Thermometer, Scale, ArrowUpRight
+  Stethoscope, Thermometer, Scale, ArrowUpRight, Receipt, Check, Copy
 } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
 import { CustomerRecord, RecordEntry, VitalSigns, ClientRecordType } from '../../shared/types';
@@ -46,9 +46,40 @@ export default function RecordsManager({ initialRecordId }: { initialRecordId?: 
     currentMedications: '',
     emergencyContactName: '',
     emergencyContactPhone: '',
-    notes: ''
+    notes: '',
+    billingInfo: {
+      requiresInvoice: false,
+      idType: '01',
+      idNumber: '',
+      legalName: '',
+      email: ''
+    }
   });
   const [savingRecord, setSavingRecord] = useState(false);
+
+  // Facturación Electrónica Modal State (Almendro / Hacienda)
+  const [showFacturarModal, setShowFacturarModal] = useState(false);
+  const [facturarData, setFacturarData] = useState({
+    serviceName: '',
+    amount: '',
+    docType: '01',
+    taxRateCode: '04', // 4% salud o 13% general
+    cabysCode: '8311100000000',
+    notes: '',
+    idType: '01',
+    idNumber: '',
+    legalName: '',
+    email: ''
+  });
+  const [emittingInvoice, setEmittingInvoice] = useState(false);
+  const [emittingAptId, setEmittingAptId] = useState<string | null>(null);
+  const [invoiceResult, setInvoiceResult] = useState<{
+    success: boolean;
+    numericKey?: string;
+    pdfUrl?: string;
+    message?: string;
+  } | null>(null);
+  const [copiedKey, setCopiedKey] = useState(false);
 
   // New Clinical Entry State
   const [entryData, setEntryData] = useState({
@@ -144,7 +175,14 @@ export default function RecordsManager({ initialRecordId }: { initialRecordId?: 
       currentMedications: '',
       emergencyContactName: '',
       emergencyContactPhone: '',
-      notes: ''
+      notes: '',
+      billingInfo: {
+        requiresInvoice: false,
+        idType: '01',
+        idNumber: '',
+        legalName: '',
+        email: ''
+      }
     });
     setShowCreateModal(true);
   };
@@ -167,7 +205,14 @@ export default function RecordsManager({ initialRecordId }: { initialRecordId?: 
       currentMedications: rec.currentMedications || '',
       emergencyContactName: rec.emergencyContactName || '',
       emergencyContactPhone: rec.emergencyContactPhone || '',
-      notes: rec.notes || ''
+      notes: rec.notes || '',
+      billingInfo: rec.billingInfo || {
+        requiresInvoice: false,
+        idType: '01',
+        idNumber: rec.identification || '',
+        legalName: rec.fullName || '',
+        email: rec.email || ''
+      }
     });
     setShowCreateModal(true);
   };
@@ -196,6 +241,100 @@ export default function RecordsManager({ initialRecordId }: { initialRecordId?: 
       alert('Error guardando expediente: ' + (err.message || err));
     } finally {
       setSavingRecord(false);
+    }
+  };
+
+  // Invoicing Handlers (Almendro / Costa Rica DGT)
+  const handleOpenFacturarModal = (rec: CustomerRecord) => {
+    const pBilling = rec.billingInfo;
+    const idNum = pBilling?.idNumber || rec.identification || '';
+    setFacturarData({
+      serviceName: rec.clientType === 'paciente' ? 'Consulta Médica / Atención Clínica' : 'Servicio Profesional',
+      amount: '',
+      docType: idNum ? '01' : '04',
+      taxRateCode: rec.clientType === 'paciente' ? '04' : '08',
+      cabysCode: '8311100000000',
+      notes: '',
+      idType: pBilling?.idType || '01',
+      idNumber: idNum,
+      legalName: pBilling?.legalName || rec.fullName || '',
+      email: pBilling?.email || rec.email || ''
+    });
+    setShowFacturarModal(true);
+  };
+
+  const handleEmitRecordInvoice = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedRecordId) return;
+    if (!facturarData.amount || Number(facturarData.amount) <= 0) {
+      alert('Por favor ingresa un monto válido mayor a 0');
+      return;
+    }
+    if (facturarData.docType === '01' && !facturarData.idNumber.trim()) {
+      alert('Para emitir Factura Electrónica (01) se requiere el número de cédula del cliente. Si no tiene cédula, use Tiquete Electrónico (04).');
+      return;
+    }
+
+    setEmittingInvoice(true);
+    try {
+      const res = await api.post(`/api/almendro/emit-record-invoice/${selectedRecordId}`, {
+        serviceName: facturarData.serviceName,
+        amount: Number(facturarData.amount),
+        docType: facturarData.docType,
+        taxRateCode: facturarData.taxRateCode,
+        cabysCode: facturarData.cabysCode,
+        notes: facturarData.notes,
+        receiver: facturarData.idNumber.trim() ? {
+          idType: facturarData.idType,
+          idNumber: facturarData.idNumber.trim(),
+          name: facturarData.legalName.trim() || recordDetail?.record.fullName,
+          email: facturarData.email.trim() || undefined
+        } : undefined
+      });
+
+      if (res && res.success) {
+        setShowFacturarModal(false);
+        setInvoiceResult({
+          success: true,
+          numericKey: res.numericKey,
+          pdfUrl: res.pdfUrl,
+          message: res.message || 'Factura electrónica emitida exitosamente ante el Ministerio de Hacienda.'
+        });
+      } else {
+        alert(res?.message || 'Error emitiendo factura electrónica');
+      }
+    } catch (err: any) {
+      alert('Error emitiendo factura: ' + (err.message || err));
+    } finally {
+      setEmittingInvoice(false);
+    }
+  };
+
+  const handleEmitAppointmentInvoice = async (apt: any) => {
+    if (!confirm(`¿Deseas emitir la factura electrónica por la cita de "${apt.service}" (₡${Number(apt.amount || 0).toLocaleString('es-CR')})?`)) {
+      return;
+    }
+
+    setEmittingAptId(apt.id);
+    try {
+      const res = await api.post(`/api/almendro/emit-appointment-invoice/${apt.id}`, {});
+      if (res && res.success) {
+        setInvoiceResult({
+          success: true,
+          numericKey: res.numericKey,
+          pdfUrl: res.pdfUrl,
+          message: res.message || 'Factura de cita emitida con éxito ante el Ministerio de Hacienda.'
+        });
+        if (selectedRecordId) {
+          fetchRecordDetails(selectedRecordId);
+        }
+      } else {
+        alert(res?.message || 'Error al emitir factura de la cita');
+      }
+    } catch (err: any) {
+      alert('Error emitiendo factura de cita: ' + (err.message || err));
+    } finally {
+      setEmittingAptId(null);
     }
   };
 
@@ -593,6 +732,12 @@ export default function RecordsManager({ initialRecordId }: { initialRecordId?: 
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <button
+                  onClick={() => handleOpenFacturarModal(recordDetail.record)}
+                  style={{ padding: '7px 12px', backgroundColor: '#059669', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}
+                >
+                  <Receipt size={14} /> Facturar Consulta
+                </button>
+                <button
                   onClick={() => handleOpenEdit(recordDetail.record)}
                   style={{ padding: '7px 12px', backgroundColor: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}
                 >
@@ -763,29 +908,71 @@ export default function RecordsManager({ initialRecordId }: { initialRecordId?: 
               {/* TAB 2: APPOINTMENTS */}
               {detailTab === 'appointments' && (
                 <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                    <h4 style={{ margin: 0, fontSize: '0.95rem', color: '#0f172a' }}>
+                      Citas Agendadas ({recordDetail.appointments.length})
+                    </h4>
+                  </div>
+
                   {recordDetail.appointments.length === 0 ? (
                     <div style={{ textAlign: 'center', padding: '40px 20px', backgroundColor: '#ffffff', borderRadius: '10px', border: '1px solid #e2e8f0', color: '#64748b' }}>
                       No hay citas reservadas registradas para este cliente.
                     </div>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                      {recordDetail.appointments.map(a => (
-                        <div key={a.id} style={{ backgroundColor: '#ffffff', borderRadius: '10px', padding: '14px', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <div>
-                            <div style={{ fontWeight: 'bold', fontSize: '0.95rem', color: '#0f172a' }}>{a.service}</div>
-                            <div style={{ fontSize: '0.8rem', color: '#64748b', display: 'flex', gap: '12px', marginTop: '2px' }}>
-                              <span>📅 {formatShortDate(a.date)} • ⏰ {formatShortTime(a.time)}</span>
-                              {a.specialistName && <span>👨‍⚕️ {a.specialistName}</span>}
+                      {recordDetail.appointments.map(a => {
+                        const hasInvoice = a.billingInfo?.numericKey || a.billingInfo?.pdfUrl;
+                        return (
+                          <div key={a.id} style={{ backgroundColor: '#ffffff', borderRadius: '10px', padding: '14px', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                            <div>
+                              <div style={{ fontWeight: 'bold', fontSize: '0.95rem', color: '#0f172a' }}>{a.service}</div>
+                              <div style={{ fontSize: '0.8rem', color: '#64748b', display: 'flex', gap: '12px', marginTop: '2px', flexWrap: 'wrap' }}>
+                                <span>📅 {formatShortDate(a.date)} • ⏰ {formatShortTime(a.time)}</span>
+                                {a.specialistName && <span>👨‍⚕️ {a.specialistName}</span>}
+                              </div>
+                              {a.billingInfo?.requiresInvoice && (
+                                <div style={{ fontSize: '0.72rem', color: '#2563eb', marginTop: '4px', fontWeight: '600' }}>
+                                  🏛️ Solicitó Factura: {a.billingInfo.legalName || a.billingInfo.idNumber}
+                                </div>
+                              )}
+                              {hasInvoice && (
+                                <div style={{ fontSize: '0.72rem', color: '#16a34a', marginTop: '3px', fontWeight: 'bold' }}>
+                                  ✓ Factura Emitida {a.billingInfo?.numericKey ? `(#...${a.billingInfo.numericKey.slice(-10)})` : ''}
+                                </div>
+                              )}
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                              <div style={{ textAlign: 'right' }}>
+                                <div style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>₡{Number(a.amount || 0).toLocaleString('es-CR')}</div>
+                                <span style={{ fontSize: '0.7rem', padding: '2px 6px', borderRadius: '4px', backgroundColor: a.status === 'completed' ? '#dcfce7' : '#e0f2fe', color: a.status === 'completed' ? '#166534' : '#0369a1', fontWeight: 'bold' }}>
+                                  {a.status}
+                                </span>
+                              </div>
+
+                              {hasInvoice && a.billingInfo?.pdfUrl ? (
+                                <a
+                                  href={a.billingInfo.pdfUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  style={{ padding: '6px 10px', backgroundColor: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 'bold', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                >
+                                  <ExternalLink size={12} /> Ver Factura
+                                </a>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleEmitAppointmentInvoice(a)}
+                                  disabled={emittingAptId === a.id}
+                                  style={{ padding: '6px 10px', backgroundColor: '#059669', color: 'white', border: 'none', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                >
+                                  {emittingAptId === a.id ? 'Facturando...' : '⚡ Emitir Factura'}
+                                </button>
+                              )}
                             </div>
                           </div>
-                          <div style={{ textAlign: 'right' }}>
-                            <div style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>₡{Number(a.amount || 0).toLocaleString('es-CR')}</div>
-                            <span style={{ fontSize: '0.7rem', padding: '2px 6px', borderRadius: '4px', backgroundColor: a.status === 'completed' ? '#dcfce7' : '#e0f2fe', color: a.status === 'completed' ? '#166534' : '#0369a1', fontWeight: 'bold' }}>
-                              {a.status}
-                            </span>
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -1054,6 +1241,103 @@ export default function RecordsManager({ initialRecordId }: { initialRecordId?: 
                 </div>
               )}
 
+              {/* Datos de Facturación Electrónica (Hacienda CR - Almendro) */}
+              <div style={{ padding: '14px', backgroundColor: '#f8fafc', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                  <div style={{ fontWeight: 'bold', fontSize: '0.85rem', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    🏛️ Datos de Facturación Electrónica (Hacienda CR)
+                  </div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', cursor: 'pointer', color: '#475569' }}>
+                    <input
+                      type="checkbox"
+                      checked={formData.billingInfo?.requiresInvoice || false}
+                      onChange={e => setFormData({
+                        ...formData,
+                        billingInfo: {
+                          ...(formData.billingInfo || { idType: '01', idNumber: '', legalName: '', email: '' }),
+                          requiresInvoice: e.target.checked
+                        }
+                      })}
+                      style={{ accentColor: 'var(--primary)' }}
+                    />
+                    <span>Requiere factura</span>
+                  </label>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '10px', marginBottom: '10px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', marginBottom: '3px', color: '#475569' }}>Tipo Cédula</label>
+                    <select
+                      value={formData.billingInfo?.idType || '01'}
+                      onChange={e => setFormData({
+                        ...formData,
+                        billingInfo: {
+                          ...(formData.billingInfo || { requiresInvoice: false, idNumber: '', legalName: '', email: '' }),
+                          idType: e.target.value
+                        }
+                      })}
+                      style={{ width: '100%', padding: '7px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.8rem' }}
+                    >
+                      <option value="01">Física (01)</option>
+                      <option value="02">Jurídica (02)</option>
+                      <option value="03">DIMEX (03)</option>
+                      <option value="04">NITE (04)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', marginBottom: '3px', color: '#475569' }}>Número de Cédula</label>
+                    <input
+                      type="text"
+                      placeholder="Ej: 101110222"
+                      value={formData.billingInfo?.idNumber || ''}
+                      onChange={e => setFormData({
+                        ...formData,
+                        billingInfo: {
+                          ...(formData.billingInfo || { requiresInvoice: false, idType: '01', legalName: '', email: '' }),
+                          idNumber: e.target.value
+                        }
+                      })}
+                      style={{ width: '100%', padding: '7px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.8rem', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', marginBottom: '3px', color: '#475569' }}>Razón Social / Nombre Legal</label>
+                    <input
+                      type="text"
+                      placeholder="Nombre registrado en Hacienda"
+                      value={formData.billingInfo?.legalName || ''}
+                      onChange={e => setFormData({
+                        ...formData,
+                        billingInfo: {
+                          ...(formData.billingInfo || { requiresInvoice: false, idType: '01', idNumber: '', email: '' }),
+                          legalName: e.target.value
+                        }
+                      })}
+                      style={{ width: '100%', padding: '7px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.8rem', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', marginBottom: '3px', color: '#475569' }}>Correo para Facturas</label>
+                    <input
+                      type="email"
+                      placeholder="factura@cliente.com"
+                      value={formData.billingInfo?.email || ''}
+                      onChange={e => setFormData({
+                        ...formData,
+                        billingInfo: {
+                          ...(formData.billingInfo || { requiresInvoice: false, idType: '01', idNumber: '', legalName: '' }),
+                          email: e.target.value
+                        }
+                      })}
+                      style={{ width: '100%', padding: '7px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.8rem', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                </div>
+              </div>
+
               <div>
                 <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '4px' }}>Notas Generales</label>
                 <textarea
@@ -1264,6 +1548,254 @@ export default function RecordsManager({ initialRecordId }: { initialRecordId?: 
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL: FACTURAR CONSULTA / SERVICIO (ALMENDRO / HACIENDA) */}
+      {/* ======================================================== */}
+      {showFacturarModal && recordDetail && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 10001, display: 'flex',
+          justifyContent: 'center', alignItems: 'center', padding: '16px'
+        }}>
+          <div style={{
+            backgroundColor: '#ffffff', borderRadius: '16px', maxWidth: '600px',
+            width: '100%', maxHeight: '90vh', overflowY: 'auto', padding: '24px',
+            boxShadow: '0 25px 50px rgba(0,0,0,0.25)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ padding: '8px', backgroundColor: '#ecfdf5', borderRadius: '8px', color: '#059669' }}>
+                  <Receipt size={22} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.15rem', color: '#0f172a', fontWeight: 'bold' }}>
+                    Facturar Consulta / Servicio
+                  </h3>
+                  <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
+                    Emisión electrónica directa ante Hacienda CR (Almendro)
+                  </div>
+                </div>
+              </div>
+              <button onClick={() => setShowFacturarModal(false)} style={{ border: 'none', background: 'transparent', cursor: 'pointer' }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleEmitRecordInvoice} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '3px' }}>Tipo Comprobante</label>
+                  <select
+                    value={facturarData.docType}
+                    onChange={e => setFacturarData({ ...facturarData, docType: e.target.value })}
+                    style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.82rem' }}
+                  >
+                    <option value="01">01 - Factura Electrónica</option>
+                    <option value="04">04 - Tiquete Electrónico</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '3px' }}>Tasa IVA</label>
+                  <select
+                    value={facturarData.taxRateCode}
+                    onChange={e => setFacturarData({ ...facturarData, taxRateCode: e.target.value })}
+                    style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.82rem' }}
+                  >
+                    <option value="04">04 - Servicios de Salud (4% IVA)</option>
+                    <option value="08">08 - Tarifa General (13% IVA)</option>
+                    <option value="01">01 - Tarifa 0% (Exento)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '3px' }}>Detalle del Servicio *</label>
+                <input
+                  type="text"
+                  required
+                  value={facturarData.serviceName}
+                  onChange={e => setFacturarData({ ...facturarData, serviceName: e.target.value })}
+                  placeholder="Ej: Consulta Médica General / Procedimiento"
+                  style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.82rem', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '3px' }}>Monto Total (₡) *</label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    step="any"
+                    value={facturarData.amount}
+                    onChange={e => setFacturarData({ ...facturarData, amount: e.target.value })}
+                    placeholder="Ej: 35000"
+                    style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem', fontWeight: 'bold', boxSizing: 'border-box' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '3px' }}>Código CABYS</label>
+                  <input
+                    type="text"
+                    value={facturarData.cabysCode}
+                    onChange={e => setFacturarData({ ...facturarData, cabysCode: e.target.value })}
+                    placeholder="8311100000000"
+                    style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.82rem', boxSizing: 'border-box' }}
+                  />
+                </div>
+              </div>
+
+              {/* Receptor Details */}
+              <div style={{ padding: '12px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontWeight: 'bold', fontSize: '0.8rem', color: '#0f172a', marginBottom: '8px' }}>
+                  Datos del Cliente / Paciente (Receptor)
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '8px', marginBottom: '8px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '600', color: '#475569', marginBottom: '2px' }}>Tipo Cédula</label>
+                    <select
+                      value={facturarData.idType}
+                      onChange={e => setFacturarData({ ...facturarData, idType: e.target.value })}
+                      style={{ width: '100%', padding: '7px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.8rem' }}
+                    >
+                      <option value="01">Física (01)</option>
+                      <option value="02">Jurídica (02)</option>
+                      <option value="03">DIMEX (03)</option>
+                      <option value="04">NITE (04)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '600', color: '#475569', marginBottom: '2px' }}>Número de Cédula</label>
+                    <input
+                      type="text"
+                      placeholder="Ej: 101110222"
+                      value={facturarData.idNumber}
+                      onChange={e => setFacturarData({ ...facturarData, idNumber: e.target.value })}
+                      style={{ width: '100%', padding: '7px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.8rem', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '600', color: '#475569', marginBottom: '2px' }}>Nombre / Razón Social</label>
+                    <input
+                      type="text"
+                      placeholder="Nombre legal"
+                      value={facturarData.legalName}
+                      onChange={e => setFacturarData({ ...facturarData, legalName: e.target.value })}
+                      style={{ width: '100%', padding: '7px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.8rem', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '600', color: '#475569', marginBottom: '2px' }}>Correo de Envío</label>
+                    <input
+                      type="email"
+                      placeholder="cliente@correo.com"
+                      value={facturarData.email}
+                      onChange={e => setFacturarData({ ...facturarData, email: e.target.value })}
+                      style={{ width: '100%', padding: '7px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.8rem', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '6px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowFacturarModal(false)}
+                  style={{ padding: '8px 14px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '6px', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 'bold' }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={emittingInvoice}
+                  style={{ padding: '8px 20px', backgroundColor: '#059669', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
+                  {emittingInvoice ? 'Emitiendo ante Hacienda...' : '⚡ Emitir Factura a Hacienda'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL: FACTURA ELECTRÓNICA RESULTADO (CLAVE NUMÉRICA + PDF) */}
+      {/* ======================================================== */}
+      {invoiceResult && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 10002, display: 'flex',
+          justifyContent: 'center', alignItems: 'center', padding: '16px'
+        }}>
+          <div style={{
+            backgroundColor: '#ffffff', borderRadius: '16px', maxWidth: '520px',
+            width: '100%', padding: '24px', boxShadow: '0 25px 50px rgba(0,0,0,0.25)', textAlign: 'center'
+          }}>
+            <div style={{ width: '54px', height: '54px', borderRadius: '50%', backgroundColor: '#dcfce7', color: '#166534', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px auto' }}>
+              <Check size={32} />
+            </div>
+
+            <h3 style={{ margin: '0 0 6px 0', fontSize: '1.25rem', color: '#0f172a', fontWeight: 'bold' }}>
+              ¡Factura Electrónica Emitida!
+            </h3>
+            <p style={{ margin: '0 0 16px 0', fontSize: '0.85rem', color: '#475569' }}>
+              {invoiceResult.message}
+            </p>
+
+            {invoiceResult.numericKey && (
+              <div style={{ backgroundColor: '#f1f5f9', padding: '12px', borderRadius: '8px', marginBottom: '16px', textAlign: 'left', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#64748b', marginBottom: '4px', textTransform: 'uppercase' }}>
+                  Clave Numérica de Hacienda (50 dígitos):
+                </div>
+                <div style={{ fontFamily: 'monospace', fontSize: '0.78rem', color: '#0f172a', wordBreak: 'break-all', backgroundColor: '#ffffff', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+                  {invoiceResult.numericKey}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (invoiceResult.numericKey) {
+                      navigator.clipboard.writeText(invoiceResult.numericKey);
+                      setCopiedKey(true);
+                      setTimeout(() => setCopiedKey(false), 2000);
+                    }
+                  }}
+                  style={{ marginTop: '6px', background: 'none', border: 'none', color: '#2563eb', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                >
+                  <Copy size={12} /> {copiedKey ? '✓ Clave Copiada' : 'Copiar Clave'}
+                </button>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+              {invoiceResult.pdfUrl && (
+                <a
+                  href={invoiceResult.pdfUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ padding: '10px 18px', backgroundColor: '#059669', color: 'white', borderRadius: '8px', textDecoration: 'none', fontWeight: 'bold', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <ExternalLink size={16} /> Ver / Descargar PDF
+                </a>
+              )}
+              <button
+                type="button"
+                onClick={() => setInvoiceResult(null)}
+                style={{ padding: '10px 18px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer' }}
+              >
+                Cerrar
+              </button>
+            </div>
           </div>
         </div>
       )}

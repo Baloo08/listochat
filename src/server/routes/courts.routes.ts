@@ -129,7 +129,8 @@ router.post('/public/:slug/book', async (req, res) => {
     const booking = await createBooking(tenant.id, {
       ...data,
       paymentMethod: paymentMethod === 'solo_reserva' ? 'pending' : paymentMethod,
-      paymentReference: data.paymentReference || null
+      paymentReference: data.paymentReference || null,
+      billingInfo: data.billingInfo?.requiresInvoice ? data.billingInfo : undefined
     });
 
     let paymentSession: any = null;

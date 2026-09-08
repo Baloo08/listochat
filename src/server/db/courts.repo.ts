@@ -63,6 +63,7 @@ function mapBookingRow(row: any): CourtBooking {
     skillLevel: row.skill_level,
     notes: row.notes,
     status: row.status,
+    billingInfo: row.billing_info,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -209,11 +210,11 @@ export async function createBooking(tenantId: string, data: Partial<CourtBooking
         team_b_name, team_b_captain, team_b_phone, team_b_players,
         team_b_extra_players, team_b_paid, total_price, price_per_team,
         payment_mode, sport_type, skill_level, notes, status,
-        payment_method, payment_reference
+        payment_method, payment_reference, billing_info
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
         $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27,
-        $28, $29
+        $28, $29, $30
       ) RETURNING *
     `, [
       tenantId, data.courtId, data.date, data.time, durationMinutes,
@@ -224,7 +225,8 @@ export async function createBooking(tenantId: string, data: Partial<CourtBooking
       data.teamBExtraPlayers || 0, data.teamBPaid || false, totalPrice,
       pricePerTeam, data.paymentMode || 'both', sportType, data.skillLevel,
       data.notes, data.status || 'confirmed',
-      data.paymentMethod || 'cash', data.paymentReference || null
+      data.paymentMethod || 'cash', data.paymentReference || null,
+      data.billingInfo ? JSON.stringify(data.billingInfo) : null
     ]);
 
     const booking = mapBookingRow(res.rows[0]);
@@ -255,14 +257,15 @@ export async function updateBooking(id: string, tenantId: string, data: Partial<
     paymentMethod: 'payment_method', paymentReference: 'payment_reference',
     tilopayTransactionIdA: 'tilopay_transaction_id_a', tilopayAuthCodeA: 'tilopay_auth_code_a',
     tilopayTransactionIdB: 'tilopay_transaction_id_b', tilopayAuthCodeB: 'tilopay_auth_code_b',
-    sportType: 'sport_type', skillLevel: 'skill_level', notes: 'notes', status: 'status'
+    sportType: 'sport_type', skillLevel: 'skill_level', notes: 'notes', status: 'status',
+    billingInfo: 'billing_info'
   };
 
   const entries = Object.entries(data).filter(([k, v]) => (allowed as any)[k] !== undefined && v !== undefined);
   if (entries.length === 0) return getBookingById(id, tenantId);
 
-  const setClause = entries.map(([k], i) => `${(allowed as any)[k]} = $${i + 3}`).join(', ');
-  const values = entries.map(e => e[1]);
+  const setClause = entries.map(([k], i) => (k === 'billingInfo' ? `${(allowed as any)[k]} = $${i + 3}::jsonb` : `${(allowed as any)[k]} = $${i + 3}`)).join(', ');
+  const values = entries.map(([k, v]) => (k === 'billingInfo' && v) ? JSON.stringify(v) : v);
 
   const res = await query(`
     UPDATE court_bookings SET ${setClause}, updated_at = CURRENT_TIMESTAMP 

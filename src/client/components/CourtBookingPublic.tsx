@@ -35,6 +35,14 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
   const [courtPaymentMethod, setCourtPaymentMethod] = useState<'on_site' | 'sinpe' | 'sinpe_tilopay' | 'card'>('on_site');
   const [courtSinpeRef, setCourtSinpeRef] = useState('');
 
+  // Electronic Billing States (Costa Rica DGT - Almendro)
+  const [almendroConfig, setAlmendroConfig] = useState<{ isEnabled: boolean; defaultDocType?: string } | null>(null);
+  const [requiresInvoice, setRequiresInvoice] = useState(false);
+  const [taxIdType, setTaxIdType] = useState('01');
+  const [taxIdNumber, setTaxIdNumber] = useState('');
+  const [taxLegalName, setTaxLegalName] = useState('');
+  const [taxEmail, setTaxEmail] = useState('');
+
   // Tab 2 state
   const [openMatches, setOpenMatches] = useState<CourtBooking[]>([]);
   const [joiningMatch, setJoiningMatch] = useState<CourtBooking | null>(null);
@@ -70,6 +78,14 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
         
         if (info) setPublicData(info);
         if (cData) setCourts(cData);
+
+        // Fetch Almendro public configuration for courts
+        fetch(`/api/almendro/public-config/${slug}?module=courts`)
+          .then(r => r.json())
+          .then(cfg => {
+            if (cfg?.isEnabled) setAlmendroConfig(cfg);
+          })
+          .catch(() => {});
       } catch (error) {
         console.error('Error fetching public info:', error);
       } finally {
@@ -126,6 +142,13 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
   const handleSubmitBooking = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCourt || !selectedSlot) return;
+
+    if (requiresInvoice) {
+      if (!taxIdNumber.trim() || !taxLegalName.trim() || !taxEmail.trim()) {
+        alert('Por favor completa todos los datos de facturación electrónica (Cédula, Nombre/Razón Social y Correo).');
+        return;
+      }
+    }
     
     setSubmitting(true);
     try {
@@ -147,7 +170,14 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
         skillLevel: bookingMode === 'seek_match' ? skillLevel : undefined,
         paymentMethod: resolvedPaymentMethod,
         paymentReference: courtPaymentMethod === 'sinpe' ? courtSinpeRef : null,
-        returnUrl: window.location.href
+        returnUrl: window.location.href,
+        billingInfo: requiresInvoice ? {
+          requiresInvoice: true,
+          idType: taxIdType,
+          idNumber: taxIdNumber.trim(),
+          legalName: taxLegalName.trim(),
+          email: taxEmail.trim()
+        } : { requiresInvoice: false }
       };
       
       const created = await api.post(`/api/courts/public/${slug}/book`, payload);
@@ -699,6 +729,81 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
                       </div>
                     );
                   })()}
+
+                  {/* Facturación Electrónica Costa Rica (Almendro / Hacienda) */}
+                  {almendroConfig?.isEnabled && (
+                    <div style={{ marginTop: '4px', marginBottom: '10px', padding: '14px', borderRadius: '10px', border: '1px solid #cbd5e1', backgroundColor: '#f8fafc' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: '700', fontSize: '0.88rem', color: '#1e293b' }}>
+                        <input
+                          type="checkbox"
+                          checked={requiresInvoice}
+                          onChange={(e) => setRequiresInvoice(e.target.checked)}
+                          style={{ width: '18px', height: '18px', accentColor: primaryColor }}
+                        />
+                        <span>¿Necesita Factura Electrónica? (Hacienda CR)</span>
+                      </label>
+
+                      {requiresInvoice && (
+                        <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '8px' }}>
+                            <div>
+                              <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                                Tipo Cédula *
+                              </label>
+                              <select
+                                value={taxIdType}
+                                onChange={(e) => setTaxIdType(e.target.value)}
+                                style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem' }}
+                              >
+                                <option value="01">Física (01)</option>
+                                <option value="02">Jurídica (02)</option>
+                                <option value="03">DIMEX (03)</option>
+                                <option value="04">NITE (04)</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                                Número de Cédula *
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="Ej: 101110222"
+                                value={taxIdNumber}
+                                onChange={(e) => setTaxIdNumber(e.target.value)}
+                                style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem', boxSizing: 'border-box' }}
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                              Nombre o Razón Social *
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="Nombre completo o Empresa registrada en Hacienda"
+                              value={taxLegalName}
+                              onChange={(e) => setTaxLegalName(e.target.value)}
+                              style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem', boxSizing: 'border-box' }}
+                            />
+                          </div>
+
+                          <div>
+                            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', color: '#475569', marginBottom: '4px' }}>
+                              Correo para Envío de Factura (XML + PDF) *
+                            </label>
+                            <input
+                              type="email"
+                              placeholder="tufactura@ejemplo.com"
+                              value={taxEmail}
+                              onChange={(e) => setTaxEmail(e.target.value)}
+                              style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem', boxSizing: 'border-box' }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   <button 
                     type="submit" 

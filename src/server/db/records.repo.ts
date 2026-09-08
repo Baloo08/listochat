@@ -21,6 +21,7 @@ function mapRecordRow(row: any): CustomerRecord {
     emergencyContactPhone: row.emergency_contact_phone || '',
     notes: row.notes || '',
     metadata: row.metadata ? (typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata) : {},
+    billingInfo: row.metadata ? ((typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata)?.billingInfo || undefined) : undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     totalAppointments: row.total_appointments ? Number(row.total_appointments) : undefined,
@@ -166,7 +167,10 @@ export async function createRecord(tenantId: string, data: Partial<CustomerRecor
     data.emergencyContactName || null,
     data.emergencyContactPhone || null,
     data.notes || null,
-    data.metadata ? JSON.stringify(data.metadata) : '{}'
+    JSON.stringify({
+      ...(data.metadata || {}),
+      ...(data.billingInfo ? { billingInfo: data.billingInfo } : {})
+    })
   ]);
 
   const newRecord = mapRecordRow(res.rows[0]);
@@ -219,9 +223,19 @@ export async function updateRecord(id: string, tenantId: string, data: Partial<C
     }
   }
 
-  if (data.metadata !== undefined) {
+  if (data.billingInfo !== undefined || data.metadata !== undefined) {
+    const existing = await query('SELECT metadata FROM customer_records WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
+    let currentMeta = existing.rows[0]?.metadata || {};
+    if (typeof currentMeta === 'string') {
+      try { currentMeta = JSON.parse(currentMeta); } catch (_) { currentMeta = {}; }
+    }
+    const mergedMeta = {
+      ...currentMeta,
+      ...(data.metadata || {}),
+      ...(data.billingInfo !== undefined ? { billingInfo: data.billingInfo } : {})
+    };
     updates.push(`metadata = $${pIdx++}`);
-    params.push(JSON.stringify(data.metadata));
+    params.push(JSON.stringify(mergedMeta));
   }
 
   const sql = `

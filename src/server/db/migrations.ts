@@ -892,7 +892,7 @@ export async function runMigrations() {
       tax_id_number VARCHAR(20),
       legal_name VARCHAR(255),
       commercial_name VARCHAR(255),
-      economic_activity_code VARCHAR(10),
+      economic_activity_code VARCHAR(30),
       branch_code VARCHAR(3) DEFAULT '001',
       pos_code VARCHAR(5) DEFAULT '00001',
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -932,6 +932,12 @@ export async function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_vouchers_tenant ON electronic_vouchers(tenant_id);
     CREATE INDEX IF NOT EXISTS idx_vouchers_key ON electronic_vouchers(numeric_key);
     CREATE INDEX IF NOT EXISTS idx_vouchers_status ON electronic_vouchers(status);
+
+    -- Electronic Invoicing and Billing Info Extension
+    ALTER TABLE tenant_almendro_configs ALTER COLUMN economic_activity_code TYPE VARCHAR(30);
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS billing_info JSONB;
+    ALTER TABLE appointments ADD COLUMN IF NOT EXISTS billing_info JSONB;
+    ALTER TABLE court_bookings ADD COLUMN IF NOT EXISTS billing_info JSONB;
   `).catch((err) => {
     console.warn('[Migrations] Columns addition warning:', err?.message || err);
   });

@@ -341,7 +341,7 @@ router.get('/public/:slug/available-slots', async (req, res) => {
 
 router.post('/public/:slug/book', async (req, res) => {
   try {
-    const { serviceName, serviceId, date, time, customerName, customerPhone, details, vehicleModel, customAnswers, specialistId } = req.body;
+    const { serviceName, serviceId, date, time, customerName, customerPhone, details, vehicleModel, customAnswers, specialistId, billingInfo } = req.body;
     if (!serviceName || !date || !time || !customerName || !customerPhone) {
       res.status(400).json({ error: 'Servicio, fecha, hora, nombre y WhatsApp son requeridos' });
       return;
@@ -440,7 +440,8 @@ router.post('/public/:slug/book', async (req, res) => {
       paymentReference: req.body.paymentReference || null,
       details: combinedDetails,
       vehicleModel: vehicleModel || '',
-      selectedVariables: req.body.selectedVariables
+      selectedVariables: req.body.selectedVariables,
+      billingInfo: billingInfo?.requiresInvoice ? billingInfo : undefined
     });
 
     if (matchedRecordId) {

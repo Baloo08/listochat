@@ -10,6 +10,7 @@ export async function getOrdersByTenant(tenantId: string, filters?: any): Promis
            o.payment_reference as "paymentReference", o.payment_proof_url as "paymentProofUrl", o.payment_proof_status as "paymentProofStatus", o.notes, o.delivery_method as "deliveryMethod",
            o.consumption_mode as "consumptionMode", o.table_number as "tableNumber", o.customer_location as "customerLocation",
            o.chat_message_id as "chatMessageId", o.driver_id as "driverId", o.waze_url as "wazeUrl",
+           o.billing_info as "billingInfo",
            o.branch_id as "branchId", b.name as "branchName",
            o.created_at as "createdAt", o.updated_at as "updatedAt",
            COALESCE(
@@ -49,6 +50,7 @@ export async function getOrderById(id: string, tenantId: string): Promise<Order 
            payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl", payment_proof_status as "paymentProofStatus", notes, delivery_method as "deliveryMethod",
            consumption_mode as "consumptionMode", table_number as "tableNumber", customer_location as "customerLocation",
            chat_message_id as "chatMessageId", driver_id as "driverId", waze_url as "wazeUrl",
+           billing_info as "billingInfo",
            created_at as "createdAt", updated_at as "updatedAt"
     FROM orders 
     WHERE id = $1 AND tenant_id = $2
@@ -72,8 +74,8 @@ export async function createOrder(tenantId: string, data: Partial<Order>, items?
     INSERT INTO orders (
       tenant_id, customer_name, customer_phone, customer_email, customer_address, whatsapp_jid,
       source, subtotal, delivery_fee, discount, total, currency, status, payment_method, 
-      payment_status, payment_reference, payment_proof_url, payment_proof_status, notes, delivery_method, consumption_mode, table_number, customer_location, stock_deducted
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
+      payment_status, payment_reference, payment_proof_url, payment_proof_status, notes, delivery_method, consumption_mode, table_number, customer_location, stock_deducted, billing_info
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
     RETURNING id
   `;
 
@@ -83,7 +85,8 @@ export async function createOrder(tenantId: string, data: Partial<Order>, items?
     data.status || 'pedido_recibido', data.paymentMethod, data.paymentStatus || 'pending', data.paymentReference || null,
     data.paymentProofUrl || null, data.paymentProofStatus || (data.paymentProofUrl ? 'received' : 'pending'), data.notes || null, data.deliveryMethod || 'pickup', data.consumptionMode || null, data.tableNumber || null,
     data.customerLocation ? JSON.stringify(data.customerLocation) : null,
-    Boolean(data.stockDeducted)
+    Boolean(data.stockDeducted),
+    data.billingInfo ? JSON.stringify(data.billingInfo) : null
   ];
 
   const client = dbClient || await getClient();
@@ -138,14 +141,14 @@ export async function updateOrder(id: string, tenantId: string, data: Partial<Or
   const fields = [
     'status', 'paymentStatus', 'paymentReference', 'notes', 
     'driverId', 'wazeUrl', 'consumptionMode', 'tableNumber', 
-    'deliveryMethod', 'deliveryFee', 'total', 'customerAddress'
+    'deliveryMethod', 'deliveryFee', 'total', 'customerAddress', 'billingInfo'
   ];
   for (const field of fields) {
     if ((data as any)[field] !== undefined) {
       const dbField = field.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
-      if (field === 'customerLocation') {
+      if (field === 'customerLocation' || field === 'billingInfo') {
         updates.push(`${dbField} = $${paramIdx++}::jsonb`);
-        params.push(JSON.stringify((data as any)[field]));
+        params.push((data as any)[field] ? JSON.stringify((data as any)[field]) : null);
       } else {
         updates.push(`${dbField} = $${paramIdx++}`);
         params.push((data as any)[field]);

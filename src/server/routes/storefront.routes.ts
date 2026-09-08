@@ -264,6 +264,7 @@ router.post('/:slug/checkout', async (req, res) => {
       paymentReference,
       paymentProofUrl,
       deliveryMethod = 'pickup',
+      billingInfo,
       notes
     } = req.body;
 
@@ -373,6 +374,7 @@ router.post('/:slug/checkout', async (req, res) => {
         paymentProofStatus: paymentProofUrl ? 'received' : 'pending',
         deliveryMethod: isDelivery ? 'delivery' : 'pickup',
         notes: notes || null,
+        billingInfo: billingInfo?.requiresInvoice ? billingInfo : null,
         status: 'pedido_recibido' as any
       },
       formattedItems

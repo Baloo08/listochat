@@ -155,6 +155,14 @@ export default function StorefrontView({ slug }: StorefrontProps) {
   const [selectedBranch, setSelectedBranch] = useState<any | null>(null);
   const [showBranchModal, setShowBranchModal] = useState<boolean>(false);
 
+  // Electronic Billing States (Costa Rica DGT - Almendro)
+  const [almendroConfig, setAlmendroConfig] = useState<{ isEnabled: boolean; defaultDocType?: string } | null>(null);
+  const [requiresInvoice, setRequiresInvoice] = useState(false);
+  const [taxIdType, setTaxIdType] = useState('01');
+  const [taxIdNumber, setTaxIdNumber] = useState('');
+  const [taxLegalName, setTaxLegalName] = useState('');
+  const [taxEmail, setTaxEmail] = useState('');
+
   useEffect(() => {
     const fetchStoreData = async () => {
       try {
@@ -179,6 +187,16 @@ export default function StorefrontView({ slug }: StorefrontProps) {
           const prodData = await prodRes.json();
           setProducts(prodData);
         }
+
+        // Fetch Almendro public configuration
+        fetch(`/api/almendro/public-config/${slug}?module=store`)
+          .then(r => r.json())
+          .then(cfg => {
+            if (cfg?.isEnabled) {
+              setAlmendroConfig(cfg);
+            }
+          })
+          .catch(() => {});
 
         // Fetch active branches
         try {
@@ -449,6 +467,17 @@ export default function StorefrontView({ slug }: StorefrontProps) {
       }
     }
 
+    if (requiresInvoice) {
+      if (!taxIdNumber.trim()) {
+        alert('Por favor ingresa tu número de cédula para la factura electrónica.');
+        return;
+      }
+      if (!taxLegalName.trim()) {
+        alert('Por favor ingresa tu nombre o razón social registrado ante Hacienda.');
+        return;
+      }
+    }
+
     setIsSubmitting(true);
     try {
       const isDeliveryType = consumptionMode === 'delivery' || consumptionMode === 'correos_cr';
@@ -465,6 +494,13 @@ export default function StorefrontView({ slug }: StorefrontProps) {
         paymentProofUrl: paymentProofUrl || undefined,
         branchId: selectedBranch?.id || undefined,
         notes: orderNotes || undefined,
+        billingInfo: requiresInvoice ? {
+          requiresInvoice: true,
+          idType: taxIdType,
+          idNumber: taxIdNumber.trim(),
+          legalName: taxLegalName.trim() || customerName,
+          email: taxEmail.trim() || undefined
+        } : undefined,
         items: cart.map(item => ({
           productId: item.product.id,
           productName: item.selectedVariablesSummary ? `${item.product.name} (${item.selectedVariablesSummary})` : item.product.name,
@@ -1498,6 +1534,94 @@ export default function StorefrontView({ slug }: StorefrontProps) {
                       )}
 
                     </div>
+
+                    {/* FACTURACIÓN ELECTRÓNICA (Costa Rica DGT v4.4) */}
+                    {almendroConfig?.isEnabled && (
+                      <div style={{
+                        backgroundColor: isDark ? '#1e293b' : '#f8fafc',
+                        padding: '14px',
+                        borderRadius: '10px',
+                        border: isDark ? '1px solid #334155' : '1px solid #e2e8f0'
+                      }}>
+                        <label style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '10px',
+                          cursor: 'pointer',
+                          fontWeight: '700',
+                          fontSize: '0.85rem',
+                          color: titleColor
+                        }}>
+                          <input
+                            type="checkbox"
+                            checked={requiresInvoice}
+                            onChange={e => setRequiresInvoice(e.target.checked)}
+                            style={{ width: '16px', height: '16px', accentColor: primaryColor }}
+                          />
+                          <span>¿Necesita Factura Electrónica? (Hacienda CR)</span>
+                        </label>
+
+                        {requiresInvoice && (
+                          <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '8px' }}>
+                              <div>
+                                <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 'bold', color: bodyTextColor, marginBottom: '2px' }}>
+                                  Tipo Cédula *
+                                </label>
+                                <select
+                                  value={taxIdType}
+                                  onChange={e => setTaxIdType(e.target.value)}
+                                  style={{ width: '100%', padding: '7px 8px', borderRadius: '6px', border: isDark ? '1px solid #475569' : '1px solid #cbd5e1', backgroundColor: isDark ? '#0f172a' : 'white', color: isDark ? '#ffffff' : '#0f172a', fontSize: '0.8rem' }}
+                                >
+                                  <option value="01">Física</option>
+                                  <option value="02">Jurídica</option>
+                                  <option value="03">DIMEX</option>
+                                  <option value="04">NITE</option>
+                                </select>
+                              </div>
+                              <div>
+                                <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 'bold', color: bodyTextColor, marginBottom: '2px' }}>
+                                  Número de Cédula *
+                                </label>
+                                <input
+                                  type="text"
+                                  placeholder="Ej: 112340567"
+                                  value={taxIdNumber}
+                                  onChange={e => setTaxIdNumber(e.target.value)}
+                                  style={{ width: '100%', padding: '7px 10px', borderRadius: '6px', border: isDark ? '1px solid #475569' : '1px solid #cbd5e1', backgroundColor: isDark ? '#0f172a' : 'white', color: isDark ? '#ffffff' : '#0f172a', fontSize: '0.8rem', boxSizing: 'border-box' }}
+                                />
+                              </div>
+                            </div>
+
+                            <div>
+                              <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 'bold', color: bodyTextColor, marginBottom: '2px' }}>
+                                Nombre o Razón Social *
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="Nombre completo registrado ante Tributación"
+                                value={taxLegalName}
+                                onChange={e => setTaxLegalName(e.target.value)}
+                                style={{ width: '100%', padding: '7px 10px', borderRadius: '6px', border: isDark ? '1px solid #475569' : '1px solid #cbd5e1', backgroundColor: isDark ? '#0f172a' : 'white', color: isDark ? '#ffffff' : '#0f172a', fontSize: '0.8rem', boxSizing: 'border-box' }}
+                              />
+                            </div>
+
+                            <div>
+                              <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 'bold', color: bodyTextColor, marginBottom: '2px' }}>
+                                Correo para Factura (XML y PDF oficial)
+                              </label>
+                              <input
+                                type="email"
+                                placeholder="correo@ejemplo.com"
+                                value={taxEmail}
+                                onChange={e => setTaxEmail(e.target.value)}
+                                style={{ width: '100%', padding: '7px 10px', borderRadius: '6px', border: isDark ? '1px solid #475569' : '1px solid #cbd5e1', backgroundColor: isDark ? '#0f172a' : 'white', color: isDark ? '#ffffff' : '#0f172a', fontSize: '0.8rem', boxSizing: 'border-box' }}
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     <div>
                       <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px', color: titleColor }}>Notas o Indicaciones</label>

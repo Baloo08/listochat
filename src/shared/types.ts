@@ -74,6 +74,14 @@ export interface Service {
   createdAt?: Date;
 }
 
+export interface CustomerBillingInfo {
+  requiresInvoice: boolean;
+  idType?: string; // '01' | '02' | '03' | '04'
+  idNumber?: string;
+  legalName?: string;
+  email?: string;
+}
+
 export interface Appointment {
   id: string;
   tenantId: string;
@@ -96,6 +104,7 @@ export interface Appointment {
   selectedVariablesSummary?: string;
   specialistId?: string;
   recordId?: string;
+  billingInfo?: CustomerBillingInfo;
   createdAt?: Date;
 }
 
@@ -367,6 +376,7 @@ export interface Order {
   stockDeducted?: boolean;
   estimatedDelivery?: Date;
   chatMessageId?: string;
+  billingInfo?: CustomerBillingInfo;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -553,6 +563,7 @@ export interface CourtBooking {
   skillLevel?: string;
   notes?: string;
   status: string;
+  billingInfo?: CustomerBillingInfo;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -677,6 +688,7 @@ export interface CustomerRecord {
   emergencyContactName?: string;
   emergencyContactPhone?: string;
   notes?: string;
+  billingInfo?: CustomerBillingInfo;
   metadata?: Record<string, any>;
   createdAt?: string;
   updatedAt?: string;
