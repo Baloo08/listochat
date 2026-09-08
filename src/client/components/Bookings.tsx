@@ -183,6 +183,8 @@ export default function Bookings() {
   const [recordsList, setRecordsList] = useState<any[]>([]);
   const [selectedRecordId, setSelectedRecordId] = useState<string>('');
   const [selectedRecordData, setSelectedRecordData] = useState<any>(null);
+  const [servicesList, setServicesList] = useState<any[]>([]);
+  const [selectedServiceId, setSelectedServiceId] = useState<string>('');
 
   const api = useApi();
 
@@ -365,17 +367,29 @@ export default function Bookings() {
     }
   };
 
+  const fetchServicesList = async () => {
+    try {
+      const res = await api.get('/api/services');
+      if (res && Array.isArray(res)) {
+        setServicesList(res);
+      }
+    } catch (err) {
+      console.error('Error fetching services:', err);
+    }
+  };
+
   useEffect(() => {
     fetchAppointments();
     fetchScheduleAndTenant();
     fetchSpecialists();
     fetchRecordsList();
+    fetchServicesList();
   }, []);
 
   const handleCreateAppointment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newName || !newWhatsapp || !newDate || !newTime) {
-      alert('Por favor completa todos los campos requeridos');
+    if (!newName || !newWhatsapp || !newDate || !newTime || !newService) {
+      alert('Por favor completa todos los campos requeridos (incluyendo el servicio)');
       return;
     }
 
@@ -403,11 +417,13 @@ export default function Bookings() {
     setShowNewModal(false);
     setSelectedRecordId('');
     setSelectedRecordData(null);
+    setSelectedServiceId('');
     setNewName('');
     setNewWhatsapp('');
     setNewService('');
     setNewDate('');
     setNewTime('');
+    setNewAmount(15000);
     setNewDetails('');
     setNewSpecialistId('');
   };
@@ -654,6 +670,7 @@ export default function Bookings() {
           <button
             onClick={() => {
               fetchRecordsList();
+              fetchServicesList();
               setShowNewModal(true);
             }}
             style={{ padding: '10px 16px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.9rem' }}
@@ -2589,14 +2606,46 @@ export default function Bookings() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>Servicio *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Ej: Limpieza Dental"
-                    value={newService}
-                    onChange={(e) => setNewService(e.target.value)}
-                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
-                  />
+                  <select
+                    value={selectedServiceId}
+                    onChange={(e) => {
+                      const sId = e.target.value;
+                      setSelectedServiceId(sId);
+                      if (sId === 'custom') {
+                        setNewService('');
+                      } else if (sId) {
+                        const matched = servicesList.find(s => String(s.id) === String(sId));
+                        if (matched) {
+                          setNewService(matched.name);
+                          if (matched.price !== undefined && matched.price !== null) {
+                            setNewAmount(Number(matched.price));
+                          }
+                        }
+                      } else {
+                        setNewService('');
+                      }
+                    }}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem', backgroundColor: 'white' }}
+                  >
+                    <option value="">-- Seleccionar Servicio --</option>
+                    {servicesList.filter(s => s.active !== false).map(s => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} (₡{Number(s.price || 0).toLocaleString('es-CR')})
+                      </option>
+                    ))}
+                    <option value="custom">✏️ Otro / Personalizado...</option>
+                  </select>
+
+                  {(selectedServiceId === 'custom' || servicesList.length === 0) && (
+                    <input
+                      type="text"
+                      required
+                      placeholder="Nombre del servicio..."
+                      value={newService}
+                      onChange={(e) => setNewService(e.target.value)}
+                      style={{ marginTop: '6px', width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                    />
+                  )}
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>Especialista Asignado</label>
@@ -2638,7 +2687,9 @@ export default function Bookings() {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>Monto (₡ CRC)</label>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>
+                    Monto (₡ CRC) <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 'normal' }}>(Editable)</span>
+                  </label>
                   <input
                     type="number"
                     value={newAmount}
