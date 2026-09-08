@@ -151,6 +151,7 @@ export default function Bookings() {
     specialty: string;
     accessPin: string;
     active: boolean;
+    showEarnings: boolean;
     scheduleType: 'business_hours' | 'custom_per_day';
     perDaySchedule: Record<number, { enabled: boolean; startHour: string; endHour: string; hasBreak?: boolean; breakStart?: string; breakEnd?: string }>;
   }>({
@@ -159,6 +160,7 @@ export default function Bookings() {
     specialty: '',
     accessPin: '',
     active: true,
+    showEarnings: true,
     scheduleType: 'business_hours',
     perDaySchedule: defaultSpecialistPerDay
   });
@@ -298,6 +300,7 @@ export default function Bookings() {
         specialty: specialistForm.specialty,
         accessPin: specialistForm.accessPin,
         active: specialistForm.active,
+        showEarnings: specialistForm.showEarnings,
         scheduleType: specialistForm.scheduleType,
         scheduleConfig: {
           perDaySchedule: specialistForm.perDaySchedule
@@ -317,6 +320,7 @@ export default function Bookings() {
         specialty: '',
         accessPin: '',
         active: true,
+        showEarnings: true,
         scheduleType: 'business_hours',
         perDaySchedule: defaultSpecialistPerDay
       });
@@ -1988,6 +1992,7 @@ export default function Bookings() {
                     specialty: '',
                     accessPin: '',
                     active: true,
+                    showEarnings: true,
                     scheduleType: 'business_hours',
                     perDaySchedule: defaultSpecialistPerDay
                   });
@@ -2016,6 +2021,7 @@ export default function Bookings() {
               {specialists.map(s => {
                 const isActive = s.active !== false;
                 const isCustomSchedule = s.scheduleType === 'custom_per_day';
+                const showsMoney = s.showEarnings !== false;
                 return (
                   <div key={s.id} style={{ backgroundColor: 'var(--surface)', borderRadius: '12px', padding: '16px', border: `1px solid ${isActive ? 'var(--border)' : '#fde68a'}`, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', opacity: isActive ? 1 : 0.85 }}>
                     <div>
@@ -2045,6 +2051,15 @@ export default function Bookings() {
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', margin: '8px 0' }}>
                         <span style={{ fontSize: '0.72rem', padding: '3px 8px', borderRadius: '6px', backgroundColor: '#f1f5f9', color: '#475569', display: 'flex', alignItems: 'center', gap: '4px' }}>
                           <Clock size={12} /> {isCustomSchedule ? 'Horario específico por día' : 'Horario del negocio'}
+                        </span>
+                        <span style={{
+                          fontSize: '0.72rem', padding: '3px 8px', borderRadius: '6px',
+                          backgroundColor: showsMoney ? '#eff6ff' : '#f8fafc',
+                          color: showsMoney ? '#1d4ed8' : '#64748b',
+                          border: `1px solid ${showsMoney ? '#bfdbfe' : '#e2e8f0'}`,
+                          display: 'flex', alignItems: 'center', gap: '4px'
+                        }}>
+                          {showsMoney ? '💰 Montos visibles' : '🔒 Solo cantidad de citas'}
                         </span>
                         {s.phone && (
                           <span style={{ fontSize: '0.72rem', padding: '3px 8px', borderRadius: '6px', backgroundColor: '#f1f5f9', color: '#475569', display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -2136,6 +2151,7 @@ export default function Bookings() {
                             specialty: s.specialty || '',
                             accessPin: s.accessPin || '',
                             active: s.active !== false,
+                            showEarnings: s.showEarnings !== false,
                             scheduleType: s.scheduleType || 'business_hours',
                             perDaySchedule: s.scheduleConfig?.perDaySchedule || defaultSpecialistPerDay
                           });
@@ -2325,6 +2341,24 @@ export default function Bookings() {
                   {specialistForm.active
                     ? 'El profesional aparecerá en la página de reservas y los clientes podrán agendar turnos con él.'
                     : 'Pausado temporalmente: no se ofrecerán turnos con este colaborador ni aparecerá disponible en línea.'}
+                </p>
+              </div>
+
+              {/* Visibilidad Financiera en el Portal del Colaborador */}
+              <div style={{ backgroundColor: specialistForm.showEarnings ? '#eff6ff' : '#f8fafc', border: `1px solid ${specialistForm.showEarnings ? '#bfdbfe' : '#e2e8f0'}`, borderRadius: '8px', padding: '12px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem', color: specialistForm.showEarnings ? '#1d4ed8' : '#334155' }}>
+                  <input
+                    type="checkbox"
+                    checked={specialistForm.showEarnings}
+                    onChange={(e) => setSpecialistForm(prev => ({ ...prev, showEarnings: e.target.checked }))}
+                    style={{ width: '16px', height: '16px' }}
+                  />
+                  Mostrar montos de dinero recaudado en su portal
+                </label>
+                <p style={{ margin: '4px 0 0 24px', fontSize: '0.75rem', color: '#64748b' }}>
+                  {specialistForm.showEarnings
+                    ? 'El colaborador podrá ver el total de dinero recaudado y el monto individual de cada cita en su historial.'
+                    : 'Modo confidencial: El colaborador SOLO verá la cantidad de citas completadas, sin montos ni cifras de dinero.'}
                 </p>
               </div>
 

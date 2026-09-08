@@ -14,6 +14,7 @@ function mapSpecialistRow(row: any): Specialist {
     active: row.active !== false,
     scheduleType: row.schedule_type || 'business_hours',
     scheduleConfig: row.schedule_config ? (typeof row.schedule_config === 'string' ? JSON.parse(row.schedule_config) : row.schedule_config) : undefined,
+    showEarnings: row.show_earnings !== false,
     createdAt: row.created_at
   };
 }
@@ -69,12 +70,13 @@ export async function createSpecialist(tenantId: string, data: Partial<Specialis
   const scheduleJson = data.scheduleConfig ? JSON.stringify(data.scheduleConfig) : null;
   const res = await query(
     `INSERT INTO specialists (
-      tenant_id, name, phone, specialty, access_pin, active, schedule_type, schedule_config
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
+      tenant_id, name, phone, specialty, access_pin, active, schedule_type, schedule_config, show_earnings
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
     RETURNING *`,
     [
       tenantId, data.name || 'Colaborador', data.phone || '', data.specialty || 'General',
-      pin, data.active !== false, data.scheduleType || 'business_hours', scheduleJson
+      pin, data.active !== false, data.scheduleType || 'business_hours', scheduleJson,
+      data.showEarnings !== false
     ]
   );
   return mapSpecialistRow(res.rows[0]);
@@ -88,7 +90,8 @@ export async function updateSpecialist(id: string, tenantId: string, data: Parti
     accessPin: 'access_pin',
     active: 'active',
     scheduleType: 'schedule_type',
-    scheduleConfig: 'schedule_config'
+    scheduleConfig: 'schedule_config',
+    showEarnings: 'show_earnings'
   };
 
   const processedData: any = { ...data };

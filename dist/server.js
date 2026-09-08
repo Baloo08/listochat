@@ -2634,9 +2634,10 @@ async function runMigrations() {
     ALTER TABLE courts ADD COLUMN IF NOT EXISTS image_url TEXT;
     ALTER TABLE courts ADD COLUMN IF NOT EXISTS schedule_config JSONB;
 
-    -- Specialists: schedule_type and schedule_config
+    -- Specialists: schedule_type, schedule_config and show_earnings
     ALTER TABLE specialists ADD COLUMN IF NOT EXISTS schedule_type VARCHAR(50) DEFAULT 'business_hours';
     ALTER TABLE specialists ADD COLUMN IF NOT EXISTS schedule_config JSONB;
+    ALTER TABLE specialists ADD COLUMN IF NOT EXISTS show_earnings BOOLEAN DEFAULT true;
 
     -- Customer & Patient Records (Expedientes)
     CREATE TABLE IF NOT EXISTS customer_records (
@@ -4666,6 +4667,7 @@ function mapSpecialistRow(row) {
     active: row.active !== false,
     scheduleType: row.schedule_type || "business_hours",
     scheduleConfig: row.schedule_config ? typeof row.schedule_config === "string" ? JSON.parse(row.schedule_config) : row.schedule_config : void 0,
+    showEarnings: row.show_earnings !== false,
     createdAt: row.created_at
   };
 }
@@ -4712,8 +4714,8 @@ async function createSpecialist(tenantId, data) {
   const scheduleJson = data.scheduleConfig ? JSON.stringify(data.scheduleConfig) : null;
   const res = await query(
     `INSERT INTO specialists (
-      tenant_id, name, phone, specialty, access_pin, active, schedule_type, schedule_config
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
+      tenant_id, name, phone, specialty, access_pin, active, schedule_type, schedule_config, show_earnings
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
     RETURNING *`,
     [
       tenantId,
@@ -4723,7 +4725,8 @@ async function createSpecialist(tenantId, data) {
       pin,
       data.active !== false,
       data.scheduleType || "business_hours",
-      scheduleJson
+      scheduleJson,
+      data.showEarnings !== false
     ]
   );
   return mapSpecialistRow(res.rows[0]);
@@ -4736,7 +4739,8 @@ async function updateSpecialist(id, tenantId, data) {
     accessPin: "access_pin",
     active: "active",
     scheduleType: "schedule_type",
-    scheduleConfig: "schedule_config"
+    scheduleConfig: "schedule_config",
+    showEarnings: "show_earnings"
   };
   const processedData = { ...data };
   if (data.scheduleConfig !== void 0) {
@@ -10274,30 +10278,97 @@ router13.use(tenantContext);
 router13.get("/stats", async (req, res) => {
   try {
     const tenantId = req.tenantId;
-    const today = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
-    const firstOfMonth = new Date((/* @__PURE__ */ new Date()).getFullYear(), (/* @__PURE__ */ new Date()).getMonth(), 1).toISOString().split("T")[0];
-    const [chatsRes, appointmentsRes, ordersRes, revenueRes, pendingRes, recentOrdersRes, recentApptsRes] = await Promise.all([
-      query(`SELECT COUNT(DISTINCT remote_jid) as count FROM chat_messages WHERE tenant_id = $1 AND created_at::date = $2`, [tenantId, today]),
-      query(`SELECT COUNT(*) as count FROM appointments WHERE tenant_id = $1 AND date = $2`, [tenantId, today]),
-      query(`SELECT COUNT(*) as count FROM orders WHERE tenant_id = $1 AND created_at::date = $2`, [tenantId, today]),
-      query(`SELECT COALESCE(SUM(total), 0) as total FROM orders WHERE tenant_id = $1 AND created_at >= $2 AND payment_status = 'paid'`, [tenantId, firstOfMonth]),
+    const range = req.query.range || "today";
+    let fromDate = req.query.fromDate;
+    let toDate = req.query.toDate;
+    const now = /* @__PURE__ */ new Date();
+    const formatYMD = (d) => {
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    };
+    const todayStr = formatYMD(now);
+    if (range === "today") {
+      fromDate = todayStr;
+      toDate = todayStr;
+    } else if (range === "week") {
+      const past = new Date(now.getTime() - 6 * 24 * 60 * 60 * 1e3);
+      fromDate = formatYMD(past);
+      toDate = todayStr;
+    } else if (range === "month") {
+      fromDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+      toDate = todayStr;
+    } else if (range === "year") {
+      fromDate = `${now.getFullYear()}-01-01`;
+      toDate = todayStr;
+    } else if (range === "all") {
+      fromDate = void 0;
+      toDate = void 0;
+    } else if (range === "custom") {
+      if (!fromDate) fromDate = todayStr;
+      if (!toDate) toDate = todayStr;
+    }
+    const hasDateRange = Boolean(fromDate && toDate);
+    const [
+      chatsRes,
+      appointmentsRes,
+      appointmentsCompletedRes,
+      appointmentRevenueRes,
+      ordersRes,
+      ordersPaidRes,
+      orderRevenueRes,
+      pendingRes,
+      recentOrdersRes,
+      recentApptsRes
+    ] = await Promise.all([
+      hasDateRange ? query(`SELECT COUNT(DISTINCT remote_jid) as count FROM chat_messages WHERE tenant_id = $1 AND created_at::date >= $2 AND created_at::date <= $3`, [tenantId, fromDate, toDate]) : query(`SELECT COUNT(DISTINCT remote_jid) as count FROM chat_messages WHERE tenant_id = $1`, [tenantId]),
+      hasDateRange ? query(`SELECT COUNT(*) as count FROM appointments WHERE tenant_id = $1 AND date >= $2 AND date <= $3`, [tenantId, fromDate, toDate]) : query(`SELECT COUNT(*) as count FROM appointments WHERE tenant_id = $1`, [tenantId]),
+      hasDateRange ? query(`SELECT COUNT(*) as count FROM appointments WHERE tenant_id = $1 AND (payment_status = 'paid' OR LOWER(status) IN ('completed', 'completado', 'completada', 'realizada', 'finalizada', 'atendida', 'done')) AND date >= $2 AND date <= $3`, [tenantId, fromDate, toDate]) : query(`SELECT COUNT(*) as count FROM appointments WHERE tenant_id = $1 AND (payment_status = 'paid' OR LOWER(status) IN ('completed', 'completado', 'completada', 'realizada', 'finalizada', 'atendida', 'done'))`, [tenantId]),
+      hasDateRange ? query(`SELECT COALESCE(SUM(amount), 0) as total FROM appointments WHERE tenant_id = $1 AND (payment_status = 'paid' OR LOWER(status) IN ('completed', 'completado', 'completada', 'realizada', 'finalizada', 'atendida', 'done')) AND date >= $2 AND date <= $3`, [tenantId, fromDate, toDate]) : query(`SELECT COALESCE(SUM(amount), 0) as total FROM appointments WHERE tenant_id = $1 AND (payment_status = 'paid' OR LOWER(status) IN ('completed', 'completado', 'completada', 'realizada', 'finalizada', 'atendida', 'done'))`, [tenantId]),
+      hasDateRange ? query(`SELECT COUNT(*) as count FROM orders WHERE tenant_id = $1 AND created_at::date >= $2 AND created_at::date <= $3`, [tenantId, fromDate, toDate]) : query(`SELECT COUNT(*) as count FROM orders WHERE tenant_id = $1`, [tenantId]),
+      hasDateRange ? query(`SELECT COUNT(*) as count FROM orders WHERE tenant_id = $1 AND payment_status = 'paid' AND created_at::date >= $2 AND created_at::date <= $3`, [tenantId, fromDate, toDate]) : query(`SELECT COUNT(*) as count FROM orders WHERE tenant_id = $1 AND payment_status = 'paid'`, [tenantId]),
+      hasDateRange ? query(`SELECT COALESCE(SUM(total), 0) as total FROM orders WHERE tenant_id = $1 AND payment_status = 'paid' AND created_at::date >= $2 AND created_at::date <= $3`, [tenantId, fromDate, toDate]) : query(`SELECT COALESCE(SUM(total), 0) as total FROM orders WHERE tenant_id = $1 AND payment_status = 'paid'`, [tenantId]),
       query(`SELECT COUNT(*) as count FROM orders WHERE tenant_id = $1 AND status = 'pending'`, [tenantId]),
       query(`
         SELECT id, order_number as "orderNumber", customer_name as "customerName", total, status, 
-               payment_method as "paymentMethod", created_at as "createdAt"
-        FROM orders WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT 5
+               payment_method as "paymentMethod", payment_status as "paymentStatus", created_at as "createdAt"
+        FROM orders WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT 6
       `, [tenantId]),
       query(`
-        SELECT id, name, whatsapp, service, date, time, status, created_at as "createdAt"
-        FROM appointments WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT 5
+        SELECT id, name, whatsapp, service, date, time, amount, status, 
+               payment_status as "paymentStatus", created_at as "createdAt"
+        FROM appointments WHERE tenant_id = $1 ORDER BY date DESC, time DESC, created_at DESC LIMIT 6
       `, [tenantId])
     ]);
+    let courtRevenue = 0;
+    let courtBookingsCount = 0;
+    try {
+      const cbRes = hasDateRange ? await query(`SELECT COUNT(*) as count, COALESCE(SUM(total_price), 0) as total FROM court_bookings WHERE tenant_id = $1 AND status NOT IN ('cancelled', 'rejected') AND date >= $2 AND date <= $3`, [tenantId, fromDate, toDate]) : await query(`SELECT COUNT(*) as count, COALESCE(SUM(total_price), 0) as total FROM court_bookings WHERE tenant_id = $1 AND status NOT IN ('cancelled', 'rejected')`, [tenantId]);
+      courtBookingsCount = parseInt(cbRes.rows[0]?.count || "0", 10);
+      courtRevenue = parseFloat(cbRes.rows[0]?.total || "0");
+    } catch (e) {
+    }
+    const appointmentRevenue = parseFloat(appointmentRevenueRes.rows[0]?.total || "0");
+    const orderRevenue = parseFloat(orderRevenueRes.rows[0]?.total || "0");
+    const totalRevenue = appointmentRevenue + orderRevenue + courtRevenue;
     res.json({
-      chats: parseInt(chatsRes.rows[0].count, 10),
-      appointments: parseInt(appointmentsRes.rows[0].count, 10),
-      orders: parseInt(ordersRes.rows[0].count, 10),
-      revenue: parseFloat(revenueRes.rows[0].total),
-      pendingOrders: parseInt(pendingRes.rows[0].count, 10),
+      range,
+      fromDate: fromDate || null,
+      toDate: toDate || null,
+      chats: parseInt(chatsRes.rows[0]?.count || "0", 10),
+      appointments: parseInt(appointmentsRes.rows[0]?.count || "0", 10),
+      appointmentsCompleted: parseInt(appointmentsCompletedRes.rows[0]?.count || "0", 10),
+      orders: parseInt(ordersRes.rows[0]?.count || "0", 10),
+      ordersPaid: parseInt(ordersPaidRes.rows[0]?.count || "0", 10),
+      appointmentRevenue,
+      orderRevenue,
+      courtRevenue,
+      courtBookingsCount,
+      totalRevenue,
+      revenue: totalRevenue,
+      // backwards compatible
+      pendingOrders: parseInt(pendingRes.rows[0]?.count || "0", 10),
       recentOrders: recentOrdersRes.rows,
       recentAppointments: recentApptsRes.rows
     });
@@ -13175,7 +13246,8 @@ async function resolveSpecialistFromRequest(req) {
             name: res.rows[0].name,
             phone: res.rows[0].phone,
             specialty: res.rows[0].specialty,
-            accessPin: res.rows[0].access_pin
+            accessPin: res.rows[0].access_pin,
+            showEarnings: res.rows[0].show_earnings !== false
           };
         }
       }
@@ -13280,7 +13352,8 @@ router24.post("/portal/login", specialistPortalLoginLimiter, async (req, res) =>
         phone: specialist.phone,
         specialty: specialist.specialty,
         accessPin: specialist.accessPin,
-        businessName: tenant?.name || "Comercio"
+        businessName: tenant?.name || "Comercio",
+        showEarnings: specialist.showEarnings !== false
       }
     });
   } catch (error) {
@@ -13306,7 +13379,8 @@ router24.get("/portal/me", async (req, res) => {
         phone: specialist.phone,
         specialty: specialist.specialty,
         accessPin: specialist.accessPin,
-        businessName: tenant?.name || "Comercio"
+        businessName: tenant?.name || "Comercio",
+        showEarnings: specialist.showEarnings !== false
       }
     });
   } catch (error) {
@@ -13321,8 +13395,12 @@ router24.get("/portal/appointments", async (req, res) => {
       res.status(401).json({ error: "Credenciales de especialista no provistas o inv\xE1lidas" });
       return;
     }
-    const appointments = await getActiveAppointmentsForSpecialist(specialist.id);
-    res.json({ appointments, specialistName: specialist.name });
+    const showEarnings = specialist.showEarnings !== false;
+    let appointments = await getActiveAppointmentsForSpecialist(specialist.id);
+    if (!showEarnings) {
+      appointments = appointments.map((a) => ({ ...a, amount: 0 }));
+    }
+    res.json({ appointments, specialistName: specialist.name, showEarnings });
   } catch (error) {
     res.status(500).json({ error: "Error obteniendo citas" });
   }
@@ -13354,12 +13432,17 @@ router24.get("/portal/history", async (req, res) => {
       res.status(401).json({ error: "Credenciales de especialista no provistas o inv\xE1lidas" });
       return;
     }
-    const appointments = await getCompletedAppointmentsForSpecialist(specialist.id, fromDate, toDate);
-    const totalEarnings = appointments.reduce((sum, a) => sum + Number(a.amount || 0), 0);
+    const showEarnings = specialist.showEarnings !== false;
+    let appointments = await getCompletedAppointmentsForSpecialist(specialist.id, fromDate, toDate);
+    const totalEarnings = showEarnings ? appointments.reduce((sum, a) => sum + Number(a.amount || 0), 0) : 0;
+    if (!showEarnings) {
+      appointments = appointments.map((a) => ({ ...a, amount: 0 }));
+    }
     res.json({
       appointments,
       totalCount: appointments.length,
       totalEarnings,
+      showEarnings,
       specialistName: specialist.name
     });
   } catch (error) {
@@ -13452,12 +13535,20 @@ router24.get("/", async (req, res) => {
 });
 router24.post("/", async (req, res) => {
   try {
-    const { name, phone, specialty, accessPin } = req.body;
+    const { name, phone, specialty, accessPin, scheduleType, scheduleConfig, showEarnings } = req.body;
     if (!name) {
       res.status(400).json({ error: "Nombre es requerido" });
       return;
     }
-    const created = await createSpecialist(req.tenantId, { name, phone, specialty, accessPin });
+    const created = await createSpecialist(req.tenantId, {
+      name,
+      phone,
+      specialty,
+      accessPin,
+      scheduleType,
+      scheduleConfig,
+      showEarnings: showEarnings !== false
+    });
     res.status(201).json(created);
   } catch (error) {
     res.status(500).json({ error: "Error al crear colaborador" });

@@ -825,9 +825,10 @@ export async function runMigrations() {
     ALTER TABLE courts ADD COLUMN IF NOT EXISTS image_url TEXT;
     ALTER TABLE courts ADD COLUMN IF NOT EXISTS schedule_config JSONB;
 
-    -- Specialists: schedule_type and schedule_config
+    -- Specialists: schedule_type, schedule_config and show_earnings
     ALTER TABLE specialists ADD COLUMN IF NOT EXISTS schedule_type VARCHAR(50) DEFAULT 'business_hours';
     ALTER TABLE specialists ADD COLUMN IF NOT EXISTS schedule_config JSONB;
+    ALTER TABLE specialists ADD COLUMN IF NOT EXISTS show_earnings BOOLEAN DEFAULT true;
 
     -- Customer & Patient Records (Expedientes)
     CREATE TABLE IF NOT EXISTS customer_records (

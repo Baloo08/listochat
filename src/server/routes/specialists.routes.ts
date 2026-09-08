@@ -43,7 +43,8 @@ async function resolveSpecialistFromRequest(req: any) {
             name: res.rows[0].name,
             phone: res.rows[0].phone,
             specialty: res.rows[0].specialty,
-            accessPin: res.rows[0].access_pin
+            accessPin: res.rows[0].access_pin,
+            showEarnings: res.rows[0].show_earnings !== false
           };
         }
       }
@@ -165,7 +166,8 @@ router.post('/portal/login', specialistPortalLoginLimiter, async (req, res) => {
         phone: specialist.phone,
         specialty: specialist.specialty,
         accessPin: specialist.accessPin,
-        businessName: tenant?.name || 'Comercio'
+        businessName: tenant?.name || 'Comercio',
+        showEarnings: specialist.showEarnings !== false
       }
     });
   } catch (error) {
@@ -195,7 +197,8 @@ router.get('/portal/me', async (req, res) => {
         phone: specialist.phone,
         specialty: specialist.specialty,
         accessPin: specialist.accessPin,
-        businessName: tenant?.name || 'Comercio'
+        businessName: tenant?.name || 'Comercio',
+        showEarnings: specialist.showEarnings !== false
       }
     });
   } catch (error) {
@@ -211,8 +214,12 @@ router.get('/portal/appointments', async (req, res) => {
       res.status(401).json({ error: 'Credenciales de especialista no provistas o inválidas' });
       return;
     }
-    const appointments = await getActiveAppointmentsForSpecialist(specialist.id);
-    res.json({ appointments, specialistName: specialist.name });
+    const showEarnings = (specialist as any).showEarnings !== false;
+    let appointments = await getActiveAppointmentsForSpecialist(specialist.id);
+    if (!showEarnings) {
+      appointments = appointments.map((a: any) => ({ ...a, amount: 0 }));
+    }
+    res.json({ appointments, specialistName: specialist.name, showEarnings });
   } catch (error) {
     res.status(500).json({ error: 'Error obteniendo citas' });
   }
@@ -246,12 +253,21 @@ router.get('/portal/history', async (req, res) => {
       res.status(401).json({ error: 'Credenciales de especialista no provistas o inválidas' });
       return;
     }
-    const appointments = await getCompletedAppointmentsForSpecialist(specialist.id, fromDate, toDate);
-    const totalEarnings = appointments.reduce((sum, a) => sum + Number(a.amount || 0), 0);
+    const showEarnings = (specialist as any).showEarnings !== false;
+    let appointments = await getCompletedAppointmentsForSpecialist(specialist.id, fromDate, toDate);
+    const totalEarnings = showEarnings
+      ? appointments.reduce((sum, a) => sum + Number(a.amount || 0), 0)
+      : 0;
+
+    if (!showEarnings) {
+      appointments = appointments.map((a: any) => ({ ...a, amount: 0 }));
+    }
+
     res.json({
       appointments,
       totalCount: appointments.length,
       totalEarnings,
+      showEarnings,
       specialistName: specialist.name
     });
   } catch (error) {
@@ -362,12 +378,20 @@ router.get('/', async (req: any, res) => {
 
 router.post('/', async (req: any, res) => {
   try {
-    const { name, phone, specialty, accessPin } = req.body;
+    const { name, phone, specialty, accessPin, scheduleType, scheduleConfig, showEarnings } = req.body;
     if (!name) {
       res.status(400).json({ error: 'Nombre es requerido' });
       return;
     }
-    const created = await createSpecialist(req.tenantId, { name, phone, specialty, accessPin });
+    const created = await createSpecialist(req.tenantId, {
+      name,
+      phone,
+      specialty,
+      accessPin,
+      scheduleType,
+      scheduleConfig,
+      showEarnings: showEarnings !== false
+    });
     res.status(201).json(created);
   } catch (error) {
     res.status(500).json({ error: 'Error al crear colaborador' });

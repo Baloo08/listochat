@@ -513,6 +513,7 @@ export interface Specialist {
   active: boolean;
   scheduleType?: SpecialistScheduleType;
   scheduleConfig?: SpecialistScheduleConfig;
+  showEarnings?: boolean;
   createdAt?: string;
 }
 

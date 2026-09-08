@@ -16,6 +16,7 @@ interface SpecialistInfo {
   specialty?: string;
   accessPin: string;
   businessName: string;
+  showEarnings?: boolean;
 }
 
 interface AppointmentItem {
@@ -688,23 +689,25 @@ export default function SpecialistPortal({ tenantSlug }: { tenantSlug?: string }
                         </span>
                       </div>
 
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', backgroundColor: '#f8fafc', padding: '10px', borderRadius: '8px', fontSize: '0.82rem', marginBottom: '14px', border: '1px solid #f1f5f9' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: specialist?.showEarnings !== false ? '1fr 1fr' : '1fr', gap: '8px', backgroundColor: '#f8fafc', padding: '10px', borderRadius: '8px', fontSize: '0.82rem', marginBottom: '14px', border: '1px solid #f1f5f9' }}>
                         <div>
                           <span style={{ color: '#64748b', display: 'block', fontSize: '0.72rem' }}>Fecha y Hora:</span>
                           <strong>📅 {formatShortDate(a.date)} • ⏰ {formatShortTime(a.time)}</strong>
                         </div>
-                        <div>
-                          <span style={{ color: '#64748b', display: 'block', fontSize: '0.72rem' }}>Monto:</span>
-                          <strong>₡{Number(a.amount || 0).toLocaleString('es-CR')}</strong>
-                        </div>
+                        {specialist?.showEarnings !== false && (
+                          <div>
+                            <span style={{ color: '#64748b', display: 'block', fontSize: '0.72rem' }}>Monto:</span>
+                            <strong>₡{Number(a.amount || 0).toLocaleString('es-CR')}</strong>
+                          </div>
+                        )}
                         {a.vehicleModel && (
-                          <div style={{ gridColumn: 'span 2' }}>
+                          <div style={{ gridColumn: specialist?.showEarnings !== false ? 'span 2' : 'span 1' }}>
                             <span style={{ color: '#64748b', display: 'block', fontSize: '0.72rem' }}>Detalle / Vehículo:</span>
                             <span>{a.vehicleModel}</span>
                           </div>
                         )}
                         {a.details && (
-                          <div style={{ gridColumn: 'span 2' }}>
+                          <div style={{ gridColumn: specialist?.showEarnings !== false ? 'span 2' : 'span 1' }}>
                             <span style={{ color: '#64748b', display: 'block', fontSize: '0.72rem' }}>Notas:</span>
                             <span>{a.details}</span>
                           </div>
@@ -816,15 +819,17 @@ export default function SpecialistPortal({ tenantSlug }: { tenantSlug?: string }
               )}
 
               {/* KPI Summary */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '12px', borderTop: '1px solid #f1f5f9', paddingTop: '10px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: specialist?.showEarnings !== false ? '1fr 1fr' : '1fr', gap: '10px', marginTop: '12px', borderTop: '1px solid #f1f5f9', paddingTop: '10px' }}>
                 <div style={{ backgroundColor: '#f0fdf4', padding: '10px', borderRadius: '8px', border: '1px solid #bbf7d0' }}>
                   <span style={{ fontSize: '0.72rem', color: '#166534', display: 'block' }}>Citas Realizadas:</span>
                   <strong style={{ fontSize: '1.2rem', color: '#166534' }}>{historyStats.totalCount}</strong>
                 </div>
-                <div style={{ backgroundColor: '#eff6ff', padding: '10px', borderRadius: '8px', border: '1px solid #bfdbfe' }}>
-                  <span style={{ fontSize: '0.72rem', color: '#1e40af', display: 'block' }}>Total Atendido:</span>
-                  <strong style={{ fontSize: '1.2rem', color: '#1e40af' }}>₡{historyStats.totalEarnings.toLocaleString('es-CR')}</strong>
-                </div>
+                {specialist?.showEarnings !== false && (
+                  <div style={{ backgroundColor: '#eff6ff', padding: '10px', borderRadius: '8px', border: '1px solid #bfdbfe' }}>
+                    <span style={{ fontSize: '0.72rem', color: '#1e40af', display: 'block' }}>Total Atendido:</span>
+                    <strong style={{ fontSize: '1.2rem', color: '#1e40af' }}>₡{historyStats.totalEarnings.toLocaleString('es-CR')}</strong>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -847,9 +852,11 @@ export default function SpecialistPortal({ tenantSlug }: { tenantSlug?: string }
                       <div style={{ fontSize: '0.8rem', color: '#64748b' }}>{h.service} • {formatShortDate(h.date)} • {formatShortTime(h.time)}</div>
                     </div>
                     <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontWeight: 'bold', color: '#16a34a', fontSize: '0.95rem' }}>
-                        ₡{Number(h.amount || 0).toLocaleString('es-CR')}
-                      </div>
+                      {specialist?.showEarnings !== false && (
+                        <div style={{ fontWeight: 'bold', color: '#16a34a', fontSize: '0.95rem' }}>
+                          ₡{Number(h.amount || 0).toLocaleString('es-CR')}
+                        </div>
+                      )}
                       <span style={{ fontSize: '0.7rem', color: '#16a34a', backgroundColor: '#dcfce7', padding: '2px 6px', borderRadius: '4px' }}>
                         Completada
                       </span>
