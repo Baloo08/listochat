@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ShoppingCart, Camera, Image, CheckCircle2, Clock, CheckCircle, Truck, Package, XCircle, Eye, MessageCircle, AlertCircle, RefreshCw, Send, Check, Utensils, LayoutGrid, List, Navigation, Bike, MapPin, User, Phone, Store, Maximize, ExternalLink, Building2, Zap, CreditCard, Smartphone, DollarSign, FileText } from 'lucide-react';
+import { ShoppingCart, Camera, Image, CheckCircle2, Clock, CheckCircle, Truck, Package, XCircle, Eye, MessageCircle, AlertCircle, RefreshCw, Send, Check, Utensils, LayoutGrid, List, Navigation, Bike, MapPin, User, Phone, Store, Maximize, ExternalLink, Building2, Zap, CreditCard, Smartphone, DollarSign, FileText, Download } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
 import { Order, OrderStatus, DeliveryDriver } from '../../shared/types';
 import InteractiveMapPicker from './InteractiveMapPicker';
@@ -20,6 +20,8 @@ export default function OrdersPanel() {
   const [updatingProofId, setUpdatingProofId] = useState<string | null>(null);
   const [dispatchingDriverId, setDispatchingDriverId] = useState<string>('');
   const [dispatching, setDispatching] = useState(false);
+  const [emittingInvoiceId, setEmittingInvoiceId] = useState<string | null>(null);
+  const [confirmingPaymentId, setConfirmingPaymentId] = useState<string | null>(null);
 
   const api = useApi();
 
@@ -87,6 +89,54 @@ export default function OrdersPanel() {
       alert('Error al actualizar estado del comprobante: ' + (e.message || 'Verifique'));
     } finally {
       setUpdatingProofId(null);
+    }
+  };
+
+  const handleConfirmCashPayment = async (orderId: string) => {
+    setConfirmingPaymentId(orderId);
+    try {
+      await api.post(`/api/orders/${orderId}/confirm-payment`, {
+        reference: 'Efectivo recibido en establecimiento',
+        notifyCustomer
+      });
+      await fetchOrders();
+      if (selectedOrder && selectedOrder.id === orderId) {
+        setSelectedOrder(prev => prev ? {
+          ...prev,
+          paymentStatus: 'paid',
+          paymentReference: 'Efectivo recibido en establecimiento'
+        } : null);
+      }
+      alert('Pago en efectivo confirmado exitosamente.');
+    } catch (e: any) {
+      alert('Error al confirmar pago en efectivo: ' + (e?.message || 'Error'));
+    } finally {
+      setConfirmingPaymentId(null);
+    }
+  };
+
+  const handleEmitInvoice = async (orderId: string) => {
+    setEmittingInvoiceId(orderId);
+    try {
+      const res: any = await api.post(`/api/almendro/emit-order-invoice/${orderId}`, {});
+      alert(`Factura emitida exitosamente en Almendro. Clave: ${res.numericKey}`);
+      await fetchOrders();
+      if (selectedOrder && selectedOrder.id === orderId) {
+        setSelectedOrder(prev => prev ? {
+          ...prev,
+          billingInfo: {
+            ...(prev.billingInfo || { requiresInvoice: true }),
+            numericKey: res.numericKey,
+            pdfUrl: res.pdfUrl,
+            invoiceStatus: 'issued',
+            issuedAt: new Date().toISOString()
+          }
+        } : null);
+      }
+    } catch (e: any) {
+      alert('Error al emitir factura electrónica: ' + (e?.message || 'Verifique configuración'));
+    } finally {
+      setEmittingInvoiceId(null);
     }
   };
 
@@ -363,6 +413,22 @@ export default function OrdersPanel() {
                                     {(order as any).branchName}
                                   </span>
                                 )}
+                                {order.billingInfo?.requiresInvoice && (
+                                  <span style={{
+                                    fontSize: '0.68rem',
+                                    padding: '1px 6px',
+                                    backgroundColor: order.billingInfo.numericKey ? '#ecfdf5' : '#faf5ff',
+                                    color: order.billingInfo.numericKey ? '#047857' : '#7e22ce',
+                                    border: `1px solid ${order.billingInfo.numericKey ? '#a7f3d0' : '#e9d5ff'}`,
+                                    borderRadius: '4px',
+                                    fontWeight: 'bold',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '3px'
+                                  }} title={order.billingInfo.numericKey ? `Factura Clave: ${order.billingInfo.numericKey}` : 'Factura solicitada'}>
+                                    <FileText size={10} /> {order.billingInfo.numericKey ? 'Facturada' : 'Factura'}
+                                  </span>
+                                )}
                               </div>
                               <div style={{ fontSize: '0.8rem', fontWeight: '600', color: '#475569' }}>{order.customerName}</div>
                             </div>
@@ -528,7 +594,25 @@ export default function OrdersPanel() {
                       #ORD-{order.orderNumber}
                     </td>
                     <td style={{ padding: '14px 16px' }}>
-                      <div style={{ fontWeight: '600', fontSize: '0.9rem' }}>{order.customerName}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ fontWeight: '600', fontSize: '0.9rem' }}>{order.customerName}</span>
+                        {order.billingInfo?.requiresInvoice && (
+                          <span style={{
+                            fontSize: '0.68rem',
+                            padding: '1px 6px',
+                            backgroundColor: order.billingInfo.numericKey ? '#ecfdf5' : '#faf5ff',
+                            color: order.billingInfo.numericKey ? '#047857' : '#7e22ce',
+                            border: `1px solid ${order.billingInfo.numericKey ? '#a7f3d0' : '#e9d5ff'}`,
+                            borderRadius: '4px',
+                            fontWeight: 'bold',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '2px'
+                          }}>
+                            <FileText size={10} /> {order.billingInfo.numericKey ? 'Facturada' : 'Factura'}
+                          </span>
+                        )}
+                      </div>
                       <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{order.customerPhone || 'Sin teléfono'}</div>
                       {order.items && order.items.length > 0 && (
                         <div style={{ fontSize: '0.75rem', color: '#475569', marginTop: '4px', fontWeight: '500', maxWidth: '320px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -672,6 +756,169 @@ export default function OrdersPanel() {
                 </div>
               )}
             </div>
+
+            {/* Payment Proof & Manual Verification Actions */}
+            <div style={{
+              backgroundColor: selectedOrder.paymentStatus === 'paid' ? '#f0fdf4' : '#fffbeb',
+              border: `1px solid ${selectedOrder.paymentStatus === 'paid' ? '#bbf7d0' : '#fde68a'}`,
+              borderRadius: '10px',
+              padding: '16px',
+              marginBottom: '20px'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: selectedOrder.paymentStatus === 'paid' ? '#166534' : '#92400e', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  {selectedOrder.paymentMethod === 'sinpe' ? <Smartphone size={16} /> : selectedOrder.paymentMethod === 'card' || selectedOrder.paymentMethod === 'tilopay' ? <CreditCard size={16} /> : <DollarSign size={16} />}
+                  Verificación de Pago: {selectedOrder.paymentMethod === 'sinpe' ? 'SINPE Móvil Manual' : selectedOrder.paymentMethod === 'card' || selectedOrder.paymentMethod === 'tilopay' ? 'Tarjeta Débito/Crédito (Tilopay)' : selectedOrder.paymentMethod === 'sinpe_tilopay' ? 'SINPE Automático (Tilopay)' : 'Efectivo / En Establecimiento'}
+                </span>
+                <span style={{
+                  fontSize: '0.75rem', fontWeight: 'bold', padding: '3px 8px', borderRadius: '6px',
+                  backgroundColor: selectedOrder.paymentStatus === 'paid' ? '#dcfce7' : '#fef3c7',
+                  color: selectedOrder.paymentStatus === 'paid' ? '#15803d' : '#b45309'
+                }}>
+                  {selectedOrder.paymentStatus === 'paid' ? '✅ Pago Aprobado' : selectedOrder.paymentProofStatus === 'received' ? '📱 Comprobante Recibido' : '⏳ Pendiente de Pago'}
+                </span>
+              </div>
+
+              {/* Reference number if exists */}
+              {selectedOrder.paymentReference && (
+                <div style={{ fontSize: '0.8rem', color: '#475569', marginBottom: '8px' }}>
+                  <strong>Referencia / Comprobante:</strong> {selectedOrder.paymentReference}
+                </div>
+              )}
+
+              {/* Payment Proof Image Preview */}
+              {selectedOrder.paymentProofUrl ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '10px', padding: '10px', backgroundColor: 'white', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <img
+                    src={selectedOrder.paymentProofUrl}
+                    alt="Comprobante de Pago"
+                    onClick={() => setLightboxImageUrl(selectedOrder.paymentProofUrl || null)}
+                    style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '6px', cursor: 'pointer', border: '1px solid #cbd5e1' }}
+                    title="Click para ver en pantalla completa"
+                  />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#1e293b' }}>Comprobante Adjunto por el Cliente</div>
+                    <div style={{ fontSize: '0.72rem', color: '#64748b' }}>Haz clic en la imagen o en el botón para inspeccionar el comprobante</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setLightboxImageUrl(selectedOrder.paymentProofUrl || null)}
+                    style={{ padding: '6px 12px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                  >
+                    <Eye size={13} /> Inspeccionar
+                  </button>
+                </div>
+              ) : selectedOrder.paymentMethod === 'sinpe' && selectedOrder.paymentStatus !== 'paid' ? (
+                <div style={{ fontSize: '0.78rem', color: '#b45309', fontStyle: 'italic', marginTop: '4px' }}>
+                  ⚠️ El cliente seleccionó SINPE Móvil pero aún no ha adjuntado la captura del comprobante.
+                </div>
+              ) : null}
+
+              {/* Action Buttons for Merchant Verification */}
+              {selectedOrder.paymentStatus !== 'paid' && (
+                <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
+                  {selectedOrder.paymentProofUrl && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => handleProofStatusChange(selectedOrder.id, 'verified')}
+                        disabled={updatingProofId === selectedOrder.id}
+                        style={{ flex: 1, padding: '8px 12px', backgroundColor: '#15803d', color: 'white', border: 'none', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                      >
+                        <CheckCircle size={14} /> {updatingProofId === selectedOrder.id ? 'Aprobando...' : 'Aprobar Comprobante (Marcar Pagado)'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleProofStatusChange(selectedOrder.id, 'pending')}
+                        disabled={updatingProofId === selectedOrder.id}
+                        style={{ padding: '8px 12px', backgroundColor: '#fee2e2', color: '#b91c1c', border: '1px solid #fca5a5', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' }}
+                      >
+                        Rechazar
+                      </button>
+                    </>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => handleConfirmCashPayment(selectedOrder.id)}
+                    disabled={confirmingPaymentId === selectedOrder.id}
+                    style={{ flex: 1, padding: '8px 12px', backgroundColor: '#0284c7', color: 'white', border: 'none', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                  >
+                    <DollarSign size={14} /> {confirmingPaymentId === selectedOrder.id ? 'Confirmando...' : 'Confirmar Pago en Efectivo'}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Facturación Electrónica Almendro */}
+            {selectedOrder.billingInfo?.requiresInvoice && (
+              <div style={{
+                backgroundColor: selectedOrder.billingInfo.numericKey ? '#f0fdf4' : '#faf5ff',
+                border: `1px solid ${selectedOrder.billingInfo.numericKey ? '#86efac' : '#e9d5ff'}`,
+                borderRadius: '10px',
+                padding: '16px',
+                marginBottom: '20px'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                  <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: selectedOrder.billingInfo.numericKey ? '#166534' : '#6b21a8', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <FileText size={16} /> Facturación Electrónica (Hacienda / Almendro)
+                  </span>
+                  <span style={{
+                    fontSize: '0.75rem', fontWeight: 'bold', padding: '3px 8px', borderRadius: '6px',
+                    backgroundColor: selectedOrder.billingInfo.numericKey ? '#dcfce7' : selectedOrder.billingInfo.invoiceStatus === 'failed' ? '#fee2e2' : '#f3e8ff',
+                    color: selectedOrder.billingInfo.numericKey ? '#15803d' : selectedOrder.billingInfo.invoiceStatus === 'failed' ? '#b91c1c' : '#7e22ce'
+                  }}>
+                    {selectedOrder.billingInfo.numericKey ? '✅ Emitida con Éxito' : selectedOrder.billingInfo.invoiceStatus === 'failed' ? '❌ Falló Emisión' : '⏳ Pendiente de Emisión'}
+                  </span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '0.8rem', backgroundColor: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '10px' }}>
+                  <div><strong>Cédula:</strong> {selectedOrder.billingInfo.idNumber || 'No registrada'} ({selectedOrder.billingInfo.idType === '02' ? 'Jurídica' : 'Física'})</div>
+                  <div><strong>Razón Social:</strong> {selectedOrder.billingInfo.legalName || selectedOrder.customerName}</div>
+                  <div style={{ gridColumn: '1 / -1' }}><strong>Correo para Factura:</strong> {selectedOrder.billingInfo.email || selectedOrder.customerEmail || 'No especificado'}</div>
+                </div>
+
+                {selectedOrder.billingInfo.numericKey ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <div style={{ fontSize: '0.75rem', color: '#166534', wordBreak: 'break-all' }}>
+                      <strong>Clave Numérica:</strong> {selectedOrder.billingInfo.numericKey}
+                    </div>
+                    {selectedOrder.billingInfo.pdfUrl && (
+                      <div style={{ marginTop: '4px' }}>
+                        <a
+                          href={selectedOrder.billingInfo.pdfUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '6px 12px', backgroundColor: '#15803d', color: 'white', borderRadius: '6px', textDecoration: 'none', fontSize: '0.78rem', fontWeight: 'bold' }}
+                        >
+                          <Download size={13} /> Ver / Descargar Factura PDF ↗
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div>
+                    {selectedOrder.paymentStatus === 'paid' ? (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                        <span style={{ fontSize: '0.75rem', color: '#6b21a8' }}>El pago está confirmado. Puedes emitir la factura a Hacienda inmediatamente:</span>
+                        <button
+                          type="button"
+                          onClick={() => handleEmitInvoice(selectedOrder.id)}
+                          disabled={emittingInvoiceId === selectedOrder.id}
+                          style={{ padding: '7px 14px', backgroundColor: '#7e22ce', color: 'white', border: 'none', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                        >
+                          <FileText size={13} /> {emittingInvoiceId === selectedOrder.id ? 'Emitiendo en Hacienda...' : '🧾 Emitir Factura Electrónica Ahora'}
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: '0.75rem', color: '#6b21a8', fontStyle: 'italic' }}>
+                        💡 La factura electrónica se emitirá automáticamente en cuanto verifiques o confirmes el pago de este pedido.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Interactive Embedded Map View */}
             {selectedOrder.customerLocation?.lat && selectedOrder.customerLocation?.lng && (

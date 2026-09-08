@@ -664,6 +664,13 @@ router.put('/:id', async (req, res) => {
         req.ip,
         req.headers['user-agent']
       );
+
+      if (req.body.paymentStatus === 'paid' && updated.billingInfo?.requiresInvoice) {
+        const { AlmendroService } = await import('../services/almendro.service.js');
+        AlmendroService.emitAppointmentInvoice(req.tenantId!, updated.id).catch(err => {
+          console.error(`[AppointmentsRoute] Error emitiendo factura electrónica para cita ${updated.id}:`, err);
+        });
+      }
     }
 
     res.json(updated);

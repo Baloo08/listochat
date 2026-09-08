@@ -1,12 +1,13 @@
 import { Router } from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import { tenantContext } from '../middleware/tenantContext.js';
-import { getOrdersByTenant, getOrderById, updateOrderStatus, confirmPayment } from '../db/orders.repo.js';
+import { getOrdersByTenant, getOrderById, updateOrderStatus, confirmPayment, executeOrderPaymentConfirmation } from '../db/orders.repo.js';
 import { getTenantById } from '../db/tenant.repo.js';
 import { getStoreSettings } from '../db/store-settings.repo.js';
 import { sendMessage } from '../services/evolution.js';
 import { query } from '../db/pool.js';
 import { logAuditEvent } from '../db/audit.repo.js';
+import { AlmendroService } from '../services/almendro.service.js';
 
 const router = Router();
 router.use(authenticateToken);
@@ -93,20 +94,19 @@ router.put('/:id/proof-status', async (req, res) => {
       return;
     }
 
-    let paymentStatus = order.paymentStatus;
     if (proofStatus === 'verified') {
-      paymentStatus = 'paid';
-    } else if (proofStatus === 'received') {
-      paymentStatus = 'proof_sent';
-    }
+      // 1. Atomic payment confirmation: marks as 'paid' and decrements inventory
+      await executeOrderPaymentConfirmation(req.tenantId!, req.params.id, {
+        paymentMethod: order.paymentMethod || 'sinpe',
+        paymentReference: order.paymentReference || 'Comprobante SINPE verificado'
+      });
 
-    await query(`
-      UPDATE orders 
-      SET payment_proof_status = $1, payment_status = $2, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $3 AND (tenant_id = $4 OR $5 = 'superadmin')
-    `, [proofStatus, paymentStatus, req.params.id, req.tenantId, (req as any).user?.role || 'user']);
+      await query(`
+        UPDATE orders 
+        SET payment_proof_status = 'verified', updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1 AND tenant_id = $2
+      `, [req.params.id, req.tenantId]);
 
-    if (proofStatus === 'verified') {
       await logAuditEvent(
         order.tenantId,
         (req as any).user?.userId || 'system',
@@ -117,18 +117,34 @@ router.put('/:id/proof-status', async (req, res) => {
         req.ip,
         req.headers['user-agent']
       );
+
+      // 2. Trigger Almendro electronic invoicing if customer requested invoice
+      if (order.billingInfo?.requiresInvoice) {
+        AlmendroService.emitOrderInvoice(req.tenantId!, order.id).catch(err => {
+          console.error(`[OrdersRoute] Error disparando factura para orden ${order.id}:`, err);
+        });
+      }
+    } else {
+      const newPaymentStatus = proofStatus === 'received' ? 'proof_sent' : 'pending';
+      await query(`
+        UPDATE orders 
+        SET payment_proof_status = $1, payment_status = $2, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $3 AND tenant_id = $4
+      `, [proofStatus, newPaymentStatus, req.params.id, req.tenantId]);
     }
+
+    const freshOrder = await getOrderById(req.params.id, req.tenantId!);
 
     // Emit real-time update
     if ((req as any).io) {
-      (req as any).io.to(`tenant_${order.tenantId}`).emit('order:updated', {
+      (req as any).io.to(`tenant_${order.tenantId}`).emit('order:updated', freshOrder || {
         id: req.params.id,
         paymentProofStatus: proofStatus,
-        paymentStatus
+        paymentStatus: freshOrder?.paymentStatus || (proofStatus === 'verified' ? 'paid' : proofStatus === 'received' ? 'proof_sent' : 'pending')
       });
     }
 
-    res.json({ success: true, proofStatus, paymentStatus });
+    res.json({ success: true, proofStatus, paymentStatus: freshOrder?.paymentStatus, order: freshOrder });
   } catch (error) {
     console.error('Error updating proof status:', error);
     res.status(500).json({ error: 'Error al actualizar estado de comprobante' });
@@ -251,6 +267,13 @@ router.post('/:id/confirm-payment', async (req, res) => {
       } catch (e) {
         // ignore
       }
+    }
+
+    // Trigger Almendro electronic invoicing if requested
+    if (order?.billingInfo?.requiresInvoice) {
+      AlmendroService.emitOrderInvoice(req.tenantId!, order.id).catch(err => {
+        console.error(`[OrdersRoute] Error disparando factura electrónica en confirm-payment para orden ${order.id}:`, err);
+      });
     }
 
     await logAuditEvent(

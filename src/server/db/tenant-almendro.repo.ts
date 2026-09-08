@@ -363,3 +363,57 @@ export async function getElectronicVouchers(
     total
   };
 }
+
+/**
+ * Retrieves an electronic voucher by orderId strictly isolated by tenantId.
+ */
+export async function getElectronicVoucherByOrderId(
+  tenantId: string,
+  orderId: string
+): Promise<ElectronicVoucher | null> {
+  if (!tenantId || !orderId) return null;
+  const res = await query(`
+    SELECT id, tenant_id as "tenantId", order_id as "orderId", appointment_id as "appointmentId",
+           court_booking_id as "courtBookingId", subscription_charge_id as "subscriptionChargeId",
+           doc_type as "docType", consecutive_number as "consecutiveNumber", numeric_key as "numericKey",
+           receiver_id_type as "receiverIdType", receiver_id_number as "receiverIdNumber",
+           receiver_name as "receiverName", receiver_email as "receiverEmail",
+           currency, subtotal, tax_amount as "taxAmount", total_amount as "totalAmount",
+           status, pdf_url as "pdfUrl", xml_signed_url as "xmlSignedUrl",
+           xml_response_url as "xmlResponseUrl", hacienda_response_code as "haciendaResponseCode",
+           hacienda_response_detail as "haciendaResponseDetail", metadata,
+           created_at as "createdAt", updated_at as "updatedAt"
+    FROM electronic_vouchers
+    WHERE tenant_id = $1 AND order_id = $2
+    ORDER BY created_at DESC
+    LIMIT 1
+  `, [tenantId, orderId]);
+  return res.rows[0] || null;
+}
+
+/**
+ * Retrieves an electronic voucher by appointmentId strictly isolated by tenantId.
+ */
+export async function getElectronicVoucherByAppointmentId(
+  tenantId: string,
+  appointmentId: string
+): Promise<ElectronicVoucher | null> {
+  if (!tenantId || !appointmentId) return null;
+  const res = await query(`
+    SELECT id, tenant_id as "tenantId", order_id as "orderId", appointment_id as "appointmentId",
+           court_booking_id as "courtBookingId", subscription_charge_id as "subscriptionChargeId",
+           doc_type as "docType", consecutive_number as "consecutiveNumber", numeric_key as "numericKey",
+           receiver_id_type as "receiverIdType", receiver_id_number as "receiverIdNumber",
+           receiver_name as "receiverName", receiver_email as "receiverEmail",
+           currency, subtotal, tax_amount as "taxAmount", total_amount as "totalAmount",
+           status, pdf_url as "pdfUrl", xml_signed_url as "xmlSignedUrl",
+           xml_response_url as "xmlResponseUrl", hacienda_response_code as "haciendaResponseCode",
+           hacienda_response_detail as "haciendaResponseDetail", metadata,
+           created_at as "createdAt", updated_at as "updatedAt"
+    FROM electronic_vouchers
+    WHERE tenant_id = $1 AND appointment_id = $2
+    ORDER BY created_at DESC
+    LIMIT 1
+  `, [tenantId, appointmentId]);
+  return res.rows[0] || null;
+}

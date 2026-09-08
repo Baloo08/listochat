@@ -17,6 +17,14 @@ export class TilopayTenantService {
     return 'https://app.tilopay.com/api/v1';
   }
 
+  public static getCleanAppUrl(): string {
+    let url = (env.APP_URL || 'https://betico.tech').trim().replace(/\/$/, '');
+    if (url.includes('easypanel.host') || !url.startsWith('https://')) {
+      url = 'https://betico.tech';
+    }
+    return url;
+  }
+
   /**
    * Clears cached tokens for a tenant (useful when credentials are saved or rotated).
    */
@@ -168,7 +176,7 @@ export class TilopayTenantService {
     const firstName = nameParts[0] || 'Cliente';
     const lastName = nameParts.slice(1).join(' ') || firstName;
     const cleanPhone = (order.customerPhone || '88888888').replace(/\D/g, '') || '88888888';
-    const appUrl = (env.APP_URL || 'https://betico.tech').replace(/\/$/, '');
+    const appUrl = this.getCleanAppUrl();
 
     const paymentPayload = {
       key: apiKey,
@@ -249,7 +257,7 @@ export class TilopayTenantService {
     const firstName = nameParts[0] || 'Cliente';
     const lastName = nameParts.slice(1).join(' ') || firstName;
     const cleanPhone = (apt.whatsapp || '88888888').replace(/\D/g, '') || '88888888';
-    const appUrl = (env.APP_URL || 'https://betico.tech').replace(/\/$/, '');
+    const appUrl = this.getCleanAppUrl();
 
     const paymentPayload = {
       key: apiKey,
@@ -339,7 +347,7 @@ export class TilopayTenantService {
     const firstName = nameParts[0] || 'Capitán';
     const lastName = nameParts.slice(1).join(' ') || firstName;
     const cleanPhone = customerPhone.replace(/\D/g, '') || '88888888';
-    const appUrl = (env.APP_URL || 'https://betico.tech').replace(/\/$/, '');
+    const appUrl = this.getCleanAppUrl();
 
     const paymentPayload = {
       key: apiKey,

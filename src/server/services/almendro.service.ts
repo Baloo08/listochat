@@ -352,6 +352,252 @@ export class AlmendroService {
       return { success: false, message: `Error de red al conectar con Almendro: ${err.message}` };
     }
   }
+
+  /**
+   * Automatically or manually emits an electronic invoice for an Order.
+   * Performs idempotency checks, line formatting, and updates order.billingInfo in DB.
+   */
+  static async emitOrderInvoice(
+    tenantId: string,
+    orderId: string
+  ): Promise<{ success: boolean; numericKey?: string; pdfUrl?: string; message: string }> {
+    try {
+      const { getOrderById, updateOrder } = await import('../db/orders.repo.js');
+      const { getElectronicVoucherByOrderId } = await import('../db/tenant-almendro.repo.js');
+
+      const order = await getOrderById(orderId, tenantId);
+      if (!order) {
+        return { success: false, message: 'Orden no encontrada' };
+      }
+
+      // Check if electronic invoicing is enabled for this tenant
+      const config = await getTenantAlmendroConfigRaw(tenantId);
+      if (!config || !config.isEnabled || !config.apiKey) {
+        return { success: false, message: 'Facturación electrónica no habilitada en este comercio' };
+      }
+
+      // Idempotency check 1: order.billingInfo already has a numericKey
+      if (order.billingInfo?.numericKey && order.billingInfo?.invoiceStatus === 'issued') {
+        return {
+          success: true,
+          numericKey: order.billingInfo.numericKey,
+          pdfUrl: order.billingInfo.pdfUrl,
+          message: `Factura ya emitida previamente con clave ${order.billingInfo.numericKey}`
+        };
+      }
+
+      // Idempotency check 2: voucher already in electronic_vouchers table
+      const existingVoucher = await getElectronicVoucherByOrderId(tenantId, order.id);
+      if (existingVoucher && existingVoucher.numericKey) {
+        const updatedBillingInfo = {
+          ...(order.billingInfo || { requiresInvoice: true }),
+          numericKey: existingVoucher.numericKey,
+          pdfUrl: existingVoucher.pdfUrl || undefined,
+          invoiceStatus: 'issued' as const,
+          issuedAt: existingVoucher.createdAt ? new Date(existingVoucher.createdAt).toISOString() : new Date().toISOString()
+        };
+        await updateOrder(order.id, tenantId, { billingInfo: updatedBillingInfo });
+        return {
+          success: true,
+          numericKey: existingVoucher.numericKey,
+          pdfUrl: existingVoucher.pdfUrl || undefined,
+          message: `Factura recuperada de registros con clave ${existingVoucher.numericKey}`
+        };
+      }
+
+      const billing = order.billingInfo;
+      const receiverIdNumber = billing?.idNumber?.replace(/\D/g, '') || undefined;
+      const receiverIdType = billing?.idType || (receiverIdNumber && receiverIdNumber.length === 10 && receiverIdNumber.startsWith('3') ? '02' : '01');
+      const receiverName = billing?.legalName || order.customerName;
+      const receiverEmail = billing?.email || order.customerEmail || undefined;
+
+      const docType: '01' | '04' = receiverIdNumber ? '01' : (config.defaultDocType || '04');
+
+      // Prepare line items
+      const items: VoucherLineItem[] = (order.items && order.items.length > 0)
+        ? order.items.map(it => ({
+            cabysCode: '8311100000000',
+            description: `${it.productName}${it.variantName ? ` - ${it.variantName}` : ''}`,
+            quantity: Number(it.quantity) || 1,
+            unitPrice: Number(it.unitPrice) || 0,
+            taxRateCode: '08' // 13% IVA
+          }))
+        : [{
+            cabysCode: '8311100000000',
+            description: `Consumo / Pedido #ORD-${order.orderNumber}`,
+            quantity: 1,
+            unitPrice: Number(order.subtotal || order.total) || 0,
+            taxRateCode: '08'
+          }];
+
+      // Add delivery fee as line item if present and > 0
+      if (Number(order.deliveryFee) > 0) {
+        items.push({
+          cabysCode: '8311100000000',
+          description: 'Servicio de Envío Express',
+          quantity: 1,
+          unitPrice: Number(order.deliveryFee),
+          taxRateCode: '08'
+        });
+      }
+
+      const voucherRes = await this.emitVoucher(tenantId, {
+        docType,
+        orderId: order.id,
+        currency: order.currency || 'CRC',
+        receiver: receiverIdNumber ? {
+          idType: receiverIdType,
+          idNumber: receiverIdNumber,
+          name: receiverName,
+          email: receiverEmail
+        } : undefined,
+        items
+      });
+
+      if (voucherRes.success && voucherRes.numericKey) {
+        const updatedBilling = {
+          ...(order.billingInfo || { requiresInvoice: true }),
+          numericKey: voucherRes.numericKey,
+          pdfUrl: voucherRes.pdfUrl,
+          invoiceStatus: 'issued' as const,
+          issuedAt: new Date().toISOString()
+        };
+
+        await updateOrder(order.id, tenantId, { billingInfo: updatedBilling });
+
+        return {
+          success: true,
+          numericKey: voucherRes.numericKey,
+          pdfUrl: voucherRes.pdfUrl,
+          message: voucherRes.message
+        };
+      } else {
+        const failedBilling = {
+          ...(order.billingInfo || { requiresInvoice: true }),
+          invoiceStatus: 'failed' as const
+        };
+        await updateOrder(order.id, tenantId, { billingInfo: failedBilling });
+        return {
+          success: false,
+          message: voucherRes.message || 'Error desconocido al emitir comprobante'
+        };
+      }
+    } catch (err: any) {
+      console.error(`[AlmendroService] Error emitiendo factura para orden ${orderId}:`, err);
+      return { success: false, message: `Error interno: ${err.message}` };
+    }
+  }
+
+  /**
+   * Automatically or manually emits an electronic invoice for an Appointment.
+   * Performs idempotency checks and updates appointment.billingInfo in DB.
+   */
+  static async emitAppointmentInvoice(
+    tenantId: string,
+    appointmentId: string
+  ): Promise<{ success: boolean; numericKey?: string; pdfUrl?: string; message: string }> {
+    try {
+      const { getAppointmentById, updateAppointment } = await import('../db/appointments.repo.js');
+      const { getRecordById } = await import('../db/records.repo.js');
+      const { getElectronicVoucherByAppointmentId } = await import('../db/tenant-almendro.repo.js');
+
+      const appt = await getAppointmentById(appointmentId, tenantId);
+      if (!appt) return { success: false, message: 'Cita no encontrada' };
+
+      const config = await getTenantAlmendroConfigRaw(tenantId);
+      if (!config || !config.isEnabled || !config.apiKey) {
+        return { success: false, message: 'Facturación electrónica no habilitada' };
+      }
+
+      if (appt.billingInfo?.numericKey && appt.billingInfo?.invoiceStatus === 'issued') {
+        return {
+          success: true,
+          numericKey: appt.billingInfo.numericKey,
+          pdfUrl: appt.billingInfo.pdfUrl,
+          message: `Factura ya emitida con clave ${appt.billingInfo.numericKey}`
+        };
+      }
+
+      const existingVoucher = await getElectronicVoucherByAppointmentId(tenantId, appt.id);
+      if (existingVoucher && existingVoucher.numericKey) {
+        const updatedBilling = {
+          ...(appt.billingInfo || { requiresInvoice: true }),
+          numericKey: existingVoucher.numericKey,
+          pdfUrl: existingVoucher.pdfUrl || undefined,
+          invoiceStatus: 'issued' as const,
+          issuedAt: existingVoucher.createdAt ? new Date(existingVoucher.createdAt).toISOString() : new Date().toISOString()
+        };
+        await updateAppointment(appt.id, tenantId, { billingInfo: updatedBilling });
+        return {
+          success: true,
+          numericKey: existingVoucher.numericKey,
+          pdfUrl: existingVoucher.pdfUrl || undefined,
+          message: `Factura recuperada con clave ${existingVoucher.numericKey}`
+        };
+      }
+
+      let patientRecord = null;
+      if (appt.recordId) {
+        patientRecord = await getRecordById(appt.recordId, tenantId).catch(() => null);
+      }
+
+      const customerBilling = appt.billingInfo || patientRecord?.metadata?.billingInfo;
+      const receiverIdNumber = customerBilling?.idNumber?.replace(/\D/g, '') || patientRecord?.identification || undefined;
+      const receiverIdType = customerBilling?.idType || (receiverIdNumber && receiverIdNumber.length === 10 && receiverIdNumber.startsWith('3') ? '02' : '01');
+      const receiverName = customerBilling?.legalName || patientRecord?.fullName || appt.name;
+      const receiverEmail = customerBilling?.email || patientRecord?.email || undefined;
+
+      const docType: '01' | '04' = receiverIdNumber ? '01' : (config.defaultDocType || '04');
+      const unitPrice = Number(appt.amount) || 0;
+
+      const voucherRes = await this.emitVoucher(tenantId, {
+        docType,
+        appointmentId: appt.id,
+        receiver: receiverIdNumber ? {
+          idType: receiverIdType,
+          idNumber: receiverIdNumber,
+          name: receiverName,
+          email: receiverEmail
+        } : undefined,
+        items: [
+          {
+            cabysCode: '8311100000000',
+            description: `Servicio: ${appt.service}${appt.vehicleModel ? ` (${appt.vehicleModel})` : ''}`,
+            quantity: 1,
+            unitPrice,
+            taxRateCode: '08'
+          }
+        ]
+      });
+
+      if (voucherRes.success && voucherRes.numericKey) {
+        const updatedBilling = {
+          ...(appt.billingInfo || { requiresInvoice: true }),
+          numericKey: voucherRes.numericKey,
+          pdfUrl: voucherRes.pdfUrl,
+          invoiceStatus: 'issued' as const,
+          issuedAt: new Date().toISOString()
+        };
+        await updateAppointment(appt.id, tenantId, { billingInfo: updatedBilling });
+        return {
+          success: true,
+          numericKey: voucherRes.numericKey,
+          pdfUrl: voucherRes.pdfUrl,
+          message: voucherRes.message
+        };
+      } else {
+        const failedBilling = {
+          ...(appt.billingInfo || { requiresInvoice: true }),
+          invoiceStatus: 'failed' as const
+        };
+        await updateAppointment(appt.id, tenantId, { billingInfo: failedBilling });
+        return { success: false, message: voucherRes.message };
+      }
+    } catch (err: any) {
+      console.error(`[AlmendroService] Error emitiendo factura para cita ${appointmentId}:`, err);
+      return { success: false, message: `Error interno: ${err.message}` };
+    }
+  }
 }
 
 export default AlmendroService;

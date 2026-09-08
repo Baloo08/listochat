@@ -29,8 +29,8 @@ var init_env = __esm({
       JWT_SECRET: process.env.JWT_SECRET || "betico_jwt_secret_64_chars_super_safe_key_cr_2026",
       DATABASE_URL: process.env.DATABASE_URL || "postgres://saas:BeticoDB2026@betico_postgres:5432/whatsapp_saas?sslmode=disable",
       REDIS_URL: process.env.REDIS_URL || "redis://default:BeticoRedis2026@betico_redis:6379",
-      BASE_DOMAIN: process.env.BASE_DOMAIN || "betico-app.qvtdko.easypanel.host",
-      APP_URL: process.env.APP_URL || "https://betico-app.qvtdko.easypanel.host",
+      BASE_DOMAIN: process.env.BASE_DOMAIN && !process.env.BASE_DOMAIN.includes("easypanel.host") ? process.env.BASE_DOMAIN : "betico.tech",
+      APP_URL: process.env.APP_URL && !process.env.APP_URL.includes("easypanel.host") ? process.env.APP_URL : "https://betico.tech",
       EVOLUTION_API_URL: process.env.EVOLUTION_API_URL || "http://betico_evolution:8080",
       EVOLUTION_API_KEY: process.env.EVOLUTION_API_KEY || "429683C4C977415CAAFCCE10F7D57E11",
       ENCRYPTION_KEY: process.env.ENCRYPTION_KEY || "e8a1b2c3d4e5f60718293a4b5c6d7e8f",
@@ -1526,6 +1526,1304 @@ var init_records_repo = __esm({
   "src/server/db/records.repo.ts"() {
     "use strict";
     init_pool();
+  }
+});
+
+// src/server/db/appointments.repo.ts
+var appointments_repo_exports = {};
+__export(appointments_repo_exports, {
+  createAppointment: () => createAppointment,
+  deleteAppointment: () => deleteAppointment,
+  getAppointmentById: () => getAppointmentById,
+  getAppointmentByIdUnsafeForWebhook: () => getAppointmentByIdUnsafeForWebhook,
+  getAppointmentsByTenant: () => getAppointmentsByTenant,
+  updateAppointment: () => updateAppointment,
+  updateAppointmentPayment: () => updateAppointmentPayment,
+  updateAppointmentStatus: () => updateAppointmentStatus
+});
+async function getAppointmentsByTenant(tenantId) {
+  const result = await query(`
+    SELECT id, tenant_id as "tenantId", name, whatsapp, service, 
+           date, time, amount, status, details, vehicle_model as "vehicleModel",
+           selected_variables as "selectedVariables", specialist_id as "specialistId",
+           record_id as "recordId",
+           billing_info as "billingInfo",
+           payment_method as "paymentMethod", payment_status as "paymentStatus",
+           payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
+           tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
+           created_at as "createdAt"
+    FROM appointments 
+    WHERE tenant_id = $1
+    ORDER BY date DESC, time DESC
+  `, [tenantId]);
+  return result.rows;
+}
+async function getAppointmentById(id, tenantId) {
+  const result = await query(`
+    SELECT id, tenant_id as "tenantId", name, whatsapp, service, 
+           date, time, amount, status, details, vehicle_model as "vehicleModel",
+           selected_variables as "selectedVariables", specialist_id as "specialistId",
+           record_id as "recordId",
+           billing_info as "billingInfo",
+           payment_method as "paymentMethod", payment_status as "paymentStatus",
+           payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
+           tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
+           created_at as "createdAt"
+    FROM appointments 
+    WHERE id = $1 AND tenant_id = $2
+  `, [id, tenantId]);
+  return result.rows[0] || null;
+}
+async function getAppointmentByIdUnsafeForWebhook(id) {
+  const result = await query(`
+    SELECT id, tenant_id as "tenantId", name, whatsapp, service, 
+           date, time, amount, status, details, vehicle_model as "vehicleModel",
+           selected_variables as "selectedVariables", specialist_id as "specialistId",
+           record_id as "recordId",
+           billing_info as "billingInfo",
+           payment_method as "paymentMethod", payment_status as "paymentStatus",
+           payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
+           tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
+           created_at as "createdAt"
+    FROM appointments 
+    WHERE id = $1
+  `, [id]);
+  return result.rows[0] || null;
+}
+async function createAppointment(tenantId, data) {
+  const result = await query(`
+    INSERT INTO appointments (
+      tenant_id, name, whatsapp, service, date, time, amount, status, details, vehicle_model, selected_variables, specialist_id,
+      record_id, payment_method, payment_status, payment_reference, payment_proof_url, tilopay_transaction_id, tilopay_auth_code, billing_info
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+    RETURNING id, tenant_id as "tenantId", name, whatsapp, service, 
+           date, time, amount, status, details, vehicle_model as "vehicleModel",
+           selected_variables as "selectedVariables", specialist_id as "specialistId",
+           record_id as "recordId",
+           billing_info as "billingInfo",
+           payment_method as "paymentMethod", payment_status as "paymentStatus",
+           payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
+           tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
+           created_at as "createdAt"
+  `, [
+    tenantId,
+    data.name,
+    data.whatsapp,
+    data.service,
+    data.date,
+    data.time,
+    data.amount,
+    data.status || "scheduled",
+    data.details,
+    data.vehicleModel,
+    data.selectedVariables ? JSON.stringify(data.selectedVariables) : null,
+    data.specialistId || null,
+    data.recordId || null,
+    data.paymentMethod || null,
+    data.paymentStatus || "pending",
+    data.paymentReference || null,
+    data.paymentProofUrl || null,
+    data.tilopayTransactionId || null,
+    data.tilopayAuthCode || null,
+    data.billingInfo ? JSON.stringify(data.billingInfo) : null
+  ]);
+  return result.rows[0];
+}
+async function updateAppointment(id, tenantId, data) {
+  const updates = [];
+  const params = [id, tenantId];
+  let paramIdx = 3;
+  const fields = [
+    "name",
+    "whatsapp",
+    "service",
+    "date",
+    "time",
+    "amount",
+    "status",
+    "details",
+    "vehicleModel",
+    "selectedVariables",
+    "specialistId",
+    "recordId",
+    "paymentMethod",
+    "paymentStatus",
+    "paymentReference",
+    "paymentProofUrl",
+    "tilopayTransactionId",
+    "tilopayAuthCode",
+    "billingInfo"
+  ];
+  for (const field of fields) {
+    if (data[field] !== void 0) {
+      const dbField = field.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+      if (field === "billingInfo") {
+        updates.push(`${dbField} = $${paramIdx++}::jsonb`);
+        params.push(data[field] ? JSON.stringify(data[field]) : null);
+      } else {
+        updates.push(`${dbField} = $${paramIdx++}`);
+        const val = field === "selectedVariables" ? JSON.stringify(data[field]) : data[field];
+        params.push(val);
+      }
+    }
+  }
+  if (updates.length === 0) return getAppointmentById(id, tenantId);
+  const result = await query(`
+    UPDATE appointments SET ${updates.join(", ")}
+    WHERE id = $1 AND tenant_id = $2
+    RETURNING id, tenant_id as "tenantId", name, whatsapp, service, 
+           date, time, amount, status, details, vehicle_model as "vehicleModel",
+           selected_variables as "selectedVariables", specialist_id as "specialistId",
+           record_id as "recordId",
+           billing_info as "billingInfo",
+           payment_method as "paymentMethod", payment_status as "paymentStatus",
+           payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
+           tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
+           created_at as "createdAt"
+  `, params);
+  return result.rows[0] || null;
+}
+async function updateAppointmentPayment(id, paymentData, tenantId) {
+  const updates = [];
+  const params = [id];
+  let paramIdx = 2;
+  if (paymentData.paymentStatus !== void 0) {
+    updates.push(`payment_status = $${paramIdx++}`);
+    params.push(paymentData.paymentStatus);
+    if (paymentData.paymentStatus === "paid") {
+      updates.push(`status = 'confirmed'`);
+    }
+  }
+  if (paymentData.paymentMethod !== void 0) {
+    updates.push(`payment_method = $${paramIdx++}`);
+    params.push(paymentData.paymentMethod);
+  }
+  if (paymentData.paymentReference !== void 0) {
+    updates.push(`payment_reference = $${paramIdx++}`);
+    params.push(paymentData.paymentReference);
+  }
+  if (paymentData.tilopayTransactionId !== void 0) {
+    updates.push(`tilopay_transaction_id = $${paramIdx++}`);
+    params.push(paymentData.tilopayTransactionId);
+  }
+  if (paymentData.tilopayAuthCode !== void 0) {
+    updates.push(`tilopay_auth_code = $${paramIdx++}`);
+    params.push(paymentData.tilopayAuthCode);
+  }
+  if (updates.length === 0) {
+    return tenantId ? getAppointmentById(id, tenantId) : getAppointmentByIdUnsafeForWebhook(id);
+  }
+  let whereClause = "WHERE id = $1";
+  if (tenantId) {
+    whereClause += ` AND tenant_id = $${paramIdx++}`;
+    params.push(tenantId);
+  }
+  const result = await query(`
+    UPDATE appointments SET ${updates.join(", ")}
+    ${whereClause}
+    RETURNING id, tenant_id as "tenantId", name, whatsapp, service, 
+           date, time, amount, status, details, vehicle_model as "vehicleModel",
+           selected_variables as "selectedVariables", specialist_id as "specialistId",
+           record_id as "recordId",
+           payment_method as "paymentMethod", payment_status as "paymentStatus",
+           payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
+           tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
+           created_at as "createdAt"
+  `, params);
+  return result.rows[0] || null;
+}
+async function updateAppointmentStatus(id, tenantId, status) {
+  return updateAppointment(id, tenantId, { status });
+}
+async function deleteAppointment(id, tenantId) {
+  const result = await query("DELETE FROM appointments WHERE id = $1 AND tenant_id = $2", [id, tenantId]);
+  return (result.rowCount ?? 0) > 0;
+}
+var init_appointments_repo = __esm({
+  "src/server/db/appointments.repo.ts"() {
+    "use strict";
+    init_pool();
+  }
+});
+
+// src/server/db/orders.repo.ts
+var orders_repo_exports = {};
+__export(orders_repo_exports, {
+  confirmPayment: () => confirmPayment,
+  createOrder: () => createOrder,
+  executeOrderPaymentConfirmation: () => executeOrderPaymentConfirmation,
+  getOrderById: () => getOrderById,
+  getOrdersByTenant: () => getOrdersByTenant,
+  updateOrder: () => updateOrder,
+  updateOrderStatus: () => updateOrderStatus
+});
+async function getOrdersByTenant(tenantId, filters) {
+  const result = await query(`
+    SELECT o.id, o.tenant_id as "tenantId", o.order_number as "orderNumber", o.customer_name as "customerName",
+           o.customer_phone as "customerPhone", o.customer_email as "customerEmail", o.customer_address as "customerAddress",
+           o.whatsapp_jid as "whatsappJid", o.source, o.subtotal, o.delivery_fee as "deliveryFee", o.discount, o.total,
+           o.currency, o.status, o.payment_method as "paymentMethod", o.payment_status as "paymentStatus",
+           o.payment_reference as "paymentReference", o.payment_proof_url as "paymentProofUrl", o.payment_proof_status as "paymentProofStatus", o.notes, o.delivery_method as "deliveryMethod",
+           o.consumption_mode as "consumptionMode", o.table_number as "tableNumber", o.customer_location as "customerLocation",
+           o.chat_message_id as "chatMessageId", o.driver_id as "driverId", o.waze_url as "wazeUrl",
+           o.billing_info as "billingInfo",
+           o.branch_id as "branchId", b.name as "branchName",
+           o.created_at as "createdAt", o.updated_at as "updatedAt",
+           COALESCE(
+             (
+               SELECT json_agg(
+                 json_build_object(
+                   'id', oi.id,
+                   'productId', oi.product_id,
+                   'variantId', oi.variant_id,
+                   'productName', oi.product_name,
+                   'variantName', oi.variant_name,
+                   'selectedVariables', oi.selected_variables,
+                   'quantity', oi.quantity,
+                   'unitPrice', oi.unit_price,
+                   'totalPrice', oi.total_price
+                 )
+               )
+               FROM order_items oi
+               WHERE oi.order_id = o.id
+             ),
+             '[]'::json
+           ) as items
+    FROM orders o
+    LEFT JOIN branches b ON o.branch_id = b.id
+    WHERE o.tenant_id = $1
+    ORDER BY o.created_at DESC
+  `, [tenantId]);
+  return result.rows;
+}
+async function getOrderById(id, tenantId) {
+  const result = await query(`
+    SELECT id, tenant_id as "tenantId", order_number as "orderNumber", customer_name as "customerName",
+           customer_phone as "customerPhone", customer_email as "customerEmail", customer_address as "customerAddress",
+           whatsapp_jid as "whatsappJid", source, subtotal, delivery_fee as "deliveryFee", discount, total,
+           currency, status, payment_method as "paymentMethod", payment_status as "paymentStatus",
+           payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl", payment_proof_status as "paymentProofStatus", notes, delivery_method as "deliveryMethod",
+           consumption_mode as "consumptionMode", table_number as "tableNumber", customer_location as "customerLocation",
+           chat_message_id as "chatMessageId", driver_id as "driverId", waze_url as "wazeUrl",
+           billing_info as "billingInfo",
+           created_at as "createdAt", updated_at as "updatedAt"
+    FROM orders 
+    WHERE id = $1 AND tenant_id = $2
+  `, [id, tenantId]);
+  if (result.rows.length === 0) return null;
+  const order = result.rows[0];
+  const itemsRes = await query(`
+    SELECT id, product_id as "productId", variant_id as "variantId", product_name as "productName",
+           variant_name as "variantName", selected_variables as "selectedVariables",
+           quantity, unit_price as "unitPrice", total_price as "totalPrice"
+    FROM order_items WHERE order_id = $1 AND tenant_id = $2
+  `, [id, tenantId]);
+  order.items = itemsRes.rows;
+  return order;
+}
+async function createOrder(tenantId, data, items, dbClient) {
+  const insertSql = `
+    INSERT INTO orders (
+      tenant_id, customer_name, customer_phone, customer_email, customer_address, whatsapp_jid,
+      source, subtotal, delivery_fee, discount, total, currency, status, payment_method, 
+      payment_status, payment_reference, payment_proof_url, payment_proof_status, notes, delivery_method, consumption_mode, table_number, customer_location, stock_deducted, billing_info
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
+    RETURNING id
+  `;
+  const params = [
+    tenantId,
+    data.customerName,
+    data.customerPhone,
+    data.customerEmail,
+    data.customerAddress,
+    data.whatsappJid,
+    data.source || "store",
+    data.subtotal,
+    data.deliveryFee || 0,
+    data.discount || 0,
+    data.total,
+    data.currency || "CRC",
+    data.status || "pedido_recibido",
+    data.paymentMethod,
+    data.paymentStatus || "pending",
+    data.paymentReference || null,
+    data.paymentProofUrl || null,
+    data.paymentProofStatus || (data.paymentProofUrl ? "received" : "pending"),
+    data.notes || null,
+    data.deliveryMethod || "pickup",
+    data.consumptionMode || null,
+    data.tableNumber || null,
+    data.customerLocation ? JSON.stringify(data.customerLocation) : null,
+    Boolean(data.stockDeducted),
+    data.billingInfo ? JSON.stringify(data.billingInfo) : null
+  ];
+  const client = dbClient || await getClient();
+  const isInternalClient = !dbClient;
+  if (isInternalClient) {
+    await client.query("BEGIN");
+  }
+  try {
+    const result = await client.query(insertSql, params);
+    const orderId = result.rows[0].id;
+    const orderItems = items || data.items || [];
+    if (orderItems && orderItems.length > 0) {
+      for (const item of orderItems) {
+        await client.query(`
+          INSERT INTO order_items (
+            order_id, product_id, variant_id, tenant_id, product_name, variant_name, selected_variables, quantity, unit_price, total_price
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        `, [
+          orderId,
+          item.productId || null,
+          item.variantId || null,
+          tenantId,
+          item.productName,
+          item.variantName || null,
+          item.selectedVariables ? JSON.stringify(item.selectedVariables) : null,
+          item.quantity,
+          item.unitPrice,
+          Number(item.unitPrice) * Number(item.quantity)
+        ]);
+      }
+    }
+    if (isInternalClient) {
+      await client.query("COMMIT");
+    }
+    return getOrderById(orderId, tenantId);
+  } catch (err) {
+    if (isInternalClient) {
+      await client.query("ROLLBACK");
+    }
+    throw err;
+  } finally {
+    if (isInternalClient) {
+      client.release();
+    }
+  }
+}
+async function updateOrder(id, tenantId, data) {
+  const updates = [];
+  const params = [id, tenantId];
+  let paramIdx = 3;
+  const fields = [
+    "status",
+    "paymentStatus",
+    "paymentReference",
+    "notes",
+    "driverId",
+    "wazeUrl",
+    "consumptionMode",
+    "tableNumber",
+    "deliveryMethod",
+    "deliveryFee",
+    "total",
+    "customerAddress",
+    "billingInfo"
+  ];
+  for (const field of fields) {
+    if (data[field] !== void 0) {
+      const dbField = field.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+      if (field === "customerLocation" || field === "billingInfo") {
+        updates.push(`${dbField} = $${paramIdx++}::jsonb`);
+        params.push(data[field] ? JSON.stringify(data[field]) : null);
+      } else {
+        updates.push(`${dbField} = $${paramIdx++}`);
+        params.push(data[field]);
+      }
+    }
+  }
+  if (updates.length > 0) {
+    updates.push(`updated_at = CURRENT_TIMESTAMP`);
+    await query(`UPDATE orders SET ${updates.join(", ")} WHERE id = $1 AND tenant_id = $2`, params);
+  }
+  return getOrderById(id, tenantId);
+}
+async function updateOrderStatus(id, tenantId, status) {
+  return updateOrder(id, tenantId, { status });
+}
+async function confirmPayment(id, tenantId, paymentReference) {
+  const result = await executeOrderPaymentConfirmation(tenantId, id, {
+    paymentMethod: "manual",
+    paymentReference: paymentReference || "Confirmado manual"
+  });
+  return result.order || getOrderById(id, tenantId);
+}
+async function executeOrderPaymentConfirmation(tenantId, orderId, paymentData) {
+  const client = await getClient();
+  try {
+    await client.query("BEGIN");
+    const orderRes = await client.query(`
+      SELECT * FROM orders WHERE id = $1 AND tenant_id = $2 FOR UPDATE
+    `, [orderId, tenantId]);
+    if (orderRes.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return { success: false, error: "Orden no encontrada para este comercio" };
+    }
+    const currentOrder = orderRes.rows[0];
+    if (String(currentOrder.payment_status).toLowerCase() === "paid") {
+      await client.query("ROLLBACK");
+      const order = await getOrderById(orderId, tenantId);
+      return { success: true, alreadyProcessed: true, order: order || void 0 };
+    }
+    const newPaymentStatus = "paid";
+    const newOrderStatus = currentOrder.status === "pending" || currentOrder.status === "pedido_recibido" ? "pedido_aceptado" : currentOrder.status;
+    await client.query(`
+      UPDATE orders
+      SET payment_status = $1,
+          status = $2,
+          tilopay_transaction_id = $3,
+          tilopay_auth_code = $4,
+          payment_reference = COALESCE($5, payment_reference),
+          payment_method = COALESCE($6, payment_method),
+          stock_deducted = true,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $7 AND tenant_id = $8
+    `, [
+      newPaymentStatus,
+      newOrderStatus,
+      paymentData.tilopayTransactionId || null,
+      paymentData.tilopayAuthCode || null,
+      paymentData.paymentReference || paymentData.tilopayTransactionId || "Tilopay",
+      paymentData.paymentMethod || "card",
+      orderId,
+      tenantId
+    ]);
+    if (!currentOrder.stock_deducted) {
+      const itemsRes = await client.query(`
+        SELECT product_id as "productId", variant_id as "variantId", quantity
+        FROM order_items
+        WHERE order_id = $1 AND tenant_id = $2
+      `, [orderId, tenantId]);
+      for (const item of itemsRes.rows) {
+        const qty = Number(item.quantity || 1);
+        if (item.productId) {
+          await client.query(`
+            UPDATE products
+            SET stock = GREATEST(0, stock - $1),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = $2 AND tenant_id = $3 AND track_stock = true
+          `, [qty, item.productId, tenantId]);
+          if (item.variantId) {
+            await client.query(`
+              UPDATE product_variants
+              SET stock = GREATEST(0, stock - $1)
+              WHERE id = $2 AND product_id = $3
+            `, [qty, item.variantId, item.productId]);
+          }
+        }
+      }
+    }
+    await client.query("COMMIT");
+    const updatedOrder = await getOrderById(orderId, tenantId);
+    return { success: true, alreadyProcessed: false, order: updatedOrder || void 0 };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error(`[executeOrderPaymentConfirmation] Error en transacci\xF3n at\xF3mica de orden ${orderId}:`, err);
+    return { success: false, error: err.message || "Error en la transacci\xF3n de confirmaci\xF3n de pago" };
+  } finally {
+    client.release();
+  }
+}
+var init_orders_repo = __esm({
+  "src/server/db/orders.repo.ts"() {
+    "use strict";
+    init_pool();
+  }
+});
+
+// src/server/db/tenant-almendro.repo.ts
+var tenant_almendro_repo_exports = {};
+__export(tenant_almendro_repo_exports, {
+  getElectronicVoucherByAppointmentId: () => getElectronicVoucherByAppointmentId,
+  getElectronicVoucherByOrderId: () => getElectronicVoucherByOrderId,
+  getElectronicVouchers: () => getElectronicVouchers,
+  getTenantAlmendroConfig: () => getTenantAlmendroConfig,
+  getTenantAlmendroConfigRaw: () => getTenantAlmendroConfigRaw,
+  saveElectronicVoucher: () => saveElectronicVoucher,
+  saveTenantAlmendroConfig: () => saveTenantAlmendroConfig
+});
+async function getTenantAlmendroConfig(tenantId) {
+  if (!tenantId) throw new Error("tenantId es requerido para consultar la configuraci\xF3n de Almendro");
+  const res = await query(`
+    SELECT id, tenant_id as "tenantId", is_enabled as "isEnabled", environment,
+           api_key_encrypted as "apiKeyEncrypted", default_doc_type as "defaultDocType",
+           module_toggles as "moduleToggles", tax_id_type as "taxIdType",
+           tax_id_number as "taxIdNumber", legal_name as "legalName",
+           commercial_name as "commercialName", economic_activity_code as "economicActivityCode",
+           branch_code as "branchCode", pos_code as "posCode",
+           created_at as "createdAt", updated_at as "updatedAt"
+    FROM tenant_almendro_configs
+    WHERE tenant_id = $1
+  `, [tenantId]);
+  if (res.rows.length === 0) {
+    return {
+      id: "",
+      tenantId,
+      isEnabled: false,
+      environment: "SANDBOX",
+      apiKeyMasked: "",
+      defaultDocType: "04",
+      moduleToggles: { ...DEFAULT_MODULE_TOGGLES },
+      isConfigured: false
+    };
+  }
+  const row = res.rows[0];
+  let rawKey = "";
+  if (row.apiKeyEncrypted) {
+    try {
+      rawKey = CryptoService.decryptForTenant(tenantId, row.apiKeyEncrypted);
+    } catch (e) {
+      console.error(`[AlmendroRepo] Error descifrando API Key para tenant ${tenantId}:`, e);
+    }
+  }
+  const toggles = row.moduleToggles ? { ...DEFAULT_MODULE_TOGGLES, ...row.moduleToggles } : { ...DEFAULT_MODULE_TOGGLES };
+  return {
+    id: row.id,
+    tenantId: row.tenantId,
+    isEnabled: Boolean(row.isEnabled),
+    environment: row.environment || "SANDBOX",
+    apiKeyMasked: rawKey ? CryptoService.maskSecret(rawKey) : "",
+    defaultDocType: row.defaultDocType === "01" ? "01" : "04",
+    moduleToggles: toggles,
+    taxIdType: row.taxIdType || "",
+    taxIdNumber: row.taxIdNumber || "",
+    legalName: row.legalName || "",
+    commercialName: row.commercialName || "",
+    economicActivityCode: row.economicActivityCode || "",
+    branchCode: row.branchCode || "001",
+    posCode: row.posCode || "00001",
+    isConfigured: Boolean(rawKey && rawKey.length > 5),
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt
+  };
+}
+async function getTenantAlmendroConfigRaw(tenantId) {
+  if (!tenantId) return null;
+  const res = await query(`
+    SELECT is_enabled as "isEnabled", environment, api_key_encrypted as "apiKeyEncrypted",
+           default_doc_type as "defaultDocType", module_toggles as "moduleToggles",
+           tax_id_type as "taxIdType", tax_id_number as "taxIdNumber",
+           legal_name as "legalName", commercial_name as "commercialName",
+           economic_activity_code as "economicActivityCode",
+           branch_code as "branchCode", pos_code as "posCode"
+    FROM tenant_almendro_configs
+    WHERE tenant_id = $1
+  `, [tenantId]);
+  if (res.rows.length === 0) return null;
+  const row = res.rows[0];
+  let apiKey = "";
+  if (row.apiKeyEncrypted) {
+    try {
+      apiKey = CryptoService.decryptForTenant(tenantId, row.apiKeyEncrypted);
+    } catch (e) {
+      console.error(`[AlmendroRepo] Error descifrando API Key raw para tenant ${tenantId}`);
+    }
+  }
+  const toggles = row.moduleToggles ? { ...DEFAULT_MODULE_TOGGLES, ...row.moduleToggles } : { ...DEFAULT_MODULE_TOGGLES };
+  return {
+    apiKey,
+    isEnabled: Boolean(row.isEnabled),
+    environment: row.environment || "SANDBOX",
+    defaultDocType: row.defaultDocType === "01" ? "01" : "04",
+    moduleToggles: toggles,
+    taxIdType: row.taxIdType,
+    taxIdNumber: row.taxIdNumber,
+    legalName: row.legalName,
+    commercialName: row.commercialName,
+    economicActivityCode: row.economicActivityCode,
+    branchCode: row.branchCode || "001",
+    posCode: row.posCode || "00001"
+  };
+}
+async function saveTenantAlmendroConfig(tenantId, data) {
+  if (!tenantId) throw new Error("tenantId es requerido para guardar la configuraci\xF3n de Almendro");
+  const existing = await query(`SELECT api_key_encrypted, module_toggles FROM tenant_almendro_configs WHERE tenant_id = $1`, [tenantId]);
+  let keyToEncrypt = existing.rows[0]?.api_key_encrypted || "";
+  if (data.apiKey && data.apiKey.trim() && !data.apiKey.includes("\u2022\u2022\u2022\u2022")) {
+    keyToEncrypt = CryptoService.encryptForTenant(tenantId, data.apiKey.trim());
+  }
+  const currentToggles = existing.rows[0]?.module_toggles || DEFAULT_MODULE_TOGGLES;
+  const mergedToggles = {
+    ...DEFAULT_MODULE_TOGGLES,
+    ...currentToggles,
+    ...data.moduleToggles || {}
+  };
+  const env3 = data.environment || "SANDBOX";
+  const docType = data.defaultDocType === "01" ? "01" : "04";
+  const branch = data.branchCode || "001";
+  const pos = data.posCode || "00001";
+  await query(`
+    INSERT INTO tenant_almendro_configs (
+      tenant_id, is_enabled, environment, api_key_encrypted,
+      default_doc_type, module_toggles, tax_id_type, tax_id_number,
+      legal_name, commercial_name, economic_activity_code,
+      branch_code, pos_code, updated_at
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CURRENT_TIMESTAMP)
+    ON CONFLICT (tenant_id) DO UPDATE SET
+      is_enabled = EXCLUDED.is_enabled,
+      environment = EXCLUDED.environment,
+      api_key_encrypted = CASE WHEN $4 != '' THEN $4 ELSE tenant_almendro_configs.api_key_encrypted END,
+      default_doc_type = EXCLUDED.default_doc_type,
+      module_toggles = EXCLUDED.module_toggles,
+      tax_id_type = COALESCE(EXCLUDED.tax_id_type, tenant_almendro_configs.tax_id_type),
+      tax_id_number = COALESCE(EXCLUDED.tax_id_number, tenant_almendro_configs.tax_id_number),
+      legal_name = COALESCE(EXCLUDED.legal_name, tenant_almendro_configs.legal_name),
+      commercial_name = COALESCE(EXCLUDED.commercial_name, tenant_almendro_configs.commercial_name),
+      economic_activity_code = COALESCE(EXCLUDED.economic_activity_code, tenant_almendro_configs.economic_activity_code),
+      branch_code = EXCLUDED.branch_code,
+      pos_code = EXCLUDED.pos_code,
+      updated_at = CURRENT_TIMESTAMP
+  `, [
+    tenantId,
+    Boolean(data.isEnabled),
+    env3,
+    keyToEncrypt,
+    docType,
+    JSON.stringify(mergedToggles),
+    data.taxIdType || null,
+    data.taxIdNumber || null,
+    data.legalName || null,
+    data.commercialName || null,
+    data.economicActivityCode || null,
+    branch,
+    pos
+  ]);
+  const updated = await getTenantAlmendroConfig(tenantId);
+  return updated;
+}
+async function saveElectronicVoucher(tenantId, voucher) {
+  if (!tenantId) throw new Error("tenantId es requerido para registrar un comprobante electr\xF3nico");
+  const res = await query(`
+    INSERT INTO electronic_vouchers (
+      tenant_id, order_id, appointment_id, court_booking_id, subscription_charge_id,
+      doc_type, consecutive_number, numeric_key, receiver_id_type, receiver_id_number,
+      receiver_name, receiver_email, currency, subtotal, tax_amount, total_amount,
+      status, pdf_url, xml_signed_url, xml_response_url, hacienda_response_code,
+      hacienda_response_detail, metadata
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+    RETURNING id, tenant_id as "tenantId", order_id as "orderId", appointment_id as "appointmentId",
+              court_booking_id as "courtBookingId", subscription_charge_id as "subscriptionChargeId",
+              doc_type as "docType", consecutive_number as "consecutiveNumber", numeric_key as "numericKey",
+              receiver_id_type as "receiverIdType", receiver_id_number as "receiverIdNumber",
+              receiver_name as "receiverName", receiver_email as "receiverEmail",
+              currency, subtotal, tax_amount as "taxAmount", total_amount as "totalAmount",
+              status, pdf_url as "pdfUrl", xml_signed_url as "xmlSignedUrl",
+              xml_response_url as "xmlResponseUrl", hacienda_response_code as "haciendaResponseCode",
+              hacienda_response_detail as "haciendaResponseDetail", metadata,
+              created_at as "createdAt", updated_at as "updatedAt"
+  `, [
+    tenantId,
+    voucher.orderId || null,
+    voucher.appointmentId || null,
+    voucher.courtBookingId || null,
+    voucher.subscriptionChargeId || null,
+    voucher.docType || "04",
+    voucher.consecutiveNumber || "",
+    voucher.numericKey,
+    voucher.receiverIdType || null,
+    voucher.receiverIdNumber || null,
+    voucher.receiverName || null,
+    voucher.receiverEmail || null,
+    voucher.currency || "CRC",
+    voucher.subtotal || 0,
+    voucher.taxAmount || 0,
+    voucher.totalAmount || 0,
+    voucher.status || "pending",
+    voucher.pdfUrl || null,
+    voucher.xmlSignedUrl || null,
+    voucher.xmlResponseUrl || null,
+    voucher.haciendaResponseCode || null,
+    voucher.haciendaResponseDetail || null,
+    JSON.stringify(voucher.metadata || {})
+  ]);
+  return res.rows[0];
+}
+async function getElectronicVouchers(tenantId, options) {
+  if (!tenantId) throw new Error("tenantId es requerido para consultar comprobantes");
+  const limit = Math.min(Number(options?.limit) || 50, 100);
+  const offset = Math.max(Number(options?.offset) || 0, 0);
+  const conditions = ["tenant_id = $1"];
+  const params = [tenantId];
+  let pIdx = 2;
+  if (options?.status) {
+    conditions.push(`status = $${pIdx}`);
+    params.push(options.status);
+    pIdx++;
+  }
+  if (options?.docType) {
+    conditions.push(`doc_type = $${pIdx}`);
+    params.push(options.docType);
+    pIdx++;
+  }
+  const whereSql = conditions.join(" AND ");
+  const countRes = await query(`SELECT COUNT(*) as total FROM electronic_vouchers WHERE ${whereSql}`, params);
+  const total = parseInt(countRes.rows[0]?.total || "0", 10);
+  params.push(limit);
+  params.push(offset);
+  const res = await query(`
+    SELECT id, tenant_id as "tenantId", order_id as "orderId", appointment_id as "appointmentId",
+           court_booking_id as "courtBookingId", subscription_charge_id as "subscriptionChargeId",
+           doc_type as "docType", consecutive_number as "consecutiveNumber", numeric_key as "numericKey",
+           receiver_id_type as "receiverIdType", receiver_id_number as "receiverIdNumber",
+           receiver_name as "receiverName", receiver_email as "receiverEmail",
+           currency, subtotal, tax_amount as "taxAmount", total_amount as "totalAmount",
+           status, pdf_url as "pdfUrl", xml_signed_url as "xmlSignedUrl",
+           xml_response_url as "xmlResponseUrl", hacienda_response_code as "haciendaResponseCode",
+           hacienda_response_detail as "haciendaResponseDetail", metadata,
+           created_at as "createdAt", updated_at as "updatedAt"
+    FROM electronic_vouchers
+    WHERE ${whereSql}
+    ORDER BY created_at DESC
+    LIMIT $${pIdx} OFFSET $${pIdx + 1}
+  `, params);
+  return {
+    vouchers: res.rows,
+    total
+  };
+}
+async function getElectronicVoucherByOrderId(tenantId, orderId) {
+  if (!tenantId || !orderId) return null;
+  const res = await query(`
+    SELECT id, tenant_id as "tenantId", order_id as "orderId", appointment_id as "appointmentId",
+           court_booking_id as "courtBookingId", subscription_charge_id as "subscriptionChargeId",
+           doc_type as "docType", consecutive_number as "consecutiveNumber", numeric_key as "numericKey",
+           receiver_id_type as "receiverIdType", receiver_id_number as "receiverIdNumber",
+           receiver_name as "receiverName", receiver_email as "receiverEmail",
+           currency, subtotal, tax_amount as "taxAmount", total_amount as "totalAmount",
+           status, pdf_url as "pdfUrl", xml_signed_url as "xmlSignedUrl",
+           xml_response_url as "xmlResponseUrl", hacienda_response_code as "haciendaResponseCode",
+           hacienda_response_detail as "haciendaResponseDetail", metadata,
+           created_at as "createdAt", updated_at as "updatedAt"
+    FROM electronic_vouchers
+    WHERE tenant_id = $1 AND order_id = $2
+    ORDER BY created_at DESC
+    LIMIT 1
+  `, [tenantId, orderId]);
+  return res.rows[0] || null;
+}
+async function getElectronicVoucherByAppointmentId(tenantId, appointmentId) {
+  if (!tenantId || !appointmentId) return null;
+  const res = await query(`
+    SELECT id, tenant_id as "tenantId", order_id as "orderId", appointment_id as "appointmentId",
+           court_booking_id as "courtBookingId", subscription_charge_id as "subscriptionChargeId",
+           doc_type as "docType", consecutive_number as "consecutiveNumber", numeric_key as "numericKey",
+           receiver_id_type as "receiverIdType", receiver_id_number as "receiverIdNumber",
+           receiver_name as "receiverName", receiver_email as "receiverEmail",
+           currency, subtotal, tax_amount as "taxAmount", total_amount as "totalAmount",
+           status, pdf_url as "pdfUrl", xml_signed_url as "xmlSignedUrl",
+           xml_response_url as "xmlResponseUrl", hacienda_response_code as "haciendaResponseCode",
+           hacienda_response_detail as "haciendaResponseDetail", metadata,
+           created_at as "createdAt", updated_at as "updatedAt"
+    FROM electronic_vouchers
+    WHERE tenant_id = $1 AND appointment_id = $2
+    ORDER BY created_at DESC
+    LIMIT 1
+  `, [tenantId, appointmentId]);
+  return res.rows[0] || null;
+}
+var DEFAULT_MODULE_TOGGLES;
+var init_tenant_almendro_repo = __esm({
+  "src/server/db/tenant-almendro.repo.ts"() {
+    "use strict";
+    init_pool();
+    init_crypto_service();
+    DEFAULT_MODULE_TOGGLES = {
+      storeEnabled: true,
+      bookingsEnabled: true,
+      courtsEnabled: false,
+      restaurantEnabled: false,
+      subscriptionsEnabled: false
+    };
+  }
+});
+
+// src/server/services/almendro.service.ts
+var almendro_service_exports = {};
+__export(almendro_service_exports, {
+  AlmendroService: () => AlmendroService,
+  default: () => almendro_service_default
+});
+function getBaseUrl(environment) {
+  return environment === "PRODUCTION" ? ALMENDRO_PROD_URL : ALMENDRO_SANDBOX_URL;
+}
+var ALMENDRO_PROD_URL, ALMENDRO_SANDBOX_URL, AlmendroService, almendro_service_default;
+var init_almendro_service = __esm({
+  "src/server/services/almendro.service.ts"() {
+    "use strict";
+    init_tenant_almendro_repo();
+    ALMENDRO_PROD_URL = "https://fe.almendro.cr/api/v1/public";
+    ALMENDRO_SANDBOX_URL = "https://fe.almendro.cr/api/v1/public/sandbox";
+    AlmendroService = class {
+      /**
+       * Tests connection with Almendro using the provided API Key.
+       */
+      static async testConnection(apiKey, environment = "SANDBOX") {
+        if (!apiKey || apiKey.trim().length < 5) {
+          return { success: false, message: "La llave de API es requerida" };
+        }
+        const cleanKey = apiKey.trim();
+        const primaryUrl = getBaseUrl(environment);
+        try {
+          let res = await fetch(`${primaryUrl}/vouchers?limit=1`, {
+            method: "GET",
+            headers: {
+              "Authorization": `Bearer ${cleanKey}`,
+              "Accept": "application/json"
+            }
+          });
+          if (!res.ok && res.status !== 401 && res.status !== 403) {
+            try {
+              const fallbackRes = await fetch(`${ALMENDRO_PROD_URL}/profile`, {
+                method: "GET",
+                headers: {
+                  "Authorization": `Bearer ${cleanKey}`,
+                  "Accept": "application/json"
+                }
+              });
+              if (fallbackRes.status === 200 || fallbackRes.status === 202 || fallbackRes.status === 401 || fallbackRes.status === 403) {
+                res = fallbackRes;
+              }
+            } catch (_) {
+            }
+          }
+          if (res.status === 200 || res.status === 202) {
+            return {
+              success: true,
+              message: `Conexi\xF3n exitosa con Almendro (${environment})`
+            };
+          }
+          if (res.status === 401 || res.status === 403) {
+            return {
+              success: false,
+              message: "La llave de API no es v\xE1lida o no tiene permisos en Almendro"
+            };
+          }
+          const errText = await res.text().catch(() => "");
+          return {
+            success: false,
+            message: `Almendro respondi\xF3 con c\xF3digo ${res.status}: ${errText.slice(0, 150)}`
+          };
+        } catch (err) {
+          try {
+            const altUrl = environment === "SANDBOX" ? ALMENDRO_PROD_URL : ALMENDRO_SANDBOX_URL;
+            const altRes = await fetch(`${altUrl}/vouchers?limit=1`, {
+              method: "GET",
+              headers: {
+                "Authorization": `Bearer ${cleanKey}`,
+                "Accept": "application/json"
+              }
+            });
+            if (altRes.status === 200 || altRes.status === 202) {
+              return {
+                success: true,
+                message: `Conexi\xF3n exitosa con Almendro`
+              };
+            }
+            if (altRes.status === 401 || altRes.status === 403) {
+              return {
+                success: false,
+                message: "La llave de API no es v\xE1lida o no tiene permisos en Almendro"
+              };
+            }
+          } catch (_) {
+          }
+          return {
+            success: false,
+            message: `No fue posible conectar con el servidor de Almendro: ${err.message}`
+          };
+        }
+      }
+      /**
+       * Looks up a taxpayer's official name, status and economic activities from TSE/Hacienda.
+       */
+      static async lookupTaxpayer(apiKey, environment, rawIdNumber) {
+        if (!rawIdNumber) return { success: false, error: "N\xFAmero de c\xE9dula requerido" };
+        const cleanId = rawIdNumber.replace(/\D/g, "");
+        if (cleanId.length < 9 || cleanId.length > 12) {
+          return { success: false, error: "El formato de c\xE9dula debe tener entre 9 y 12 d\xEDgitos num\xE9ricos" };
+        }
+        const baseUrl = getBaseUrl(environment);
+        try {
+          const res = await fetch(`${baseUrl}/taxpayer/${cleanId}`, {
+            method: "GET",
+            headers: {
+              "Authorization": `Bearer ${apiKey.trim()}`,
+              "Accept": "application/json"
+            }
+          });
+          if (!res.ok) {
+            const errText = await res.text().catch(() => "");
+            return {
+              success: false,
+              error: `Contribuyente no encontrado en el padr\xF3n (${res.status}): ${errText.slice(0, 100)}`
+            };
+          }
+          const body = await res.json();
+          return {
+            success: true,
+            data: {
+              idType: body.id_type || (cleanId.length === 10 && cleanId.startsWith("3") ? "02" : "01"),
+              idNumber: cleanId,
+              name: body.name || body.legal_name || "Nombre no disponible",
+              commercialName: body.commercial_name,
+              status: body.status || "INSCRITO",
+              taxRegime: body.tax_regime || "TRADICIONAL",
+              activities: body.activities || []
+            }
+          };
+        } catch (err) {
+          return { success: false, error: `Error consultando padr\xF3n de Hacienda: ${err.message}` };
+        }
+      }
+      /**
+       * Determines if a specific module should automatically invoice.
+       */
+      static async shouldInvoiceModule(tenantId, moduleName) {
+        const config = await getTenantAlmendroConfigRaw(tenantId);
+        if (!config || !config.isEnabled || !config.apiKey) return false;
+        return Boolean(config.moduleToggles[moduleName]);
+      }
+      /**
+       * Emits an electronic voucher through Almendro and stores it in electronic_vouchers.
+       */
+      static async emitVoucher(tenantId, params) {
+        const config = await getTenantAlmendroConfigRaw(tenantId);
+        if (!config || !config.isEnabled || !config.apiKey) {
+          return {
+            success: false,
+            message: "La facturaci\xF3n electr\xF3nica est\xE1 desactivada o no configurada para este negocio."
+          };
+        }
+        const docType = params.docType || config.defaultDocType || "04";
+        const currency = params.currency || "CRC";
+        const exchangeRate = params.exchangeRate || 1;
+        let subtotal = 0;
+        let taxAmount = 0;
+        const lines = params.items.map((item, idx) => {
+          const lineQty = Number(item.quantity) || 1;
+          const unitPrice = Number(item.unitPrice) || 0;
+          const lineSubtotal = lineQty * unitPrice;
+          subtotal += lineSubtotal;
+          const taxRateCode = item.taxRateCode || "08";
+          let taxPercentage = 0.13;
+          if (taxRateCode === "04") taxPercentage = 0.04;
+          else if (taxRateCode === "02") taxPercentage = 0.02;
+          else if (taxRateCode === "01") taxPercentage = 0.01;
+          else if (taxRateCode === "10") taxPercentage = 0;
+          const lineTax = lineSubtotal * taxPercentage;
+          taxAmount += lineTax;
+          return {
+            line_number: idx + 1,
+            cabys_code: item.cabysCode || "8311100000000",
+            description: item.description.slice(0, 160),
+            quantity: lineQty.toFixed(3),
+            unit_price: unitPrice.toFixed(5),
+            unit_measure: "Unid",
+            taxes: [
+              {
+                code: "01",
+                // IVA
+                rate_code: taxRateCode,
+                rate: (taxPercentage * 100).toFixed(2),
+                amount: lineTax.toFixed(5)
+              }
+            ]
+          };
+        });
+        const totalAmount = subtotal + taxAmount;
+        const receiverPayload = params.receiver?.idNumber ? {
+          id_type: params.receiver.idType || "01",
+          id_number: params.receiver.idNumber.replace(/\D/g, ""),
+          name: params.receiver.name || "Cliente Particular",
+          email: params.receiver.email
+        } : void 0;
+        const payload = {
+          doc_type: docType,
+          currency,
+          exchange_rate: exchangeRate.toFixed(4),
+          branch_code: config.branchCode || "001",
+          pos_code: config.posCode || "00001",
+          items: lines
+        };
+        if (receiverPayload) {
+          payload.receiver = receiverPayload;
+        }
+        if (params.referenceKey && docType === "03") {
+          payload.reference = {
+            code: "01",
+            // Anula documento de referencia
+            numeric_key: params.referenceKey,
+            reason: "Anulaci\xF3n solicitada por el emisor"
+          };
+        }
+        const baseUrl = getBaseUrl(config.environment);
+        try {
+          const res = await fetch(`${baseUrl}/vouchers`, {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${config.apiKey.trim()}`,
+              "Content-Type": "application/json",
+              "Accept": "application/json"
+            },
+            body: JSON.stringify(payload)
+          });
+          const responseBody = await res.json().catch(() => ({}));
+          if (res.status === 200 || res.status === 201 || res.status === 202) {
+            const numericKey = responseBody.numeric_key || responseBody.key || `506${Date.now()}`;
+            const consecutive = responseBody.consecutive || responseBody.consecutive_number || "";
+            const pdfUrl = responseBody.pdf_url || `${baseUrl}/vouchers/${numericKey}/pdf`;
+            const xmlSigned = responseBody.xml_signed_url || `${baseUrl}/vouchers/${numericKey}/xml`;
+            await saveElectronicVoucher(tenantId, {
+              orderId: params.orderId,
+              appointmentId: params.appointmentId,
+              courtBookingId: params.courtBookingId,
+              subscriptionChargeId: params.subscriptionChargeId,
+              docType,
+              consecutiveNumber: consecutive,
+              numericKey,
+              receiverIdType: params.receiver?.idType,
+              receiverIdNumber: params.receiver?.idNumber,
+              receiverName: params.receiver?.name,
+              receiverEmail: params.receiver?.email,
+              currency,
+              subtotal,
+              taxAmount,
+              totalAmount,
+              status: responseBody.status === "accepted" ? "accepted" : "pending",
+              pdfUrl,
+              xmlSignedUrl: xmlSigned,
+              metadata: responseBody
+            });
+            return {
+              success: true,
+              numericKey,
+              pdfUrl,
+              message: `Comprobante emitido con \xE9xito. Clave: ${numericKey}`
+            };
+          }
+          const errorMsg = responseBody.message || responseBody.error || `Error ${res.status} al emitir en Almendro`;
+          console.warn(`[AlmendroService] Emisi\xF3n fallida para tenant ${tenantId}:`, errorMsg);
+          return { success: false, message: errorMsg };
+        } catch (err) {
+          console.error(`[AlmendroService] Excepci\xF3n emitiendo comprobante para tenant ${tenantId}:`, err);
+          return { success: false, message: `Error de red al conectar con Almendro: ${err.message}` };
+        }
+      }
+      /**
+       * Automatically or manually emits an electronic invoice for an Order.
+       * Performs idempotency checks, line formatting, and updates order.billingInfo in DB.
+       */
+      static async emitOrderInvoice(tenantId, orderId) {
+        try {
+          const { getOrderById: getOrderById3, updateOrder: updateOrder2 } = await Promise.resolve().then(() => (init_orders_repo(), orders_repo_exports));
+          const { getElectronicVoucherByOrderId: getElectronicVoucherByOrderId2 } = await Promise.resolve().then(() => (init_tenant_almendro_repo(), tenant_almendro_repo_exports));
+          const order = await getOrderById3(orderId, tenantId);
+          if (!order) {
+            return { success: false, message: "Orden no encontrada" };
+          }
+          const config = await getTenantAlmendroConfigRaw(tenantId);
+          if (!config || !config.isEnabled || !config.apiKey) {
+            return { success: false, message: "Facturaci\xF3n electr\xF3nica no habilitada en este comercio" };
+          }
+          if (order.billingInfo?.numericKey && order.billingInfo?.invoiceStatus === "issued") {
+            return {
+              success: true,
+              numericKey: order.billingInfo.numericKey,
+              pdfUrl: order.billingInfo.pdfUrl,
+              message: `Factura ya emitida previamente con clave ${order.billingInfo.numericKey}`
+            };
+          }
+          const existingVoucher = await getElectronicVoucherByOrderId2(tenantId, order.id);
+          if (existingVoucher && existingVoucher.numericKey) {
+            const updatedBillingInfo = {
+              ...order.billingInfo || { requiresInvoice: true },
+              numericKey: existingVoucher.numericKey,
+              pdfUrl: existingVoucher.pdfUrl || void 0,
+              invoiceStatus: "issued",
+              issuedAt: existingVoucher.createdAt ? new Date(existingVoucher.createdAt).toISOString() : (/* @__PURE__ */ new Date()).toISOString()
+            };
+            await updateOrder2(order.id, tenantId, { billingInfo: updatedBillingInfo });
+            return {
+              success: true,
+              numericKey: existingVoucher.numericKey,
+              pdfUrl: existingVoucher.pdfUrl || void 0,
+              message: `Factura recuperada de registros con clave ${existingVoucher.numericKey}`
+            };
+          }
+          const billing = order.billingInfo;
+          const receiverIdNumber = billing?.idNumber?.replace(/\D/g, "") || void 0;
+          const receiverIdType = billing?.idType || (receiverIdNumber && receiverIdNumber.length === 10 && receiverIdNumber.startsWith("3") ? "02" : "01");
+          const receiverName = billing?.legalName || order.customerName;
+          const receiverEmail = billing?.email || order.customerEmail || void 0;
+          const docType = receiverIdNumber ? "01" : config.defaultDocType || "04";
+          const items = order.items && order.items.length > 0 ? order.items.map((it) => ({
+            cabysCode: "8311100000000",
+            description: `${it.productName}${it.variantName ? ` - ${it.variantName}` : ""}`,
+            quantity: Number(it.quantity) || 1,
+            unitPrice: Number(it.unitPrice) || 0,
+            taxRateCode: "08"
+            // 13% IVA
+          })) : [{
+            cabysCode: "8311100000000",
+            description: `Consumo / Pedido #ORD-${order.orderNumber}`,
+            quantity: 1,
+            unitPrice: Number(order.subtotal || order.total) || 0,
+            taxRateCode: "08"
+          }];
+          if (Number(order.deliveryFee) > 0) {
+            items.push({
+              cabysCode: "8311100000000",
+              description: "Servicio de Env\xEDo Express",
+              quantity: 1,
+              unitPrice: Number(order.deliveryFee),
+              taxRateCode: "08"
+            });
+          }
+          const voucherRes = await this.emitVoucher(tenantId, {
+            docType,
+            orderId: order.id,
+            currency: order.currency || "CRC",
+            receiver: receiverIdNumber ? {
+              idType: receiverIdType,
+              idNumber: receiverIdNumber,
+              name: receiverName,
+              email: receiverEmail
+            } : void 0,
+            items
+          });
+          if (voucherRes.success && voucherRes.numericKey) {
+            const updatedBilling = {
+              ...order.billingInfo || { requiresInvoice: true },
+              numericKey: voucherRes.numericKey,
+              pdfUrl: voucherRes.pdfUrl,
+              invoiceStatus: "issued",
+              issuedAt: (/* @__PURE__ */ new Date()).toISOString()
+            };
+            await updateOrder2(order.id, tenantId, { billingInfo: updatedBilling });
+            return {
+              success: true,
+              numericKey: voucherRes.numericKey,
+              pdfUrl: voucherRes.pdfUrl,
+              message: voucherRes.message
+            };
+          } else {
+            const failedBilling = {
+              ...order.billingInfo || { requiresInvoice: true },
+              invoiceStatus: "failed"
+            };
+            await updateOrder2(order.id, tenantId, { billingInfo: failedBilling });
+            return {
+              success: false,
+              message: voucherRes.message || "Error desconocido al emitir comprobante"
+            };
+          }
+        } catch (err) {
+          console.error(`[AlmendroService] Error emitiendo factura para orden ${orderId}:`, err);
+          return { success: false, message: `Error interno: ${err.message}` };
+        }
+      }
+      /**
+       * Automatically or manually emits an electronic invoice for an Appointment.
+       * Performs idempotency checks and updates appointment.billingInfo in DB.
+       */
+      static async emitAppointmentInvoice(tenantId, appointmentId) {
+        try {
+          const { getAppointmentById: getAppointmentById2, updateAppointment: updateAppointment2 } = await Promise.resolve().then(() => (init_appointments_repo(), appointments_repo_exports));
+          const { getRecordById: getRecordById2 } = await Promise.resolve().then(() => (init_records_repo(), records_repo_exports));
+          const { getElectronicVoucherByAppointmentId: getElectronicVoucherByAppointmentId2 } = await Promise.resolve().then(() => (init_tenant_almendro_repo(), tenant_almendro_repo_exports));
+          const appt = await getAppointmentById2(appointmentId, tenantId);
+          if (!appt) return { success: false, message: "Cita no encontrada" };
+          const config = await getTenantAlmendroConfigRaw(tenantId);
+          if (!config || !config.isEnabled || !config.apiKey) {
+            return { success: false, message: "Facturaci\xF3n electr\xF3nica no habilitada" };
+          }
+          if (appt.billingInfo?.numericKey && appt.billingInfo?.invoiceStatus === "issued") {
+            return {
+              success: true,
+              numericKey: appt.billingInfo.numericKey,
+              pdfUrl: appt.billingInfo.pdfUrl,
+              message: `Factura ya emitida con clave ${appt.billingInfo.numericKey}`
+            };
+          }
+          const existingVoucher = await getElectronicVoucherByAppointmentId2(tenantId, appt.id);
+          if (existingVoucher && existingVoucher.numericKey) {
+            const updatedBilling = {
+              ...appt.billingInfo || { requiresInvoice: true },
+              numericKey: existingVoucher.numericKey,
+              pdfUrl: existingVoucher.pdfUrl || void 0,
+              invoiceStatus: "issued",
+              issuedAt: existingVoucher.createdAt ? new Date(existingVoucher.createdAt).toISOString() : (/* @__PURE__ */ new Date()).toISOString()
+            };
+            await updateAppointment2(appt.id, tenantId, { billingInfo: updatedBilling });
+            return {
+              success: true,
+              numericKey: existingVoucher.numericKey,
+              pdfUrl: existingVoucher.pdfUrl || void 0,
+              message: `Factura recuperada con clave ${existingVoucher.numericKey}`
+            };
+          }
+          let patientRecord = null;
+          if (appt.recordId) {
+            patientRecord = await getRecordById2(appt.recordId, tenantId).catch(() => null);
+          }
+          const customerBilling = appt.billingInfo || patientRecord?.metadata?.billingInfo;
+          const receiverIdNumber = customerBilling?.idNumber?.replace(/\D/g, "") || patientRecord?.identification || void 0;
+          const receiverIdType = customerBilling?.idType || (receiverIdNumber && receiverIdNumber.length === 10 && receiverIdNumber.startsWith("3") ? "02" : "01");
+          const receiverName = customerBilling?.legalName || patientRecord?.fullName || appt.name;
+          const receiverEmail = customerBilling?.email || patientRecord?.email || void 0;
+          const docType = receiverIdNumber ? "01" : config.defaultDocType || "04";
+          const unitPrice = Number(appt.amount) || 0;
+          const voucherRes = await this.emitVoucher(tenantId, {
+            docType,
+            appointmentId: appt.id,
+            receiver: receiverIdNumber ? {
+              idType: receiverIdType,
+              idNumber: receiverIdNumber,
+              name: receiverName,
+              email: receiverEmail
+            } : void 0,
+            items: [
+              {
+                cabysCode: "8311100000000",
+                description: `Servicio: ${appt.service}${appt.vehicleModel ? ` (${appt.vehicleModel})` : ""}`,
+                quantity: 1,
+                unitPrice,
+                taxRateCode: "08"
+              }
+            ]
+          });
+          if (voucherRes.success && voucherRes.numericKey) {
+            const updatedBilling = {
+              ...appt.billingInfo || { requiresInvoice: true },
+              numericKey: voucherRes.numericKey,
+              pdfUrl: voucherRes.pdfUrl,
+              invoiceStatus: "issued",
+              issuedAt: (/* @__PURE__ */ new Date()).toISOString()
+            };
+            await updateAppointment2(appt.id, tenantId, { billingInfo: updatedBilling });
+            return {
+              success: true,
+              numericKey: voucherRes.numericKey,
+              pdfUrl: voucherRes.pdfUrl,
+              message: voucherRes.message
+            };
+          } else {
+            const failedBilling = {
+              ...appt.billingInfo || { requiresInvoice: true },
+              invoiceStatus: "failed"
+            };
+            await updateAppointment2(appt.id, tenantId, { billingInfo: failedBilling });
+            return { success: false, message: voucherRes.message };
+          }
+        } catch (err) {
+          console.error(`[AlmendroService] Error emitiendo factura para cita ${appointmentId}:`, err);
+          return { success: false, message: `Error interno: ${err.message}` };
+        }
+      }
+    };
+    almendro_service_default = AlmendroService;
   }
 });
 
@@ -5998,208 +7296,8 @@ async function setChatHumanMode(tenantId, remoteJid, isHumanMode, hoursUntilExpi
 var getChatMessagesByTenant = getChatsByTenant;
 var saveChatMessage = createChatMessage;
 
-// src/server/db/appointments.repo.ts
-init_pool();
-async function getAppointmentsByTenant(tenantId) {
-  const result = await query(`
-    SELECT id, tenant_id as "tenantId", name, whatsapp, service, 
-           date, time, amount, status, details, vehicle_model as "vehicleModel",
-           selected_variables as "selectedVariables", specialist_id as "specialistId",
-           record_id as "recordId",
-           billing_info as "billingInfo",
-           payment_method as "paymentMethod", payment_status as "paymentStatus",
-           payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
-           tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
-           created_at as "createdAt"
-    FROM appointments 
-    WHERE tenant_id = $1
-    ORDER BY date DESC, time DESC
-  `, [tenantId]);
-  return result.rows;
-}
-async function getAppointmentById(id, tenantId) {
-  const result = await query(`
-    SELECT id, tenant_id as "tenantId", name, whatsapp, service, 
-           date, time, amount, status, details, vehicle_model as "vehicleModel",
-           selected_variables as "selectedVariables", specialist_id as "specialistId",
-           record_id as "recordId",
-           billing_info as "billingInfo",
-           payment_method as "paymentMethod", payment_status as "paymentStatus",
-           payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
-           tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
-           created_at as "createdAt"
-    FROM appointments 
-    WHERE id = $1 AND tenant_id = $2
-  `, [id, tenantId]);
-  return result.rows[0] || null;
-}
-async function getAppointmentByIdUnsafeForWebhook(id) {
-  const result = await query(`
-    SELECT id, tenant_id as "tenantId", name, whatsapp, service, 
-           date, time, amount, status, details, vehicle_model as "vehicleModel",
-           selected_variables as "selectedVariables", specialist_id as "specialistId",
-           record_id as "recordId",
-           billing_info as "billingInfo",
-           payment_method as "paymentMethod", payment_status as "paymentStatus",
-           payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
-           tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
-           created_at as "createdAt"
-    FROM appointments 
-    WHERE id = $1
-  `, [id]);
-  return result.rows[0] || null;
-}
-async function createAppointment(tenantId, data) {
-  const result = await query(`
-    INSERT INTO appointments (
-      tenant_id, name, whatsapp, service, date, time, amount, status, details, vehicle_model, selected_variables, specialist_id,
-      record_id, payment_method, payment_status, payment_reference, payment_proof_url, tilopay_transaction_id, tilopay_auth_code, billing_info
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
-    RETURNING id, tenant_id as "tenantId", name, whatsapp, service, 
-           date, time, amount, status, details, vehicle_model as "vehicleModel",
-           selected_variables as "selectedVariables", specialist_id as "specialistId",
-           record_id as "recordId",
-           billing_info as "billingInfo",
-           payment_method as "paymentMethod", payment_status as "paymentStatus",
-           payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
-           tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
-           created_at as "createdAt"
-  `, [
-    tenantId,
-    data.name,
-    data.whatsapp,
-    data.service,
-    data.date,
-    data.time,
-    data.amount,
-    data.status || "scheduled",
-    data.details,
-    data.vehicleModel,
-    data.selectedVariables ? JSON.stringify(data.selectedVariables) : null,
-    data.specialistId || null,
-    data.recordId || null,
-    data.paymentMethod || null,
-    data.paymentStatus || "pending",
-    data.paymentReference || null,
-    data.paymentProofUrl || null,
-    data.tilopayTransactionId || null,
-    data.tilopayAuthCode || null,
-    data.billingInfo ? JSON.stringify(data.billingInfo) : null
-  ]);
-  return result.rows[0];
-}
-async function updateAppointment(id, tenantId, data) {
-  const updates = [];
-  const params = [id, tenantId];
-  let paramIdx = 3;
-  const fields = [
-    "name",
-    "whatsapp",
-    "service",
-    "date",
-    "time",
-    "amount",
-    "status",
-    "details",
-    "vehicleModel",
-    "selectedVariables",
-    "specialistId",
-    "recordId",
-    "paymentMethod",
-    "paymentStatus",
-    "paymentReference",
-    "paymentProofUrl",
-    "tilopayTransactionId",
-    "tilopayAuthCode",
-    "billingInfo"
-  ];
-  for (const field of fields) {
-    if (data[field] !== void 0) {
-      const dbField = field.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
-      if (field === "billingInfo") {
-        updates.push(`${dbField} = $${paramIdx++}::jsonb`);
-        params.push(data[field] ? JSON.stringify(data[field]) : null);
-      } else {
-        updates.push(`${dbField} = $${paramIdx++}`);
-        const val = field === "selectedVariables" ? JSON.stringify(data[field]) : data[field];
-        params.push(val);
-      }
-    }
-  }
-  if (updates.length === 0) return getAppointmentById(id, tenantId);
-  const result = await query(`
-    UPDATE appointments SET ${updates.join(", ")}
-    WHERE id = $1 AND tenant_id = $2
-    RETURNING id, tenant_id as "tenantId", name, whatsapp, service, 
-           date, time, amount, status, details, vehicle_model as "vehicleModel",
-           selected_variables as "selectedVariables", specialist_id as "specialistId",
-           record_id as "recordId",
-           billing_info as "billingInfo",
-           payment_method as "paymentMethod", payment_status as "paymentStatus",
-           payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
-           tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
-           created_at as "createdAt"
-  `, params);
-  return result.rows[0] || null;
-}
-async function updateAppointmentPayment(id, paymentData, tenantId) {
-  const updates = [];
-  const params = [id];
-  let paramIdx = 2;
-  if (paymentData.paymentStatus !== void 0) {
-    updates.push(`payment_status = $${paramIdx++}`);
-    params.push(paymentData.paymentStatus);
-    if (paymentData.paymentStatus === "paid") {
-      updates.push(`status = 'confirmed'`);
-    }
-  }
-  if (paymentData.paymentMethod !== void 0) {
-    updates.push(`payment_method = $${paramIdx++}`);
-    params.push(paymentData.paymentMethod);
-  }
-  if (paymentData.paymentReference !== void 0) {
-    updates.push(`payment_reference = $${paramIdx++}`);
-    params.push(paymentData.paymentReference);
-  }
-  if (paymentData.tilopayTransactionId !== void 0) {
-    updates.push(`tilopay_transaction_id = $${paramIdx++}`);
-    params.push(paymentData.tilopayTransactionId);
-  }
-  if (paymentData.tilopayAuthCode !== void 0) {
-    updates.push(`tilopay_auth_code = $${paramIdx++}`);
-    params.push(paymentData.tilopayAuthCode);
-  }
-  if (updates.length === 0) {
-    return tenantId ? getAppointmentById(id, tenantId) : getAppointmentByIdUnsafeForWebhook(id);
-  }
-  let whereClause = "WHERE id = $1";
-  if (tenantId) {
-    whereClause += ` AND tenant_id = $${paramIdx++}`;
-    params.push(tenantId);
-  }
-  const result = await query(`
-    UPDATE appointments SET ${updates.join(", ")}
-    ${whereClause}
-    RETURNING id, tenant_id as "tenantId", name, whatsapp, service, 
-           date, time, amount, status, details, vehicle_model as "vehicleModel",
-           selected_variables as "selectedVariables", specialist_id as "specialistId",
-           record_id as "recordId",
-           payment_method as "paymentMethod", payment_status as "paymentStatus",
-           payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
-           tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
-           created_at as "createdAt"
-  `, params);
-  return result.rows[0] || null;
-}
-async function updateAppointmentStatus(id, tenantId, status) {
-  return updateAppointment(id, tenantId, { status });
-}
-async function deleteAppointment(id, tenantId) {
-  const result = await query("DELETE FROM appointments WHERE id = $1 AND tenant_id = $2", [id, tenantId]);
-  return (result.rowCount ?? 0) > 0;
-}
-
 // src/server/services/booking.service.ts
+init_appointments_repo();
 init_pool();
 async function createBookingFromCommand(tenantId, bookingData) {
   try {
@@ -6365,277 +7463,8 @@ async function rescheduleBookingFromWhatsApp(tenantId, phone, rescheduleData) {
   }
 }
 
-// src/server/db/orders.repo.ts
-init_pool();
-async function getOrdersByTenant(tenantId, filters) {
-  const result = await query(`
-    SELECT o.id, o.tenant_id as "tenantId", o.order_number as "orderNumber", o.customer_name as "customerName",
-           o.customer_phone as "customerPhone", o.customer_email as "customerEmail", o.customer_address as "customerAddress",
-           o.whatsapp_jid as "whatsappJid", o.source, o.subtotal, o.delivery_fee as "deliveryFee", o.discount, o.total,
-           o.currency, o.status, o.payment_method as "paymentMethod", o.payment_status as "paymentStatus",
-           o.payment_reference as "paymentReference", o.payment_proof_url as "paymentProofUrl", o.payment_proof_status as "paymentProofStatus", o.notes, o.delivery_method as "deliveryMethod",
-           o.consumption_mode as "consumptionMode", o.table_number as "tableNumber", o.customer_location as "customerLocation",
-           o.chat_message_id as "chatMessageId", o.driver_id as "driverId", o.waze_url as "wazeUrl",
-           o.billing_info as "billingInfo",
-           o.branch_id as "branchId", b.name as "branchName",
-           o.created_at as "createdAt", o.updated_at as "updatedAt",
-           COALESCE(
-             (
-               SELECT json_agg(
-                 json_build_object(
-                   'id', oi.id,
-                   'productId', oi.product_id,
-                   'variantId', oi.variant_id,
-                   'productName', oi.product_name,
-                   'variantName', oi.variant_name,
-                   'selectedVariables', oi.selected_variables,
-                   'quantity', oi.quantity,
-                   'unitPrice', oi.unit_price,
-                   'totalPrice', oi.total_price
-                 )
-               )
-               FROM order_items oi
-               WHERE oi.order_id = o.id
-             ),
-             '[]'::json
-           ) as items
-    FROM orders o
-    LEFT JOIN branches b ON o.branch_id = b.id
-    WHERE o.tenant_id = $1
-    ORDER BY o.created_at DESC
-  `, [tenantId]);
-  return result.rows;
-}
-async function getOrderById(id, tenantId) {
-  const result = await query(`
-    SELECT id, tenant_id as "tenantId", order_number as "orderNumber", customer_name as "customerName",
-           customer_phone as "customerPhone", customer_email as "customerEmail", customer_address as "customerAddress",
-           whatsapp_jid as "whatsappJid", source, subtotal, delivery_fee as "deliveryFee", discount, total,
-           currency, status, payment_method as "paymentMethod", payment_status as "paymentStatus",
-           payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl", payment_proof_status as "paymentProofStatus", notes, delivery_method as "deliveryMethod",
-           consumption_mode as "consumptionMode", table_number as "tableNumber", customer_location as "customerLocation",
-           chat_message_id as "chatMessageId", driver_id as "driverId", waze_url as "wazeUrl",
-           billing_info as "billingInfo",
-           created_at as "createdAt", updated_at as "updatedAt"
-    FROM orders 
-    WHERE id = $1 AND tenant_id = $2
-  `, [id, tenantId]);
-  if (result.rows.length === 0) return null;
-  const order = result.rows[0];
-  const itemsRes = await query(`
-    SELECT id, product_id as "productId", variant_id as "variantId", product_name as "productName",
-           variant_name as "variantName", selected_variables as "selectedVariables",
-           quantity, unit_price as "unitPrice", total_price as "totalPrice"
-    FROM order_items WHERE order_id = $1 AND tenant_id = $2
-  `, [id, tenantId]);
-  order.items = itemsRes.rows;
-  return order;
-}
-async function createOrder(tenantId, data, items, dbClient) {
-  const insertSql = `
-    INSERT INTO orders (
-      tenant_id, customer_name, customer_phone, customer_email, customer_address, whatsapp_jid,
-      source, subtotal, delivery_fee, discount, total, currency, status, payment_method, 
-      payment_status, payment_reference, payment_proof_url, payment_proof_status, notes, delivery_method, consumption_mode, table_number, customer_location, stock_deducted, billing_info
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
-    RETURNING id
-  `;
-  const params = [
-    tenantId,
-    data.customerName,
-    data.customerPhone,
-    data.customerEmail,
-    data.customerAddress,
-    data.whatsappJid,
-    data.source || "store",
-    data.subtotal,
-    data.deliveryFee || 0,
-    data.discount || 0,
-    data.total,
-    data.currency || "CRC",
-    data.status || "pedido_recibido",
-    data.paymentMethod,
-    data.paymentStatus || "pending",
-    data.paymentReference || null,
-    data.paymentProofUrl || null,
-    data.paymentProofStatus || (data.paymentProofUrl ? "received" : "pending"),
-    data.notes || null,
-    data.deliveryMethod || "pickup",
-    data.consumptionMode || null,
-    data.tableNumber || null,
-    data.customerLocation ? JSON.stringify(data.customerLocation) : null,
-    Boolean(data.stockDeducted),
-    data.billingInfo ? JSON.stringify(data.billingInfo) : null
-  ];
-  const client = dbClient || await getClient();
-  const isInternalClient = !dbClient;
-  if (isInternalClient) {
-    await client.query("BEGIN");
-  }
-  try {
-    const result = await client.query(insertSql, params);
-    const orderId = result.rows[0].id;
-    const orderItems = items || data.items || [];
-    if (orderItems && orderItems.length > 0) {
-      for (const item of orderItems) {
-        await client.query(`
-          INSERT INTO order_items (
-            order_id, product_id, variant_id, tenant_id, product_name, variant_name, selected_variables, quantity, unit_price, total_price
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-        `, [
-          orderId,
-          item.productId || null,
-          item.variantId || null,
-          tenantId,
-          item.productName,
-          item.variantName || null,
-          item.selectedVariables ? JSON.stringify(item.selectedVariables) : null,
-          item.quantity,
-          item.unitPrice,
-          Number(item.unitPrice) * Number(item.quantity)
-        ]);
-      }
-    }
-    if (isInternalClient) {
-      await client.query("COMMIT");
-    }
-    return getOrderById(orderId, tenantId);
-  } catch (err) {
-    if (isInternalClient) {
-      await client.query("ROLLBACK");
-    }
-    throw err;
-  } finally {
-    if (isInternalClient) {
-      client.release();
-    }
-  }
-}
-async function updateOrder(id, tenantId, data) {
-  const updates = [];
-  const params = [id, tenantId];
-  let paramIdx = 3;
-  const fields = [
-    "status",
-    "paymentStatus",
-    "paymentReference",
-    "notes",
-    "driverId",
-    "wazeUrl",
-    "consumptionMode",
-    "tableNumber",
-    "deliveryMethod",
-    "deliveryFee",
-    "total",
-    "customerAddress",
-    "billingInfo"
-  ];
-  for (const field of fields) {
-    if (data[field] !== void 0) {
-      const dbField = field.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
-      if (field === "customerLocation" || field === "billingInfo") {
-        updates.push(`${dbField} = $${paramIdx++}::jsonb`);
-        params.push(data[field] ? JSON.stringify(data[field]) : null);
-      } else {
-        updates.push(`${dbField} = $${paramIdx++}`);
-        params.push(data[field]);
-      }
-    }
-  }
-  if (updates.length > 0) {
-    updates.push(`updated_at = CURRENT_TIMESTAMP`);
-    await query(`UPDATE orders SET ${updates.join(", ")} WHERE id = $1 AND tenant_id = $2`, params);
-  }
-  return getOrderById(id, tenantId);
-}
-async function updateOrderStatus(id, tenantId, status) {
-  return updateOrder(id, tenantId, { status });
-}
-async function confirmPayment(id, tenantId, paymentReference) {
-  const result = await executeOrderPaymentConfirmation(tenantId, id, {
-    paymentMethod: "manual",
-    paymentReference: paymentReference || "Confirmado manual"
-  });
-  return result.order || getOrderById(id, tenantId);
-}
-async function executeOrderPaymentConfirmation(tenantId, orderId, paymentData) {
-  const client = await getClient();
-  try {
-    await client.query("BEGIN");
-    const orderRes = await client.query(`
-      SELECT * FROM orders WHERE id = $1 AND tenant_id = $2 FOR UPDATE
-    `, [orderId, tenantId]);
-    if (orderRes.rows.length === 0) {
-      await client.query("ROLLBACK");
-      return { success: false, error: "Orden no encontrada para este comercio" };
-    }
-    const currentOrder = orderRes.rows[0];
-    if (String(currentOrder.payment_status).toLowerCase() === "paid") {
-      await client.query("ROLLBACK");
-      const order = await getOrderById(orderId, tenantId);
-      return { success: true, alreadyProcessed: true, order: order || void 0 };
-    }
-    const newPaymentStatus = "paid";
-    const newOrderStatus = currentOrder.status === "pending" || currentOrder.status === "pedido_recibido" ? "pedido_aceptado" : currentOrder.status;
-    await client.query(`
-      UPDATE orders
-      SET payment_status = $1,
-          status = $2,
-          tilopay_transaction_id = $3,
-          tilopay_auth_code = $4,
-          payment_reference = COALESCE($5, payment_reference),
-          payment_method = COALESCE($6, payment_method),
-          stock_deducted = true,
-          updated_at = CURRENT_TIMESTAMP
-      WHERE id = $7 AND tenant_id = $8
-    `, [
-      newPaymentStatus,
-      newOrderStatus,
-      paymentData.tilopayTransactionId || null,
-      paymentData.tilopayAuthCode || null,
-      paymentData.paymentReference || paymentData.tilopayTransactionId || "Tilopay",
-      paymentData.paymentMethod || "card",
-      orderId,
-      tenantId
-    ]);
-    if (!currentOrder.stock_deducted) {
-      const itemsRes = await client.query(`
-        SELECT product_id as "productId", variant_id as "variantId", quantity
-        FROM order_items
-        WHERE order_id = $1 AND tenant_id = $2
-      `, [orderId, tenantId]);
-      for (const item of itemsRes.rows) {
-        const qty = Number(item.quantity || 1);
-        if (item.productId) {
-          await client.query(`
-            UPDATE products
-            SET stock = GREATEST(0, stock - $1),
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = $2 AND tenant_id = $3 AND track_stock = true
-          `, [qty, item.productId, tenantId]);
-          if (item.variantId) {
-            await client.query(`
-              UPDATE product_variants
-              SET stock = GREATEST(0, stock - $1)
-              WHERE id = $2 AND product_id = $3
-            `, [qty, item.variantId, item.productId]);
-          }
-        }
-      }
-    }
-    await client.query("COMMIT");
-    const updatedOrder = await getOrderById(orderId, tenantId);
-    return { success: true, alreadyProcessed: false, order: updatedOrder || void 0 };
-  } catch (err) {
-    await client.query("ROLLBACK");
-    console.error(`[executeOrderPaymentConfirmation] Error en transacci\xF3n at\xF3mica de orden ${orderId}:`, err);
-    return { success: false, error: err.message || "Error en la transacci\xF3n de confirmaci\xF3n de pago" };
-  } finally {
-    client.release();
-  }
-}
-
 // src/server/services/order.service.ts
+init_orders_repo();
 init_pool();
 async function createOrderFromWhatsApp(tenantId, orderData) {
   const allProducts = await getProductsByTenant(tenantId, true);
@@ -7058,6 +7887,7 @@ async function processSingleMessage(msg) {
 // src/server/services/evolution-api.service.ts
 init_evolution();
 import crypto4 from "crypto";
+init_orders_repo();
 
 // src/server/services/event-bus.service.ts
 import { EventEmitter } from "events";
@@ -8556,15 +9386,25 @@ var services_routes_default = router4;
 
 // src/server/routes/appointments.routes.ts
 import { Router as Router5 } from "express";
+init_appointments_repo();
 init_tenant_payment_repo();
 
 // src/server/services/tilopay-tenant.service.ts
 init_tenant_payment_repo();
+init_orders_repo();
+init_appointments_repo();
 init_env();
 var tokenCache = /* @__PURE__ */ new Map();
 var TilopayTenantService = class {
   static getBaseUrl(environment) {
     return "https://app.tilopay.com/api/v1";
+  }
+  static getCleanAppUrl() {
+    let url = (env2.APP_URL || "https://betico.tech").trim().replace(/\/$/, "");
+    if (url.includes("easypanel.host") || !url.startsWith("https://")) {
+      url = "https://betico.tech";
+    }
+    return url;
   }
   /**
    * Clears cached tokens for a tenant (useful when credentials are saved or rotated).
@@ -8679,7 +9519,7 @@ var TilopayTenantService = class {
     const firstName = nameParts[0] || "Cliente";
     const lastName = nameParts.slice(1).join(" ") || firstName;
     const cleanPhone = (order.customerPhone || "88888888").replace(/\D/g, "") || "88888888";
-    const appUrl = (env2.APP_URL || "https://betico.tech").replace(/\/$/, "");
+    const appUrl = this.getCleanAppUrl();
     const paymentPayload = {
       key: apiKey,
       amount: Number(order.total).toFixed(2),
@@ -8739,7 +9579,7 @@ var TilopayTenantService = class {
     const firstName = nameParts[0] || "Cliente";
     const lastName = nameParts.slice(1).join(" ") || firstName;
     const cleanPhone = (apt.whatsapp || "88888888").replace(/\D/g, "") || "88888888";
-    const appUrl = (env2.APP_URL || "https://betico.tech").replace(/\/$/, "");
+    const appUrl = this.getCleanAppUrl();
     const paymentPayload = {
       key: apiKey,
       amount: Number(apt.amount).toFixed(2),
@@ -8801,7 +9641,7 @@ var TilopayTenantService = class {
     const firstName = nameParts[0] || "Capit\xE1n";
     const lastName = nameParts.slice(1).join(" ") || firstName;
     const cleanPhone = customerPhone.replace(/\D/g, "") || "88888888";
-    const appUrl = (env2.APP_URL || "https://betico.tech").replace(/\/$/, "");
+    const appUrl = this.getCleanAppUrl();
     const paymentPayload = {
       key: apiKey,
       amount: Number(amount).toFixed(2),
@@ -9410,6 +10250,12 @@ router5.put("/:id", async (req, res) => {
         req.ip,
         req.headers["user-agent"]
       );
+      if (req.body.paymentStatus === "paid" && updated.billingInfo?.requiresInvoice) {
+        const { AlmendroService: AlmendroService2 } = await Promise.resolve().then(() => (init_almendro_service(), almendro_service_exports));
+        AlmendroService2.emitAppointmentInvoice(req.tenantId, updated.id).catch((err) => {
+          console.error(`[AppointmentsRoute] Error emitiendo factura electr\xF3nica para cita ${updated.id}:`, err);
+        });
+      }
     }
     res.json(updated);
   } catch (error) {
@@ -10101,8 +10947,10 @@ var products_routes_default = router11;
 
 // src/server/routes/orders.routes.ts
 import { Router as Router12 } from "express";
+init_orders_repo();
 init_evolution();
 init_pool();
+init_almendro_service();
 var router12 = Router12();
 router12.use(authenticateToken);
 router12.use(tenantContext);
@@ -10178,18 +11026,16 @@ router12.put("/:id/proof-status", async (req, res) => {
       res.status(404).json({ error: "Orden no encontrada" });
       return;
     }
-    let paymentStatus = order.paymentStatus;
     if (proofStatus === "verified") {
-      paymentStatus = "paid";
-    } else if (proofStatus === "received") {
-      paymentStatus = "proof_sent";
-    }
-    await query(`
-      UPDATE orders 
-      SET payment_proof_status = $1, payment_status = $2, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $3 AND (tenant_id = $4 OR $5 = 'superadmin')
-    `, [proofStatus, paymentStatus, req.params.id, req.tenantId, req.user?.role || "user"]);
-    if (proofStatus === "verified") {
+      await executeOrderPaymentConfirmation(req.tenantId, req.params.id, {
+        paymentMethod: order.paymentMethod || "sinpe",
+        paymentReference: order.paymentReference || "Comprobante SINPE verificado"
+      });
+      await query(`
+        UPDATE orders 
+        SET payment_proof_status = 'verified', updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1 AND tenant_id = $2
+      `, [req.params.id, req.tenantId]);
       await logAuditEvent(
         order.tenantId,
         req.user?.userId || "system",
@@ -10200,15 +11046,28 @@ router12.put("/:id/proof-status", async (req, res) => {
         req.ip,
         req.headers["user-agent"]
       );
+      if (order.billingInfo?.requiresInvoice) {
+        AlmendroService.emitOrderInvoice(req.tenantId, order.id).catch((err) => {
+          console.error(`[OrdersRoute] Error disparando factura para orden ${order.id}:`, err);
+        });
+      }
+    } else {
+      const newPaymentStatus = proofStatus === "received" ? "proof_sent" : "pending";
+      await query(`
+        UPDATE orders 
+        SET payment_proof_status = $1, payment_status = $2, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $3 AND tenant_id = $4
+      `, [proofStatus, newPaymentStatus, req.params.id, req.tenantId]);
     }
+    const freshOrder = await getOrderById(req.params.id, req.tenantId);
     if (req.io) {
-      req.io.to(`tenant_${order.tenantId}`).emit("order:updated", {
+      req.io.to(`tenant_${order.tenantId}`).emit("order:updated", freshOrder || {
         id: req.params.id,
         paymentProofStatus: proofStatus,
-        paymentStatus
+        paymentStatus: freshOrder?.paymentStatus || (proofStatus === "verified" ? "paid" : proofStatus === "received" ? "proof_sent" : "pending")
       });
     }
-    res.json({ success: true, proofStatus, paymentStatus });
+    res.json({ success: true, proofStatus, paymentStatus: freshOrder?.paymentStatus, order: freshOrder });
   } catch (error) {
     console.error("Error updating proof status:", error);
     res.status(500).json({ error: "Error al actualizar estado de comprobante" });
@@ -10322,6 +11181,11 @@ Estamos procesando tu orden de inmediato. \xA1Gracias!`;
         await sendMessage(instanceName, cleanCustomerPhone, msg);
       } catch (e) {
       }
+    }
+    if (order?.billingInfo?.requiresInvoice) {
+      AlmendroService.emitOrderInvoice(req.tenantId, order.id).catch((err) => {
+        console.error(`[OrdersRoute] Error disparando factura electr\xF3nica en confirm-payment para orden ${order.id}:`, err);
+      });
     }
     await logAuditEvent(
       req.tenantId,
@@ -10618,6 +11482,7 @@ var upload_routes_default = router15;
 
 // src/server/routes/storefront.routes.ts
 import { Router as Router16 } from "express";
+init_orders_repo();
 init_evolution();
 init_pool();
 init_tenant_payment_repo();
@@ -11378,6 +12243,7 @@ var webhook_routes_default = router17;
 
 // src/server/routes/calendar.routes.ts
 import { Router as Router18 } from "express";
+init_appointments_repo();
 var router18 = Router18();
 function normalizeDateStr(dateVal) {
   if (!dateVal) return (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
@@ -11497,6 +12363,7 @@ import { Router as Router19 } from "express";
 import jwt2 from "jsonwebtoken";
 import rateLimit3 from "express-rate-limit";
 init_drivers_repo();
+init_orders_repo();
 init_evolution();
 init_pool();
 var router19 = Router19();
@@ -14290,9 +15157,12 @@ var courts_routes_default = router28;
 
 // src/server/routes/tilopay-webhook.routes.ts
 init_pool();
+init_orders_repo();
 import { Router as Router29 } from "express";
+init_appointments_repo();
 init_evolution();
 init_crypto_service();
+init_almendro_service();
 var router29 = Router29();
 router29.post("/", async (req, res) => {
   res.status(200).json({ received: true, timestamp: (/* @__PURE__ */ new Date()).toISOString() });
@@ -14480,6 +15350,11 @@ Hola *${apt.name}*, tu cita en *${tenant.name}* ha sido confirmada con \xE9xito.
         } catch (msgErr) {
           console.error("[TilopayWebhook] Error al enviar WhatsApp de cita confirmada:", msgErr);
         }
+        if (apt.billingInfo?.requiresInvoice) {
+          AlmendroService.emitAppointmentInvoice(apt.tenantId, apt.id).catch((invErr) => {
+            console.error(`[TilopayWebhook] Error disparando factura electr\xF3nica para cita ${apt.id}:`, invErr);
+          });
+        }
       } else {
         console.log(`[TilopayWebhook] Pago fallido para cita ${apt.id}.`);
         await updateAppointmentPayment(apt.id, { paymentStatus: "failed" }, apt.tenantId);
@@ -14541,7 +15416,8 @@ Hola *${captainName}*, el pago para la reserva de cancha ha sido confirmado con 
       SELECT o.id, o.tenant_id as "tenantId", o.order_number as "orderNumber",
              o.customer_name as "customerName", o.customer_phone as "customerPhone",
              o.customer_email as "customerEmail", o.total, o.currency, o.channel_origin as "channelOrigin",
-             o.payment_status as "paymentStatus", o.delivery_method as "deliveryMethod"
+             o.payment_status as "paymentStatus", o.delivery_method as "deliveryMethod",
+             o.billing_info as "billingInfo"
       FROM orders o
       WHERE o.id::text = $1 OR o.order_number::text = $1 OR o.payment_link_token::text = $1
       LIMIT 1
@@ -14599,6 +15475,11 @@ Hola *${captainName}*, el pago para la reserva de cancha ha sido confirmado con 
       });
       if (req.io) {
         req.io.to(`tenant_${tenantId}`).emit("order:updated", updatedOrder);
+      }
+      if (updatedOrder.billingInfo?.requiresInvoice || order.billingInfo?.requiresInvoice) {
+        AlmendroService.emitOrderInvoice(tenantId, updatedOrder.id).catch((invErr) => {
+          console.error(`[TilopayWebhook] Error disparando factura electr\xF3nica para orden ${updatedOrder.id}:`, invErr);
+        });
       }
     } else {
       console.log(`[TilopayWebhook] Notificaci\xF3n de pago no aprobado o fallido para orden #${order.orderNumber}. Estado: ${status || resultCode}`);
@@ -15513,524 +16394,9 @@ var records_routes_default = router33;
 
 // src/server/routes/almendro.routes.ts
 import { Router as Router34 } from "express";
-
-// src/server/db/tenant-almendro.repo.ts
-init_pool();
-init_crypto_service();
-var DEFAULT_MODULE_TOGGLES = {
-  storeEnabled: true,
-  bookingsEnabled: true,
-  courtsEnabled: false,
-  restaurantEnabled: false,
-  subscriptionsEnabled: false
-};
-async function getTenantAlmendroConfig(tenantId) {
-  if (!tenantId) throw new Error("tenantId es requerido para consultar la configuraci\xF3n de Almendro");
-  const res = await query(`
-    SELECT id, tenant_id as "tenantId", is_enabled as "isEnabled", environment,
-           api_key_encrypted as "apiKeyEncrypted", default_doc_type as "defaultDocType",
-           module_toggles as "moduleToggles", tax_id_type as "taxIdType",
-           tax_id_number as "taxIdNumber", legal_name as "legalName",
-           commercial_name as "commercialName", economic_activity_code as "economicActivityCode",
-           branch_code as "branchCode", pos_code as "posCode",
-           created_at as "createdAt", updated_at as "updatedAt"
-    FROM tenant_almendro_configs
-    WHERE tenant_id = $1
-  `, [tenantId]);
-  if (res.rows.length === 0) {
-    return {
-      id: "",
-      tenantId,
-      isEnabled: false,
-      environment: "SANDBOX",
-      apiKeyMasked: "",
-      defaultDocType: "04",
-      moduleToggles: { ...DEFAULT_MODULE_TOGGLES },
-      isConfigured: false
-    };
-  }
-  const row = res.rows[0];
-  let rawKey = "";
-  if (row.apiKeyEncrypted) {
-    try {
-      rawKey = CryptoService.decryptForTenant(tenantId, row.apiKeyEncrypted);
-    } catch (e) {
-      console.error(`[AlmendroRepo] Error descifrando API Key para tenant ${tenantId}:`, e);
-    }
-  }
-  const toggles = row.moduleToggles ? { ...DEFAULT_MODULE_TOGGLES, ...row.moduleToggles } : { ...DEFAULT_MODULE_TOGGLES };
-  return {
-    id: row.id,
-    tenantId: row.tenantId,
-    isEnabled: Boolean(row.isEnabled),
-    environment: row.environment || "SANDBOX",
-    apiKeyMasked: rawKey ? CryptoService.maskSecret(rawKey) : "",
-    defaultDocType: row.defaultDocType === "01" ? "01" : "04",
-    moduleToggles: toggles,
-    taxIdType: row.taxIdType || "",
-    taxIdNumber: row.taxIdNumber || "",
-    legalName: row.legalName || "",
-    commercialName: row.commercialName || "",
-    economicActivityCode: row.economicActivityCode || "",
-    branchCode: row.branchCode || "001",
-    posCode: row.posCode || "00001",
-    isConfigured: Boolean(rawKey && rawKey.length > 5),
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt
-  };
-}
-async function getTenantAlmendroConfigRaw(tenantId) {
-  if (!tenantId) return null;
-  const res = await query(`
-    SELECT is_enabled as "isEnabled", environment, api_key_encrypted as "apiKeyEncrypted",
-           default_doc_type as "defaultDocType", module_toggles as "moduleToggles",
-           tax_id_type as "taxIdType", tax_id_number as "taxIdNumber",
-           legal_name as "legalName", commercial_name as "commercialName",
-           economic_activity_code as "economicActivityCode",
-           branch_code as "branchCode", pos_code as "posCode"
-    FROM tenant_almendro_configs
-    WHERE tenant_id = $1
-  `, [tenantId]);
-  if (res.rows.length === 0) return null;
-  const row = res.rows[0];
-  let apiKey = "";
-  if (row.apiKeyEncrypted) {
-    try {
-      apiKey = CryptoService.decryptForTenant(tenantId, row.apiKeyEncrypted);
-    } catch (e) {
-      console.error(`[AlmendroRepo] Error descifrando API Key raw para tenant ${tenantId}`);
-    }
-  }
-  const toggles = row.moduleToggles ? { ...DEFAULT_MODULE_TOGGLES, ...row.moduleToggles } : { ...DEFAULT_MODULE_TOGGLES };
-  return {
-    apiKey,
-    isEnabled: Boolean(row.isEnabled),
-    environment: row.environment || "SANDBOX",
-    defaultDocType: row.defaultDocType === "01" ? "01" : "04",
-    moduleToggles: toggles,
-    taxIdType: row.taxIdType,
-    taxIdNumber: row.taxIdNumber,
-    legalName: row.legalName,
-    commercialName: row.commercialName,
-    economicActivityCode: row.economicActivityCode,
-    branchCode: row.branchCode || "001",
-    posCode: row.posCode || "00001"
-  };
-}
-async function saveTenantAlmendroConfig(tenantId, data) {
-  if (!tenantId) throw new Error("tenantId es requerido para guardar la configuraci\xF3n de Almendro");
-  const existing = await query(`SELECT api_key_encrypted, module_toggles FROM tenant_almendro_configs WHERE tenant_id = $1`, [tenantId]);
-  let keyToEncrypt = existing.rows[0]?.api_key_encrypted || "";
-  if (data.apiKey && data.apiKey.trim() && !data.apiKey.includes("\u2022\u2022\u2022\u2022")) {
-    keyToEncrypt = CryptoService.encryptForTenant(tenantId, data.apiKey.trim());
-  }
-  const currentToggles = existing.rows[0]?.module_toggles || DEFAULT_MODULE_TOGGLES;
-  const mergedToggles = {
-    ...DEFAULT_MODULE_TOGGLES,
-    ...currentToggles,
-    ...data.moduleToggles || {}
-  };
-  const env3 = data.environment || "SANDBOX";
-  const docType = data.defaultDocType === "01" ? "01" : "04";
-  const branch = data.branchCode || "001";
-  const pos = data.posCode || "00001";
-  await query(`
-    INSERT INTO tenant_almendro_configs (
-      tenant_id, is_enabled, environment, api_key_encrypted,
-      default_doc_type, module_toggles, tax_id_type, tax_id_number,
-      legal_name, commercial_name, economic_activity_code,
-      branch_code, pos_code, updated_at
-    )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CURRENT_TIMESTAMP)
-    ON CONFLICT (tenant_id) DO UPDATE SET
-      is_enabled = EXCLUDED.is_enabled,
-      environment = EXCLUDED.environment,
-      api_key_encrypted = CASE WHEN $4 != '' THEN $4 ELSE tenant_almendro_configs.api_key_encrypted END,
-      default_doc_type = EXCLUDED.default_doc_type,
-      module_toggles = EXCLUDED.module_toggles,
-      tax_id_type = COALESCE(EXCLUDED.tax_id_type, tenant_almendro_configs.tax_id_type),
-      tax_id_number = COALESCE(EXCLUDED.tax_id_number, tenant_almendro_configs.tax_id_number),
-      legal_name = COALESCE(EXCLUDED.legal_name, tenant_almendro_configs.legal_name),
-      commercial_name = COALESCE(EXCLUDED.commercial_name, tenant_almendro_configs.commercial_name),
-      economic_activity_code = COALESCE(EXCLUDED.economic_activity_code, tenant_almendro_configs.economic_activity_code),
-      branch_code = EXCLUDED.branch_code,
-      pos_code = EXCLUDED.pos_code,
-      updated_at = CURRENT_TIMESTAMP
-  `, [
-    tenantId,
-    Boolean(data.isEnabled),
-    env3,
-    keyToEncrypt,
-    docType,
-    JSON.stringify(mergedToggles),
-    data.taxIdType || null,
-    data.taxIdNumber || null,
-    data.legalName || null,
-    data.commercialName || null,
-    data.economicActivityCode || null,
-    branch,
-    pos
-  ]);
-  const updated = await getTenantAlmendroConfig(tenantId);
-  return updated;
-}
-async function saveElectronicVoucher(tenantId, voucher) {
-  if (!tenantId) throw new Error("tenantId es requerido para registrar un comprobante electr\xF3nico");
-  const res = await query(`
-    INSERT INTO electronic_vouchers (
-      tenant_id, order_id, appointment_id, court_booking_id, subscription_charge_id,
-      doc_type, consecutive_number, numeric_key, receiver_id_type, receiver_id_number,
-      receiver_name, receiver_email, currency, subtotal, tax_amount, total_amount,
-      status, pdf_url, xml_signed_url, xml_response_url, hacienda_response_code,
-      hacienda_response_detail, metadata
-    )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
-    RETURNING id, tenant_id as "tenantId", order_id as "orderId", appointment_id as "appointmentId",
-              court_booking_id as "courtBookingId", subscription_charge_id as "subscriptionChargeId",
-              doc_type as "docType", consecutive_number as "consecutiveNumber", numeric_key as "numericKey",
-              receiver_id_type as "receiverIdType", receiver_id_number as "receiverIdNumber",
-              receiver_name as "receiverName", receiver_email as "receiverEmail",
-              currency, subtotal, tax_amount as "taxAmount", total_amount as "totalAmount",
-              status, pdf_url as "pdfUrl", xml_signed_url as "xmlSignedUrl",
-              xml_response_url as "xmlResponseUrl", hacienda_response_code as "haciendaResponseCode",
-              hacienda_response_detail as "haciendaResponseDetail", metadata,
-              created_at as "createdAt", updated_at as "updatedAt"
-  `, [
-    tenantId,
-    voucher.orderId || null,
-    voucher.appointmentId || null,
-    voucher.courtBookingId || null,
-    voucher.subscriptionChargeId || null,
-    voucher.docType || "04",
-    voucher.consecutiveNumber || "",
-    voucher.numericKey,
-    voucher.receiverIdType || null,
-    voucher.receiverIdNumber || null,
-    voucher.receiverName || null,
-    voucher.receiverEmail || null,
-    voucher.currency || "CRC",
-    voucher.subtotal || 0,
-    voucher.taxAmount || 0,
-    voucher.totalAmount || 0,
-    voucher.status || "pending",
-    voucher.pdfUrl || null,
-    voucher.xmlSignedUrl || null,
-    voucher.xmlResponseUrl || null,
-    voucher.haciendaResponseCode || null,
-    voucher.haciendaResponseDetail || null,
-    JSON.stringify(voucher.metadata || {})
-  ]);
-  return res.rows[0];
-}
-async function getElectronicVouchers(tenantId, options) {
-  if (!tenantId) throw new Error("tenantId es requerido para consultar comprobantes");
-  const limit = Math.min(Number(options?.limit) || 50, 100);
-  const offset = Math.max(Number(options?.offset) || 0, 0);
-  const conditions = ["tenant_id = $1"];
-  const params = [tenantId];
-  let pIdx = 2;
-  if (options?.status) {
-    conditions.push(`status = $${pIdx}`);
-    params.push(options.status);
-    pIdx++;
-  }
-  if (options?.docType) {
-    conditions.push(`doc_type = $${pIdx}`);
-    params.push(options.docType);
-    pIdx++;
-  }
-  const whereSql = conditions.join(" AND ");
-  const countRes = await query(`SELECT COUNT(*) as total FROM electronic_vouchers WHERE ${whereSql}`, params);
-  const total = parseInt(countRes.rows[0]?.total || "0", 10);
-  params.push(limit);
-  params.push(offset);
-  const res = await query(`
-    SELECT id, tenant_id as "tenantId", order_id as "orderId", appointment_id as "appointmentId",
-           court_booking_id as "courtBookingId", subscription_charge_id as "subscriptionChargeId",
-           doc_type as "docType", consecutive_number as "consecutiveNumber", numeric_key as "numericKey",
-           receiver_id_type as "receiverIdType", receiver_id_number as "receiverIdNumber",
-           receiver_name as "receiverName", receiver_email as "receiverEmail",
-           currency, subtotal, tax_amount as "taxAmount", total_amount as "totalAmount",
-           status, pdf_url as "pdfUrl", xml_signed_url as "xmlSignedUrl",
-           xml_response_url as "xmlResponseUrl", hacienda_response_code as "haciendaResponseCode",
-           hacienda_response_detail as "haciendaResponseDetail", metadata,
-           created_at as "createdAt", updated_at as "updatedAt"
-    FROM electronic_vouchers
-    WHERE ${whereSql}
-    ORDER BY created_at DESC
-    LIMIT $${pIdx} OFFSET $${pIdx + 1}
-  `, params);
-  return {
-    vouchers: res.rows,
-    total
-  };
-}
-
-// src/server/services/almendro.service.ts
-var ALMENDRO_PROD_URL = "https://fe.almendro.cr/api/v1/public";
-var ALMENDRO_SANDBOX_URL = "https://fe.almendro.cr/api/v1/public/sandbox";
-function getBaseUrl(environment) {
-  return environment === "PRODUCTION" ? ALMENDRO_PROD_URL : ALMENDRO_SANDBOX_URL;
-}
-var AlmendroService = class {
-  /**
-   * Tests connection with Almendro using the provided API Key.
-   */
-  static async testConnection(apiKey, environment = "SANDBOX") {
-    if (!apiKey || apiKey.trim().length < 5) {
-      return { success: false, message: "La llave de API es requerida" };
-    }
-    const cleanKey = apiKey.trim();
-    const primaryUrl = getBaseUrl(environment);
-    try {
-      let res = await fetch(`${primaryUrl}/vouchers?limit=1`, {
-        method: "GET",
-        headers: {
-          "Authorization": `Bearer ${cleanKey}`,
-          "Accept": "application/json"
-        }
-      });
-      if (!res.ok && res.status !== 401 && res.status !== 403) {
-        try {
-          const fallbackRes = await fetch(`${ALMENDRO_PROD_URL}/profile`, {
-            method: "GET",
-            headers: {
-              "Authorization": `Bearer ${cleanKey}`,
-              "Accept": "application/json"
-            }
-          });
-          if (fallbackRes.status === 200 || fallbackRes.status === 202 || fallbackRes.status === 401 || fallbackRes.status === 403) {
-            res = fallbackRes;
-          }
-        } catch (_) {
-        }
-      }
-      if (res.status === 200 || res.status === 202) {
-        return {
-          success: true,
-          message: `Conexi\xF3n exitosa con Almendro (${environment})`
-        };
-      }
-      if (res.status === 401 || res.status === 403) {
-        return {
-          success: false,
-          message: "La llave de API no es v\xE1lida o no tiene permisos en Almendro"
-        };
-      }
-      const errText = await res.text().catch(() => "");
-      return {
-        success: false,
-        message: `Almendro respondi\xF3 con c\xF3digo ${res.status}: ${errText.slice(0, 150)}`
-      };
-    } catch (err) {
-      try {
-        const altUrl = environment === "SANDBOX" ? ALMENDRO_PROD_URL : ALMENDRO_SANDBOX_URL;
-        const altRes = await fetch(`${altUrl}/vouchers?limit=1`, {
-          method: "GET",
-          headers: {
-            "Authorization": `Bearer ${cleanKey}`,
-            "Accept": "application/json"
-          }
-        });
-        if (altRes.status === 200 || altRes.status === 202) {
-          return {
-            success: true,
-            message: `Conexi\xF3n exitosa con Almendro`
-          };
-        }
-        if (altRes.status === 401 || altRes.status === 403) {
-          return {
-            success: false,
-            message: "La llave de API no es v\xE1lida o no tiene permisos en Almendro"
-          };
-        }
-      } catch (_) {
-      }
-      return {
-        success: false,
-        message: `No fue posible conectar con el servidor de Almendro: ${err.message}`
-      };
-    }
-  }
-  /**
-   * Looks up a taxpayer's official name, status and economic activities from TSE/Hacienda.
-   */
-  static async lookupTaxpayer(apiKey, environment, rawIdNumber) {
-    if (!rawIdNumber) return { success: false, error: "N\xFAmero de c\xE9dula requerido" };
-    const cleanId = rawIdNumber.replace(/\D/g, "");
-    if (cleanId.length < 9 || cleanId.length > 12) {
-      return { success: false, error: "El formato de c\xE9dula debe tener entre 9 y 12 d\xEDgitos num\xE9ricos" };
-    }
-    const baseUrl = getBaseUrl(environment);
-    try {
-      const res = await fetch(`${baseUrl}/taxpayer/${cleanId}`, {
-        method: "GET",
-        headers: {
-          "Authorization": `Bearer ${apiKey.trim()}`,
-          "Accept": "application/json"
-        }
-      });
-      if (!res.ok) {
-        const errText = await res.text().catch(() => "");
-        return {
-          success: false,
-          error: `Contribuyente no encontrado en el padr\xF3n (${res.status}): ${errText.slice(0, 100)}`
-        };
-      }
-      const body = await res.json();
-      return {
-        success: true,
-        data: {
-          idType: body.id_type || (cleanId.length === 10 && cleanId.startsWith("3") ? "02" : "01"),
-          idNumber: cleanId,
-          name: body.name || body.legal_name || "Nombre no disponible",
-          commercialName: body.commercial_name,
-          status: body.status || "INSCRITO",
-          taxRegime: body.tax_regime || "TRADICIONAL",
-          activities: body.activities || []
-        }
-      };
-    } catch (err) {
-      return { success: false, error: `Error consultando padr\xF3n de Hacienda: ${err.message}` };
-    }
-  }
-  /**
-   * Determines if a specific module should automatically invoice.
-   */
-  static async shouldInvoiceModule(tenantId, moduleName) {
-    const config = await getTenantAlmendroConfigRaw(tenantId);
-    if (!config || !config.isEnabled || !config.apiKey) return false;
-    return Boolean(config.moduleToggles[moduleName]);
-  }
-  /**
-   * Emits an electronic voucher through Almendro and stores it in electronic_vouchers.
-   */
-  static async emitVoucher(tenantId, params) {
-    const config = await getTenantAlmendroConfigRaw(tenantId);
-    if (!config || !config.isEnabled || !config.apiKey) {
-      return {
-        success: false,
-        message: "La facturaci\xF3n electr\xF3nica est\xE1 desactivada o no configurada para este negocio."
-      };
-    }
-    const docType = params.docType || config.defaultDocType || "04";
-    const currency = params.currency || "CRC";
-    const exchangeRate = params.exchangeRate || 1;
-    let subtotal = 0;
-    let taxAmount = 0;
-    const lines = params.items.map((item, idx) => {
-      const lineQty = Number(item.quantity) || 1;
-      const unitPrice = Number(item.unitPrice) || 0;
-      const lineSubtotal = lineQty * unitPrice;
-      subtotal += lineSubtotal;
-      const taxRateCode = item.taxRateCode || "08";
-      let taxPercentage = 0.13;
-      if (taxRateCode === "04") taxPercentage = 0.04;
-      else if (taxRateCode === "02") taxPercentage = 0.02;
-      else if (taxRateCode === "01") taxPercentage = 0.01;
-      else if (taxRateCode === "10") taxPercentage = 0;
-      const lineTax = lineSubtotal * taxPercentage;
-      taxAmount += lineTax;
-      return {
-        line_number: idx + 1,
-        cabys_code: item.cabysCode || "8311100000000",
-        description: item.description.slice(0, 160),
-        quantity: lineQty.toFixed(3),
-        unit_price: unitPrice.toFixed(5),
-        unit_measure: "Unid",
-        taxes: [
-          {
-            code: "01",
-            // IVA
-            rate_code: taxRateCode,
-            rate: (taxPercentage * 100).toFixed(2),
-            amount: lineTax.toFixed(5)
-          }
-        ]
-      };
-    });
-    const totalAmount = subtotal + taxAmount;
-    const receiverPayload = params.receiver?.idNumber ? {
-      id_type: params.receiver.idType || "01",
-      id_number: params.receiver.idNumber.replace(/\D/g, ""),
-      name: params.receiver.name || "Cliente Particular",
-      email: params.receiver.email
-    } : void 0;
-    const payload = {
-      doc_type: docType,
-      currency,
-      exchange_rate: exchangeRate.toFixed(4),
-      branch_code: config.branchCode || "001",
-      pos_code: config.posCode || "00001",
-      items: lines
-    };
-    if (receiverPayload) {
-      payload.receiver = receiverPayload;
-    }
-    if (params.referenceKey && docType === "03") {
-      payload.reference = {
-        code: "01",
-        // Anula documento de referencia
-        numeric_key: params.referenceKey,
-        reason: "Anulaci\xF3n solicitada por el emisor"
-      };
-    }
-    const baseUrl = getBaseUrl(config.environment);
-    try {
-      const res = await fetch(`${baseUrl}/vouchers`, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${config.apiKey.trim()}`,
-          "Content-Type": "application/json",
-          "Accept": "application/json"
-        },
-        body: JSON.stringify(payload)
-      });
-      const responseBody = await res.json().catch(() => ({}));
-      if (res.status === 200 || res.status === 201 || res.status === 202) {
-        const numericKey = responseBody.numeric_key || responseBody.key || `506${Date.now()}`;
-        const consecutive = responseBody.consecutive || responseBody.consecutive_number || "";
-        const pdfUrl = responseBody.pdf_url || `${baseUrl}/vouchers/${numericKey}/pdf`;
-        const xmlSigned = responseBody.xml_signed_url || `${baseUrl}/vouchers/${numericKey}/xml`;
-        await saveElectronicVoucher(tenantId, {
-          orderId: params.orderId,
-          appointmentId: params.appointmentId,
-          courtBookingId: params.courtBookingId,
-          subscriptionChargeId: params.subscriptionChargeId,
-          docType,
-          consecutiveNumber: consecutive,
-          numericKey,
-          receiverIdType: params.receiver?.idType,
-          receiverIdNumber: params.receiver?.idNumber,
-          receiverName: params.receiver?.name,
-          receiverEmail: params.receiver?.email,
-          currency,
-          subtotal,
-          taxAmount,
-          totalAmount,
-          status: responseBody.status === "accepted" ? "accepted" : "pending",
-          pdfUrl,
-          xmlSignedUrl: xmlSigned,
-          metadata: responseBody
-        });
-        return {
-          success: true,
-          numericKey,
-          pdfUrl,
-          message: `Comprobante emitido con \xE9xito. Clave: ${numericKey}`
-        };
-      }
-      const errorMsg = responseBody.message || responseBody.error || `Error ${res.status} al emitir en Almendro`;
-      console.warn(`[AlmendroService] Emisi\xF3n fallida para tenant ${tenantId}:`, errorMsg);
-      return { success: false, message: errorMsg };
-    } catch (err) {
-      console.error(`[AlmendroService] Excepci\xF3n emitiendo comprobante para tenant ${tenantId}:`, err);
-      return { success: false, message: `Error de red al conectar con Almendro: ${err.message}` };
-    }
-  }
-};
-
-// src/server/routes/almendro.routes.ts
+init_tenant_almendro_repo();
+init_almendro_service();
+init_appointments_repo();
 init_records_repo();
 var router34 = Router34();
 router34.get("/public-config/:slug", async (req, res) => {
@@ -16290,10 +16656,43 @@ router34.post("/emit-record-invoice/:recordId", async (req, res) => {
     res.status(500).json({ error: error.message || "Error interno al emitir comprobante" });
   }
 });
+router34.post("/emit-order-invoice/:orderId", async (req, res) => {
+  try {
+    const tenantId = req.tenantId;
+    const { orderId } = req.params;
+    if (!tenantId) {
+      res.status(400).json({ error: "tenantId requerido en la sesi\xF3n" });
+      return;
+    }
+    const result = await AlmendroService.emitOrderInvoice(tenantId, orderId);
+    if (!result.success) {
+      res.status(400).json({ success: false, message: result.message });
+      return;
+    }
+    if (req.io) {
+      const { getOrderById: getOrderById3 } = await Promise.resolve().then(() => (init_orders_repo(), orders_repo_exports));
+      const updatedOrder = await getOrderById3(orderId, tenantId);
+      if (updatedOrder) {
+        req.io.to(`tenant_${tenantId}`).emit("order:updated", updatedOrder);
+      }
+    }
+    res.json({
+      success: true,
+      numericKey: result.numericKey,
+      pdfUrl: result.pdfUrl,
+      message: result.message
+    });
+  } catch (error) {
+    console.error("[AlmendroRoutes] Error emitiendo factura de orden:", error);
+    res.status(500).json({ error: error.message || "Error interno al emitir comprobante de la orden" });
+  }
+});
 var almendro_routes_default = router34;
 
 // src/server/routes/superadmin-almendro.routes.ts
 import { Router as Router35 } from "express";
+init_tenant_almendro_repo();
+init_almendro_service();
 init_pool();
 var router35 = Router35();
 router35.use(authenticateToken, requireSuperAdmin);

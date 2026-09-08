@@ -349,4 +349,45 @@ router.post('/emit-record-invoice/:recordId', async (req: Request, res: Response
   }
 });
 
+/**
+ * POST /api/almendro/emit-order-invoice/:orderId
+ * Emits or retries an electronic invoice for an Order.
+ * Authenticated with tenant isolation via req.tenantId.
+ */
+router.post('/emit-order-invoice/:orderId', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const tenantId = (req as any).tenantId;
+    const { orderId } = req.params;
+
+    if (!tenantId) {
+      res.status(400).json({ error: 'tenantId requerido en la sesión' });
+      return;
+    }
+
+    const result = await AlmendroService.emitOrderInvoice(tenantId, orderId);
+    if (!result.success) {
+      res.status(400).json({ success: false, message: result.message });
+      return;
+    }
+
+    if ((req as any).io) {
+      const { getOrderById } = await import('../db/orders.repo.js');
+      const updatedOrder = await getOrderById(orderId, tenantId);
+      if (updatedOrder) {
+        (req as any).io.to(`tenant_${tenantId}`).emit('order:updated', updatedOrder);
+      }
+    }
+
+    res.json({
+      success: true,
+      numericKey: result.numericKey,
+      pdfUrl: result.pdfUrl,
+      message: result.message
+    });
+  } catch (error: any) {
+    console.error('[AlmendroRoutes] Error emitiendo factura de orden:', error);
+    res.status(500).json({ error: error.message || 'Error interno al emitir comprobante de la orden' });
+  }
+});
+
 export default router;

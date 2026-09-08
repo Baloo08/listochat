@@ -80,6 +80,10 @@ export interface CustomerBillingInfo {
   idNumber?: string;
   legalName?: string;
   email?: string;
+  numericKey?: string;
+  pdfUrl?: string;
+  invoiceStatus?: 'pending' | 'issued' | 'failed';
+  issuedAt?: string;
 }
 
 export interface Appointment {

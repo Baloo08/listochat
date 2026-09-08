@@ -9,6 +9,7 @@ import { sendMessage } from '../services/evolution.js';
 import { getChargeByOrderNumber, updateBillingCharge, saveBillingCard } from '../db/tenant-billing.repo.js';
 import { CryptoService } from '../services/crypto.service.js';
 import { logAuditEvent } from '../db/audit.repo.js';
+import { AlmendroService } from '../services/almendro.service.js';
 
 const router = Router();
 
@@ -247,6 +248,13 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
         } catch (msgErr) {
           console.error('[TilopayWebhook] Error al enviar WhatsApp de cita confirmada:', msgErr);
         }
+
+        // Trigger electronic invoice emission if requested
+        if (apt.billingInfo?.requiresInvoice) {
+          AlmendroService.emitAppointmentInvoice(apt.tenantId, apt.id).catch(invErr => {
+            console.error(`[TilopayWebhook] Error disparando factura electrónica para cita ${apt.id}:`, invErr);
+          });
+        }
       } else {
         console.log(`[TilopayWebhook] Pago fallido para cita ${apt.id}.`);
         await updateAppointmentPayment(apt.id, { paymentStatus: 'failed' }, apt.tenantId);
@@ -313,7 +321,8 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       SELECT o.id, o.tenant_id as "tenantId", o.order_number as "orderNumber",
              o.customer_name as "customerName", o.customer_phone as "customerPhone",
              o.customer_email as "customerEmail", o.total, o.currency, o.channel_origin as "channelOrigin",
-             o.payment_status as "paymentStatus", o.delivery_method as "deliveryMethod"
+             o.payment_status as "paymentStatus", o.delivery_method as "deliveryMethod",
+             o.billing_info as "billingInfo"
       FROM orders o
       WHERE o.id::text = $1 OR o.order_number::text = $1 OR o.payment_link_token::text = $1
       LIMIT 1
@@ -384,6 +393,13 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       // 3. Emitir WebSocket en tiempo real hacia KDS y Dashboard del tenant
       if ((req as any).io) {
         (req as any).io.to(`tenant_${tenantId}`).emit('order:updated', updatedOrder);
+      }
+
+      // 4. Disparar factura electrónica en Almendro si el cliente la solicitó
+      if (updatedOrder.billingInfo?.requiresInvoice || order.billingInfo?.requiresInvoice) {
+        AlmendroService.emitOrderInvoice(tenantId, updatedOrder.id).catch(invErr => {
+          console.error(`[TilopayWebhook] Error disparando factura electrónica para orden ${updatedOrder.id}:`, invErr);
+        });
       }
     } else {
       console.log(`[TilopayWebhook] Notificación de pago no aprobado o fallido para orden #${order.orderNumber}. Estado: ${status || resultCode}`);
