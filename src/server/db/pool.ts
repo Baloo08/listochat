@@ -3,6 +3,11 @@ import { env } from '../config/env.js';
 
 const { Pool } = pg;
 
+// Parse DATE (OID 1082) as plain string 'YYYY-MM-DD' instead of converting to UTC Date
+pg.types.setTypeParser(1082, (val: string) => val);
+// Parse TIME (OID 1083) as clean 'HH:MM'
+pg.types.setTypeParser(1083, (val: string) => val ? val.slice(0, 5) : val);
+
 const pool = new Pool({
   connectionString: env.DATABASE_URL,
   max: 25,

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApi } from '../hooks/useApi';
 import { MessageSquare, Calendar, ShoppingBag, DollarSign, Clock, AlertCircle, ArrowUpRight, CheckCircle2 } from 'lucide-react';
+import { formatShortDate, formatShortTime } from '../../shared/formatters';
 
 interface DashboardStats {
   chats: number;
@@ -198,7 +199,7 @@ export default function Dashboard() {
                     <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '2px' }}>{appt.service} · {appt.whatsapp}</div>
                   </div>
                   <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontWeight: '700', fontSize: '0.88rem', color: '#047857' }}>{appt.date} · {appt.time}</div>
+                    <div style={{ fontWeight: '700', fontSize: '0.88rem', color: '#047857' }}>{formatShortDate(appt.date)} · {formatShortTime(appt.time)}</div>
                     <span style={{ 
                       fontSize: '0.72rem', 
                       fontWeight: '700', 

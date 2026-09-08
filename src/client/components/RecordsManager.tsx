@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
 import { CustomerRecord, RecordEntry, VitalSigns, ClientRecordType } from '../../shared/types';
+import { formatShortDate, formatShortTime, formatShortDateTime } from '../../shared/formatters';
 
 export default function RecordsManager({ initialRecordId }: { initialRecordId?: string }) {
   const api = useApi();
@@ -705,7 +706,7 @@ export default function RecordsManager({ initialRecordId }: { initialRecordId?: 
                                 {ent.entryType === 'consultation' ? 'Consulta Clínica' : ent.entryType === 'vital_signs' ? 'Toma de Signos' : ent.entryType === 'prescription' ? 'Receta Médica' : 'Nota'}
                               </span>
                               <span style={{ fontSize: '0.75rem', color: '#64748b', marginLeft: '8px' }}>
-                                {new Date(ent.createdAt).toLocaleDateString('es-CR', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                {formatShortDateTime(ent.createdAt)}
                               </span>
                             </div>
 
@@ -773,7 +774,7 @@ export default function RecordsManager({ initialRecordId }: { initialRecordId?: 
                           <div>
                             <div style={{ fontWeight: 'bold', fontSize: '0.95rem', color: '#0f172a' }}>{a.service}</div>
                             <div style={{ fontSize: '0.8rem', color: '#64748b', display: 'flex', gap: '12px', marginTop: '2px' }}>
-                              <span>📅 {a.date} a las {a.time}</span>
+                              <span>📅 {formatShortDate(a.date)} • ⏰ {formatShortTime(a.time)}</span>
                               {a.specialistName && <span>👨‍⚕️ {a.specialistName}</span>}
                             </div>
                           </div>

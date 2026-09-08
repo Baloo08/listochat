@@ -5,6 +5,7 @@ import {
   FileText, Activity, Plus, X, Eye, Heart
 } from 'lucide-react';
 import { CustomerRecord, RecordEntry, VitalSigns } from '../../shared/types';
+import { formatShortDate, formatShortTime, formatShortDateTime, getLocalDateString } from '../../shared/formatters';
 
 interface SpecialistInfo {
   id: string;
@@ -57,7 +58,7 @@ export default function SpecialistPortal({ tenantSlug }: { tenantSlug?: string }
   const [historyAppts, setHistoryAppts] = useState<AppointmentItem[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [historyStats, setHistoryStats] = useState({ totalCount: 0, totalEarnings: 0 });
-  const [dateFilter, setDateFilter] = useState<'today' | 'week' | 'month' | 'custom'>('today');
+  const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'week' | 'month' | 'custom'>('all');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
 
@@ -256,17 +257,20 @@ export default function SpecialistPortal({ tenantSlug }: { tenantSlug?: string }
       let to = '';
       const now = new Date();
 
-      if (dateFilter === 'today') {
-        from = now.toISOString().split('T')[0];
+      if (dateFilter === 'all') {
+        from = '';
+        to = '';
+      } else if (dateFilter === 'today') {
+        from = getLocalDateString(now);
         to = from;
       } else if (dateFilter === 'week') {
         const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-        from = weekAgo.toISOString().split('T')[0];
-        to = now.toISOString().split('T')[0];
+        from = getLocalDateString(weekAgo);
+        to = getLocalDateString(now);
       } else if (dateFilter === 'month') {
         const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-        from = monthAgo.toISOString().split('T')[0];
-        to = now.toISOString().split('T')[0];
+        from = getLocalDateString(monthAgo);
+        to = getLocalDateString(now);
       } else if (dateFilter === 'custom') {
         from = customFrom;
         to = customTo;
@@ -687,7 +691,7 @@ export default function SpecialistPortal({ tenantSlug }: { tenantSlug?: string }
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', backgroundColor: '#f8fafc', padding: '10px', borderRadius: '8px', fontSize: '0.82rem', marginBottom: '14px', border: '1px solid #f1f5f9' }}>
                         <div>
                           <span style={{ color: '#64748b', display: 'block', fontSize: '0.72rem' }}>Fecha y Hora:</span>
-                          <strong>📅 {a.date} • ⏰ {a.time}</strong>
+                          <strong>📅 {formatShortDate(a.date)} • ⏰ {formatShortTime(a.time)}</strong>
                         </div>
                         <div>
                           <span style={{ color: '#64748b', display: 'block', fontSize: '0.72rem' }}>Monto:</span>
@@ -777,7 +781,7 @@ export default function SpecialistPortal({ tenantSlug }: { tenantSlug?: string }
             {/* Filter Bar */}
             <div style={{ backgroundColor: '#ffffff', padding: '14px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '16px' }}>
               <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '10px' }}>
-                {(['today', 'week', 'month', 'custom'] as const).map((mode) => (
+                {(['all', 'today', 'week', 'month', 'custom'] as const).map((mode) => (
                   <button
                     key={mode}
                     onClick={() => setDateFilter(mode)}
@@ -788,7 +792,7 @@ export default function SpecialistPortal({ tenantSlug }: { tenantSlug?: string }
                       color: dateFilter === mode ? '#ffffff' : '#475569'
                     }}
                   >
-                    {mode === 'today' ? 'Hoy' : mode === 'week' ? 'Esta Semana' : mode === 'month' ? 'Este Mes' : 'Rango'}
+                    {mode === 'all' ? 'Todas' : mode === 'today' ? 'Hoy' : mode === 'week' ? 'Esta Semana' : mode === 'month' ? 'Este Mes' : 'Rango'}
                   </button>
                 ))}
               </div>
@@ -840,7 +844,7 @@ export default function SpecialistPortal({ tenantSlug }: { tenantSlug?: string }
                   }}>
                     <div>
                       <div style={{ fontWeight: 'bold', fontSize: '0.95rem', color: '#0f172a' }}>{h.name}</div>
-                      <div style={{ fontSize: '0.8rem', color: '#64748b' }}>{h.service} • {h.date} {h.time}</div>
+                      <div style={{ fontSize: '0.8rem', color: '#64748b' }}>{h.service} • {formatShortDate(h.date)} • {formatShortTime(h.time)}</div>
                     </div>
                     <div style={{ textAlign: 'right' }}>
                       <div style={{ fontWeight: 'bold', color: '#16a34a', fontSize: '0.95rem' }}>
@@ -1129,7 +1133,7 @@ export default function SpecialistPortal({ tenantSlug }: { tenantSlug?: string }
                         {e.entryType === 'consultation' ? '🩺 Consulta' : e.entryType === 'vital_signs' ? '📊 Signos Vitales' : e.entryType === 'diagnosis' ? '🔬 Diagnóstico' : '📝 Nota de Evolución'}
                       </span>
                       <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
-                        {new Date(e.createdAt).toLocaleString('es-CR')}
+                        {formatShortDateTime(e.createdAt)}
                       </span>
                     </div>
 

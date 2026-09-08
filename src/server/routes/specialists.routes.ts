@@ -226,7 +226,12 @@ router.post('/portal/appointments/:id/status', async (req, res) => {
       res.status(401).json({ error: 'Credenciales de especialista no provistas o inválidas' });
       return;
     }
-    await query('UPDATE appointments SET status = $1 WHERE id = $2 AND specialist_id = $3', [status || 'completed', req.params.id, specialist.id]);
+    await query(
+      `UPDATE appointments 
+       SET status = $1, specialist_id = COALESCE(specialist_id, $3) 
+       WHERE id = $2 AND tenant_id = $4 AND (specialist_id = $3 OR specialist_id IS NULL)`,
+      [status || 'completed', req.params.id, specialist.id, specialist.tenantId]
+    );
     res.json({ success: true, message: 'Estado actualizado' });
   } catch (error) {
     res.status(500).json({ error: 'Error al actualizar estado' });

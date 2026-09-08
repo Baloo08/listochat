@@ -60,6 +60,8 @@ var init_pool = __esm({
     "use strict";
     init_env();
     ({ Pool } = pg);
+    pg.types.setTypeParser(1082, (val) => val);
+    pg.types.setTypeParser(1083, (val) => val ? val.slice(0, 5) : val);
     pool = new Pool({
       connectionString: env.DATABASE_URL,
       max: 25,
@@ -4756,21 +4758,38 @@ async function deleteSpecialist(id, tenantId) {
 }
 async function getActiveAppointmentsForSpecialist(specialistId) {
   const res = await query(
-    `SELECT a.id, a.tenant_id as "tenantId", a.name, a.whatsapp, a.service, a.date, a.time, a.amount, a.status, a.details, a.vehicle_model as "vehicleModel", a.specialist_id as "specialistId", a.created_at as "createdAt" FROM appointments a WHERE a.specialist_id = $1 AND a.status NOT IN ('completed', 'completado', 'cancelled', 'cancelado') ORDER BY a.date ASC, a.time ASC`,
+    `SELECT a.id, a.tenant_id as "tenantId", a.name, a.whatsapp, a.service, 
+            TO_CHAR(a.date, 'YYYY-MM-DD') as date, 
+            TO_CHAR(a.time, 'HH24:MI') as time, 
+            a.amount, a.status, a.details, a.vehicle_model as "vehicleModel", 
+            a.specialist_id as "specialistId", a.created_at as "createdAt" 
+     FROM appointments a 
+     WHERE a.specialist_id = $1 
+       AND LOWER(a.status) NOT IN ('completed', 'completado', 'completada', 'realizada', 'finalizada', 'atendida', 'done', 'cancelled', 'cancelado', 'cancelada') 
+     ORDER BY a.date ASC, a.time ASC`,
     [specialistId]
   );
   return res.rows;
 }
 async function getCompletedAppointmentsForSpecialist(specialistId, fromDate, toDate) {
-  let sql = `SELECT a.id, a.tenant_id as "tenantId", a.name, a.whatsapp, a.service, a.date, a.time, a.amount, a.status, a.details, a.vehicle_model as "vehicleModel", a.specialist_id as "specialistId", a.created_at as "createdAt" FROM appointments a WHERE a.specialist_id = $1 AND a.status IN ('completed', 'completado')`;
+  let sql = `
+    SELECT a.id, a.tenant_id as "tenantId", a.name, a.whatsapp, a.service, 
+           TO_CHAR(a.date, 'YYYY-MM-DD') as date, 
+           TO_CHAR(a.time, 'HH24:MI') as time, 
+           a.amount, a.status, a.details, a.vehicle_model as "vehicleModel", 
+           a.specialist_id as "specialistId", a.created_at as "createdAt" 
+    FROM appointments a 
+    WHERE a.specialist_id = $1 
+      AND LOWER(a.status) IN ('completed', 'completado', 'completada', 'realizada', 'finalizada', 'atendida', 'done')
+  `;
   const params = [specialistId];
   if (fromDate) {
     params.push(fromDate);
-    sql += " AND a.date >= $" + params.length;
+    sql += ` AND a.date >= $${params.length}`;
   }
   if (toDate) {
     params.push(toDate);
-    sql += " AND a.date <= $" + params.length;
+    sql += ` AND a.date <= $${params.length}`;
   }
   sql += " ORDER BY a.date DESC, a.time DESC";
   const res = await query(sql, params);
@@ -13316,7 +13335,12 @@ router24.post("/portal/appointments/:id/status", async (req, res) => {
       res.status(401).json({ error: "Credenciales de especialista no provistas o inv\xE1lidas" });
       return;
     }
-    await query("UPDATE appointments SET status = $1 WHERE id = $2 AND specialist_id = $3", [status || "completed", req.params.id, specialist.id]);
+    await query(
+      `UPDATE appointments 
+       SET status = $1, specialist_id = COALESCE(specialist_id, $3) 
+       WHERE id = $2 AND tenant_id = $4 AND (specialist_id = $3 OR specialist_id IS NULL)`,
+      [status || "completed", req.params.id, specialist.id, specialist.tenantId]
+    );
     res.json({ success: true, message: "Estado actualizado" });
   } catch (error) {
     res.status(500).json({ error: "Error al actualizar estado" });

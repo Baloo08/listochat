@@ -116,24 +116,42 @@ export async function deleteSpecialist(id: string, tenantId: string): Promise<bo
 
 export async function getActiveAppointmentsForSpecialist(specialistId: string): Promise<any[]> {
   const res = await query(
-    "SELECT a.id, a.tenant_id as \"tenantId\", a.name, a.whatsapp, a.service, a.date, a.time, a.amount, a.status, a.details, a.vehicle_model as \"vehicleModel\", a.specialist_id as \"specialistId\", a.created_at as \"createdAt\" FROM appointments a WHERE a.specialist_id = $1 AND a.status NOT IN ('completed', 'completado', 'cancelled', 'cancelado') ORDER BY a.date ASC, a.time ASC",
+    `SELECT a.id, a.tenant_id as "tenantId", a.name, a.whatsapp, a.service, 
+            TO_CHAR(a.date, 'YYYY-MM-DD') as date, 
+            TO_CHAR(a.time, 'HH24:MI') as time, 
+            a.amount, a.status, a.details, a.vehicle_model as "vehicleModel", 
+            a.specialist_id as "specialistId", a.created_at as "createdAt" 
+     FROM appointments a 
+     WHERE a.specialist_id = $1 
+       AND LOWER(a.status) NOT IN ('completed', 'completado', 'completada', 'realizada', 'finalizada', 'atendida', 'done', 'cancelled', 'cancelado', 'cancelada') 
+     ORDER BY a.date ASC, a.time ASC`,
     [specialistId]
   );
   return res.rows;
 }
 
 export async function getCompletedAppointmentsForSpecialist(specialistId: string, fromDate?: string, toDate?: string): Promise<any[]> {
-  let sql = "SELECT a.id, a.tenant_id as \"tenantId\", a.name, a.whatsapp, a.service, a.date, a.time, a.amount, a.status, a.details, a.vehicle_model as \"vehicleModel\", a.specialist_id as \"specialistId\", a.created_at as \"createdAt\" FROM appointments a WHERE a.specialist_id = $1 AND a.status IN ('completed', 'completado')";
-  const params = [specialistId];
+  let sql = `
+    SELECT a.id, a.tenant_id as "tenantId", a.name, a.whatsapp, a.service, 
+           TO_CHAR(a.date, 'YYYY-MM-DD') as date, 
+           TO_CHAR(a.time, 'HH24:MI') as time, 
+           a.amount, a.status, a.details, a.vehicle_model as "vehicleModel", 
+           a.specialist_id as "specialistId", a.created_at as "createdAt" 
+    FROM appointments a 
+    WHERE a.specialist_id = $1 
+      AND LOWER(a.status) IN ('completed', 'completado', 'completada', 'realizada', 'finalizada', 'atendida', 'done')
+  `;
+  const params: any[] = [specialistId];
   if (fromDate) {
     params.push(fromDate);
-    sql += ' AND a.date >= $' + params.length;
+    sql += ` AND a.date >= $${params.length}`;
   }
   if (toDate) {
     params.push(toDate);
-    sql += ' AND a.date <= $' + params.length;
+    sql += ` AND a.date <= $${params.length}`;
   }
   sql += ' ORDER BY a.date DESC, a.time DESC';
   const res = await query(sql, params);
   return res.rows;
 }
+

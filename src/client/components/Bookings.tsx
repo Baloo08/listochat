@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
 import { Appointment, DayBreakConfig, BookingField } from '../../shared/types';
+import { formatShortDate, formatShortTime, formatShortDateTime } from '../../shared/formatters';
 import RecordsManager from './RecordsManager';
 
 const DAYS_OF_WEEK = [
@@ -198,18 +199,6 @@ export default function Bookings() {
     return clean;
   };
 
-  const formatShortDate = (dateStr?: string): string => {
-    if (!dateStr) return '';
-    const clean = dateStr.split('T')[0];
-    const parts = clean.split('-');
-    if (parts.length === 3) {
-      const [year, month, day] = parts;
-      const months = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Set', 'Oct', 'Nov', 'Dic'];
-      const mIdx = parseInt(month, 10) - 1;
-      return `${day} ${months[mIdx] || month} ${year}`;
-    }
-    return dateStr;
-  };
 
   const fetchAppointments = async () => {
     try {
@@ -930,11 +919,16 @@ export default function Bookings() {
                       </td>
                       <td style={{ padding: '12px 16px' }}>
                         <div style={{ fontWeight: '500' }}>{app.service}</div>
+                        {app.specialistId && (
+                          <div style={{ fontSize: '0.75rem', color: 'var(--primary)', fontWeight: '600', marginTop: '2px' }}>
+                            👨‍⚕️ {specialists.find(s => s.id === app.specialistId)?.name || 'Especialista'}
+                          </div>
+                        )}
                         {app.details && <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{app.details}</div>}
                       </td>
                       <td style={{ padding: '12px 16px' }}>
                         <div style={{ fontWeight: '600' }}>{formatShortDate(app.date)}</div>
-                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{app.time}</div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{formatShortTime(app.time)}</div>
                       </td>
                       <td style={{ padding: '12px 16px' }}>
                         <div style={{ fontWeight: '600' }}>₡{Number(app.amount || 0).toLocaleString('es-CR')}</div>
@@ -1115,9 +1109,9 @@ export default function Bookings() {
                             overflow: 'hidden',
                             textOverflow: 'ellipsis'
                           }}
-                          title={`${app.time} - ${app.name} (${app.service})`}
+                          title={`${formatShortTime(app.time)} - ${app.name} (${app.service})`}
                         >
-                          {app.time} {app.name}
+                          {formatShortTime(app.time)} {app.name}
                         </div>
                       );
                     })}
@@ -1797,7 +1791,7 @@ export default function Bookings() {
                 </div>
                 <div>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block' }}>Hora:</span>
-                  <span style={{ fontWeight: '600' }}>{selectedAppointment.time}</span>
+                  <span style={{ fontWeight: '600' }}>{formatShortTime(selectedAppointment.time)}</span>
                 </div>
               </div>
 
@@ -1859,6 +1853,29 @@ export default function Bookings() {
                     </button>
                   </div>
                 )}
+              </div>
+
+              <div>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>Especialista Asignado:</span>
+                <select
+                  value={selectedAppointment.specialistId || ''}
+                  onChange={async (e) => {
+                    const val = e.target.value || null;
+                    try {
+                      await api.put(`/api/appointments/${selectedAppointment.id}`, { specialistId: val });
+                      setSelectedAppointment({ ...selectedAppointment, specialistId: val || undefined });
+                      fetchAppointments();
+                    } catch (err: any) {
+                      alert('Error al actualizar especialista: ' + err.message);
+                    }
+                  }}
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem', backgroundColor: 'white' }}
+                >
+                  <option value="">-- Sin Asignar --</option>
+                  {specialists.map(s => (
+                    <option key={s.id} value={s.id}>{s.name} ({s.specialty || 'General'})</option>
+                  ))}
+                </select>
               </div>
 
               <div>
