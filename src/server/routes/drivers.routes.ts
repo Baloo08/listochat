@@ -15,7 +15,13 @@ const router = Router();
 
 const driverPortalLoginLimiter = rateLimit({
   windowMs: 5 * 60 * 1000,
-  max: 5,
+  max: 15,
+  skipSuccessfulRequests: true,
+  keyGenerator: (req) => {
+    const slug = String(req.body?.tenantSlug || req.query?.tenantSlug || req.headers['x-tenant-slug'] || 'general').toLowerCase().trim();
+    const rawIp = req.ip || req.socket?.remoteAddress || '127.0.0.1';
+    return `${rawIp}_${slug}`;
+  },
   message: { error: 'Demasiados intentos de acceso fallidos con PIN. Por favor espera 5 minutos.' },
   standardHeaders: true,
   legacyHeaders: false
@@ -177,6 +183,38 @@ router.post('/portal/login', driverPortalLoginLimiter, async (req, res) => {
   } catch (error) {
     console.error('Driver portal login error:', error);
     res.status(500).json({ error: 'Error al iniciar sesión' });
+  }
+});
+
+// 1.1 Verify active session and return driver profile
+router.get('/portal/me', async (req, res) => {
+  try {
+    const driver = await resolveDriverFromRequest(req);
+    if (!driver) {
+      res.status(401).json({ error: 'Sesión no válida o expirada' });
+      return;
+    }
+
+    const tenant = await getTenantById(driver.tenantId);
+    const storeSettings = await getStoreSettings(driver.tenantId);
+
+    res.json({
+      success: true,
+      driver: {
+        id: driver.id,
+        tenantId: driver.tenantId,
+        tenantSlug: tenant?.slug || '',
+        name: driver.name,
+        phone: driver.phone,
+        accessPin: driver.accessPin,
+        vehicleType: driver.vehicleType,
+        plateNumber: driver.plateNumber,
+        businessName: storeSettings?.storeName || tenant?.name || 'Comercio'
+      }
+    });
+  } catch (error) {
+    console.error('Driver portal me error:', error);
+    res.status(500).json({ error: 'Error al consultar sesión del repartidor' });
   }
 });
 

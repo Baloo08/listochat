@@ -10811,7 +10811,13 @@ init_pool();
 var router19 = Router19();
 var driverPortalLoginLimiter = rateLimit3({
   windowMs: 5 * 60 * 1e3,
-  max: 5,
+  max: 15,
+  skipSuccessfulRequests: true,
+  keyGenerator: (req) => {
+    const slug = String(req.body?.tenantSlug || req.query?.tenantSlug || req.headers["x-tenant-slug"] || "general").toLowerCase().trim();
+    const rawIp = req.ip || req.socket?.remoteAddress || "127.0.0.1";
+    return `${rawIp}_${slug}`;
+  },
   message: { error: "Demasiados intentos de acceso fallidos con PIN. Por favor espera 5 minutos." },
   standardHeaders: true,
   legacyHeaders: false
@@ -10949,6 +10955,34 @@ router19.post("/portal/login", driverPortalLoginLimiter, async (req, res) => {
   } catch (error) {
     console.error("Driver portal login error:", error);
     res.status(500).json({ error: "Error al iniciar sesi\xF3n" });
+  }
+});
+router19.get("/portal/me", async (req, res) => {
+  try {
+    const driver = await resolveDriverFromRequest(req);
+    if (!driver) {
+      res.status(401).json({ error: "Sesi\xF3n no v\xE1lida o expirada" });
+      return;
+    }
+    const tenant = await getTenantById(driver.tenantId);
+    const storeSettings = await getStoreSettings(driver.tenantId);
+    res.json({
+      success: true,
+      driver: {
+        id: driver.id,
+        tenantId: driver.tenantId,
+        tenantSlug: tenant?.slug || "",
+        name: driver.name,
+        phone: driver.phone,
+        accessPin: driver.accessPin,
+        vehicleType: driver.vehicleType,
+        plateNumber: driver.plateNumber,
+        businessName: storeSettings?.storeName || tenant?.name || "Comercio"
+      }
+    });
+  } catch (error) {
+    console.error("Driver portal me error:", error);
+    res.status(500).json({ error: "Error al consultar sesi\xF3n del repartidor" });
   }
 });
 router19.get("/portal/orders", async (req, res) => {
@@ -12577,7 +12611,13 @@ init_pool();
 var router24 = Router24();
 var specialistPortalLoginLimiter = rateLimit4({
   windowMs: 5 * 60 * 1e3,
-  max: 5,
+  max: 15,
+  skipSuccessfulRequests: true,
+  keyGenerator: (req) => {
+    const slug = String(req.body?.tenantSlug || req.query?.tenantSlug || req.headers["x-tenant-slug"] || "general").toLowerCase().trim();
+    const rawIp = req.ip || req.socket?.remoteAddress || "127.0.0.1";
+    return `${rawIp}_${slug}`;
+  },
   message: { error: "Demasiados intentos de acceso fallidos con PIN. Por favor espera 5 minutos." },
   standardHeaders: true,
   legacyHeaders: false
@@ -12708,6 +12748,32 @@ router24.post("/portal/login", specialistPortalLoginLimiter, async (req, res) =>
   } catch (error) {
     console.error("Specialist login error:", error);
     res.status(500).json({ error: "Error al iniciar sesi\xF3n" });
+  }
+});
+router24.get("/portal/me", async (req, res) => {
+  try {
+    const specialist = await resolveSpecialistFromRequest(req);
+    if (!specialist) {
+      res.status(401).json({ error: "Sesi\xF3n no v\xE1lida o expirada" });
+      return;
+    }
+    const tenant = await getTenantById(specialist.tenantId);
+    res.json({
+      success: true,
+      specialist: {
+        id: specialist.id,
+        tenantId: specialist.tenantId,
+        tenantSlug: tenant?.slug || "",
+        name: specialist.name,
+        phone: specialist.phone,
+        specialty: specialist.specialty,
+        accessPin: specialist.accessPin,
+        businessName: tenant?.name || "Comercio"
+      }
+    });
+  } catch (error) {
+    console.error("Specialist me error:", error);
+    res.status(500).json({ error: "Error al consultar sesi\xF3n de colaborador" });
   }
 });
 router24.get("/portal/appointments", async (req, res) => {

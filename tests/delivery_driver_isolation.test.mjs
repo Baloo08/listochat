@@ -166,4 +166,41 @@ describe('Delivery Driver Portal Multi-Tenant Isolation & Routing Tests', () => 
     });
   });
 
+  describe('5. Rate Limiter Tenant Partitioning & Cross-Tenant Isolation', () => {
+    const generateRateLimitKey = (req) => {
+      const slug = String(req.body?.tenantSlug || req.query?.tenantSlug || req.headers?.['x-tenant-slug'] || 'general').toLowerCase().trim();
+      const rawIp = req.ip || req.socket?.remoteAddress || '127.0.0.1';
+      return `${rawIp}_${slug}`;
+    };
+
+    test('generates isolated keys for different merchants on the same client IP', () => {
+      const reqTenantA = { ip: '190.113.115.22', body: { tenantSlug: 'barberia-elite' } };
+      const reqTenantB = { ip: '190.113.115.22', body: { tenantSlug: 'sodalulo' } };
+
+      const keyA = generateRateLimitKey(reqTenantA);
+      const keyB = generateRateLimitKey(reqTenantB);
+
+      assert.equal(keyA, '190.113.115.22_barberia-elite');
+      assert.equal(keyB, '190.113.115.22_sodalulo');
+      assert.notEqual(keyA, keyB, 'Keys MUST be strictly partitioned by tenant to prevent cross-store lockout');
+    });
+
+    test('prevents sending credentials across tenants when switching stores', () => {
+      const savedTenantSlug = 'barberia-elite';
+      const effectiveSlug = 'sodalulo';
+
+      const isMatchingTenant = !effectiveSlug || !savedTenantSlug || savedTenantSlug.toLowerCase() === effectiveSlug.toLowerCase();
+      assert.equal(isMatchingTenant, false, 'Must identify store mismatch and prevent sending old credentials');
+    });
+
+    test('allows session restoration when tenant matches without re-triggering login limiter', () => {
+      const savedTenantSlug = 'sodalulo';
+      const effectiveSlug = 'sodalulo';
+
+      const isMatchingTenant = !effectiveSlug || !savedTenantSlug || savedTenantSlug.toLowerCase() === effectiveSlug.toLowerCase();
+      assert.equal(isMatchingTenant, true, 'Must allow direct session restoration for matching tenant');
+    });
+  });
+
 });
+

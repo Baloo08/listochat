@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Calendar, User, Phone, CheckCircle2, Clock, Play, Check, Search, Filter, DollarSign, LogOut, MessageSquare, AlertCircle, Sparkles, Building2 } from 'lucide-react';
 
 interface SpecialistInfo {
@@ -85,6 +85,8 @@ export default function SpecialistPortal({ tenantSlug }: { tenantSlug?: string }
     return () => { cancelled = true; };
   }, [tenantSlug, customSlugInput]);
 
+  const autoLoginAttemptedRef = useRef<string | null>(null);
+
   // 2. Auto-restore session from localStorage & check 1-click URL pin
   useEffect(() => {
     const savedSession = localStorage.getItem('betico_specialist_session');
@@ -93,19 +95,28 @@ export default function SpecialistPortal({ tenantSlug }: { tenantSlug?: string }
     if (savedSession && savedToken) {
       try {
         const parsed = JSON.parse(savedSession);
-        setSpecialist(parsed);
+        const isMatchingTenant = !effectiveSlug || !parsed.tenantSlug || parsed.tenantSlug.toLowerCase() === effectiveSlug.toLowerCase();
+        if (isMatchingTenant) {
+          setSpecialist(parsed);
+        } else {
+          setSpecialist(null);
+          setPin('');
+        }
       } catch (e) {}
     }
 
     // Check URL parameters for 1-click login: ?pin=1234
     const urlParams = new URLSearchParams(window.location.search);
-    const pinFromUrl = urlParams.get('pin');
+    const pinFromUrl = urlParams.get('pin')?.trim();
     if (pinFromUrl && !specialist) {
-      const cleanPin = pinFromUrl.trim();
-      setPin(cleanPin);
-      handleLogin(cleanPin);
+      const attemptKey = `${effectiveSlug || 'generic'}_${pinFromUrl}`;
+      if (autoLoginAttemptedRef.current !== attemptKey) {
+        autoLoginAttemptedRef.current = attemptKey;
+        setPin(pinFromUrl);
+        handleLogin(pinFromUrl);
+      }
     }
-  }, []);
+  }, [effectiveSlug]);
 
   const getAuthHeaders = (): Record<string, string> => {
     const token = localStorage.getItem('betico_specialist_token');

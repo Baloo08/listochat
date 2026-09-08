@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Bike, Navigation, MapPin, Phone, MessageSquare, CheckCircle, Package, RefreshCw, LogOut, AlertCircle, Clock, ShieldCheck, DollarSign, Eye, EyeOff, Lock, Calendar, Filter, FileText, ExternalLink, Building2 } from 'lucide-react';
 import { Order } from '../../shared/types';
 import InteractiveMapPicker from './InteractiveMapPicker';
@@ -75,19 +75,72 @@ export default function DriverPortal({ tenantSlug }: { tenantSlug?: string }) {
     return headers;
   };
 
-  // Check URL params for pin (?pin=1234) or saved localStorage PIN
+  const autoLoginAttemptedRef = useRef<string | null>(null);
+
+  // Check URL params for pin (?pin=1234) or saved localStorage session
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+
     const urlParams = new URLSearchParams(window.location.search);
-    const pinFromUrl = urlParams.get('pin');
+    const pinFromUrl = urlParams.get('pin')?.trim();
+    const savedTenantSlug = (localStorage.getItem('betico_driver_tenant_slug') || '').toLowerCase().trim();
     const savedPin = localStorage.getItem('driver_pin');
     const savedToken = localStorage.getItem('betico_driver_token');
+    const savedSession = localStorage.getItem('betico_driver_session');
 
+    // Prevent re-triggering auto-login for the same state
+    const attemptKey = `${effectiveSlug || 'generic'}_${pinFromUrl || 'session'}`;
+    if (autoLoginAttemptedRef.current === attemptKey) return;
+    autoLoginAttemptedRef.current = attemptKey;
+
+    // 1-Click WhatsApp Login via URL (?pin=XXXX)
     if (pinFromUrl) {
       setPin(pinFromUrl);
       handleLogin(pinFromUrl, true);
-    } else if (savedPin && savedToken) {
-      setPin(savedPin);
-      handleLogin(savedPin, false);
+      return;
+    }
+
+    // If no pin in URL, check if stored session belongs to the CURRENT tenant
+    const isMatchingTenant = !effectiveSlug || !savedTenantSlug || savedTenantSlug === effectiveSlug;
+
+    if (!isMatchingTenant) {
+      // Stored credentials belong to a DIFFERENT tenant.
+      // Do NOT send cross-tenant requests. Reset state for clean entry.
+      setDriver(null);
+      setPin('');
+      return;
+    }
+
+    // Matching tenant: if we have a saved driver profile and token, restore session directly
+    if (savedToken && savedSession) {
+      try {
+        const parsed = JSON.parse(savedSession);
+        setDriver(parsed);
+        if (savedPin) setPin(savedPin);
+        fetchDriverOrders(savedPin || undefined, savedToken);
+        return;
+      } catch (e) {
+        // Corrupted session, fall through
+      }
+    }
+
+    // Fallback: If only savedToken exists, verify via /api/drivers/portal/me
+    if (savedToken) {
+      fetch('/api/drivers/portal/me', {
+        headers: {
+          'Authorization': `Bearer ${savedToken}`,
+          ...(effectiveSlug ? { 'x-tenant-slug': effectiveSlug } : {})
+        }
+      })
+        .then(res => res.ok ? res.json() : null)
+        .then(data => {
+          if (data?.success && data?.driver) {
+            setDriver(data.driver);
+            localStorage.setItem('betico_driver_session', JSON.stringify(data.driver));
+            fetchDriverOrders(savedPin || undefined, savedToken);
+          }
+        })
+        .catch(() => {});
     }
   }, [effectiveSlug]);
 
@@ -119,9 +172,14 @@ export default function DriverPortal({ tenantSlug }: { tenantSlug?: string }) {
       if (data.token) {
         localStorage.setItem('betico_driver_token', data.token);
       }
+      if (data.driver) {
+        localStorage.setItem('betico_driver_session', JSON.stringify(data.driver));
+      }
       localStorage.setItem('driver_pin', p.trim());
       if (data.driver?.tenantSlug) {
         localStorage.setItem('betico_driver_tenant_slug', data.driver.tenantSlug);
+      } else if (effectiveSlug) {
+        localStorage.setItem('betico_driver_tenant_slug', effectiveSlug);
       }
 
       // Clean URL if logged in via ?pin=
@@ -249,6 +307,8 @@ export default function DriverPortal({ tenantSlug }: { tenantSlug?: string }) {
   const handleLogout = () => {
     localStorage.removeItem('driver_pin');
     localStorage.removeItem('betico_driver_token');
+    localStorage.removeItem('betico_driver_session');
+    localStorage.removeItem('betico_driver_tenant_slug');
     setDriver(null);
     setPin('');
     setOrders([]);

@@ -16,7 +16,13 @@ const router = Router();
 
 const specialistPortalLoginLimiter = rateLimit({
   windowMs: 5 * 60 * 1000,
-  max: 5,
+  max: 15,
+  skipSuccessfulRequests: true,
+  keyGenerator: (req) => {
+    const slug = String(req.body?.tenantSlug || req.query?.tenantSlug || req.headers['x-tenant-slug'] || 'general').toLowerCase().trim();
+    const rawIp = req.ip || req.socket?.remoteAddress || '127.0.0.1';
+    return `${rawIp}_${slug}`;
+  },
   message: { error: 'Demasiados intentos de acceso fallidos con PIN. Por favor espera 5 minutos.' },
   standardHeaders: true,
   legacyHeaders: false
@@ -165,6 +171,36 @@ router.post('/portal/login', specialistPortalLoginLimiter, async (req, res) => {
   } catch (error) {
     console.error('Specialist login error:', error);
     res.status(500).json({ error: 'Error al iniciar sesión' });
+  }
+});
+
+// 1.1 Verify active session and return specialist profile
+router.get('/portal/me', async (req, res) => {
+  try {
+    const specialist = await resolveSpecialistFromRequest(req);
+    if (!specialist) {
+      res.status(401).json({ error: 'Sesión no válida o expirada' });
+      return;
+    }
+
+    const tenant = await getTenantById(specialist.tenantId);
+
+    res.json({
+      success: true,
+      specialist: {
+        id: specialist.id,
+        tenantId: specialist.tenantId,
+        tenantSlug: tenant?.slug || '',
+        name: specialist.name,
+        phone: specialist.phone,
+        specialty: specialist.specialty,
+        accessPin: specialist.accessPin,
+        businessName: tenant?.name || 'Comercio'
+      }
+    });
+  } catch (error) {
+    console.error('Specialist me error:', error);
+    res.status(500).json({ error: 'Error al consultar sesión de colaborador' });
   }
 });
 
