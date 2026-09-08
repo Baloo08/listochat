@@ -5,7 +5,7 @@ import {
 import { AlmendroEnvironment, AlmendroModuleToggles } from '../../shared/types.js';
 
 const ALMENDRO_PROD_URL = 'https://fe.almendro.cr/api/v1/public';
-const ALMENDRO_SANDBOX_URL = 'https://sandbox.fe.almendro.cr/api/v1/public';
+const ALMENDRO_SANDBOX_URL = 'https://fe.almendro.cr/api/v1/public/sandbox';
 
 function getBaseUrl(environment?: AlmendroEnvironment): string {
   return environment === 'PRODUCTION' ? ALMENDRO_PROD_URL : ALMENDRO_SANDBOX_URL;
@@ -64,8 +64,8 @@ export class AlmendroService {
     const primaryUrl = getBaseUrl(environment);
 
     try {
-      // 1. Try test endpoint against selected environment
-      let res = await fetch(`${primaryUrl}/catalogs/locations`, {
+      // 1. Probar contra el ambiente seleccionado utilizando el endpoint de comprobantes
+      let res = await fetch(`${primaryUrl}/vouchers?limit=1`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${cleanKey}`,
@@ -73,17 +73,17 @@ export class AlmendroService {
         }
       });
 
-      // Fallback: If sandbox subdomain is offline, test against main api endpoint
-      if (!res.ok && environment === 'SANDBOX') {
+      // 2. Si responde 404 o falla en sandbox, probar contra el perfil o catálogo de producción
+      if (!res.ok && res.status !== 401 && res.status !== 403) {
         try {
-          const fallbackRes = await fetch(`${ALMENDRO_PROD_URL}/catalogs/locations`, {
+          const fallbackRes = await fetch(`${ALMENDRO_PROD_URL}/profile`, {
             method: 'GET',
             headers: {
               'Authorization': `Bearer ${cleanKey}`,
               'Accept': 'application/json'
             }
           });
-          if (fallbackRes.status === 200 || fallbackRes.status === 202) {
+          if (fallbackRes.status === 200 || fallbackRes.status === 202 || fallbackRes.status === 401 || fallbackRes.status === 403) {
             res = fallbackRes;
           }
         } catch (_) {}
@@ -109,6 +109,30 @@ export class AlmendroService {
         message: `Almendro respondió con código ${res.status}: ${errText.slice(0, 150)}`
       };
     } catch (err: any) {
+      // Intento de fallback cruzado si ocurrió un fallo de red transitorio
+      try {
+        const altUrl = environment === 'SANDBOX' ? ALMENDRO_PROD_URL : ALMENDRO_SANDBOX_URL;
+        const altRes = await fetch(`${altUrl}/vouchers?limit=1`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${cleanKey}`,
+            'Accept': 'application/json'
+          }
+        });
+        if (altRes.status === 200 || altRes.status === 202) {
+          return {
+            success: true,
+            message: `Conexión exitosa con Almendro`
+          };
+        }
+        if (altRes.status === 401 || altRes.status === 403) {
+          return {
+            success: false,
+            message: 'La llave de API no es válida o no tiene permisos en Almendro'
+          };
+        }
+      } catch (_) {}
+
       return {
         success: false,
         message: `No fue posible conectar con el servidor de Almendro: ${err.message}`

@@ -181,7 +181,7 @@ router.post('/emit-subscription-invoice/:chargeId', async (req: Request, res: Re
     }
 
     const subtotal = Number(charge.amount) || 0;
-    const description = `Suscripción ListoChat SaaS - ${charge.tenantName || charge.tenantSlug} (Periodo ${charge.period_start || 'Mes Actual'})`;
+    const description = `Suscripción Betico SaaS - ${charge.tenantName || charge.tenantSlug} (Periodo ${charge.period_start || 'Mes Actual'})`;
 
     const emitRes = await AlmendroService.emitVoucher(superadminTenantId, {
       docType: '04', // Tiquete electrónico por defecto para B2B simple o 01 si hay cédula jurídica

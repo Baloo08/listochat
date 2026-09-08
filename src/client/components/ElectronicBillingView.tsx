@@ -240,10 +240,10 @@ export default function ElectronicBillingView() {
           </div>
           <div style={{ flex: 1, fontSize: '0.88rem', color: '#334155', lineHeight: '1.5' }}>
             <h3 style={{ margin: '0 0 6px 0', fontSize: '1.02rem', fontWeight: '800', color: '#0f172a' }}>
-              ¿Cómo funciona la Facturación Electrónica en ListoChat?
+              ¿Cómo funciona la Facturación Electrónica en Betico?
             </h3>
             <p style={{ margin: '0 0 10px 0' }}>
-              Para cumplir con la normativa tributaria de Costa Rica sin fricción manual, ListoChat se conecta con <strong>Almendro Facturación Electrónica</strong> (<a href="https://fe.almendro.cr/?lang=es" target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', fontWeight: '700', textDecoration: 'underline' }}>fe.almendro.cr</a>), un Proveedor Autorizado de Facturación (PAC).
+              Para cumplir con la normativa tributaria de Costa Rica sin fricción manual, Betico se conecta con <strong>Almendro Facturación Electrónica</strong> (<a href="https://fe.almendro.cr/?lang=es" target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', fontWeight: '700', textDecoration: 'underline' }}>fe.almendro.cr</a>), un Proveedor Autorizado de Facturación (PAC).
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px', marginTop: '12px' }}>
               <div style={{ backgroundColor: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>

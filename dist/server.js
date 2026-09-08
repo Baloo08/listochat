@@ -15721,7 +15721,7 @@ async function getElectronicVouchers(tenantId, options) {
 
 // src/server/services/almendro.service.ts
 var ALMENDRO_PROD_URL = "https://fe.almendro.cr/api/v1/public";
-var ALMENDRO_SANDBOX_URL = "https://sandbox.fe.almendro.cr/api/v1/public";
+var ALMENDRO_SANDBOX_URL = "https://fe.almendro.cr/api/v1/public/sandbox";
 function getBaseUrl(environment) {
   return environment === "PRODUCTION" ? ALMENDRO_PROD_URL : ALMENDRO_SANDBOX_URL;
 }
@@ -15736,23 +15736,23 @@ var AlmendroService = class {
     const cleanKey = apiKey.trim();
     const primaryUrl = getBaseUrl(environment);
     try {
-      let res = await fetch(`${primaryUrl}/catalogs/locations`, {
+      let res = await fetch(`${primaryUrl}/vouchers?limit=1`, {
         method: "GET",
         headers: {
           "Authorization": `Bearer ${cleanKey}`,
           "Accept": "application/json"
         }
       });
-      if (!res.ok && environment === "SANDBOX") {
+      if (!res.ok && res.status !== 401 && res.status !== 403) {
         try {
-          const fallbackRes = await fetch(`${ALMENDRO_PROD_URL}/catalogs/locations`, {
+          const fallbackRes = await fetch(`${ALMENDRO_PROD_URL}/profile`, {
             method: "GET",
             headers: {
               "Authorization": `Bearer ${cleanKey}`,
               "Accept": "application/json"
             }
           });
-          if (fallbackRes.status === 200 || fallbackRes.status === 202) {
+          if (fallbackRes.status === 200 || fallbackRes.status === 202 || fallbackRes.status === 401 || fallbackRes.status === 403) {
             res = fallbackRes;
           }
         } catch (_) {
@@ -15776,6 +15776,29 @@ var AlmendroService = class {
         message: `Almendro respondi\xF3 con c\xF3digo ${res.status}: ${errText.slice(0, 150)}`
       };
     } catch (err) {
+      try {
+        const altUrl = environment === "SANDBOX" ? ALMENDRO_PROD_URL : ALMENDRO_SANDBOX_URL;
+        const altRes = await fetch(`${altUrl}/vouchers?limit=1`, {
+          method: "GET",
+          headers: {
+            "Authorization": `Bearer ${cleanKey}`,
+            "Accept": "application/json"
+          }
+        });
+        if (altRes.status === 200 || altRes.status === 202) {
+          return {
+            success: true,
+            message: `Conexi\xF3n exitosa con Almendro`
+          };
+        }
+        if (altRes.status === 401 || altRes.status === 403) {
+          return {
+            success: false,
+            message: "La llave de API no es v\xE1lida o no tiene permisos en Almendro"
+          };
+        }
+      } catch (_) {
+      }
       return {
         success: false,
         message: `No fue posible conectar con el servidor de Almendro: ${err.message}`
@@ -16216,7 +16239,7 @@ router35.post("/emit-subscription-invoice/:chargeId", async (req, res) => {
       return;
     }
     const subtotal = Number(charge.amount) || 0;
-    const description = `Suscripci\xF3n ListoChat SaaS - ${charge.tenantName || charge.tenantSlug} (Periodo ${charge.period_start || "Mes Actual"})`;
+    const description = `Suscripci\xF3n Betico SaaS - ${charge.tenantName || charge.tenantSlug} (Periodo ${charge.period_start || "Mes Actual"})`;
     const emitRes = await AlmendroService.emitVoucher(superadminTenantId, {
       docType: "04",
       // Tiquete electrónico por defecto para B2B simple o 01 si hay cédula jurídica
