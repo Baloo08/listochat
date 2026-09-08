@@ -9,6 +9,7 @@ import { getScheduleSettings } from '../db/schedule.repo.js';
 import { getTenantCurrentMonthUsage, incrementTenantUsage } from '../db/ai-usage.repo.js';
 import { getSpecialistsByTenant } from '../db/specialists.repo.js';
 import { getCourtsByTenant } from '../db/courts.repo.js';
+import { getRecordByPhone } from '../db/records.repo.js';
 import { query } from '../db/pool.js';
 
 export interface AgentProcessResult {
@@ -237,6 +238,31 @@ export async function processWhatsAppMessageWithAI(
     }
   }
 
+  // 2.5 FETCH REGISTERED CUSTOMER RECORD / EXPEDIENTE
+  let customerRecord: any = null;
+  let customerProfileText = '';
+  try {
+    customerRecord = await getRecordByPhone(senderPhone, tenantId);
+    if (customerRecord) {
+      const isPatient = customerRecord.clientType === 'paciente';
+      customerProfileText = `\nEXPEDIENTE DEL CLIENTE REGISTRADO:
+- Nombre Registrado: ${customerRecord.fullName}
+- Tipo de Expediente: ${isPatient ? 'PACIENTE MÉDICO / SERVICIOS DE SALUD' : 'CLIENTE GENERAL'}
+${customerRecord.identification ? `- Cédula / Identificación / DIMEX: ${customerRecord.identification}` : ''}
+${customerRecord.allergies ? `- ⚠️ ALERGIAS CONOCIDAS: ${customerRecord.allergies}` : ''}
+${customerRecord.pathologicalBackground ? `- 📋 ANTECEDENTES PATOLÓGICOS: ${customerRecord.pathologicalBackground}` : ''}
+${customerRecord.currentMedications ? `- 💊 MEDICACIÓN ACTUAL: ${customerRecord.currentMedications}` : ''}
+${customerRecord.notes ? `- Notas del expediente: ${customerRecord.notes}` : ''}
+REGLAS PARA CLIENTE CON EXPEDIENTE:
+* Este cliente YA TIENE UN EXPEDIENTE REGISTRADO. Salúdalo cálidamente por su nombre (${customerRecord.fullName}).
+* NO le preguntes su nombre completo ni su identificación, ya que están registrados en su expediente.
+* Si solicita citas o servicios, asócialas a su expediente existente.
+`;
+    }
+  } catch (recErr) {
+    console.warn('[agent.ts] Error fetching customer record:', recErr);
+  }
+
   // 3. FETCH ACTIVE BOOKINGS FOR THIS CUSTOMER
   let activeCustomerBookingsText = '';
   try {
@@ -318,10 +344,10 @@ ${agentConfig?.systemPrompt || 'Atiende amablemente a los clientes.'}
 Datos del negocio:
 ${crTime}
 ${(agentConfig?.showBookingLink !== false && bookingUrl) ? `Reservas online: ${bookingUrl}` : ''}${(agentConfig?.showStoreLink !== false && storeUrl) ? ` | Tienda online: ${storeUrl}` : ''}
-${scheduleInfo}${paymentInfo}${relevantServicesText}${relevantProductsText}${courtsText}${specialistsText}${busySlotsText}${activeCustomerBookingsText}${activeCustomerOrdersText}
+${scheduleInfo}${paymentInfo}${relevantServicesText}${relevantProductsText}${courtsText}${specialistsText}${busySlotsText}${customerProfileText}${activeCustomerBookingsText}${activeCustomerOrdersText}
 REGLAS OBLIGATORIAS:
 1. Responde SOLO en español con un tono cálido, empático, educado y ágil adaptado al público de Costa Rica (*pura vida*, con mucho gusto, claro que sí).
-2. Usa el nombre EXACTO del cliente (${senderName}) cuando sea oportuno. No lo modifiques.
+2. Usa el nombre EXACTO del cliente (${customerRecord?.fullName || senderName}) cuando sea oportuno. No lo modifiques.
 3. Usa *negrita* para datos clave (precios, productos, horarios) y emojis moderados para dar calidez. Sé conciso y claro (1-2 párrafos máximo).
 4. Solo menciona productos, servicios y precios que aparezcan arriba en los datos del negocio. Si algo no aparece, indica que consultarás con el equipo.
 5. NUNCA inventes URLs, links, procesos ni precios que no estén en la información proporcionada.
@@ -345,7 +371,7 @@ REGLAS OBLIGATORIAS:
 - Si el cliente pregunta por su pedido ("¿Cómo va mi orden?", "¿Dónde viene?", "¿Ya salió?"), revisa la sección "PEDIDOS ACTIVOS EN CURSO DE ESTE CLIENTE" y respóndele de inmediato con el número de orden, los ítems y su estado real actual, dándole tranquilidad.
 
 9. GESTIÓN DE CITAS:
-- Para AGENDAR: Cuando el cliente elija servicio, fecha y hora (verificando que NO figure en HORARIOS YA OCUPADOS), y opcionalmente elija con quién atenderse, añade <<<COMMAND_BOOKING: {"service":"nombre","date":"YYYY-MM-DD","time":"HH:MM","customerName":"${senderName}","specialistName":"opcional"}>>>.
+- Para AGENDAR: Cuando el cliente elija servicio, fecha y hora (verificando que NO figure en HORARIOS YA OCUPADOS), y opcionalmente elija con quién atenderse, añade <<<COMMAND_BOOKING: {"service":"nombre","date":"YYYY-MM-DD","time":"HH:MM","customerName":"${customerRecord?.fullName || senderName}","recordId":"${customerRecord?.id || ''}","specialistName":"opcional"}>>>.
 - Para CANCELAR: Si el cliente pide cancelar una cita activa, SIEMPRE pregúntale primero para confirmar: "¿Estás seguro de que deseas cancelar tu cita de [Servicio] para el [Fecha] a las [Hora]?". SOLO si el cliente responde confirmando ("sí", "confirmo", "correcto", "cancélala"), añade <<<COMMAND_CANCEL_BOOKING: {"date":"YYYY-MM-DD", "service":"opcional", "reason":"solicitado por cliente"}>>>.
 - Para REAGENDAR: Ofrécele los horarios libres disponibles y cuando confirme la nueva fecha y hora, añade <<<COMMAND_RESCHEDULE_BOOKING: {"newDate":"YYYY-MM-DD", "newTime":"HH:MM"}>>>.
 
@@ -355,7 +381,7 @@ REGLAS OBLIGATORIAS:
   <<<COMMAND_COURT_BOOKING: {"courtName":"nombre cancha", "date":"YYYY-MM-DD", "time":"HH:MM", "bookingMode":"full"|"seek_match", "teamAName":"${senderName}"}>>>
 
 Acciones disponibles (añade al final SOLO cuando el cliente confirme explícitamente):
-Cita: <<<COMMAND_BOOKING: {"service":"nombre","date":"YYYY-MM-DD","time":"HH:MM","customerName":"${senderName}","specialistName":"opcional"}>>>
+Cita: <<<COMMAND_BOOKING: {"service":"nombre","date":"YYYY-MM-DD","time":"HH:MM","customerName":"${customerRecord?.fullName || senderName}","recordId":"${customerRecord?.id || ''}","specialistName":"opcional"}>>>
 Cancha: <<<COMMAND_COURT_BOOKING: {"courtName":"nombre", "date":"YYYY-MM-DD", "time":"HH:MM", "bookingMode":"full"|"seek_match", "teamAName":"${senderName}"}>>>
 Cancelar Cita: <<<COMMAND_CANCEL_BOOKING: {"date":"YYYY-MM-DD","service":"opcional","reason":"motivo"}>>>
 Reagendar Cita: <<<COMMAND_RESCHEDULE_BOOKING: {"newDate":"YYYY-MM-DD","newTime":"HH:MM"}>>>
@@ -481,6 +507,12 @@ function safeParseJSON(rawStr: string): any {
   if (bookingMatch && bookingMatch[1]) {
     const parsed = safeParseJSON(bookingMatch[1]);
     if (parsed && parsed.service && (parsed.date || parsed.time)) {
+      if (customerRecord?.id && !parsed.recordId) {
+        parsed.recordId = customerRecord.id;
+      }
+      if (customerRecord?.fullName && (!parsed.customerName || parsed.customerName === 'Cliente WhatsApp' || parsed.customerName === senderName)) {
+        parsed.customerName = customerRecord.fullName;
+      }
       isBookingDetected = true;
       bookingData = parsed;
     }

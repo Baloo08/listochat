@@ -6,6 +6,7 @@ export async function getAppointmentsByTenant(tenantId: string): Promise<Appoint
     SELECT id, tenant_id as "tenantId", name, whatsapp, service, 
            date, time, amount, status, details, vehicle_model as "vehicleModel",
            selected_variables as "selectedVariables", specialist_id as "specialistId",
+           record_id as "recordId",
            payment_method as "paymentMethod", payment_status as "paymentStatus",
            payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
            tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
@@ -22,6 +23,7 @@ export async function getAppointmentById(id: string, tenantId: string): Promise<
     SELECT id, tenant_id as "tenantId", name, whatsapp, service, 
            date, time, amount, status, details, vehicle_model as "vehicleModel",
            selected_variables as "selectedVariables", specialist_id as "specialistId",
+           record_id as "recordId",
            payment_method as "paymentMethod", payment_status as "paymentStatus",
            payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
            tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
@@ -41,6 +43,7 @@ export async function getAppointmentByIdUnsafeForWebhook(id: string): Promise<Ap
     SELECT id, tenant_id as "tenantId", name, whatsapp, service, 
            date, time, amount, status, details, vehicle_model as "vehicleModel",
            selected_variables as "selectedVariables", specialist_id as "specialistId",
+           record_id as "recordId",
            payment_method as "paymentMethod", payment_status as "paymentStatus",
            payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
            tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
@@ -55,11 +58,12 @@ export async function createAppointment(tenantId: string, data: Partial<Appointm
   const result = await query(`
     INSERT INTO appointments (
       tenant_id, name, whatsapp, service, date, time, amount, status, details, vehicle_model, selected_variables, specialist_id,
-      payment_method, payment_status, payment_reference, payment_proof_url, tilopay_transaction_id, tilopay_auth_code
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+      record_id, payment_method, payment_status, payment_reference, payment_proof_url, tilopay_transaction_id, tilopay_auth_code
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
     RETURNING id, tenant_id as "tenantId", name, whatsapp, service, 
            date, time, amount, status, details, vehicle_model as "vehicleModel",
            selected_variables as "selectedVariables", specialist_id as "specialistId",
+           record_id as "recordId",
            payment_method as "paymentMethod", payment_status as "paymentStatus",
            payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
            tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
@@ -69,6 +73,7 @@ export async function createAppointment(tenantId: string, data: Partial<Appointm
     data.status || 'scheduled', data.details, data.vehicleModel,
     data.selectedVariables ? JSON.stringify(data.selectedVariables) : null,
     data.specialistId || null,
+    data.recordId || null,
     data.paymentMethod || null,
     data.paymentStatus || 'pending',
     data.paymentReference || null,
@@ -86,7 +91,7 @@ export async function updateAppointment(id: string, tenantId: string, data: Part
 
   const fields = [
     'name', 'whatsapp', 'service', 'date', 'time', 'amount', 'status', 'details', 'vehicleModel',
-    'selectedVariables', 'specialistId', 'paymentMethod', 'paymentStatus', 'paymentReference',
+    'selectedVariables', 'specialistId', 'recordId', 'paymentMethod', 'paymentStatus', 'paymentReference',
     'paymentProofUrl', 'tilopayTransactionId', 'tilopayAuthCode'
   ];
   for (const field of fields) {
@@ -106,6 +111,7 @@ export async function updateAppointment(id: string, tenantId: string, data: Part
     RETURNING id, tenant_id as "tenantId", name, whatsapp, service, 
            date, time, amount, status, details, vehicle_model as "vehicleModel",
            selected_variables as "selectedVariables", specialist_id as "specialistId",
+           record_id as "recordId",
            payment_method as "paymentMethod", payment_status as "paymentStatus",
            payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
            tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
@@ -151,6 +157,7 @@ export async function updateAppointmentPayment(id: string, paymentData: {
   }
 
   if (updates.length === 0) return getAppointmentById(id);
+  if (updates.length === 0) return getAppointmentById(id, '');
 
   const result = await query(`
     UPDATE appointments SET ${updates.join(', ')}
@@ -158,6 +165,7 @@ export async function updateAppointmentPayment(id: string, paymentData: {
     RETURNING id, tenant_id as "tenantId", name, whatsapp, service, 
            date, time, amount, status, details, vehicle_model as "vehicleModel",
            selected_variables as "selectedVariables", specialist_id as "specialistId",
+           record_id as "recordId",
            payment_method as "paymentMethod", payment_status as "paymentStatus",
            payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
            tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",

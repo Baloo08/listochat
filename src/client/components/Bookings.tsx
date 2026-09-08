@@ -180,6 +180,9 @@ export default function Bookings() {
   const [newAmount, setNewAmount] = useState(15000);
   const [newDetails, setNewDetails] = useState('');
   const [newSpecialistId, setNewSpecialistId] = useState('');
+  const [recordsList, setRecordsList] = useState<any[]>([]);
+  const [selectedRecordId, setSelectedRecordId] = useState<string>('');
+  const [selectedRecordData, setSelectedRecordData] = useState<any>(null);
 
   const api = useApi();
 
@@ -351,10 +354,22 @@ export default function Bookings() {
     }
   };
 
+  const fetchRecordsList = async () => {
+    try {
+      const res = await api.get('/api/records?limit=100');
+      if (res && res.records && Array.isArray(res.records)) {
+        setRecordsList(res.records);
+      }
+    } catch (err) {
+      console.error('Error fetching records:', err);
+    }
+  };
+
   useEffect(() => {
     fetchAppointments();
     fetchScheduleAndTenant();
     fetchSpecialists();
+    fetchRecordsList();
   }, []);
 
   const handleCreateAppointment = async (e: React.FormEvent) => {
@@ -373,21 +388,28 @@ export default function Bookings() {
         time: newTime,
         amount: Number(newAmount),
         details: newDetails,
-        specialistId: newSpecialistId || undefined
+        specialistId: newSpecialistId || undefined,
+        recordId: selectedRecordId || undefined
       });
 
-      setShowNewModal(false);
-      setNewName('');
-      setNewWhatsapp('');
-      setNewService('');
-      setNewDate('');
-      setNewTime('');
-      setNewDetails('');
-      setNewSpecialistId('');
+      handleCloseNewModal();
       fetchAppointments();
     } catch (err) {
       alert('Error al registrar la cita');
     }
+  };
+
+  const handleCloseNewModal = () => {
+    setShowNewModal(false);
+    setSelectedRecordId('');
+    setSelectedRecordData(null);
+    setNewName('');
+    setNewWhatsapp('');
+    setNewService('');
+    setNewDate('');
+    setNewTime('');
+    setNewDetails('');
+    setNewSpecialistId('');
   };
 
   const handleCompleteAppointment = async (id: string) => {
@@ -630,7 +652,10 @@ export default function Bookings() {
 
         {activeTab === 'list' && (
           <button
-            onClick={() => setShowNewModal(true)}
+            onClick={() => {
+              fetchRecordsList();
+              setShowNewModal(true);
+            }}
             style={{ padding: '10px 16px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.9rem' }}
           >
             <Plus size={16} /> Nueva Cita
@@ -2461,12 +2486,82 @@ export default function Bookings() {
             
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
               <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'bold' }}>Agendar Nueva Cita</h3>
-              <button onClick={() => setShowNewModal(false)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#64748b' }}>
+              <button onClick={handleCloseNewModal} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#64748b' }}>
                 <X size={20} />
               </button>
             </div>
 
             <form onSubmit={handleCreateAppointment} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {/* Selector de Paciente o Cliente Registrado */}
+              <div style={{ backgroundColor: '#f0fdfa', border: '1px solid #ccfbf1', padding: '12px', borderRadius: '8px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', fontWeight: 'bold', color: '#0f766e', marginBottom: '6px' }}>
+                  <FileText size={14} />
+                  Vincular con Paciente o Cliente Registrado
+                </label>
+                <select
+                  value={selectedRecordId}
+                  onChange={(e) => {
+                    const recId = e.target.value;
+                    setSelectedRecordId(recId);
+                    if (!recId) {
+                      setSelectedRecordData(null);
+                      return;
+                    }
+                    const found = recordsList.find(r => r.id === recId);
+                    if (found) {
+                      setSelectedRecordData(found);
+                      setNewName(found.fullName);
+                      setNewWhatsapp(found.phone || '');
+                    }
+                  }}
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #99f6e4', fontSize: '0.85rem', backgroundColor: 'white' }}
+                >
+                  <option value="">-- Cliente nuevo / no registrado --</option>
+                  {recordsList.map(r => (
+                    <option key={r.id} value={r.id}>
+                      {r.clientType === 'paciente' ? '🏥 [Paciente]' : '👤 [General]'} {r.fullName} {r.identification ? `(${r.identification})` : ''} - {r.phone}
+                    </option>
+                  ))}
+                </select>
+
+                {selectedRecordData && (
+                  <div style={{ marginTop: '8px', fontSize: '0.78rem', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                      <span style={{
+                        padding: '2px 6px',
+                        borderRadius: '4px',
+                        backgroundColor: selectedRecordData.clientType === 'paciente' ? '#dcfce7' : '#e0f2fe',
+                        color: selectedRecordData.clientType === 'paciente' ? '#166534' : '#0369a1',
+                        fontWeight: 'bold',
+                        fontSize: '0.72rem'
+                      }}>
+                        {selectedRecordData.clientType === 'paciente' ? '🏥 Expediente Médico' : '👤 Cliente General'}
+                      </span>
+                      {selectedRecordData.identification && (
+                        <span style={{ color: '#0f766e', fontWeight: '600' }}>
+                          ID/DIMEX: {selectedRecordData.identification}
+                        </span>
+                      )}
+                    </div>
+                    {selectedRecordData.allergies && (
+                      <div style={{ color: '#b91c1c', backgroundColor: '#fee2e2', padding: '3px 8px', borderRadius: '4px' }}>
+                        ⚠️ <strong>Alergias:</strong> {selectedRecordData.allergies}
+                      </div>
+                    )}
+                    {selectedRecordData.pathologicalBackground && (
+                      <div style={{ color: '#854d0e', backgroundColor: '#fef9c3', padding: '3px 8px', borderRadius: '4px' }}>
+                        📋 <strong>Antecedentes:</strong> {selectedRecordData.pathologicalBackground}
+                      </div>
+                    )}
+                    {selectedRecordData.currentMedications && (
+                      <div style={{ color: '#1e40af', backgroundColor: '#dbeafe', padding: '3px 8px', borderRadius: '4px' }}>
+                        💊 <strong>Medicación:</strong> {selectedRecordData.currentMedications}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
               <div>
                 <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '4px' }}>Nombre del Cliente *</label>
                 <input
@@ -2566,7 +2661,7 @@ export default function Bookings() {
               <div style={{ marginTop: '14px', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
                 <button
                   type="button"
-                  onClick={() => setShowNewModal(false)}
+                  onClick={handleCloseNewModal}
                   style={{ padding: '8px 14px', backgroundColor: 'transparent', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem' }}
                 >
                   Cancelar

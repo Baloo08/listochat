@@ -40,17 +40,56 @@ export async function createBookingFromCommand(tenantId: string, bookingData: an
       if (matchedSpec) specialistId = matchedSpec.id;
     }
 
+    // Resolve registered patient / customer record
+    let recordId = bookingData.recordId;
+    let customerRecord = null;
+    try {
+      const { getRecordByPhone, getRecordById, getRecordByIdentification, addRecordEntry } = await import('../db/records.repo.js');
+      if (recordId) {
+        customerRecord = await getRecordById(recordId, tenantId);
+      }
+      if (!customerRecord && bookingData.identification) {
+        customerRecord = await getRecordByIdentification(bookingData.identification, tenantId);
+      }
+      if (!customerRecord && (bookingData.customerPhone || bookingData.whatsapp)) {
+        customerRecord = await getRecordByPhone(bookingData.customerPhone || bookingData.whatsapp, tenantId);
+      }
+      if (customerRecord) {
+        recordId = customerRecord.id;
+        if (!bookingData.customerName || bookingData.customerName === 'Cliente WhatsApp') {
+          bookingData.customerName = customerRecord.fullName;
+        }
+      }
+    } catch (recErr) {
+      console.warn('[createBookingFromCommand] Error resolving customer record:', recErr);
+    }
+
     const appointment = await createAppointment(tenantId, {
-      name: bookingData.customerName || 'Cliente WhatsApp',
-      whatsapp: bookingData.customerPhone || '',
+      name: bookingData.customerName || (customerRecord ? customerRecord.fullName : 'Cliente WhatsApp'),
+      whatsapp: bookingData.customerPhone || (customerRecord ? customerRecord.phone : ''),
       service: matchedService ? matchedService.name : (bookingData.service || 'Servicio General'),
       date: bookingDate,
       time: bookingTime,
       amount: Number(price),
       details: bookingData.vehicleInfo || '',
       specialistId,
+      recordId: recordId || undefined,
       status: 'scheduled'
     });
+
+    if (recordId) {
+      try {
+        const { addRecordEntry } = await import('../db/records.repo.js');
+        await addRecordEntry(tenantId, recordId, {
+          appointmentId: appointment.id,
+          specialistId,
+          entryType: 'consultation',
+          notes: `Cita agendada automáticamente por WhatsApp para ${matchedService ? matchedService.name : 'Servicio General'} el ${bookingDate} a las ${bookingTime}.`
+        });
+      } catch (entryErr) {
+        console.warn('[createBookingFromCommand] Error logging record entry:', entryErr);
+      }
+    }
 
     return appointment;
   } catch (error) {

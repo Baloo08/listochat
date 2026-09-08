@@ -127,6 +127,19 @@ export async function getRecordByPhone(phone: string, tenantId: string): Promise
   return res.rows[0] ? mapRecordRow(res.rows[0]) : null;
 }
 
+export async function getRecordByIdentification(identification: string, tenantId: string): Promise<CustomerRecord | null> {
+  const cleanId = (identification || '').trim();
+  if (!cleanId) return null;
+
+  const sql = `
+    SELECT r.* FROM customer_records r
+    WHERE r.tenant_id = $1 AND r.identification ILIKE $2
+    ORDER BY r.updated_at DESC LIMIT 1
+  `;
+  const res = await query(sql, [tenantId, cleanId]);
+  return res.rows[0] ? mapRecordRow(res.rows[0]) : null;
+}
+
 export async function createRecord(tenantId: string, data: Partial<CustomerRecord>): Promise<CustomerRecord> {
   const sql = `
     INSERT INTO customer_records (

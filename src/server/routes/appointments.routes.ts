@@ -416,6 +416,15 @@ router.post('/public/:slug/book', async (req, res) => {
       return;
     }
 
+    let matchedRecordId: string | undefined = undefined;
+    try {
+      const { getRecordByPhone } = await import('../db/records.repo.js');
+      const rec = await getRecordByPhone(customerPhone, tenant.id);
+      if (rec) {
+        matchedRecordId = rec.id;
+      }
+    } catch (e) {}
+
     const appt = await createAppointment(tenant.id, {
       name: customerName,
       whatsapp: customerPhone,
@@ -425,6 +434,7 @@ router.post('/public/:slug/book', async (req, res) => {
       amount: finalAmount,
       status: 'scheduled',
       specialistId: specialistId || undefined,
+      recordId: matchedRecordId || undefined,
       paymentMethod: paymentMethod === 'solo_reserva' ? 'pending' : paymentMethod,
       paymentStatus: paymentMethod === 'sinpe' ? 'proof_sent' : 'pending',
       paymentReference: req.body.paymentReference || null,
@@ -432,6 +442,20 @@ router.post('/public/:slug/book', async (req, res) => {
       vehicleModel: vehicleModel || '',
       selectedVariables: req.body.selectedVariables
     });
+
+    if (matchedRecordId) {
+      try {
+        const { addRecordEntry } = await import('../db/records.repo.js');
+        await addRecordEntry(tenant.id, matchedRecordId, {
+          appointmentId: appt.id,
+          specialistId: specialistId || undefined,
+          entryType: 'consultation',
+          notes: `Cita reservada en línea para ${serviceName} el ${date} a las ${time}.`
+        });
+      } catch (entryErr) {
+        console.warn('[Public Booking] Error adding record entry:', entryErr);
+      }
+    }
 
     let paymentSession: any = null;
     if (isOnlinePayment && finalAmount > 0) {
@@ -570,9 +594,49 @@ router.get('/', async (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const appt = await createAppointment(req.tenantId!, req.body);
+    let recordId = req.body.recordId;
+    if (!recordId) {
+      try {
+        const { getRecordByPhone, getRecordByIdentification } = await import('../db/records.repo.js');
+        if (req.body.identification) {
+          const rec = await getRecordByIdentification(req.body.identification, req.tenantId!);
+          if (rec) recordId = rec.id;
+        }
+        if (!recordId && req.body.whatsapp) {
+          const rec = await getRecordByPhone(req.body.whatsapp, req.tenantId!);
+          if (rec) recordId = rec.id;
+        }
+      } catch (e) {
+        console.warn('[Appointments] Record lookup error:', e);
+      }
+    }
+
+    const appt = await createAppointment(req.tenantId!, {
+      ...req.body,
+      recordId: recordId || undefined
+    });
+
+    if (recordId) {
+      try {
+        const { addRecordEntry } = await import('../db/records.repo.js');
+        await addRecordEntry(req.tenantId!, recordId, {
+          appointmentId: appt.id,
+          specialistId: req.body.specialistId || undefined,
+          entryType: 'consultation',
+          notes: `Cita registrada en agenda para ${appt.service} el ${appt.date} a las ${appt.time}.`
+        });
+      } catch (entryErr) {
+        console.warn('[Appointments] Error logging record entry:', entryErr);
+      }
+    }
+
+    if ((req as any).io) {
+      (req as any).io.to(`tenant_${req.tenantId}`).emit('appointment:created', appt);
+    }
+
     res.status(201).json(appt);
   } catch (error) {
+    console.error('Error al agendar cita:', error);
     res.status(500).json({ error: 'Error al agendar cita' });
   }
 });

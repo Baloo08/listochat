@@ -1173,6 +1173,341 @@ var init_ai_provider = __esm({
   }
 });
 
+// src/server/db/records.repo.ts
+var records_repo_exports = {};
+__export(records_repo_exports, {
+  addRecordEntry: () => addRecordEntry,
+  createRecord: () => createRecord,
+  deleteRecord: () => deleteRecord,
+  deleteRecordEntry: () => deleteRecordEntry,
+  getAppointmentsForRecord: () => getAppointmentsForRecord,
+  getRecordById: () => getRecordById,
+  getRecordByIdentification: () => getRecordByIdentification,
+  getRecordByPhone: () => getRecordByPhone,
+  getRecordEntries: () => getRecordEntries,
+  getRecordForSpecialistById: () => getRecordForSpecialistById,
+  getRecordsByTenant: () => getRecordsByTenant,
+  getRecordsForSpecialist: () => getRecordsForSpecialist,
+  updateRecord: () => updateRecord
+});
+function mapRecordRow(row) {
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    clientType: row.client_type || "general",
+    fullName: row.full_name,
+    phone: row.phone || "",
+    email: row.email || "",
+    identification: row.identification || "",
+    address: row.address || "",
+    dateOfBirth: row.date_of_birth ? row.date_of_birth.toISOString?.().split("T")[0] || String(row.date_of_birth) : void 0,
+    gender: row.gender || "",
+    bloodType: row.blood_type || "",
+    allergies: row.allergies || "",
+    pathologicalBackground: row.pathological_background || "",
+    currentMedications: row.current_medications || "",
+    emergencyContactName: row.emergency_contact_name || "",
+    emergencyContactPhone: row.emergency_contact_phone || "",
+    notes: row.notes || "",
+    metadata: row.metadata ? typeof row.metadata === "string" ? JSON.parse(row.metadata) : row.metadata : {},
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    totalAppointments: row.total_appointments ? Number(row.total_appointments) : void 0,
+    lastAppointmentDate: row.last_appointment_date || void 0,
+    latestVitalSigns: row.latest_vital_signs ? typeof row.latest_vital_signs === "string" ? JSON.parse(row.latest_vital_signs) : row.latest_vital_signs : void 0,
+    recentEntriesCount: row.recent_entries_count ? Number(row.recent_entries_count) : void 0
+  };
+}
+function mapEntryRow(row) {
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    recordId: row.record_id,
+    appointmentId: row.appointment_id || void 0,
+    specialistId: row.specialist_id || void 0,
+    specialistName: row.specialist_name || void 0,
+    entryType: row.entry_type || "consultation",
+    vitalSigns: row.vital_signs ? typeof row.vital_signs === "string" ? JSON.parse(row.vital_signs) : row.vital_signs : void 0,
+    diagnosis: row.diagnosis || "",
+    treatmentPlan: row.treatment_plan || "",
+    prescription: row.prescription || "",
+    notes: row.notes || "",
+    attachments: row.attachments ? typeof row.attachments === "string" ? JSON.parse(row.attachments) : row.attachments : [],
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+async function getRecordsByTenant(tenantId, options = {}) {
+  const { search, type, limit = 50, offset = 0 } = options;
+  let whereClause = "WHERE r.tenant_id = $1";
+  const params = [tenantId];
+  if (type && type !== "all") {
+    params.push(type);
+    whereClause += ` AND r.client_type = $${params.length}`;
+  }
+  if (search && search.trim()) {
+    const cleanSearch = search.trim();
+    params.push(`%${cleanSearch}%`);
+    const pIdx = params.length;
+    whereClause += ` AND (
+      r.full_name ILIKE $${pIdx} OR 
+      r.phone ILIKE $${pIdx} OR 
+      r.email ILIKE $${pIdx} OR 
+      r.identification ILIKE $${pIdx}
+    )`;
+  }
+  const countSql = `SELECT COUNT(*) as count FROM customer_records r ${whereClause}`;
+  const countRes = await query(countSql, params);
+  const total = parseInt(countRes.rows[0]?.count || "0", 10);
+  const dataParams = [...params, limit, offset];
+  const dataSql = `
+    SELECT r.*,
+      (SELECT COUNT(*) FROM appointments a WHERE a.tenant_id = r.tenant_id AND (a.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))) as total_appointments,
+      (SELECT MAX(a.date) FROM appointments a WHERE a.tenant_id = r.tenant_id AND (a.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))) as last_appointment_date,
+      (SELECT re.vital_signs FROM record_entries re WHERE re.record_id = r.id AND re.vital_signs IS NOT NULL ORDER BY re.created_at DESC LIMIT 1) as latest_vital_signs,
+      (SELECT COUNT(*) FROM record_entries re WHERE re.record_id = r.id) as recent_entries_count
+    FROM customer_records r
+    ${whereClause}
+    ORDER BY r.updated_at DESC
+    LIMIT $${dataParams.length - 1} OFFSET $${dataParams.length}
+  `;
+  const dataRes = await query(dataSql, dataParams);
+  return {
+    records: dataRes.rows.map(mapRecordRow),
+    total
+  };
+}
+async function getRecordById(id, tenantId) {
+  const sql = `
+    SELECT r.*,
+      (SELECT COUNT(*) FROM appointments a WHERE a.tenant_id = r.tenant_id AND (a.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))) as total_appointments,
+      (SELECT MAX(a.date) FROM appointments a WHERE a.tenant_id = r.tenant_id AND (a.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))) as last_appointment_date,
+      (SELECT re.vital_signs FROM record_entries re WHERE re.record_id = r.id AND re.vital_signs IS NOT NULL ORDER BY re.created_at DESC LIMIT 1) as latest_vital_signs,
+      (SELECT COUNT(*) FROM record_entries re WHERE re.record_id = r.id) as recent_entries_count
+    FROM customer_records r
+    WHERE r.id = $1 AND r.tenant_id = $2
+  `;
+  const res = await query(sql, [id, tenantId]);
+  return res.rows[0] ? mapRecordRow(res.rows[0]) : null;
+}
+async function getRecordByPhone(phone, tenantId) {
+  const cleanPhone = (phone || "").replace(/\D/g, "");
+  if (cleanPhone.length < 8) return null;
+  const sql = `
+    SELECT r.* FROM customer_records r
+    WHERE r.tenant_id = $1 AND REPLACE(r.phone, '-', '') LIKE '%' || $2
+    ORDER BY r.updated_at DESC LIMIT 1
+  `;
+  const res = await query(sql, [tenantId, cleanPhone.slice(-8)]);
+  return res.rows[0] ? mapRecordRow(res.rows[0]) : null;
+}
+async function getRecordByIdentification(identification, tenantId) {
+  const cleanId = (identification || "").trim();
+  if (!cleanId) return null;
+  const sql = `
+    SELECT r.* FROM customer_records r
+    WHERE r.tenant_id = $1 AND r.identification ILIKE $2
+    ORDER BY r.updated_at DESC LIMIT 1
+  `;
+  const res = await query(sql, [tenantId, cleanId]);
+  return res.rows[0] ? mapRecordRow(res.rows[0]) : null;
+}
+async function createRecord(tenantId, data) {
+  const sql = `
+    INSERT INTO customer_records (
+      tenant_id, client_type, full_name, phone, email, identification, address,
+      date_of_birth, gender, blood_type, allergies, pathological_background,
+      current_medications, emergency_contact_name, emergency_contact_phone, notes, metadata
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+    RETURNING *
+  `;
+  const res = await query(sql, [
+    tenantId,
+    data.clientType || "general",
+    data.fullName || "Cliente Sin Nombre",
+    data.phone || "",
+    data.email || null,
+    data.identification || null,
+    data.address || null,
+    data.dateOfBirth || null,
+    data.gender || null,
+    data.bloodType || null,
+    data.allergies || null,
+    data.pathologicalBackground || null,
+    data.currentMedications || null,
+    data.emergencyContactName || null,
+    data.emergencyContactPhone || null,
+    data.notes || null,
+    data.metadata ? JSON.stringify(data.metadata) : "{}"
+  ]);
+  const newRecord = mapRecordRow(res.rows[0]);
+  if (newRecord.phone) {
+    const clean = newRecord.phone.replace(/\D/g, "");
+    if (clean.length >= 8) {
+      await query(
+        `UPDATE appointments 
+         SET record_id = $1 
+         WHERE tenant_id = $2 
+           AND record_id IS NULL 
+           AND REPLACE(whatsapp, '-', '') LIKE '%' || $3`,
+        [newRecord.id, tenantId, clean.slice(-8)]
+      ).catch(() => {
+      });
+    }
+  }
+  return newRecord;
+}
+async function updateRecord(id, tenantId, data) {
+  const allowedFields = {
+    clientType: "client_type",
+    fullName: "full_name",
+    phone: "phone",
+    email: "email",
+    identification: "identification",
+    address: "address",
+    dateOfBirth: "date_of_birth",
+    gender: "gender",
+    bloodType: "blood_type",
+    allergies: "allergies",
+    pathologicalBackground: "pathological_background",
+    currentMedications: "current_medications",
+    emergencyContactName: "emergency_contact_name",
+    emergencyContactPhone: "emergency_contact_phone",
+    notes: "notes"
+  };
+  const updates = ["updated_at = CURRENT_TIMESTAMP"];
+  const params = [id, tenantId];
+  let pIdx = 3;
+  for (const [key, col] of Object.entries(allowedFields)) {
+    if (data[key] !== void 0) {
+      updates.push(`${col} = $${pIdx++}`);
+      params.push(data[key] === "" ? null : data[key]);
+    }
+  }
+  if (data.metadata !== void 0) {
+    updates.push(`metadata = $${pIdx++}`);
+    params.push(JSON.stringify(data.metadata));
+  }
+  const sql = `
+    UPDATE customer_records
+    SET ${updates.join(", ")}
+    WHERE id = $1 AND tenant_id = $2
+    RETURNING *
+  `;
+  const res = await query(sql, params);
+  return res.rows[0] ? mapRecordRow(res.rows[0]) : null;
+}
+async function deleteRecord(id, tenantId) {
+  await query("UPDATE appointments SET record_id = NULL WHERE record_id = $1 AND tenant_id = $2", [id, tenantId]).catch(() => {
+  });
+  const res = await query("DELETE FROM customer_records WHERE id = $1 AND tenant_id = $2", [id, tenantId]);
+  return (res.rowCount || 0) > 0;
+}
+async function addRecordEntry(tenantId, recordId, data) {
+  const sql = `
+    INSERT INTO record_entries (
+      tenant_id, record_id, appointment_id, specialist_id, entry_type,
+      vital_signs, diagnosis, treatment_plan, prescription, notes, attachments
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    RETURNING *
+  `;
+  const res = await query(sql, [
+    tenantId,
+    recordId,
+    data.appointmentId || null,
+    data.specialistId || null,
+    data.entryType || "consultation",
+    data.vitalSigns ? JSON.stringify(data.vitalSigns) : null,
+    data.diagnosis || null,
+    data.treatmentPlan || null,
+    data.prescription || null,
+    data.notes || null,
+    data.attachments ? JSON.stringify(data.attachments) : "[]"
+  ]);
+  await query("UPDATE customer_records SET updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND tenant_id = $2", [recordId, tenantId]).catch(() => {
+  });
+  const entry = mapEntryRow(res.rows[0]);
+  if (entry.specialistId) {
+    const specRes = await query("SELECT name FROM specialists WHERE id = $1", [entry.specialistId]);
+    entry.specialistName = specRes.rows[0]?.name;
+  }
+  return entry;
+}
+async function getRecordEntries(recordId, tenantId) {
+  const sql = `
+    SELECT re.*, s.name as specialist_name
+    FROM record_entries re
+    LEFT JOIN specialists s ON s.id = re.specialist_id
+    WHERE re.record_id = $1 AND re.tenant_id = $2
+    ORDER BY re.created_at DESC
+  `;
+  const res = await query(sql, [recordId, tenantId]);
+  return res.rows.map(mapEntryRow);
+}
+async function deleteRecordEntry(entryId, tenantId) {
+  const res = await query("DELETE FROM record_entries WHERE id = $1 AND tenant_id = $2", [entryId, tenantId]);
+  return (res.rowCount || 0) > 0;
+}
+async function getAppointmentsForRecord(recordId, tenantId) {
+  const rec = await getRecordById(recordId, tenantId);
+  const cleanPhone = rec?.phone ? rec.phone.replace(/\D/g, "") : "";
+  let sql = `
+    SELECT a.*, s.name as "specialistName"
+    FROM appointments a
+    LEFT JOIN specialists s ON s.id = a.specialist_id
+    WHERE a.tenant_id = $1 AND (a.record_id = $2
+  `;
+  const params = [tenantId, recordId];
+  if (cleanPhone.length >= 8) {
+    params.push(cleanPhone.slice(-8));
+    sql += ` OR REPLACE(a.whatsapp, '-', '') LIKE '%' || $3`;
+  }
+  sql += `) ORDER BY a.date DESC, a.time DESC`;
+  const res = await query(sql, params);
+  return res.rows;
+}
+async function getRecordsForSpecialist(specialistId, tenantId, search) {
+  let whereClause = `WHERE a.specialist_id = $1 AND r.tenant_id = $2`;
+  const params = [specialistId, tenantId];
+  if (search && search.trim()) {
+    params.push(`%${search.trim()}%`);
+    whereClause += ` AND (r.full_name ILIKE $${params.length} OR r.phone ILIKE $${params.length} OR r.identification ILIKE $${params.length})`;
+  }
+  const sql = `
+    SELECT DISTINCT r.*,
+      (SELECT COUNT(*) FROM appointments a2 WHERE a2.specialist_id = $1 AND (a2.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a2.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))) as total_appointments,
+      (SELECT MAX(a2.date) FROM appointments a2 WHERE a2.specialist_id = $1 AND (a2.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a2.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))) as last_appointment_date,
+      (SELECT re.vital_signs FROM record_entries re WHERE re.record_id = r.id AND re.vital_signs IS NOT NULL ORDER BY re.created_at DESC LIMIT 1) as latest_vital_signs,
+      (SELECT COUNT(*) FROM record_entries re WHERE re.record_id = r.id) as recent_entries_count
+    FROM customer_records r
+    JOIN appointments a ON (a.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))
+    ${whereClause}
+    ORDER BY r.updated_at DESC
+  `;
+  const res = await query(sql, params);
+  return res.rows.map(mapRecordRow);
+}
+async function getRecordForSpecialistById(recordId, specialistId, tenantId) {
+  const sql = `
+    SELECT DISTINCT r.*,
+      (SELECT COUNT(*) FROM appointments a2 WHERE a2.specialist_id = $2 AND (a2.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a2.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))) as total_appointments,
+      (SELECT MAX(a2.date) FROM appointments a2 WHERE a2.specialist_id = $2 AND (a2.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a2.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))) as last_appointment_date,
+      (SELECT re.vital_signs FROM record_entries re WHERE re.record_id = r.id AND re.vital_signs IS NOT NULL ORDER BY re.created_at DESC LIMIT 1) as latest_vital_signs,
+      (SELECT COUNT(*) FROM record_entries re WHERE re.record_id = r.id) as recent_entries_count
+    FROM customer_records r
+    JOIN appointments a ON (a.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))
+    WHERE r.id = $1 AND a.specialist_id = $2 AND r.tenant_id = $3
+  `;
+  const res = await query(sql, [recordId, specialistId, tenantId]);
+  return res.rows[0] ? mapRecordRow(res.rows[0]) : null;
+}
+var init_records_repo = __esm({
+  "src/server/db/records.repo.ts"() {
+    "use strict";
+    init_pool();
+  }
+});
+
 // src/server/services/superadmin-bot.service.ts
 var superadmin_bot_service_exports = {};
 __export(superadmin_bot_service_exports, {
@@ -1467,329 +1802,6 @@ async function getCompletedOrdersForDriver(driverId, fromDate, toDate) {
 }
 var init_drivers_repo = __esm({
   "src/server/db/drivers.repo.ts"() {
-    "use strict";
-    init_pool();
-  }
-});
-
-// src/server/db/records.repo.ts
-var records_repo_exports = {};
-__export(records_repo_exports, {
-  addRecordEntry: () => addRecordEntry,
-  createRecord: () => createRecord,
-  deleteRecord: () => deleteRecord,
-  deleteRecordEntry: () => deleteRecordEntry,
-  getAppointmentsForRecord: () => getAppointmentsForRecord,
-  getRecordById: () => getRecordById,
-  getRecordByPhone: () => getRecordByPhone,
-  getRecordEntries: () => getRecordEntries,
-  getRecordForSpecialistById: () => getRecordForSpecialistById,
-  getRecordsByTenant: () => getRecordsByTenant,
-  getRecordsForSpecialist: () => getRecordsForSpecialist,
-  updateRecord: () => updateRecord
-});
-function mapRecordRow(row) {
-  return {
-    id: row.id,
-    tenantId: row.tenant_id,
-    clientType: row.client_type || "general",
-    fullName: row.full_name,
-    phone: row.phone || "",
-    email: row.email || "",
-    identification: row.identification || "",
-    address: row.address || "",
-    dateOfBirth: row.date_of_birth ? row.date_of_birth.toISOString?.().split("T")[0] || String(row.date_of_birth) : void 0,
-    gender: row.gender || "",
-    bloodType: row.blood_type || "",
-    allergies: row.allergies || "",
-    pathologicalBackground: row.pathological_background || "",
-    currentMedications: row.current_medications || "",
-    emergencyContactName: row.emergency_contact_name || "",
-    emergencyContactPhone: row.emergency_contact_phone || "",
-    notes: row.notes || "",
-    metadata: row.metadata ? typeof row.metadata === "string" ? JSON.parse(row.metadata) : row.metadata : {},
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    totalAppointments: row.total_appointments ? Number(row.total_appointments) : void 0,
-    lastAppointmentDate: row.last_appointment_date || void 0,
-    latestVitalSigns: row.latest_vital_signs ? typeof row.latest_vital_signs === "string" ? JSON.parse(row.latest_vital_signs) : row.latest_vital_signs : void 0,
-    recentEntriesCount: row.recent_entries_count ? Number(row.recent_entries_count) : void 0
-  };
-}
-function mapEntryRow(row) {
-  return {
-    id: row.id,
-    tenantId: row.tenant_id,
-    recordId: row.record_id,
-    appointmentId: row.appointment_id || void 0,
-    specialistId: row.specialist_id || void 0,
-    specialistName: row.specialist_name || void 0,
-    entryType: row.entry_type || "consultation",
-    vitalSigns: row.vital_signs ? typeof row.vital_signs === "string" ? JSON.parse(row.vital_signs) : row.vital_signs : void 0,
-    diagnosis: row.diagnosis || "",
-    treatmentPlan: row.treatment_plan || "",
-    prescription: row.prescription || "",
-    notes: row.notes || "",
-    attachments: row.attachments ? typeof row.attachments === "string" ? JSON.parse(row.attachments) : row.attachments : [],
-    createdAt: row.created_at,
-    updatedAt: row.updated_at
-  };
-}
-async function getRecordsByTenant(tenantId, options = {}) {
-  const { search, type, limit = 50, offset = 0 } = options;
-  let whereClause = "WHERE r.tenant_id = $1";
-  const params = [tenantId];
-  if (type && type !== "all") {
-    params.push(type);
-    whereClause += ` AND r.client_type = $${params.length}`;
-  }
-  if (search && search.trim()) {
-    const cleanSearch = search.trim();
-    params.push(`%${cleanSearch}%`);
-    const pIdx = params.length;
-    whereClause += ` AND (
-      r.full_name ILIKE $${pIdx} OR 
-      r.phone ILIKE $${pIdx} OR 
-      r.email ILIKE $${pIdx} OR 
-      r.identification ILIKE $${pIdx}
-    )`;
-  }
-  const countSql = `SELECT COUNT(*) as count FROM customer_records r ${whereClause}`;
-  const countRes = await query(countSql, params);
-  const total = parseInt(countRes.rows[0]?.count || "0", 10);
-  const dataParams = [...params, limit, offset];
-  const dataSql = `
-    SELECT r.*,
-      (SELECT COUNT(*) FROM appointments a WHERE a.tenant_id = r.tenant_id AND (a.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))) as total_appointments,
-      (SELECT MAX(a.date) FROM appointments a WHERE a.tenant_id = r.tenant_id AND (a.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))) as last_appointment_date,
-      (SELECT re.vital_signs FROM record_entries re WHERE re.record_id = r.id AND re.vital_signs IS NOT NULL ORDER BY re.created_at DESC LIMIT 1) as latest_vital_signs,
-      (SELECT COUNT(*) FROM record_entries re WHERE re.record_id = r.id) as recent_entries_count
-    FROM customer_records r
-    ${whereClause}
-    ORDER BY r.updated_at DESC
-    LIMIT $${dataParams.length - 1} OFFSET $${dataParams.length}
-  `;
-  const dataRes = await query(dataSql, dataParams);
-  return {
-    records: dataRes.rows.map(mapRecordRow),
-    total
-  };
-}
-async function getRecordById(id, tenantId) {
-  const sql = `
-    SELECT r.*,
-      (SELECT COUNT(*) FROM appointments a WHERE a.tenant_id = r.tenant_id AND (a.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))) as total_appointments,
-      (SELECT MAX(a.date) FROM appointments a WHERE a.tenant_id = r.tenant_id AND (a.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))) as last_appointment_date,
-      (SELECT re.vital_signs FROM record_entries re WHERE re.record_id = r.id AND re.vital_signs IS NOT NULL ORDER BY re.created_at DESC LIMIT 1) as latest_vital_signs,
-      (SELECT COUNT(*) FROM record_entries re WHERE re.record_id = r.id) as recent_entries_count
-    FROM customer_records r
-    WHERE r.id = $1 AND r.tenant_id = $2
-  `;
-  const res = await query(sql, [id, tenantId]);
-  return res.rows[0] ? mapRecordRow(res.rows[0]) : null;
-}
-async function getRecordByPhone(phone, tenantId) {
-  const cleanPhone = (phone || "").replace(/\D/g, "");
-  if (cleanPhone.length < 8) return null;
-  const sql = `
-    SELECT r.* FROM customer_records r
-    WHERE r.tenant_id = $1 AND REPLACE(r.phone, '-', '') LIKE '%' || $2
-    ORDER BY r.updated_at DESC LIMIT 1
-  `;
-  const res = await query(sql, [tenantId, cleanPhone.slice(-8)]);
-  return res.rows[0] ? mapRecordRow(res.rows[0]) : null;
-}
-async function createRecord(tenantId, data) {
-  const sql = `
-    INSERT INTO customer_records (
-      tenant_id, client_type, full_name, phone, email, identification, address,
-      date_of_birth, gender, blood_type, allergies, pathological_background,
-      current_medications, emergency_contact_name, emergency_contact_phone, notes, metadata
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-    RETURNING *
-  `;
-  const res = await query(sql, [
-    tenantId,
-    data.clientType || "general",
-    data.fullName || "Cliente Sin Nombre",
-    data.phone || "",
-    data.email || null,
-    data.identification || null,
-    data.address || null,
-    data.dateOfBirth || null,
-    data.gender || null,
-    data.bloodType || null,
-    data.allergies || null,
-    data.pathologicalBackground || null,
-    data.currentMedications || null,
-    data.emergencyContactName || null,
-    data.emergencyContactPhone || null,
-    data.notes || null,
-    data.metadata ? JSON.stringify(data.metadata) : "{}"
-  ]);
-  const newRecord = mapRecordRow(res.rows[0]);
-  if (newRecord.phone) {
-    const clean = newRecord.phone.replace(/\D/g, "");
-    if (clean.length >= 8) {
-      await query(
-        `UPDATE appointments 
-         SET record_id = $1 
-         WHERE tenant_id = $2 
-           AND record_id IS NULL 
-           AND REPLACE(whatsapp, '-', '') LIKE '%' || $3`,
-        [newRecord.id, tenantId, clean.slice(-8)]
-      ).catch(() => {
-      });
-    }
-  }
-  return newRecord;
-}
-async function updateRecord(id, tenantId, data) {
-  const allowedFields = {
-    clientType: "client_type",
-    fullName: "full_name",
-    phone: "phone",
-    email: "email",
-    identification: "identification",
-    address: "address",
-    dateOfBirth: "date_of_birth",
-    gender: "gender",
-    bloodType: "blood_type",
-    allergies: "allergies",
-    pathologicalBackground: "pathological_background",
-    currentMedications: "current_medications",
-    emergencyContactName: "emergency_contact_name",
-    emergencyContactPhone: "emergency_contact_phone",
-    notes: "notes"
-  };
-  const updates = ["updated_at = CURRENT_TIMESTAMP"];
-  const params = [id, tenantId];
-  let pIdx = 3;
-  for (const [key, col] of Object.entries(allowedFields)) {
-    if (data[key] !== void 0) {
-      updates.push(`${col} = $${pIdx++}`);
-      params.push(data[key] === "" ? null : data[key]);
-    }
-  }
-  if (data.metadata !== void 0) {
-    updates.push(`metadata = $${pIdx++}`);
-    params.push(JSON.stringify(data.metadata));
-  }
-  const sql = `
-    UPDATE customer_records
-    SET ${updates.join(", ")}
-    WHERE id = $1 AND tenant_id = $2
-    RETURNING *
-  `;
-  const res = await query(sql, params);
-  return res.rows[0] ? mapRecordRow(res.rows[0]) : null;
-}
-async function deleteRecord(id, tenantId) {
-  await query("UPDATE appointments SET record_id = NULL WHERE record_id = $1 AND tenant_id = $2", [id, tenantId]).catch(() => {
-  });
-  const res = await query("DELETE FROM customer_records WHERE id = $1 AND tenant_id = $2", [id, tenantId]);
-  return (res.rowCount || 0) > 0;
-}
-async function addRecordEntry(tenantId, recordId, data) {
-  const sql = `
-    INSERT INTO record_entries (
-      tenant_id, record_id, appointment_id, specialist_id, entry_type,
-      vital_signs, diagnosis, treatment_plan, prescription, notes, attachments
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-    RETURNING *
-  `;
-  const res = await query(sql, [
-    tenantId,
-    recordId,
-    data.appointmentId || null,
-    data.specialistId || null,
-    data.entryType || "consultation",
-    data.vitalSigns ? JSON.stringify(data.vitalSigns) : null,
-    data.diagnosis || null,
-    data.treatmentPlan || null,
-    data.prescription || null,
-    data.notes || null,
-    data.attachments ? JSON.stringify(data.attachments) : "[]"
-  ]);
-  await query("UPDATE customer_records SET updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND tenant_id = $2", [recordId, tenantId]).catch(() => {
-  });
-  const entry = mapEntryRow(res.rows[0]);
-  if (entry.specialistId) {
-    const specRes = await query("SELECT name FROM specialists WHERE id = $1", [entry.specialistId]);
-    entry.specialistName = specRes.rows[0]?.name;
-  }
-  return entry;
-}
-async function getRecordEntries(recordId, tenantId) {
-  const sql = `
-    SELECT re.*, s.name as specialist_name
-    FROM record_entries re
-    LEFT JOIN specialists s ON s.id = re.specialist_id
-    WHERE re.record_id = $1 AND re.tenant_id = $2
-    ORDER BY re.created_at DESC
-  `;
-  const res = await query(sql, [recordId, tenantId]);
-  return res.rows.map(mapEntryRow);
-}
-async function deleteRecordEntry(entryId, tenantId) {
-  const res = await query("DELETE FROM record_entries WHERE id = $1 AND tenant_id = $2", [entryId, tenantId]);
-  return (res.rowCount || 0) > 0;
-}
-async function getAppointmentsForRecord(recordId, tenantId) {
-  const rec = await getRecordById(recordId, tenantId);
-  const cleanPhone = rec?.phone ? rec.phone.replace(/\D/g, "") : "";
-  let sql = `
-    SELECT a.*, s.name as "specialistName"
-    FROM appointments a
-    LEFT JOIN specialists s ON s.id = a.specialist_id
-    WHERE a.tenant_id = $1 AND (a.record_id = $2
-  `;
-  const params = [tenantId, recordId];
-  if (cleanPhone.length >= 8) {
-    params.push(cleanPhone.slice(-8));
-    sql += ` OR REPLACE(a.whatsapp, '-', '') LIKE '%' || $3`;
-  }
-  sql += `) ORDER BY a.date DESC, a.time DESC`;
-  const res = await query(sql, params);
-  return res.rows;
-}
-async function getRecordsForSpecialist(specialistId, tenantId, search) {
-  let whereClause = `WHERE a.specialist_id = $1 AND r.tenant_id = $2`;
-  const params = [specialistId, tenantId];
-  if (search && search.trim()) {
-    params.push(`%${search.trim()}%`);
-    whereClause += ` AND (r.full_name ILIKE $${params.length} OR r.phone ILIKE $${params.length} OR r.identification ILIKE $${params.length})`;
-  }
-  const sql = `
-    SELECT DISTINCT r.*,
-      (SELECT COUNT(*) FROM appointments a2 WHERE a2.specialist_id = $1 AND (a2.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a2.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))) as total_appointments,
-      (SELECT MAX(a2.date) FROM appointments a2 WHERE a2.specialist_id = $1 AND (a2.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a2.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))) as last_appointment_date,
-      (SELECT re.vital_signs FROM record_entries re WHERE re.record_id = r.id AND re.vital_signs IS NOT NULL ORDER BY re.created_at DESC LIMIT 1) as latest_vital_signs,
-      (SELECT COUNT(*) FROM record_entries re WHERE re.record_id = r.id) as recent_entries_count
-    FROM customer_records r
-    JOIN appointments a ON (a.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))
-    ${whereClause}
-    ORDER BY r.updated_at DESC
-  `;
-  const res = await query(sql, params);
-  return res.rows.map(mapRecordRow);
-}
-async function getRecordForSpecialistById(recordId, specialistId, tenantId) {
-  const sql = `
-    SELECT DISTINCT r.*,
-      (SELECT COUNT(*) FROM appointments a2 WHERE a2.specialist_id = $2 AND (a2.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a2.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))) as total_appointments,
-      (SELECT MAX(a2.date) FROM appointments a2 WHERE a2.specialist_id = $2 AND (a2.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a2.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))) as last_appointment_date,
-      (SELECT re.vital_signs FROM record_entries re WHERE re.record_id = r.id AND re.vital_signs IS NOT NULL ORDER BY re.created_at DESC LIMIT 1) as latest_vital_signs,
-      (SELECT COUNT(*) FROM record_entries re WHERE re.record_id = r.id) as recent_entries_count
-    FROM customer_records r
-    JOIN appointments a ON (a.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))
-    WHERE r.id = $1 AND a.specialist_id = $2 AND r.tenant_id = $3
-  `;
-  const res = await query(sql, [recordId, specialistId, tenantId]);
-  return res.rows[0] ? mapRecordRow(res.rows[0]) : null;
-}
-var init_records_repo = __esm({
-  "src/server/db/records.repo.ts"() {
     "use strict";
     init_pool();
   }
@@ -5230,6 +5242,7 @@ async function getAvailableSlots(tenantId, courtId, date) {
 }
 
 // src/server/services/agent.ts
+init_records_repo();
 init_pool();
 async function processWhatsAppMessageWithAI(tenantId, userMessage, senderPhone, senderName, chatHistory) {
   const tenant = await getTenantById(tenantId);
@@ -5403,6 +5416,30 @@ ${busySummary}
       }).join("\n\n") + "\n";
     }
   }
+  let customerRecord = null;
+  let customerProfileText = "";
+  try {
+    customerRecord = await getRecordByPhone(senderPhone, tenantId);
+    if (customerRecord) {
+      const isPatient = customerRecord.clientType === "paciente";
+      customerProfileText = `
+EXPEDIENTE DEL CLIENTE REGISTRADO:
+- Nombre Registrado: ${customerRecord.fullName}
+- Tipo de Expediente: ${isPatient ? "PACIENTE M\xC9DICO / SERVICIOS DE SALUD" : "CLIENTE GENERAL"}
+${customerRecord.identification ? `- C\xE9dula / Identificaci\xF3n / DIMEX: ${customerRecord.identification}` : ""}
+${customerRecord.allergies ? `- \u26A0\uFE0F ALERGIAS CONOCIDAS: ${customerRecord.allergies}` : ""}
+${customerRecord.pathologicalBackground ? `- \u{1F4CB} ANTECEDENTES PATOL\xD3GICOS: ${customerRecord.pathologicalBackground}` : ""}
+${customerRecord.currentMedications ? `- \u{1F48A} MEDICACI\xD3N ACTUAL: ${customerRecord.currentMedications}` : ""}
+${customerRecord.notes ? `- Notas del expediente: ${customerRecord.notes}` : ""}
+REGLAS PARA CLIENTE CON EXPEDIENTE:
+* Este cliente YA TIENE UN EXPEDIENTE REGISTRADO. Sal\xFAdalo c\xE1lidamente por su nombre (${customerRecord.fullName}).
+* NO le preguntes su nombre completo ni su identificaci\xF3n, ya que est\xE1n registrados en su expediente.
+* Si solicita citas o servicios, as\xF3cialas a su expediente existente.
+`;
+    }
+  } catch (recErr) {
+    console.warn("[agent.ts] Error fetching customer record:", recErr);
+  }
   let activeCustomerBookingsText = "";
   try {
     const cleanPhone = senderPhone.replace(/\D/g, "");
@@ -5476,10 +5513,10 @@ ${agentConfig?.systemPrompt || "Atiende amablemente a los clientes."}
 Datos del negocio:
 ${crTime}
 ${agentConfig?.showBookingLink !== false && bookingUrl ? `Reservas online: ${bookingUrl}` : ""}${agentConfig?.showStoreLink !== false && storeUrl ? ` | Tienda online: ${storeUrl}` : ""}
-${scheduleInfo}${paymentInfo}${relevantServicesText}${relevantProductsText}${courtsText}${specialistsText}${busySlotsText}${activeCustomerBookingsText}${activeCustomerOrdersText}
+${scheduleInfo}${paymentInfo}${relevantServicesText}${relevantProductsText}${courtsText}${specialistsText}${busySlotsText}${customerProfileText}${activeCustomerBookingsText}${activeCustomerOrdersText}
 REGLAS OBLIGATORIAS:
 1. Responde SOLO en espa\xF1ol con un tono c\xE1lido, emp\xE1tico, educado y \xE1gil adaptado al p\xFAblico de Costa Rica (*pura vida*, con mucho gusto, claro que s\xED).
-2. Usa el nombre EXACTO del cliente (${senderName}) cuando sea oportuno. No lo modifiques.
+2. Usa el nombre EXACTO del cliente (${customerRecord?.fullName || senderName}) cuando sea oportuno. No lo modifiques.
 3. Usa *negrita* para datos clave (precios, productos, horarios) y emojis moderados para dar calidez. S\xE9 conciso y claro (1-2 p\xE1rrafos m\xE1ximo).
 4. Solo menciona productos, servicios y precios que aparezcan arriba en los datos del negocio. Si algo no aparece, indica que consultar\xE1s con el equipo.
 5. NUNCA inventes URLs, links, procesos ni precios que no est\xE9n en la informaci\xF3n proporcionada.
@@ -5503,7 +5540,7 @@ REGLAS OBLIGATORIAS:
 - Si el cliente pregunta por su pedido ("\xBFC\xF3mo va mi orden?", "\xBFD\xF3nde viene?", "\xBFYa sali\xF3?"), revisa la secci\xF3n "PEDIDOS ACTIVOS EN CURSO DE ESTE CLIENTE" y resp\xF3ndele de inmediato con el n\xFAmero de orden, los \xEDtems y su estado real actual, d\xE1ndole tranquilidad.
 
 9. GESTI\xD3N DE CITAS:
-- Para AGENDAR: Cuando el cliente elija servicio, fecha y hora (verificando que NO figure en HORARIOS YA OCUPADOS), y opcionalmente elija con qui\xE9n atenderse, a\xF1ade <<<COMMAND_BOOKING: {"service":"nombre","date":"YYYY-MM-DD","time":"HH:MM","customerName":"${senderName}","specialistName":"opcional"}>>>.
+- Para AGENDAR: Cuando el cliente elija servicio, fecha y hora (verificando que NO figure en HORARIOS YA OCUPADOS), y opcionalmente elija con qui\xE9n atenderse, a\xF1ade <<<COMMAND_BOOKING: {"service":"nombre","date":"YYYY-MM-DD","time":"HH:MM","customerName":"${customerRecord?.fullName || senderName}","recordId":"${customerRecord?.id || ""}","specialistName":"opcional"}>>>.
 - Para CANCELAR: Si el cliente pide cancelar una cita activa, SIEMPRE preg\xFAntale primero para confirmar: "\xBFEst\xE1s seguro de que deseas cancelar tu cita de [Servicio] para el [Fecha] a las [Hora]?". SOLO si el cliente responde confirmando ("s\xED", "confirmo", "correcto", "canc\xE9lala"), a\xF1ade <<<COMMAND_CANCEL_BOOKING: {"date":"YYYY-MM-DD", "service":"opcional", "reason":"solicitado por cliente"}>>>.
 - Para REAGENDAR: Ofr\xE9cele los horarios libres disponibles y cuando confirme la nueva fecha y hora, a\xF1ade <<<COMMAND_RESCHEDULE_BOOKING: {"newDate":"YYYY-MM-DD", "newTime":"HH:MM"}>>>.
 
@@ -5513,7 +5550,7 @@ REGLAS OBLIGATORIAS:
   <<<COMMAND_COURT_BOOKING: {"courtName":"nombre cancha", "date":"YYYY-MM-DD", "time":"HH:MM", "bookingMode":"full"|"seek_match", "teamAName":"${senderName}"}>>>
 
 Acciones disponibles (a\xF1ade al final SOLO cuando el cliente confirme expl\xEDcitamente):
-Cita: <<<COMMAND_BOOKING: {"service":"nombre","date":"YYYY-MM-DD","time":"HH:MM","customerName":"${senderName}","specialistName":"opcional"}>>>
+Cita: <<<COMMAND_BOOKING: {"service":"nombre","date":"YYYY-MM-DD","time":"HH:MM","customerName":"${customerRecord?.fullName || senderName}","recordId":"${customerRecord?.id || ""}","specialistName":"opcional"}>>>
 Cancha: <<<COMMAND_COURT_BOOKING: {"courtName":"nombre", "date":"YYYY-MM-DD", "time":"HH:MM", "bookingMode":"full"|"seek_match", "teamAName":"${senderName}"}>>>
 Cancelar Cita: <<<COMMAND_CANCEL_BOOKING: {"date":"YYYY-MM-DD","service":"opcional","reason":"motivo"}>>>
 Reagendar Cita: <<<COMMAND_RESCHEDULE_BOOKING: {"newDate":"YYYY-MM-DD","newTime":"HH:MM"}>>>
@@ -5622,6 +5659,12 @@ Asistente:`;
   if (bookingMatch && bookingMatch[1]) {
     const parsed = safeParseJSON(bookingMatch[1]);
     if (parsed && parsed.service && (parsed.date || parsed.time)) {
+      if (customerRecord?.id && !parsed.recordId) {
+        parsed.recordId = customerRecord.id;
+      }
+      if (customerRecord?.fullName && (!parsed.customerName || parsed.customerName === "Cliente WhatsApp" || parsed.customerName === senderName)) {
+        parsed.customerName = customerRecord.fullName;
+      }
       isBookingDetected = true;
       bookingData = parsed;
     }
@@ -5857,6 +5900,7 @@ async function getAppointmentsByTenant(tenantId) {
     SELECT id, tenant_id as "tenantId", name, whatsapp, service, 
            date, time, amount, status, details, vehicle_model as "vehicleModel",
            selected_variables as "selectedVariables", specialist_id as "specialistId",
+           record_id as "recordId",
            payment_method as "paymentMethod", payment_status as "paymentStatus",
            payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
            tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
@@ -5872,6 +5916,7 @@ async function getAppointmentById(id, tenantId) {
     SELECT id, tenant_id as "tenantId", name, whatsapp, service, 
            date, time, amount, status, details, vehicle_model as "vehicleModel",
            selected_variables as "selectedVariables", specialist_id as "specialistId",
+           record_id as "recordId",
            payment_method as "paymentMethod", payment_status as "paymentStatus",
            payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
            tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
@@ -5886,6 +5931,7 @@ async function getAppointmentByIdUnsafeForWebhook(id) {
     SELECT id, tenant_id as "tenantId", name, whatsapp, service, 
            date, time, amount, status, details, vehicle_model as "vehicleModel",
            selected_variables as "selectedVariables", specialist_id as "specialistId",
+           record_id as "recordId",
            payment_method as "paymentMethod", payment_status as "paymentStatus",
            payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
            tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
@@ -5899,11 +5945,12 @@ async function createAppointment(tenantId, data) {
   const result = await query(`
     INSERT INTO appointments (
       tenant_id, name, whatsapp, service, date, time, amount, status, details, vehicle_model, selected_variables, specialist_id,
-      payment_method, payment_status, payment_reference, payment_proof_url, tilopay_transaction_id, tilopay_auth_code
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+      record_id, payment_method, payment_status, payment_reference, payment_proof_url, tilopay_transaction_id, tilopay_auth_code
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
     RETURNING id, tenant_id as "tenantId", name, whatsapp, service, 
            date, time, amount, status, details, vehicle_model as "vehicleModel",
            selected_variables as "selectedVariables", specialist_id as "specialistId",
+           record_id as "recordId",
            payment_method as "paymentMethod", payment_status as "paymentStatus",
            payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
            tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
@@ -5921,6 +5968,7 @@ async function createAppointment(tenantId, data) {
     data.vehicleModel,
     data.selectedVariables ? JSON.stringify(data.selectedVariables) : null,
     data.specialistId || null,
+    data.recordId || null,
     data.paymentMethod || null,
     data.paymentStatus || "pending",
     data.paymentReference || null,
@@ -5946,6 +5994,7 @@ async function updateAppointment(id, tenantId, data) {
     "vehicleModel",
     "selectedVariables",
     "specialistId",
+    "recordId",
     "paymentMethod",
     "paymentStatus",
     "paymentReference",
@@ -5968,6 +6017,7 @@ async function updateAppointment(id, tenantId, data) {
     RETURNING id, tenant_id as "tenantId", name, whatsapp, service, 
            date, time, amount, status, details, vehicle_model as "vehicleModel",
            selected_variables as "selectedVariables", specialist_id as "specialistId",
+           record_id as "recordId",
            payment_method as "paymentMethod", payment_status as "paymentStatus",
            payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
            tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
@@ -6003,12 +6053,14 @@ async function updateAppointmentPayment(id, paymentData) {
     params.push(paymentData.tilopayAuthCode);
   }
   if (updates.length === 0) return getAppointmentById(id);
+  if (updates.length === 0) return getAppointmentById(id, "");
   const result = await query(`
     UPDATE appointments SET ${updates.join(", ")}
     WHERE id = $1
     RETURNING id, tenant_id as "tenantId", name, whatsapp, service, 
            date, time, amount, status, details, vehicle_model as "vehicleModel",
            selected_variables as "selectedVariables", specialist_id as "specialistId",
+           record_id as "recordId",
            payment_method as "paymentMethod", payment_status as "paymentStatus",
            payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
            tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
@@ -6055,17 +6107,53 @@ async function createBookingFromCommand(tenantId, bookingData) {
       );
       if (matchedSpec) specialistId = matchedSpec.id;
     }
+    let recordId = bookingData.recordId;
+    let customerRecord = null;
+    try {
+      const { getRecordByPhone: getRecordByPhone2, getRecordById: getRecordById2, getRecordByIdentification: getRecordByIdentification2, addRecordEntry: addRecordEntry2 } = await Promise.resolve().then(() => (init_records_repo(), records_repo_exports));
+      if (recordId) {
+        customerRecord = await getRecordById2(recordId, tenantId);
+      }
+      if (!customerRecord && bookingData.identification) {
+        customerRecord = await getRecordByIdentification2(bookingData.identification, tenantId);
+      }
+      if (!customerRecord && (bookingData.customerPhone || bookingData.whatsapp)) {
+        customerRecord = await getRecordByPhone2(bookingData.customerPhone || bookingData.whatsapp, tenantId);
+      }
+      if (customerRecord) {
+        recordId = customerRecord.id;
+        if (!bookingData.customerName || bookingData.customerName === "Cliente WhatsApp") {
+          bookingData.customerName = customerRecord.fullName;
+        }
+      }
+    } catch (recErr) {
+      console.warn("[createBookingFromCommand] Error resolving customer record:", recErr);
+    }
     const appointment = await createAppointment(tenantId, {
-      name: bookingData.customerName || "Cliente WhatsApp",
-      whatsapp: bookingData.customerPhone || "",
+      name: bookingData.customerName || (customerRecord ? customerRecord.fullName : "Cliente WhatsApp"),
+      whatsapp: bookingData.customerPhone || (customerRecord ? customerRecord.phone : ""),
       service: matchedService ? matchedService.name : bookingData.service || "Servicio General",
       date: bookingDate,
       time: bookingTime,
       amount: Number(price),
       details: bookingData.vehicleInfo || "",
       specialistId,
+      recordId: recordId || void 0,
       status: "scheduled"
     });
+    if (recordId) {
+      try {
+        const { addRecordEntry: addRecordEntry2 } = await Promise.resolve().then(() => (init_records_repo(), records_repo_exports));
+        await addRecordEntry2(tenantId, recordId, {
+          appointmentId: appointment.id,
+          specialistId,
+          entryType: "consultation",
+          notes: `Cita agendada autom\xE1ticamente por WhatsApp para ${matchedService ? matchedService.name : "Servicio General"} el ${bookingDate} a las ${bookingTime}.`
+        });
+      } catch (entryErr) {
+        console.warn("[createBookingFromCommand] Error logging record entry:", entryErr);
+      }
+    }
     return appointment;
   } catch (error) {
     console.error("Error creating booking from command:", error);
@@ -8973,6 +9061,15 @@ router5.post("/public/:slug/book", async (req, res) => {
       });
       return;
     }
+    let matchedRecordId = void 0;
+    try {
+      const { getRecordByPhone: getRecordByPhone2 } = await Promise.resolve().then(() => (init_records_repo(), records_repo_exports));
+      const rec = await getRecordByPhone2(customerPhone, tenant.id);
+      if (rec) {
+        matchedRecordId = rec.id;
+      }
+    } catch (e) {
+    }
     const appt = await createAppointment(tenant.id, {
       name: customerName,
       whatsapp: customerPhone,
@@ -8982,6 +9079,7 @@ router5.post("/public/:slug/book", async (req, res) => {
       amount: finalAmount,
       status: "scheduled",
       specialistId: specialistId || void 0,
+      recordId: matchedRecordId || void 0,
       paymentMethod: paymentMethod === "solo_reserva" ? "pending" : paymentMethod,
       paymentStatus: paymentMethod === "sinpe" ? "proof_sent" : "pending",
       paymentReference: req.body.paymentReference || null,
@@ -8989,6 +9087,19 @@ router5.post("/public/:slug/book", async (req, res) => {
       vehicleModel: vehicleModel || "",
       selectedVariables: req.body.selectedVariables
     });
+    if (matchedRecordId) {
+      try {
+        const { addRecordEntry: addRecordEntry2 } = await Promise.resolve().then(() => (init_records_repo(), records_repo_exports));
+        await addRecordEntry2(tenant.id, matchedRecordId, {
+          appointmentId: appt.id,
+          specialistId: specialistId || void 0,
+          entryType: "consultation",
+          notes: `Cita reservada en l\xEDnea para ${serviceName} el ${date} a las ${time}.`
+        });
+      } catch (entryErr) {
+        console.warn("[Public Booking] Error adding record entry:", entryErr);
+      }
+    }
     let paymentSession = null;
     if (isOnlinePayment && finalAmount > 0) {
       try {
@@ -9105,9 +9216,45 @@ router5.get("/", async (req, res) => {
 });
 router5.post("/", async (req, res) => {
   try {
-    const appt = await createAppointment(req.tenantId, req.body);
+    let recordId = req.body.recordId;
+    if (!recordId) {
+      try {
+        const { getRecordByPhone: getRecordByPhone2, getRecordByIdentification: getRecordByIdentification2 } = await Promise.resolve().then(() => (init_records_repo(), records_repo_exports));
+        if (req.body.identification) {
+          const rec = await getRecordByIdentification2(req.body.identification, req.tenantId);
+          if (rec) recordId = rec.id;
+        }
+        if (!recordId && req.body.whatsapp) {
+          const rec = await getRecordByPhone2(req.body.whatsapp, req.tenantId);
+          if (rec) recordId = rec.id;
+        }
+      } catch (e) {
+        console.warn("[Appointments] Record lookup error:", e);
+      }
+    }
+    const appt = await createAppointment(req.tenantId, {
+      ...req.body,
+      recordId: recordId || void 0
+    });
+    if (recordId) {
+      try {
+        const { addRecordEntry: addRecordEntry2 } = await Promise.resolve().then(() => (init_records_repo(), records_repo_exports));
+        await addRecordEntry2(req.tenantId, recordId, {
+          appointmentId: appt.id,
+          specialistId: req.body.specialistId || void 0,
+          entryType: "consultation",
+          notes: `Cita registrada en agenda para ${appt.service} el ${appt.date} a las ${appt.time}.`
+        });
+      } catch (entryErr) {
+        console.warn("[Appointments] Error logging record entry:", entryErr);
+      }
+    }
+    if (req.io) {
+      req.io.to(`tenant_${req.tenantId}`).emit("appointment:created", appt);
+    }
     res.status(201).json(appt);
   } catch (error) {
+    console.error("Error al agendar cita:", error);
     res.status(500).json({ error: "Error al agendar cita" });
   }
 });
