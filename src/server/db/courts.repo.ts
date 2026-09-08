@@ -163,6 +163,11 @@ export async function getBookingById(id: string, tenantId: string) {
   return res.rows[0] ? mapBookingRow(res.rows[0]) : null;
 }
 
+/**
+ * @security RESTRINGIDO EXCLUSIVAMENTE PARA WEBHOOKS EXTERNOS (ej. Tilopay CRT-*).
+ * NO invocar en endpoints de API autenticados ni en rutas de inquilino.
+ * El consumidor DEBE verificar el tenant_id retornado contra las credenciales del evento antes de mutar estado.
+ */
 export async function getBookingByIdUnsafe(id: string) {
   const res = await query(`
     SELECT cb.*, c.name as court_name 

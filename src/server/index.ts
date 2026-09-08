@@ -53,6 +53,8 @@ import superadminBillingRoutes from './routes/superadmin-billing.routes.js';
 import tenantPaymentRoutes from './routes/tenant-payment.routes.js';
 import tenantSubscriptionRoutes from './routes/tenant-subscription.routes.js';
 import recordsRoutes from './routes/records.routes.js';
+import almendroRoutes from './routes/almendro.routes.js';
+import superadminAlmendroRoutes from './routes/superadmin-almendro.routes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -228,6 +230,8 @@ async function startServer() {
   app.use('/api/queue', queueRoutes);
   app.use('/api/courts', courtsRoutes);
   app.use('/api/records', recordsRoutes);
+  app.use('/api/almendro', almendroRoutes);
+  app.use('/api/superadmin/almendro', superadminAlmendroRoutes);
 
   // Serve static assets in production, setup vite dev server in dev
   if (env.NODE_ENV === 'production') {

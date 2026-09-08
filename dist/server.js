@@ -10,7 +10,7 @@ var __export = (target, all) => {
 
 // src/server/config/env.ts
 import dotenv from "dotenv";
-var isProduction, env;
+var isProduction, env2;
 var init_env = __esm({
   "src/server/config/env.ts"() {
     "use strict";
@@ -24,7 +24,7 @@ var init_env = __esm({
         console.warn(`[Security Warning] Variables de entorno cr\xEDticas no definidas en producci\xF3n: ${missingCriticalVars.join(", ")}. Usando configuraci\xF3n predeterminada.`);
       }
     }
-    env = {
+    env2 = {
       PORT: process.env.PORT ? parseInt(process.env.PORT, 10) : 3e3,
       JWT_SECRET: process.env.JWT_SECRET || "betico_jwt_secret_64_chars_super_safe_key_cr_2026",
       DATABASE_URL: process.env.DATABASE_URL || "postgres://saas:BeticoDB2026@betico_postgres:5432/whatsapp_saas?sslmode=disable",
@@ -63,7 +63,7 @@ var init_pool = __esm({
     pg.types.setTypeParser(1082, (val) => val);
     pg.types.setTypeParser(1083, (val) => val ? val.slice(0, 5) : val);
     pool = new Pool({
-      connectionString: env.DATABASE_URL,
+      connectionString: env2.DATABASE_URL,
       max: 25,
       idleTimeoutMillis: 3e4,
       connectionTimeoutMillis: 5e3
@@ -420,6 +420,7 @@ async function setWebhook(instanceName, webhookUrl) {
         webhook: {
           enabled: true,
           url: webhookUrl,
+          headers: env.EVOLUTION_API_KEY ? { apikey: env.EVOLUTION_API_KEY } : {},
           byEvents: false,
           base64: false,
           events: [
@@ -651,7 +652,7 @@ var init_superadmin_notify_service = __esm({
 // src/server/services/crypto.service.ts
 import crypto2 from "crypto";
 function getMasterKey() {
-  const secret = process.env.APP_ENCRYPTION_KEY || process.env.ENCRYPTION_KEY || env.ENCRYPTION_KEY || "betico_master_encryption_key_default_32bytes";
+  const secret = process.env.APP_ENCRYPTION_KEY || process.env.ENCRYPTION_KEY || env2.ENCRYPTION_KEY || "betico_master_encryption_key_default_32bytes";
   return crypto2.scryptSync(secret, "betico_envelope_salt_2026", 32);
 }
 function getTenantDataKey(tenantId) {
@@ -709,7 +710,7 @@ var init_crypto_service = __esm({
           return decryptWithKey(dek, cipherText);
         } catch (err) {
           try {
-            const legacyKey = crypto2.scryptSync(process.env.ENCRYPTION_KEY || env.ENCRYPTION_KEY || "legacy_key", "salt", 32);
+            const legacyKey = crypto2.scryptSync(process.env.ENCRYPTION_KEY || env2.ENCRYPTION_KEY || "legacy_key", "salt", 32);
             return decryptWithKey(legacyKey, cipherText);
           } catch (fallbackErr) {
             console.error(`[CryptoService] Error descifrando datos para tenant ${tenantId}`);
@@ -961,7 +962,7 @@ var init_encryption = __esm({
     ALGORITHM2 = "aes-256-gcm";
     IV_LENGTH2 = 16;
     getEncryptionKey = () => {
-      const key = process.env.ENCRYPTION_KEY || env.ENCRYPTION_KEY || "e8a1b2c3d4e5f60718293a4b5c6d7e8f";
+      const key = process.env.ENCRYPTION_KEY || env2.ENCRYPTION_KEY || "e8a1b2c3d4e5f60718293a4b5c6d7e8f";
       return crypto3.scryptSync(key, "salt", 32);
     };
   }
@@ -1171,7 +1172,7 @@ var init_ai_provider = __esm({
     init_pool();
     init_encryption();
     init_env();
-    DEFAULT_GEMINI_KEY = env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || "AQ.Ab8RN6IHcdDKDITkdIOjt8SznSc6lS_1grotOA6SQ6fjZnd2SQ";
+    DEFAULT_GEMINI_KEY = env2.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || "AQ.Ab8RN6IHcdDKDITkdIOjt8SznSc6lS_1grotOA6SQ6fjZnd2SQ";
   }
 });
 
@@ -1579,7 +1580,7 @@ Responde como Betico Sales AI:`;
           INSERT INTO users (tenant_id, name, email, password_hash, role, active)
           VALUES ($1, $2, $3, $4, 'admin', true)
         `, [tenantId, cName, email, passwordHash]);
-        const appLoginUrl = (env.APP_URL || "https://betico.tech").replace(/\/$/, "") + "/login";
+        const appLoginUrl = (env2.APP_URL || "https://betico.tech").replace(/\/$/, "") + "/login";
         const welcomeCreds = `\u{1F389} \xA1Tu cuenta para *${bName}* ha sido creada exitosamente!
 
 \u{1F517} *Enlace de Acceso:* ${appLoginUrl}
@@ -2687,6 +2688,60 @@ async function runMigrations() {
 
     -- Appointments: link to customer_records
     ALTER TABLE appointments ADD COLUMN IF NOT EXISTS record_id UUID REFERENCES customer_records(id) ON DELETE SET NULL;
+
+    -- Almendro Electronic Invoicing Tables (Costa Rica DGT v4.4)
+    CREATE TABLE IF NOT EXISTS tenant_almendro_configs (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      is_enabled BOOLEAN DEFAULT false,
+      environment VARCHAR(20) DEFAULT 'SANDBOX',
+      api_key_encrypted TEXT,
+      default_doc_type VARCHAR(5) DEFAULT '04',
+      module_toggles JSONB DEFAULT '{"storeEnabled":true,"bookingsEnabled":true,"courtsEnabled":false,"restaurantEnabled":false,"subscriptionsEnabled":false}'::jsonb,
+      tax_id_type VARCHAR(5),
+      tax_id_number VARCHAR(20),
+      legal_name VARCHAR(255),
+      commercial_name VARCHAR(255),
+      economic_activity_code VARCHAR(10),
+      branch_code VARCHAR(3) DEFAULT '001',
+      pos_code VARCHAR(5) DEFAULT '00001',
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(tenant_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_tenant_almendro_tenant ON tenant_almendro_configs(tenant_id);
+
+    CREATE TABLE IF NOT EXISTS electronic_vouchers (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      order_id UUID REFERENCES orders(id) ON DELETE SET NULL,
+      appointment_id UUID REFERENCES appointments(id) ON DELETE SET NULL,
+      court_booking_id UUID REFERENCES court_bookings(id) ON DELETE SET NULL,
+      subscription_charge_id UUID REFERENCES tenant_billing_charges(id) ON DELETE SET NULL,
+      doc_type VARCHAR(5) NOT NULL DEFAULT '04',
+      consecutive_number VARCHAR(50),
+      numeric_key VARCHAR(50) UNIQUE,
+      receiver_id_type VARCHAR(5),
+      receiver_id_number VARCHAR(20),
+      receiver_name VARCHAR(255),
+      receiver_email VARCHAR(255),
+      currency VARCHAR(10) DEFAULT 'CRC',
+      subtotal NUMERIC(14, 2) NOT NULL DEFAULT 0,
+      tax_amount NUMERIC(14, 2) NOT NULL DEFAULT 0,
+      total_amount NUMERIC(14, 2) NOT NULL DEFAULT 0,
+      status VARCHAR(20) NOT NULL DEFAULT 'pending',
+      pdf_url TEXT,
+      xml_signed_url TEXT,
+      xml_response_url TEXT,
+      hacienda_response_code VARCHAR(50),
+      hacienda_response_detail TEXT,
+      metadata JSONB DEFAULT '{}'::jsonb,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_vouchers_tenant ON electronic_vouchers(tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_vouchers_key ON electronic_vouchers(numeric_key);
+    CREATE INDEX IF NOT EXISTS idx_vouchers_status ON electronic_vouchers(status);
   `).catch((err) => {
     console.warn("[Migrations] Columns addition warning:", err?.message || err);
   });
@@ -3507,7 +3562,7 @@ var TilopaySubscriptionService = class {
     const baseUrl = this.getBaseUrl(platformCfg.environment);
     const orderNumber = `SUB-${tenant.slug.substring(0, 8)}-${Date.now()}`;
     const cleanPhone = (tenant.whatsappNumber || "88888888").replace(/\D/g, "") || "88888888";
-    const appUrl = (env.APP_URL || "https://betico.tech").replace(/\/$/, "");
+    const appUrl = (env2.APP_URL || "https://betico.tech").replace(/\/$/, "");
     const charge = await createBillingCharge({
       tenantId,
       billingCardId: card.id,
@@ -6048,7 +6103,7 @@ async function updateAppointment(id, tenantId, data) {
   `, params);
   return result.rows[0] || null;
 }
-async function updateAppointmentPayment(id, paymentData) {
+async function updateAppointmentPayment(id, paymentData, tenantId) {
   const updates = [];
   const params = [id];
   let paramIdx = 2;
@@ -6075,11 +6130,17 @@ async function updateAppointmentPayment(id, paymentData) {
     updates.push(`tilopay_auth_code = $${paramIdx++}`);
     params.push(paymentData.tilopayAuthCode);
   }
-  if (updates.length === 0) return getAppointmentById(id);
-  if (updates.length === 0) return getAppointmentById(id, "");
+  if (updates.length === 0) {
+    return tenantId ? getAppointmentById(id, tenantId) : getAppointmentByIdUnsafeForWebhook(id);
+  }
+  let whereClause = "WHERE id = $1";
+  if (tenantId) {
+    whereClause += ` AND tenant_id = $${paramIdx++}`;
+    params.push(tenantId);
+  }
   const result = await query(`
     UPDATE appointments SET ${updates.join(", ")}
-    WHERE id = $1
+    ${whereClause}
     RETURNING id, tenant_id as "tenantId", name, whatsapp, service, 
            date, time, amount, status, details, vehicle_model as "vehicleModel",
            selected_variables as "selectedVariables", specialist_id as "specialistId",
@@ -6330,7 +6391,6 @@ async function getOrderById(id, tenantId) {
   return order;
 }
 async function createOrder(tenantId, data, items, dbClient) {
-  const runQuery = dbClient ? dbClient.query.bind(dbClient) : query;
   const insertSql = `
     INSERT INTO orders (
       tenant_id, customer_name, customer_phone, customer_email, customer_address, whatsapp_jid,
@@ -6365,45 +6425,49 @@ async function createOrder(tenantId, data, items, dbClient) {
     data.customerLocation ? JSON.stringify(data.customerLocation) : null,
     Boolean(data.stockDeducted)
   ];
-  let result;
+  const client = dbClient || await getClient();
+  const isInternalClient = !dbClient;
+  if (isInternalClient) {
+    await client.query("BEGIN");
+  }
   try {
-    result = await runQuery(insertSql, params);
+    const result = await client.query(insertSql, params);
+    const orderId = result.rows[0].id;
+    const orderItems = items || data.items || [];
+    if (orderItems && orderItems.length > 0) {
+      for (const item of orderItems) {
+        await client.query(`
+          INSERT INTO order_items (
+            order_id, product_id, variant_id, tenant_id, product_name, variant_name, selected_variables, quantity, unit_price, total_price
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        `, [
+          orderId,
+          item.productId || null,
+          item.variantId || null,
+          tenantId,
+          item.productName,
+          item.variantName || null,
+          item.selectedVariables ? JSON.stringify(item.selectedVariables) : null,
+          item.quantity,
+          item.unitPrice,
+          Number(item.unitPrice) * Number(item.quantity)
+        ]);
+      }
+    }
+    if (isInternalClient) {
+      await client.query("COMMIT");
+    }
+    return getOrderById(orderId, tenantId);
   } catch (err) {
-    if (err && (err.message?.includes("payment_proof_url") || err.message?.includes("payment_proof_status") || err.message?.includes("stock_deducted") || err.code === "42703")) {
-      console.log("[createOrder] Column missing detected, auto-migrating orders table...");
-      await query(`
-        ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_proof_url TEXT;
-        ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_proof_status VARCHAR(50) DEFAULT 'pending';
-        ALTER TABLE orders ADD COLUMN IF NOT EXISTS stock_deducted BOOLEAN DEFAULT false;
-      `);
-      result = await runQuery(insertSql, params);
-    } else {
-      throw err;
+    if (isInternalClient) {
+      await client.query("ROLLBACK");
+    }
+    throw err;
+  } finally {
+    if (isInternalClient) {
+      client.release();
     }
   }
-  const orderId = result.rows[0].id;
-  const orderItems = items || data.items || [];
-  if (orderItems && orderItems.length > 0) {
-    for (const item of orderItems) {
-      await runQuery(`
-        INSERT INTO order_items (
-          order_id, product_id, variant_id, tenant_id, product_name, variant_name, selected_variables, quantity, unit_price, total_price
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-      `, [
-        orderId,
-        item.productId || null,
-        item.variantId || null,
-        tenantId,
-        item.productName,
-        item.variantName || null,
-        item.selectedVariables ? JSON.stringify(item.selectedVariables) : null,
-        item.quantity,
-        item.unitPrice,
-        Number(item.unitPrice) * Number(item.quantity)
-      ]);
-    }
-  }
-  return getOrderById(orderId, tenantId);
 }
 async function updateOrder(id, tenantId, data) {
   const updates = [];
@@ -7051,7 +7115,7 @@ var EvolutionApiService = class {
           payment_link_expires_at = $2
       WHERE id = $3 AND tenant_id = $4
     `, [paymentLinkToken, expiresAt, newOrder.id, tenantId]);
-    const baseUrl = env.APP_URL || "https://betico.tech";
+    const baseUrl = env2.APP_URL || "https://betico.tech";
     const paymentLink = `${baseUrl.replace(/\/$/, "")}/pay/${paymentLinkToken}`;
     return {
       order: newOrder,
@@ -7117,7 +7181,7 @@ init_env();
 init_users_repo();
 import jwt from "jsonwebtoken";
 function generateToken(userId, tenantId, role) {
-  return jwt.sign({ userId, tenantId, role }, env.JWT_SECRET, { expiresIn: "7d" });
+  return jwt.sign({ userId, tenantId, role }, env2.JWT_SECRET, { expiresIn: "7d" });
 }
 async function authenticateToken(req, res, next) {
   const authHeader = req.headers["authorization"];
@@ -7127,7 +7191,7 @@ async function authenticateToken(req, res, next) {
     return;
   }
   try {
-    const decoded = jwt.verify(token, env.JWT_SECRET);
+    const decoded = jwt.verify(token, env2.JWT_SECRET);
     if (decoded.userId && decoded.role !== "superadmin") {
       const user = await getUserById(decoded.userId);
       if (!user || user.active === false) {
@@ -8507,7 +8571,7 @@ var TilopayTenantService = class {
    * Multi-tenant isolated via composite cache key: `tilopay_jwt:${tenantId}:${env}`.
    */
   static async getSdkToken(tenantId) {
-    if (!env.TILOPAY_MODULE_ENABLED) {
+    if (!env2.TILOPAY_MODULE_ENABLED) {
       throw new Error("El m\xF3dulo de Tilopay se encuentra temporalmente inactivo.");
     }
     const config = await getTenantPaymentConfigRaw(tenantId);
@@ -8572,7 +8636,7 @@ var TilopayTenantService = class {
     const firstName = nameParts[0] || "Cliente";
     const lastName = nameParts.slice(1).join(" ") || firstName;
     const cleanPhone = (order.customerPhone || "88888888").replace(/\D/g, "") || "88888888";
-    const appUrl = (env.APP_URL || "https://betico.tech").replace(/\/$/, "");
+    const appUrl = (env2.APP_URL || "https://betico.tech").replace(/\/$/, "");
     const paymentPayload = {
       key: apiKey,
       amount: Number(order.total).toFixed(2),
@@ -8632,7 +8696,7 @@ var TilopayTenantService = class {
     const firstName = nameParts[0] || "Cliente";
     const lastName = nameParts.slice(1).join(" ") || firstName;
     const cleanPhone = (apt.whatsapp || "88888888").replace(/\D/g, "") || "88888888";
-    const appUrl = (env.APP_URL || "https://betico.tech").replace(/\/$/, "");
+    const appUrl = (env2.APP_URL || "https://betico.tech").replace(/\/$/, "");
     const paymentPayload = {
       key: apiKey,
       amount: Number(apt.amount).toFixed(2),
@@ -8694,7 +8758,7 @@ var TilopayTenantService = class {
     const firstName = nameParts[0] || "Capit\xE1n";
     const lastName = nameParts.slice(1).join(" ") || firstName;
     const cleanPhone = customerPhone.replace(/\D/g, "") || "88888888";
-    const appUrl = (env.APP_URL || "https://betico.tech").replace(/\/$/, "");
+    const appUrl = (env2.APP_URL || "https://betico.tech").replace(/\/$/, "");
     const paymentPayload = {
       key: apiKey,
       amount: Number(amount).toFixed(2),
@@ -9557,8 +9621,9 @@ router8.post("/connect", async (req, res) => {
       pairingCode = connectData?.pairingCode || null;
     }
     try {
-      const appUrl = env.APP_URL || `http://betico_app:80`;
-      await setWebhook(instanceName, `${appUrl}/api/webhook/evolution`);
+      const appUrl = env2.APP_URL || `http://betico_app:80`;
+      const webhookToken = env2.EVOLUTION_API_KEY ? `?token=${encodeURIComponent(env2.EVOLUTION_API_KEY)}` : "";
+      await setWebhook(instanceName, `${appUrl}/api/webhook/evolution${webhookToken}`);
     } catch (e) {
     }
     res.json({
@@ -10026,36 +10091,7 @@ var STATUS_LABELS = {
 };
 router12.get("/", async (req, res) => {
   try {
-    let orders = await getOrdersByTenant(req.tenantId, req.query);
-    if (req.user?.role === "superadmin" && orders.length === 0) {
-      const allRes = await query(`
-        SELECT o.id, o.tenant_id as "tenantId", o.order_number as "orderNumber",
-               o.customer_name as "customerName", o.customer_phone as "customerPhone",
-               o.customer_email as "customerEmail", o.customer_address as "customerAddress",
-               o.customer_location as "customerLocation", o.whatsapp_jid as "whatsappJid",
-               o.source, o.subtotal, o.delivery_fee as "deliveryFee", o.discount, o.total,
-               o.currency, o.status, o.payment_method as "paymentMethod",
-               o.payment_status as "paymentStatus", o.payment_reference as "paymentReference",
-               o.notes, o.delivery_method as "deliveryMethod", o.consumption_mode as "consumptionMode",
-               o.table_number as "tableNumber", o.driver_id as "driverId", o.waze_url as "wazeUrl",
-               o.created_at as "createdAt", o.updated_at as "updatedAt",
-               COALESCE(
-                 (SELECT json_agg(json_build_object(
-                    'id', oi.id,
-                    'productName', oi.product_name,
-                    'variantName', oi.variant_name,
-                    'quantity', oi.quantity,
-                    'unitPrice', oi.unit_price,
-                    'totalPrice', oi.total_price
-                  ))
-                  FROM order_items oi WHERE oi.order_id = o.id), '[]'::json
-               ) as items
-        FROM orders o
-        ORDER BY o.created_at DESC
-        LIMIT 100
-      `);
-      orders = allRes.rows;
-    }
+    const orders = await getOrdersByTenant(req.tenantId, req.query);
     res.json(orders);
   } catch (error) {
     console.error(error);
@@ -10422,7 +10458,7 @@ var publicUploadLimiter = rateLimit2({
   standardHeaders: true,
   legacyHeaders: false
 });
-var uploadDir = env.UPLOAD_DIR || path.join(process.cwd(), "uploads");
+var uploadDir = env2.UPLOAD_DIR || path.join(process.cwd(), "uploads");
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
@@ -10977,7 +11013,7 @@ init_pool();
 
 // src/server/services/audio-transcriber.service.ts
 init_env();
-var DEFAULT_GEMINI_KEY2 = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || env.GEMINI_API_KEY || "AQ.Ab8RN6IHcdDKDITkdIOjt8SznSc6lS_1grotOA6SQ6fjZnd2SQ";
+var DEFAULT_GEMINI_KEY2 = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || env2.GEMINI_API_KEY || "AQ.Ab8RN6IHcdDKDITkdIOjt8SznSc6lS_1grotOA6SQ6fjZnd2SQ";
 async function transcribeAudioWithGemini(base64Audio, mimetype = "audio/ogg", apiKey) {
   try {
     const cleanBase64 = base64Audio.replace(/^data:audio\/[a-z0-9]+;base64,/, "").trim();
@@ -11078,9 +11114,9 @@ async function transcribeAudio(base64Audio, mimetype = "audio/ogg", apiKey) {
 var router17 = Router17();
 router17.post("/", async (req, res) => {
   const incomingApiKey = req.headers["apikey"] || req.headers["x-api-key"] || req.query["apikey"] || req.query["token"];
-  const expectedKey = env.EVOLUTION_API_KEY;
-  if (expectedKey && incomingApiKey && incomingApiKey !== expectedKey) {
-    console.warn(`[Security Alert] Rechazado webhook de WhatsApp con apikey no autorizada desde IP ${req.ip}`);
+  const expectedKey = env2.EVOLUTION_API_KEY;
+  if (expectedKey && incomingApiKey !== expectedKey) {
+    console.warn(`[Security Alert] Rechazado webhook de WhatsApp con apikey no autorizada o ausente desde IP ${req.ip}`);
     res.status(401).json({ error: "Unauthorized webhook" });
     return;
   }
@@ -11436,7 +11472,7 @@ async function resolveDriverFromRequest(req) {
   if (authHeader && authHeader.startsWith("Bearer ")) {
     const rawToken = authHeader.substring(7);
     try {
-      const decoded = jwt2.verify(rawToken, env.JWT_SECRET);
+      const decoded = jwt2.verify(rawToken, env2.JWT_SECRET);
       if (decoded?.driverId) {
         const driver = await getDriverById(decoded.driverId, decoded.tenantId);
         if (driver && driver.active !== false) {
@@ -11543,7 +11579,7 @@ router19.post("/portal/login", driverPortalLoginLimiter, async (req, res) => {
     const storeSettings = await getStoreSettings(driver.tenantId);
     const token = jwt2.sign(
       { driverId: driver.id, tenantId: driver.tenantId, role: "driver" },
-      env.JWT_SECRET,
+      env2.JWT_SECRET,
       { expiresIn: "30d" }
     );
     res.json({
@@ -12452,7 +12488,7 @@ router21.post("/tenants/create", async (req, res) => {
     `, [tenant.id, contactName || name, email.toLowerCase().trim(), passwordHash]);
     if (cleanPhone && cleanPhone.length >= 8) {
       const trialMsg = trialEnabled ? `\u23F3 Cuentas con *15 d\xEDas de prueba gratis* hasta el *${trialEnd.toLocaleDateString("es-CR")}*.` : "";
-      const appLoginUrl = (env.APP_URL || "https://betico.tech").replace(/\/$/, "") + "/login";
+      const appLoginUrl = (env2.APP_URL || "https://betico.tech").replace(/\/$/, "") + "/login";
       const waText = `\u{1F389} \xA1Hola *${contactName || name}*! Te damos la bienvenida a *Betico.tech*.
 
 Tu plataforma de ventas y WhatsApp con IA est\xE1 lista:
@@ -13236,7 +13272,7 @@ async function resolveSpecialistFromRequest(req) {
   if (authHeader && authHeader.startsWith("Bearer ")) {
     const rawToken = authHeader.substring(7);
     try {
-      const decoded = jwt3.verify(rawToken, env.JWT_SECRET);
+      const decoded = jwt3.verify(rawToken, env2.JWT_SECRET);
       if (decoded?.specialistId) {
         const res = await query("SELECT * FROM specialists WHERE id = $1 AND active = TRUE", [decoded.specialistId]);
         if (res.rows[0]) {
@@ -13338,7 +13374,7 @@ router24.post("/portal/login", specialistPortalLoginLimiter, async (req, res) =>
     const tenant = targetTenant || await getTenantById(specialist.tenantId);
     const token = jwt3.sign(
       { specialistId: specialist.id, tenantId: specialist.tenantId, role: "specialist" },
-      env.JWT_SECRET,
+      env2.JWT_SECRET,
       { expiresIn: "30d" }
     );
     res.json({
@@ -14373,7 +14409,7 @@ Tu cuenta se encuentra *Activa* y al d\xEDa hasta el *${new Date(Date.now() + 30
           paymentReference: transactionId,
           tilopayTransactionId: transactionId,
           tilopayAuthCode: authCode
-        });
+        }, apt.tenantId);
         if (req.io) {
           req.io.to(`tenant_${apt.tenantId}`).emit("appointment:updated", updatedApt || { ...apt, paymentStatus: "paid", status: "confirmed" });
         }
@@ -14399,7 +14435,7 @@ Hola *${apt.name}*, tu cita en *${tenant.name}* ha sido confirmada con \xE9xito.
         }
       } else {
         console.log(`[TilopayWebhook] Pago fallido para cita ${apt.id}.`);
-        await updateAppointmentPayment(apt.id, { paymentStatus: "failed" });
+        await updateAppointmentPayment(apt.id, { paymentStatus: "failed" }, apt.tenantId);
         if (req.io) {
           req.io.to(`tenant_${apt.tenantId}`).emit("appointment:updated", { ...apt, paymentStatus: "failed" });
         }
@@ -14570,7 +14606,7 @@ router30.get("/platform-config", async (req, res) => {
     const hasEnvConfig = Boolean(
       process.env.TILOPAY_PLATFORM_KEY && process.env.TILOPAY_PLATFORM_USER && process.env.TILOPAY_PLATFORM_PASSWORD
     );
-    const appUrl = (env.APP_URL || "https://betico.tech").replace(/\/$/, "");
+    const appUrl = (env2.APP_URL || "https://betico.tech").replace(/\/$/, "");
     const webhookUrl = `${appUrl}/api/webhooks/tilopay`;
     if (config && (config.apiKeyMasked || config.apiUser)) {
       res.json({
@@ -14988,7 +15024,7 @@ router32.post("/exchange-return-token", async (req, res) => {
     }
     let decoded;
     try {
-      decoded = jwtLib.verify(session_token.trim(), env.JWT_SECRET);
+      decoded = jwtLib.verify(session_token.trim(), env2.JWT_SECRET);
     } catch (err) {
       res.status(401).json({ error: "El enlace de retorno ha expirado o es inv\xE1lido" });
       return;
@@ -15156,7 +15192,7 @@ router32.post("/create-card-session", async (req, res) => {
     }
     const jwt5 = loginData.access_token;
     const cleanPhone = (tenant.whatsappNumber || "88888888").replace(/\D/g, "") || "88888888";
-    const appUrl = (env.APP_URL || "https://betico.tech").replace(/\/$/, "");
+    const appUrl = (env2.APP_URL || "https://betico.tech").replace(/\/$/, "");
     const orderNumber = `SUB-CARD-${tenant.id}-${Date.now()}`;
     const sessionToken = jwtLib.sign(
       {
@@ -15165,7 +15201,7 @@ router32.post("/create-card-session", async (req, res) => {
         action: "subscription_return",
         orderNumber
       },
-      env.JWT_SECRET,
+      env2.JWT_SECRET,
       { expiresIn: "30m" }
     );
     const sessionPayload = {
@@ -15428,6 +15464,793 @@ router33.delete("/:id/entries/:entryId", async (req, res) => {
 });
 var records_routes_default = router33;
 
+// src/server/routes/almendro.routes.ts
+import { Router as Router34 } from "express";
+
+// src/server/db/tenant-almendro.repo.ts
+init_pool();
+init_crypto_service();
+var DEFAULT_MODULE_TOGGLES = {
+  storeEnabled: true,
+  bookingsEnabled: true,
+  courtsEnabled: false,
+  restaurantEnabled: false,
+  subscriptionsEnabled: false
+};
+async function getTenantAlmendroConfig(tenantId) {
+  if (!tenantId) throw new Error("tenantId es requerido para consultar la configuraci\xF3n de Almendro");
+  const res = await query(`
+    SELECT id, tenant_id as "tenantId", is_enabled as "isEnabled", environment,
+           api_key_encrypted as "apiKeyEncrypted", default_doc_type as "defaultDocType",
+           module_toggles as "moduleToggles", tax_id_type as "taxIdType",
+           tax_id_number as "taxIdNumber", legal_name as "legalName",
+           commercial_name as "commercialName", economic_activity_code as "economicActivityCode",
+           branch_code as "branchCode", pos_code as "posCode",
+           created_at as "createdAt", updated_at as "updatedAt"
+    FROM tenant_almendro_configs
+    WHERE tenant_id = $1
+  `, [tenantId]);
+  if (res.rows.length === 0) {
+    return {
+      id: "",
+      tenantId,
+      isEnabled: false,
+      environment: "SANDBOX",
+      apiKeyMasked: "",
+      defaultDocType: "04",
+      moduleToggles: { ...DEFAULT_MODULE_TOGGLES },
+      isConfigured: false
+    };
+  }
+  const row = res.rows[0];
+  let rawKey = "";
+  if (row.apiKeyEncrypted) {
+    try {
+      rawKey = CryptoService.decryptForTenant(tenantId, row.apiKeyEncrypted);
+    } catch (e) {
+      console.error(`[AlmendroRepo] Error descifrando API Key para tenant ${tenantId}:`, e);
+    }
+  }
+  const toggles = row.moduleToggles ? { ...DEFAULT_MODULE_TOGGLES, ...row.moduleToggles } : { ...DEFAULT_MODULE_TOGGLES };
+  return {
+    id: row.id,
+    tenantId: row.tenantId,
+    isEnabled: Boolean(row.isEnabled),
+    environment: row.environment || "SANDBOX",
+    apiKeyMasked: rawKey ? CryptoService.maskSecret(rawKey) : "",
+    defaultDocType: row.defaultDocType === "01" ? "01" : "04",
+    moduleToggles: toggles,
+    taxIdType: row.taxIdType || "",
+    taxIdNumber: row.taxIdNumber || "",
+    legalName: row.legalName || "",
+    commercialName: row.commercialName || "",
+    economicActivityCode: row.economicActivityCode || "",
+    branchCode: row.branchCode || "001",
+    posCode: row.posCode || "00001",
+    isConfigured: Boolean(rawKey && rawKey.length > 5),
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt
+  };
+}
+async function getTenantAlmendroConfigRaw(tenantId) {
+  if (!tenantId) return null;
+  const res = await query(`
+    SELECT is_enabled as "isEnabled", environment, api_key_encrypted as "apiKeyEncrypted",
+           default_doc_type as "defaultDocType", module_toggles as "moduleToggles",
+           tax_id_type as "taxIdType", tax_id_number as "taxIdNumber",
+           legal_name as "legalName", commercial_name as "commercialName",
+           economic_activity_code as "economicActivityCode",
+           branch_code as "branchCode", pos_code as "posCode"
+    FROM tenant_almendro_configs
+    WHERE tenant_id = $1
+  `, [tenantId]);
+  if (res.rows.length === 0) return null;
+  const row = res.rows[0];
+  let apiKey = "";
+  if (row.apiKeyEncrypted) {
+    try {
+      apiKey = CryptoService.decryptForTenant(tenantId, row.apiKeyEncrypted);
+    } catch (e) {
+      console.error(`[AlmendroRepo] Error descifrando API Key raw para tenant ${tenantId}`);
+    }
+  }
+  const toggles = row.moduleToggles ? { ...DEFAULT_MODULE_TOGGLES, ...row.moduleToggles } : { ...DEFAULT_MODULE_TOGGLES };
+  return {
+    apiKey,
+    isEnabled: Boolean(row.isEnabled),
+    environment: row.environment || "SANDBOX",
+    defaultDocType: row.defaultDocType === "01" ? "01" : "04",
+    moduleToggles: toggles,
+    taxIdType: row.taxIdType,
+    taxIdNumber: row.taxIdNumber,
+    legalName: row.legalName,
+    commercialName: row.commercialName,
+    economicActivityCode: row.economicActivityCode,
+    branchCode: row.branchCode || "001",
+    posCode: row.posCode || "00001"
+  };
+}
+async function saveTenantAlmendroConfig(tenantId, data) {
+  if (!tenantId) throw new Error("tenantId es requerido para guardar la configuraci\xF3n de Almendro");
+  const existing = await query(`SELECT api_key_encrypted, module_toggles FROM tenant_almendro_configs WHERE tenant_id = $1`, [tenantId]);
+  let keyToEncrypt = existing.rows[0]?.api_key_encrypted || "";
+  if (data.apiKey && data.apiKey.trim() && !data.apiKey.includes("\u2022\u2022\u2022\u2022")) {
+    keyToEncrypt = CryptoService.encryptForTenant(tenantId, data.apiKey.trim());
+  }
+  const currentToggles = existing.rows[0]?.module_toggles || DEFAULT_MODULE_TOGGLES;
+  const mergedToggles = {
+    ...DEFAULT_MODULE_TOGGLES,
+    ...currentToggles,
+    ...data.moduleToggles || {}
+  };
+  const env3 = data.environment || "SANDBOX";
+  const docType = data.defaultDocType === "01" ? "01" : "04";
+  const branch = data.branchCode || "001";
+  const pos = data.posCode || "00001";
+  await query(`
+    INSERT INTO tenant_almendro_configs (
+      tenant_id, is_enabled, environment, api_key_encrypted,
+      default_doc_type, module_toggles, tax_id_type, tax_id_number,
+      legal_name, commercial_name, economic_activity_code,
+      branch_code, pos_code, updated_at
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CURRENT_TIMESTAMP)
+    ON CONFLICT (tenant_id) DO UPDATE SET
+      is_enabled = EXCLUDED.is_enabled,
+      environment = EXCLUDED.environment,
+      api_key_encrypted = CASE WHEN $4 != '' THEN $4 ELSE tenant_almendro_configs.api_key_encrypted END,
+      default_doc_type = EXCLUDED.default_doc_type,
+      module_toggles = EXCLUDED.module_toggles,
+      tax_id_type = COALESCE(EXCLUDED.tax_id_type, tenant_almendro_configs.tax_id_type),
+      tax_id_number = COALESCE(EXCLUDED.tax_id_number, tenant_almendro_configs.tax_id_number),
+      legal_name = COALESCE(EXCLUDED.legal_name, tenant_almendro_configs.legal_name),
+      commercial_name = COALESCE(EXCLUDED.commercial_name, tenant_almendro_configs.commercial_name),
+      economic_activity_code = COALESCE(EXCLUDED.economic_activity_code, tenant_almendro_configs.economic_activity_code),
+      branch_code = EXCLUDED.branch_code,
+      pos_code = EXCLUDED.pos_code,
+      updated_at = CURRENT_TIMESTAMP
+  `, [
+    tenantId,
+    Boolean(data.isEnabled),
+    env3,
+    keyToEncrypt,
+    docType,
+    JSON.stringify(mergedToggles),
+    data.taxIdType || null,
+    data.taxIdNumber || null,
+    data.legalName || null,
+    data.commercialName || null,
+    data.economicActivityCode || null,
+    branch,
+    pos
+  ]);
+  const updated = await getTenantAlmendroConfig(tenantId);
+  return updated;
+}
+async function saveElectronicVoucher(tenantId, voucher) {
+  if (!tenantId) throw new Error("tenantId es requerido para registrar un comprobante electr\xF3nico");
+  const res = await query(`
+    INSERT INTO electronic_vouchers (
+      tenant_id, order_id, appointment_id, court_booking_id, subscription_charge_id,
+      doc_type, consecutive_number, numeric_key, receiver_id_type, receiver_id_number,
+      receiver_name, receiver_email, currency, subtotal, tax_amount, total_amount,
+      status, pdf_url, xml_signed_url, xml_response_url, hacienda_response_code,
+      hacienda_response_detail, metadata
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+    RETURNING id, tenant_id as "tenantId", order_id as "orderId", appointment_id as "appointmentId",
+              court_booking_id as "courtBookingId", subscription_charge_id as "subscriptionChargeId",
+              doc_type as "docType", consecutive_number as "consecutiveNumber", numeric_key as "numericKey",
+              receiver_id_type as "receiverIdType", receiver_id_number as "receiverIdNumber",
+              receiver_name as "receiverName", receiver_email as "receiverEmail",
+              currency, subtotal, tax_amount as "taxAmount", total_amount as "totalAmount",
+              status, pdf_url as "pdfUrl", xml_signed_url as "xmlSignedUrl",
+              xml_response_url as "xmlResponseUrl", hacienda_response_code as "haciendaResponseCode",
+              hacienda_response_detail as "haciendaResponseDetail", metadata,
+              created_at as "createdAt", updated_at as "updatedAt"
+  `, [
+    tenantId,
+    voucher.orderId || null,
+    voucher.appointmentId || null,
+    voucher.courtBookingId || null,
+    voucher.subscriptionChargeId || null,
+    voucher.docType || "04",
+    voucher.consecutiveNumber || "",
+    voucher.numericKey,
+    voucher.receiverIdType || null,
+    voucher.receiverIdNumber || null,
+    voucher.receiverName || null,
+    voucher.receiverEmail || null,
+    voucher.currency || "CRC",
+    voucher.subtotal || 0,
+    voucher.taxAmount || 0,
+    voucher.totalAmount || 0,
+    voucher.status || "pending",
+    voucher.pdfUrl || null,
+    voucher.xmlSignedUrl || null,
+    voucher.xmlResponseUrl || null,
+    voucher.haciendaResponseCode || null,
+    voucher.haciendaResponseDetail || null,
+    JSON.stringify(voucher.metadata || {})
+  ]);
+  return res.rows[0];
+}
+async function getElectronicVouchers(tenantId, options) {
+  if (!tenantId) throw new Error("tenantId es requerido para consultar comprobantes");
+  const limit = Math.min(Number(options?.limit) || 50, 100);
+  const offset = Math.max(Number(options?.offset) || 0, 0);
+  const conditions = ["tenant_id = $1"];
+  const params = [tenantId];
+  let pIdx = 2;
+  if (options?.status) {
+    conditions.push(`status = $${pIdx}`);
+    params.push(options.status);
+    pIdx++;
+  }
+  if (options?.docType) {
+    conditions.push(`doc_type = $${pIdx}`);
+    params.push(options.docType);
+    pIdx++;
+  }
+  const whereSql = conditions.join(" AND ");
+  const countRes = await query(`SELECT COUNT(*) as total FROM electronic_vouchers WHERE ${whereSql}`, params);
+  const total = parseInt(countRes.rows[0]?.total || "0", 10);
+  params.push(limit);
+  params.push(offset);
+  const res = await query(`
+    SELECT id, tenant_id as "tenantId", order_id as "orderId", appointment_id as "appointmentId",
+           court_booking_id as "courtBookingId", subscription_charge_id as "subscriptionChargeId",
+           doc_type as "docType", consecutive_number as "consecutiveNumber", numeric_key as "numericKey",
+           receiver_id_type as "receiverIdType", receiver_id_number as "receiverIdNumber",
+           receiver_name as "receiverName", receiver_email as "receiverEmail",
+           currency, subtotal, tax_amount as "taxAmount", total_amount as "totalAmount",
+           status, pdf_url as "pdfUrl", xml_signed_url as "xmlSignedUrl",
+           xml_response_url as "xmlResponseUrl", hacienda_response_code as "haciendaResponseCode",
+           hacienda_response_detail as "haciendaResponseDetail", metadata,
+           created_at as "createdAt", updated_at as "updatedAt"
+    FROM electronic_vouchers
+    WHERE ${whereSql}
+    ORDER BY created_at DESC
+    LIMIT $${pIdx} OFFSET $${pIdx + 1}
+  `, params);
+  return {
+    vouchers: res.rows,
+    total
+  };
+}
+
+// src/server/services/almendro.service.ts
+var ALMENDRO_PROD_URL = "https://fe.almendro.cr/api/v1/public";
+var ALMENDRO_SANDBOX_URL = "https://sandbox.fe.almendro.cr/api/v1/public";
+function getBaseUrl(environment) {
+  return environment === "PRODUCTION" ? ALMENDRO_PROD_URL : ALMENDRO_SANDBOX_URL;
+}
+var AlmendroService = class {
+  /**
+   * Tests connection with Almendro using the provided API Key.
+   */
+  static async testConnection(apiKey, environment = "SANDBOX") {
+    if (!apiKey || apiKey.trim().length < 5) {
+      return { success: false, message: "La llave de API es requerida" };
+    }
+    const cleanKey = apiKey.trim();
+    const primaryUrl = getBaseUrl(environment);
+    try {
+      let res = await fetch(`${primaryUrl}/catalogs/locations`, {
+        method: "GET",
+        headers: {
+          "Authorization": `Bearer ${cleanKey}`,
+          "Accept": "application/json"
+        }
+      });
+      if (!res.ok && environment === "SANDBOX") {
+        try {
+          const fallbackRes = await fetch(`${ALMENDRO_PROD_URL}/catalogs/locations`, {
+            method: "GET",
+            headers: {
+              "Authorization": `Bearer ${cleanKey}`,
+              "Accept": "application/json"
+            }
+          });
+          if (fallbackRes.status === 200 || fallbackRes.status === 202) {
+            res = fallbackRes;
+          }
+        } catch (_) {
+        }
+      }
+      if (res.status === 200 || res.status === 202) {
+        return {
+          success: true,
+          message: `Conexi\xF3n exitosa con Almendro (${environment})`
+        };
+      }
+      if (res.status === 401 || res.status === 403) {
+        return {
+          success: false,
+          message: "La llave de API no es v\xE1lida o no tiene permisos en Almendro"
+        };
+      }
+      const errText = await res.text().catch(() => "");
+      return {
+        success: false,
+        message: `Almendro respondi\xF3 con c\xF3digo ${res.status}: ${errText.slice(0, 150)}`
+      };
+    } catch (err) {
+      return {
+        success: false,
+        message: `No fue posible conectar con el servidor de Almendro: ${err.message}`
+      };
+    }
+  }
+  /**
+   * Looks up a taxpayer's official name, status and economic activities from TSE/Hacienda.
+   */
+  static async lookupTaxpayer(apiKey, environment, rawIdNumber) {
+    if (!rawIdNumber) return { success: false, error: "N\xFAmero de c\xE9dula requerido" };
+    const cleanId = rawIdNumber.replace(/\D/g, "");
+    if (cleanId.length < 9 || cleanId.length > 12) {
+      return { success: false, error: "El formato de c\xE9dula debe tener entre 9 y 12 d\xEDgitos num\xE9ricos" };
+    }
+    const baseUrl = getBaseUrl(environment);
+    try {
+      const res = await fetch(`${baseUrl}/taxpayer/${cleanId}`, {
+        method: "GET",
+        headers: {
+          "Authorization": `Bearer ${apiKey.trim()}`,
+          "Accept": "application/json"
+        }
+      });
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "");
+        return {
+          success: false,
+          error: `Contribuyente no encontrado en el padr\xF3n (${res.status}): ${errText.slice(0, 100)}`
+        };
+      }
+      const body = await res.json();
+      return {
+        success: true,
+        data: {
+          idType: body.id_type || (cleanId.length === 10 && cleanId.startsWith("3") ? "02" : "01"),
+          idNumber: cleanId,
+          name: body.name || body.legal_name || "Nombre no disponible",
+          commercialName: body.commercial_name,
+          status: body.status || "INSCRITO",
+          taxRegime: body.tax_regime || "TRADICIONAL",
+          activities: body.activities || []
+        }
+      };
+    } catch (err) {
+      return { success: false, error: `Error consultando padr\xF3n de Hacienda: ${err.message}` };
+    }
+  }
+  /**
+   * Determines if a specific module should automatically invoice.
+   */
+  static async shouldInvoiceModule(tenantId, moduleName) {
+    const config = await getTenantAlmendroConfigRaw(tenantId);
+    if (!config || !config.isEnabled || !config.apiKey) return false;
+    return Boolean(config.moduleToggles[moduleName]);
+  }
+  /**
+   * Emits an electronic voucher through Almendro and stores it in electronic_vouchers.
+   */
+  static async emitVoucher(tenantId, params) {
+    const config = await getTenantAlmendroConfigRaw(tenantId);
+    if (!config || !config.isEnabled || !config.apiKey) {
+      return {
+        success: false,
+        message: "La facturaci\xF3n electr\xF3nica est\xE1 desactivada o no configurada para este negocio."
+      };
+    }
+    const docType = params.docType || config.defaultDocType || "04";
+    const currency = params.currency || "CRC";
+    const exchangeRate = params.exchangeRate || 1;
+    let subtotal = 0;
+    let taxAmount = 0;
+    const lines = params.items.map((item, idx) => {
+      const lineQty = Number(item.quantity) || 1;
+      const unitPrice = Number(item.unitPrice) || 0;
+      const lineSubtotal = lineQty * unitPrice;
+      subtotal += lineSubtotal;
+      const taxRateCode = item.taxRateCode || "08";
+      let taxPercentage = 0.13;
+      if (taxRateCode === "04") taxPercentage = 0.04;
+      else if (taxRateCode === "02") taxPercentage = 0.02;
+      else if (taxRateCode === "01") taxPercentage = 0.01;
+      else if (taxRateCode === "10") taxPercentage = 0;
+      const lineTax = lineSubtotal * taxPercentage;
+      taxAmount += lineTax;
+      return {
+        line_number: idx + 1,
+        cabys_code: item.cabysCode || "8311100000000",
+        description: item.description.slice(0, 160),
+        quantity: lineQty.toFixed(3),
+        unit_price: unitPrice.toFixed(5),
+        unit_measure: "Unid",
+        taxes: [
+          {
+            code: "01",
+            // IVA
+            rate_code: taxRateCode,
+            rate: (taxPercentage * 100).toFixed(2),
+            amount: lineTax.toFixed(5)
+          }
+        ]
+      };
+    });
+    const totalAmount = subtotal + taxAmount;
+    const receiverPayload = params.receiver?.idNumber ? {
+      id_type: params.receiver.idType || "01",
+      id_number: params.receiver.idNumber.replace(/\D/g, ""),
+      name: params.receiver.name || "Cliente Particular",
+      email: params.receiver.email
+    } : void 0;
+    const payload = {
+      doc_type: docType,
+      currency,
+      exchange_rate: exchangeRate.toFixed(4),
+      branch_code: config.branchCode || "001",
+      pos_code: config.posCode || "00001",
+      items: lines
+    };
+    if (receiverPayload) {
+      payload.receiver = receiverPayload;
+    }
+    if (params.referenceKey && docType === "03") {
+      payload.reference = {
+        code: "01",
+        // Anula documento de referencia
+        numeric_key: params.referenceKey,
+        reason: "Anulaci\xF3n solicitada por el emisor"
+      };
+    }
+    const baseUrl = getBaseUrl(config.environment);
+    try {
+      const res = await fetch(`${baseUrl}/vouchers`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${config.apiKey.trim()}`,
+          "Content-Type": "application/json",
+          "Accept": "application/json"
+        },
+        body: JSON.stringify(payload)
+      });
+      const responseBody = await res.json().catch(() => ({}));
+      if (res.status === 200 || res.status === 201 || res.status === 202) {
+        const numericKey = responseBody.numeric_key || responseBody.key || `506${Date.now()}`;
+        const consecutive = responseBody.consecutive || responseBody.consecutive_number || "";
+        const pdfUrl = responseBody.pdf_url || `${baseUrl}/vouchers/${numericKey}/pdf`;
+        const xmlSigned = responseBody.xml_signed_url || `${baseUrl}/vouchers/${numericKey}/xml`;
+        await saveElectronicVoucher(tenantId, {
+          orderId: params.orderId,
+          appointmentId: params.appointmentId,
+          courtBookingId: params.courtBookingId,
+          subscriptionChargeId: params.subscriptionChargeId,
+          docType,
+          consecutiveNumber: consecutive,
+          numericKey,
+          receiverIdType: params.receiver?.idType,
+          receiverIdNumber: params.receiver?.idNumber,
+          receiverName: params.receiver?.name,
+          receiverEmail: params.receiver?.email,
+          currency,
+          subtotal,
+          taxAmount,
+          totalAmount,
+          status: responseBody.status === "accepted" ? "accepted" : "pending",
+          pdfUrl,
+          xmlSignedUrl: xmlSigned,
+          metadata: responseBody
+        });
+        return {
+          success: true,
+          numericKey,
+          pdfUrl,
+          message: `Comprobante emitido con \xE9xito. Clave: ${numericKey}`
+        };
+      }
+      const errorMsg = responseBody.message || responseBody.error || `Error ${res.status} al emitir en Almendro`;
+      console.warn(`[AlmendroService] Emisi\xF3n fallida para tenant ${tenantId}:`, errorMsg);
+      return { success: false, message: errorMsg };
+    } catch (err) {
+      console.error(`[AlmendroService] Excepci\xF3n emitiendo comprobante para tenant ${tenantId}:`, err);
+      return { success: false, message: `Error de red al conectar con Almendro: ${err.message}` };
+    }
+  }
+};
+
+// src/server/routes/almendro.routes.ts
+var router34 = Router34();
+router34.use(authenticateToken, tenantContext);
+router34.get("/config", async (req, res) => {
+  try {
+    const tenantId = req.tenantId;
+    if (!tenantId) {
+      res.status(400).json({ error: "tenantId no disponible en el contexto" });
+      return;
+    }
+    const config = await getTenantAlmendroConfig(tenantId);
+    res.json(config);
+  } catch (error) {
+    console.error("[AlmendroRoutes] Error al consultar configuraci\xF3n:", error);
+    res.status(500).json({ error: error.message || "Error al obtener configuraci\xF3n de facturaci\xF3n" });
+  }
+});
+router34.post("/config", async (req, res) => {
+  try {
+    const tenantId = req.tenantId;
+    const userRole = req.user?.role;
+    if (userRole !== "admin" && userRole !== "superadmin") {
+      res.status(403).json({ error: "Solo los administradores pueden modificar la configuraci\xF3n de facturaci\xF3n" });
+      return;
+    }
+    const {
+      isEnabled,
+      environment,
+      apiKey,
+      defaultDocType,
+      moduleToggles,
+      taxIdType,
+      taxIdNumber,
+      legalName,
+      commercialName,
+      economicActivityCode,
+      branchCode,
+      posCode
+    } = req.body;
+    const updated = await saveTenantAlmendroConfig(tenantId, {
+      isEnabled: Boolean(isEnabled),
+      environment: environment === "PRODUCTION" ? "PRODUCTION" : "SANDBOX",
+      apiKey,
+      defaultDocType: defaultDocType === "01" ? "01" : "04",
+      moduleToggles,
+      taxIdType,
+      taxIdNumber,
+      legalName,
+      commercialName,
+      economicActivityCode,
+      branchCode,
+      posCode
+    });
+    res.json({
+      success: true,
+      message: "Configuraci\xF3n de facturaci\xF3n electr\xF3nica guardada con \xE9xito",
+      config: updated
+    });
+  } catch (error) {
+    console.error("[AlmendroRoutes] Error al guardar configuraci\xF3n:", error);
+    res.status(500).json({ error: error.message || "Error al guardar configuraci\xF3n de facturaci\xF3n" });
+  }
+});
+router34.post("/test-connection", async (req, res) => {
+  try {
+    const tenantId = req.tenantId;
+    const { apiKey, environment } = req.body;
+    let keyToTest = apiKey;
+    let envToTest = environment || "SANDBOX";
+    if (!keyToTest || keyToTest.includes("\u2022\u2022\u2022\u2022")) {
+      const stored = await getTenantAlmendroConfigRaw(tenantId);
+      if (!stored || !stored.apiKey) {
+        res.status(400).json({ success: false, message: "No hay ninguna llave de API configurada para probar" });
+        return;
+      }
+      keyToTest = stored.apiKey;
+      envToTest = environment || stored.environment;
+    }
+    const result = await AlmendroService.testConnection(keyToTest, envToTest);
+    res.json(result);
+  } catch (error) {
+    console.error("[AlmendroRoutes] Error al probar conexi\xF3n:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+router34.get("/taxpayer/:idNumber", async (req, res) => {
+  try {
+    const tenantId = req.tenantId;
+    const { idNumber } = req.params;
+    const stored = await getTenantAlmendroConfigRaw(tenantId);
+    if (!stored || !stored.apiKey) {
+      res.status(400).json({ error: "Debes configurar tu API Key de Almendro para consultar contribuyentes" });
+      return;
+    }
+    const result = await AlmendroService.lookupTaxpayer(stored.apiKey, stored.environment, idNumber);
+    if (!result.success) {
+      res.status(404).json({ error: result.error });
+      return;
+    }
+    res.json(result.data);
+  } catch (error) {
+    console.error("[AlmendroRoutes] Error al consultar contribuyente:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+router34.get("/vouchers", async (req, res) => {
+  try {
+    const tenantId = req.tenantId;
+    const { limit, offset, status, docType } = req.query;
+    const result = await getElectronicVouchers(tenantId, {
+      limit: limit ? Number(limit) : 50,
+      offset: offset ? Number(offset) : 0,
+      status,
+      docType
+    });
+    res.json(result);
+  } catch (error) {
+    console.error("[AlmendroRoutes] Error al listar comprobantes:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+var almendro_routes_default = router34;
+
+// src/server/routes/superadmin-almendro.routes.ts
+import { Router as Router35 } from "express";
+init_pool();
+var router35 = Router35();
+router35.use(authenticateToken, requireSuperAdmin);
+router35.get("/config", async (req, res) => {
+  try {
+    const superadminTenantId = await getOrCreateSuperadminTenantId();
+    const config = await getTenantAlmendroConfig(superadminTenantId);
+    res.json(config);
+  } catch (error) {
+    console.error("[SuperAdminAlmendro] Error al obtener config:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+router35.post("/config", async (req, res) => {
+  try {
+    const superadminTenantId = await getOrCreateSuperadminTenantId();
+    const {
+      isEnabled,
+      environment,
+      apiKey,
+      defaultDocType,
+      moduleToggles,
+      taxIdType,
+      taxIdNumber,
+      legalName,
+      commercialName,
+      economicActivityCode,
+      branchCode,
+      posCode
+    } = req.body;
+    const updated = await saveTenantAlmendroConfig(superadminTenantId, {
+      isEnabled: Boolean(isEnabled),
+      environment: environment === "PRODUCTION" ? "PRODUCTION" : "SANDBOX",
+      apiKey,
+      defaultDocType: defaultDocType === "01" ? "01" : "04",
+      moduleToggles: {
+        storeEnabled: false,
+        bookingsEnabled: false,
+        courtsEnabled: false,
+        restaurantEnabled: false,
+        subscriptionsEnabled: Boolean(moduleToggles?.subscriptionsEnabled ?? true)
+      },
+      taxIdType,
+      taxIdNumber,
+      legalName,
+      commercialName,
+      economicActivityCode: economicActivityCode || "8314100000000",
+      // Servicios de desarrollo/hosting de software
+      branchCode,
+      posCode
+    });
+    res.json({
+      success: true,
+      message: "Configuraci\xF3n de facturaci\xF3n de plataforma guardada con \xE9xito",
+      config: updated
+    });
+  } catch (error) {
+    console.error("[SuperAdminAlmendro] Error al guardar config:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+router35.post("/test-connection", async (req, res) => {
+  try {
+    const superadminTenantId = await getOrCreateSuperadminTenantId();
+    const { apiKey, environment } = req.body;
+    let keyToTest = apiKey;
+    let envToTest = environment || "SANDBOX";
+    if (!keyToTest || keyToTest.includes("\u2022\u2022\u2022\u2022")) {
+      const stored = await getTenantAlmendroConfigRaw(superadminTenantId);
+      if (!stored || !stored.apiKey) {
+        res.status(400).json({ success: false, message: "No hay ninguna llave configurada para la plataforma" });
+        return;
+      }
+      keyToTest = stored.apiKey;
+      envToTest = environment || stored.environment;
+    }
+    const result = await AlmendroService.testConnection(keyToTest, envToTest);
+    res.json(result);
+  } catch (error) {
+    console.error("[SuperAdminAlmendro] Error en test connection:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+router35.get("/vouchers", async (req, res) => {
+  try {
+    const superadminTenantId = await getOrCreateSuperadminTenantId();
+    const { limit, offset, status, docType } = req.query;
+    const result = await getElectronicVouchers(superadminTenantId, {
+      limit: limit ? Number(limit) : 50,
+      offset: offset ? Number(offset) : 0,
+      status,
+      docType
+    });
+    res.json(result);
+  } catch (error) {
+    console.error("[SuperAdminAlmendro] Error al listar comprobantes:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+router35.post("/emit-subscription-invoice/:chargeId", async (req, res) => {
+  try {
+    const superadminTenantId = await getOrCreateSuperadminTenantId();
+    const { chargeId } = req.params;
+    const chargeRes = await query(`
+      SELECT c.*, t.name as "tenantName", t.slug as "tenantSlug",
+             t.settings_json as "settingsJson"
+      FROM tenant_billing_charges c
+      JOIN tenants t ON t.id = c.tenant_id
+      WHERE c.id = $1
+    `, [chargeId]);
+    if (chargeRes.rows.length === 0) {
+      res.status(404).json({ error: "Cobro de suscripci\xF3n no encontrado" });
+      return;
+    }
+    const charge = chargeRes.rows[0];
+    const existingVoucher = await query(`
+      SELECT id, numeric_key as "numericKey", pdf_url as "pdfUrl"
+      FROM electronic_vouchers
+      WHERE subscription_charge_id = $1
+    `, [chargeId]);
+    if (existingVoucher.rows.length > 0) {
+      res.json({
+        success: true,
+        alreadyEmitted: true,
+        numericKey: existingVoucher.rows[0].numericKey,
+        pdfUrl: existingVoucher.rows[0].pdfUrl,
+        message: "Este cobro ya cuenta con comprobante electr\xF3nico emitido."
+      });
+      return;
+    }
+    const subtotal = Number(charge.amount) || 0;
+    const description = `Suscripci\xF3n ListoChat SaaS - ${charge.tenantName || charge.tenantSlug} (Periodo ${charge.period_start || "Mes Actual"})`;
+    const emitRes = await AlmendroService.emitVoucher(superadminTenantId, {
+      docType: "04",
+      // Tiquete electrónico por defecto para B2B simple o 01 si hay cédula jurídica
+      subscriptionChargeId: charge.id,
+      currency: charge.currency || "CRC",
+      items: [
+        {
+          cabysCode: "8314100000000",
+          // Servicios de desarrollo de software y aplicaciones
+          description,
+          quantity: 1,
+          unitPrice: subtotal,
+          taxRateCode: "08"
+          // 13% IVA
+        }
+      ]
+    });
+    if (!emitRes.success) {
+      res.status(400).json({ error: emitRes.message });
+      return;
+    }
+    res.json({
+      success: true,
+      numericKey: emitRes.numericKey,
+      pdfUrl: emitRes.pdfUrl,
+      message: "Factura de suscripci\xF3n emitida con \xE9xito."
+    });
+  } catch (error) {
+    console.error("[SuperAdminAlmendro] Error emitiendo factura de suscripci\xF3n:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+var superadmin_almendro_routes_default = router35;
+
 // src/server/index.ts
 var __filename = fileURLToPath(import.meta.url);
 var __dirname = path2.dirname(__filename);
@@ -15444,7 +16267,7 @@ async function startServer() {
       return next();
     }
     try {
-      const decoded = jwt4.verify(String(token), env.JWT_SECRET);
+      const decoded = jwt4.verify(String(token), env2.JWT_SECRET);
       socket.data.user = decoded;
       next();
     } catch (err) {
@@ -15470,7 +16293,7 @@ async function startServer() {
     req.io = io2;
     next();
   });
-  const uploadPath = env.UPLOAD_DIR || path2.join(process.cwd(), "uploads");
+  const uploadPath = env2.UPLOAD_DIR || path2.join(process.cwd(), "uploads");
   if (!fs2.existsSync(uploadPath)) {
     fs2.mkdirSync(uploadPath, { recursive: true });
   }
@@ -15575,7 +16398,9 @@ async function startServer() {
   app.use("/api/queue", queue_routes_default);
   app.use("/api/courts", courts_routes_default);
   app.use("/api/records", records_routes_default);
-  if (env.NODE_ENV === "production") {
+  app.use("/api/almendro", almendro_routes_default);
+  app.use("/api/superadmin/almendro", superadmin_almendro_routes_default);
+  if (env2.NODE_ENV === "production") {
     app.use("/assets", express.static(path2.join(__dirname, "assets"), { maxAge: "1y", immutable: true }));
     app.use(express.static(__dirname));
     app.get("*", (req, res) => {
@@ -15636,8 +16461,8 @@ async function startServer() {
   } catch (err) {
     console.error("Failed to run database migrations:", err);
   }
-  server.listen(env.PORT, "0.0.0.0", () => {
-    console.log(`Betico Server listening on http://0.0.0.0:${env.PORT}`);
+  server.listen(env2.PORT, "0.0.0.0", () => {
+    console.log(`Betico Server listening on http://0.0.0.0:${env2.PORT}`);
   });
 }
 startServer().catch(console.error);

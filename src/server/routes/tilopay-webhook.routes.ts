@@ -230,7 +230,7 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
           paymentReference: transactionId,
           tilopayTransactionId: transactionId,
           tilopayAuthCode: authCode
-        });
+        }, apt.tenantId);
 
         if ((req as any).io) {
           (req as any).io.to(`tenant_${apt.tenantId}`).emit('appointment:updated', updatedApt || { ...apt, paymentStatus: 'paid', status: 'confirmed' });
@@ -249,7 +249,7 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
         }
       } else {
         console.log(`[TilopayWebhook] Pago fallido para cita ${apt.id}.`);
-        await updateAppointmentPayment(apt.id, { paymentStatus: 'failed' });
+        await updateAppointmentPayment(apt.id, { paymentStatus: 'failed' }, apt.tenantId);
         if ((req as any).io) {
           (req as any).io.to(`tenant_${apt.tenantId}`).emit('appointment:updated', { ...apt, paymentStatus: 'failed' });
         }

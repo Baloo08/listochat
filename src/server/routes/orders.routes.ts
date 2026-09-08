@@ -44,36 +44,7 @@ const STATUS_LABELS: Record<string, string> = {
 
 router.get('/', async (req, res) => {
   try {
-    let orders = await getOrdersByTenant(req.tenantId!, req.query as any);
-    if ((req as any).user?.role === 'superadmin' && orders.length === 0) {
-      const allRes = await query(`
-        SELECT o.id, o.tenant_id as "tenantId", o.order_number as "orderNumber",
-               o.customer_name as "customerName", o.customer_phone as "customerPhone",
-               o.customer_email as "customerEmail", o.customer_address as "customerAddress",
-               o.customer_location as "customerLocation", o.whatsapp_jid as "whatsappJid",
-               o.source, o.subtotal, o.delivery_fee as "deliveryFee", o.discount, o.total,
-               o.currency, o.status, o.payment_method as "paymentMethod",
-               o.payment_status as "paymentStatus", o.payment_reference as "paymentReference",
-               o.notes, o.delivery_method as "deliveryMethod", o.consumption_mode as "consumptionMode",
-               o.table_number as "tableNumber", o.driver_id as "driverId", o.waze_url as "wazeUrl",
-               o.created_at as "createdAt", o.updated_at as "updatedAt",
-               COALESCE(
-                 (SELECT json_agg(json_build_object(
-                    'id', oi.id,
-                    'productName', oi.product_name,
-                    'variantName', oi.variant_name,
-                    'quantity', oi.quantity,
-                    'unitPrice', oi.unit_price,
-                    'totalPrice', oi.total_price
-                  ))
-                  FROM order_items oi WHERE oi.order_id = o.id), '[]'::json
-               ) as items
-        FROM orders o
-        ORDER BY o.created_at DESC
-        LIMIT 100
-      `);
-      orders = allRes.rows;
-    }
+    const orders = await getOrdersByTenant(req.tenantId!, req.query as any);
     res.json(orders);
   } catch (error) {
     console.error(error);

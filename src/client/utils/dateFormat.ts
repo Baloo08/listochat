@@ -60,3 +60,17 @@ export function formatTime12h(timeStr: string): string {
 
   return `${h}:${mStr} ${ampm}`;
 }
+
+export function formatShortDateTime(dateStrOrObj?: string | Date): string {
+  if (!dateStrOrObj) return '';
+  const d = typeof dateStrOrObj === 'string' ? new Date(dateStrOrObj) : dateStrOrObj;
+  if (isNaN(d.getTime())) return String(dateStrOrObj);
+  const day = d.getDate();
+  const monthIdx = d.getMonth();
+  const year = d.getFullYear();
+  let h = d.getHours();
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  const m = String(d.getMinutes()).padStart(2, '0');
+  return `${day} ${shortMonths[monthIdx] || ''} ${year}, ${h}:${m} ${ampm}`;
+}

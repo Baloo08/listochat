@@ -114,6 +114,7 @@ export async function setWebhook(instanceName: string, webhookUrl: string): Prom
         webhook: {
           enabled: true,
           url: webhookUrl,
+          headers: env.EVOLUTION_API_KEY ? { apikey: env.EVOLUTION_API_KEY } : {},
           byEvents: false,
           base64: false,
           events: [

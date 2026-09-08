@@ -68,7 +68,6 @@ export async function getOrderById(id: string, tenantId: string): Promise<Order 
 }
 
 export async function createOrder(tenantId: string, data: Partial<Order>, items?: OrderItem[], dbClient?: any): Promise<Order> {
-  const runQuery = dbClient ? dbClient.query.bind(dbClient) : query;
   const insertSql = `
     INSERT INTO orders (
       tenant_id, customer_name, customer_phone, customer_email, customer_address, whatsapp_jid,
@@ -87,42 +86,48 @@ export async function createOrder(tenantId: string, data: Partial<Order>, items?
     Boolean(data.stockDeducted)
   ];
 
-  let result;
+  const client = dbClient || await getClient();
+  const isInternalClient = !dbClient;
+
+  if (isInternalClient) {
+    await client.query('BEGIN');
+  }
+
   try {
-    result = await runQuery(insertSql, params);
-  } catch (err: any) {
-    if (err && (err.message?.includes('payment_proof_url') || err.message?.includes('payment_proof_status') || err.message?.includes('stock_deducted') || err.code === '42703')) {
-      console.log('[createOrder] Column missing detected, auto-migrating orders table...');
-      await query(`
-        ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_proof_url TEXT;
-        ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_proof_status VARCHAR(50) DEFAULT 'pending';
-        ALTER TABLE orders ADD COLUMN IF NOT EXISTS stock_deducted BOOLEAN DEFAULT false;
-      `);
-      result = await runQuery(insertSql, params);
-    } else {
-      throw err;
+    const result = await client.query(insertSql, params);
+    const orderId = result.rows[0].id;
+    const orderItems = items || data.items || [];
+
+    if (orderItems && orderItems.length > 0) {
+      for (const item of orderItems) {
+        await client.query(`
+          INSERT INTO order_items (
+            order_id, product_id, variant_id, tenant_id, product_name, variant_name, selected_variables, quantity, unit_price, total_price
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        `, [
+          orderId, item.productId || null, item.variantId || null, tenantId, 
+          item.productName, item.variantName || null, 
+          item.selectedVariables ? JSON.stringify(item.selectedVariables) : null,
+          item.quantity, item.unitPrice, Number(item.unitPrice) * Number(item.quantity)
+        ]);
+      }
+    }
+
+    if (isInternalClient) {
+      await client.query('COMMIT');
+    }
+
+    return getOrderById(orderId, tenantId) as Promise<Order>;
+  } catch (err) {
+    if (isInternalClient) {
+      await client.query('ROLLBACK');
+    }
+    throw err;
+  } finally {
+    if (isInternalClient) {
+      client.release();
     }
   }
-  
-  const orderId = result.rows[0].id;
-  const orderItems = items || data.items || [];
-  
-  if (orderItems && orderItems.length > 0) {
-    for (const item of orderItems) {
-      await runQuery(`
-        INSERT INTO order_items (
-          order_id, product_id, variant_id, tenant_id, product_name, variant_name, selected_variables, quantity, unit_price, total_price
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-      `, [
-        orderId, item.productId || null, item.variantId || null, tenantId, 
-        item.productName, item.variantName || null, 
-        item.selectedVariables ? JSON.stringify(item.selectedVariables) : null,
-        item.quantity, item.unitPrice, Number(item.unitPrice) * Number(item.quantity)
-      ]);
-    }
-  }
-  
-  return getOrderById(orderId, tenantId) as Promise<Order>;
 }
 
 export async function updateOrder(id: string, tenantId: string, data: Partial<Order>): Promise<Order | null> {

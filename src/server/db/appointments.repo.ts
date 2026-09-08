@@ -121,13 +121,17 @@ export async function updateAppointment(id: string, tenantId: string, data: Part
   return result.rows[0] || null;
 }
 
-export async function updateAppointmentPayment(id: string, paymentData: {
-  paymentStatus?: string;
-  paymentMethod?: string;
-  paymentReference?: string;
-  tilopayTransactionId?: string;
-  tilopayAuthCode?: string;
-}): Promise<Appointment | null> {
+export async function updateAppointmentPayment(
+  id: string,
+  paymentData: {
+    paymentStatus?: string;
+    paymentMethod?: string;
+    paymentReference?: string;
+    tilopayTransactionId?: string;
+    tilopayAuthCode?: string;
+  },
+  tenantId?: string
+): Promise<Appointment | null> {
   const updates: string[] = [];
   const params: any[] = [id];
   let paramIdx = 2;
@@ -156,12 +160,19 @@ export async function updateAppointmentPayment(id: string, paymentData: {
     params.push(paymentData.tilopayAuthCode);
   }
 
-  if (updates.length === 0) return getAppointmentById(id);
-  if (updates.length === 0) return getAppointmentById(id, '');
+  if (updates.length === 0) {
+    return tenantId ? getAppointmentById(id, tenantId) : getAppointmentByIdUnsafeForWebhook(id);
+  }
+
+  let whereClause = 'WHERE id = $1';
+  if (tenantId) {
+    whereClause += ` AND tenant_id = $${paramIdx++}`;
+    params.push(tenantId);
+  }
 
   const result = await query(`
     UPDATE appointments SET ${updates.join(', ')}
-    WHERE id = $1
+    ${whereClause}
     RETURNING id, tenant_id as "tenantId", name, whatsapp, service, 
            date, time, amount, status, details, vehicle_model as "vehicleModel",
            selected_variables as "selectedVariables", specialist_id as "specialistId",

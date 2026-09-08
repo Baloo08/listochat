@@ -36,6 +36,7 @@ import WebsiteBuilder from './components/WebsiteBuilder';
 import WebsitePublicView from '../storefront/WebsitePublicView';
 import TenantSubscriptionView from './components/TenantSubscriptionView';
 import SubscriptionReturnView from './components/SubscriptionReturnView';
+import ElectronicBillingView from './components/ElectronicBillingView';
 import { io } from 'socket.io-client';
 import { playOrderNotificationSound, playBookingNotificationSound } from './utils/sound';
 
@@ -47,6 +48,7 @@ import {
   ShoppingBag,
   Package,
   ClipboardList,
+  FileText,
   Bot,
   Phone,
   Bell,
@@ -486,6 +488,7 @@ function MainApp({ pathname }: { pathname: string }) {
         { id: 'sucursales', label: 'Sedes & Sucursales', icon: <Building2 size={18} /> },
         { id: 'agente', label: 'Personalidad Agente IA', icon: <Bot size={18} /> },
         { id: 'usuarios', label: 'Equipo & Usuarios', icon: <Users size={18} /> },
+        { id: 'facturacion', label: 'Facturación Electrónica', icon: <FileText size={18} /> },
         { id: 'suscripcion', label: 'Mi Suscripción & Pagos', icon: <CreditCard size={18} /> },
         { id: 'configuracion', label: 'Ajustes Generales', icon: <Settings size={18} /> }
       ]
@@ -543,6 +546,7 @@ function MainApp({ pathname }: { pathname: string }) {
         case 'whatsapp': return <EvolutionManager />;
         case 'notificaciones': return <NotificationsCenter />;
         case 'usuarios': return <UsersManagement />;
+        case 'facturacion': return <ElectronicBillingView />;
         case 'suscripcion': return <TenantSubscriptionView />;
         case 'configuracion': return <TenantSettings />;
         default: return <Dashboard />;
@@ -948,6 +952,7 @@ function MainApp({ pathname }: { pathname: string }) {
                 currentPage === 'notificaciones' ? 'Notificaciones' :
                 currentPage === 'sucursales' ? 'Sucursales' :
                 currentPage === 'usuarios' ? 'Usuarios' :
+                currentPage === 'facturacion' ? 'Facturación Electrónica' :
                 currentPage === 'configuracion' ? 'Configuración' :
                 currentPage
               }

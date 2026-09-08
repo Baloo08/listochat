@@ -82,7 +82,8 @@ router.post('/connect', async (req, res) => {
     // Configure webhook
     try {
       const appUrl = env.APP_URL || `http://betico_app:80`;
-      await setWebhook(instanceName, `${appUrl}/api/webhook/evolution`);
+      const webhookToken = env.EVOLUTION_API_KEY ? `?token=${encodeURIComponent(env.EVOLUTION_API_KEY)}` : '';
+      await setWebhook(instanceName, `${appUrl}/api/webhook/evolution${webhookToken}`);
     } catch (e) {
       // ignore
     }

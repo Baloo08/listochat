@@ -4,6 +4,7 @@ import { CreditCard, Search, RefreshCw, Send, FileText, CheckCircle, AlertTriang
 import TenantDossierModal from './TenantDossierModal';
 import TenantBillingCardModal from './TenantBillingCardModal';
 import PlatformTilopayModal from './PlatformTilopayModal';
+import PlatformAlmendroModal from './PlatformAlmendroModal';
 
 export default function BillingCollectionsView() {
   const [data, setData] = useState<any>(null);
@@ -13,6 +14,7 @@ export default function BillingCollectionsView() {
   const [selectedDossierId, setSelectedDossierId] = useState<string | null>(null);
   const [selectedCardTenant, setSelectedCardTenant] = useState<{ id: string; name: string } | null>(null);
   const [showPlatformModal, setShowPlatformModal] = useState(false);
+  const [showAlmendroModal, setShowAlmendroModal] = useState(false);
   const [platformStatus, setPlatformStatus] = useState<{ configured: boolean; environment?: string } | null>(null);
 
   const api = useApi();
@@ -140,6 +142,26 @@ export default function BillingCollectionsView() {
           >
             <ShieldCheck size={16} />
             {platformStatus?.configured ? '🟢 Tilopay Plataforma' : '🔴 Configurar Tilopay'}
+          </button>
+          <button
+            onClick={() => setShowAlmendroModal(true)}
+            style={{
+              padding: '8px 14px',
+              backgroundColor: '#eff6ff',
+              color: '#1d4ed8',
+              border: '1px solid #bfdbfe',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontSize: '0.82rem',
+              fontWeight: 'bold'
+            }}
+            title="Configurar credenciales de Almendro para facturar suscripciones del SaaS"
+          >
+            <FileText size={16} />
+            Facturación Almendro
           </button>
           <button
             onClick={handleRunAutoBilling}
@@ -429,6 +451,15 @@ export default function BillingCollectionsView() {
           loadCollections();
         }}
         onSuccess={() => {
+          loadCollections();
+        }}
+      />
+
+      {/* PLATFORM ALMENDRO BILLING MODAL */}
+      <PlatformAlmendroModal
+        isOpen={showAlmendroModal}
+        onClose={() => {
+          setShowAlmendroModal(false);
           loadCollections();
         }}
       />

@@ -878,6 +878,60 @@ export async function runMigrations() {
 
     -- Appointments: link to customer_records
     ALTER TABLE appointments ADD COLUMN IF NOT EXISTS record_id UUID REFERENCES customer_records(id) ON DELETE SET NULL;
+
+    -- Almendro Electronic Invoicing Tables (Costa Rica DGT v4.4)
+    CREATE TABLE IF NOT EXISTS tenant_almendro_configs (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      is_enabled BOOLEAN DEFAULT false,
+      environment VARCHAR(20) DEFAULT 'SANDBOX',
+      api_key_encrypted TEXT,
+      default_doc_type VARCHAR(5) DEFAULT '04',
+      module_toggles JSONB DEFAULT '{"storeEnabled":true,"bookingsEnabled":true,"courtsEnabled":false,"restaurantEnabled":false,"subscriptionsEnabled":false}'::jsonb,
+      tax_id_type VARCHAR(5),
+      tax_id_number VARCHAR(20),
+      legal_name VARCHAR(255),
+      commercial_name VARCHAR(255),
+      economic_activity_code VARCHAR(10),
+      branch_code VARCHAR(3) DEFAULT '001',
+      pos_code VARCHAR(5) DEFAULT '00001',
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(tenant_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_tenant_almendro_tenant ON tenant_almendro_configs(tenant_id);
+
+    CREATE TABLE IF NOT EXISTS electronic_vouchers (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      order_id UUID REFERENCES orders(id) ON DELETE SET NULL,
+      appointment_id UUID REFERENCES appointments(id) ON DELETE SET NULL,
+      court_booking_id UUID REFERENCES court_bookings(id) ON DELETE SET NULL,
+      subscription_charge_id UUID REFERENCES tenant_billing_charges(id) ON DELETE SET NULL,
+      doc_type VARCHAR(5) NOT NULL DEFAULT '04',
+      consecutive_number VARCHAR(50),
+      numeric_key VARCHAR(50) UNIQUE,
+      receiver_id_type VARCHAR(5),
+      receiver_id_number VARCHAR(20),
+      receiver_name VARCHAR(255),
+      receiver_email VARCHAR(255),
+      currency VARCHAR(10) DEFAULT 'CRC',
+      subtotal NUMERIC(14, 2) NOT NULL DEFAULT 0,
+      tax_amount NUMERIC(14, 2) NOT NULL DEFAULT 0,
+      total_amount NUMERIC(14, 2) NOT NULL DEFAULT 0,
+      status VARCHAR(20) NOT NULL DEFAULT 'pending',
+      pdf_url TEXT,
+      xml_signed_url TEXT,
+      xml_response_url TEXT,
+      hacienda_response_code VARCHAR(50),
+      hacienda_response_detail TEXT,
+      metadata JSONB DEFAULT '{}'::jsonb,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_vouchers_tenant ON electronic_vouchers(tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_vouchers_key ON electronic_vouchers(numeric_key);
+    CREATE INDEX IF NOT EXISTS idx_vouchers_status ON electronic_vouchers(status);
   `).catch((err) => {
     console.warn('[Migrations] Columns addition warning:', err?.message || err);
   });

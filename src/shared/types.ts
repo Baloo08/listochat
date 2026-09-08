@@ -704,4 +704,65 @@ export interface RecordEntry {
   updatedAt?: string;
 }
 
+// ==========================================
+// Facturación Electrónica Almendro (Costa Rica - DGT v4.4)
+// ==========================================
 
+export type AlmendroEnvironment = 'SANDBOX' | 'PRODUCTION';
+
+export interface AlmendroModuleToggles {
+  storeEnabled: boolean;        // Tienda virtual / E-commerce
+  bookingsEnabled: boolean;     // Citas y reservas de servicios
+  courtsEnabled: boolean;       // Canchas deportivas
+  restaurantEnabled: boolean;   // Menú, comandas y cocina
+  subscriptionsEnabled?: boolean; // Para Superadmin (cobro de planes)
+}
+
+export interface TenantAlmendroConfig {
+  id: string;
+  tenantId: string;
+  isEnabled: boolean;
+  environment: AlmendroEnvironment;
+  apiKeyMasked: string;
+  defaultDocType: '01' | '04'; // 01: Factura Electrónica, 04: Tiquete Electrónico
+  moduleToggles: AlmendroModuleToggles;
+  taxIdType?: string;          // 01: Física, 02: Jurídica, 03: DIMEX, 04: NITE
+  taxIdNumber?: string;
+  legalName?: string;
+  commercialName?: string;
+  economicActivityCode?: string;
+  branchCode?: string;
+  posCode?: string;
+  isConfigured: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ElectronicVoucher {
+  id: string;
+  tenantId: string;
+  orderId?: string;
+  appointmentId?: string;
+  courtBookingId?: string;
+  subscriptionChargeId?: string;
+  docType: string;             // 01: Factura, 03: Nota Crédito, 04: Tiquete
+  consecutiveNumber: string;
+  numericKey: string;          // Clave de 50 dígitos Hacienda
+  receiverIdType?: string;
+  receiverIdNumber?: string;
+  receiverName?: string;
+  receiverEmail?: string;
+  currency: string;
+  subtotal: number;
+  taxAmount: number;
+  totalAmount: number;
+  status: 'pending' | 'accepted' | 'rejected' | 'cancelled';
+  pdfUrl?: string;
+  xmlSignedUrl?: string;
+  xmlResponseUrl?: string;
+  haciendaResponseCode?: string;
+  haciendaResponseDetail?: string;
+  metadata?: Record<string, any>;
+  createdAt: string;
+  updatedAt?: string;
+}
