@@ -24,6 +24,7 @@ export async function getDriverById(id: string, tenantId?: string): Promise<Deli
 
 export async function getDriverByPin(pin: string, phone?: string, tenantId?: string): Promise<DeliveryDriver | null> {
   const cleanPin = (pin || '').trim();
+  if (!cleanPin) return null;
   let sql = `
     SELECT id, tenant_id as "tenantId", name, phone, access_pin as "accessPin",
            vehicle_type as "vehicleType", plate_number as "plateNumber", active, created_at as "createdAt"

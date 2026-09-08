@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Bike, Navigation, MapPin, Phone, MessageSquare, CheckCircle, Package, RefreshCw, LogOut, AlertCircle, Clock, ShieldCheck, DollarSign, Eye, EyeOff, Lock, Calendar, Filter, FileText, ExternalLink } from 'lucide-react';
+import { Bike, Navigation, MapPin, Phone, MessageSquare, CheckCircle, Package, RefreshCw, LogOut, AlertCircle, Clock, ShieldCheck, DollarSign, Eye, EyeOff, Lock, Calendar, Filter, FileText, ExternalLink, Building2 } from 'lucide-react';
 import { Order } from '../../shared/types';
 import InteractiveMapPicker from './InteractiveMapPicker';
 
@@ -12,6 +12,13 @@ export default function DriverPortal({ tenantSlug }: { tenantSlug?: string }) {
   const [loginError, setLoginError] = useState('');
   const [deliveringId, setDeliveringId] = useState<string | null>(null);
   const [deliveredSuccess, setDeliveredSuccess] = useState<string | null>(null);
+  const [customSlugInput, setCustomSlugInput] = useState('');
+  const [businessInfo, setBusinessInfo] = useState<{
+    businessName: string;
+    logoUrl: string | null;
+    primaryColor: string;
+    tenantSlug: string;
+  } | null>(null);
 
   // Tabs & History State
   const [activeTab, setActiveTab] = useState<'active' | 'history'>('active');
@@ -22,20 +29,69 @@ export default function DriverPortal({ tenantSlug }: { tenantSlug?: string }) {
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
 
+  const effectiveSlug = (
+    tenantSlug ||
+    customSlugInput ||
+    (typeof window !== 'undefined' ? localStorage.getItem('betico_driver_tenant_slug') : '') ||
+    ''
+  ).toLowerCase().trim();
+
+  // 1. Fetch public business branding if slug exists
+  useEffect(() => {
+    const slugToFetch = effectiveSlug;
+    if (!slugToFetch) return;
+
+    let cancelled = false;
+    fetch(`/api/drivers/portal/info/${slugToFetch}`)
+      .then(res => res.ok ? res.json() : null)
+      .then(info => {
+        if (!cancelled && info) {
+          setBusinessInfo(info);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('betico_driver_tenant_slug', slugToFetch);
+          }
+        }
+      })
+      .catch(() => {});
+
+    return () => { cancelled = true; };
+  }, [effectiveSlug]);
+
+  const getAuthHeaders = () => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('betico_driver_token') : null;
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json'
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    if (effectiveSlug) {
+      headers['x-tenant-slug'] = effectiveSlug;
+    }
+    const savedPin = pin || (typeof window !== 'undefined' ? localStorage.getItem('driver_pin') : null);
+    if (savedPin) {
+      headers['x-driver-pin'] = savedPin;
+    }
+    return headers;
+  };
+
   // Check URL params for pin (?pin=1234) or saved localStorage PIN
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const pinFromUrl = urlParams.get('pin');
     const savedPin = localStorage.getItem('driver_pin');
+    const savedToken = localStorage.getItem('betico_driver_token');
 
-    const effectivePin = pinFromUrl || savedPin;
-    if (effectivePin) {
-      setPin(effectivePin);
-      handleLogin(effectivePin);
+    if (pinFromUrl) {
+      setPin(pinFromUrl);
+      handleLogin(pinFromUrl, true);
+    } else if (savedPin && savedToken) {
+      setPin(savedPin);
+      handleLogin(savedPin, false);
     }
-  }, []);
+  }, [effectiveSlug]);
 
-  const handleLogin = async (pinToUse?: string) => {
+  const handleLogin = async (pinToUse?: string, isAutoLogin?: boolean) => {
     const p = pinToUse || pin;
     if (!p) {
       setLoginError('Por favor ingresa tu código PIN de repartidor');
@@ -48,18 +104,34 @@ export default function DriverPortal({ tenantSlug }: { tenantSlug?: string }) {
       const res = await fetch('/api/drivers/portal/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin: p.trim() })
+        body: JSON.stringify({
+          pin: p.trim(),
+          tenantSlug: effectiveSlug || undefined
+        })
       });
 
+      const data = await res.json();
       if (!res.ok) {
-        const data = await res.json();
         throw new Error(data.error || 'Código PIN incorrecto o inactivo');
       }
 
-      const data = await res.json();
       setDriver(data.driver);
+      if (data.token) {
+        localStorage.setItem('betico_driver_token', data.token);
+      }
       localStorage.setItem('driver_pin', p.trim());
-      await fetchDriverOrders(p.trim());
+      if (data.driver?.tenantSlug) {
+        localStorage.setItem('betico_driver_tenant_slug', data.driver.tenantSlug);
+      }
+
+      // Clean URL if logged in via ?pin=
+      if (isAutoLogin && window.history.replaceState) {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('pin');
+        window.history.replaceState({}, document.title, url.pathname + (url.search || ''));
+      }
+
+      await fetchDriverOrders(p.trim(), data.token);
     } catch (err: any) {
       setLoginError(err.message || 'Error al iniciar sesión');
       setDriver(null);
@@ -68,12 +140,19 @@ export default function DriverPortal({ tenantSlug }: { tenantSlug?: string }) {
     }
   };
 
-  const fetchDriverOrders = async (pinToUse?: string) => {
+  const fetchDriverOrders = async (pinToUse?: string, tokenToUse?: string) => {
     const p = pinToUse || pin || localStorage.getItem('driver_pin');
-    if (!p) return;
+    const token = tokenToUse || localStorage.getItem('betico_driver_token');
+    if (!p && !token) return;
 
     try {
-      const res = await fetch(`/api/drivers/portal/orders?pin=${p}`);
+      const headers = getAuthHeaders();
+      if (tokenToUse) headers['Authorization'] = `Bearer ${tokenToUse}`;
+      let url = '/api/drivers/portal/orders';
+      if (p) url += `?pin=${encodeURIComponent(p)}`;
+      if (effectiveSlug) url += `${p ? '&' : '?'}tenantSlug=${encodeURIComponent(effectiveSlug)}`;
+
+      const res = await fetch(url, { headers });
       if (res.ok) {
         const data = await res.json();
         setOrders(data.orders || []);
@@ -85,7 +164,8 @@ export default function DriverPortal({ tenantSlug }: { tenantSlug?: string }) {
 
   const fetchHistoryOrders = async () => {
     const p = pin || localStorage.getItem('driver_pin');
-    if (!p) return;
+    const token = localStorage.getItem('betico_driver_token');
+    if (!p && !token) return;
 
     setLoadingHistory(true);
     try {
@@ -109,11 +189,14 @@ export default function DriverPortal({ tenantSlug }: { tenantSlug?: string }) {
         to = customTo;
       }
 
-      let url = `/api/drivers/portal/history?pin=${p}`;
-      if (from) url += `&fromDate=${from}`;
-      if (to) url += `&toDate=${to}`;
+      const params = new URLSearchParams();
+      if (p) params.append('pin', p);
+      if (effectiveSlug) params.append('tenantSlug', effectiveSlug);
+      if (from) params.append('fromDate', from);
+      if (to) params.append('toDate', to);
 
-      const res = await fetch(url);
+      const url = `/api/drivers/portal/history?${params.toString()}`;
+      const res = await fetch(url, { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setHistoryOrders(data.orders || []);
@@ -147,8 +230,8 @@ export default function DriverPortal({ tenantSlug }: { tenantSlug?: string }) {
     try {
       const res = await fetch(`/api/drivers/portal/orders/${orderId}/deliver`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin: p })
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ pin: p, tenantSlug: effectiveSlug || undefined })
       });
 
       if (!res.ok) throw new Error('Error al confirmar entrega');
@@ -165,10 +248,15 @@ export default function DriverPortal({ tenantSlug }: { tenantSlug?: string }) {
 
   const handleLogout = () => {
     localStorage.removeItem('driver_pin');
+    localStorage.removeItem('betico_driver_token');
     setDriver(null);
     setPin('');
     setOrders([]);
+    setHistoryOrders([]);
   };
+
+  const primaryColor = businessInfo?.primaryColor || '#0f766e';
+  const brandName = businessInfo?.businessName || driver?.businessName || (effectiveSlug ? `Comercio (${effectiveSlug})` : 'Tu Negocio');
 
   // PIN LOGIN FORM
   if (!driver) {
@@ -178,24 +266,50 @@ export default function DriverPortal({ tenantSlug }: { tenantSlug?: string }) {
         backgroundColor: '#0f172a', padding: '20px', fontFamily: 'system-ui, -apple-system, sans-serif'
       }}>
         <div style={{
-          backgroundColor: '#ffffff', borderRadius: '20px', padding: '36px 28px',
-          maxWidth: '400px', width: '100%', boxShadow: '0 20px 40px rgba(0,0,0,0.3)',
+          backgroundColor: '#ffffff', borderRadius: '24px', padding: '36px 28px',
+          maxWidth: '420px', width: '100%', boxShadow: '0 20px 40px rgba(0,0,0,0.3)',
           border: '1px solid #e2e8f0'
         }}>
           <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-            <div style={{
-              width: '64px', height: '64px', backgroundColor: '#f0fdf4',
-              borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              margin: '0 auto 12px auto', border: '1px solid #bbf7d0'
-            }}>
-              <Bike size={32} color="#16a34a" />
-            </div>
-            <h1 style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#0f172a', margin: '0 0 4px 0' }}>
-              Portal de Repartidor
+            {businessInfo?.logoUrl ? (
+              <img
+                src={businessInfo.logoUrl}
+                alt={brandName}
+                style={{
+                  maxHeight: '64px',
+                  maxWidth: '180px',
+                  objectFit: 'contain',
+                  margin: '0 auto 14px auto',
+                  display: 'block'
+                }}
+              />
+            ) : (
+              <div style={{
+                width: '64px', height: '64px', backgroundColor: `${primaryColor}15`,
+                borderRadius: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                margin: '0 auto 12px auto', border: `1px solid ${primaryColor}30`
+              }}>
+                <Bike size={32} color={primaryColor} />
+              </div>
+            )}
+
+            <h1 style={{ fontSize: '1.4rem', fontWeight: '800', color: '#0f172a', margin: '0 0 4px 0' }}>
+              Portal de Repartidores
             </h1>
-            <p style={{ margin: 0, color: '#64748b', fontSize: '0.85rem' }}>
-              Ingresa tu código PIN de 4 dígitos para ver tus entregas
+            <p style={{ margin: 0, color: '#64748b', fontSize: '0.88rem' }}>
+              {brandName}
             </p>
+
+            {effectiveSlug && (
+              <div style={{
+                display: 'inline-flex', alignItems: 'center', gap: '5px',
+                marginTop: '10px', padding: '3px 10px', borderRadius: '20px',
+                backgroundColor: '#f1f5f9', fontSize: '0.75rem', color: '#475569', fontWeight: '600'
+              }}>
+                <Building2 size={13} color={primaryColor} />
+                <span>{effectiveSlug}</span>
+              </div>
+            )}
           </div>
 
           {loginError && (
@@ -210,6 +324,27 @@ export default function DriverPortal({ tenantSlug }: { tenantSlug?: string }) {
           )}
 
           <form onSubmit={(e) => { e.preventDefault(); handleLogin(); }} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            {!effectiveSlug && (
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', color: '#334155', marginBottom: '4px' }}>
+                  Identificador de tu Negocio (Slug)
+                </label>
+                <input
+                  type="text"
+                  placeholder="ej. pizzeriabambino"
+                  value={customSlugInput}
+                  onChange={(e) => setCustomSlugInput(e.target.value.toLowerCase().trim())}
+                  style={{
+                    width: '100%', padding: '10px 12px', borderRadius: '8px',
+                    border: '1px solid #cbd5e1', fontSize: '0.9rem', boxSizing: 'border-box'
+                  }}
+                />
+                <span style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                  Opcional si tu PIN es único, requerido si hay comercios con el mismo PIN.
+                </span>
+              </div>
+            )}
+
             <div>
               <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', color: '#334155', marginBottom: '4px' }}>
                 Código PIN Asignado
@@ -243,12 +378,13 @@ export default function DriverPortal({ tenantSlug }: { tenantSlug?: string }) {
               type="submit"
               disabled={loading}
               style={{
-                width: '100%', padding: '12px', backgroundColor: '#16a34a', color: 'white',
-                border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.95rem',
-                cursor: loading ? 'not-allowed' : 'pointer', marginTop: '6px'
+                width: '100%', padding: '13px', backgroundColor: primaryColor, color: 'white',
+                border: 'none', borderRadius: '10px', fontWeight: 'bold', fontSize: '0.95rem',
+                cursor: loading ? 'not-allowed' : 'pointer', marginTop: '6px',
+                boxShadow: `0 4px 12px ${primaryColor}40`, transition: 'all 0.2s'
               }}
             >
-              {loading ? 'Verificando...' : 'Entrar a Mis Entregas'}
+              {loading ? 'Verificando credenciales...' : 'Entrar a Mis Entregas'}
             </button>
           </form>
         </div>
@@ -263,15 +399,24 @@ export default function DriverPortal({ tenantSlug }: { tenantSlug?: string }) {
       {/* Top Header */}
       <header style={{ backgroundColor: '#ffffff', borderBottom: '1px solid #e2e8f0', padding: '14px 20px', position: 'sticky', top: 0, zIndex: 30 }}>
         <div style={{ maxWidth: '800px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <div style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '600' }}>{driver.businessName}</div>
-            <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Bike size={18} color="#16a34a" /> {driver.name}
-              {driver.plateNumber && (
-                <span style={{ fontSize: '0.75rem', backgroundColor: '#f1f5f9', color: '#475569', padding: '2px 8px', borderRadius: '12px' }}>
-                  Placa: {driver.plateNumber}
-                </span>
-              )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            {businessInfo?.logoUrl && (
+              <img
+                src={businessInfo.logoUrl}
+                alt={driver.businessName}
+                style={{ height: '36px', width: 'auto', objectFit: 'contain' }}
+              />
+            )}
+            <div>
+              <div style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '600' }}>{driver.businessName}</div>
+              <div style={{ fontSize: '1.05rem', fontWeight: 'bold', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Bike size={18} color={primaryColor} /> {driver.name}
+                {driver.plateNumber && (
+                  <span style={{ fontSize: '0.72rem', backgroundColor: `${primaryColor}15`, color: primaryColor, padding: '2px 8px', borderRadius: '12px', fontWeight: '700' }}>
+                    Placa: {driver.plateNumber}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 
@@ -312,7 +457,7 @@ export default function DriverPortal({ tenantSlug }: { tenantSlug?: string }) {
             style={{
               flex: 1, padding: '9px', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.85rem',
               cursor: 'pointer', backgroundColor: activeTab === 'active' ? '#ffffff' : 'transparent',
-              color: activeTab === 'active' ? '#16a34a' : '#64748b', boxShadow: activeTab === 'active' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+              color: activeTab === 'active' ? primaryColor : '#64748b', boxShadow: activeTab === 'active' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'
             }}
           >
@@ -323,7 +468,7 @@ export default function DriverPortal({ tenantSlug }: { tenantSlug?: string }) {
             style={{
               flex: 1, padding: '9px', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.85rem',
               cursor: 'pointer', backgroundColor: activeTab === 'history' ? '#ffffff' : 'transparent',
-              color: activeTab === 'history' ? '#16a34a' : '#64748b', boxShadow: activeTab === 'history' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+              color: activeTab === 'history' ? primaryColor : '#64748b', boxShadow: activeTab === 'history' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'
             }}
           >
@@ -378,7 +523,7 @@ export default function DriverPortal({ tenantSlug }: { tenantSlug?: string }) {
                     }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
                         <div>
-                          <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#16a34a', backgroundColor: '#dcfce7', padding: '2px 8px', borderRadius: '4px' }}>
+                          <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: primaryColor, backgroundColor: `${primaryColor}15`, padding: '2px 8px', borderRadius: '4px' }}>
                             Orden #{o.orderNumber}
                           </span>
                           <h4 style={{ margin: '6px 0 2px 0', fontSize: '1.1rem', fontWeight: 'bold', color: '#0f172a' }}>
@@ -393,12 +538,12 @@ export default function DriverPortal({ tenantSlug }: { tenantSlug?: string }) {
                             {o.paymentStatus === 'paid' ? (
                               <>
                                 <CheckCircle size={12} color="#15803d" />
-                                {o.paymentMethod === 'card' || o.paymentMethod === 'tilopay' ? 'Pagado con Tarjeta' : 'Pagado'}
+                                {(o.paymentMethod as string) === 'card' || (o.paymentMethod as string) === 'tilopay' ? 'Pagado con Tarjeta' : 'Pagado'}
                               </>
                             ) : (
                               <>
                                 <Clock size={12} color="#b45309" />
-                                {o.paymentMethod === 'card' || o.paymentMethod === 'tilopay' ? 'Tarjeta Pendiente' : 'Cobrar al entregar'}
+                                {(o.paymentMethod as string) === 'card' || (o.paymentMethod as string) === 'tilopay' ? 'Tarjeta Pendiente' : 'Cobrar al entregar'}
                               </>
                             )}
                           </span>
@@ -497,10 +642,11 @@ export default function DriverPortal({ tenantSlug }: { tenantSlug?: string }) {
                         onClick={() => handleMarkDelivered(o.id)}
                         disabled={deliveringId === o.id}
                         style={{
-                          width: '100%', padding: '11px', backgroundColor: '#16a34a', color: 'white',
+                          width: '100%', padding: '11px', backgroundColor: primaryColor, color: 'white',
                           border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.9rem',
                           cursor: deliveringId === o.id ? 'not-allowed' : 'pointer', display: 'flex',
-                          alignItems: 'center', justifyContent: 'center', gap: '6px'
+                          alignItems: 'center', justifyContent: 'center', gap: '6px',
+                          boxShadow: `0 2px 8px ${primaryColor}30`
                         }}
                       >
                         <CheckCircle size={16} />
@@ -528,7 +674,7 @@ export default function DriverPortal({ tenantSlug }: { tenantSlug?: string }) {
                     style={{
                       padding: '6px 12px', borderRadius: '6px', border: '1px solid #cbd5e1',
                       fontSize: '0.78rem', fontWeight: 'bold', cursor: 'pointer',
-                      backgroundColor: dateFilter === mode ? '#16a34a' : '#f8fafc',
+                      backgroundColor: dateFilter === mode ? primaryColor : '#f8fafc',
                       color: dateFilter === mode ? '#ffffff' : '#475569'
                     }}
                   >
@@ -589,10 +735,10 @@ export default function DriverPortal({ tenantSlug }: { tenantSlug?: string }) {
                       <div style={{ fontSize: '0.78rem', color: '#64748b' }}>{h.customerAddress || 'Entrega a domicilio'}</div>
                     </div>
                     <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontWeight: 'bold', color: '#16a34a', fontSize: '0.95rem' }}>
+                      <div style={{ fontWeight: 'bold', color: primaryColor, fontSize: '0.95rem' }}>
                         ₡{Number(h.total || 0).toLocaleString('es-CR')}
                       </div>
-                      <span style={{ fontSize: '0.7rem', color: '#16a34a', backgroundColor: '#dcfce7', padding: '2px 6px', borderRadius: '4px' }}>
+                      <span style={{ fontSize: '0.7rem', color: primaryColor, backgroundColor: `${primaryColor}15`, padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>
                         Entregado
                       </span>
                     </div>

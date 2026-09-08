@@ -27,17 +27,26 @@ async function resolveDriverFromRequest(req: any) {
     const rawToken = authHeader.substring(7);
     try {
       const decoded = jwt.verify(rawToken, env.JWT_SECRET) as any;
-      if (decoded?.driverId && decoded?.tenantId) {
-        return await getDriverById(decoded.driverId, decoded.tenantId);
+      if (decoded?.driverId) {
+        const driver = await getDriverById(decoded.driverId, decoded.tenantId);
+        if (driver && driver.active !== false) {
+          return driver;
+        }
       }
     } catch (e) {
-      // fallback to PIN if present
+      // fallback to PIN
     }
   }
 
   const pin = (req.headers['x-driver-pin'] || req.body?.pin || req.query?.pin) as string;
   if (pin) {
-    return await getDriverByPin(pin);
+    let tenantId = (req.headers['x-tenant-id'] || req.query?.tenantId) as string | undefined;
+    const tenantSlug = (req.headers['x-tenant-slug'] || req.query?.tenantSlug) as string | undefined;
+    if (!tenantId && tenantSlug) {
+      const tenant = await getTenantBySlug(String(tenantSlug).toLowerCase().trim());
+      if (tenant) tenantId = tenant.id;
+    }
+    return await getDriverByPin(pin, undefined, tenantId);
   }
 
   return null;
@@ -66,6 +75,50 @@ async function resolveInstanceName(tenantId: string): Promise<string | undefined
 // PUBLIC DRIVER PORTAL ROUTES (Authenticated via PIN / JWT)
 // =======================================================
 
+// 0. Public Driver Portal Info (Brand, Logo, Colors by Slug)
+router.get('/portal/info/:slug', async (req, res) => {
+  try {
+    const rawSlug = (req.params.slug || '').toLowerCase().trim();
+    if (!rawSlug) {
+      res.status(400).json({ error: 'Identificador de negocio requerido' });
+      return;
+    }
+    const tenant = await getTenantBySlug(rawSlug);
+    if (!tenant || !tenant.active) {
+      res.status(404).json({ error: 'Negocio no encontrado o inactivo' });
+      return;
+    }
+
+    let businessName = tenant.name;
+    let logoUrl: string | null = null;
+    let primaryColor = '#0f766e'; // default teal for driver/delivery branding
+
+    try {
+      const storeSettings = await getStoreSettings(tenant.id);
+      if (storeSettings) {
+        businessName = storeSettings.storeName || tenant.name;
+        logoUrl = storeSettings.storeLogoUrl || (storeSettings.storeTheme as any)?.logoUrl || null;
+        if (storeSettings.storeTheme?.primaryColor) {
+          primaryColor = storeSettings.storeTheme.primaryColor;
+        }
+      }
+    } catch (err) {
+      // fallback to tenant values
+    }
+
+    res.json({
+      businessName,
+      logoUrl,
+      primaryColor,
+      tenantSlug: tenant.slug,
+      active: true
+    });
+  } catch (error) {
+    console.error('Driver portal info error:', error);
+    res.status(500).json({ error: 'Error al consultar información del comercio' });
+  }
+});
+
 // 1. PIN Login / Verification (Rate-limited & JWT issued)
 router.post('/portal/login', driverPortalLoginLimiter, async (req, res) => {
   try {
@@ -76,24 +129,34 @@ router.post('/portal/login', driverPortalLoginLimiter, async (req, res) => {
     }
 
     let targetTenantId: string | undefined;
+    let targetTenant: any = null;
     if (tenantSlug) {
-      const targetTenant = await getTenantBySlug(String(tenantSlug).toLowerCase().trim());
-      if (targetTenant) targetTenantId = targetTenant.id;
+      const cleanSlug = String(tenantSlug).toLowerCase().trim();
+      targetTenant = await getTenantBySlug(cleanSlug);
+      if (!targetTenant || !targetTenant.active) {
+        res.status(404).json({ error: 'El negocio especificado no existe o está inactivo' });
+        return;
+      }
+      targetTenantId = targetTenant.id;
     }
 
     const driver = await getDriverByPin(pin, phone, targetTenantId);
     if (!driver) {
-      res.status(401).json({ error: 'Código PIN no encontrado o requiere número de teléfono para validar el comercio.' });
+      if (targetTenantId) {
+        res.status(401).json({ error: 'Código PIN no válido para este negocio' });
+      } else {
+        res.status(401).json({ error: 'Código PIN no encontrado o requiere número de teléfono o comercio para validar.' });
+      }
       return;
     }
 
-    const tenant = await getTenantById(driver.tenantId);
+    const tenant = targetTenant || (await getTenantById(driver.tenantId));
     const storeSettings = await getStoreSettings(driver.tenantId);
 
     const token = jwt.sign(
       { driverId: driver.id, tenantId: driver.tenantId, role: 'driver' },
       env.JWT_SECRET,
-      { expiresIn: '24h' }
+      { expiresIn: '30d' }
     );
 
     res.json({
@@ -102,6 +165,7 @@ router.post('/portal/login', driverPortalLoginLimiter, async (req, res) => {
       driver: {
         id: driver.id,
         tenantId: driver.tenantId,
+        tenantSlug: tenant?.slug || tenantSlug || '',
         name: driver.name,
         phone: driver.phone,
         accessPin: driver.accessPin,
@@ -305,7 +369,10 @@ router.post('/:id/send-welcome', async (req, res) => {
     const instanceName = await resolveInstanceName(req.tenantId!);
     const cleanDriverPhone = normalizeCostaRicaPhone(driver.phone);
     const appOrigin = process.env.APP_URL || 'https://betico-app.qvtdko.easypanel.host';
-    const driverPortalUrl = `${appOrigin}/repartidor?pin=${driver.accessPin || '1234'}`;
+    const effectiveSlug = tenant?.slug || storeSettings?.storeSlug;
+    const driverPortalUrl = effectiveSlug
+      ? `${appOrigin}/repartidor/${effectiveSlug}?pin=${driver.accessPin || '1234'}`
+      : `${appOrigin}/repartidor?pin=${driver.accessPin || '1234'}`;
     const businessName = storeSettings?.storeName || tenant?.name || 'Nuestro Comercio';
 
     const welcomeMsg = `👋 *¡Hola ${driver.name}!*
@@ -375,7 +442,10 @@ router.post('/:id/dispatch-order', async (req, res) => {
       .join('\n');
 
     const appOrigin = process.env.APP_URL || 'https://betico-app.qvtdko.easypanel.host';
-    const driverPortalUrl = `${appOrigin}/repartidor?pin=${driver.accessPin || '1234'}`;
+    const effectiveDispatchSlug = tenant?.slug || storeSettings?.storeSlug;
+    const driverPortalUrl = effectiveDispatchSlug
+      ? `${appOrigin}/repartidor/${effectiveDispatchSlug}?pin=${driver.accessPin || '1234'}`
+      : `${appOrigin}/repartidor?pin=${driver.accessPin || '1234'}`;
 
     const customDispatchTpl = storeSettings?.notificationTemplates?.driverDispatch;
     let dispatchMsg = customDispatchTpl || `🛵 *NUEVA ENTREGA ASIGNADA* (#ORD-{pedido})

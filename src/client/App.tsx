@@ -164,9 +164,9 @@ export default function App() {
     return <TenantLoginView slug={slug} />;
   }
 
-  if (pathname.startsWith('/repartidor')) {
+  if (pathname.startsWith('/repartidor') || pathname.startsWith('/driver') || pathname.startsWith('/mensajero')) {
     const cleanPath = pathname.split('?')[0].split('#')[0];
-    const match = cleanPath.match(/^\/repartidor(?:\/([a-zA-Z0-9_-]+))?/i);
+    const match = cleanPath.match(/^\/(?:repartidor|driver|mensajero)(?:\/([a-zA-Z0-9_-]+))?/i);
     const slug = (match && match[1]) ? match[1].toLowerCase().trim() : undefined;
     return <DriverPortal tenantSlug={slug} />;
   }

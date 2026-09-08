@@ -581,6 +581,7 @@ export async function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_campaigns_tenant ON whatsapp_campaigns(tenant_id);
     CREATE INDEX IF NOT EXISTS idx_uploaded_files_filename ON uploaded_files(filename);
     CREATE INDEX IF NOT EXISTS idx_delivery_drivers_tenant ON delivery_drivers(tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_delivery_drivers_tenant_pin ON delivery_drivers(tenant_id, access_pin);
     CREATE INDEX IF NOT EXISTS idx_schedule_settings_tenant ON schedule_settings(tenant_id);
     CREATE INDEX IF NOT EXISTS idx_chat_sessions_tenant ON chat_sessions(tenant_id);
     CREATE INDEX IF NOT EXISTS idx_audit_logs_tenant ON audit_logs(tenant_id);

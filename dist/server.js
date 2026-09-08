@@ -1341,6 +1341,7 @@ async function getDriverById(id, tenantId) {
 }
 async function getDriverByPin(pin, phone, tenantId) {
   const cleanPin = (pin || "").trim();
+  if (!cleanPin) return null;
   let sql = `
     SELECT id, tenant_id as "tenantId", name, phone, access_pin as "accessPin",
            vehicle_type as "vehicleType", plate_number as "plateNumber", active, created_at as "createdAt"
@@ -2066,6 +2067,7 @@ async function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_campaigns_tenant ON whatsapp_campaigns(tenant_id);
     CREATE INDEX IF NOT EXISTS idx_uploaded_files_filename ON uploaded_files(filename);
     CREATE INDEX IF NOT EXISTS idx_delivery_drivers_tenant ON delivery_drivers(tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_delivery_drivers_tenant_pin ON delivery_drivers(tenant_id, access_pin);
     CREATE INDEX IF NOT EXISTS idx_schedule_settings_tenant ON schedule_settings(tenant_id);
     CREATE INDEX IF NOT EXISTS idx_chat_sessions_tenant ON chat_sessions(tenant_id);
     CREATE INDEX IF NOT EXISTS idx_audit_logs_tenant ON audit_logs(tenant_id);
@@ -10820,15 +10822,24 @@ async function resolveDriverFromRequest(req) {
     const rawToken = authHeader.substring(7);
     try {
       const decoded = jwt2.verify(rawToken, env.JWT_SECRET);
-      if (decoded?.driverId && decoded?.tenantId) {
-        return await getDriverById(decoded.driverId, decoded.tenantId);
+      if (decoded?.driverId) {
+        const driver = await getDriverById(decoded.driverId, decoded.tenantId);
+        if (driver && driver.active !== false) {
+          return driver;
+        }
       }
     } catch (e) {
     }
   }
   const pin = req.headers["x-driver-pin"] || req.body?.pin || req.query?.pin;
   if (pin) {
-    return await getDriverByPin(pin);
+    let tenantId = req.headers["x-tenant-id"] || req.query?.tenantId;
+    const tenantSlug = req.headers["x-tenant-slug"] || req.query?.tenantSlug;
+    if (!tenantId && tenantSlug) {
+      const tenant = await getTenantBySlug(String(tenantSlug).toLowerCase().trim());
+      if (tenant) tenantId = tenant.id;
+    }
+    return await getDriverByPin(pin, void 0, tenantId);
   }
   return null;
 }
@@ -10848,6 +10859,44 @@ async function resolveInstanceName2(tenantId) {
   }
   return void 0;
 }
+router19.get("/portal/info/:slug", async (req, res) => {
+  try {
+    const rawSlug = (req.params.slug || "").toLowerCase().trim();
+    if (!rawSlug) {
+      res.status(400).json({ error: "Identificador de negocio requerido" });
+      return;
+    }
+    const tenant = await getTenantBySlug(rawSlug);
+    if (!tenant || !tenant.active) {
+      res.status(404).json({ error: "Negocio no encontrado o inactivo" });
+      return;
+    }
+    let businessName = tenant.name;
+    let logoUrl = null;
+    let primaryColor = "#0f766e";
+    try {
+      const storeSettings = await getStoreSettings(tenant.id);
+      if (storeSettings) {
+        businessName = storeSettings.storeName || tenant.name;
+        logoUrl = storeSettings.storeLogoUrl || storeSettings.storeTheme?.logoUrl || null;
+        if (storeSettings.storeTheme?.primaryColor) {
+          primaryColor = storeSettings.storeTheme.primaryColor;
+        }
+      }
+    } catch (err) {
+    }
+    res.json({
+      businessName,
+      logoUrl,
+      primaryColor,
+      tenantSlug: tenant.slug,
+      active: true
+    });
+  } catch (error) {
+    console.error("Driver portal info error:", error);
+    res.status(500).json({ error: "Error al consultar informaci\xF3n del comercio" });
+  }
+});
 router19.post("/portal/login", driverPortalLoginLimiter, async (req, res) => {
   try {
     const { pin, phone, tenantSlug } = req.body;
@@ -10856,21 +10905,31 @@ router19.post("/portal/login", driverPortalLoginLimiter, async (req, res) => {
       return;
     }
     let targetTenantId;
+    let targetTenant = null;
     if (tenantSlug) {
-      const targetTenant = await getTenantBySlug(String(tenantSlug).toLowerCase().trim());
-      if (targetTenant) targetTenantId = targetTenant.id;
+      const cleanSlug = String(tenantSlug).toLowerCase().trim();
+      targetTenant = await getTenantBySlug(cleanSlug);
+      if (!targetTenant || !targetTenant.active) {
+        res.status(404).json({ error: "El negocio especificado no existe o est\xE1 inactivo" });
+        return;
+      }
+      targetTenantId = targetTenant.id;
     }
     const driver = await getDriverByPin(pin, phone, targetTenantId);
     if (!driver) {
-      res.status(401).json({ error: "C\xF3digo PIN no encontrado o requiere n\xFAmero de tel\xE9fono para validar el comercio." });
+      if (targetTenantId) {
+        res.status(401).json({ error: "C\xF3digo PIN no v\xE1lido para este negocio" });
+      } else {
+        res.status(401).json({ error: "C\xF3digo PIN no encontrado o requiere n\xFAmero de tel\xE9fono o comercio para validar." });
+      }
       return;
     }
-    const tenant = await getTenantById(driver.tenantId);
+    const tenant = targetTenant || await getTenantById(driver.tenantId);
     const storeSettings = await getStoreSettings(driver.tenantId);
     const token = jwt2.sign(
       { driverId: driver.id, tenantId: driver.tenantId, role: "driver" },
       env.JWT_SECRET,
-      { expiresIn: "24h" }
+      { expiresIn: "30d" }
     );
     res.json({
       success: true,
@@ -10878,6 +10937,7 @@ router19.post("/portal/login", driverPortalLoginLimiter, async (req, res) => {
       driver: {
         id: driver.id,
         tenantId: driver.tenantId,
+        tenantSlug: tenant?.slug || tenantSlug || "",
         name: driver.name,
         phone: driver.phone,
         accessPin: driver.accessPin,
@@ -11045,7 +11105,8 @@ router19.post("/:id/send-welcome", async (req, res) => {
     const instanceName = await resolveInstanceName2(req.tenantId);
     const cleanDriverPhone = normalizeCostaRicaPhone2(driver.phone);
     const appOrigin = process.env.APP_URL || "https://betico-app.qvtdko.easypanel.host";
-    const driverPortalUrl = `${appOrigin}/repartidor?pin=${driver.accessPin || "1234"}`;
+    const effectiveSlug = tenant?.slug || storeSettings?.storeSlug;
+    const driverPortalUrl = effectiveSlug ? `${appOrigin}/repartidor/${effectiveSlug}?pin=${driver.accessPin || "1234"}` : `${appOrigin}/repartidor?pin=${driver.accessPin || "1234"}`;
     const businessName = storeSettings?.storeName || tenant?.name || "Nuestro Comercio";
     const welcomeMsg = `\u{1F44B} *\xA1Hola ${driver.name}!*
 
@@ -11099,7 +11160,8 @@ router19.post("/:id/dispatch-order", async (req, res) => {
     const cleanCustomerPhone = normalizeCostaRicaPhone2(order.customerPhone || "");
     const itemsList = (order.items || []).map((i) => `\u2022 ${i.quantity}x ${i.productName}`).join("\n");
     const appOrigin = process.env.APP_URL || "https://betico-app.qvtdko.easypanel.host";
-    const driverPortalUrl = `${appOrigin}/repartidor?pin=${driver.accessPin || "1234"}`;
+    const effectiveDispatchSlug = tenant?.slug || storeSettings?.storeSlug;
+    const driverPortalUrl = effectiveDispatchSlug ? `${appOrigin}/repartidor/${effectiveDispatchSlug}?pin=${driver.accessPin || "1234"}` : `${appOrigin}/repartidor?pin=${driver.accessPin || "1234"}`;
     const customDispatchTpl = storeSettings?.notificationTemplates?.driverDispatch;
     let dispatchMsg = customDispatchTpl || `\u{1F6F5} *NUEVA ENTREGA ASIGNADA* (#ORD-{pedido})
 

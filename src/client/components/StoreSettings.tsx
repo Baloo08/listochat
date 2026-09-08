@@ -189,6 +189,7 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
   const [editingDriver, setEditingDriver] = useState<DeliveryDriver | null>(null);
   const [updatingDriver, setUpdatingDriver] = useState(false);
   const [copiedPinDriverId, setCopiedPinDriverId] = useState<string | null>(null);
+  const [copiedDriverPortalUrl, setCopiedDriverPortalUrl] = useState(false);
 
   // Design & Theme Fields
   const [primaryColor, setPrimaryColor] = useState('#16a34a');
@@ -441,20 +442,23 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
         alert(`¡Mensaje de WhatsApp con PIN y enlace enviado a ${driver.name}!`);
       } else {
         const cleanPhone = driver.phone.replace(/\D/g, '');
-        const directUrl = `${window.location.origin}/repartidor?pin=${driver.accessPin || '1234'}`;
+        const portalBase = storeSlug ? `${window.location.origin}/repartidor/${storeSlug}` : `${window.location.origin}/repartidor`;
+        const directUrl = `${portalBase}?pin=${driver.accessPin || '1234'}`;
         const waText = encodeURIComponent(`👋 ¡Hola ${driver.name}! Has sido registrado como repartidor en ${storeName || 'nuestro negocio'}.\n\n🔑 Tu PIN de acceso es: ${driver.accessPin || '1234'}\n📲 Tu portal de entregas: ${directUrl}`);
         window.open(`https://wa.me/${cleanPhone.length === 8 ? '506' + cleanPhone : cleanPhone}?text=${waText}`, '_blank');
       }
     } catch (e) {
       const cleanPhone = driver.phone.replace(/\D/g, '');
-      const directUrl = `${window.location.origin}/repartidor?pin=${driver.accessPin || '1234'}`;
+      const portalBase = storeSlug ? `${window.location.origin}/repartidor/${storeSlug}` : `${window.location.origin}/repartidor`;
+      const directUrl = `${portalBase}?pin=${driver.accessPin || '1234'}`;
       const waText = encodeURIComponent(`👋 ¡Hola ${driver.name}! Has sido registrado como repartidor en ${storeName || 'nuestro negocio'}.\n\n🔑 Tu PIN de acceso es: ${driver.accessPin || '1234'}\n📲 Tu portal de entregas: ${directUrl}`);
       window.open(`https://wa.me/${cleanPhone.length === 8 ? '506' + cleanPhone : cleanPhone}?text=${waText}`, '_blank');
     }
   };
 
   const copyDriverPortalLink = (driver: DeliveryDriver) => {
-    const directUrl = `${window.location.origin}/repartidor?pin=${driver.accessPin || '1234'}`;
+    const portalBase = storeSlug ? `${window.location.origin}/repartidor/${storeSlug}` : `${window.location.origin}/repartidor`;
+    const directUrl = `${portalBase}?pin=${driver.accessPin || '1234'}`;
     navigator.clipboard.writeText(directUrl);
     setCopiedPinDriverId(driver.id);
     setTimeout(() => setCopiedPinDriverId(null), 2500);
@@ -1877,6 +1881,84 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
       {activeTab === 'drivers' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           
+          {/* Top Banner: Enlace Oficial del Portal de Repartidores */}
+          <div style={{
+            backgroundColor: '#f0fdf4',
+            border: '1px solid #bbf7d0',
+            borderRadius: '12px',
+            padding: '18px 20px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '14px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ width: '42px', height: '42px', borderRadius: '10px', backgroundColor: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#16a34a' }}>
+                <Bike size={24} />
+              </div>
+              <div>
+                <h4 style={{ margin: '0 0 4px 0', fontSize: '1rem', fontWeight: 'bold', color: '#14532d' }}>
+                  Portal Oficial de Repartidores / Domiciliarios
+                </h4>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <code style={{ fontSize: '0.82rem', backgroundColor: '#ffffff', padding: '3px 8px', borderRadius: '6px', border: '1px solid #86efac', color: '#166534', fontWeight: '600' }}>
+                    {`${window.location.origin}/repartidor/${storeSlug || ''}`}
+                  </code>
+                  <span style={{ fontSize: '0.75rem', color: '#15803d' }}>
+                    (Los choferes usan su código PIN individual asignado)
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  const url = `${window.location.origin}/repartidor/${storeSlug || ''}`;
+                  navigator.clipboard.writeText(url);
+                  setCopiedDriverPortalUrl(true);
+                  setTimeout(() => setCopiedDriverPortalUrl(false), 2500);
+                }}
+                style={{
+                  padding: '8px 14px',
+                  backgroundColor: '#ffffff',
+                  border: '1px solid #86efac',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontSize: '0.8rem',
+                  fontWeight: 'bold',
+                  color: '#15803d',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                <Copy size={14} /> {copiedDriverPortalUrl ? '¡Copiado!' : 'Copiar Enlace'}
+              </button>
+              <a
+                href={`${window.location.origin}/repartidor/${storeSlug || ''}`}
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  padding: '8px 14px',
+                  backgroundColor: '#16a34a',
+                  color: 'white',
+                  borderRadius: '8px',
+                  textDecoration: 'none',
+                  fontSize: '0.8rem',
+                  fontWeight: 'bold',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                <ExternalLink size={14} /> Abrir Portal
+              </a>
+            </div>
+          </div>
+
           <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
             <h3 style={{ margin: '0 0 14px 0', fontSize: '1.15rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Plus size={18} color="var(--primary)" /> Registrar Nuevo Repartidor / Motorizado
@@ -1959,7 +2041,8 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px' }}>
                 {drivers.map(d => {
-                  const driverPortalUrl = `${window.location.origin}/repartidor?pin=${d.accessPin || '1234'}`;
+                  const portalBase = storeSlug ? `${window.location.origin}/repartidor/${storeSlug}` : `${window.location.origin}/repartidor`;
+                  const driverPortalUrl = `${portalBase}?pin=${d.accessPin || '1234'}`;
                   return (
                     <div key={d.id} style={{ padding: '18px', backgroundColor: '#f8fafc', borderRadius: '12px', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
