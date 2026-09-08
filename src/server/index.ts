@@ -52,6 +52,7 @@ import tilopayWebhookRoutes from './routes/tilopay-webhook.routes.js';
 import superadminBillingRoutes from './routes/superadmin-billing.routes.js';
 import tenantPaymentRoutes from './routes/tenant-payment.routes.js';
 import tenantSubscriptionRoutes from './routes/tenant-subscription.routes.js';
+import recordsRoutes from './routes/records.routes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -226,6 +227,7 @@ async function startServer() {
   app.use('/webhook', webhookRoutes);
   app.use('/api/queue', queueRoutes);
   app.use('/api/courts', courtsRoutes);
+  app.use('/api/records', recordsRoutes);
 
   // Serve static assets in production, setup vite dev server in dev
   if (env.NODE_ENV === 'production') {

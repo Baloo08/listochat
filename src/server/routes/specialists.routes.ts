@@ -254,6 +254,94 @@ router.get('/portal/history', async (req, res) => {
   }
 });
 
+// 2.3 Specialist Portal Records Consultation (Strictly filtered to this specialist's patients)
+router.get('/portal/records', async (req, res) => {
+  try {
+    const specialist = await resolveSpecialistFromRequest(req);
+    if (!specialist) {
+      res.status(401).json({ error: 'Credenciales de colaborador no provistas o inválidas' });
+      return;
+    }
+
+    const { getRecordsForSpecialist } = await import('../db/records.repo.js');
+    const search = req.query.search ? String(req.query.search) : undefined;
+    const records = await getRecordsForSpecialist(specialist.id, specialist.tenantId, search);
+
+    res.json({
+      success: true,
+      records,
+      specialistName: specialist.name
+    });
+  } catch (error) {
+    console.error('Specialist portal records error:', error);
+    res.status(500).json({ error: 'Error al consultar expedientes asignados' });
+  }
+});
+
+// 2.4 Get single patient record details for specialist
+router.get('/portal/records/:id', async (req, res) => {
+  try {
+    const specialist = await resolveSpecialistFromRequest(req);
+    if (!specialist) {
+      res.status(401).json({ error: 'Credenciales de colaborador no provistas o inválidas' });
+      return;
+    }
+
+    const { getRecordForSpecialistById, getRecordEntries, getAppointmentsForRecord } = await import('../db/records.repo.js');
+    const record = await getRecordForSpecialistById(req.params.id, specialist.id, specialist.tenantId);
+    if (!record) {
+      res.status(403).json({ error: 'Acceso no autorizado: este expediente no tiene citas asociadas con tu perfil.' });
+      return;
+    }
+
+    const [appointments, entries] = await Promise.all([
+      getAppointmentsForRecord(record.id, specialist.tenantId),
+      getRecordEntries(record.id, specialist.tenantId)
+    ]);
+
+    res.json({
+      record,
+      appointments: appointments.filter(a => a.specialist_id === specialist.id || a.specialistId === specialist.id),
+      entries
+    });
+  } catch (error) {
+    console.error('Specialist portal record detail error:', error);
+    res.status(500).json({ error: 'Error al consultar detalle del expediente' });
+  }
+});
+
+// 2.5 Specialist adds a clinical note / vital signs / evolution to their patient
+router.post('/portal/records/:id/entries', async (req, res) => {
+  try {
+    const specialist = await resolveSpecialistFromRequest(req);
+    if (!specialist) {
+      res.status(401).json({ error: 'Credenciales de colaborador no provistas o inválidas' });
+      return;
+    }
+
+    const { getRecordForSpecialistById, addRecordEntry } = await import('../db/records.repo.js');
+    const record = await getRecordForSpecialistById(req.params.id, specialist.id, specialist.tenantId);
+    if (!record) {
+      res.status(403).json({ error: 'Acceso no autorizado: este expediente no tiene citas asociadas con tu perfil.' });
+      return;
+    }
+
+    const entry = await addRecordEntry(specialist.tenantId, record.id, {
+      ...req.body,
+      specialistId: specialist.id,
+      entryType: req.body.entryType || 'consultation'
+    });
+
+    res.status(201).json({
+      success: true,
+      entry
+    });
+  } catch (error) {
+    console.error('Specialist add record entry error:', error);
+    res.status(500).json({ error: 'Error al registrar nota clínica en el expediente' });
+  }
+});
+
 // 2. Tenant Management Routes
 router.use(authenticateToken);
 router.use(tenantContext);

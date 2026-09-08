@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
 import { Appointment, DayBreakConfig, BookingField } from '../../shared/types';
+import RecordsManager from './RecordsManager';
 
 const DAYS_OF_WEEK = [
   { num: 1, name: 'Lunes', key: 'monday' },
@@ -42,7 +43,7 @@ const DAYS_OF_WEEK = [
 ];
 
 export default function Bookings() {
-  const [activeTab, setActiveTab] = useState<'list' | 'calendar' | 'schedule' | 'calendarSync' | 'team' | 'reminders'>('list');
+  const [activeTab, setActiveTab] = useState<'list' | 'calendar' | 'records' | 'schedule' | 'calendarSync' | 'team' | 'reminders'>('list');
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterDate, setFilterDate] = useState('');
@@ -708,6 +709,25 @@ export default function Bookings() {
         </button>
 
         <button
+          onClick={() => setActiveTab('records')}
+          style={{
+            padding: '10px 18px',
+            border: 'none',
+            borderBottom: activeTab === 'records' ? '2px solid #0d9488' : '2px solid transparent',
+            backgroundColor: 'transparent',
+            color: activeTab === 'records' ? '#0d9488' : 'var(--text-muted)',
+            fontWeight: '600',
+            fontSize: '0.9rem',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}
+        >
+          <FileText size={18} /> Expedientes
+        </button>
+
+        <button
           onClick={() => setActiveTab('schedule')}
           style={{
             padding: '10px 18px',
@@ -783,6 +803,13 @@ export default function Bookings() {
           <Share2 size={18} /> Sincronizar Calendarios
         </button>
       </div>
+
+      {/* ==============================================================
+          TAB: EXPEDIENTES (CLIENTES Y PACIENTES)
+      ============================================================== */}
+      {activeTab === 'records' && (
+        <RecordsManager />
+      )}
 
       {/* ==============================================================
           TAB 1: LISTA DE CITAS
@@ -1670,6 +1697,30 @@ export default function Bookings() {
                 <div>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block' }}>Cliente:</span>
                   <strong style={{ fontSize: '0.95rem' }}>{selectedAppointment.name}</strong>
+                  <div style={{ marginTop: '5px' }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveTab('records');
+                        setSelectedAppointment(null);
+                      }}
+                      style={{
+                        padding: '3px 8px',
+                        backgroundColor: '#f0fdfa',
+                        color: '#0d9488',
+                        border: '1px solid #99f6e4',
+                        borderRadius: '5px',
+                        fontSize: '0.74rem',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}
+                    >
+                      <FileText size={12} /> Ver Expediente
+                    </button>
+                  </div>
                 </div>
                 <div>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block' }}>WhatsApp:</span>

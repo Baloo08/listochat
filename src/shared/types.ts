@@ -95,6 +95,7 @@ export interface Appointment {
   selectedVariables?: Record<string, string | string[]>;
   selectedVariablesSummary?: string;
   specialistId?: string;
+  recordId?: string;
   createdAt?: Date;
 }
 
@@ -635,6 +636,70 @@ export interface Branch {
   isMain: boolean;
   active: boolean;
   createdAt?: string;
+  updatedAt?: string;
+}
+
+// ==========================================
+// Customer & Patient Records (Expedientes)
+// ==========================================
+
+export type ClientRecordType = 'general' | 'paciente';
+
+export interface VitalSigns {
+  bloodPressure?: string; // e.g. "120/80"
+  heartRate?: number; // bpm
+  respiratoryRate?: number; // rpm
+  temperature?: number; // °C
+  weightKg?: number; // kg
+  heightCm?: number; // cm
+  bmi?: number; // IMC
+  oxygenSaturation?: number; // % SpO2
+  glucoseMgDl?: number; // mg/dL
+  recordedAt?: string;
+}
+
+export interface CustomerRecord {
+  id: string;
+  tenantId: string;
+  clientType: ClientRecordType;
+  fullName: string;
+  phone: string;
+  email?: string;
+  identification?: string; // Cédula nacional, DIMEX o Pasaporte
+  address?: string;
+  dateOfBirth?: string;
+  gender?: string;
+  bloodType?: string;
+  allergies?: string;
+  pathologicalBackground?: string;
+  currentMedications?: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
+  notes?: string;
+  metadata?: Record<string, any>;
+  createdAt?: string;
+  updatedAt?: string;
+  totalAppointments?: number;
+  lastAppointmentDate?: string;
+  latestVitalSigns?: VitalSigns;
+  recentEntriesCount?: number;
+}
+
+export interface RecordEntry {
+  id: string;
+  tenantId: string;
+  recordId: string;
+  appointmentId?: string;
+  specialistId?: string;
+  specialistName?: string;
+  entryType: 'consultation' | 'vital_signs' | 'prescription' | 'note' | 'treatment';
+  vitalSigns?: VitalSigns;
+  diagnosis?: string;
+  treatmentPlan?: string;
+  prescription?: string;
+  notes?: string;
+  attachments?: string[];
+  createdAt: string;
   updatedAt?: string;
 }
 

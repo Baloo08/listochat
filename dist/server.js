@@ -1472,6 +1472,329 @@ var init_drivers_repo = __esm({
   }
 });
 
+// src/server/db/records.repo.ts
+var records_repo_exports = {};
+__export(records_repo_exports, {
+  addRecordEntry: () => addRecordEntry,
+  createRecord: () => createRecord,
+  deleteRecord: () => deleteRecord,
+  deleteRecordEntry: () => deleteRecordEntry,
+  getAppointmentsForRecord: () => getAppointmentsForRecord,
+  getRecordById: () => getRecordById,
+  getRecordByPhone: () => getRecordByPhone,
+  getRecordEntries: () => getRecordEntries,
+  getRecordForSpecialistById: () => getRecordForSpecialistById,
+  getRecordsByTenant: () => getRecordsByTenant,
+  getRecordsForSpecialist: () => getRecordsForSpecialist,
+  updateRecord: () => updateRecord
+});
+function mapRecordRow(row) {
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    clientType: row.client_type || "general",
+    fullName: row.full_name,
+    phone: row.phone || "",
+    email: row.email || "",
+    identification: row.identification || "",
+    address: row.address || "",
+    dateOfBirth: row.date_of_birth ? row.date_of_birth.toISOString?.().split("T")[0] || String(row.date_of_birth) : void 0,
+    gender: row.gender || "",
+    bloodType: row.blood_type || "",
+    allergies: row.allergies || "",
+    pathologicalBackground: row.pathological_background || "",
+    currentMedications: row.current_medications || "",
+    emergencyContactName: row.emergency_contact_name || "",
+    emergencyContactPhone: row.emergency_contact_phone || "",
+    notes: row.notes || "",
+    metadata: row.metadata ? typeof row.metadata === "string" ? JSON.parse(row.metadata) : row.metadata : {},
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    totalAppointments: row.total_appointments ? Number(row.total_appointments) : void 0,
+    lastAppointmentDate: row.last_appointment_date || void 0,
+    latestVitalSigns: row.latest_vital_signs ? typeof row.latest_vital_signs === "string" ? JSON.parse(row.latest_vital_signs) : row.latest_vital_signs : void 0,
+    recentEntriesCount: row.recent_entries_count ? Number(row.recent_entries_count) : void 0
+  };
+}
+function mapEntryRow(row) {
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    recordId: row.record_id,
+    appointmentId: row.appointment_id || void 0,
+    specialistId: row.specialist_id || void 0,
+    specialistName: row.specialist_name || void 0,
+    entryType: row.entry_type || "consultation",
+    vitalSigns: row.vital_signs ? typeof row.vital_signs === "string" ? JSON.parse(row.vital_signs) : row.vital_signs : void 0,
+    diagnosis: row.diagnosis || "",
+    treatmentPlan: row.treatment_plan || "",
+    prescription: row.prescription || "",
+    notes: row.notes || "",
+    attachments: row.attachments ? typeof row.attachments === "string" ? JSON.parse(row.attachments) : row.attachments : [],
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+async function getRecordsByTenant(tenantId, options = {}) {
+  const { search, type, limit = 50, offset = 0 } = options;
+  let whereClause = "WHERE r.tenant_id = $1";
+  const params = [tenantId];
+  if (type && type !== "all") {
+    params.push(type);
+    whereClause += ` AND r.client_type = $${params.length}`;
+  }
+  if (search && search.trim()) {
+    const cleanSearch = search.trim();
+    params.push(`%${cleanSearch}%`);
+    const pIdx = params.length;
+    whereClause += ` AND (
+      r.full_name ILIKE $${pIdx} OR 
+      r.phone ILIKE $${pIdx} OR 
+      r.email ILIKE $${pIdx} OR 
+      r.identification ILIKE $${pIdx}
+    )`;
+  }
+  const countSql = `SELECT COUNT(*) as count FROM customer_records r ${whereClause}`;
+  const countRes = await query(countSql, params);
+  const total = parseInt(countRes.rows[0]?.count || "0", 10);
+  const dataParams = [...params, limit, offset];
+  const dataSql = `
+    SELECT r.*,
+      (SELECT COUNT(*) FROM appointments a WHERE a.tenant_id = r.tenant_id AND (a.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))) as total_appointments,
+      (SELECT MAX(a.date) FROM appointments a WHERE a.tenant_id = r.tenant_id AND (a.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))) as last_appointment_date,
+      (SELECT re.vital_signs FROM record_entries re WHERE re.record_id = r.id AND re.vital_signs IS NOT NULL ORDER BY re.created_at DESC LIMIT 1) as latest_vital_signs,
+      (SELECT COUNT(*) FROM record_entries re WHERE re.record_id = r.id) as recent_entries_count
+    FROM customer_records r
+    ${whereClause}
+    ORDER BY r.updated_at DESC
+    LIMIT $${dataParams.length - 1} OFFSET $${dataParams.length}
+  `;
+  const dataRes = await query(dataSql, dataParams);
+  return {
+    records: dataRes.rows.map(mapRecordRow),
+    total
+  };
+}
+async function getRecordById(id, tenantId) {
+  const sql = `
+    SELECT r.*,
+      (SELECT COUNT(*) FROM appointments a WHERE a.tenant_id = r.tenant_id AND (a.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))) as total_appointments,
+      (SELECT MAX(a.date) FROM appointments a WHERE a.tenant_id = r.tenant_id AND (a.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))) as last_appointment_date,
+      (SELECT re.vital_signs FROM record_entries re WHERE re.record_id = r.id AND re.vital_signs IS NOT NULL ORDER BY re.created_at DESC LIMIT 1) as latest_vital_signs,
+      (SELECT COUNT(*) FROM record_entries re WHERE re.record_id = r.id) as recent_entries_count
+    FROM customer_records r
+    WHERE r.id = $1 AND r.tenant_id = $2
+  `;
+  const res = await query(sql, [id, tenantId]);
+  return res.rows[0] ? mapRecordRow(res.rows[0]) : null;
+}
+async function getRecordByPhone(phone, tenantId) {
+  const cleanPhone = (phone || "").replace(/\D/g, "");
+  if (cleanPhone.length < 8) return null;
+  const sql = `
+    SELECT r.* FROM customer_records r
+    WHERE r.tenant_id = $1 AND REPLACE(r.phone, '-', '') LIKE '%' || $2
+    ORDER BY r.updated_at DESC LIMIT 1
+  `;
+  const res = await query(sql, [tenantId, cleanPhone.slice(-8)]);
+  return res.rows[0] ? mapRecordRow(res.rows[0]) : null;
+}
+async function createRecord(tenantId, data) {
+  const sql = `
+    INSERT INTO customer_records (
+      tenant_id, client_type, full_name, phone, email, identification, address,
+      date_of_birth, gender, blood_type, allergies, pathological_background,
+      current_medications, emergency_contact_name, emergency_contact_phone, notes, metadata
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+    RETURNING *
+  `;
+  const res = await query(sql, [
+    tenantId,
+    data.clientType || "general",
+    data.fullName || "Cliente Sin Nombre",
+    data.phone || "",
+    data.email || null,
+    data.identification || null,
+    data.address || null,
+    data.dateOfBirth || null,
+    data.gender || null,
+    data.bloodType || null,
+    data.allergies || null,
+    data.pathologicalBackground || null,
+    data.currentMedications || null,
+    data.emergencyContactName || null,
+    data.emergencyContactPhone || null,
+    data.notes || null,
+    data.metadata ? JSON.stringify(data.metadata) : "{}"
+  ]);
+  const newRecord = mapRecordRow(res.rows[0]);
+  if (newRecord.phone) {
+    const clean = newRecord.phone.replace(/\D/g, "");
+    if (clean.length >= 8) {
+      await query(
+        `UPDATE appointments 
+         SET record_id = $1 
+         WHERE tenant_id = $2 
+           AND record_id IS NULL 
+           AND REPLACE(whatsapp, '-', '') LIKE '%' || $3`,
+        [newRecord.id, tenantId, clean.slice(-8)]
+      ).catch(() => {
+      });
+    }
+  }
+  return newRecord;
+}
+async function updateRecord(id, tenantId, data) {
+  const allowedFields = {
+    clientType: "client_type",
+    fullName: "full_name",
+    phone: "phone",
+    email: "email",
+    identification: "identification",
+    address: "address",
+    dateOfBirth: "date_of_birth",
+    gender: "gender",
+    bloodType: "blood_type",
+    allergies: "allergies",
+    pathologicalBackground: "pathological_background",
+    currentMedications: "current_medications",
+    emergencyContactName: "emergency_contact_name",
+    emergencyContactPhone: "emergency_contact_phone",
+    notes: "notes"
+  };
+  const updates = ["updated_at = CURRENT_TIMESTAMP"];
+  const params = [id, tenantId];
+  let pIdx = 3;
+  for (const [key, col] of Object.entries(allowedFields)) {
+    if (data[key] !== void 0) {
+      updates.push(`${col} = $${pIdx++}`);
+      params.push(data[key] === "" ? null : data[key]);
+    }
+  }
+  if (data.metadata !== void 0) {
+    updates.push(`metadata = $${pIdx++}`);
+    params.push(JSON.stringify(data.metadata));
+  }
+  const sql = `
+    UPDATE customer_records
+    SET ${updates.join(", ")}
+    WHERE id = $1 AND tenant_id = $2
+    RETURNING *
+  `;
+  const res = await query(sql, params);
+  return res.rows[0] ? mapRecordRow(res.rows[0]) : null;
+}
+async function deleteRecord(id, tenantId) {
+  await query("UPDATE appointments SET record_id = NULL WHERE record_id = $1 AND tenant_id = $2", [id, tenantId]).catch(() => {
+  });
+  const res = await query("DELETE FROM customer_records WHERE id = $1 AND tenant_id = $2", [id, tenantId]);
+  return (res.rowCount || 0) > 0;
+}
+async function addRecordEntry(tenantId, recordId, data) {
+  const sql = `
+    INSERT INTO record_entries (
+      tenant_id, record_id, appointment_id, specialist_id, entry_type,
+      vital_signs, diagnosis, treatment_plan, prescription, notes, attachments
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    RETURNING *
+  `;
+  const res = await query(sql, [
+    tenantId,
+    recordId,
+    data.appointmentId || null,
+    data.specialistId || null,
+    data.entryType || "consultation",
+    data.vitalSigns ? JSON.stringify(data.vitalSigns) : null,
+    data.diagnosis || null,
+    data.treatmentPlan || null,
+    data.prescription || null,
+    data.notes || null,
+    data.attachments ? JSON.stringify(data.attachments) : "[]"
+  ]);
+  await query("UPDATE customer_records SET updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND tenant_id = $2", [recordId, tenantId]).catch(() => {
+  });
+  const entry = mapEntryRow(res.rows[0]);
+  if (entry.specialistId) {
+    const specRes = await query("SELECT name FROM specialists WHERE id = $1", [entry.specialistId]);
+    entry.specialistName = specRes.rows[0]?.name;
+  }
+  return entry;
+}
+async function getRecordEntries(recordId, tenantId) {
+  const sql = `
+    SELECT re.*, s.name as specialist_name
+    FROM record_entries re
+    LEFT JOIN specialists s ON s.id = re.specialist_id
+    WHERE re.record_id = $1 AND re.tenant_id = $2
+    ORDER BY re.created_at DESC
+  `;
+  const res = await query(sql, [recordId, tenantId]);
+  return res.rows.map(mapEntryRow);
+}
+async function deleteRecordEntry(entryId, tenantId) {
+  const res = await query("DELETE FROM record_entries WHERE id = $1 AND tenant_id = $2", [entryId, tenantId]);
+  return (res.rowCount || 0) > 0;
+}
+async function getAppointmentsForRecord(recordId, tenantId) {
+  const rec = await getRecordById(recordId, tenantId);
+  const cleanPhone = rec?.phone ? rec.phone.replace(/\D/g, "") : "";
+  let sql = `
+    SELECT a.*, s.name as "specialistName"
+    FROM appointments a
+    LEFT JOIN specialists s ON s.id = a.specialist_id
+    WHERE a.tenant_id = $1 AND (a.record_id = $2
+  `;
+  const params = [tenantId, recordId];
+  if (cleanPhone.length >= 8) {
+    params.push(cleanPhone.slice(-8));
+    sql += ` OR REPLACE(a.whatsapp, '-', '') LIKE '%' || $3`;
+  }
+  sql += `) ORDER BY a.date DESC, a.time DESC`;
+  const res = await query(sql, params);
+  return res.rows;
+}
+async function getRecordsForSpecialist(specialistId, tenantId, search) {
+  let whereClause = `WHERE a.specialist_id = $1 AND r.tenant_id = $2`;
+  const params = [specialistId, tenantId];
+  if (search && search.trim()) {
+    params.push(`%${search.trim()}%`);
+    whereClause += ` AND (r.full_name ILIKE $${params.length} OR r.phone ILIKE $${params.length} OR r.identification ILIKE $${params.length})`;
+  }
+  const sql = `
+    SELECT DISTINCT r.*,
+      (SELECT COUNT(*) FROM appointments a2 WHERE a2.specialist_id = $1 AND (a2.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a2.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))) as total_appointments,
+      (SELECT MAX(a2.date) FROM appointments a2 WHERE a2.specialist_id = $1 AND (a2.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a2.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))) as last_appointment_date,
+      (SELECT re.vital_signs FROM record_entries re WHERE re.record_id = r.id AND re.vital_signs IS NOT NULL ORDER BY re.created_at DESC LIMIT 1) as latest_vital_signs,
+      (SELECT COUNT(*) FROM record_entries re WHERE re.record_id = r.id) as recent_entries_count
+    FROM customer_records r
+    JOIN appointments a ON (a.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))
+    ${whereClause}
+    ORDER BY r.updated_at DESC
+  `;
+  const res = await query(sql, params);
+  return res.rows.map(mapRecordRow);
+}
+async function getRecordForSpecialistById(recordId, specialistId, tenantId) {
+  const sql = `
+    SELECT DISTINCT r.*,
+      (SELECT COUNT(*) FROM appointments a2 WHERE a2.specialist_id = $2 AND (a2.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a2.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))) as total_appointments,
+      (SELECT MAX(a2.date) FROM appointments a2 WHERE a2.specialist_id = $2 AND (a2.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a2.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))) as last_appointment_date,
+      (SELECT re.vital_signs FROM record_entries re WHERE re.record_id = r.id AND re.vital_signs IS NOT NULL ORDER BY re.created_at DESC LIMIT 1) as latest_vital_signs,
+      (SELECT COUNT(*) FROM record_entries re WHERE re.record_id = r.id) as recent_entries_count
+    FROM customer_records r
+    JOIN appointments a ON (a.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))
+    WHERE r.id = $1 AND a.specialist_id = $2 AND r.tenant_id = $3
+  `;
+  const res = await query(sql, [recordId, specialistId, tenantId]);
+  return res.rows[0] ? mapRecordRow(res.rows[0]) : null;
+}
+var init_records_repo = __esm({
+  "src/server/db/records.repo.ts"() {
+    "use strict";
+    init_pool();
+  }
+});
+
 // src/server/index.ts
 init_env();
 import express from "express";
@@ -2300,6 +2623,55 @@ async function runMigrations() {
     -- Specialists: schedule_type and schedule_config
     ALTER TABLE specialists ADD COLUMN IF NOT EXISTS schedule_type VARCHAR(50) DEFAULT 'business_hours';
     ALTER TABLE specialists ADD COLUMN IF NOT EXISTS schedule_config JSONB;
+
+    -- Customer & Patient Records (Expedientes)
+    CREATE TABLE IF NOT EXISTS customer_records (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+      client_type VARCHAR(20) DEFAULT 'general',
+      full_name VARCHAR(255) NOT NULL,
+      phone VARCHAR(50),
+      email VARCHAR(255),
+      identification VARCHAR(50),
+      address TEXT,
+      date_of_birth DATE,
+      gender VARCHAR(50),
+      blood_type VARCHAR(10),
+      allergies TEXT,
+      pathological_background TEXT,
+      current_medications TEXT,
+      emergency_contact_name VARCHAR(255),
+      emergency_contact_phone VARCHAR(50),
+      notes TEXT,
+      metadata JSONB DEFAULT '{}'::jsonb,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_customer_records_tenant_phone ON customer_records(tenant_id, phone);
+    CREATE INDEX IF NOT EXISTS idx_customer_records_tenant_id_num ON customer_records(tenant_id, identification);
+    CREATE INDEX IF NOT EXISTS idx_customer_records_tenant_type ON customer_records(tenant_id, client_type);
+
+    CREATE TABLE IF NOT EXISTS record_entries (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+      record_id UUID REFERENCES customer_records(id) ON DELETE CASCADE,
+      appointment_id UUID REFERENCES appointments(id) ON DELETE SET NULL,
+      specialist_id UUID REFERENCES specialists(id) ON DELETE SET NULL,
+      entry_type VARCHAR(50) DEFAULT 'consultation',
+      vital_signs JSONB,
+      diagnosis TEXT,
+      treatment_plan TEXT,
+      prescription TEXT,
+      notes TEXT,
+      attachments JSONB DEFAULT '[]'::jsonb,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_record_entries_tenant_record ON record_entries(tenant_id, record_id);
+    CREATE INDEX IF NOT EXISTS idx_record_entries_specialist ON record_entries(specialist_id);
+
+    -- Appointments: link to customer_records
+    ALTER TABLE appointments ADD COLUMN IF NOT EXISTS record_id UUID REFERENCES customer_records(id) ON DELETE SET NULL;
   `).catch((err) => {
     console.warn("[Migrations] Columns addition warning:", err?.message || err);
   });
@@ -12823,6 +13195,80 @@ router24.get("/portal/history", async (req, res) => {
     res.status(500).json({ error: "Error al consultar historial" });
   }
 });
+router24.get("/portal/records", async (req, res) => {
+  try {
+    const specialist = await resolveSpecialistFromRequest(req);
+    if (!specialist) {
+      res.status(401).json({ error: "Credenciales de colaborador no provistas o inv\xE1lidas" });
+      return;
+    }
+    const { getRecordsForSpecialist: getRecordsForSpecialist2 } = await Promise.resolve().then(() => (init_records_repo(), records_repo_exports));
+    const search = req.query.search ? String(req.query.search) : void 0;
+    const records = await getRecordsForSpecialist2(specialist.id, specialist.tenantId, search);
+    res.json({
+      success: true,
+      records,
+      specialistName: specialist.name
+    });
+  } catch (error) {
+    console.error("Specialist portal records error:", error);
+    res.status(500).json({ error: "Error al consultar expedientes asignados" });
+  }
+});
+router24.get("/portal/records/:id", async (req, res) => {
+  try {
+    const specialist = await resolveSpecialistFromRequest(req);
+    if (!specialist) {
+      res.status(401).json({ error: "Credenciales de colaborador no provistas o inv\xE1lidas" });
+      return;
+    }
+    const { getRecordForSpecialistById: getRecordForSpecialistById2, getRecordEntries: getRecordEntries2, getAppointmentsForRecord: getAppointmentsForRecord2 } = await Promise.resolve().then(() => (init_records_repo(), records_repo_exports));
+    const record = await getRecordForSpecialistById2(req.params.id, specialist.id, specialist.tenantId);
+    if (!record) {
+      res.status(403).json({ error: "Acceso no autorizado: este expediente no tiene citas asociadas con tu perfil." });
+      return;
+    }
+    const [appointments, entries] = await Promise.all([
+      getAppointmentsForRecord2(record.id, specialist.tenantId),
+      getRecordEntries2(record.id, specialist.tenantId)
+    ]);
+    res.json({
+      record,
+      appointments: appointments.filter((a) => a.specialist_id === specialist.id || a.specialistId === specialist.id),
+      entries
+    });
+  } catch (error) {
+    console.error("Specialist portal record detail error:", error);
+    res.status(500).json({ error: "Error al consultar detalle del expediente" });
+  }
+});
+router24.post("/portal/records/:id/entries", async (req, res) => {
+  try {
+    const specialist = await resolveSpecialistFromRequest(req);
+    if (!specialist) {
+      res.status(401).json({ error: "Credenciales de colaborador no provistas o inv\xE1lidas" });
+      return;
+    }
+    const { getRecordForSpecialistById: getRecordForSpecialistById2, addRecordEntry: addRecordEntry2 } = await Promise.resolve().then(() => (init_records_repo(), records_repo_exports));
+    const record = await getRecordForSpecialistById2(req.params.id, specialist.id, specialist.tenantId);
+    if (!record) {
+      res.status(403).json({ error: "Acceso no autorizado: este expediente no tiene citas asociadas con tu perfil." });
+      return;
+    }
+    const entry = await addRecordEntry2(specialist.tenantId, record.id, {
+      ...req.body,
+      specialistId: specialist.id,
+      entryType: req.body.entryType || "consultation"
+    });
+    res.status(201).json({
+      success: true,
+      entry
+    });
+  } catch (error) {
+    console.error("Specialist add record entry error:", error);
+    res.status(500).json({ error: "Error al registrar nota cl\xEDnica en el expediente" });
+  }
+});
 router24.use(authenticateToken);
 router24.use(tenantContext);
 router24.get("/", async (req, res) => {
@@ -14584,6 +15030,142 @@ router32.post("/reactivate", async (req, res) => {
 });
 var tenant_subscription_routes_default = router32;
 
+// src/server/routes/records.routes.ts
+import { Router as Router33 } from "express";
+init_records_repo();
+var router33 = Router33();
+router33.use(authenticateToken);
+router33.use(tenantContext);
+router33.get("/", async (req, res) => {
+  try {
+    const { search, type, limit, offset } = req.query;
+    const result = await getRecordsByTenant(req.tenantId, {
+      search: search ? String(search) : void 0,
+      type: type ? String(type) : void 0,
+      limit: limit ? parseInt(String(limit), 10) : 50,
+      offset: offset ? parseInt(String(offset), 10) : 0
+    });
+    res.json(result);
+  } catch (error) {
+    console.error("Error fetching customer records:", error);
+    res.status(500).json({ error: "Error al obtener expedientes" });
+  }
+});
+router33.get("/by-phone/:phone", async (req, res) => {
+  try {
+    const record = await getRecordByPhone(req.params.phone, req.tenantId);
+    if (!record) {
+      res.status(404).json({ error: "Expediente no encontrado para este tel\xE9fono" });
+      return;
+    }
+    res.json(record);
+  } catch (error) {
+    console.error("Error fetching record by phone:", error);
+    res.status(500).json({ error: "Error al buscar expediente" });
+  }
+});
+router33.get("/:id", async (req, res) => {
+  try {
+    const record = await getRecordById(req.params.id, req.tenantId);
+    if (!record) {
+      res.status(404).json({ error: "Expediente no encontrado" });
+      return;
+    }
+    const [appointments, entries] = await Promise.all([
+      getAppointmentsForRecord(req.params.id, req.tenantId),
+      getRecordEntries(req.params.id, req.tenantId)
+    ]);
+    res.json({
+      record,
+      appointments,
+      entries
+    });
+  } catch (error) {
+    console.error("Error fetching record details:", error);
+    res.status(500).json({ error: "Error al obtener detalles del expediente" });
+  }
+});
+router33.post("/", async (req, res) => {
+  try {
+    const { fullName, phone } = req.body;
+    if (!fullName || !fullName.trim()) {
+      res.status(400).json({ error: "El nombre completo es requerido" });
+      return;
+    }
+    const record = await createRecord(req.tenantId, req.body);
+    res.status(201).json(record);
+  } catch (error) {
+    console.error("Error creating customer record:", error);
+    res.status(500).json({ error: "Error al crear expediente" });
+  }
+});
+router33.put("/:id", async (req, res) => {
+  try {
+    const updated = await updateRecord(req.params.id, req.tenantId, req.body);
+    if (!updated) {
+      res.status(404).json({ error: "Expediente no encontrado" });
+      return;
+    }
+    res.json(updated);
+  } catch (error) {
+    console.error("Error updating customer record:", error);
+    res.status(500).json({ error: "Error al actualizar expediente" });
+  }
+});
+router33.delete("/:id", async (req, res) => {
+  try {
+    const success = await deleteRecord(req.params.id, req.tenantId);
+    if (!success) {
+      res.status(404).json({ error: "Expediente no encontrado" });
+      return;
+    }
+    res.json({ success: true, message: "Expediente eliminado con \xE9xito" });
+  } catch (error) {
+    console.error("Error deleting customer record:", error);
+    res.status(500).json({ error: "Error al eliminar expediente" });
+  }
+});
+router33.get("/:id/entries", async (req, res) => {
+  try {
+    const entries = await getRecordEntries(req.params.id, req.tenantId);
+    res.json(entries);
+  } catch (error) {
+    console.error("Error fetching record entries:", error);
+    res.status(500).json({ error: "Error al obtener historial cl\xEDnico" });
+  }
+});
+router33.post("/:id/entries", async (req, res) => {
+  try {
+    const record = await getRecordById(req.params.id, req.tenantId);
+    if (!record) {
+      res.status(404).json({ error: "Expediente no encontrado" });
+      return;
+    }
+    const entry = await addRecordEntry(req.tenantId, req.params.id, {
+      ...req.body,
+      specialistId: req.body.specialistId || void 0
+    });
+    res.status(201).json(entry);
+  } catch (error) {
+    console.error("Error adding record entry:", error);
+    res.status(500).json({ error: "Error al registrar nota en el expediente" });
+  }
+});
+router33.delete("/:id/entries/:entryId", async (req, res) => {
+  try {
+    const success = await deleteRecordEntry(req.params.entryId, req.tenantId);
+    if (!success) {
+      res.status(404).json({ error: "Nota no encontrada" });
+      return;
+    }
+    res.json({ success: true, message: "Nota eliminada" });
+  } catch (error) {
+    console.error("Error deleting record entry:", error);
+    res.status(500).json({ error: "Error al eliminar nota" });
+  }
+});
+var records_routes_default = router33;
+
 // src/server/index.ts
 var __filename = fileURLToPath(import.meta.url);
 var __dirname = path2.dirname(__filename);
@@ -14730,6 +15312,7 @@ async function startServer() {
   app.use("/webhook", webhook_routes_default);
   app.use("/api/queue", queue_routes_default);
   app.use("/api/courts", courts_routes_default);
+  app.use("/api/records", records_routes_default);
   if (env.NODE_ENV === "production") {
     app.use("/assets", express.static(path2.join(__dirname, "assets"), { maxAge: "1y", immutable: true }));
     app.use(express.static(__dirname));

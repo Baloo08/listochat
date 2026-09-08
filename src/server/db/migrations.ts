@@ -828,6 +828,55 @@ export async function runMigrations() {
     -- Specialists: schedule_type and schedule_config
     ALTER TABLE specialists ADD COLUMN IF NOT EXISTS schedule_type VARCHAR(50) DEFAULT 'business_hours';
     ALTER TABLE specialists ADD COLUMN IF NOT EXISTS schedule_config JSONB;
+
+    -- Customer & Patient Records (Expedientes)
+    CREATE TABLE IF NOT EXISTS customer_records (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+      client_type VARCHAR(20) DEFAULT 'general',
+      full_name VARCHAR(255) NOT NULL,
+      phone VARCHAR(50),
+      email VARCHAR(255),
+      identification VARCHAR(50),
+      address TEXT,
+      date_of_birth DATE,
+      gender VARCHAR(50),
+      blood_type VARCHAR(10),
+      allergies TEXT,
+      pathological_background TEXT,
+      current_medications TEXT,
+      emergency_contact_name VARCHAR(255),
+      emergency_contact_phone VARCHAR(50),
+      notes TEXT,
+      metadata JSONB DEFAULT '{}'::jsonb,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_customer_records_tenant_phone ON customer_records(tenant_id, phone);
+    CREATE INDEX IF NOT EXISTS idx_customer_records_tenant_id_num ON customer_records(tenant_id, identification);
+    CREATE INDEX IF NOT EXISTS idx_customer_records_tenant_type ON customer_records(tenant_id, client_type);
+
+    CREATE TABLE IF NOT EXISTS record_entries (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+      record_id UUID REFERENCES customer_records(id) ON DELETE CASCADE,
+      appointment_id UUID REFERENCES appointments(id) ON DELETE SET NULL,
+      specialist_id UUID REFERENCES specialists(id) ON DELETE SET NULL,
+      entry_type VARCHAR(50) DEFAULT 'consultation',
+      vital_signs JSONB,
+      diagnosis TEXT,
+      treatment_plan TEXT,
+      prescription TEXT,
+      notes TEXT,
+      attachments JSONB DEFAULT '[]'::jsonb,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_record_entries_tenant_record ON record_entries(tenant_id, record_id);
+    CREATE INDEX IF NOT EXISTS idx_record_entries_specialist ON record_entries(specialist_id);
+
+    -- Appointments: link to customer_records
+    ALTER TABLE appointments ADD COLUMN IF NOT EXISTS record_id UUID REFERENCES customer_records(id) ON DELETE SET NULL;
   `).catch((err) => {
     console.warn('[Migrations] Columns addition warning:', err?.message || err);
   });
