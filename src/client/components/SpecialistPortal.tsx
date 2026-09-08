@@ -56,9 +56,11 @@ export default function SpecialistPortal({ tenantSlug }: { tenantSlug?: string }
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
 
+  const effectiveSlug = (tenantSlug || customSlugInput || (typeof window !== 'undefined' ? localStorage.getItem('betico_specialist_tenant_slug') : '') || '').toLowerCase().trim();
+
   // 1. Fetch public business branding if slug exists
   useEffect(() => {
-    const slugToFetch = tenantSlug || customSlugInput || localStorage.getItem('betico_specialist_tenant_slug');
+    const slugToFetch = effectiveSlug;
     if (!slugToFetch) return;
 
     let cancelled = false;

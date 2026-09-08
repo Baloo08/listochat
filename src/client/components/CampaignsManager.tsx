@@ -245,7 +245,7 @@ Puedes ver nuestro catálogo completo aquí.`,
   };
 
   const handleImportContactsToCrm = async () => {
-    const contactsToImport = waContacts.filter(c => selectedWaPhones.size === 0 || selectedWaPhones.has(c.phone));
+    const contactsToImport = waContactsList.filter(c => selectedWaPhones.size === 0 || selectedWaPhones.has(c.phone));
     if (contactsToImport.length === 0) {
       alert('No hay contactos seleccionados para importar');
       return;

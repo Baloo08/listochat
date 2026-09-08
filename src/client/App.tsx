@@ -165,8 +165,10 @@ export default function App() {
   }
 
   if (pathname.startsWith('/repartidor')) {
-    const slug = pathname.replace('/repartidor/', '').replace('/repartidor', '').split('/')[0];
-    return <DriverPortal tenantSlug={slug || undefined} />;
+    const cleanPath = pathname.split('?')[0].split('#')[0];
+    const match = cleanPath.match(/^\/repartidor(?:\/([a-zA-Z0-9_-]+))?/i);
+    const slug = (match && match[1]) ? match[1].toLowerCase().trim() : undefined;
+    return <DriverPortal tenantSlug={slug} />;
   }
 
   if (pathname.startsWith('/especialista') || pathname.startsWith('/colaborador') || pathname.startsWith('/equipo')) {
