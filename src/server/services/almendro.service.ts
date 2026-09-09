@@ -11,6 +11,19 @@ function getBaseUrl(environment?: AlmendroEnvironment): string {
   return environment === 'PRODUCTION' ? ALMENDRO_PROD_URL : ALMENDRO_SANDBOX_URL;
 }
 
+function getCostaRicaIssuedAt(): string {
+  const now = new Date();
+  const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+  const crTime = new Date(utc - (3600000 * 6)); // Costa Rica is UTC-6
+  const y = crTime.getFullYear();
+  const m = String(crTime.getMonth() + 1).padStart(2, '0');
+  const d = String(crTime.getDate()).padStart(2, '0');
+  const hh = String(crTime.getHours()).padStart(2, '0');
+  const mm = String(crTime.getMinutes()).padStart(2, '0');
+  const ss = String(crTime.getSeconds()).padStart(2, '0');
+  return `${y}-${m}-${d}T${hh}:${mm}:${ss}-06:00`;
+}
+
 export interface TaxpayerInfo {
   idType: string;
   idNumber: string;
@@ -287,11 +300,14 @@ export class AlmendroService {
     } : undefined;
 
     const paymentMethodCode = params.paymentMethod || '01';
+    const issuerActivityCode = config.economicActivityCode?.trim() || '561001';
 
     const payload: Record<string, any> = {
       voucher_type: docType,
       doc_type: docType,
       situation: '1',
+      issued_at: getCostaRicaIssuedAt(),
+      issuer_activity_code: issuerActivityCode,
       sale_condition: '01',
       currency_code: currency,
       currency,
@@ -306,10 +322,6 @@ export class AlmendroService {
       line_items: lines,
       items: lines
     };
-
-    if (config.economicActivityCode) {
-      payload.issuer_activity_code = config.economicActivityCode;
-    }
 
     if (receiverPayload) {
       payload.receiver = receiverPayload;

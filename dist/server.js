@@ -2348,6 +2348,18 @@ __export(almendro_service_exports, {
 function getBaseUrl(environment) {
   return environment === "PRODUCTION" ? ALMENDRO_PROD_URL : ALMENDRO_SANDBOX_URL;
 }
+function getCostaRicaIssuedAt() {
+  const now = /* @__PURE__ */ new Date();
+  const utc = now.getTime() + now.getTimezoneOffset() * 6e4;
+  const crTime = new Date(utc - 36e5 * 6);
+  const y = crTime.getFullYear();
+  const m = String(crTime.getMonth() + 1).padStart(2, "0");
+  const d = String(crTime.getDate()).padStart(2, "0");
+  const hh = String(crTime.getHours()).padStart(2, "0");
+  const mm = String(crTime.getMinutes()).padStart(2, "0");
+  const ss = String(crTime.getSeconds()).padStart(2, "0");
+  return `${y}-${m}-${d}T${hh}:${mm}:${ss}-06:00`;
+}
 var ALMENDRO_PROD_URL, ALMENDRO_SANDBOX_URL, AlmendroService, almendro_service_default;
 var init_almendro_service = __esm({
   "src/server/services/almendro.service.ts"() {
@@ -2554,10 +2566,13 @@ var init_almendro_service = __esm({
           email: receiverEmail
         } : void 0;
         const paymentMethodCode = params.paymentMethod || "01";
+        const issuerActivityCode = config.economicActivityCode?.trim() || "561001";
         const payload = {
           voucher_type: docType,
           doc_type: docType,
           situation: "1",
+          issued_at: getCostaRicaIssuedAt(),
+          issuer_activity_code: issuerActivityCode,
           sale_condition: "01",
           currency_code: currency,
           currency,
@@ -2572,9 +2587,6 @@ var init_almendro_service = __esm({
           line_items: lines,
           items: lines
         };
-        if (config.economicActivityCode) {
-          payload.issuer_activity_code = config.economicActivityCode;
-        }
         if (receiverPayload) {
           payload.receiver = receiverPayload;
         }
