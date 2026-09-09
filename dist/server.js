@@ -2514,39 +2514,67 @@ var init_almendro_service = __esm({
           else if (taxRateCode === "10") taxPercentage = 0;
           const lineTax = lineSubtotal * taxPercentage;
           taxAmount += lineTax;
+          const totalLineAmount = lineSubtotal + lineTax;
           return {
             line_number: idx + 1,
             cabys_code: item.cabysCode || "8311100000000",
+            detail: item.description.slice(0, 160),
             description: item.description.slice(0, 160),
+            unit_of_measure: "Unid",
+            unit_measure: "Unid",
             quantity: lineQty.toFixed(3),
             unit_price: unitPrice.toFixed(5),
-            unit_measure: "Unid",
+            total_amount: lineSubtotal.toFixed(5),
+            sub_total: lineSubtotal.toFixed(5),
+            base_imponible: lineSubtotal.toFixed(5),
             taxes: [
               {
-                code: "01",
+                codigo: "01",
                 // IVA
+                codigoTarifa: taxRateCode,
+                tarifa: (taxPercentage * 100).toFixed(2),
+                monto: lineTax.toFixed(5),
+                code: "01",
                 rate_code: taxRateCode,
                 rate: (taxPercentage * 100).toFixed(2),
                 amount: lineTax.toFixed(5)
               }
-            ]
+            ],
+            impuesto_neto: lineTax.toFixed(5),
+            total_line_amount: totalLineAmount.toFixed(5)
           };
         });
         const totalAmount = subtotal + taxAmount;
+        const receiverEmail = params.receiver?.email;
         const receiverPayload = params.receiver?.idNumber ? {
           id_type: params.receiver.idType || "01",
           id_number: params.receiver.idNumber.replace(/\D/g, ""),
           name: params.receiver.name || "Cliente Particular",
-          email: params.receiver.email
+          emails: receiverEmail ? [receiverEmail] : [],
+          email: receiverEmail
         } : void 0;
+        const paymentMethodCode = params.paymentMethod || "01";
         const payload = {
+          voucher_type: docType,
           doc_type: docType,
+          situation: "1",
+          sale_condition: "01",
+          currency_code: currency,
           currency,
-          exchange_rate: exchangeRate.toFixed(4),
+          exchange_rate: exchangeRate.toFixed(5),
+          payment_methods: [
+            {
+              tipo: paymentMethodCode
+            }
+          ],
           branch_code: config.branchCode || "001",
           pos_code: config.posCode || "00001",
+          line_items: lines,
           items: lines
         };
+        if (config.economicActivityCode) {
+          payload.issuer_activity_code = config.economicActivityCode;
+        }
         if (receiverPayload) {
           payload.receiver = receiverPayload;
         }
@@ -2603,7 +2631,13 @@ var init_almendro_service = __esm({
               message: `Comprobante emitido con \xE9xito. Clave: ${numericKey}`
             };
           }
-          const errorMsg = responseBody.message || responseBody.error || `Error ${res.status} al emitir en Almendro`;
+          let errorMsg = responseBody.message || responseBody.error || `Error ${res.status} al emitir en Almendro`;
+          if (responseBody.errors && typeof responseBody.errors === "object") {
+            const detailErrors = Object.entries(responseBody.errors).map(([field, errs]) => `${field}: ${Array.isArray(errs) ? errs.join(", ") : errs}`).join(" | ");
+            if (detailErrors) {
+              errorMsg = `${errorMsg} (${detailErrors})`;
+            }
+          }
           console.warn(`[AlmendroService] Emisi\xF3n fallida para tenant ${tenantId}:`, errorMsg);
           return { success: false, message: errorMsg };
         } catch (err) {
@@ -2681,10 +2715,12 @@ var init_almendro_service = __esm({
               taxRateCode: "08"
             });
           }
+          const paymentMethodCode = order.paymentMethod === "card" ? "02" : ["sinpe", "transfer"].includes(order.paymentMethod) ? "04" : "01";
           const voucherRes = await this.emitVoucher(tenantId, {
             docType,
             orderId: order.id,
             currency: order.currency || "CRC",
+            paymentMethod: paymentMethodCode,
             receiver: receiverIdNumber ? {
               idType: receiverIdType,
               idNumber: receiverIdNumber,
@@ -2778,6 +2814,7 @@ var init_almendro_service = __esm({
           const voucherRes = await this.emitVoucher(tenantId, {
             docType,
             appointmentId: appt.id,
+            paymentMethod: "01",
             receiver: receiverIdNumber ? {
               idType: receiverIdType,
               idNumber: receiverIdNumber,
