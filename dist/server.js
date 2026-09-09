@@ -2360,6 +2360,21 @@ function getCostaRicaIssuedAt() {
   const ss = String(crTime.getSeconds()).padStart(2, "0");
   return `${y}-${m}-${d}T${hh}:${mm}:${ss}-06:00`;
 }
+function formatEconomicActivityCode(rawCode) {
+  if (!rawCode) return "5610.0";
+  const cleaned = rawCode.trim();
+  if (/^\d{4}\.\d$/.test(cleaned)) {
+    return cleaned;
+  }
+  const digits = cleaned.replace(/\D/g, "");
+  if (digits.length >= 5) {
+    return `${digits.slice(0, 4)}.${digits.slice(4, 5)}`;
+  }
+  if (digits.length === 4) {
+    return `${digits}.0`;
+  }
+  return "5610.0";
+}
 var ALMENDRO_PROD_URL, ALMENDRO_SANDBOX_URL, AlmendroService, almendro_service_default;
 var init_almendro_service = __esm({
   "src/server/services/almendro.service.ts"() {
@@ -2566,7 +2581,7 @@ var init_almendro_service = __esm({
           email: receiverEmail
         } : void 0;
         const paymentMethodCode = params.paymentMethod || "01";
-        const issuerActivityCode = config.economicActivityCode?.trim() || "561001";
+        const issuerActivityCode = formatEconomicActivityCode(config.economicActivityCode);
         const payload = {
           voucher_type: docType,
           doc_type: docType,

@@ -24,6 +24,22 @@ function getCostaRicaIssuedAt(): string {
   return `${y}-${m}-${d}T${hh}:${mm}:${ss}-06:00`;
 }
 
+function formatEconomicActivityCode(rawCode?: string): string {
+  if (!rawCode) return '5610.0';
+  const cleaned = rawCode.trim();
+  if (/^\d{4}\.\d$/.test(cleaned)) {
+    return cleaned;
+  }
+  const digits = cleaned.replace(/\D/g, '');
+  if (digits.length >= 5) {
+    return `${digits.slice(0, 4)}.${digits.slice(4, 5)}`;
+  }
+  if (digits.length === 4) {
+    return `${digits}.0`;
+  }
+  return '5610.0';
+}
+
 export interface TaxpayerInfo {
   idType: string;
   idNumber: string;
@@ -300,7 +316,7 @@ export class AlmendroService {
     } : undefined;
 
     const paymentMethodCode = params.paymentMethod || '01';
-    const issuerActivityCode = config.economicActivityCode?.trim() || '561001';
+    const issuerActivityCode = formatEconomicActivityCode(config.economicActivityCode);
 
     const payload: Record<string, any> = {
       voucher_type: docType,
