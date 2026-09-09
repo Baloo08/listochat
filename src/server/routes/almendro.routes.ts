@@ -50,6 +50,74 @@ router.get('/public-config/:slug', async (req: Request, res: Response): Promise<
   }
 });
 
+/**
+ * GET /api/almendro/public/voucher-pdf/:keyOrId
+ * Public proxy endpoint for viewing/downloading official electronic invoice PDFs.
+ * Resolves voucher by 16-digit numeric key, 50-digit voucher key, or internal UUID.
+ * Streams application/pdf binary inline to browser with Content-Disposition.
+ */
+router.get(['/public/voucher-pdf/:keyOrId', '/public/vouchers/:keyOrId/pdf'], async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { keyOrId } = req.params;
+    if (!keyOrId) {
+      res.status(400).send('Clave o identificador de comprobante requerido');
+      return;
+    }
+
+    const pdfRes = await AlmendroService.getVoucherPdf(keyOrId);
+    if (!pdfRes.success || !pdfRes.buffer) {
+      const acceptsHtml = req.headers.accept && req.headers.accept.includes('text/html');
+      if (acceptsHtml) {
+        res.status(pdfRes.status || 404).send(`
+          <!DOCTYPE html>
+          <html lang="es">
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>Factura Electrónica - Betico</title>
+            <style>
+              body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background-color: #0f172a; color: #f8fafc; padding: 20px; box-sizing: border-box; }
+              .card { background-color: #1e293b; padding: 2.5rem; border-radius: 1rem; max-width: 480px; width: 100%; text-align: center; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5); border: 1px solid #334155; }
+              .icon { font-size: 2.5rem; margin-bottom: 1rem; }
+              h1 { font-size: 1.25rem; font-weight: 700; margin-bottom: 0.75rem; color: #38bdf8; }
+              p { color: #94a3b8; font-size: 0.95rem; line-height: 1.5; margin-bottom: 1.5rem; }
+              .btn { display: inline-block; padding: 0.75rem 1.5rem; background-color: #0284c7; color: white; border-radius: 0.5rem; text-decoration: none; font-weight: 600; font-size: 0.9rem; transition: background-color 0.2s; }
+              .btn:hover { background-color: #0369a1; }
+            </style>
+          </head>
+          <body>
+            <div class="card">
+              <div class="icon">📄</div>
+              <h1>Comprobante Electrónico no disponible</h1>
+              <p>${pdfRes.message || 'El comprobante aún está en proceso de emisión ante el Ministerio de Hacienda o no se encuentra disponible temporalmente.'}</p>
+              <a href="javascript:location.reload()" class="btn">Reintentar actualización</a>
+            </div>
+          </body>
+          </html>
+        `);
+        return;
+      }
+      res.status(pdfRes.status || 404).json({
+        success: false,
+        error: pdfRes.message || 'No se pudo obtener el PDF del comprobante electrónico'
+      });
+      return;
+    }
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${pdfRes.filename || 'Factura-Electronica.pdf'}"`);
+    res.setHeader('Content-Length', pdfRes.buffer.length);
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.send(pdfRes.buffer);
+  } catch (err: any) {
+    console.error('[AlmendroRoutes] Error en proxy de PDF de comprobante:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Error interno al procesar la descarga del comprobante PDF'
+    });
+  }
+});
+
 // Apply JWT authentication and tenant context to all following routes
 router.use(authenticateToken, tenantContext);
 

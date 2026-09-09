@@ -883,10 +883,14 @@ export default function OrdersPanel() {
                     <div style={{ fontSize: '0.75rem', color: '#166534', wordBreak: 'break-all' }}>
                       <strong>Clave Numérica:</strong> {selectedOrder.billingInfo.numericKey}
                     </div>
-                    {selectedOrder.billingInfo.pdfUrl && (
+                    {Boolean(selectedOrder.billingInfo.pdfUrl || selectedOrder.billingInfo.numericKey) && (
                       <div style={{ marginTop: '4px' }}>
                         <a
-                          href={selectedOrder.billingInfo.pdfUrl}
+                          href={
+                            selectedOrder.billingInfo.pdfUrl && !selectedOrder.billingInfo.pdfUrl.includes('fe.almendro.cr')
+                              ? selectedOrder.billingInfo.pdfUrl
+                              : `/api/almendro/public/voucher-pdf/${selectedOrder.billingInfo.numericKey}`
+                          }
                           target="_blank"
                           rel="noreferrer"
                           style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '6px 12px', backgroundColor: '#15803d', color: 'white', borderRadius: '6px', textDecoration: 'none', fontSize: '0.78rem', fontWeight: 'bold' }}

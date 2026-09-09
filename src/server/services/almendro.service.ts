@@ -1,8 +1,10 @@
 import {
   getTenantAlmendroConfigRaw,
-  saveElectronicVoucher
+  saveElectronicVoucher,
+  getElectronicVoucherByKeyOrId
 } from '../db/tenant-almendro.repo.js';
 import { AlmendroEnvironment, AlmendroModuleToggles } from '../../shared/types.js';
+import { env } from '../config/env.js';
 
 const ALMENDRO_PROD_URL = 'https://fe.almendro.cr/api/v1/public';
 const ALMENDRO_SANDBOX_URL = 'https://fe.almendro.cr/api/v1/public/sandbox';
@@ -38,6 +40,13 @@ function formatEconomicActivityCode(rawCode?: string): string {
     return `${digits}.0`;
   }
   return '5610.0';
+}
+
+function sanitizeVoucherPdfUrl(url?: string, numericKey?: string): string | undefined {
+  if (!url && !numericKey) return undefined;
+  if (url && !url.includes('fe.almendro.cr')) return url;
+  if (numericKey) return `${env.APP_URL}/api/almendro/public/voucher-pdf/${numericKey}`;
+  return url;
 }
 
 export interface TaxpayerInfo {
@@ -367,10 +376,11 @@ export class AlmendroService {
       const responseBody: any = await res.json().catch(() => ({}));
 
       if (res.status === 200 || res.status === 201 || res.status === 202) {
-        const numericKey = responseBody.numeric_key || responseBody.key || `506${Date.now()}`;
-        const consecutive = responseBody.consecutive || responseBody.consecutive_number || '';
-        const pdfUrl = responseBody.pdf_url || `${baseUrl}/vouchers/${numericKey}/pdf`;
-        const xmlSigned = responseBody.xml_signed_url || `${baseUrl}/vouchers/${numericKey}/xml`;
+        const numericKey = responseBody.data?.numeric_key || responseBody.numeric_key || responseBody.key || `506${Date.now()}`;
+        const consecutive = responseBody.data?.consecutive || responseBody.consecutive || responseBody.consecutive_number || '';
+        const voucherKey = responseBody.data?.voucher_key || responseBody.voucher_key || numericKey;
+        const pdfUrl = `${env.APP_URL}/api/almendro/public/voucher-pdf/${numericKey}`;
+        const xmlSigned = responseBody.xml_signed_url || `${baseUrl}/vouchers/${voucherKey}/xml`;
 
         // Save voucher in electronic_vouchers table
         await saveElectronicVoucher(tenantId, {
@@ -445,10 +455,11 @@ export class AlmendroService {
 
       // Idempotency check 1: order.billingInfo already has a numericKey
       if (order.billingInfo?.numericKey && order.billingInfo?.invoiceStatus === 'issued') {
+        const safeUrl = sanitizeVoucherPdfUrl(order.billingInfo.pdfUrl, order.billingInfo.numericKey);
         return {
           success: true,
           numericKey: order.billingInfo.numericKey,
-          pdfUrl: order.billingInfo.pdfUrl,
+          pdfUrl: safeUrl,
           message: `Factura ya emitida previamente con clave ${order.billingInfo.numericKey}`
         };
       }
@@ -456,10 +467,11 @@ export class AlmendroService {
       // Idempotency check 2: voucher already in electronic_vouchers table
       const existingVoucher = await getElectronicVoucherByOrderId(tenantId, order.id);
       if (existingVoucher && existingVoucher.numericKey) {
+        const safeUrl = sanitizeVoucherPdfUrl(existingVoucher.pdfUrl, existingVoucher.numericKey);
         const updatedBillingInfo = {
           ...(order.billingInfo || { requiresInvoice: true }),
           numericKey: existingVoucher.numericKey,
-          pdfUrl: existingVoucher.pdfUrl || undefined,
+          pdfUrl: safeUrl,
           invoiceStatus: 'issued' as const,
           issuedAt: existingVoucher.createdAt ? new Date(existingVoucher.createdAt).toISOString() : new Date().toISOString()
         };
@@ -467,7 +479,7 @@ export class AlmendroService {
         return {
           success: true,
           numericKey: existingVoucher.numericKey,
-          pdfUrl: existingVoucher.pdfUrl || undefined,
+          pdfUrl: safeUrl,
           message: `Factura recuperada de registros con clave ${existingVoucher.numericKey}`
         };
       }
@@ -582,20 +594,22 @@ export class AlmendroService {
       }
 
       if (appt.billingInfo?.numericKey && appt.billingInfo?.invoiceStatus === 'issued') {
+        const safeUrl = sanitizeVoucherPdfUrl(appt.billingInfo.pdfUrl, appt.billingInfo.numericKey);
         return {
           success: true,
           numericKey: appt.billingInfo.numericKey,
-          pdfUrl: appt.billingInfo.pdfUrl,
+          pdfUrl: safeUrl,
           message: `Factura ya emitida con clave ${appt.billingInfo.numericKey}`
         };
       }
 
       const existingVoucher = await getElectronicVoucherByAppointmentId(tenantId, appt.id);
       if (existingVoucher && existingVoucher.numericKey) {
+        const safeUrl = sanitizeVoucherPdfUrl(existingVoucher.pdfUrl, existingVoucher.numericKey);
         const updatedBilling = {
           ...(appt.billingInfo || { requiresInvoice: true }),
           numericKey: existingVoucher.numericKey,
-          pdfUrl: existingVoucher.pdfUrl || undefined,
+          pdfUrl: safeUrl,
           invoiceStatus: 'issued' as const,
           issuedAt: existingVoucher.createdAt ? new Date(existingVoucher.createdAt).toISOString() : new Date().toISOString()
         };
@@ -603,7 +617,7 @@ export class AlmendroService {
         return {
           success: true,
           numericKey: existingVoucher.numericKey,
-          pdfUrl: existingVoucher.pdfUrl || undefined,
+          pdfUrl: safeUrl,
           message: `Factura recuperada con clave ${existingVoucher.numericKey}`
         };
       }
@@ -669,6 +683,111 @@ export class AlmendroService {
     } catch (err: any) {
       console.error(`[AlmendroService] Error emitiendo factura para cita ${appointmentId}:`, err);
       return { success: false, message: `Error interno: ${err.message}` };
+    }
+  }
+
+  /**
+   * Secure proxy method to retrieve the official PDF voucher from Almendro.
+   * Resolves the voucher record by numericKey (16 digits), voucher_key (50 digits), or UUID,
+   * retrieves the decrypted API key for the tenant, and requests the PDF with Bearer authentication.
+   */
+  static async getVoucherPdf(
+    keyOrId: string
+  ): Promise<{
+    success: boolean;
+    buffer?: Buffer;
+    contentType?: string;
+    filename?: string;
+    status?: number;
+    message?: string;
+  }> {
+    try {
+      if (!keyOrId || !keyOrId.trim()) {
+        return { success: false, status: 400, message: 'Clave o identificador de comprobante requerido' };
+      }
+
+      const voucher = await getElectronicVoucherByKeyOrId(keyOrId.trim());
+      if (!voucher) {
+        return { success: false, status: 404, message: 'Comprobante electrónico no encontrado' };
+      }
+
+      const config = await getTenantAlmendroConfigRaw(voucher.tenantId);
+      if (!config || !config.apiKey || !config.apiKey.trim()) {
+        return { success: false, status: 400, message: 'Configuración de facturación no disponible para este comercio' };
+      }
+
+      // Extract 50-digit voucher key from metadata or fallback to numericKey
+      const metadata = (voucher.metadata || {}) as any;
+      const voucherKey50 = metadata?.data?.voucher_key || metadata?.voucher_key;
+      const effectiveKey = voucherKey50 || voucher.numericKey;
+
+      if (!effectiveKey) {
+        return { success: false, status: 400, message: 'El comprobante no cuenta con clave de documento registrada' };
+      }
+
+      const baseUrl = getBaseUrl(config.environment);
+      const cleanKey = config.apiKey.trim();
+
+      // Primary attempt: using the configured environment (Sandbox or Production)
+      const primaryUrl = `${baseUrl}/vouchers/${effectiveKey}/pdf`;
+      let res = await fetch(primaryUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${cleanKey}`,
+          'Accept': 'application/pdf, application/json'
+        }
+      });
+
+      // If primary returned 404, attempt fallback to the other baseUrl (in case environment was toggled)
+      if (res.status === 404) {
+        const fallbackBase = config.environment === 'PRODUCTION' ? ALMENDRO_SANDBOX_URL : ALMENDRO_PROD_URL;
+        const fallbackUrl = `${fallbackBase}/vouchers/${effectiveKey}/pdf`;
+        try {
+          const fallbackRes = await fetch(fallbackUrl, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${cleanKey}`,
+              'Accept': 'application/pdf, application/json'
+            }
+          });
+          if (fallbackRes.status === 200) {
+            res = fallbackRes;
+          }
+        } catch (_) {}
+      }
+
+      if (res.status === 200) {
+        const arrayBuf = await res.arrayBuffer();
+        const buffer = Buffer.from(arrayBuf);
+        const filename = `Factura-${voucher.consecutiveNumber || voucher.numericKey || 'CR'}.pdf`;
+        return {
+          success: true,
+          buffer,
+          contentType: 'application/pdf',
+          filename
+        };
+      }
+
+      const errText = await res.text().catch(() => '');
+      let errMessage = `Error ${res.status} al consultar PDF en Almendro`;
+      try {
+        const errJson = JSON.parse(errText);
+        if (errJson.message) errMessage = errJson.message;
+      } catch (_) {}
+
+      console.warn(`[AlmendroService] No se pudo obtener PDF para clave ${effectiveKey}: ${errMessage}`);
+      return {
+        success: false,
+        status: res.status,
+        message: errMessage
+      };
+    } catch (err: any) {
+      console.error('[AlmendroService] Error al obtener PDF de comprobante:', err);
+      return {
+        success: false,
+        status: 500,
+        message: `Error interno de conexión con el proveedor de facturación: ${err.message}`
+      };
     }
   }
 }

@@ -417,3 +417,41 @@ export async function getElectronicVoucherByAppointmentId(
   `, [tenantId, appointmentId]);
   return res.rows[0] || null;
 }
+
+/**
+ * Retrieves an electronic voucher by numericKey, 50-digit voucher_key, UUID, or order_id/appointment_id.
+ * Used for public PDF downloads and status verification.
+ */
+export async function getElectronicVoucherByKeyOrId(
+  keyOrId: string
+): Promise<ElectronicVoucher | null> {
+  if (!keyOrId || !keyOrId.trim()) return null;
+  const clean = keyOrId.trim();
+
+  const querySql = `
+    SELECT id, tenant_id as "tenantId", order_id as "orderId", appointment_id as "appointmentId",
+           court_booking_id as "courtBookingId", subscription_charge_id as "subscriptionChargeId",
+           doc_type as "docType", consecutive_number as "consecutiveNumber", numeric_key as "numericKey",
+           receiver_id_type as "receiverIdType", receiver_id_number as "receiverIdNumber",
+           receiver_name as "receiverName", receiver_email as "receiverEmail",
+           currency, subtotal, tax_amount as "taxAmount", total_amount as "totalAmount",
+           status, pdf_url as "pdfUrl", xml_signed_url as "xmlSignedUrl",
+           xml_response_url as "xmlResponseUrl", hacienda_response_code as "haciendaResponseCode",
+           hacienda_response_detail as "haciendaResponseDetail", metadata,
+           created_at as "createdAt", updated_at as "updatedAt"
+    FROM electronic_vouchers
+    WHERE numeric_key = $1
+       OR id::text = $1
+       OR order_id::text = $1
+       OR appointment_id::text = $1
+       OR metadata->'data'->>'voucher_key' = $1
+       OR metadata->>'voucher_key' = $1
+       OR metadata->>'key' = $1
+    ORDER BY created_at DESC
+    LIMIT 1
+  `;
+
+  const res = await query(querySql, [clean]);
+  return res.rows[0] || null;
+}
+

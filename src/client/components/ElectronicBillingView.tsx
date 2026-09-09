@@ -775,9 +775,13 @@ export default function ElectronicBillingView() {
                         </span>
                       </td>
                       <td style={{ padding: '10px 8px', textAlign: 'center' }}>
-                        {v.pdfUrl ? (
+                        {Boolean(v.pdfUrl || v.numericKey) ? (
                           <a
-                            href={v.pdfUrl}
+                            href={
+                              v.pdfUrl && !v.pdfUrl.includes('fe.almendro.cr')
+                                ? v.pdfUrl
+                                : `/api/almendro/public/voucher-pdf/${v.numericKey || v.id}`
+                            }
                             target="_blank"
                             rel="noreferrer"
                             style={{

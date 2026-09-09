@@ -950,9 +950,13 @@ export default function RecordsManager({ initialRecordId }: { initialRecordId?: 
                                 </span>
                               </div>
 
-                              {hasInvoice && a.billingInfo?.pdfUrl ? (
+                              {hasInvoice && (a.billingInfo?.pdfUrl || a.billingInfo?.numericKey) ? (
                                 <a
-                                  href={a.billingInfo.pdfUrl}
+                                  href={
+                                    a.billingInfo.pdfUrl && !a.billingInfo.pdfUrl.includes('fe.almendro.cr')
+                                      ? a.billingInfo.pdfUrl
+                                      : `/api/almendro/public/voucher-pdf/${a.billingInfo.numericKey || a.id}`
+                                  }
                                   target="_blank"
                                   rel="noreferrer"
                                   style={{ padding: '6px 10px', backgroundColor: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 'bold', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}
@@ -1778,9 +1782,13 @@ export default function RecordsManager({ initialRecordId }: { initialRecordId?: 
             )}
 
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
-              {invoiceResult.pdfUrl && (
+              {(invoiceResult.pdfUrl || invoiceResult.numericKey) && (
                 <a
-                  href={invoiceResult.pdfUrl}
+                  href={
+                    invoiceResult.pdfUrl && !invoiceResult.pdfUrl.includes('fe.almendro.cr')
+                      ? invoiceResult.pdfUrl
+                      : `/api/almendro/public/voucher-pdf/${invoiceResult.numericKey}`
+                  }
                   target="_blank"
                   rel="noreferrer"
                   style={{ padding: '10px 18px', backgroundColor: '#059669', color: 'white', borderRadius: '8px', textDecoration: 'none', fontWeight: 'bold', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px' }}
