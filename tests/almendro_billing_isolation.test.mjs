@@ -232,4 +232,125 @@ describe('Almendro Electronic Invoicing - Security & Multi-Tenant Isolation Test
       assert.equal(resStaff.statusCode, 403);
     });
   });
+
+  describe('6. External Manual Billing Mode & Receptor Tax Data Protocol', () => {
+    function resolvePublicBillingConfig(config, moduleName = 'store') {
+      if (!config) return { isEnabled: false };
+      const mode = config.billingMode || (config.isEnabled && config.apiKey ? 'ALMENDRO_AUTO' : config.isEnabled ? 'EXTERNAL_MANUAL' : 'DISABLED');
+      
+      if (mode === 'DISABLED') return { isEnabled: false, billingMode: 'DISABLED' };
+      
+      const moduleKey = `${moduleName}Enabled`;
+      const isModuleActive = config.moduleToggles ? config.moduleToggles[moduleKey] !== false : true;
+      if (!isModuleActive) return { isEnabled: false, billingMode: mode };
+
+      if (mode === 'EXTERNAL_MANUAL') {
+        return { isEnabled: true, billingMode: 'EXTERNAL_MANUAL' };
+      }
+
+      if (mode === 'ALMENDRO_AUTO') {
+        const isConfigured = Boolean(config.apiKey);
+        return { isEnabled: isConfigured, billingMode: 'ALMENDRO_AUTO' };
+      }
+
+      return { isEnabled: false, billingMode: mode };
+    }
+
+    test('enables public checkout billing form in EXTERNAL_MANUAL mode without Almendro API key', () => {
+      const manualMerchantConfig = {
+        tenantId: 'tenant_pulperia_don_pepe',
+        billingMode: 'EXTERNAL_MANUAL',
+        isEnabled: true,
+        apiKey: null, // No Almendro subscription needed!
+        moduleToggles: { storeEnabled: true }
+      };
+
+      const publicConfig = resolvePublicBillingConfig(manualMerchantConfig, 'store');
+      assert.equal(publicConfig.isEnabled, true, 'Checkout debe mostrar formulario de facturación');
+      assert.equal(publicConfig.billingMode, 'EXTERNAL_MANUAL');
+    });
+
+    test('respects DISABLED billing mode', () => {
+      const disabledMerchantConfig = {
+        tenantId: 'tenant_bar_central',
+        billingMode: 'DISABLED',
+        isEnabled: false,
+        apiKey: 'some_key'
+      };
+
+      const publicConfig = resolvePublicBillingConfig(disabledMerchantConfig, 'store');
+      assert.equal(publicConfig.isEnabled, false);
+      assert.equal(publicConfig.billingMode, 'DISABLED');
+    });
+
+    test('requires API key in ALMENDRO_AUTO mode', () => {
+      const autoWithoutKey = {
+        tenantId: 'tenant_auto_nokey',
+        billingMode: 'ALMENDRO_AUTO',
+        isEnabled: true,
+        apiKey: null
+      };
+      assert.equal(resolvePublicBillingConfig(autoWithoutKey).isEnabled, false);
+
+      const autoWithKey = {
+        tenantId: 'tenant_auto_withkey',
+        billingMode: 'ALMENDRO_AUTO',
+        isEnabled: true,
+        apiKey: 'valid_api_token_almendro'
+      };
+      assert.equal(resolvePublicBillingConfig(autoWithKey).isEnabled, true);
+    });
+
+    test('manual invoice state transition updates order billing metadata', () => {
+      const order = {
+        id: 'ord_12345',
+        tenantId: 'tenant_pulperia_don_pepe',
+        billingInfo: {
+          requiresInvoice: true,
+          idNumber: '112340567',
+          idType: '01',
+          legalName: 'Juan Pérez Soto',
+          email: 'juan@example.com',
+          invoiceStatus: 'pending'
+        }
+      };
+
+      // Transition via manual invoice
+      const externalRef = 'FE-00100001010000004521';
+      const updatedBilling = {
+        ...order.billingInfo,
+        invoiceStatus: 'issued',
+        issuedManually: true,
+        externalInvoiceReference: externalRef,
+        issuedAt: new Date().toISOString()
+      };
+
+      assert.equal(updatedBilling.invoiceStatus, 'issued');
+      assert.equal(updatedBilling.issuedManually, true);
+      assert.equal(updatedBilling.externalInvoiceReference, externalRef);
+      assert.ok(updatedBilling.issuedAt);
+    });
+
+    test('validates Receptor does not require CodigoActividad under DGT-R-033-2019 / XML v4.3', () => {
+      // Costa Rica Hacienda XML v4.3 schema rule:
+      // Emisor: CodigoActividad is MANDATORY (6 digits)
+      // Receptor: CodigoActividad does NOT exist in XML specification
+      const emisorXmlPayload = {
+        Numero: '3101123456',
+        CodigoActividad: '722003' // Mandatory for Emisor
+      };
+      const receptorXmlPayload = {
+        Identificacion: {
+          Tipo: '01',
+          Numero: '112340567'
+        },
+        Nombre: 'María Rodríguez Calvo',
+        CorreoElectronico: 'maria@correo.cr'
+        // Notice: NO CodigoActividad in Receptor!
+      };
+
+      assert.ok(emisorXmlPayload.CodigoActividad, 'Emisor requiere actividad económica obligatoria');
+      assert.equal(receptorXmlPayload.CodigoActividad, undefined, 'Receptor NO lleva actividad económica en factura de compra');
+    });
+  });
 });

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ShoppingCart, Camera, Image, CheckCircle2, Clock, CheckCircle, Truck, Package, XCircle, Eye, MessageCircle, AlertCircle, RefreshCw, Send, Check, Utensils, LayoutGrid, List, Navigation, Bike, MapPin, User, Phone, Store, Maximize, ExternalLink, Building2, Zap, CreditCard, Smartphone, DollarSign, FileText, Download } from 'lucide-react';
+import { ShoppingCart, Camera, Image, CheckCircle2, Clock, CheckCircle, Truck, Package, XCircle, Eye, MessageCircle, AlertCircle, RefreshCw, Send, Check, Utensils, LayoutGrid, List, Navigation, Bike, MapPin, User, Phone, Store, Maximize, ExternalLink, Building2, Zap, CreditCard, Smartphone, DollarSign, FileText, Download, Copy } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
 import { Order, OrderStatus, DeliveryDriver } from '../../shared/types';
 import InteractiveMapPicker from './InteractiveMapPicker';
@@ -22,6 +22,10 @@ export default function OrdersPanel() {
   const [dispatching, setDispatching] = useState(false);
   const [emittingInvoiceId, setEmittingInvoiceId] = useState<string | null>(null);
   const [confirmingPaymentId, setConfirmingPaymentId] = useState<string | null>(null);
+  const [markingManualInvoice, setMarkingManualInvoice] = useState(false);
+  const [manualRefInput, setManualRefInput] = useState('');
+  const [showManualInvoiceForm, setShowManualInvoiceForm] = useState(false);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
 
   const api = useApi();
 
@@ -137,6 +141,64 @@ export default function OrdersPanel() {
       alert('Error al emitir factura electrónica: ' + (e?.message || 'Verifique configuración'));
     } finally {
       setEmittingInvoiceId(null);
+    }
+  };
+
+  const copyToClipboard = (text: string, fieldName: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopiedField(fieldName);
+    setTimeout(() => setCopiedField(null), 2000);
+  };
+
+  const copyFullTaxData = (billing: any) => {
+    if (!billing) return;
+    const typeMap: Record<string, string> = {
+      '01': 'Cédula Física',
+      '02': 'Cédula Jurídica',
+      '03': 'DIMEX',
+      '04': 'NITE'
+    };
+    const orderNum = selectedOrder?.orderNumber ? `#${selectedOrder.orderNumber}` : selectedOrder?.id ? `#${selectedOrder.id.slice(0, 8)}` : '';
+    const totalFormatted = selectedOrder?.total != null ? `${selectedOrder.currency === 'USD' ? '$' : '₡'}${Number(selectedOrder.total).toLocaleString()}` : '';
+    const text = `--- DATOS PARA FACTURA ELECTRÓNICA ---
+Cédula: ${billing.idNumber || 'No especificada'}
+Tipo de Cédula: ${typeMap[billing.idType] || billing.idType || 'Física'}
+Razón Social: ${billing.legalName || selectedOrder?.customerName || ''}
+Correo Electrónico: ${billing.email || selectedOrder?.customerEmail || ''}
+${orderNum ? `Orden: ${orderNum}\n` : ''}${totalFormatted ? `Monto Total: ${totalFormatted}\n` : ''}---------------------------------------`;
+    navigator.clipboard.writeText(text);
+    setCopiedField('all');
+    setTimeout(() => setCopiedField(null), 2000);
+  };
+
+  const handleMarkManualInvoice = async (orderId: string) => {
+    if (!orderId) return;
+    setMarkingManualInvoice(true);
+    try {
+      const res: any = await api.put(`/api/orders/${orderId}/manual-invoice`, {
+        externalInvoiceReference: manualRefInput.trim() || undefined
+      });
+      alert(res?.message || 'Orden marcada como facturada en su sistema exitosamente.');
+      setShowManualInvoiceForm(false);
+      setManualRefInput('');
+      await fetchOrders();
+      if (selectedOrder && selectedOrder.id === orderId) {
+        setSelectedOrder(prev => prev ? {
+          ...prev,
+          billingInfo: {
+            ...(prev.billingInfo || { requiresInvoice: true }),
+            invoiceStatus: 'issued',
+            issuedManually: true,
+            externalInvoiceReference: manualRefInput.trim() || 'Manual',
+            issuedAt: new Date().toISOString()
+          }
+        } : null);
+      }
+    } catch (err: any) {
+      alert('Error al marcar orden como facturada: ' + (err?.message || 'Error desconocido'));
+    } finally {
+      setMarkingManualInvoice(false);
     }
   };
 
@@ -850,34 +912,110 @@ export default function OrdersPanel() {
               )}
             </div>
 
-            {/* Facturación Electrónica Almendro */}
+            {/* Facturación Electrónica */}
             {selectedOrder.billingInfo?.requiresInvoice && (
               <div style={{
-                backgroundColor: selectedOrder.billingInfo.numericKey ? '#f0fdf4' : '#faf5ff',
-                border: `1px solid ${selectedOrder.billingInfo.numericKey ? '#86efac' : '#e9d5ff'}`,
+                backgroundColor: (selectedOrder.billingInfo.numericKey || selectedOrder.billingInfo.issuedManually) ? '#f0fdf4' : '#faf5ff',
+                border: `1px solid ${(selectedOrder.billingInfo.numericKey || selectedOrder.billingInfo.issuedManually) ? '#86efac' : '#e9d5ff'}`,
                 borderRadius: '10px',
                 padding: '16px',
                 marginBottom: '20px'
               }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                  <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: selectedOrder.billingInfo.numericKey ? '#166534' : '#6b21a8', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <FileText size={16} /> Facturación Electrónica (Hacienda / Almendro)
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
+                  <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: (selectedOrder.billingInfo.numericKey || selectedOrder.billingInfo.issuedManually) ? '#166534' : '#6b21a8', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <FileText size={16} /> Datos de Facturación Electrónica
                   </span>
-                  <span style={{
-                    fontSize: '0.75rem', fontWeight: 'bold', padding: '3px 8px', borderRadius: '6px',
-                    backgroundColor: selectedOrder.billingInfo.numericKey ? '#dcfce7' : selectedOrder.billingInfo.invoiceStatus === 'failed' ? '#fee2e2' : '#f3e8ff',
-                    color: selectedOrder.billingInfo.numericKey ? '#15803d' : selectedOrder.billingInfo.invoiceStatus === 'failed' ? '#b91c1c' : '#7e22ce'
-                  }}>
-                    {selectedOrder.billingInfo.numericKey ? '✅ Emitida con Éxito' : selectedOrder.billingInfo.invoiceStatus === 'failed' ? '❌ Falló Emisión' : '⏳ Pendiente de Emisión'}
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      onClick={() => copyFullTaxData(selectedOrder.billingInfo)}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        padding: '4px 9px',
+                        backgroundColor: copiedField === 'all' ? '#15803d' : '#f8fafc',
+                        color: copiedField === 'all' ? '#ffffff' : '#334155',
+                        border: '1px solid #cbd5e1',
+                        borderRadius: '6px',
+                        fontSize: '0.74rem',
+                        fontWeight: '700',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s'
+                      }}
+                      title="Copiar toda la información fiscal al portapapeles"
+                    >
+                      {copiedField === 'all' ? <Check size={13} /> : <Copy size={13} />}
+                      {copiedField === 'all' ? '¡Ficha Copiada!' : 'Copiar Ficha Completa'}
+                    </button>
+                    <span style={{
+                      fontSize: '0.75rem', fontWeight: 'bold', padding: '3px 8px', borderRadius: '6px',
+                      backgroundColor: selectedOrder.billingInfo.numericKey ? '#dcfce7' : selectedOrder.billingInfo.issuedManually ? '#dcfce7' : selectedOrder.billingInfo.invoiceStatus === 'failed' ? '#fee2e2' : '#f3e8ff',
+                      color: selectedOrder.billingInfo.numericKey ? '#15803d' : selectedOrder.billingInfo.issuedManually ? '#15803d' : selectedOrder.billingInfo.invoiceStatus === 'failed' ? '#b91c1c' : '#7e22ce'
+                    }}>
+                      {selectedOrder.billingInfo.numericKey
+                        ? '✅ Emitida en Hacienda'
+                        : selectedOrder.billingInfo.issuedManually
+                        ? `✅ Facturada en mi Sistema (${selectedOrder.billingInfo.externalInvoiceReference || 'Manual'})`
+                        : selectedOrder.billingInfo.invoiceStatus === 'failed'
+                        ? '❌ Falló Emisión'
+                        : '⏳ Pendiente de Emisión'}
+                    </span>
+                  </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '0.8rem', backgroundColor: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '10px' }}>
-                  <div><strong>Cédula:</strong> {selectedOrder.billingInfo.idNumber || 'No registrada'} ({selectedOrder.billingInfo.idType === '02' ? 'Jurídica' : 'Física'})</div>
-                  <div><strong>Razón Social:</strong> {selectedOrder.billingInfo.legalName || selectedOrder.customerName}</div>
-                  <div style={{ gridColumn: '1 / -1' }}><strong>Correo para Factura:</strong> {selectedOrder.billingInfo.email || selectedOrder.customerEmail || 'No especificado'}</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '0.8rem', backgroundColor: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' }}>
+                    <div>
+                      <strong>Cédula:</strong> {selectedOrder.billingInfo.idNumber || 'No registrada'}{' '}
+                      <span style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                        ({selectedOrder.billingInfo.idType === '02' ? 'Jurídica' : selectedOrder.billingInfo.idType === '03' ? 'DIMEX' : selectedOrder.billingInfo.idType === '04' ? 'NITE' : 'Física'})
+                      </span>
+                    </div>
+                    {selectedOrder.billingInfo.idNumber && (
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(selectedOrder.billingInfo.idNumber, 'idNumber')}
+                        style={{ border: 'none', background: 'none', cursor: 'pointer', padding: '2px', color: copiedField === 'idNumber' ? '#15803d' : '#64748b', display: 'flex', alignItems: 'center' }}
+                        title="Copiar Cédula"
+                      >
+                        {copiedField === 'idNumber' ? <Check size={13} /> : <Copy size={13} />}
+                      </button>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' }}>
+                    <div>
+                      <strong>Razón Social:</strong> {selectedOrder.billingInfo.legalName || selectedOrder.customerName}
+                    </div>
+                    {(selectedOrder.billingInfo.legalName || selectedOrder.customerName) && (
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(selectedOrder.billingInfo.legalName || selectedOrder.customerName, 'legalName')}
+                        style={{ border: 'none', background: 'none', cursor: 'pointer', padding: '2px', color: copiedField === 'legalName' ? '#15803d' : '#64748b', display: 'flex', alignItems: 'center' }}
+                        title="Copiar Razón Social"
+                      >
+                        {copiedField === 'legalName' ? <Check size={13} /> : <Copy size={13} />}
+                      </button>
+                    )}
+                  </div>
+                  <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' }}>
+                    <div>
+                      <strong>Correo para Factura:</strong> {selectedOrder.billingInfo.email || selectedOrder.customerEmail || 'No especificado'}
+                    </div>
+                    {(selectedOrder.billingInfo.email || selectedOrder.customerEmail) && (
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(selectedOrder.billingInfo.email || selectedOrder.customerEmail, 'email')}
+                        style={{ border: 'none', background: 'none', cursor: 'pointer', padding: '2px', color: copiedField === 'email' ? '#15803d' : '#64748b', display: 'flex', alignItems: 'center' }}
+                        title="Copiar Correo"
+                      >
+                        {copiedField === 'email' ? <Check size={13} /> : <Copy size={13} />}
+                      </button>
+                    )}
+                  </div>
                 </div>
 
+                {/* State: Issued via Almendro/Hacienda */}
                 {selectedOrder.billingInfo.numericKey ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                     <div style={{ fontSize: '0.75rem', color: '#166534', wordBreak: 'break-all' }}>
@@ -900,25 +1038,85 @@ export default function OrdersPanel() {
                       </div>
                     )}
                   </div>
+                ) : selectedOrder.billingInfo.issuedManually ? (
+                  /* State: Issued manually in external system */
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#f0fdf4', padding: '8px 12px', borderRadius: '6px', border: '1px solid #bbf7d0', fontSize: '0.8rem', color: '#166534' }}>
+                    <span>
+                      📋 Facturada en su sistema externo. <strong>Ref:</strong> {selectedOrder.billingInfo.externalInvoiceReference || 'Manual'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowManualInvoiceForm(true)}
+                      style={{ fontSize: '0.75rem', color: '#15803d', background: 'none', border: 'none', textDecoration: 'underline', cursor: 'pointer', fontWeight: '600' }}
+                    >
+                      Editar Referencia
+                    </button>
+                  </div>
                 ) : (
-                  <div>
-                    {selectedOrder.paymentStatus === 'paid' ? (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-                        <span style={{ fontSize: '0.75rem', color: '#6b21a8' }}>El pago está confirmado. Puedes emitir la factura a Hacienda inmediatamente:</span>
+                  /* State: Not yet issued */
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: '0.76rem', color: '#6b21a8' }}>
+                        {selectedOrder.paymentStatus === 'paid'
+                          ? 'El cliente solicitó factura electrónica. Puedes gestionarla aquí:'
+                          : '💡 Datos recibidos para factura. Puedes marcarla cuando la emitas en tu facturador:'}
+                      </span>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                         <button
                           type="button"
-                          onClick={() => handleEmitInvoice(selectedOrder.id)}
-                          disabled={emittingInvoiceId === selectedOrder.id}
-                          style={{ padding: '7px 14px', backgroundColor: '#7e22ce', color: 'white', border: 'none', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                          onClick={() => setShowManualInvoiceForm(true)}
+                          style={{ padding: '6px 12px', backgroundColor: '#0284c7', color: 'white', border: 'none', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 'bold', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                         >
-                          <FileText size={13} /> {emittingInvoiceId === selectedOrder.id ? 'Emitiendo en Hacienda...' : '🧾 Emitir Factura Electrónica Ahora'}
+                          <CheckCircle2 size={13} /> Marcar como Facturada en mi Sistema
                         </button>
+                        {selectedOrder.paymentStatus === 'paid' && (
+                          <button
+                            type="button"
+                            onClick={() => handleEmitInvoice(selectedOrder.id)}
+                            disabled={emittingInvoiceId === selectedOrder.id}
+                            style={{ padding: '6px 12px', backgroundColor: '#7e22ce', color: 'white', border: 'none', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 'bold', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                          >
+                            <FileText size={13} /> {emittingInvoiceId === selectedOrder.id ? 'Emitiendo en Hacienda...' : 'Emitir con Almendro'}
+                          </button>
+                        )}
                       </div>
-                    ) : (
-                      <div style={{ fontSize: '0.75rem', color: '#6b21a8', fontStyle: 'italic' }}>
-                        💡 La factura electrónica se emitirá automáticamente en cuanto verifiques o confirmes el pago de este pedido.
-                      </div>
-                    )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Form to enter external invoice reference */}
+                {showManualInvoiceForm && (
+                  <div style={{ marginTop: '12px', padding: '12px', backgroundColor: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: '8px' }}>
+                    <div style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#1e293b', marginBottom: '4px' }}>
+                      Registrar comprobante emitido en su facturador externo
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '8px' }}>
+                      Ingrese el número o referencia del comprobante emitido en su sistema (ej. Quickbooks, Factun, GTI, ATV Hacienda o consecutivo local):
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      <input
+                        type="text"
+                        placeholder="Ej. FE-00100001010000001234 o #1042"
+                        value={manualRefInput}
+                        onChange={(e) => setManualRefInput(e.target.value)}
+                        style={{ flex: 1, minWidth: '200px', padding: '7px 10px', fontSize: '0.8rem', border: '1px solid #cbd5e1', borderRadius: '6px' }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleMarkManualInvoice(selectedOrder.id)}
+                        disabled={markingManualInvoice}
+                        style={{ padding: '7px 14px', backgroundColor: '#15803d', color: 'white', border: 'none', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 'bold', cursor: markingManualInvoice ? 'not-allowed' : 'pointer' }}
+                      >
+                        {markingManualInvoice ? 'Guardando...' : 'Confirmar Facturación'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setShowManualInvoiceForm(false); setManualRefInput(''); }}
+                        style={{ padding: '7px 12px', backgroundColor: '#e2e8f0', color: '#334155', border: 'none', borderRadius: '6px', fontSize: '0.8rem', cursor: 'pointer' }}
+                      >
+                        Cancelar
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>

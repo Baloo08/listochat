@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import { tenantContext } from '../middleware/tenantContext.js';
-import { getOrdersByTenant, getOrderById, updateOrderStatus, confirmPayment, executeOrderPaymentConfirmation } from '../db/orders.repo.js';
+import { getOrdersByTenant, getOrderById, updateOrderStatus, updateOrder, confirmPayment, executeOrderPaymentConfirmation } from '../db/orders.repo.js';
 import { getTenantById } from '../db/tenant.repo.js';
 import { getStoreSettings } from '../db/store-settings.repo.js';
 import { sendMessage } from '../services/evolution.js';
@@ -301,6 +301,70 @@ router.post('/:id/confirm-payment', async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Error al confirmar pago' });
+  }
+});
+
+/**
+ * PUT /api/orders/:id/manual-invoice
+ * Marks an order as invoiced in an external system (without Almendro API).
+ * Stores the external invoice reference / consecutive and updates invoiceStatus to 'issued'.
+ */
+router.put('/:id/manual-invoice', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { invoiceReference, notes } = req.body;
+    const tenantId = req.tenantId!;
+
+    const order = await getOrderById(id, tenantId);
+    if (!order) {
+      res.status(404).json({ error: 'Orden no encontrada' });
+      return;
+    }
+
+    const currentBilling = order.billingInfo || { requiresInvoice: true };
+    const ref = (invoiceReference || '').trim() || 'Factura Externa';
+    const updatedBilling = {
+      ...currentBilling,
+      requiresInvoice: true,
+      invoiceStatus: 'issued' as const,
+      externalInvoiceReference: ref,
+      issuedManually: true,
+      invoiceIssuedAt: new Date().toISOString(),
+      manualInvoiceNotes: notes || undefined
+    };
+
+    const updated = await updateOrder(id, tenantId, {
+      billingInfo: updatedBilling
+    });
+
+    await logAuditEvent(
+      tenantId,
+      (req as any).user?.userId || 'system',
+      'order_manual_invoice_registered',
+      'order',
+      id,
+      {
+        orderNumber: order.orderNumber,
+        invoiceReference: ref,
+        customerName: order.customerName
+      },
+      req.ip,
+      req.headers['user-agent']
+    );
+
+    // Emit real-time WebSocket event
+    if ((req as any).io) {
+      (req as any).io.to(`tenant_${tenantId}`).emit('order:updated', updated);
+    }
+
+    res.json({
+      success: true,
+      order: updated,
+      message: `Factura manual registrada con éxito (${ref})`
+    });
+  } catch (error: any) {
+    console.error('[OrdersRoute] Error registrando factura manual:', error);
+    res.status(500).json({ error: error.message || 'Error al registrar factura manual' });
   }
 });
 

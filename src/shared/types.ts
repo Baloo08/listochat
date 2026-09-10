@@ -84,6 +84,8 @@ export interface CustomerBillingInfo {
   pdfUrl?: string;
   invoiceStatus?: 'pending' | 'issued' | 'failed';
   issuedAt?: string;
+  externalInvoiceReference?: string;
+  issuedManually?: boolean;
 }
 
 export interface Appointment {
@@ -725,6 +727,7 @@ export interface RecordEntry {
 // ==========================================
 
 export type AlmendroEnvironment = 'SANDBOX' | 'PRODUCTION';
+export type AlmendroBillingMode = 'ALMENDRO_AUTO' | 'EXTERNAL_MANUAL' | 'DISABLED';
 
 export interface AlmendroModuleToggles {
   storeEnabled: boolean;        // Tienda virtual / E-commerce
@@ -738,6 +741,7 @@ export interface TenantAlmendroConfig {
   id: string;
   tenantId: string;
   isEnabled: boolean;
+  billingMode?: AlmendroBillingMode;
   environment: AlmendroEnvironment;
   apiKeyMasked: string;
   defaultDocType: '01' | '04'; // 01: Factura Electrónica, 04: Tiquete Electrónico

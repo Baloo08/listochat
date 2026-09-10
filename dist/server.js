@@ -2046,7 +2046,8 @@ __export(tenant_almendro_repo_exports, {
 async function getTenantAlmendroConfig(tenantId) {
   if (!tenantId) throw new Error("tenantId es requerido para consultar la configuraci\xF3n de Almendro");
   const res = await query(`
-    SELECT id, tenant_id as "tenantId", is_enabled as "isEnabled", environment,
+    SELECT id, tenant_id as "tenantId", is_enabled as "isEnabled",
+           billing_mode as "billingMode", environment,
            api_key_encrypted as "apiKeyEncrypted", default_doc_type as "defaultDocType",
            module_toggles as "moduleToggles", tax_id_type as "taxIdType",
            tax_id_number as "taxIdNumber", legal_name as "legalName",
@@ -2061,6 +2062,7 @@ async function getTenantAlmendroConfig(tenantId) {
       id: "",
       tenantId,
       isEnabled: false,
+      billingMode: "DISABLED",
       environment: "SANDBOX",
       apiKeyMasked: "",
       defaultDocType: "04",
@@ -2078,10 +2080,16 @@ async function getTenantAlmendroConfig(tenantId) {
     }
   }
   const toggles = row.moduleToggles ? { ...DEFAULT_MODULE_TOGGLES, ...row.moduleToggles } : { ...DEFAULT_MODULE_TOGGLES };
+  const isKeyConfigured = Boolean(rawKey && rawKey.length > 5);
+  const rawBillingMode = row.billingMode;
+  const billingMode = rawBillingMode || (row.isEnabled ? isKeyConfigured ? "ALMENDRO_AUTO" : "EXTERNAL_MANUAL" : "DISABLED");
+  const isConfigured = billingMode === "EXTERNAL_MANUAL" ? true : isKeyConfigured;
+  const isEnabled = Boolean(row.isEnabled) && billingMode !== "DISABLED";
   return {
     id: row.id,
     tenantId: row.tenantId,
-    isEnabled: Boolean(row.isEnabled),
+    isEnabled,
+    billingMode,
     environment: row.environment || "SANDBOX",
     apiKeyMasked: rawKey ? CryptoService.maskSecret(rawKey) : "",
     defaultDocType: row.defaultDocType === "01" ? "01" : "04",
@@ -2093,7 +2101,7 @@ async function getTenantAlmendroConfig(tenantId) {
     economicActivityCode: row.economicActivityCode || "",
     branchCode: row.branchCode || "001",
     posCode: row.posCode || "00001",
-    isConfigured: Boolean(rawKey && rawKey.length > 5),
+    isConfigured,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt
   };
@@ -2101,7 +2109,8 @@ async function getTenantAlmendroConfig(tenantId) {
 async function getTenantAlmendroConfigRaw(tenantId) {
   if (!tenantId) return null;
   const res = await query(`
-    SELECT is_enabled as "isEnabled", environment, api_key_encrypted as "apiKeyEncrypted",
+    SELECT is_enabled as "isEnabled", billing_mode as "billingMode", environment,
+           api_key_encrypted as "apiKeyEncrypted",
            default_doc_type as "defaultDocType", module_toggles as "moduleToggles",
            tax_id_type as "taxIdType", tax_id_number as "taxIdNumber",
            legal_name as "legalName", commercial_name as "commercialName",
@@ -2121,9 +2130,12 @@ async function getTenantAlmendroConfigRaw(tenantId) {
     }
   }
   const toggles = row.moduleToggles ? { ...DEFAULT_MODULE_TOGGLES, ...row.moduleToggles } : { ...DEFAULT_MODULE_TOGGLES };
+  const rawBillingMode = row.billingMode;
+  const billingMode = rawBillingMode || (row.isEnabled ? apiKey ? "ALMENDRO_AUTO" : "EXTERNAL_MANUAL" : "DISABLED");
   return {
     apiKey,
     isEnabled: Boolean(row.isEnabled),
+    billingMode,
     environment: row.environment || "SANDBOX",
     defaultDocType: row.defaultDocType === "01" ? "01" : "04",
     moduleToggles: toggles,
@@ -2138,7 +2150,7 @@ async function getTenantAlmendroConfigRaw(tenantId) {
 }
 async function saveTenantAlmendroConfig(tenantId, data) {
   if (!tenantId) throw new Error("tenantId es requerido para guardar la configuraci\xF3n de Almendro");
-  const existing = await query(`SELECT api_key_encrypted, module_toggles FROM tenant_almendro_configs WHERE tenant_id = $1`, [tenantId]);
+  const existing = await query(`SELECT api_key_encrypted, module_toggles, billing_mode FROM tenant_almendro_configs WHERE tenant_id = $1`, [tenantId]);
   let keyToEncrypt = existing.rows[0]?.api_key_encrypted || "";
   if (data.apiKey && data.apiKey.trim() && !data.apiKey.includes("\u2022\u2022\u2022\u2022")) {
     keyToEncrypt = CryptoService.encryptForTenant(tenantId, data.apiKey.trim());
@@ -2153,18 +2165,21 @@ async function saveTenantAlmendroConfig(tenantId, data) {
   const docType = data.defaultDocType === "01" ? "01" : "04";
   const branch = data.branchCode || "001";
   const pos = data.posCode || "00001";
+  const billingMode = data.billingMode || (Boolean(data.isEnabled) ? keyToEncrypt ? "ALMENDRO_AUTO" : "EXTERNAL_MANUAL" : "DISABLED");
+  const isEnabled = Boolean(data.isEnabled) && billingMode !== "DISABLED";
   await query(`
     INSERT INTO tenant_almendro_configs (
-      tenant_id, is_enabled, environment, api_key_encrypted,
+      tenant_id, is_enabled, billing_mode, environment, api_key_encrypted,
       default_doc_type, module_toggles, tax_id_type, tax_id_number,
       legal_name, commercial_name, economic_activity_code,
       branch_code, pos_code, updated_at
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CURRENT_TIMESTAMP)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)
     ON CONFLICT (tenant_id) DO UPDATE SET
       is_enabled = EXCLUDED.is_enabled,
+      billing_mode = EXCLUDED.billing_mode,
       environment = EXCLUDED.environment,
-      api_key_encrypted = CASE WHEN $4 != '' THEN $4 ELSE tenant_almendro_configs.api_key_encrypted END,
+      api_key_encrypted = CASE WHEN $5 != '' THEN $5 ELSE tenant_almendro_configs.api_key_encrypted END,
       default_doc_type = EXCLUDED.default_doc_type,
       module_toggles = EXCLUDED.module_toggles,
       tax_id_type = COALESCE(EXCLUDED.tax_id_type, tenant_almendro_configs.tax_id_type),
@@ -2177,7 +2192,8 @@ async function saveTenantAlmendroConfig(tenantId, data) {
       updated_at = CURRENT_TIMESTAMP
   `, [
     tenantId,
-    Boolean(data.isEnabled),
+    isEnabled,
+    billingMode,
     env3,
     keyToEncrypt,
     docType,
@@ -4250,6 +4266,7 @@ async function runMigrations() {
 
     -- Electronic Invoicing and Billing Info Extension
     ALTER TABLE tenant_almendro_configs ALTER COLUMN economic_activity_code TYPE VARCHAR(30);
+    ALTER TABLE tenant_almendro_configs ADD COLUMN IF NOT EXISTS billing_mode VARCHAR(30) DEFAULT 'ALMENDRO_AUTO';
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS billing_info JSONB;
     ALTER TABLE appointments ADD COLUMN IF NOT EXISTS billing_info JSONB;
     ALTER TABLE court_bookings ADD COLUMN IF NOT EXISTS billing_info JSONB;
@@ -11400,6 +11417,57 @@ Estamos procesando tu orden de inmediato. \xA1Gracias!`;
     res.status(500).json({ error: "Error al confirmar pago" });
   }
 });
+router12.put("/:id/manual-invoice", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { invoiceReference, notes } = req.body;
+    const tenantId = req.tenantId;
+    const order = await getOrderById(id, tenantId);
+    if (!order) {
+      res.status(404).json({ error: "Orden no encontrada" });
+      return;
+    }
+    const currentBilling = order.billingInfo || { requiresInvoice: true };
+    const ref = (invoiceReference || "").trim() || "Factura Externa";
+    const updatedBilling = {
+      ...currentBilling,
+      requiresInvoice: true,
+      invoiceStatus: "issued",
+      externalInvoiceReference: ref,
+      issuedManually: true,
+      invoiceIssuedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      manualInvoiceNotes: notes || void 0
+    };
+    const updated = await updateOrder(id, tenantId, {
+      billingInfo: updatedBilling
+    });
+    await logAuditEvent(
+      tenantId,
+      req.user?.userId || "system",
+      "order_manual_invoice_registered",
+      "order",
+      id,
+      {
+        orderNumber: order.orderNumber,
+        invoiceReference: ref,
+        customerName: order.customerName
+      },
+      req.ip,
+      req.headers["user-agent"]
+    );
+    if (req.io) {
+      req.io.to(`tenant_${tenantId}`).emit("order:updated", updated);
+    }
+    res.json({
+      success: true,
+      order: updated,
+      message: `Factura manual registrada con \xE9xito (${ref})`
+    });
+  } catch (error) {
+    console.error("[OrdersRoute] Error registrando factura manual:", error);
+    res.status(500).json({ error: error.message || "Error al registrar factura manual" });
+  }
+});
 var orders_routes_default = router12;
 
 // src/server/routes/dashboard.routes.ts
@@ -16609,6 +16677,7 @@ router34.get("/public-config/:slug", async (req, res) => {
     else if (module === "restaurant") isModuleEnabled = Boolean(config.moduleToggles.restaurantEnabled);
     res.json({
       isEnabled: isModuleEnabled,
+      billingMode: config.billingMode || "ALMENDRO_AUTO",
       defaultDocType: config.defaultDocType || "04"
     });
   } catch (err) {
@@ -16699,6 +16768,7 @@ router34.post("/config", async (req, res) => {
     }
     const {
       isEnabled,
+      billingMode,
       environment,
       apiKey,
       defaultDocType,
@@ -16713,6 +16783,7 @@ router34.post("/config", async (req, res) => {
     } = req.body;
     const updated = await saveTenantAlmendroConfig(tenantId, {
       isEnabled: Boolean(isEnabled),
+      billingMode,
       environment: environment === "PRODUCTION" ? "PRODUCTION" : "SANDBOX",
       apiKey,
       defaultDocType: defaultDocType === "01" ? "01" : "04",

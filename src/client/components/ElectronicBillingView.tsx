@@ -33,6 +33,7 @@ export default function ElectronicBillingView() {
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
   // Form State
+  const [billingMode, setBillingMode] = useState<'ALMENDRO_AUTO' | 'EXTERNAL_MANUAL' | 'DISABLED'>('DISABLED');
   const [isEnabled, setIsEnabled] = useState(false);
   const [environment, setEnvironment] = useState<'SANDBOX' | 'PRODUCTION'>('SANDBOX');
   const [apiKey, setApiKey] = useState('');
@@ -62,7 +63,10 @@ export default function ElectronicBillingView() {
       setLoading(true);
       const res: TenantAlmendroConfig = await api.get('/api/almendro/config');
       if (res) {
-        setIsEnabled(Boolean(res.isEnabled));
+        const rawMode = (res as any).billingMode as 'ALMENDRO_AUTO' | 'EXTERNAL_MANUAL' | 'DISABLED' | undefined;
+        const effectiveMode = rawMode || (res.isEnabled ? (res.apiKeyMasked ? 'ALMENDRO_AUTO' : 'EXTERNAL_MANUAL') : 'DISABLED');
+        setBillingMode(effectiveMode);
+        setIsEnabled(effectiveMode !== 'DISABLED');
         setEnvironment(res.environment || 'SANDBOX');
         setApiKeyMasked(res.apiKeyMasked || '');
         setDefaultDocType(res.defaultDocType || '04');
@@ -137,8 +141,10 @@ export default function ElectronicBillingView() {
       setSaving(true);
       setTestResult(null);
 
+      const isEnabledValue = billingMode !== 'DISABLED';
       const payload: any = {
-        isEnabled,
+        isEnabled: isEnabledValue,
+        billingMode,
         environment,
         defaultDocType,
         moduleToggles: {
@@ -154,7 +160,7 @@ export default function ElectronicBillingView() {
         posCode
       };
 
-      if (isEditingKey && apiKey.trim()) {
+      if (billingMode === 'ALMENDRO_AUTO' && isEditingKey && apiKey.trim()) {
         payload.apiKey = apiKey.trim();
       }
 
@@ -203,77 +209,199 @@ export default function ElectronicBillingView() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <span style={{ fontSize: '0.88rem', fontWeight: '700', color: isEnabled ? '#15803d' : '#64748b' }}>
-            {isEnabled ? '● Módulo Habilitado' : '○ Deshabilitado'}
+          <span style={{
+            fontSize: '0.84rem',
+            fontWeight: '700',
+            padding: '5px 12px',
+            borderRadius: '20px',
+            backgroundColor: billingMode === 'ALMENDRO_AUTO' ? '#dcfce7' : billingMode === 'EXTERNAL_MANUAL' ? '#f3e8ff' : '#f1f5f9',
+            color: billingMode === 'ALMENDRO_AUTO' ? '#15803d' : billingMode === 'EXTERNAL_MANUAL' ? '#7e22ce' : '#64748b'
+          }}>
+            {billingMode === 'ALMENDRO_AUTO' ? '⚡ Facturación Automática (Almendro)' : billingMode === 'EXTERNAL_MANUAL' ? '📋 Facturación Externa / Manual' : '○ Facturación Deshabilitada'}
           </span>
-          <button
-            type="button"
-            onClick={() => setIsEnabled(!isEnabled)}
-            style={{
-              padding: '8px 18px',
-              borderRadius: '8px',
-              border: 'none',
-              cursor: 'pointer',
-              fontWeight: '700',
-              fontSize: '0.85rem',
-              backgroundColor: isEnabled ? '#fee2e2' : 'var(--primary)',
-              color: isEnabled ? '#dc2626' : 'white',
-              transition: 'all 0.2s'
-            }}
-          >
-            {isEnabled ? 'Desactivar Facturación' : 'Habilitar Facturación'}
-          </button>
         </div>
       </div>
 
-      {/* 2. TRANSPARENCY & EDUCATIONAL BANNER (ALMENDRO & TRIBU-CR) */}
+      {/* 2. SELECTOR DE MODALIDAD DE FACTURACIÓN */}
       <div style={{
-        backgroundColor: '#f8fafc',
-        border: '1px solid #e2e8f0',
+        backgroundColor: 'var(--surface)',
+        border: '1px solid var(--border)',
         borderRadius: '12px',
         padding: '20px',
-        marginBottom: '24px'
+        marginBottom: '24px',
+        boxShadow: 'var(--shadow-xs)'
       }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px' }}>
-          <div style={{ backgroundColor: '#3b82f6', color: 'white', padding: '6px', borderRadius: '8px', marginTop: '2px' }}>
-            <Info size={20} />
-          </div>
-          <div style={{ flex: 1, fontSize: '0.88rem', color: '#334155', lineHeight: '1.5' }}>
-            <h3 style={{ margin: '0 0 6px 0', fontSize: '1.02rem', fontWeight: '800', color: '#0f172a' }}>
-              ¿Cómo funciona la Facturación Electrónica en Betico?
-            </h3>
-            <p style={{ margin: '0 0 10px 0' }}>
-              Para cumplir con la normativa tributaria de Costa Rica sin fricción manual, Betico se conecta con <strong>Almendro Facturación Electrónica</strong> (<a href="https://fe.almendro.cr/?lang=es" target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', fontWeight: '700', textDecoration: 'underline' }}>fe.almendro.cr</a>), un Proveedor Autorizado de Facturación (PAC).
+        <h2 style={{ fontSize: '1.05rem', fontWeight: '800', margin: '0 0 14px 0', color: 'var(--text)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <FileText size={18} color="var(--primary)" /> Selecciona la Modalidad de Facturación
+        </h2>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px' }}>
+          
+          {/* Opción 1: Automática con Almendro */}
+          <div
+            onClick={() => { setBillingMode('ALMENDRO_AUTO'); setIsEnabled(true); }}
+            style={{
+              padding: '16px',
+              borderRadius: '10px',
+              border: `2px solid ${billingMode === 'ALMENDRO_AUTO' ? 'var(--primary)' : 'var(--border)'}`,
+              backgroundColor: billingMode === 'ALMENDRO_AUTO' ? '#f0fdf4' : 'var(--surface)',
+              cursor: 'pointer',
+              transition: 'all 0.15s'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+              <span style={{ fontWeight: '800', fontSize: '0.92rem', color: billingMode === 'ALMENDRO_AUTO' ? '#166534' : 'var(--text)' }}>
+                ⚡ Automática (Almendro / API)
+              </span>
+              <input
+                type="radio"
+                name="billingMode"
+                checked={billingMode === 'ALMENDRO_AUTO'}
+                onChange={() => { setBillingMode('ALMENDRO_AUTO'); setIsEnabled(true); }}
+                style={{ accentColor: 'var(--primary)' }}
+              />
+            </div>
+            <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b', lineHeight: '1.4' }}>
+              Emisión oficial automática ante Hacienda al pagar. Genera PDF oficial con QR y firma digital. Requiere API Key de Almendro.
             </p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px', marginTop: '12px' }}>
-              <div style={{ backgroundColor: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                <div style={{ fontWeight: '700', color: '#0f172a', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <ShieldCheck size={16} color="#16a34a" /> 100% Legal ante TRIBU-CR
-                </div>
-                <div style={{ fontSize: '0.8rem', color: '#64748b' }}>
-                  Genera la firma digital oficial (XAdES-EPES) y valida los 23 campos matemáticos exigidos por Hacienda.
-                </div>
-              </div>
-              <div style={{ backgroundColor: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                <div style={{ fontWeight: '700', color: '#0f172a', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Zap size={16} color="#2563eb" /> Emisión Automática & WhatsApp
-                </div>
-                <div style={{ fontSize: '0.8rem', color: '#64748b' }}>
-                  El cliente recibe su factura o tiquete en PDF oficial de inmediato tras pagar o reservar.
-                </div>
-              </div>
-            </div>
-            <div style={{ marginTop: '12px', fontSize: '0.82rem', color: '#64748b' }}>
-              💡 <em>Si aún no tienes cuenta en Almendro, puedes crearla gratis en <a href="https://fe.almendro.cr" target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', fontWeight: '700' }}>fe.almendro.cr</a> y obtener tu API Key en minutos.</em>
-            </div>
           </div>
+
+          {/* Opción 2: Externa / Manual sin facturador */}
+          <div
+            onClick={() => { setBillingMode('EXTERNAL_MANUAL'); setIsEnabled(true); }}
+            style={{
+              padding: '16px',
+              borderRadius: '10px',
+              border: `2px solid ${billingMode === 'EXTERNAL_MANUAL' ? '#7c3aed' : 'var(--border)'}`,
+              backgroundColor: billingMode === 'EXTERNAL_MANUAL' ? '#faf5ff' : 'var(--surface)',
+              cursor: 'pointer',
+              transition: 'all 0.15s'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+              <span style={{ fontWeight: '800', fontSize: '0.92rem', color: billingMode === 'EXTERNAL_MANUAL' ? '#6b21a8' : 'var(--text)' }}>
+                📋 Facturación Externa / Manual
+              </span>
+              <input
+                type="radio"
+                name="billingMode"
+                checked={billingMode === 'EXTERNAL_MANUAL'}
+                onChange={() => { setBillingMode('EXTERNAL_MANUAL'); setIsEnabled(true); }}
+                style={{ accentColor: '#7c3aed' }}
+              />
+            </div>
+            <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b', lineHeight: '1.4' }}>
+              <strong>Sin facturador integrado.</strong> Pide datos fiscales (cédula, razón social, correo) en el checkout para que emitas la factura en tu propio sistema (Quickbooks, Factun, ATV, etc.).
+            </p>
+          </div>
+
+          {/* Opción 3: Deshabilitada */}
+          <div
+            onClick={() => { setBillingMode('DISABLED'); setIsEnabled(false); }}
+            style={{
+              padding: '16px',
+              borderRadius: '10px',
+              border: `2px solid ${billingMode === 'DISABLED' ? '#dc2626' : 'var(--border)'}`,
+              backgroundColor: billingMode === 'DISABLED' ? '#fef2f2' : 'var(--surface)',
+              cursor: 'pointer',
+              transition: 'all 0.15s'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+              <span style={{ fontWeight: '800', fontSize: '0.92rem', color: billingMode === 'DISABLED' ? '#991b1b' : 'var(--text)' }}>
+                🚫 Deshabilitada
+              </span>
+              <input
+                type="radio"
+                name="billingMode"
+                checked={billingMode === 'DISABLED'}
+                onChange={() => { setBillingMode('DISABLED'); setIsEnabled(false); }}
+                style={{ accentColor: '#dc2626' }}
+              />
+            </div>
+            <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b', lineHeight: '1.4' }}>
+              No se solicitan datos de facturación electrónica a los clientes en la tienda virtual ni en reservas.
+            </p>
+          </div>
+
         </div>
       </div>
 
+      {/* BANNER INFORMATIVO PARA FACTURACIÓN EXTERNA / MANUAL */}
+      {billingMode === 'EXTERNAL_MANUAL' && (
+        <div style={{
+          backgroundColor: '#faf5ff',
+          border: '1px solid #d8b4fe',
+          borderRadius: '12px',
+          padding: '18px 20px',
+          marginBottom: '24px',
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: '14px'
+        }}>
+          <div style={{ backgroundColor: '#7c3aed', color: 'white', padding: '6px', borderRadius: '8px', marginTop: '2px' }}>
+            <FileText size={18} />
+          </div>
+          <div style={{ fontSize: '0.86rem', color: '#581c87', lineHeight: '1.5' }}>
+            <strong style={{ fontSize: '0.95rem' }}>Modalidad de Facturación Externa Activada</strong>
+            <p style={{ margin: '4px 0 8px 0' }}>
+              Los clientes verán la casilla <em>«¿Necesita Factura Electrónica? (Hacienda CR)»</em> al comprar en tu tienda o reservar citas. Al abrir la orden en tu panel, verás su cédula, razón social y correo electrónico con botones para <strong>copiar con 1 solo clic</strong> y pegar directamente en tu sistema de facturación habitual (Quickbooks, Factun, GTI, STEL Order, ATV de Hacienda, etc.).
+            </p>
+            <span style={{ fontSize: '0.8rem', color: '#7e22ce' }}>
+              💡 <em>No requieres suscripción, API Key ni conexión con Almendro para utilizar esta modalidad.</em>
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* BANNER EDUCATIVO ALMENDRO (Solo si está en modo ALMENDRO_AUTO) */}
+      {billingMode === 'ALMENDRO_AUTO' && (
+        <div style={{
+          backgroundColor: '#f8fafc',
+          border: '1px solid #e2e8f0',
+          borderRadius: '12px',
+          padding: '20px',
+          marginBottom: '24px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px' }}>
+            <div style={{ backgroundColor: '#3b82f6', color: 'white', padding: '6px', borderRadius: '8px', marginTop: '2px' }}>
+              <Info size={20} />
+            </div>
+            <div style={{ flex: 1, fontSize: '0.88rem', color: '#334155', lineHeight: '1.5' }}>
+              <h3 style={{ margin: '0 0 6px 0', fontSize: '1.02rem', fontWeight: '800', color: '#0f172a' }}>
+                ¿Cómo funciona la Facturación Automática en Betico?
+              </h3>
+              <p style={{ margin: '0 0 10px 0' }}>
+                Para cumplir con la normativa tributaria de Costa Rica sin fricción manual, Betico se conecta con <strong>Almendro Facturación Electrónica</strong> (<a href="https://fe.almendro.cr/?lang=es" target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', fontWeight: '700', textDecoration: 'underline' }}>fe.almendro.cr</a>), un Proveedor Autorizado de Facturación (PAC).
+              </p>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px', marginTop: '12px' }}>
+                <div style={{ backgroundColor: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontWeight: '700', color: '#0f172a', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <ShieldCheck size={16} color="#16a34a" /> 100% Legal ante TRIBU-CR
+                  </div>
+                  <div style={{ fontSize: '0.8rem', color: '#64748b' }}>
+                    Genera la firma digital oficial (XAdES-EPES) y valida los 23 campos matemáticos exigidos por Hacienda.
+                  </div>
+                </div>
+                <div style={{ backgroundColor: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontWeight: '700', color: '#0f172a', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Zap size={16} color="#2563eb" /> Emisión Automática & WhatsApp
+                  </div>
+                  <div style={{ fontSize: '0.8rem', color: '#64748b' }}>
+                    El cliente recibe su factura o tiquete en PDF oficial de inmediato tras pagar o reservar.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 3. CONFIGURATION FORM */}
-      <form onSubmit={handleSave} style={{ opacity: isEnabled ? 1 : 0.6, pointerEvents: isEnabled ? 'auto' : 'none', transition: 'opacity 0.2s' }}>
+      <form onSubmit={handleSave} style={{ opacity: billingMode !== 'DISABLED' ? 1 : 0.6, pointerEvents: billingMode !== 'DISABLED' ? 'auto' : 'none', transition: 'opacity 0.2s' }}>
         
         {/* CARD A: CREDENTIALS & ENVIRONMENT */}
+        {billingMode === 'ALMENDRO_AUTO' && (
         <div style={{
           backgroundColor: 'var(--surface)',
           border: '1px solid var(--border)',
@@ -438,6 +566,7 @@ export default function ElectronicBillingView() {
             )}
           </div>
         </div>
+        )}
 
         {/* CARD B: MODULE-LEVEL TOGGLES (CHECKBOXES) */}
         <div style={{
@@ -449,10 +578,12 @@ export default function ElectronicBillingView() {
           boxShadow: 'var(--shadow-xs)'
         }}>
           <h2 style={{ fontSize: '1.1rem', fontWeight: '800', margin: '0 0 6px 0', color: 'var(--text)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <CheckSquare size={18} color="var(--primary)" /> Módulos con Facturación Electrónica Automática
+            <CheckSquare size={18} color="var(--primary)" /> {billingMode === 'ALMENDRO_AUTO' ? 'Módulos con Emisión Automática' : 'Módulos donde Solicitar Datos de Facturación'}
           </h2>
           <p style={{ margin: '0 0 16px 0', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-            Selecciona en cuáles áreas de tu negocio deseas que el sistema emita y envíe comprobantes oficiales automáticamente:
+            {billingMode === 'ALMENDRO_AUTO'
+              ? 'Selecciona en cuáles áreas de tu negocio deseas que el sistema emita y envíe comprobantes oficiales automáticamente:'
+              : 'Selecciona en cuáles áreas de tu negocio deseas que el checkout pida cédula, razón social y correo de facturación al cliente:'}
           </p>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
@@ -572,66 +703,68 @@ export default function ElectronicBillingView() {
         </div>
 
         {/* CARD C: EMISOR BRANCH & POS CODES (ADVANCED) */}
-        <div style={{
-          backgroundColor: 'var(--surface)',
-          border: '1px solid var(--border)',
-          borderRadius: '12px',
-          padding: '24px',
-          marginBottom: '24px',
-          boxShadow: 'var(--shadow-xs)'
-        }}>
-          <h2 style={{ fontSize: '1.05rem', fontWeight: '800', margin: '0 0 14px 0', color: 'var(--text)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Building size={18} color="var(--primary)" /> Parámetros de Sucursal y Terminal
-          </h2>
+        {billingMode === 'ALMENDRO_AUTO' && (
+          <div style={{
+            backgroundColor: 'var(--surface)',
+            border: '1px solid var(--border)',
+            borderRadius: '12px',
+            padding: '24px',
+            marginBottom: '24px',
+            boxShadow: 'var(--shadow-xs)'
+          }}>
+            <h2 style={{ fontSize: '1.05rem', fontWeight: '800', margin: '0 0 14px 0', color: 'var(--text)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Building size={18} color="var(--primary)" /> Parámetros de Sucursal y Terminal
+            </h2>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
-            <div>
-              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', marginBottom: '4px', color: 'var(--text)' }}>
-                Código de Sucursal (3 dígitos)
-              </label>
-              <input
-                type="text"
-                maxLength={3}
-                placeholder="001"
-                value={branchCode}
-                onChange={(e) => setBranchCode(e.target.value.replace(/\D/g, ''))}
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  borderRadius: '8px',
-                  border: '1px solid var(--border)',
-                  backgroundColor: 'var(--surface)',
-                  color: 'var(--text)',
-                  fontSize: '0.9rem',
-                  fontFamily: 'monospace'
-                }}
-              />
-            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', marginBottom: '4px', color: 'var(--text)' }}>
+                  Código de Sucursal (3 dígitos)
+                </label>
+                <input
+                  type="text"
+                  maxLength={3}
+                  placeholder="001"
+                  value={branchCode}
+                  onChange={(e) => setBranchCode(e.target.value.replace(/\D/g, ''))}
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border)',
+                    backgroundColor: 'var(--surface)',
+                    color: 'var(--text)',
+                    fontSize: '0.9rem',
+                    fontFamily: 'monospace'
+                  }}
+                />
+              </div>
 
-            <div>
-              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', marginBottom: '4px', color: 'var(--text)' }}>
-                Punto de Venta / Caja (5 dígitos)
-              </label>
-              <input
-                type="text"
-                maxLength={5}
-                placeholder="00001"
-                value={posCode}
-                onChange={(e) => setPosCode(e.target.value.replace(/\D/g, ''))}
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  borderRadius: '8px',
-                  border: '1px solid var(--border)',
-                  backgroundColor: 'var(--surface)',
-                  color: 'var(--text)',
-                  fontSize: '0.9rem',
-                  fontFamily: 'monospace'
-                }}
-              />
+              <div>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', marginBottom: '4px', color: 'var(--text)' }}>
+                  Punto de Venta / Caja (5 dígitos)
+                </label>
+                <input
+                  type="text"
+                  maxLength={5}
+                  placeholder="00001"
+                  value={posCode}
+                  onChange={(e) => setPosCode(e.target.value.replace(/\D/g, ''))}
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border)',
+                    backgroundColor: 'var(--surface)',
+                    color: 'var(--text)',
+                    fontSize: '0.9rem',
+                    fontFamily: 'monospace'
+                  }}
+                />
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* SUBMIT BUTTON */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '32px' }}>

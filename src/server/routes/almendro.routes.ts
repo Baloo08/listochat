@@ -43,6 +43,7 @@ router.get('/public-config/:slug', async (req: Request, res: Response): Promise<
 
     res.json({
       isEnabled: isModuleEnabled,
+      billingMode: config.billingMode || 'ALMENDRO_AUTO',
       defaultDocType: config.defaultDocType || '04'
     });
   } catch (err: any) {
@@ -157,6 +158,7 @@ router.post('/config', async (req: Request, res: Response): Promise<void> => {
 
     const {
       isEnabled,
+      billingMode,
       environment,
       apiKey,
       defaultDocType,
@@ -172,6 +174,7 @@ router.post('/config', async (req: Request, res: Response): Promise<void> => {
 
     const updated = await saveTenantAlmendroConfig(tenantId, {
       isEnabled: Boolean(isEnabled),
+      billingMode: billingMode as any,
       environment: environment === 'PRODUCTION' ? 'PRODUCTION' : 'SANDBOX',
       apiKey,
       defaultDocType: defaultDocType === '01' ? '01' : '04',

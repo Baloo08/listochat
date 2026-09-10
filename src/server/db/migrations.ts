@@ -935,6 +935,7 @@ export async function runMigrations() {
 
     -- Electronic Invoicing and Billing Info Extension
     ALTER TABLE tenant_almendro_configs ALTER COLUMN economic_activity_code TYPE VARCHAR(30);
+    ALTER TABLE tenant_almendro_configs ADD COLUMN IF NOT EXISTS billing_mode VARCHAR(30) DEFAULT 'ALMENDRO_AUTO';
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS billing_info JSONB;
     ALTER TABLE appointments ADD COLUMN IF NOT EXISTS billing_info JSONB;
     ALTER TABLE court_bookings ADD COLUMN IF NOT EXISTS billing_info JSONB;
