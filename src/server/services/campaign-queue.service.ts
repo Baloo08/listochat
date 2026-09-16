@@ -3,7 +3,7 @@ import { query } from '../db/pool.js';
 import { sendMessage, sendMedia } from './evolution.js';
 import { getTenantById } from '../db/tenant.repo.js';
 
-const REDIS_URL = process.env.REDIS_URL || 'redis://betico_redis:6379';
+const REDIS_URL = process.env.REDIS_URL || 'redis://:BeticoRedis2026@betico_redis:6379';
 
 let redis: Redis | null = null;
 try {
@@ -14,6 +14,10 @@ try {
       return Math.min(times * 200, 1000);
     },
     lazyConnect: true
+  });
+  redis.on('error', (err) => {
+    // Graceful error handler to prevent unhandled error event emissions
+    console.warn('[Redis] Connection warning:', err?.message || err);
   });
   redis.connect().catch(() => {
     console.log('[Redis] Redis not available, using in-memory queue fallback.');
