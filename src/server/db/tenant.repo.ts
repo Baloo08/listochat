@@ -28,7 +28,12 @@ export async function getAllTenantsWithAdmin(): Promise<any[]> {
            t.grace_period_ends_at as "gracePeriodEndsAt", t.settings_json as "settingsJson", 
            t.created_at as "createdAt",
            COALESCE(u.email, 'Sin registrar') as "adminEmail",
-           u.id as "adminId"
+           u.id as "adminId",
+           t.id as "postgresTenantId",
+           'whatsapp_saas' as "postgresDb",
+           'public' as "postgresSchema",
+           (t.settings_json->'easypanel'->>'project') as "easypanelProject",
+           (t.settings_json->'easypanel'->>'service') as "easypanelService"
     FROM tenants t
     LEFT JOIN LATERAL (
       SELECT id, email
@@ -52,7 +57,12 @@ export async function getTenantById(id: string): Promise<any | null> {
            custom_monthly_price as "customMonthlyPrice", trial_ends_at as "trialEndsAt", 
            next_billing_date as "nextBillingDate", grace_period_ends_at as "gracePeriodEndsAt",
            calendar_token as "calendarToken",
-           settings_json as "settingsJson", created_at as "createdAt"
+           settings_json as "settingsJson", created_at as "createdAt",
+           id as "postgresTenantId",
+           'whatsapp_saas' as "postgresDb",
+           'public' as "postgresSchema",
+           (settings_json->'easypanel'->>'project') as "easypanelProject",
+           (settings_json->'easypanel'->>'service') as "easypanelService"
     FROM tenants WHERE id = $1
   `, [id]);
   return result.rows[0] || null;

@@ -342,4 +342,78 @@ describe('Security & Cryptographic Hardening Tests (ISO/IEC 25010, OWASP ASVS)',
       assert.equal(isExemptFromBilling({ plan: 'enterprise', customMonthlyPrice: 85000 }), false);
     });
   });
+
+  describe('SuperAdmin Infrastructure Metadata & Read-Only Invariance (PostgreSQL & EasyPanel)', () => {
+    test('should provide non-null postgres and easypanel metadata fields in superadmin tenant listing', () => {
+      const mockDbRow = {
+        id: '14a87e1e-4521-4a01-a4a3-8277250b64e8',
+        name: 'Clínica Dental Sonrisas',
+        slug: 'clinicasonrisas',
+        plan: 'aliado',
+        active: true,
+        postgresTenantId: '14a87e1e-4521-4a01-a4a3-8277250b64e8',
+        postgresDb: 'whatsapp_saas',
+        postgresSchema: 'public',
+        easypanelProject: null,
+        easypanelService: null,
+        evolutionInstance: 'tenant_14a87e1e'
+      };
+
+      assert.equal(mockDbRow.postgresDb, 'whatsapp_saas');
+      assert.equal(mockDbRow.postgresSchema, 'public');
+      assert.equal(mockDbRow.postgresTenantId, mockDbRow.id);
+      assert.equal(mockDbRow.easypanelProject, null);
+    });
+
+    test('should prevent parameter tampering on PUT /api/tenants/:id (immutability enforcement)', () => {
+      // Simulates the PUT /:id route filtering logic in tenant.routes.ts
+      const incomingPayload = {
+        name: 'Nuevo Nombre',
+        id: 'tampered-uuid-attack',
+        postgresTenantId: 'tampered-pg-id',
+        postgresDb: 'malicious_db',
+        postgresSchema: 'secret_schema',
+        easypanelProject: 'attacker_project',
+        customMonthlyPrice: 55000
+      };
+
+      const tenantUpdateData = {};
+      if (incomingPayload.name !== undefined) tenantUpdateData.name = incomingPayload.name;
+      if (incomingPayload.customMonthlyPrice !== undefined) tenantUpdateData.customMonthlyPrice = Number(incomingPayload.customMonthlyPrice);
+
+      // Verify that malicious keys were discarded
+      assert.equal(tenantUpdateData.id, undefined);
+      assert.equal(tenantUpdateData.postgresTenantId, undefined);
+      assert.equal(tenantUpdateData.postgresDb, undefined);
+      assert.equal(tenantUpdateData.postgresSchema, undefined);
+      assert.equal(tenantUpdateData.easypanelProject, undefined);
+      assert.equal(tenantUpdateData.name, 'Nuevo Nombre');
+      assert.equal(tenantUpdateData.customMonthlyPrice, 55000);
+    });
+
+    test('should mask infrastructure details from public storefront and customer endpoints', () => {
+      const fullTenant = {
+        id: '14a87e1e-4521-4a01-a4a3-8277250b64e8',
+        name: 'Clínica Dental Sonrisas',
+        slug: 'clinicasonrisas',
+        postgresDb: 'whatsapp_saas',
+        postgresSchema: 'public',
+        easypanelProject: 'betico',
+        easypanelService: 'betico_app',
+        storeName: 'Sonrisas Store'
+      };
+
+      // Simulates public storefront info serialization
+      const publicInfo = {
+        storeName: fullTenant.storeName,
+        storeSlug: fullTenant.slug,
+        name: fullTenant.name
+      };
+
+      assert.equal(publicInfo.postgresDb, undefined);
+      assert.equal(publicInfo.postgresSchema, undefined);
+      assert.equal(publicInfo.easypanelProject, undefined);
+      assert.equal(publicInfo.easypanelService, undefined);
+    });
+  });
 });

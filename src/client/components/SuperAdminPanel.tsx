@@ -581,12 +581,50 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
                     <div>💎 Plan: <strong style={{ textTransform: 'uppercase', color: 'var(--text-main)' }}>{t.plan}</strong> ({formatPrice(t.customMonthlyPrice, t.billingCurrency)}/mes)</div>
                   </div>
 
+                  {/* Infraestructura Backend (Solo Lectura) */}
+                  <div style={{ backgroundColor: 'rgba(0,0,0,0.03)', border: '1px solid var(--border)', borderRadius: '8px', padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.74rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>🐘 Postgres ID:</span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const val = t.postgresTenantId || t.id;
+                          navigator.clipboard.writeText(val);
+                          setCopiedSlug(`pg_${t.id}`);
+                          setTimeout(() => setCopiedSlug(null), 2000);
+                        }}
+                        title={`Copiar UUID completo: ${t.postgresTenantId || t.id}`}
+                        style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '4px', padding: '1px 6px', fontSize: '0.68rem', cursor: 'pointer', fontFamily: 'monospace' }}
+                      >
+                        {copiedSlug === `pg_${t.id}` ? '✅ Copiado' : `${(t.postgresTenantId || t.id).slice(0, 8)}... 📋`}
+                      </button>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>📦 EasyPanel:</span>
+                      <span style={{
+                        padding: '1px 6px', borderRadius: '4px', fontSize: '0.68rem', fontWeight: 600,
+                        backgroundColor: t.easypanelProject ? 'rgba(16, 185, 129, 0.1)' : 'transparent',
+                        color: t.easypanelProject ? '#15803d' : 'var(--text-muted)'
+                      }}>
+                        {t.easypanelProject ? `${t.easypanelProject}/${t.easypanelService || 'app'}` : '⚪ Sin vincular (Compartido)'}
+                      </span>
+                    </div>
+                  </div>
+
                   <div style={{ display: 'flex', gap: '8px', borderTop: '1px solid var(--border)', paddingTop: '12px', flexWrap: 'wrap' }}>
                     <button
                       onClick={() => handleImpersonate(t.id)}
                       style={{ flex: 1, padding: '7px 10px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
                     >
                       <Key size={13} /> Entrar al Portal
+                    </button>
+                    <button
+                      onClick={() => setSelectedDossierTenantId(t.id)}
+                      title="Ver Expediente 360°"
+                      style={{ padding: '7px 10px', backgroundColor: '#f1f5f9', border: '1px solid var(--border)', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' }}
+                    >
+                      <FileText size={13} />
                     </button>
                     <button
                       onClick={() => {
@@ -651,6 +689,31 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
                       <td style={{ padding: '12px 14px' }}>
                         <strong>{t.name}</strong>
                         <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t.adminEmail} • <code>/{t.slug}</code></div>
+                        {/* Infraestructura Backend (Solo Lectura) */}
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '5px', flexWrap: 'wrap', fontSize: '0.72rem' }}>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const val = t.postgresTenantId || t.id;
+                              navigator.clipboard.writeText(val);
+                              setCopiedSlug(`pg_${t.id}`);
+                              setTimeout(() => setCopiedSlug(null), 2000);
+                            }}
+                            title={`Copiar Postgres UUID: ${t.postgresTenantId || t.id}`}
+                            style={{ background: '#f8fafc', border: '1px solid var(--border)', borderRadius: '4px', padding: '2px 6px', fontSize: '0.69rem', cursor: 'pointer', fontFamily: 'monospace', display: 'flex', alignItems: 'center', gap: '3px' }}
+                          >
+                            🐘 {copiedSlug === `pg_${t.id}` ? '✅ Copiado' : `PG: ${(t.postgresTenantId || t.id).slice(0, 8)}... 📋`}
+                          </button>
+                          <span style={{
+                            padding: '2px 6px', borderRadius: '4px', fontSize: '0.69rem', fontWeight: 500,
+                            backgroundColor: t.easypanelProject ? 'rgba(16, 185, 129, 0.1)' : '#f8fafc',
+                            border: '1px solid var(--border)',
+                            color: t.easypanelProject ? '#15803d' : 'var(--text-muted)'
+                          }}>
+                            📦 {t.easypanelProject ? `EasyPanel: ${t.easypanelProject}/${t.easypanelService || 'app'}` : 'EasyPanel: Sin vincular'}
+                          </span>
+                        </div>
                       </td>
                       <td style={{ padding: '12px 14px' }}>
                         <span style={{ textTransform: 'uppercase', fontWeight: 'bold' }}>{t.plan}</span>
@@ -679,6 +742,13 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
                             style={{ padding: '5px 9px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' }}
                           >
                             Entrar
+                          </button>
+                          <button
+                            onClick={() => setSelectedDossierTenantId(t.id)}
+                            title="Expediente 360°"
+                            style={{ padding: '5px 8px', backgroundColor: '#f1f5f9', border: '1px solid var(--border)', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' }}
+                          >
+                            <FileText size={13} />
                           </button>
                           <button
                             onClick={() => {
@@ -1609,6 +1679,55 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
                   </div>
                 </div>
               </div>
+
+              {/* METADATOS DE INFRAESTRUCTURA (SOLO LECTURA - NO EDITABLE) */}
+              {editingTenant && (
+                <div style={{ backgroundColor: '#f8fafc', border: '1px solid var(--border)', borderRadius: '10px', padding: '14px', marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontWeight: 'bold', fontSize: '0.82rem', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <ShieldCheck size={15} color="#3b82f6" /> Infraestructura Asignada (Solo Lectura)
+                    </div>
+                    <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>🔒 Protegido</span>
+                  </div>
+                  
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '0.78rem' }}>
+                    <div>
+                      <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.71rem', fontWeight: 600 }}>🐘 Base de Datos PostgreSQL</span>
+                      <code style={{ fontSize: '0.74rem', color: '#0369a1' }}>whatsapp_saas (public)</code>
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.71rem', fontWeight: 600 }}>UUID del Tenant en Postgres</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                        <code style={{ fontSize: '0.72rem', wordBreak: 'break-all', backgroundColor: '#e2e8f0', padding: '2px 4px', borderRadius: '4px' }}>
+                          {editingTenant.postgresTenantId || editingTenant.id}
+                        </code>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(editingTenant.postgresTenantId || editingTenant.id);
+                            alert('UUID de Postgres copiado');
+                          }}
+                          style={{ padding: '2px 5px', fontSize: '0.65rem', border: '1px solid var(--border)', borderRadius: '4px', cursor: 'pointer', background: 'white' }}
+                        >
+                          📋
+                        </button>
+                      </div>
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.71rem', fontWeight: 600 }}>📦 Proyecto EasyPanel</span>
+                      <span style={{ fontWeight: 600, color: editingTenant.easypanelProject ? '#15803d' : 'var(--text-muted)' }}>
+                        {editingTenant.easypanelProject || '⚪ Sin vincular (Instancia Compartida)'}
+                      </span>
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.71rem', fontWeight: 600 }}>Servicio EasyPanel</span>
+                      <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>
+                        {editingTenant.easypanelService || 'betico_app (Cluster Producción)'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '14px' }}>
                 <button

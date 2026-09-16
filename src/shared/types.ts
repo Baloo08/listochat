@@ -19,6 +19,11 @@ export interface Tenant {
   plan: SubscriptionPlan;
   active: boolean;
   trialConsumed?: boolean;
+  postgresDb?: string;
+  postgresSchema?: string;
+  postgresTenantId?: string;
+  easypanelProject?: string | null;
+  easypanelService?: string | null;
   createdAt: Date;
   settingsJson?: Record<string, any>;
 }

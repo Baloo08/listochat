@@ -300,6 +300,80 @@ export default function TenantDossierModal({ tenantId, onClose, onRefresh }: Pro
         {/* BODY CONTAINER */}
         <div style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: '22px' }}>
           
+          {/* INFRASTRUCTURE & BACKEND MAPPING (READ ONLY) */}
+          <div style={{ backgroundColor: '#1e293b', padding: '18px 20px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <ShieldCheck size={18} color="#38bdf8" />
+                <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: '800', color: '#f8fafc' }}>
+                  Infraestructura & Servidores Vinculados (Solo Lectura)
+                </h3>
+              </div>
+              <span style={{ fontSize: '0.72rem', color: '#94a3b8', backgroundColor: 'rgba(255,255,255,0.05)', padding: '2px 8px', borderRadius: '6px' }}>
+                🔒 Protegido contra edición
+              </span>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '14px' }}>
+              
+              {/* POSTGRES */}
+              <div style={{ backgroundColor: 'rgba(15, 23, 42, 0.6)', padding: '12px 14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                <div style={{ fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: '700', letterSpacing: '0.05em' }}>
+                  🐘 Inquilino PostgreSQL
+                </div>
+                <div style={{ fontSize: '0.85rem', fontWeight: '700', color: '#38bdf8', marginTop: '4px' }}>
+                  BD: {data?.infrastructure?.postgresDb || 'whatsapp_saas'} ({data?.infrastructure?.postgresSchema || 'public'})
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '6px', gap: '8px' }}>
+                  <code style={{ fontSize: '0.74rem', color: '#cbd5e1', backgroundColor: 'rgba(0,0,0,0.3)', padding: '2px 6px', borderRadius: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {data?.infrastructure?.postgresTenantId || tenantId}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(data?.infrastructure?.postgresTenantId || tenantId);
+                      alert('UUID de Postgres copiado al portapapeles');
+                    }}
+                    style={{ background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)', borderRadius: '6px', padding: '3px 8px', fontSize: '0.7rem', cursor: 'pointer', fontWeight: 'bold', whiteSpace: 'nowrap' }}
+                  >
+                    Copiar UUID
+                  </button>
+                </div>
+              </div>
+
+              {/* EASYPANEL */}
+              <div style={{ backgroundColor: 'rgba(15, 23, 42, 0.6)', padding: '12px 14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                <div style={{ fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: '700', letterSpacing: '0.05em' }}>
+                  📦 EasyPanel (Docker Swarm)
+                </div>
+                <div style={{ fontSize: '0.85rem', fontWeight: '700', marginTop: '4px', color: (data?.infrastructure?.easypanelProject || tenant.easypanelProject) ? '#34d399' : '#e2e8f0' }}>
+                  {(data?.infrastructure?.easypanelProject || tenant.easypanelProject)
+                    ? `Proyecto: ${data?.infrastructure?.easypanelProject || tenant.easypanelProject}`
+                    : '⚪ Sin vincular (Instancia Compartida)'}
+                </div>
+                <div style={{ fontSize: '0.74rem', color: '#94a3b8', marginTop: '6px' }}>
+                  {(data?.infrastructure?.easypanelService || tenant.easypanelService)
+                    ? `Servicio: ${data?.infrastructure?.easypanelService || tenant.easypanelService}`
+                    : 'Servicio por defecto: betico_app (Cluster Producción)'}
+                </div>
+              </div>
+
+              {/* EVOLUTION API */}
+              <div style={{ backgroundColor: 'rgba(15, 23, 42, 0.6)', padding: '12px 14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                <div style={{ fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: '700', letterSpacing: '0.05em' }}>
+                  📱 Evolution WhatsApp
+                </div>
+                <div style={{ fontSize: '0.85rem', fontWeight: '700', color: (tenant.evolutionInstance || data?.infrastructure?.evolutionInstance) ? '#34d399' : '#f59e0b', marginTop: '4px' }}>
+                  {(tenant.evolutionInstance || data?.infrastructure?.evolutionInstance) ? '🟢 Conectado' : '⚪ Sin Instancia'}
+                </div>
+                <div style={{ fontSize: '0.74rem', color: '#cbd5e1', marginTop: '6px', fontFamily: 'monospace' }}>
+                  Instancia: {tenant.evolutionInstance || data?.infrastructure?.evolutionInstance || 'No configurada'}
+                </div>
+              </div>
+
+            </div>
+          </div>
+
           {/* RESOURCE USAGE KPI CARDS */}
           <div>
             <div style={{ fontSize: '0.78rem', fontWeight: '800', color: '#64748b', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '10px' }}>

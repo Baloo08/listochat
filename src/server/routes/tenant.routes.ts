@@ -311,6 +311,14 @@ router.get('/:id/dossier', async (req, res) => {
         adminPhone: tenant.whatsappNumber || null
       },
       storeModules,
+      infrastructure: {
+        postgresDb: 'whatsapp_saas',
+        postgresSchema: 'public',
+        postgresTenantId: id,
+        easypanelProject: tenant.settingsJson?.easypanel?.project || null,
+        easypanelService: tenant.settingsJson?.easypanel?.service || null,
+        evolutionInstance: tenant.evolutionInstance || null
+      },
       metrics: {
         ordersCount,
         appointmentsCount,

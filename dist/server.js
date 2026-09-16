@@ -4439,7 +4439,12 @@ async function getAllTenantsWithAdmin() {
            t.grace_period_ends_at as "gracePeriodEndsAt", t.settings_json as "settingsJson", 
            t.created_at as "createdAt",
            COALESCE(u.email, 'Sin registrar') as "adminEmail",
-           u.id as "adminId"
+           u.id as "adminId",
+           t.id as "postgresTenantId",
+           'whatsapp_saas' as "postgresDb",
+           'public' as "postgresSchema",
+           (t.settings_json->'easypanel'->>'project') as "easypanelProject",
+           (t.settings_json->'easypanel'->>'service') as "easypanelService"
     FROM tenants t
     LEFT JOIN LATERAL (
       SELECT id, email
@@ -4462,7 +4467,12 @@ async function getTenantById(id) {
            custom_monthly_price as "customMonthlyPrice", trial_ends_at as "trialEndsAt", 
            next_billing_date as "nextBillingDate", grace_period_ends_at as "gracePeriodEndsAt",
            calendar_token as "calendarToken",
-           settings_json as "settingsJson", created_at as "createdAt"
+           settings_json as "settingsJson", created_at as "createdAt",
+           id as "postgresTenantId",
+           'whatsapp_saas' as "postgresDb",
+           'public' as "postgresSchema",
+           (settings_json->'easypanel'->>'project') as "easypanelProject",
+           (settings_json->'easypanel'->>'service') as "easypanelService"
     FROM tenants WHERE id = $1
   `, [id]);
   return result.rows[0] || null;
@@ -4588,7 +4598,7 @@ async function deleteTenant(id) {
 }
 
 // src/server/services/campaign-queue.service.ts
-var REDIS_URL = process.env.REDIS_URL || "redis://betico_redis:6379";
+var REDIS_URL = process.env.REDIS_URL || "redis://:BeticoRedis2026@betico_redis:6379";
 var redis = null;
 try {
   redis = new Redis(REDIS_URL, {
@@ -4598,6 +4608,9 @@ try {
       return Math.min(times * 200, 1e3);
     },
     lazyConnect: true
+  });
+  redis.on("error", (err) => {
+    console.warn("[Redis] Connection warning:", err?.message || err);
   });
   redis.connect().catch(() => {
     console.log("[Redis] Redis not available, using in-memory queue fallback.");
@@ -9407,6 +9420,14 @@ router2.get("/:id/dossier", async (req, res) => {
         adminPhone: tenant.whatsappNumber || null
       },
       storeModules,
+      infrastructure: {
+        postgresDb: "whatsapp_saas",
+        postgresSchema: "public",
+        postgresTenantId: id,
+        easypanelProject: tenant.settingsJson?.easypanel?.project || null,
+        easypanelService: tenant.settingsJson?.easypanel?.service || null,
+        evolutionInstance: tenant.evolutionInstance || null
+      },
       metrics: {
         ordersCount,
         appointmentsCount,
