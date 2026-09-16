@@ -601,14 +601,30 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
                       </button>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
-                      <span style={{ color: 'var(--text-muted)' }}>📦 EasyPanel:</span>
-                      <span style={{
-                        padding: '1px 6px', borderRadius: '4px', fontSize: '0.68rem', fontWeight: 600,
-                        backgroundColor: t.easypanelProject ? 'rgba(16, 185, 129, 0.1)' : 'transparent',
-                        color: t.easypanelProject ? '#15803d' : 'var(--text-muted)'
-                      }}>
-                        {t.easypanelProject ? `${t.easypanelProject}/${t.easypanelService || 'app'}` : '⚪ Sin vincular (Compartido)'}
-                      </span>
+                      <span style={{ color: 'var(--text-muted)' }}>📱 Evolution API:</span>
+                      {t.evolutionInstance ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigator.clipboard.writeText(t.evolutionInstance || '');
+                            setCopiedSlug(`evo_${t.id}`);
+                            setTimeout(() => setCopiedSlug(null), 2000);
+                          }}
+                          title={`Copiar Instancia Evolution: ${t.evolutionInstance}`}
+                          style={{
+                            background: 'rgba(34, 197, 94, 0.1)', border: '1px solid rgba(34, 197, 94, 0.3)',
+                            borderRadius: '4px', padding: '1px 6px', fontSize: '0.68rem', fontWeight: 600,
+                            color: '#15803d', cursor: 'pointer', fontFamily: 'monospace'
+                          }}
+                        >
+                          {copiedSlug === `evo_${t.id}` ? '✅ Copiado' : `${t.evolutionInstance} 📋`}
+                        </button>
+                      ) : (
+                        <span style={{ padding: '1px 6px', borderRadius: '4px', fontSize: '0.68rem', fontWeight: 500, color: 'var(--text-muted)' }}>
+                          ⚪ Sin vincular
+                        </span>
+                      )}
                     </div>
                   </div>
 
@@ -705,14 +721,46 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
                           >
                             🐘 {copiedSlug === `pg_${t.id}` ? '✅ Copiado' : `PG: ${(t.postgresTenantId || t.id).slice(0, 8)}... 📋`}
                           </button>
-                          <span style={{
-                            padding: '2px 6px', borderRadius: '4px', fontSize: '0.69rem', fontWeight: 500,
-                            backgroundColor: t.easypanelProject ? 'rgba(16, 185, 129, 0.1)' : '#f8fafc',
-                            border: '1px solid var(--border)',
-                            color: t.easypanelProject ? '#15803d' : 'var(--text-muted)'
-                          }}>
-                            📦 {t.easypanelProject ? `EasyPanel: ${t.easypanelProject}/${t.easypanelService || 'app'}` : 'EasyPanel: Sin vincular'}
-                          </span>
+                          {t.evolutionInstance ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigator.clipboard.writeText(t.evolutionInstance || '');
+                                setCopiedSlug(`evo_${t.id}`);
+                                setTimeout(() => setCopiedSlug(null), 2000);
+                              }}
+                              title={`Copiar Instancia Evolution API: ${t.evolutionInstance}`}
+                              style={{
+                                background: 'rgba(34, 197, 94, 0.08)',
+                                border: '1px solid rgba(34, 197, 94, 0.3)',
+                                borderRadius: '4px',
+                                padding: '2px 6px',
+                                fontSize: '0.69rem',
+                                fontWeight: 600,
+                                color: '#15803d',
+                                cursor: 'pointer',
+                                fontFamily: 'monospace',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '3px'
+                              }}
+                            >
+                              📱 {copiedSlug === `evo_${t.id}` ? '✅ Copiado' : `Evo: ${t.evolutionInstance} 📋`}
+                            </button>
+                          ) : (
+                            <span style={{
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              fontSize: '0.69rem',
+                              fontWeight: 500,
+                              backgroundColor: '#f8fafc',
+                              border: '1px solid var(--border)',
+                              color: 'var(--text-muted)'
+                            }}>
+                              📱 Evo: Sin vincular
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td style={{ padding: '12px 14px' }}>
@@ -1714,15 +1762,30 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
                       </div>
                     </div>
                     <div>
-                      <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.71rem', fontWeight: 600 }}>📦 Proyecto EasyPanel</span>
-                      <span style={{ fontWeight: 600, color: editingTenant.easypanelProject ? '#15803d' : 'var(--text-muted)' }}>
-                        {editingTenant.easypanelProject || '⚪ Sin vincular (Instancia Compartida)'}
-                      </span>
+                      <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.71rem', fontWeight: 600 }}>📱 Instancia Evolution API</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                        <code style={{ fontSize: '0.74rem', color: editingTenant.evolutionInstance ? '#15803d' : 'var(--text-muted)', backgroundColor: '#e2e8f0', padding: '2px 4px', borderRadius: '4px' }}>
+                          {editingTenant.evolutionInstance || '⚪ Sin vincular'}
+                        </code>
+                        {editingTenant.evolutionInstance && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(editingTenant.evolutionInstance || '');
+                              alert('Nombre de instancia Evolution copiado');
+                            }}
+                            title="Copiar nombre de instancia"
+                            style={{ padding: '2px 5px', fontSize: '0.65rem', border: '1px solid var(--border)', borderRadius: '4px', cursor: 'pointer', background: 'white' }}
+                          >
+                            📋
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <div>
-                      <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.71rem', fontWeight: 600 }}>Servicio EasyPanel</span>
-                      <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>
-                        {editingTenant.easypanelService || 'betico_app (Cluster Producción)'}
+                      <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.71rem', fontWeight: 600 }}>WhatsApp Vinculado</span>
+                      <span style={{ fontWeight: 600, color: editingTenant.whatsappNumber ? '#15803d' : 'var(--text-muted)' }}>
+                        {editingTenant.whatsappNumber ? `🟢 ${editingTenant.whatsappNumber}` : '⚪ No vinculado'}
                       </span>
                     </div>
                   </div>

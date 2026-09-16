@@ -314,18 +314,18 @@ export default function TenantDossierModal({ tenantId, onClose, onRefresh }: Pro
               </span>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '14px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '14px' }}>
               
               {/* POSTGRES */}
-              <div style={{ backgroundColor: 'rgba(15, 23, 42, 0.6)', padding: '12px 14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
+              <div style={{ backgroundColor: 'rgba(15, 23, 42, 0.6)', padding: '14px 16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.06)' }}>
                 <div style={{ fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: '700', letterSpacing: '0.05em' }}>
                   🐘 Inquilino PostgreSQL
                 </div>
-                <div style={{ fontSize: '0.85rem', fontWeight: '700', color: '#38bdf8', marginTop: '4px' }}>
-                  BD: {data?.infrastructure?.postgresDb || 'whatsapp_saas'} ({data?.infrastructure?.postgresSchema || 'public'})
+                <div style={{ fontSize: '0.88rem', fontWeight: '700', color: '#38bdf8', marginTop: '4px' }}>
+                  Base de Datos: {data?.infrastructure?.postgresDb || 'whatsapp_saas'} ({data?.infrastructure?.postgresSchema || 'public'})
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '6px', gap: '8px' }}>
-                  <code style={{ fontSize: '0.74rem', color: '#cbd5e1', backgroundColor: 'rgba(0,0,0,0.3)', padding: '2px 6px', borderRadius: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '8px', gap: '8px' }}>
+                  <code style={{ fontSize: '0.74rem', color: '#cbd5e1', backgroundColor: 'rgba(0,0,0,0.3)', padding: '3px 8px', borderRadius: '6px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {data?.infrastructure?.postgresTenantId || tenantId}
                   </code>
                   <button
@@ -334,40 +334,38 @@ export default function TenantDossierModal({ tenantId, onClose, onRefresh }: Pro
                       navigator.clipboard.writeText(data?.infrastructure?.postgresTenantId || tenantId);
                       alert('UUID de Postgres copiado al portapapeles');
                     }}
-                    style={{ background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)', borderRadius: '6px', padding: '3px 8px', fontSize: '0.7rem', cursor: 'pointer', fontWeight: 'bold', whiteSpace: 'nowrap' }}
+                    style={{ background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)', borderRadius: '6px', padding: '4px 10px', fontSize: '0.72rem', cursor: 'pointer', fontWeight: 'bold', whiteSpace: 'nowrap' }}
                   >
                     Copiar UUID
                   </button>
                 </div>
               </div>
 
-              {/* EASYPANEL */}
-              <div style={{ backgroundColor: 'rgba(15, 23, 42, 0.6)', padding: '12px 14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                <div style={{ fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: '700', letterSpacing: '0.05em' }}>
-                  📦 EasyPanel (Docker Swarm)
-                </div>
-                <div style={{ fontSize: '0.85rem', fontWeight: '700', marginTop: '4px', color: (data?.infrastructure?.easypanelProject || tenant.easypanelProject) ? '#34d399' : '#e2e8f0' }}>
-                  {(data?.infrastructure?.easypanelProject || tenant.easypanelProject)
-                    ? `Proyecto: ${data?.infrastructure?.easypanelProject || tenant.easypanelProject}`
-                    : '⚪ Sin vincular (Instancia Compartida)'}
-                </div>
-                <div style={{ fontSize: '0.74rem', color: '#94a3b8', marginTop: '6px' }}>
-                  {(data?.infrastructure?.easypanelService || tenant.easypanelService)
-                    ? `Servicio: ${data?.infrastructure?.easypanelService || tenant.easypanelService}`
-                    : 'Servicio por defecto: betico_app (Cluster Producción)'}
-                </div>
-              </div>
-
               {/* EVOLUTION API */}
-              <div style={{ backgroundColor: 'rgba(15, 23, 42, 0.6)', padding: '12px 14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
+              <div style={{ backgroundColor: 'rgba(15, 23, 42, 0.6)', padding: '14px 16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.06)' }}>
                 <div style={{ fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: '700', letterSpacing: '0.05em' }}>
-                  📱 Evolution WhatsApp
+                  📱 Inquilino Evolution API (WhatsApp)
                 </div>
-                <div style={{ fontSize: '0.85rem', fontWeight: '700', color: (tenant.evolutionInstance || data?.infrastructure?.evolutionInstance) ? '#34d399' : '#f59e0b', marginTop: '4px' }}>
-                  {(tenant.evolutionInstance || data?.infrastructure?.evolutionInstance) ? '🟢 Conectado' : '⚪ Sin Instancia'}
+                <div style={{ fontSize: '0.88rem', fontWeight: '700', color: (tenant.evolutionInstance || data?.infrastructure?.evolutionInstance) ? '#34d399' : '#f59e0b', marginTop: '4px' }}>
+                  {(tenant.evolutionInstance || data?.infrastructure?.evolutionInstance) ? '🟢 Instancia Vinculada' : '⚪ Sin Instancia Asignada'}
                 </div>
-                <div style={{ fontSize: '0.74rem', color: '#cbd5e1', marginTop: '6px', fontFamily: 'monospace' }}>
-                  Instancia: {tenant.evolutionInstance || data?.infrastructure?.evolutionInstance || 'No configurada'}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '8px', gap: '8px' }}>
+                  <code style={{ fontSize: '0.74rem', color: '#cbd5e1', backgroundColor: 'rgba(0,0,0,0.3)', padding: '3px 8px', borderRadius: '6px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'monospace' }}>
+                    {tenant.evolutionInstance || data?.infrastructure?.evolutionInstance || 'Sin vincular'}
+                  </code>
+                  {(tenant.evolutionInstance || data?.infrastructure?.evolutionInstance) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const evo = tenant.evolutionInstance || data?.infrastructure?.evolutionInstance;
+                        navigator.clipboard.writeText(evo);
+                        alert('Nombre de instancia Evolution copiado al portapapeles');
+                      }}
+                      style={{ background: 'rgba(52, 211, 153, 0.15)', color: '#34d399', border: '1px solid rgba(52, 211, 153, 0.3)', borderRadius: '6px', padding: '4px 10px', fontSize: '0.72rem', cursor: 'pointer', fontWeight: 'bold', whiteSpace: 'nowrap' }}
+                    >
+                      Copiar Instancia
+                    </button>
+                  )}
                 </div>
               </div>
 
