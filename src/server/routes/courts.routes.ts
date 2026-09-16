@@ -272,7 +272,10 @@ router.post('/public/:slug/pay/:bookingId', async (req, res) => {
     res.json(session);
   } catch (error: any) {
     console.error('[Courts] Error al generar sesión de pago:', error);
-    res.status(400).json({ error: error.message || 'Error al generar sesión de pago' });
+    const safeMsg = (typeof error?.message === 'string' && !error.message.includes('SELECT') && !error.message.includes('INSERT') && !error.message.includes('password') && !error.message.includes('secret'))
+      ? error.message
+      : 'Error al generar sesión de pago';
+    res.status(400).json({ error: safeMsg });
   }
 });
 

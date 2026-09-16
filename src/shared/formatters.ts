@@ -103,3 +103,15 @@ export function getLocalDateString(date: Date = new Date()): string {
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
+
+/**
+ * Normalizes Costa Rica telephone numbers to standard E.164 without '+' for WhatsApp/Evolution API.
+ * Prepends '506' if 8 digits are supplied, strips punctuation and spaces.
+ */
+export function normalizeCostaRicaPhone(phone?: string | null): string {
+  let clean = (phone || '').replace(/\D/g, '');
+  if (clean.length === 8) {
+    clean = '506' + clean;
+  }
+  return clean;
+}

@@ -20,7 +20,20 @@ export function useApi() {
     
     if (response.status === 401) {
       localStorage.removeItem('token');
-      window.location.reload();
+      const path = window.location.pathname;
+      const isPublicPath = path.startsWith('/tienda') || 
+                           path.startsWith('/canchas') || 
+                           path.startsWith('/citas') || 
+                           path.startsWith('/especialista') || 
+                           path.startsWith('/repartidor') || 
+                           path.startsWith('/checkout') ||
+                           path.startsWith('/order-success') ||
+                           path.startsWith('/site') ||
+                           path.startsWith('/login') ||
+                           path === '/';
+      if (!isPublicPath) {
+        window.location.href = '/login';
+      }
       throw new Error('Unauthorized');
     }
     

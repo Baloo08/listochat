@@ -1767,6 +1767,7 @@ async function getOrdersByTenant(tenantId, filters) {
            o.consumption_mode as "consumptionMode", o.table_number as "tableNumber", o.customer_location as "customerLocation",
            o.chat_message_id as "chatMessageId", o.driver_id as "driverId", o.waze_url as "wazeUrl",
            o.billing_info as "billingInfo",
+           o.tracking_token as "trackingToken",
            o.branch_id as "branchId", b.name as "branchName",
            o.created_at as "createdAt", o.updated_at as "updatedAt",
            COALESCE(
@@ -1806,6 +1807,7 @@ async function getOrderById(id, tenantId) {
            consumption_mode as "consumptionMode", table_number as "tableNumber", customer_location as "customerLocation",
            chat_message_id as "chatMessageId", driver_id as "driverId", waze_url as "wazeUrl",
            billing_info as "billingInfo",
+           tracking_token as "trackingToken",
            created_at as "createdAt", updated_at as "updatedAt"
     FROM orders 
     WHERE id = $1 AND tenant_id = $2
@@ -1918,6 +1920,7 @@ async function updateOrder(id, tenantId, data) {
     "deliveryFee",
     "total",
     "customerAddress",
+    "customerLocation",
     "billingInfo"
   ];
   for (const field of fields) {
@@ -1965,6 +1968,44 @@ async function executeOrderPaymentConfirmation(tenantId, orderId, paymentData) {
       const order = await getOrderById(orderId, tenantId);
       return { success: true, alreadyProcessed: true, order: order || void 0 };
     }
+    if (!currentOrder.stock_deducted) {
+      const itemsRes = await client.query(`
+        SELECT product_id as "productId", variant_id as "variantId", quantity
+        FROM order_items
+        WHERE order_id = $1 AND tenant_id = $2
+        ORDER BY product_id ASC, variant_id ASC NULLS FIRST
+      `, [orderId, tenantId]);
+      for (const item of itemsRes.rows) {
+        const qty = Number(item.quantity || 1);
+        if (item.productId) {
+          await client.query(`
+            SELECT id, stock, track_stock
+            FROM products
+            WHERE id = $1 AND tenant_id = $2
+            FOR UPDATE
+          `, [item.productId, tenantId]);
+          await client.query(`
+            UPDATE products
+            SET stock = GREATEST(0, stock - $1),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = $2 AND tenant_id = $3 AND track_stock = true
+          `, [qty, item.productId, tenantId]);
+          if (item.variantId) {
+            await client.query(`
+              SELECT id, stock
+              FROM product_variants
+              WHERE id = $1 AND product_id = $2
+              FOR UPDATE
+            `, [item.variantId, item.productId]);
+            await client.query(`
+              UPDATE product_variants
+              SET stock = GREATEST(0, stock - $1)
+              WHERE id = $2 AND product_id = $3
+            `, [qty, item.variantId, item.productId]);
+          }
+        }
+      }
+    }
     const newPaymentStatus = "paid";
     const newOrderStatus = currentOrder.status === "pending" || currentOrder.status === "pedido_recibido" ? "pedido_aceptado" : currentOrder.status;
     await client.query(`
@@ -1988,31 +2029,6 @@ async function executeOrderPaymentConfirmation(tenantId, orderId, paymentData) {
       orderId,
       tenantId
     ]);
-    if (!currentOrder.stock_deducted) {
-      const itemsRes = await client.query(`
-        SELECT product_id as "productId", variant_id as "variantId", quantity
-        FROM order_items
-        WHERE order_id = $1 AND tenant_id = $2
-      `, [orderId, tenantId]);
-      for (const item of itemsRes.rows) {
-        const qty = Number(item.quantity || 1);
-        if (item.productId) {
-          await client.query(`
-            UPDATE products
-            SET stock = GREATEST(0, stock - $1),
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = $2 AND tenant_id = $3 AND track_stock = true
-          `, [qty, item.productId, tenantId]);
-          if (item.variantId) {
-            await client.query(`
-              UPDATE product_variants
-              SET stock = GREATEST(0, stock - $1)
-              WHERE id = $2 AND product_id = $3
-            `, [qty, item.variantId, item.productId]);
-          }
-        }
-      }
-    }
     await client.query("COMMIT");
     const updatedOrder = await getOrderById(orderId, tenantId);
     return { success: true, alreadyProcessed: false, order: updatedOrder || void 0 };
@@ -3190,12 +3206,18 @@ async function getDriversByTenant(tenantId) {
   return res.rows;
 }
 async function getDriverById(id, tenantId) {
-  const res = await query(`
+  let sql = `
     SELECT id, tenant_id as "tenantId", name, phone, access_pin as "accessPin",
            vehicle_type as "vehicleType", plate_number as "plateNumber", active, created_at as "createdAt"
     FROM delivery_drivers
     WHERE id = $1
-  `, [id]);
+  `;
+  const params = [id];
+  if (tenantId) {
+    sql += ` AND tenant_id = $2`;
+    params.push(tenantId);
+  }
+  const res = await query(sql, params);
   return res.rows[0] || null;
 }
 async function getDriverByPin(pin, phone, tenantId) {
@@ -3272,22 +3294,29 @@ async function getActiveOrdersForDriver(driverId) {
            o.total, o.currency, o.status, o.payment_method as "paymentMethod",
            o.payment_status as "paymentStatus", o.notes, o.delivery_method as "deliveryMethod",
            o.consumption_mode as "consumptionMode", o.table_number as "tableNumber",
-           o.driver_id as "driverId", o.waze_url as "wazeUrl", o.created_at as "createdAt"
+           o.driver_id as "driverId", o.waze_url as "wazeUrl", o.created_at as "createdAt",
+           COALESCE(
+             (
+               SELECT json_agg(
+                 json_build_object(
+                   'id', oi.id,
+                   'productName', oi.product_name,
+                   'quantity', oi.quantity,
+                   'unitPrice', oi.unit_price,
+                   'totalPrice', oi.total_price
+                 )
+               )
+               FROM order_items oi
+               WHERE oi.order_id = o.id
+             ),
+             '[]'::json
+           ) as items
     FROM orders o
     WHERE o.driver_id = $1
       AND o.status NOT IN ('delivered', 'entregado', 'cancelled', 'cancelado')
     ORDER BY o.created_at DESC
   `, [driverId]);
-  const orders = [];
-  for (const row of res.rows) {
-    const itemsRes = await query(`
-      SELECT id, product_name as "productName", quantity, unit_price as "unitPrice", total_price as "totalPrice"
-      FROM order_items
-      WHERE order_id = $1
-    `, [row.id]);
-    orders.push({ ...row, items: itemsRes.rows });
-  }
-  return orders;
+  return res.rows;
 }
 async function getCompletedOrdersForDriver(driverId, fromDate, toDate) {
   let sql = `
@@ -3297,7 +3326,23 @@ async function getCompletedOrdersForDriver(driverId, fromDate, toDate) {
            o.total, o.currency, o.status, o.payment_method as "paymentMethod",
            o.payment_status as "paymentStatus", o.notes, o.delivery_method as "deliveryMethod",
            o.consumption_mode as "consumptionMode", o.table_number as "tableNumber",
-           o.driver_id as "driverId", o.waze_url as "wazeUrl", o.created_at as "createdAt"
+           o.driver_id as "driverId", o.waze_url as "wazeUrl", o.created_at as "createdAt",
+           COALESCE(
+             (
+               SELECT json_agg(
+                 json_build_object(
+                   'id', oi.id,
+                   'productName', oi.product_name,
+                   'quantity', oi.quantity,
+                   'unitPrice', oi.unit_price,
+                   'totalPrice', oi.total_price
+                 )
+               )
+               FROM order_items oi
+               WHERE oi.order_id = o.id
+             ),
+             '[]'::json
+           ) as items
     FROM orders o
     WHERE o.driver_id = $1
       AND o.status IN ('delivered', 'entregado')
@@ -3313,16 +3358,7 @@ async function getCompletedOrdersForDriver(driverId, fromDate, toDate) {
   }
   sql += ` ORDER BY o.created_at DESC`;
   const res = await query(sql, params);
-  const orders = [];
-  for (const row of res.rows) {
-    const itemsRes = await query(`
-      SELECT id, product_name as "productName", quantity, unit_price as "unitPrice", total_price as "totalPrice"
-      FROM order_items
-      WHERE order_id = $1
-    `, [row.id]);
-    orders.push({ ...row, items: itemsRes.rows });
-  }
-  return orders;
+  return res.rows;
 }
 var init_drivers_repo = __esm({
   "src/server/db/drivers.repo.ts"() {
@@ -4270,6 +4306,15 @@ async function runMigrations() {
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS billing_info JSONB;
     ALTER TABLE appointments ADD COLUMN IF NOT EXISTS billing_info JSONB;
     ALTER TABLE court_bookings ADD COLUMN IF NOT EXISTS billing_info JSONB;
+
+    -- Subscription Grace Period Abuse Prevention & Order Tracking Token (ISO/IEC 25010)
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS trial_consumed BOOLEAN DEFAULT false;
+    UPDATE tenants SET trial_consumed = true WHERE trial_ends_at < CURRENT_TIMESTAMP OR subscription_status IN ('active', 'cancelled', 'past_due');
+
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_token UUID DEFAULT gen_random_uuid();
+    CREATE INDEX IF NOT EXISTS idx_orders_tracking_token ON orders(tracking_token);
+
+    CREATE INDEX IF NOT EXISTS idx_court_bookings_slot ON court_bookings(tenant_id, court_id, date, time) WHERE status != 'cancelled';
   `).catch((err) => {
     console.warn("[Migrations] Columns addition warning:", err?.message || err);
   });
@@ -4319,8 +4364,8 @@ async function checkAndSendReminders() {
           FROM appointments
           WHERE tenant_id = $1 
             AND status IN ('pending', 'scheduled', 'confirmed')
-            AND date >= TO_CHAR(CURRENT_DATE, 'YYYY-MM-DD')
-            AND date <= TO_CHAR(CURRENT_DATE + INTERVAL '3 days', 'YYYY-MM-DD')
+            AND date >= CURRENT_DATE
+            AND date <= (CURRENT_DATE + INTERVAL '3 days')::date
         `, [tenant.id]);
         for (const appt of apptsRes.rows) {
           if (!appt.whatsapp || !appt.date || !appt.time) continue;
@@ -5230,6 +5275,72 @@ Hola *${tenant.name}*, tu mensualidad de *${priceStr}* ha sido cobrada exitosame
       }
     }
     return { processed: dueTenants.length, successCount, failedCount };
+  }
+  /**
+   * Actively queries the official Tilopay API (POST /api/v1/consult) with platform credentials
+   * to verify that a platform subscription or card registration transaction was authorized.
+   * Defends against spoofed webhook payloads (ISO/IEC 25010 / OWASP ASVS).
+   */
+  static async verifyPlatformTransactionStatus(orderNumber) {
+    try {
+      const platformCfg = await getPlatformTilopayConfig();
+      if (!platformCfg) {
+        return {
+          verified: false,
+          isApproved: false,
+          error: "Configuraci\xF3n de Tilopay de la plataforma no disponible para verificar suscripci\xF3n."
+        };
+      }
+      const jwt5 = await this.getPlatformJwt(platformCfg);
+      const baseUrl = this.getBaseUrl(platformCfg.environment);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 1e4);
+      try {
+        const res = await fetch(`${baseUrl}/consult`, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${jwt5}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            orderNumber: orderNumber.trim()
+          }),
+          signal: controller.signal
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const errorMsg = data.message || data.error || `HTTP ${res.status} al consultar transacci\xF3n en Tilopay`;
+          return {
+            verified: false,
+            isApproved: false,
+            error: errorMsg
+          };
+        }
+        const result = data.result || data;
+        const resultCode = String(result.result_code || result.code || result.result || "");
+        const status = String(result.status || "").toLowerCase();
+        const isApproved = resultCode === "1" || resultCode === "00" || status === "approved" || status === "success" || status === "paid" || result.approved === true;
+        const transactionId = result.transaction_id || result.transactionId || result.id;
+        const authCode = result.auth_code || result.authCode || result.authorization;
+        return {
+          verified: true,
+          isApproved,
+          transactionId: transactionId ? String(transactionId) : void 0,
+          authCode: authCode ? String(authCode) : void 0,
+          status,
+          resultCode
+        };
+      } finally {
+        clearTimeout(timeout);
+      }
+    } catch (err) {
+      console.error(`[TilopaySubscriptionService.verifyPlatformTransactionStatus] Error al verificar suscripci\xF3n ${orderNumber}:`, err);
+      return {
+        verified: false,
+        isApproved: false,
+        error: err.message || "Error de red o comunicaci\xF3n al consultar la API de Tilopay"
+      };
+    }
   }
 };
 
@@ -6245,6 +6356,7 @@ function mapSpecialistRow(row) {
     tenantId: row.tenant_id,
     name: row.name,
     phone: row.phone,
+    whatsapp: row.phone,
     specialty: row.specialty,
     accessPin: row.access_pin,
     active: row.active !== false,
@@ -6261,11 +6373,14 @@ async function getSpecialistsByTenant(tenantId) {
   );
   return res.rows.map(mapSpecialistRow);
 }
-async function getSpecialistById(id) {
-  const res = await query(
-    "SELECT * FROM specialists WHERE id = $1",
-    [id]
-  );
+async function getSpecialistById(id, tenantId) {
+  let sql = "SELECT * FROM specialists WHERE id = $1";
+  const params = [id];
+  if (tenantId) {
+    sql += " AND tenant_id = $2";
+    params.push(tenantId);
+  }
+  const res = await query(sql, params);
   return res.rows[0] ? mapSpecialistRow(res.rows[0]) : null;
 }
 async function getSpecialistByPin(pin, phone, tenantId) {
@@ -8906,9 +9021,9 @@ router.post("/forgot-password", otpLimiter, async (req, res) => {
       res.status(400).json({ error: "Tu cuenta no tiene un n\xFAmero de WhatsApp vinculado para recibir el c\xF3digo. Por favor contacta a soporte." });
       return;
     }
-    const crypto5 = await import("crypto");
-    const otpCode = crypto5.randomInt(1e5, 999999).toString();
-    const tokenHash = crypto5.createHash("sha256").update(otpCode + user.id).digest("hex");
+    const crypto6 = await import("crypto");
+    const otpCode = crypto6.randomInt(1e5, 999999).toString();
+    const tokenHash = crypto6.createHash("sha256").update(otpCode + user.id).digest("hex");
     await (await Promise.resolve().then(() => (init_pool(), pool_exports))).query(`
       UPDATE password_reset_tokens SET used = true WHERE user_id = $1 AND used = false
     `, [user.id]);
@@ -9022,6 +9137,7 @@ var auth_routes_default = router;
 
 // src/server/routes/tenant.routes.ts
 import { Router as Router2 } from "express";
+import crypto5 from "crypto";
 init_users_repo();
 var router2 = Router2();
 router2.use(authenticateToken);
@@ -9175,7 +9291,7 @@ router2.put("/:id", async (req, res) => {
             name: body.contactName ? body.contactName.trim() : `${body.name || "Admin"}`,
             email: body.email.toLowerCase().trim(),
             role: "admin",
-            password: "password123"
+            password: crypto5.randomBytes(9).toString("base64url") + "!1Aa"
           });
         }
       } catch (userErr) {
@@ -9892,6 +10008,71 @@ var TilopayTenantService = class {
       customerPhone
     };
   }
+  /**
+   * Actively queries the official Tilopay API (POST /api/v1/consult) to verify
+   * that a transaction was truly authorized and approved.
+   * Defends against spoofed or unverified webhook payloads (ISO/IEC 25010 / OWASP ASVS).
+   */
+  static async verifyTransactionStatus(tenantId, orderNumber) {
+    if (!env2.TILOPAY_MODULE_ENABLED) {
+      return {
+        verified: false,
+        isApproved: false,
+        error: "El m\xF3dulo de Tilopay se encuentra inactivo en la configuraci\xF3n del sistema."
+      };
+    }
+    try {
+      const { token, environment } = await this.getSdkToken(tenantId);
+      const baseUrl = this.getBaseUrl(environment);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 1e4);
+      try {
+        const res = await fetch(`${baseUrl}/consult`, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${token}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            orderNumber: orderNumber.trim()
+          }),
+          signal: controller.signal
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const errorMsg = data.message || data.error || `HTTP ${res.status} al consultar transacci\xF3n en Tilopay`;
+          return {
+            verified: false,
+            isApproved: false,
+            error: errorMsg
+          };
+        }
+        const result = data.result || data;
+        const resultCode = String(result.result_code || result.code || result.result || "");
+        const status = String(result.status || "").toLowerCase();
+        const isApproved = resultCode === "1" || resultCode === "00" || status === "approved" || status === "success" || status === "paid" || result.approved === true;
+        const transactionId = result.transaction_id || result.transactionId || result.id;
+        const authCode = result.auth_code || result.authCode || result.authorization;
+        return {
+          verified: true,
+          isApproved,
+          transactionId: transactionId ? String(transactionId) : void 0,
+          authCode: authCode ? String(authCode) : void 0,
+          status,
+          resultCode
+        };
+      } finally {
+        clearTimeout(timeout);
+      }
+    } catch (err) {
+      console.error(`[TilopayTenantService.verifyTransactionStatus] Error al verificar orden ${orderNumber}:`, err);
+      return {
+        verified: false,
+        isApproved: false,
+        error: err.message || "Error de red o comunicaci\xF3n al consultar la API de Tilopay"
+      };
+    }
+  }
 };
 
 // src/server/routes/appointments.routes.ts
@@ -10517,28 +10698,8 @@ router6.use(authenticateToken);
 router6.use(tenantContext);
 router6.get("/", async (req, res) => {
   try {
-    const isSuperAdmin = req.user?.role === "superadmin";
-    let msgs = await getChatMessagesByTenant(req.tenantId, 500);
-    let sessions = await getAllChatSessions(req.tenantId);
-    if (isSuperAdmin && msgs.length === 0) {
-      const allMsgsRes = await query(`
-        SELECT id, tenant_id as "tenantId", remote_jid as "remoteJid", push_name as "pushName",
-               from_me as "fromMe", message_text as "messageText", ai_response as "aiResponse",
-               status, created_at as "createdAt"
-        FROM chat_messages
-        ORDER BY created_at DESC
-        LIMIT 500
-      `);
-      msgs = allMsgsRes.rows;
-      const allSessionsRes = await query(`
-        SELECT remote_jid as "remoteJid", is_human_mode as "isHumanMode", unread, notes, updated_at as "updatedAt"
-        FROM chat_sessions
-      `);
-      sessions = allSessionsRes.rows.reduce((acc, row) => {
-        acc[row.remoteJid] = row;
-        return acc;
-      }, {});
-    }
+    const msgs = await getChatMessagesByTenant(req.tenantId, 500);
+    const sessions = await getAllChatSessions(req.tenantId);
     res.json({ messages: msgs, sessions });
   } catch (error) {
     console.error(error);
@@ -10983,7 +11144,7 @@ router11.post("/bulk-upload", upload.single("file"), async (req, res) => {
     });
   } catch (error) {
     console.error("Bulk upload error:", error);
-    res.status(500).json({ error: error.message || "Error procesando archivo Excel" });
+    res.status(500).json({ error: "Error procesando archivo Excel. Verifique la estructura del archivo e intente nuevamente." });
   }
 });
 router11.post("/generate-description", async (req, res) => {
@@ -11157,9 +11318,8 @@ init_orders_repo();
 init_evolution();
 init_pool();
 init_almendro_service();
-var router12 = Router12();
-router12.use(authenticateToken);
-router12.use(tenantContext);
+
+// src/shared/formatters.ts
 function normalizeCostaRicaPhone(phone) {
   let clean = (phone || "").replace(/\D/g, "");
   if (clean.length === 8) {
@@ -11167,6 +11327,11 @@ function normalizeCostaRicaPhone(phone) {
   }
   return clean;
 }
+
+// src/server/routes/orders.routes.ts
+var router12 = Router12();
+router12.use(authenticateToken);
+router12.use(tenantContext);
 async function resolveInstanceName(tenantId) {
   const tenant = await getTenantById(tenantId);
   if (tenant?.evolutionInstance) return tenant.evolutionInstance;
@@ -11198,11 +11363,8 @@ router12.get("/", async (req, res) => {
 });
 router12.get("/stats/unread", async (req, res) => {
   try {
-    const result = await query(`
-      SELECT COUNT(*) as count 
-      FROM orders 
-      WHERE (tenant_id = $1 OR $2 = 'superadmin') AND status IN ('pedido_recibido', 'pending')
-    `, [req.tenantId, req.user?.role || "user"]);
+    const isSuperAdmin = req.user?.role === "superadmin" && !req.tenantId;
+    const result = isSuperAdmin ? await query(`SELECT COUNT(*) as count FROM orders WHERE status IN ('pedido_recibido', 'pending')`) : await query(`SELECT COUNT(*) as count FROM orders WHERE tenant_id = $1 AND status IN ('pedido_recibido', 'pending')`, [req.tenantId]);
     res.json({ newOrdersCount: parseInt(result.rows[0]?.count || "0", 10) });
   } catch (error) {
     res.json({ newOrdersCount: 0 });
@@ -11773,37 +11935,47 @@ router16.get("/:slug", async (req, res) => {
 router16.get("/order-public/:orderId", async (req, res) => {
   try {
     const { orderId } = req.params;
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(orderId);
+    if (!isUuid) {
+      res.status(400).json({ error: "Identificador de orden inv\xE1lido. Se requiere el identificador seguro de orden (UUID)." });
+      return;
+    }
     const result = await query(`
       SELECT o.id, o.tenant_id as "tenantId", o.order_number as "orderNumber", o.customer_name as "customerName",
              o.customer_phone as "customerPhone", o.subtotal, o.delivery_fee as "deliveryFee",
              o.total, o.currency, o.status, o.payment_status as "paymentStatus",
              o.payment_method as "paymentMethod", o.delivery_method as "deliveryMethod",
-             o.consumption_mode as "consumptionMode", o.table_number as "tableNumber",
-             o.created_at as "createdAt",
-             COALESCE(ss.store_name, t.name) as "storeName",
-             COALESCE(ss.store_slug, t.slug) as "storeSlug",
-             t.slug as "tenantSlug",
-             COALESCE(ss.sinpe_phone, t.whatsapp_number) as "whatsappNumber",
-             COALESCE(
-               (SELECT json_agg(json_build_object(
-                  'productName', oi.product_name,
-                  'variantName', oi.variant_name,
-                  'quantity', oi.quantity,
-                  'totalPrice', oi.total_price
-                ))
+              o.consumption_mode as "consumptionMode", o.table_number as "tableNumber",
+              o.tracking_token as "trackingToken",
+              o.created_at as "createdAt",
+              COALESCE(ss.store_name, t.name) as "storeName",
+              COALESCE(ss.store_slug, t.slug) as "storeSlug",
+              t.slug as "tenantSlug",
+              COALESCE(ss.sinpe_phone, t.whatsapp_number) as "whatsappNumber",
+              COALESCE(
+                (SELECT json_agg(json_build_object(
+                   'productName', oi.product_name,
+                   'variantName', oi.variant_name,
+                   'quantity', oi.quantity,
+                   'totalPrice', oi.total_price
+                 ))
                 FROM order_items oi WHERE oi.order_id = o.id), '[]'::json
-             ) as items
-      FROM orders o
-      JOIN tenants t ON o.tenant_id = t.id
-      LEFT JOIN store_settings ss ON ss.tenant_id = t.id
-      WHERE o.id::text = $1 OR o.order_number::text = $1
-      LIMIT 1
+              ) as items
+       FROM orders o
+       JOIN tenants t ON o.tenant_id = t.id
+       LEFT JOIN store_settings ss ON ss.tenant_id = t.id
+       WHERE o.id = $1::uuid OR o.tracking_token = $1::uuid
+       LIMIT 1
     `, [orderId]);
     if (result.rows.length === 0) {
       res.status(404).json({ error: "Orden no encontrada" });
       return;
     }
     const orderRow = result.rows[0];
+    if (orderRow.customerPhone && String(orderRow.customerPhone).length >= 4) {
+      const clean = String(orderRow.customerPhone).trim();
+      orderRow.customerPhone = `\u2022\u2022\u2022\u2022 \u2022\u2022${clean.slice(-2)}`;
+    }
     res.json(orderRow);
   } catch (error) {
     console.error("Error fetching public order summary:", error);
@@ -12281,7 +12453,9 @@ async function transcribeAudio(base64Audio, mimetype = "audio/ogg", apiKey) {
 // src/server/routes/webhook.routes.ts
 var router17 = Router17();
 router17.post("/", async (req, res) => {
-  const incomingApiKey = req.headers["apikey"] || req.headers["x-api-key"] || req.query["apikey"] || req.query["token"];
+  const authHeader = req.headers["authorization"] || "";
+  const bearerToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : authHeader.trim();
+  const incomingApiKey = req.headers["apikey"] || req.headers["x-api-key"] || bearerToken || req.query["apikey"] || req.query["token"];
   const expectedKey = env2.EVOLUTION_API_KEY;
   if (expectedKey && incomingApiKey !== expectedKey) {
     console.warn(`[Security Alert] Rechazado webhook de WhatsApp con apikey no autorizada o ausente desde IP ${req.ip}`);
@@ -12664,20 +12838,10 @@ async function resolveDriverFromRequest(req) {
   }
   return null;
 }
-function normalizeCostaRicaPhone2(phone) {
-  let clean = (phone || "").replace(/\D/g, "");
-  if (clean.length === 8) {
-    clean = "506" + clean;
-  }
-  return clean;
-}
 async function resolveInstanceName2(tenantId) {
   const tenant = await getTenantById(tenantId);
   if (tenant?.evolutionInstance) return tenant.evolutionInstance;
-  const anyActiveInstance = await query(`SELECT evolution_instance FROM tenants WHERE evolution_instance IS NOT NULL AND evolution_instance != '' LIMIT 1`);
-  if (anyActiveInstance.rows.length > 0) {
-    return anyActiveInstance.rows[0].evolution_instance;
-  }
+  console.warn(`[DriversRoute] Tenant ${tenantId} does not have a configured WhatsApp evolutionInstance. Notification skipped.`);
   return void 0;
 }
 router19.get("/portal/info/:slug", async (req, res) => {
@@ -12856,7 +13020,7 @@ router19.post("/portal/orders/:id/deliver", async (req, res) => {
     const tenant = await getTenantById(driver.tenantId);
     const storeSettings = await getStoreSettings(driver.tenantId);
     const instanceName = await resolveInstanceName2(driver.tenantId);
-    const cleanCustomerPhone = normalizeCostaRicaPhone2(order.customerPhone || "");
+    const cleanCustomerPhone = normalizeCostaRicaPhone(order.customerPhone || "");
     if (instanceName && cleanCustomerPhone) {
       const customTpl = storeSettings?.notificationTemplates?.orderDelivered;
       let deliveredMsg = customTpl || `\u{1F389} *\xA1Tu pedido ha sido entregado con \xE9xito!*
@@ -12952,7 +13116,7 @@ router19.post("/:id/send-welcome", async (req, res) => {
     const tenant = await getTenantById(req.tenantId);
     const storeSettings = await getStoreSettings(req.tenantId);
     const instanceName = await resolveInstanceName2(req.tenantId);
-    const cleanDriverPhone = normalizeCostaRicaPhone2(driver.phone);
+    const cleanDriverPhone = normalizeCostaRicaPhone(driver.phone);
     const appOrigin = process.env.APP_URL || "https://betico-app.qvtdko.easypanel.host";
     const effectiveSlug = tenant?.slug || storeSettings?.storeSlug;
     const driverPortalUrl = effectiveSlug ? `${appOrigin}/repartidor/${effectiveSlug}?pin=${driver.accessPin || "1234"}` : `${appOrigin}/repartidor?pin=${driver.accessPin || "1234"}`;
@@ -13005,8 +13169,8 @@ router19.post("/:id/dispatch-order", async (req, res) => {
       driverId: driver.id,
       wazeUrl
     });
-    const cleanDriverPhone = normalizeCostaRicaPhone2(driver.phone);
-    const cleanCustomerPhone = normalizeCostaRicaPhone2(order.customerPhone || "");
+    const cleanDriverPhone = normalizeCostaRicaPhone(driver.phone);
+    const cleanCustomerPhone = normalizeCostaRicaPhone(order.customerPhone || "");
     const itemsList = (order.items || []).map((i) => `\u2022 ${i.quantity}x ${i.productName}`).join("\n");
     const appOrigin = process.env.APP_URL || "https://betico-app.qvtdko.easypanel.host";
     const effectiveDispatchSlug = tenant?.slug || storeSettings?.storeSlug;
@@ -14358,10 +14522,11 @@ router23.get("/:id", async (req, res) => {
     }
     res.json(branch);
   } catch (error) {
+    console.error("Error al obtener sucursal:", error);
     res.status(500).json({ error: "Error al obtener sucursal" });
   }
 });
-router23.post("/", async (req, res) => {
+router23.post("/", requireRole("admin", "superadmin"), async (req, res) => {
   try {
     const tenantId = req.user.tenantId;
     const { name, code, address, phone, sinpePhone, sinpeName, latitude, longitude, isMain, active } = req.body;
@@ -14387,7 +14552,7 @@ router23.post("/", async (req, res) => {
     res.status(500).json({ error: "Error al crear sucursal" });
   }
 });
-router23.put("/:id", async (req, res) => {
+router23.put("/:id", requireRole("admin", "superadmin"), async (req, res) => {
   try {
     const tenantId = req.user.tenantId;
     const branch = await updateBranch(req.params.id, tenantId, req.body);
@@ -14401,7 +14566,7 @@ router23.put("/:id", async (req, res) => {
     res.status(500).json({ error: "Error al actualizar sucursal" });
   }
 });
-router23.delete("/:id", async (req, res) => {
+router23.delete("/:id", requireRole("admin", "superadmin"), async (req, res) => {
   try {
     const tenantId = req.user.tenantId;
     const success = await deleteBranch(req.params.id, tenantId);
@@ -15178,7 +15343,8 @@ router28.post("/public/:slug/pay/:bookingId", async (req, res) => {
     res.json(session);
   } catch (error) {
     console.error("[Courts] Error al generar sesi\xF3n de pago:", error);
-    res.status(400).json({ error: error.message || "Error al generar sesi\xF3n de pago" });
+    const safeMsg = typeof error?.message === "string" && !error.message.includes("SELECT") && !error.message.includes("INSERT") && !error.message.includes("password") && !error.message.includes("secret") ? error.message : "Error al generar sesi\xF3n de pago";
+    res.status(400).json({ error: safeMsg });
   }
 });
 router28.use(authenticateToken);
@@ -15457,7 +15623,17 @@ router29.post("/", async (req, res) => {
       const brand = String(payload.brand || payload.card_brand || "VISA").toUpperCase();
       const holder = String(payload.cardholder || payload.holder || payload.bill_to || tenant.name).trim();
       if (isApproved && token) {
-        console.log(`[TilopayWebhook] Tarjeta tokenizada exitosamente para tenant ${tenant.name} (${tenant.id})`);
+        const verification = await TilopaySubscriptionService.verifyPlatformTransactionStatus(orderStr);
+        if (!verification.isApproved) {
+          console.warn(`[TilopayWebhook] Verificaci\xF3n activa fallida contra API Tilopay para tokenizaci\xF3n ${orderStr}:`, verification.error || "No confirmada por Tilopay API");
+          await logAuditEvent(tenant.id, null, "tilopay_webhook_verification_failed", "billing", orderStr, {
+            reason: verification.error || "API consult did not confirm approval",
+            payloadResultCode: resultCode
+          }, req.ip, req.headers["user-agent"]);
+          return;
+        }
+        const authoritativeTxId = verification.transactionId || transactionId;
+        console.log(`[TilopayWebhook] Tarjeta tokenizada y verificada exitosamente para tenant ${tenant.name} (${tenant.id})`);
         const encryptedToken = CryptoService.encryptForTenant(tenant.id, token);
         await saveBillingCard(tenant.id, {
           last4,
@@ -15475,7 +15651,7 @@ router29.post("/", async (req, res) => {
         await logAuditEvent(tenant.id, null, "tilopay_card_tokenized", "billing", orderStr, {
           cardLast4: last4,
           cardBrand: brand,
-          transactionId
+          transactionId: authoritativeTxId
         }, req.ip, req.headers["user-agent"]);
         if (tenant.whatsappNumber) {
           const cleanPhone = tenant.whatsappNumber.replace(/\D/g, "");
@@ -15505,11 +15681,22 @@ Recuerda que dispones de tus 15 d\xEDas de prueba gratis y recibir\xE1s un aviso
         return;
       }
       if (isApproved) {
-        console.log(`[TilopayWebhook] Cobro de suscripci\xF3n aprobado para tenant ${charge.tenantId} (Orden: ${orderStr})`);
+        const verification = await TilopaySubscriptionService.verifyPlatformTransactionStatus(orderStr);
+        if (!verification.isApproved) {
+          console.warn(`[TilopayWebhook] Verificaci\xF3n activa fallida contra API Tilopay para suscripci\xF3n ${orderStr}:`, verification.error || "No confirmada por Tilopay API");
+          await logAuditEvent(charge.tenantId, null, "tilopay_webhook_verification_failed", "billing", orderStr, {
+            reason: verification.error || "API consult did not confirm approval",
+            payloadResultCode: resultCode
+          }, req.ip, req.headers["user-agent"]);
+          return;
+        }
+        const authoritativeTxId = verification.transactionId || transactionId;
+        const authoritativeAuthCode = verification.authCode || authCode;
+        console.log(`[TilopayWebhook] Cobro de suscripci\xF3n aprobado y verificado para tenant ${charge.tenantId} (Orden: ${orderStr})`);
         await updateBillingCharge(orderStr, {
           status: "success",
-          transactionId,
-          authCode
+          transactionId: authoritativeTxId,
+          authCode: authoritativeAuthCode
         });
         await query(`
           UPDATE tenants
@@ -15524,16 +15711,16 @@ Recuerda que dispones de tus 15 d\xEDas de prueba gratis y recibir\xE1s un aviso
               active = true,
               updated_at = CURRENT_TIMESTAMP
           WHERE id = $3
-        `, [charge.amount, `Tilopay #${transactionId || orderStr}`, charge.tenantId]);
+        `, [charge.amount, `Tilopay #${authoritativeTxId || orderStr}`, charge.tenantId]);
         await query(`
           INSERT INTO tenant_payments (tenant_id, amount, currency, payment_method, reference, notes, status)
           VALUES ($1, $2, $3, 'card', $4, $5, 'approved')
-        `, [charge.tenantId, charge.amount, charge.currency, transactionId || orderStr, "Cobro de suscripci\xF3n recurrente aprobado por Tilopay"]);
+        `, [charge.tenantId, charge.amount, charge.currency, authoritativeTxId || orderStr, "Cobro de suscripci\xF3n recurrente aprobado por Tilopay"]);
         await logAuditEvent(charge.tenantId, null, "tilopay_subscription_renewed", "billing", orderStr, {
           amount: charge.amount,
           currency: charge.currency,
-          transactionId,
-          authCode
+          transactionId: authoritativeTxId,
+          authCode: authoritativeAuthCode
         }, req.ip, req.headers["user-agent"]);
         const tenant = await getTenantById(charge.tenantId);
         if (tenant?.whatsappNumber) {
@@ -15576,13 +15763,25 @@ Tu cuenta se encuentra *Activa* y al d\xEDa hasta el *${new Date(Date.now() + 30
         return;
       }
       if (isApproved) {
-        console.log(`[TilopayWebhook] Pago aprobado para cita ${apt.id} (${apt.name} - ${apt.service})`);
+        const formattedOrderNumber = `APT-${apt.id}`;
+        const verification = await TilopayTenantService.verifyTransactionStatus(apt.tenantId, formattedOrderNumber);
+        if (!verification.isApproved) {
+          console.warn(`[TilopayWebhook] Verificaci\xF3n activa fallida contra API Tilopay para cita ${apt.id}:`, verification.error || "No confirmada por Tilopay API");
+          await logAuditEvent(apt.tenantId, null, "tilopay_webhook_verification_failed", "appointment", apt.id, {
+            reason: verification.error || "API consult did not confirm approval",
+            payloadResultCode: resultCode
+          }, req.ip, req.headers["user-agent"]);
+          return;
+        }
+        const authoritativeTxId = verification.transactionId || transactionId;
+        const authoritativeAuthCode = verification.authCode || authCode;
+        console.log(`[TilopayWebhook] Pago aprobado y verificado para cita ${apt.id} (${apt.name} - ${apt.service})`);
         const updatedApt = await updateAppointmentPayment(apt.id, {
           paymentStatus: "paid",
           paymentMethod,
-          paymentReference: transactionId,
-          tilopayTransactionId: transactionId,
-          tilopayAuthCode: authCode
+          paymentReference: authoritativeTxId,
+          tilopayTransactionId: authoritativeTxId,
+          tilopayAuthCode: authoritativeAuthCode
         }, apt.tenantId);
         if (req.io) {
           req.io.to(`tenant_${apt.tenantId}`).emit("appointment:updated", updatedApt || { ...apt, paymentStatus: "paid", status: "confirmed" });
@@ -15599,7 +15798,7 @@ Hola *${apt.name}*, tu cita en *${tenant.name}* ha sido confirmada con \xE9xito.
 \u23F0 *Hora:* ${apt.time}
 \u{1F4BC} *Servicio:* ${apt.service}
 \u{1F4B0} *Monto Pagado:* \u20A1${Number(apt.amount).toLocaleString("es-CR")}
-\u{1F516} *Comprobante:* #${transactionId}
+\u{1F516} *Comprobante:* #${authoritativeTxId}
 
 \xA1Te esperamos! \u2B50`;
             await sendMessage(tenant.evolutionInstance, cleanPhone, msg);
@@ -15631,12 +15830,24 @@ Hola *${apt.name}*, tu cita en *${tenant.name}* ha sido confirmada con \xE9xito.
         return;
       }
       if (isApproved) {
-        console.log(`[TilopayWebhook] Pago aprobado para cancha ${booking.id} (Equipo ${team.toUpperCase()})`);
+        const formattedOrderNumber = `CRT-${team.toUpperCase()}-${booking.id}`;
+        const verification = await TilopayTenantService.verifyTransactionStatus(booking.tenantId, formattedOrderNumber);
+        if (!verification.isApproved) {
+          console.warn(`[TilopayWebhook] Verificaci\xF3n activa fallida contra API Tilopay para reserva ${booking.id}:`, verification.error || "No confirmada por Tilopay API");
+          await logAuditEvent(booking.tenantId, null, "tilopay_webhook_verification_failed", "court_booking", booking.id, {
+            reason: verification.error || "API consult did not confirm approval",
+            payloadResultCode: resultCode
+          }, req.ip, req.headers["user-agent"]);
+          return;
+        }
+        const authoritativeTxId = verification.transactionId || transactionId;
+        const authoritativeAuthCode = verification.authCode || authCode;
+        console.log(`[TilopayWebhook] Pago aprobado y verificado para cancha ${booking.id} (Equipo ${team.toUpperCase()})`);
         const updatedBooking = await updateCourtBookingPayment(booking.id, team, {
-          tilopayTxId: transactionId,
-          tilopayAuth: authCode,
+          tilopayTxId: authoritativeTxId,
+          tilopayAuth: authoritativeAuthCode,
           paymentMethod,
-          paymentReference: transactionId
+          paymentReference: authoritativeTxId
         });
         if (req.io) {
           req.io.to(`tenant_${booking.tenantId}`).emit("courtBooking:updated", updatedBooking || booking);
@@ -15686,12 +15897,25 @@ Hola *${captainName}*, el pago para la reserva de cancha ha sido confirmado con 
     const order = orderLookup.rows[0];
     const tenantId = order.tenantId;
     if (isApproved) {
-      console.log(`[TilopayWebhook] Procesando pago aprobado para orden #${order.orderNumber} (ID: ${order.id})`);
+      const formattedOrderNumber = orderStr.startsWith("ORD-") ? orderStr : `ORD-${order.orderNumber}`;
+      const verification = await TilopayTenantService.verifyTransactionStatus(tenantId, formattedOrderNumber);
+      if (!verification.isApproved) {
+        console.warn(`[TilopayWebhook] Verificaci\xF3n activa fallida contra API Tilopay para orden #${order.orderNumber}:`, verification.error || "No confirmada por Tilopay API");
+        await logAuditEvent(tenantId, null, "tilopay_webhook_verification_failed", "order", String(order.id), {
+          orderNumber: order.orderNumber,
+          reason: verification.error || "API consult did not confirm approval",
+          payloadResultCode: resultCode
+        }, req.ip, req.headers["user-agent"]);
+        return;
+      }
+      const authoritativeTxId = verification.transactionId || transactionId;
+      const authoritativeAuthCode = verification.authCode || authCode;
+      console.log(`[TilopayWebhook] Procesando pago aprobado y verificado para orden #${order.orderNumber} (ID: ${order.id})`);
       const result = await executeOrderPaymentConfirmation(tenantId, order.id, {
-        tilopayTransactionId: transactionId,
-        tilopayAuthCode: authCode,
+        tilopayTransactionId: authoritativeTxId,
+        tilopayAuthCode: authoritativeAuthCode,
         paymentMethod,
-        paymentReference: transactionId
+        paymentReference: authoritativeTxId
       });
       if (!result.success) {
         console.error(`[TilopayWebhook] Error al confirmar orden ${order.id} en BD:`, result.error);
@@ -15705,8 +15929,8 @@ Hola *${captainName}*, el pago para la reserva de cancha ha sido confirmado con 
       await logAuditEvent(tenantId, null, "tilopay_order_paid", "order", String(updatedOrder.id), {
         orderNumber: updatedOrder.orderNumber,
         total: updatedOrder.total,
-        transactionId,
-        authCode
+        transactionId: authoritativeTxId,
+        authCode: authoritativeAuthCode
       }, req.ip, req.headers["user-agent"]);
       emitOrderPaidEvent({
         tenantId,
@@ -15718,8 +15942,8 @@ Hola *${captainName}*, el pago para la reserva de cancha ha sido confirmado con 
         total: Number(updatedOrder.total),
         currency: updatedOrder.currency || "CRC",
         channelOrigin: updatedOrder.channelOrigin,
-        tilopayTransactionId: transactionId,
-        tilopayAuthCode: authCode,
+        tilopayTransactionId: authoritativeTxId,
+        tilopayAuthCode: authoritativeAuthCode,
         deliveryMethod: updatedOrder.deliveryMethod,
         items: (updatedOrder.items || []).map((i) => ({
           productId: i.productId,
@@ -16280,6 +16504,7 @@ router32.get("/", async (req, res) => {
              next_billing_date as "nextBillingDate",
              grace_period_ends_at as "gracePeriodEndsAt",
              auto_billing_enabled as "autoBillingEnabled",
+             trial_consumed as "trialConsumed",
              plan,
              active
       FROM tenants
@@ -16337,6 +16562,7 @@ router32.get("/", async (req, res) => {
       monthlyPrice,
       currency,
       autoBillingEnabled,
+      trialConsumed: Boolean(billingData.trialConsumed),
       card: cardInfo,
       paymentHistory: paymentsRes.rows
     });
@@ -16458,6 +16684,7 @@ router32.post("/cancel", async (req, res) => {
       SET subscription_status = 'cancelled',
           auto_billing_enabled = false,
           active = false,
+          trial_consumed = true,
           updated_at = CURRENT_TIMESTAMP
       WHERE id = $1
     `, [tenantId]);
@@ -16492,19 +16719,72 @@ router32.post("/reactivate", async (req, res) => {
       res.status(400).json({ error: "Contexto de inquilino requerido." });
       return;
     }
+    const tenantRes = await query(`
+      SELECT plan, custom_monthly_price as "customMonthlyPrice", trial_consumed as "trialConsumed", active
+      FROM tenants
+      WHERE id = $1
+    `, [tenantId]);
+    if (!tenantRes.rows || tenantRes.rows.length === 0) {
+      res.status(404).json({ error: "Negocio no encontrado." });
+      return;
+    }
+    const tenantRow = tenantRes.rows[0];
+    const isAliado = tenantRow.plan?.toLowerCase() === "aliado" || Number(tenantRow.customMonthlyPrice) === 0;
+    if (isAliado) {
+      await query(`
+        UPDATE tenants
+        SET subscription_status = 'active',
+            active = true,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1
+      `, [tenantId]);
+      await logAuditEvent(tenantId, req.user?.userId || null, "subscription_reactivated", "billing", tenantId, { plan: "aliado" }, req.ip, req.headers["user-agent"]);
+      res.json({
+        success: true,
+        message: "Cuenta reactivada exitosamente bajo el Plan Aliado Estrat\xE9gico (\u20A10/mes)."
+      });
+      return;
+    }
+    const card = await getDefaultBillingCard(tenantId);
+    const trialAlreadyConsumed = Boolean(tenantRow.trialConsumed);
+    if (trialAlreadyConsumed) {
+      if (!card) {
+        res.status(402).json({
+          error: "El periodo de prueba gratuita ya ha sido utilizado para este comercio. Debe vincular una tarjeta de cr\xE9dito o d\xE9bito para reactivar el servicio.",
+          requiresCard: true
+        });
+        return;
+      }
+      await query(`
+        UPDATE tenants
+        SET subscription_status = 'active',
+            auto_billing_enabled = true,
+            active = true,
+            trial_consumed = true,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1
+      `, [tenantId]);
+      await logAuditEvent(tenantId, req.user?.userId || null, "subscription_reactivated", "billing", tenantId, { cardId: card.id }, req.ip, req.headers["user-agent"]);
+      res.json({
+        success: true,
+        message: "Cuenta reactivada exitosamente. Se ha reanudado tu suscripci\xF3n activa con tu tarjeta vinculada."
+      });
+      return;
+    }
     await query(`
       UPDATE tenants
       SET subscription_status = 'trial',
+          trial_consumed = true,
           trial_ends_at = CURRENT_TIMESTAMP + INTERVAL '15 days',
           next_billing_date = CURRENT_TIMESTAMP + INTERVAL '15 days',
           active = true,
           updated_at = CURRENT_TIMESTAMP
       WHERE id = $1
     `, [tenantId]);
-    await logAuditEvent(tenantId, req.user?.userId || null, "subscription_reactivated", "billing", tenantId, {}, req.ip, req.headers["user-agent"]);
+    await logAuditEvent(tenantId, req.user?.userId || null, "subscription_reactivated", "billing", tenantId, { trialConsumedNow: true }, req.ip, req.headers["user-agent"]);
     res.json({
       success: true,
-      message: "Cuenta reactivada exitosamente. Se han restablecido tus 15 d\xEDas."
+      message: "Cuenta reactivada exitosamente con tu periodo de prueba inicial (15 d\xEDas)."
     });
   } catch (error) {
     console.error("[TenantSubscription] Error al reactivar suscripci\xF3n:", error);

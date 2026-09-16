@@ -18,6 +18,7 @@ export interface Tenant {
   whatsappNumber?: string;
   plan: SubscriptionPlan;
   active: boolean;
+  trialConsumed?: boolean;
   createdAt: Date;
   settingsJson?: Record<string, any>;
 }
@@ -125,6 +126,8 @@ export interface AgentPromptConfig {
   notifyNumber?: string;
   businessName?: string;
   currency?: string;
+  showBookingLink?: boolean;
+  showStoreLink?: boolean;
   humanHandoffEnabled?: boolean;
   handoffKeywords?: string[];
   handoffNotifyPhone?: string;
@@ -379,6 +382,7 @@ export interface Order {
   paymentLinkExpiresAt?: Date | string;
   tilopayTransactionId?: string;
   tilopayAuthCode?: string;
+  trackingToken?: string;
   stockDeducted?: boolean;
   estimatedDelivery?: Date;
   chatMessageId?: string;

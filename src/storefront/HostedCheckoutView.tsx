@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ShieldCheck, AlertCircle, Clock, MessageCircle, ArrowLeft, Loader2, CheckCircle2, ShoppingBag } from 'lucide-react';
-import TilopayPaymentForm from '../client/components/TilopayPaymentForm.js';
+import TilopayPaymentForm from '../client/components/TilopayPaymentForm';
 
 interface HostedCheckoutViewProps {
   token: string;

@@ -12,32 +12,8 @@ router.use(tenantContext);
 
 router.get('/', async (req, res) => {
   try {
-    const isSuperAdmin = (req as any).user?.role === 'superadmin';
-    let msgs = await getChatMessagesByTenant(req.tenantId!, 500);
-    let sessions = await getAllChatSessions(req.tenantId!);
-
-    if (isSuperAdmin && msgs.length === 0) {
-      // Superadmin fallback: fetch all chat messages across all tenants
-      const allMsgsRes = await query(`
-        SELECT id, tenant_id as "tenantId", remote_jid as "remoteJid", push_name as "pushName",
-               from_me as "fromMe", message_text as "messageText", ai_response as "aiResponse",
-               status, created_at as "createdAt"
-        FROM chat_messages
-        ORDER BY created_at DESC
-        LIMIT 500
-      `);
-      msgs = allMsgsRes.rows;
-
-      const allSessionsRes = await query(`
-        SELECT remote_jid as "remoteJid", is_human_mode as "isHumanMode", unread, notes, updated_at as "updatedAt"
-        FROM chat_sessions
-      `);
-      sessions = allSessionsRes.rows.reduce((acc, row) => {
-        acc[row.remoteJid] = row;
-        return acc;
-      }, {} as any);
-    }
-
+    const msgs = await getChatMessagesByTenant(req.tenantId!, 500);
+    const sessions = await getAllChatSessions(req.tenantId!);
     res.json({ messages: msgs, sessions });
   } catch (error) {
     console.error(error);

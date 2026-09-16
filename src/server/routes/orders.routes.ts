@@ -8,18 +8,11 @@ import { sendMessage } from '../services/evolution.js';
 import { query } from '../db/pool.js';
 import { logAuditEvent } from '../db/audit.repo.js';
 import { AlmendroService } from '../services/almendro.service.js';
+import { normalizeCostaRicaPhone } from '../../shared/formatters.js';
 
 const router = Router();
 router.use(authenticateToken);
 router.use(tenantContext);
-
-function normalizeCostaRicaPhone(phone: string): string {
-  let clean = (phone || '').replace(/\D/g, '');
-  if (clean.length === 8) {
-    clean = '506' + clean;
-  }
-  return clean;
-}
 
 async function resolveInstanceName(tenantId: string): Promise<string | undefined> {
   const tenant = await getTenantById(tenantId);
@@ -55,11 +48,10 @@ router.get('/', async (req, res) => {
 
 router.get('/stats/unread', async (req, res) => {
   try {
-    const result = await query(`
-      SELECT COUNT(*) as count 
-      FROM orders 
-      WHERE (tenant_id = $1 OR $2 = 'superadmin') AND status IN ('pedido_recibido', 'pending')
-    `, [req.tenantId!, (req as any).user?.role || 'user']);
+    const isSuperAdmin = (req as any).user?.role === 'superadmin' && !req.tenantId;
+    const result = isSuperAdmin
+      ? await query(`SELECT COUNT(*) as count FROM orders WHERE status IN ('pedido_recibido', 'pending')`)
+      : await query(`SELECT COUNT(*) as count FROM orders WHERE tenant_id = $1 AND status IN ('pedido_recibido', 'pending')`, [req.tenantId!]);
     res.json({ newOrdersCount: parseInt(result.rows[0]?.count || '0', 10) });
   } catch (error) {
     res.json({ newOrdersCount: 0 });

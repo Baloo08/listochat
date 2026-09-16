@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { authenticateToken } from '../middleware/auth.js';
+import { authenticateToken, requireRole } from '../middleware/auth.js';
 import {
   getBranchesByTenant,
   getBranchById,
@@ -32,11 +32,12 @@ router.get('/:id', async (req, res) => {
     }
     res.json(branch);
   } catch (error) {
+    console.error('Error al obtener sucursal:', error);
     res.status(500).json({ error: 'Error al obtener sucursal' });
   }
 });
 
-router.post('/', async (req, res) => {
+router.post('/', requireRole('admin', 'superadmin'), async (req, res) => {
   try {
     const tenantId = req.user!.tenantId;
     const { name, code, address, phone, sinpePhone, sinpeName, latitude, longitude, isMain, active } = req.body;
@@ -64,7 +65,7 @@ router.post('/', async (req, res) => {
   }
 });
 
-router.put('/:id', async (req, res) => {
+router.put('/:id', requireRole('admin', 'superadmin'), async (req, res) => {
   try {
     const tenantId = req.user!.tenantId;
     const branch = await updateBranch(req.params.id, tenantId, req.body);
@@ -79,7 +80,7 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireRole('admin', 'superadmin'), async (req, res) => {
   try {
     const tenantId = req.user!.tenantId;
     const success = await deleteBranch(req.params.id, tenantId);

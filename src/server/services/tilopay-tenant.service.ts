@@ -396,4 +396,94 @@ export class TilopayTenantService {
       customerPhone
     };
   }
+
+  /**
+   * Actively queries the official Tilopay API (POST /api/v1/consult) to verify
+   * that a transaction was truly authorized and approved.
+   * Defends against spoofed or unverified webhook payloads (ISO/IEC 25010 / OWASP ASVS).
+   */
+  static async verifyTransactionStatus(
+    tenantId: string,
+    orderNumber: string
+  ): Promise<{
+    verified: boolean;
+    isApproved: boolean;
+    transactionId?: string;
+    authCode?: string;
+    status?: string;
+    resultCode?: string;
+    error?: string;
+  }> {
+    if (!env.TILOPAY_MODULE_ENABLED) {
+      return {
+        verified: false,
+        isApproved: false,
+        error: 'El módulo de Tilopay se encuentra inactivo en la configuración del sistema.'
+      };
+    }
+
+    try {
+      const { token, environment } = await this.getSdkToken(tenantId);
+      const baseUrl = this.getBaseUrl(environment);
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+
+      try {
+        const res = await fetch(`${baseUrl}/consult`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            orderNumber: orderNumber.trim()
+          }),
+          signal: controller.signal
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const errorMsg = data.message || data.error || `HTTP ${res.status} al consultar transacción en Tilopay`;
+          return {
+            verified: false,
+            isApproved: false,
+            error: errorMsg
+          };
+        }
+
+        const result = data.result || data;
+        const resultCode = String(result.result_code || result.code || result.result || '');
+        const status = String(result.status || '').toLowerCase();
+        const isApproved =
+          resultCode === '1' ||
+          resultCode === '00' ||
+          status === 'approved' ||
+          status === 'success' ||
+          status === 'paid' ||
+          result.approved === true;
+
+        const transactionId = result.transaction_id || result.transactionId || result.id;
+        const authCode = result.auth_code || result.authCode || result.authorization;
+
+        return {
+          verified: true,
+          isApproved,
+          transactionId: transactionId ? String(transactionId) : undefined,
+          authCode: authCode ? String(authCode) : undefined,
+          status,
+          resultCode
+        };
+      } finally {
+        clearTimeout(timeout);
+      }
+    } catch (err: any) {
+      console.error(`[TilopayTenantService.verifyTransactionStatus] Error al verificar orden ${orderNumber}:`, err);
+      return {
+        verified: false,
+        isApproved: false,
+        error: err.message || 'Error de red o comunicación al consultar la API de Tilopay'
+      };
+    }
+  }
 }

@@ -939,6 +939,15 @@ export async function runMigrations() {
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS billing_info JSONB;
     ALTER TABLE appointments ADD COLUMN IF NOT EXISTS billing_info JSONB;
     ALTER TABLE court_bookings ADD COLUMN IF NOT EXISTS billing_info JSONB;
+
+    -- Subscription Grace Period Abuse Prevention & Order Tracking Token (ISO/IEC 25010)
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS trial_consumed BOOLEAN DEFAULT false;
+    UPDATE tenants SET trial_consumed = true WHERE trial_ends_at < CURRENT_TIMESTAMP OR subscription_status IN ('active', 'cancelled', 'past_due');
+
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_token UUID DEFAULT gen_random_uuid();
+    CREATE INDEX IF NOT EXISTS idx_orders_tracking_token ON orders(tracking_token);
+
+    CREATE INDEX IF NOT EXISTS idx_court_bookings_slot ON court_bookings(tenant_id, court_id, date, time) WHERE status != 'cancelled';
   `).catch((err) => {
     console.warn('[Migrations] Columns addition warning:', err?.message || err);
   });

@@ -12,7 +12,9 @@ const router = Router();
 
 router.post('/', async (req, res) => {
   // Validate authentication if provided or configured (OWASP ASVS V13.1)
-  const incomingApiKey = (req.headers['apikey'] || req.headers['x-api-key'] || req.query['apikey'] || req.query['token']) as string;
+  const authHeader = (req.headers['authorization'] || '') as string;
+  const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : authHeader.trim();
+  const incomingApiKey = (req.headers['apikey'] || req.headers['x-api-key'] || bearerToken || req.query['apikey'] || req.query['token']) as string;
   const expectedKey = env.EVOLUTION_API_KEY;
   if (expectedKey && incomingApiKey !== expectedKey) {
     console.warn(`[Security Alert] Rechazado webhook de WhatsApp con apikey no autorizada o ausente desde IP ${req.ip}`);

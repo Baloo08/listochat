@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import crypto from 'crypto';
 import { authenticateToken, requireSuperAdmin, generateToken } from '../middleware/auth.js';
 import { getAllTenants, getAllTenantsWithAdmin, getTenantById, createTenant, updateTenant, deleteTenant } from '../db/tenant.repo.js';
 import { createUser, updateUser, getUsersByTenant, getAdminUserByTenant, resetTenantAdminPassword } from '../db/users.repo.js';
@@ -168,7 +169,7 @@ router.put('/:id', async (req, res) => {
             name: body.contactName ? body.contactName.trim() : `${body.name || 'Admin'}`,
             email: body.email.toLowerCase().trim(),
             role: 'admin',
-            password: 'password123'
+            password: crypto.randomBytes(9).toString('base64url') + '!1Aa'
           });
         }
       } catch (userErr) {

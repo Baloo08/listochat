@@ -10,6 +10,8 @@ import { getChargeByOrderNumber, updateBillingCharge, saveBillingCard } from '..
 import { CryptoService } from '../services/crypto.service.js';
 import { logAuditEvent } from '../db/audit.repo.js';
 import { AlmendroService } from '../services/almendro.service.js';
+import { TilopayTenantService } from '../services/tilopay-tenant.service.js';
+import { TilopaySubscriptionService } from '../services/tilopay-subscription.service.js';
 
 const router = Router();
 
@@ -93,7 +95,19 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       const holder = String(payload.cardholder || payload.holder || payload.bill_to || tenant.name).trim();
 
       if (isApproved && token) {
-        console.log(`[TilopayWebhook] Tarjeta tokenizada exitosamente para tenant ${tenant.name} (${tenant.id})`);
+        // Active verification with Tilopay API (Anti-Spoofing Protocol - ISO/IEC 25010)
+        const verification = await TilopaySubscriptionService.verifyPlatformTransactionStatus(orderStr);
+        if (!verification.isApproved) {
+          console.warn(`[TilopayWebhook] Verificación activa fallida contra API Tilopay para tokenización ${orderStr}:`, verification.error || 'No confirmada por Tilopay API');
+          await logAuditEvent(tenant.id, null, 'tilopay_webhook_verification_failed', 'billing', orderStr, {
+            reason: verification.error || 'API consult did not confirm approval',
+            payloadResultCode: resultCode
+          }, req.ip, req.headers['user-agent'] as string);
+          return;
+        }
+
+        const authoritativeTxId = verification.transactionId || transactionId;
+        console.log(`[TilopayWebhook] Tarjeta tokenizada y verificada exitosamente para tenant ${tenant.name} (${tenant.id})`);
         const encryptedToken = CryptoService.encryptForTenant(tenant.id, token);
         
         await saveBillingCard(tenant.id, {
@@ -114,7 +128,7 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
         await logAuditEvent(tenant.id, null, 'tilopay_card_tokenized', 'billing', orderStr, {
           cardLast4: last4,
           cardBrand: brand,
-          transactionId
+          transactionId: authoritativeTxId
         }, req.ip, req.headers['user-agent'] as string);
 
         // Notify tenant via WhatsApp
@@ -146,11 +160,25 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       }
 
       if (isApproved) {
-        console.log(`[TilopayWebhook] Cobro de suscripción aprobado para tenant ${charge.tenantId} (Orden: ${orderStr})`);
+        // Active verification with Tilopay API (Anti-Spoofing Protocol - ISO/IEC 25010)
+        const verification = await TilopaySubscriptionService.verifyPlatformTransactionStatus(orderStr);
+        if (!verification.isApproved) {
+          console.warn(`[TilopayWebhook] Verificación activa fallida contra API Tilopay para suscripción ${orderStr}:`, verification.error || 'No confirmada por Tilopay API');
+          await logAuditEvent(charge.tenantId, null, 'tilopay_webhook_verification_failed', 'billing', orderStr, {
+            reason: verification.error || 'API consult did not confirm approval',
+            payloadResultCode: resultCode
+          }, req.ip, req.headers['user-agent'] as string);
+          return;
+        }
+
+        const authoritativeTxId = verification.transactionId || transactionId;
+        const authoritativeAuthCode = verification.authCode || authCode;
+
+        console.log(`[TilopayWebhook] Cobro de suscripción aprobado y verificado para tenant ${charge.tenantId} (Orden: ${orderStr})`);
         await updateBillingCharge(orderStr, {
           status: 'success',
-          transactionId,
-          authCode
+          transactionId: authoritativeTxId,
+          authCode: authoritativeAuthCode
         });
 
         // Renew tenant subscription +30 days
@@ -167,19 +195,19 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
               active = true,
               updated_at = CURRENT_TIMESTAMP
           WHERE id = $3
-        `, [charge.amount, `Tilopay #${transactionId || orderStr}`, charge.tenantId]);
+        `, [charge.amount, `Tilopay #${authoritativeTxId || orderStr}`, charge.tenantId]);
 
         // Insert payment history
         await query(`
           INSERT INTO tenant_payments (tenant_id, amount, currency, payment_method, reference, notes, status)
           VALUES ($1, $2, $3, 'card', $4, $5, 'approved')
-        `, [charge.tenantId, charge.amount, charge.currency, transactionId || orderStr, 'Cobro de suscripción recurrente aprobado por Tilopay']);
+        `, [charge.tenantId, charge.amount, charge.currency, authoritativeTxId || orderStr, 'Cobro de suscripción recurrente aprobado por Tilopay']);
 
         await logAuditEvent(charge.tenantId, null, 'tilopay_subscription_renewed', 'billing', orderStr, {
           amount: charge.amount,
           currency: charge.currency,
-          transactionId,
-          authCode
+          transactionId: authoritativeTxId,
+          authCode: authoritativeAuthCode
         }, req.ip, req.headers['user-agent'] as string);
 
         const tenant = await getTenantById(charge.tenantId);
@@ -224,13 +252,28 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       }
 
       if (isApproved) {
-        console.log(`[TilopayWebhook] Pago aprobado para cita ${apt.id} (${apt.name} - ${apt.service})`);
+        // Active verification with Tilopay API (Anti-Spoofing Protocol - ISO/IEC 25010)
+        const formattedOrderNumber = `APT-${apt.id}`;
+        const verification = await TilopayTenantService.verifyTransactionStatus(apt.tenantId, formattedOrderNumber);
+        if (!verification.isApproved) {
+          console.warn(`[TilopayWebhook] Verificación activa fallida contra API Tilopay para cita ${apt.id}:`, verification.error || 'No confirmada por Tilopay API');
+          await logAuditEvent(apt.tenantId, null, 'tilopay_webhook_verification_failed', 'appointment', apt.id, {
+            reason: verification.error || 'API consult did not confirm approval',
+            payloadResultCode: resultCode
+          }, req.ip, req.headers['user-agent'] as string);
+          return;
+        }
+
+        const authoritativeTxId = verification.transactionId || transactionId;
+        const authoritativeAuthCode = verification.authCode || authCode;
+
+        console.log(`[TilopayWebhook] Pago aprobado y verificado para cita ${apt.id} (${apt.name} - ${apt.service})`);
         const updatedApt = await updateAppointmentPayment(apt.id, {
           paymentStatus: 'paid',
           paymentMethod,
-          paymentReference: transactionId,
-          tilopayTransactionId: transactionId,
-          tilopayAuthCode: authCode
+          paymentReference: authoritativeTxId,
+          tilopayTransactionId: authoritativeTxId,
+          tilopayAuthCode: authoritativeAuthCode
         }, apt.tenantId);
 
         if ((req as any).io) {
@@ -242,7 +285,7 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
           const tenant = await getTenantById(apt.tenantId);
           if (tenant?.evolutionInstance && apt.whatsapp) {
             const cleanPhone = apt.whatsapp.replace(/\D/g, '');
-            const msg = `✅ *¡Pago Confirmado!* (${paymentLabel})\n\nHola *${apt.name}*, tu cita en *${tenant.name}* ha sido confirmada con éxito.\n\n📅 *Fecha:* ${apt.date}\n⏰ *Hora:* ${apt.time}\n💼 *Servicio:* ${apt.service}\n💰 *Monto Pagado:* ₡${Number(apt.amount).toLocaleString('es-CR')}\n🔖 *Comprobante:* #${transactionId}\n\n¡Te esperamos! ⭐`;
+            const msg = `✅ *¡Pago Confirmado!* (${paymentLabel})\n\nHola *${apt.name}*, tu cita en *${tenant.name}* ha sido confirmada con éxito.\n\n📅 *Fecha:* ${apt.date}\n⏰ *Hora:* ${apt.time}\n💼 *Servicio:* ${apt.service}\n💰 *Monto Pagado:* ₡${Number(apt.amount).toLocaleString('es-CR')}\n🔖 *Comprobante:* #${authoritativeTxId}\n\n¡Te esperamos! ⭐`;
             await sendMessage(tenant.evolutionInstance, cleanPhone, msg);
           }
         } catch (msgErr) {
@@ -280,12 +323,27 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       }
 
       if (isApproved) {
-        console.log(`[TilopayWebhook] Pago aprobado para cancha ${booking.id} (Equipo ${team.toUpperCase()})`);
+        // Active verification with Tilopay API (Anti-Spoofing Protocol - ISO/IEC 25010)
+        const formattedOrderNumber = `CRT-${team.toUpperCase()}-${booking.id}`;
+        const verification = await TilopayTenantService.verifyTransactionStatus(booking.tenantId, formattedOrderNumber);
+        if (!verification.isApproved) {
+          console.warn(`[TilopayWebhook] Verificación activa fallida contra API Tilopay para reserva ${booking.id}:`, verification.error || 'No confirmada por Tilopay API');
+          await logAuditEvent(booking.tenantId, null, 'tilopay_webhook_verification_failed', 'court_booking', booking.id, {
+            reason: verification.error || 'API consult did not confirm approval',
+            payloadResultCode: resultCode
+          }, req.ip, req.headers['user-agent'] as string);
+          return;
+        }
+
+        const authoritativeTxId = verification.transactionId || transactionId;
+        const authoritativeAuthCode = verification.authCode || authCode;
+
+        console.log(`[TilopayWebhook] Pago aprobado y verificado para cancha ${booking.id} (Equipo ${team.toUpperCase()})`);
         const updatedBooking = await updateCourtBookingPayment(booking.id, team, {
-          tilopayTxId: transactionId,
-          tilopayAuth: authCode,
+          tilopayTxId: authoritativeTxId,
+          tilopayAuth: authoritativeAuthCode,
           paymentMethod,
-          paymentReference: transactionId
+          paymentReference: authoritativeTxId
         });
 
         if ((req as any).io) {
@@ -337,14 +395,30 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
     const tenantId = order.tenantId;
 
     if (isApproved) {
-      console.log(`[TilopayWebhook] Procesando pago aprobado para orden #${order.orderNumber} (ID: ${order.id})`);
+      // Active verification with Tilopay API (Anti-Spoofing Protocol - ISO/IEC 25010)
+      const formattedOrderNumber = orderStr.startsWith('ORD-') ? orderStr : `ORD-${order.orderNumber}`;
+      const verification = await TilopayTenantService.verifyTransactionStatus(tenantId, formattedOrderNumber);
+      if (!verification.isApproved) {
+        console.warn(`[TilopayWebhook] Verificación activa fallida contra API Tilopay para orden #${order.orderNumber}:`, verification.error || 'No confirmada por Tilopay API');
+        await logAuditEvent(tenantId, null, 'tilopay_webhook_verification_failed', 'order', String(order.id), {
+          orderNumber: order.orderNumber,
+          reason: verification.error || 'API consult did not confirm approval',
+          payloadResultCode: resultCode
+        }, req.ip, req.headers['user-agent'] as string);
+        return;
+      }
+
+      const authoritativeTxId = verification.transactionId || transactionId;
+      const authoritativeAuthCode = verification.authCode || authCode;
+
+      console.log(`[TilopayWebhook] Procesando pago aprobado y verificado para orden #${order.orderNumber} (ID: ${order.id})`);
 
       // 1. Transacción atómica en BD: Actualiza a PAID y descuenta inventario con rollback
       const result = await executeOrderPaymentConfirmation(tenantId, order.id, {
-        tilopayTransactionId: transactionId,
-        tilopayAuthCode: authCode,
+        tilopayTransactionId: authoritativeTxId,
+        tilopayAuthCode: authoritativeAuthCode,
         paymentMethod,
-        paymentReference: transactionId
+        paymentReference: authoritativeTxId
       });
 
       if (!result.success) {
@@ -362,8 +436,8 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       await logAuditEvent(tenantId, null, 'tilopay_order_paid', 'order', String(updatedOrder.id), {
         orderNumber: updatedOrder.orderNumber,
         total: updatedOrder.total,
-        transactionId,
-        authCode
+        transactionId: authoritativeTxId,
+        authCode: authoritativeAuthCode
       }, req.ip, req.headers['user-agent'] as string);
 
       // 2. Emitir evento desacoplado OrderPaidEvent hacia el EventBus
@@ -377,8 +451,8 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
         total: Number(updatedOrder.total),
         currency: updatedOrder.currency || 'CRC',
         channelOrigin: updatedOrder.channelOrigin as any,
-        tilopayTransactionId: transactionId,
-        tilopayAuthCode: authCode,
+        tilopayTransactionId: authoritativeTxId,
+        tilopayAuthCode: authoritativeAuthCode,
         deliveryMethod: updatedOrder.deliveryMethod,
         items: (updatedOrder.items || []).map(i => ({
           productId: i.productId,

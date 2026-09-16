@@ -388,4 +388,94 @@ export class TilopaySubscriptionService {
 
     return { processed: dueTenants.length, successCount, failedCount };
   }
+
+  /**
+   * Actively queries the official Tilopay API (POST /api/v1/consult) with platform credentials
+   * to verify that a platform subscription or card registration transaction was authorized.
+   * Defends against spoofed webhook payloads (ISO/IEC 25010 / OWASP ASVS).
+   */
+  static async verifyPlatformTransactionStatus(
+    orderNumber: string
+  ): Promise<{
+    verified: boolean;
+    isApproved: boolean;
+    transactionId?: string;
+    authCode?: string;
+    status?: string;
+    resultCode?: string;
+    error?: string;
+  }> {
+    try {
+      const platformCfg = await getPlatformTilopayConfig();
+      if (!platformCfg) {
+        return {
+          verified: false,
+          isApproved: false,
+          error: 'Configuración de Tilopay de la plataforma no disponible para verificar suscripción.'
+        };
+      }
+
+      const jwt = await this.getPlatformJwt(platformCfg);
+      const baseUrl = this.getBaseUrl(platformCfg.environment);
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+
+      try {
+        const res = await fetch(`${baseUrl}/consult`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${jwt}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            orderNumber: orderNumber.trim()
+          }),
+          signal: controller.signal
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const errorMsg = data.message || data.error || `HTTP ${res.status} al consultar transacción en Tilopay`;
+          return {
+            verified: false,
+            isApproved: false,
+            error: errorMsg
+          };
+        }
+
+        const result = data.result || data;
+        const resultCode = String(result.result_code || result.code || result.result || '');
+        const status = String(result.status || '').toLowerCase();
+        const isApproved =
+          resultCode === '1' ||
+          resultCode === '00' ||
+          status === 'approved' ||
+          status === 'success' ||
+          status === 'paid' ||
+          result.approved === true;
+
+        const transactionId = result.transaction_id || result.transactionId || result.id;
+        const authCode = result.auth_code || result.authCode || result.authorization;
+
+        return {
+          verified: true,
+          isApproved,
+          transactionId: transactionId ? String(transactionId) : undefined,
+          authCode: authCode ? String(authCode) : undefined,
+          status,
+          resultCode
+        };
+      } finally {
+        clearTimeout(timeout);
+      }
+    } catch (err: any) {
+      console.error(`[TilopaySubscriptionService.verifyPlatformTransactionStatus] Error al verificar suscripción ${orderNumber}:`, err);
+      return {
+        verified: false,
+        isApproved: false,
+        error: err.message || 'Error de red o comunicación al consultar la API de Tilopay'
+      };
+    }
+  }
 }

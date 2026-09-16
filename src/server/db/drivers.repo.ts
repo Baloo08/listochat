@@ -13,12 +13,18 @@ export async function getDriversByTenant(tenantId: string): Promise<DeliveryDriv
 }
 
 export async function getDriverById(id: string, tenantId?: string): Promise<DeliveryDriver | null> {
-  const res = await query(`
+  let sql = `
     SELECT id, tenant_id as "tenantId", name, phone, access_pin as "accessPin",
            vehicle_type as "vehicleType", plate_number as "plateNumber", active, created_at as "createdAt"
     FROM delivery_drivers
     WHERE id = $1
-  `, [id]);
+  `;
+  const params: any[] = [id];
+  if (tenantId) {
+    sql += ` AND tenant_id = $2`;
+    params.push(tenantId);
+  }
+  const res = await query(sql, params);
   return res.rows[0] || null;
 }
 
@@ -106,23 +112,30 @@ export async function getActiveOrdersForDriver(driverId: string): Promise<Order[
            o.total, o.currency, o.status, o.payment_method as "paymentMethod",
            o.payment_status as "paymentStatus", o.notes, o.delivery_method as "deliveryMethod",
            o.consumption_mode as "consumptionMode", o.table_number as "tableNumber",
-           o.driver_id as "driverId", o.waze_url as "wazeUrl", o.created_at as "createdAt"
+           o.driver_id as "driverId", o.waze_url as "wazeUrl", o.created_at as "createdAt",
+           COALESCE(
+             (
+               SELECT json_agg(
+                 json_build_object(
+                   'id', oi.id,
+                   'productName', oi.product_name,
+                   'quantity', oi.quantity,
+                   'unitPrice', oi.unit_price,
+                   'totalPrice', oi.total_price
+                 )
+               )
+               FROM order_items oi
+               WHERE oi.order_id = o.id
+             ),
+             '[]'::json
+           ) as items
     FROM orders o
     WHERE o.driver_id = $1
       AND o.status NOT IN ('delivered', 'entregado', 'cancelled', 'cancelado')
     ORDER BY o.created_at DESC
   `, [driverId]);
 
-  const orders: Order[] = [];
-  for (const row of res.rows) {
-    const itemsRes = await query(`
-      SELECT id, product_name as "productName", quantity, unit_price as "unitPrice", total_price as "totalPrice"
-      FROM order_items
-      WHERE order_id = $1
-    `, [row.id]);
-    orders.push({ ...row, items: itemsRes.rows });
-  }
-  return orders;
+  return res.rows;
 }
 
 export async function getCompletedOrdersForDriver(driverId: string, fromDate?: string, toDate?: string): Promise<Order[]> {
@@ -133,7 +146,23 @@ export async function getCompletedOrdersForDriver(driverId: string, fromDate?: s
            o.total, o.currency, o.status, o.payment_method as "paymentMethod",
            o.payment_status as "paymentStatus", o.notes, o.delivery_method as "deliveryMethod",
            o.consumption_mode as "consumptionMode", o.table_number as "tableNumber",
-           o.driver_id as "driverId", o.waze_url as "wazeUrl", o.created_at as "createdAt"
+           o.driver_id as "driverId", o.waze_url as "wazeUrl", o.created_at as "createdAt",
+           COALESCE(
+             (
+               SELECT json_agg(
+                 json_build_object(
+                   'id', oi.id,
+                   'productName', oi.product_name,
+                   'quantity', oi.quantity,
+                   'unitPrice', oi.unit_price,
+                   'totalPrice', oi.total_price
+                 )
+               )
+               FROM order_items oi
+               WHERE oi.order_id = o.id
+             ),
+             '[]'::json
+           ) as items
     FROM orders o
     WHERE o.driver_id = $1
       AND o.status IN ('delivered', 'entregado')
@@ -150,14 +179,5 @@ export async function getCompletedOrdersForDriver(driverId: string, fromDate?: s
   sql += ` ORDER BY o.created_at DESC`;
   const res = await query(sql, params);
 
-  const orders: Order[] = [];
-  for (const row of res.rows) {
-    const itemsRes = await query(`
-      SELECT id, product_name as "productName", quantity, unit_price as "unitPrice", total_price as "totalPrice"
-      FROM order_items
-      WHERE order_id = $1
-    `, [row.id]);
-    orders.push({ ...row, items: itemsRes.rows });
-  }
-  return orders;
+  return res.rows;
 }

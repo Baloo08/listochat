@@ -11,6 +11,7 @@ export async function getOrdersByTenant(tenantId: string, filters?: any): Promis
            o.consumption_mode as "consumptionMode", o.table_number as "tableNumber", o.customer_location as "customerLocation",
            o.chat_message_id as "chatMessageId", o.driver_id as "driverId", o.waze_url as "wazeUrl",
            o.billing_info as "billingInfo",
+           o.tracking_token as "trackingToken",
            o.branch_id as "branchId", b.name as "branchName",
            o.created_at as "createdAt", o.updated_at as "updatedAt",
            COALESCE(
@@ -51,6 +52,7 @@ export async function getOrderById(id: string, tenantId: string): Promise<Order 
            consumption_mode as "consumptionMode", table_number as "tableNumber", customer_location as "customerLocation",
            chat_message_id as "chatMessageId", driver_id as "driverId", waze_url as "wazeUrl",
            billing_info as "billingInfo",
+           tracking_token as "trackingToken",
            created_at as "createdAt", updated_at as "updatedAt"
     FROM orders 
     WHERE id = $1 AND tenant_id = $2
@@ -141,7 +143,7 @@ export async function updateOrder(id: string, tenantId: string, data: Partial<Or
   const fields = [
     'status', 'paymentStatus', 'paymentReference', 'notes', 
     'driverId', 'wazeUrl', 'consumptionMode', 'tableNumber', 
-    'deliveryMethod', 'deliveryFee', 'total', 'customerAddress', 'billingInfo'
+    'deliveryMethod', 'deliveryFee', 'total', 'customerAddress', 'customerLocation', 'billingInfo'
   ];
   for (const field of fields) {
     if ((data as any)[field] !== undefined) {
@@ -208,7 +210,54 @@ export async function executeOrderPaymentConfirmation(
       return { success: true, alreadyProcessed: true, order: order || undefined };
     }
 
-    // 2. Actualizar estado de pago y orden
+    // 2. Descuento atómico de inventario con bloqueo a nivel de fila (FOR UPDATE)
+    // Solo si no se había descontado previamente
+    if (!currentOrder.stock_deducted) {
+      const itemsRes = await client.query(`
+        SELECT product_id as "productId", variant_id as "variantId", quantity
+        FROM order_items
+        WHERE order_id = $1 AND tenant_id = $2
+        ORDER BY product_id ASC, variant_id ASC NULLS FIRST
+      `, [orderId, tenantId]);
+
+      for (const item of itemsRes.rows) {
+        const qty = Number(item.quantity || 1);
+        if (item.productId) {
+          // Bloqueo a nivel de fila en products para serializar concurrencia
+          await client.query(`
+            SELECT id, stock, track_stock
+            FROM products
+            WHERE id = $1 AND tenant_id = $2
+            FOR UPDATE
+          `, [item.productId, tenantId]);
+
+          await client.query(`
+            UPDATE products
+            SET stock = GREATEST(0, stock - $1),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = $2 AND tenant_id = $3 AND track_stock = true
+          `, [qty, item.productId, tenantId]);
+
+          if (item.variantId) {
+            // Bloqueo a nivel de fila en product_variants
+            await client.query(`
+              SELECT id, stock
+              FROM product_variants
+              WHERE id = $1 AND product_id = $2
+              FOR UPDATE
+            `, [item.variantId, item.productId]);
+
+            await client.query(`
+              UPDATE product_variants
+              SET stock = GREATEST(0, stock - $1)
+              WHERE id = $2 AND product_id = $3
+            `, [qty, item.variantId, item.productId]);
+          }
+        }
+      }
+    }
+
+    // 3. Actualizar estado de pago y orden
     const newPaymentStatus = 'paid';
     const newOrderStatus = currentOrder.status === 'pending' || currentOrder.status === 'pedido_recibido'
       ? 'pedido_aceptado'
@@ -235,35 +284,6 @@ export async function executeOrderPaymentConfirmation(
       orderId,
       tenantId
     ]);
-
-    // 3. Descuento atómico de inventario para todos los ítems de la orden (solo si no se había descontado previamente)
-    if (!currentOrder.stock_deducted) {
-      const itemsRes = await client.query(`
-        SELECT product_id as "productId", variant_id as "variantId", quantity
-        FROM order_items
-        WHERE order_id = $1 AND tenant_id = $2
-      `, [orderId, tenantId]);
-
-      for (const item of itemsRes.rows) {
-        const qty = Number(item.quantity || 1);
-        if (item.productId) {
-          await client.query(`
-            UPDATE products
-            SET stock = GREATEST(0, stock - $1),
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = $2 AND tenant_id = $3 AND track_stock = true
-          `, [qty, item.productId, tenantId]);
-
-          if (item.variantId) {
-            await client.query(`
-              UPDATE product_variants
-              SET stock = GREATEST(0, stock - $1)
-              WHERE id = $2 AND product_id = $3
-            `, [qty, item.variantId, item.productId]);
-          }
-        }
-      }
-    }
 
     await client.query('COMMIT');
 

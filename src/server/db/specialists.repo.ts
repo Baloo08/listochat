@@ -9,6 +9,7 @@ function mapSpecialistRow(row: any): Specialist {
     tenantId: row.tenant_id,
     name: row.name,
     phone: row.phone,
+    whatsapp: row.phone,
     specialty: row.specialty,
     accessPin: row.access_pin,
     active: row.active !== false,
@@ -27,11 +28,14 @@ export async function getSpecialistsByTenant(tenantId: string): Promise<Speciali
   return res.rows.map(mapSpecialistRow);
 }
 
-export async function getSpecialistById(id: string): Promise<Specialist | null> {
-  const res = await query(
-    'SELECT * FROM specialists WHERE id = $1',
-    [id]
-  );
+export async function getSpecialistById(id: string, tenantId?: string): Promise<Specialist | null> {
+  let sql = 'SELECT * FROM specialists WHERE id = $1';
+  const params: any[] = [id];
+  if (tenantId) {
+    sql += ' AND tenant_id = $2';
+    params.push(tenantId);
+  }
+  const res = await query(sql, params);
   return res.rows[0] ? mapSpecialistRow(res.rows[0]) : null;
 }
 

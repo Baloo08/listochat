@@ -10,6 +10,7 @@ import { getTenantById, getTenantBySlug } from '../db/tenant.repo.js';
 import { getStoreSettings } from '../db/store-settings.repo.js';
 import { sendMessage } from '../services/evolution.js';
 import { query } from '../db/pool.js';
+import { normalizeCostaRicaPhone } from '../../shared/formatters.js';
 
 const router = Router();
 
@@ -58,22 +59,10 @@ async function resolveDriverFromRequest(req: any) {
   return null;
 }
 
-function normalizeCostaRicaPhone(phone: string): string {
-  let clean = (phone || '').replace(/\D/g, '');
-  if (clean.length === 8) {
-    clean = '506' + clean;
-  }
-  return clean;
-}
-
 async function resolveInstanceName(tenantId: string): Promise<string | undefined> {
   const tenant = await getTenantById(tenantId);
   if (tenant?.evolutionInstance) return tenant.evolutionInstance;
-
-  const anyActiveInstance = await query(`SELECT evolution_instance FROM tenants WHERE evolution_instance IS NOT NULL AND evolution_instance != '' LIMIT 1`);
-  if (anyActiveInstance.rows.length > 0) {
-    return anyActiveInstance.rows[0].evolution_instance;
-  }
+  console.warn(`[DriversRoute] Tenant ${tenantId} does not have a configured WhatsApp evolutionInstance. Notification skipped.`);
   return undefined;
 }
 

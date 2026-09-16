@@ -32,7 +32,7 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
   const [skillLevel, setSkillLevel] = useState('intermedio');
 
   // Payment Options
-  const [courtPaymentMethod, setCourtPaymentMethod] = useState<'on_site' | 'sinpe' | 'sinpe_tilopay' | 'card'>('on_site');
+  const [courtPaymentMethod, setCourtPaymentMethod] = useState<'on_site' | 'sinpe' | 'sinpe_tilopay' | 'card' | 'solo_reserva'>('on_site');
   const [courtSinpeRef, setCourtSinpeRef] = useState('');
 
   // Electronic Billing States (Costa Rica DGT - Almendro)

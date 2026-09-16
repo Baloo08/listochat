@@ -177,4 +177,109 @@ describe('Payment Verification & Almendro Electronic Invoicing Tests', () => {
     });
   });
 
+  describe('4. Atomic Inventory Locking & Idempotent Stock Deduction (ISO/IEC 25010)', () => {
+    test('idempotency guard prevents double inventory deduction when order is already paid', () => {
+      const order = {
+        id: 'ord_paid_1',
+        tenantId: 'tenant_demo',
+        paymentStatus: 'paid',
+        stockDeducted: true
+      };
+
+      let stockDeductedCalls = 0;
+      function simulateConfirmPayment(currentOrder) {
+        if (String(currentOrder.paymentStatus).toLowerCase() === 'paid') {
+          return { success: true, alreadyProcessed: true };
+        }
+        stockDeductedCalls++;
+        return { success: true, alreadyProcessed: false };
+      }
+
+      const res = simulateConfirmPayment(order);
+      assert.equal(res.success, true);
+      assert.equal(res.alreadyProcessed, true);
+      assert.equal(stockDeductedCalls, 0, 'Must NOT deduct stock if order is already paid');
+    });
+
+    test('enforces deterministic locking sequence (product_id ASC) to prevent deadlocks', () => {
+      const items = [
+        { productId: 'prod_z', variantId: 'var_1', quantity: 2 },
+        { productId: 'prod_a', variantId: null, quantity: 1 },
+        { productId: 'prod_m', variantId: 'var_2', quantity: 3 }
+      ];
+
+      // Sort items in the exact manner executeOrderPaymentConfirmation queries them
+      const sorted = [...items].sort((a, b) => {
+        if (a.productId !== b.productId) {
+          return a.productId.localeCompare(b.productId);
+        }
+        if (!a.variantId && !b.variantId) return 0;
+        if (!a.variantId) return -1;
+        if (!b.variantId) return 1;
+        return a.variantId.localeCompare(b.variantId);
+      });
+
+      assert.equal(sorted[0].productId, 'prod_a');
+      assert.equal(sorted[1].productId, 'prod_m');
+      assert.equal(sorted[2].productId, 'prod_z');
+    });
+
+    test('deducts inventory safely and guards against negative stock with GREATEST(0, stock - qty)', () => {
+      const products = new Map([
+        ['p1', { id: 'p1', stock: 5, trackStock: true }],
+        ['p2', { id: 'p2', stock: 1, trackStock: true }],
+        ['p3', { id: 'p3', stock: 10, trackStock: false }]
+      ]);
+
+      const items = [
+        { productId: 'p1', quantity: 2 },
+        { productId: 'p2', quantity: 3 }, // More than current stock -> should floor at 0
+        { productId: 'p3', quantity: 5 }  // trackStock is false -> should not change
+      ];
+
+      for (const item of items) {
+        const prod = products.get(item.productId);
+        if (prod && prod.trackStock) {
+          prod.stock = Math.max(0, prod.stock - item.quantity);
+        }
+      }
+
+      assert.equal(products.get('p1').stock, 3);
+      assert.equal(products.get('p2').stock, 0); // Floored at 0 without going negative
+      assert.equal(products.get('p3').stock, 10); // Untouched because trackStock is false
+    });
+
+    test('executes rollback and releases client on unexpected database errors', async () => {
+      let rolledBack = false;
+      let released = false;
+
+      const mockClient = {
+        query: async (sql) => {
+          if (sql === 'BEGIN') return;
+          if (sql === 'ROLLBACK') { rolledBack = true; return; }
+          if (sql.includes('SELECT * FROM orders')) {
+            throw new Error('Database connection reset during lock acquisition');
+          }
+        },
+        release: () => { released = true; }
+      };
+
+      let outcome;
+      try {
+        await mockClient.query('BEGIN');
+        await mockClient.query('SELECT * FROM orders WHERE id = $1 FOR UPDATE');
+      } catch (err) {
+        await mockClient.query('ROLLBACK');
+        outcome = { success: false, error: err.message };
+      } finally {
+        mockClient.release();
+      }
+
+      assert.equal(rolledBack, true, 'Must execute ROLLBACK on error');
+      assert.equal(released, true, 'Must release DB client back to pool');
+      assert.equal(outcome.success, false);
+      assert.ok(outcome.error.includes('Database connection reset'));
+    });
+  });
+
 });

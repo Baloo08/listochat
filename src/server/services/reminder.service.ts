@@ -50,8 +50,8 @@ async function checkAndSendReminders() {
           FROM appointments
           WHERE tenant_id = $1 
             AND status IN ('pending', 'scheduled', 'confirmed')
-            AND date >= TO_CHAR(CURRENT_DATE, 'YYYY-MM-DD')
-            AND date <= TO_CHAR(CURRENT_DATE + INTERVAL '3 days', 'YYYY-MM-DD')
+            AND date >= CURRENT_DATE
+            AND date <= (CURRENT_DATE + INTERVAL '3 days')::date
         `, [tenant.id]);
 
         for (const appt of apptsRes.rows) {

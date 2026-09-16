@@ -211,7 +211,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
     });
   } catch (error: any) {
     console.error('Bulk upload error:', error);
-    res.status(500).json({ error: error.message || 'Error procesando archivo Excel' });
+    res.status(500).json({ error: 'Error procesando archivo Excel. Verifique la estructura del archivo e intente nuevamente.' });
   }
 });
 

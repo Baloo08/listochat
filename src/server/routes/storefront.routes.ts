@@ -45,31 +45,40 @@ router.get('/:slug', async (req, res) => {
 router.get('/order-public/:orderId', async (req, res) => {
   try {
     const { orderId } = req.params;
+
+    // Enforce strict UUID validation to prevent sequential enumeration (OWASP IDOR / ISO 25010)
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(orderId);
+    if (!isUuid) {
+      res.status(400).json({ error: 'Identificador de orden inválido. Se requiere el identificador seguro de orden (UUID).' });
+      return;
+    }
+
     const result = await query(`
       SELECT o.id, o.tenant_id as "tenantId", o.order_number as "orderNumber", o.customer_name as "customerName",
              o.customer_phone as "customerPhone", o.subtotal, o.delivery_fee as "deliveryFee",
              o.total, o.currency, o.status, o.payment_status as "paymentStatus",
              o.payment_method as "paymentMethod", o.delivery_method as "deliveryMethod",
-             o.consumption_mode as "consumptionMode", o.table_number as "tableNumber",
-             o.created_at as "createdAt",
-             COALESCE(ss.store_name, t.name) as "storeName",
-             COALESCE(ss.store_slug, t.slug) as "storeSlug",
-             t.slug as "tenantSlug",
-             COALESCE(ss.sinpe_phone, t.whatsapp_number) as "whatsappNumber",
-             COALESCE(
-               (SELECT json_agg(json_build_object(
-                  'productName', oi.product_name,
-                  'variantName', oi.variant_name,
-                  'quantity', oi.quantity,
-                  'totalPrice', oi.total_price
-                ))
+              o.consumption_mode as "consumptionMode", o.table_number as "tableNumber",
+              o.tracking_token as "trackingToken",
+              o.created_at as "createdAt",
+              COALESCE(ss.store_name, t.name) as "storeName",
+              COALESCE(ss.store_slug, t.slug) as "storeSlug",
+              t.slug as "tenantSlug",
+              COALESCE(ss.sinpe_phone, t.whatsapp_number) as "whatsappNumber",
+              COALESCE(
+                (SELECT json_agg(json_build_object(
+                   'productName', oi.product_name,
+                   'variantName', oi.variant_name,
+                   'quantity', oi.quantity,
+                   'totalPrice', oi.total_price
+                 ))
                 FROM order_items oi WHERE oi.order_id = o.id), '[]'::json
-             ) as items
-      FROM orders o
-      JOIN tenants t ON o.tenant_id = t.id
-      LEFT JOIN store_settings ss ON ss.tenant_id = t.id
-      WHERE o.id::text = $1 OR o.order_number::text = $1
-      LIMIT 1
+              ) as items
+       FROM orders o
+       JOIN tenants t ON o.tenant_id = t.id
+       LEFT JOIN store_settings ss ON ss.tenant_id = t.id
+       WHERE o.id = $1::uuid OR o.tracking_token = $1::uuid
+       LIMIT 1
     `, [orderId]);
 
     if (result.rows.length === 0) {
@@ -78,6 +87,12 @@ router.get('/order-public/:orderId', async (req, res) => {
     }
 
     const orderRow = result.rows[0];
+
+    // Mask phone number to protect customer PII against link leakage
+    if (orderRow.customerPhone && String(orderRow.customerPhone).length >= 4) {
+      const clean = String(orderRow.customerPhone).trim();
+      orderRow.customerPhone = `•••• ••${clean.slice(-2)}`;
+    }
 
     // Resumen público en modo solo lectura (la confirmación ocurre exclusivamente vía webhook verificado)
     res.json(orderRow);

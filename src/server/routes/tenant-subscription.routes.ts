@@ -116,6 +116,7 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
              next_billing_date as "nextBillingDate",
              grace_period_ends_at as "gracePeriodEndsAt",
              auto_billing_enabled as "autoBillingEnabled",
+             trial_consumed as "trialConsumed",
              plan,
              active
       FROM tenants
@@ -183,6 +184,7 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
       monthlyPrice,
       currency,
       autoBillingEnabled,
+      trialConsumed: Boolean(billingData.trialConsumed),
       card: cardInfo,
       paymentHistory: paymentsRes.rows
     });
@@ -328,12 +330,13 @@ router.post('/cancel', async (req: Request, res: Response): Promise<void> => {
 
     const { reason } = req.body;
 
-    // Update tenant subscription status to cancelled and deactivate auto billing
+    // Update tenant subscription status to cancelled, deactivate auto billing, and record trial consumption
     await query(`
       UPDATE tenants
       SET subscription_status = 'cancelled',
           auto_billing_enabled = false,
           active = false,
+          trial_consumed = true,
           updated_at = CURRENT_TIMESTAMP
       WHERE id = $1
     `, [tenantId]);
@@ -370,6 +373,8 @@ router.post('/cancel', async (req: Request, res: Response): Promise<void> => {
 /**
  * POST /api/tenant/subscription/reactivate
  * Allows reactivating a cancelled account.
+ * Enforces anti-abuse rule (ISO/IEC 25010): If the 15-day trial was already consumed,
+ * reactivation requires an active registered card and activates immediately without resetting trial.
  */
 router.post('/reactivate', async (req: Request, res: Response): Promise<void> => {
   try {
@@ -379,9 +384,75 @@ router.post('/reactivate', async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
+    const tenantRes = await query(`
+      SELECT plan, custom_monthly_price as "customMonthlyPrice", trial_consumed as "trialConsumed", active
+      FROM tenants
+      WHERE id = $1
+    `, [tenantId]);
+
+    if (!tenantRes.rows || tenantRes.rows.length === 0) {
+      res.status(404).json({ error: 'Negocio no encontrado.' });
+      return;
+    }
+
+    const tenantRow = tenantRes.rows[0];
+    const isAliado = tenantRow.plan?.toLowerCase() === 'aliado' || Number(tenantRow.customMonthlyPrice) === 0;
+
+    if (isAliado) {
+      await query(`
+        UPDATE tenants
+        SET subscription_status = 'active',
+            active = true,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1
+      `, [tenantId]);
+
+      await logAuditEvent(tenantId, req.user?.userId || null, 'subscription_reactivated', 'billing', tenantId, { plan: 'aliado' }, req.ip, req.headers['user-agent'] as string);
+
+      res.json({
+        success: true,
+        message: 'Cuenta reactivada exitosamente bajo el Plan Aliado Estratégico (₡0/mes).'
+      });
+      return;
+    }
+
+    const card = await getDefaultBillingCard(tenantId);
+    const trialAlreadyConsumed = Boolean(tenantRow.trialConsumed);
+
+    if (trialAlreadyConsumed) {
+      if (!card) {
+        res.status(402).json({
+          error: 'El periodo de prueba gratuita ya ha sido utilizado para este comercio. Debe vincular una tarjeta de crédito o débito para reactivar el servicio.',
+          requiresCard: true
+        });
+        return;
+      }
+
+      // Card is present: reactivate as active with auto billing enabled
+      await query(`
+        UPDATE tenants
+        SET subscription_status = 'active',
+            auto_billing_enabled = true,
+            active = true,
+            trial_consumed = true,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1
+      `, [tenantId]);
+
+      await logAuditEvent(tenantId, req.user?.userId || null, 'subscription_reactivated', 'billing', tenantId, { cardId: card.id }, req.ip, req.headers['user-agent'] as string);
+
+      res.json({
+        success: true,
+        message: 'Cuenta reactivada exitosamente. Se ha reanudado tu suscripción activa con tu tarjeta vinculada.'
+      });
+      return;
+    }
+
+    // First-time trial reactivation (trial not yet consumed)
     await query(`
       UPDATE tenants
       SET subscription_status = 'trial',
+          trial_consumed = true,
           trial_ends_at = CURRENT_TIMESTAMP + INTERVAL '15 days',
           next_billing_date = CURRENT_TIMESTAMP + INTERVAL '15 days',
           active = true,
@@ -389,11 +460,11 @@ router.post('/reactivate', async (req: Request, res: Response): Promise<void> =>
       WHERE id = $1
     `, [tenantId]);
 
-    await logAuditEvent(tenantId, req.user?.userId || null, 'subscription_reactivated', 'billing', tenantId, {}, req.ip, req.headers['user-agent'] as string);
+    await logAuditEvent(tenantId, req.user?.userId || null, 'subscription_reactivated', 'billing', tenantId, { trialConsumedNow: true }, req.ip, req.headers['user-agent'] as string);
 
     res.json({
       success: true,
-      message: 'Cuenta reactivada exitosamente. Se han restablecido tus 15 días.'
+      message: 'Cuenta reactivada exitosamente con tu periodo de prueba inicial (15 días).'
     });
   } catch (error: any) {
     console.error('[TenantSubscription] Error al reactivar suscripción:', error);
