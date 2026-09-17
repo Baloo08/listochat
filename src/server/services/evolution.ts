@@ -259,3 +259,27 @@ export async function fetchWhatsAppContacts(instanceName: string): Promise<Array
   }
 }
 
+export async function sendWhatsAppAudio(instanceName: string, number: string, audioBase64OrUrl: string): Promise<EvolutionResponse> {
+  try {
+    const cleanNumber = (number || '').replace(/@.+$/, '').replace(/\D/g, '');
+    let audioPayload = audioBase64OrUrl;
+    if (!audioPayload.startsWith('http://') && !audioPayload.startsWith('https://') && !audioPayload.startsWith('data:')) {
+      audioPayload = `data:audio/mp3;base64,${audioPayload}`;
+    }
+
+    const response = await fetchWithTimeout(`${EVOLUTION_API_URL}/message/sendWhatsAppAudio/${instanceName}`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({
+        number: cleanNumber,
+        audio: audioPayload,
+        delay: 1200
+      })
+    }, 25000);
+    const data = await response.json();
+    return { success: response.ok, data };
+  } catch (error) {
+    console.error('[Evolution] Error sending WhatsApp audio:', error);
+    return { success: false, error };
+  }
+}

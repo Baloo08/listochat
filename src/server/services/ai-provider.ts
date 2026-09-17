@@ -8,7 +8,7 @@ import { decrypt } from './encryption.js';
 import { env } from '../config/env.js';
 
 export interface TenantAIConfig {
-  provider: 'gemini' | 'openai' | 'anthropic' | 'localai' | 'betico_ai';
+  provider: 'gemini' | 'openai' | 'anthropic' | 'localai' | 'betico_ai' | 'ollama' | 'deepseek';
   apiKey: string;
   model: string;
   temperature: number;
@@ -42,8 +42,19 @@ export function getDefaultModels(provider: string): string[] {
         'claude-3-5-sonnet-20241022',
         'claude-3-5-haiku-20241022'
       ];
-    case 'localai':
+    case 'deepseek':
+      return [
+        'deepseek-chat',
+        'deepseek-reasoner'
+      ];
+    case 'ollama':
     case 'betico_ai':
+      return [
+        'betico-ai',
+        'qwen2.5:1.5b',
+        'qwen2.5:3b'
+      ];
+    case 'localai':
       return [
         'gpt-4',
         'gpt-4o'
@@ -55,7 +66,7 @@ export function getDefaultModels(provider: string): string[] {
 
 export async function getMasterAIConfig(): Promise<TenantAIConfig> {
   try {
-    const res = await query("SELECT key, value, value_encrypted FROM platform_settings WHERE key IN ('master_ai_provider', 'master_ai_key', 'master_ai_model', 'localai_url', 'localai_model', 'localai_api_key', 'localai_enabled')");
+    const res = await query("SELECT key, value, value_encrypted FROM platform_settings WHERE key IN ('master_ai_provider', 'master_ai_key', 'master_ai_model', 'localai_url', 'localai_model', 'localai_api_key', 'localai_enabled', 'ollama_url', 'ollama_model', 'ollama_enabled')");
     const settings: Record<string, string> = {};
     for (const row of res.rows) {
       if (row.value_encrypted) {
@@ -65,20 +76,28 @@ export async function getMasterAIConfig(): Promise<TenantAIConfig> {
       }
     }
 
-    const localaiEnabled = settings.localai_enabled !== 'false';
-    const localaiUrl = settings.localai_url || process.env.LOCALAI_URL || 'https://beticoia-localai.qvtdko.easypanel.host/v1';
-    let localaiModel = settings.localai_model || 'gpt-4';
-    if (!localaiModel || localaiModel.includes('llama') || localaiModel.includes('qwen') || localaiModel.includes('gemini')) {
-      localaiModel = 'gpt-4';
+    const ollamaEnabled = settings.ollama_enabled !== 'false';
+    const ollamaUrl = settings.ollama_url || process.env.OLLAMA_URL || 'http://beticoia_ollama:11434/v1';
+    const ollamaModel = settings.ollama_model || 'betico-ai';
+
+    if (ollamaEnabled) {
+      return {
+        provider: 'betico_ai',
+        apiKey: 'ollama',
+        model: ollamaModel,
+        temperature: 0.7,
+        baseUrl: ollamaUrl
+      };
     }
 
+    const localaiEnabled = settings.localai_enabled === 'true';
     if (localaiEnabled) {
       return {
         provider: 'localai',
         apiKey: settings.localai_api_key || 'localai',
-        model: localaiModel,
+        model: settings.localai_model || 'gpt-4',
         temperature: 0.7,
-        baseUrl: localaiUrl
+        baseUrl: settings.localai_url || 'http://beticoia_localai:8080/v1'
       };
     }
 
@@ -118,7 +137,15 @@ export async function callAI(config: TenantAIConfig, input: AIPromptInput): Prom
   
   // Sanitize model name for LocalAI so it never calls non-existent files
   let chosenModel = config.model;
-  if (provider === 'localai' || provider === 'betico_ai') {
+  if (provider === 'betico_ai' || provider === 'ollama') {
+    if (!chosenModel || chosenModel.includes('gpt') || chosenModel.includes('gemini') || chosenModel.includes('claude')) {
+      chosenModel = 'betico-ai';
+    }
+  } else if (provider === 'deepseek') {
+    if (!chosenModel || !chosenModel.includes('deepseek')) {
+      chosenModel = 'deepseek-chat';
+    }
+  } else if (provider === 'localai') {
     if (!chosenModel || chosenModel.includes('llama') || chosenModel.includes('qwen') || chosenModel.includes('gemini') || chosenModel.includes('claude')) {
       chosenModel = 'gpt-4';
     }
@@ -143,20 +170,20 @@ export async function callAI(config: TenantAIConfig, input: AIPromptInput): Prom
     } catch (error) {
       lastError = error;
       console.error(`Error calling AI with model ${modelName} (${provider}):`, error);
-      if (provider === 'localai' || provider === 'betico_ai') {
-        break; // For LocalAI, jump immediately to Gemini failover instead of trying invalid models
+      if (provider === 'localai' || provider === 'betico_ai' || provider === 'ollama') {
+        break; // For local engines, jump immediately to Gemini failover instead of retrying invalid models
       }
     }
   }
 
-  // RESILIENT FAILOVER: If LocalAI failed, fallback to Master Gemini 2.5 Flash
-  if (provider === 'localai' || provider === 'betico_ai') {
-    console.warn('[AI-Provider] LocalAI unavailable or timed out. Engaging Master Gemini Failover...');
+  // RESILIENT FAILOVER: If local engine (Ollama/LocalAI) failed, fallback to Master Gemini 2.5 Flash
+  if (provider === 'localai' || provider === 'betico_ai' || provider === 'ollama') {
+    console.warn(`[AI-Provider] ${provider} unavailable or timed out. Engaging Master Gemini Failover...`);
     try {
       let masterKey = DEFAULT_GEMINI_KEY;
       try {
         const masterConf = await getMasterAIConfig();
-        if (masterConf.apiKey && masterConf.apiKey !== 'localai') {
+        if (masterConf.apiKey && masterConf.apiKey !== 'localai' && masterConf.apiKey !== 'ollama') {
           masterKey = masterConf.apiKey;
         }
       } catch (e) {}
@@ -193,9 +220,21 @@ async function executeProvider(config: TenantAIConfig, input: AIPromptInput) {
   } else if (config.provider === 'anthropic') {
     const anthropic = createAnthropic({ apiKey: config.apiKey });
     model = anthropic(config.model || 'claude-3-5-haiku-20241022');
-  } else if (config.provider === 'localai' || config.provider === 'betico_ai') {
+  } else if (config.provider === 'deepseek') {
+    const deepseek = createOpenAI({
+      baseURL: config.baseUrl || 'https://api.deepseek.com/v1',
+      apiKey: config.apiKey
+    });
+    model = deepseek(config.model || 'deepseek-chat');
+  } else if (config.provider === 'ollama' || config.provider === 'betico_ai') {
+    const ollama = createOpenAI({
+      baseURL: config.baseUrl || process.env.OLLAMA_URL || 'http://beticoia_ollama:11434/v1',
+      apiKey: config.apiKey || 'ollama'
+    });
+    model = ollama(config.model || 'betico-ai');
+  } else if (config.provider === 'localai') {
     const localai = createOpenAI({
-      baseURL: config.baseUrl || process.env.LOCALAI_URL || 'https://beticoia-localai.qvtdko.easypanel.host/v1',
+      baseURL: config.baseUrl || process.env.LOCALAI_URL || 'http://beticoia_localai:8080/v1',
       apiKey: config.apiKey || 'localai'
     });
     model = localai(config.model || 'gpt-4');

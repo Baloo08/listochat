@@ -408,7 +408,7 @@ Humano: <<<COMMAND_HANDOFF: {"reason":"motivo"}>>>`;
   const flatPrompt = `${systemPrompt}\n\n${chatHistory.slice(-12).map(h => `${h.role === 'user' ? 'Cliente' : 'Asistente'}: ${h.content}`).join('\n')}\n\nCliente (${senderName}): ${userMessage}\nAsistente:`;
 
   let apiKey = '';
-  let isMarcaBlanca = false;
+  let isBeticoPlatformAI = false;
 
   if (tenant?.aiApiKeyEncrypted) {
     try { apiKey = decrypt(tenant.aiApiKeyEncrypted); } catch (e) {}
@@ -424,7 +424,7 @@ Humano: <<<COMMAND_HANDOFF: {"reason":"motivo"}>>>`;
       temperature: agentConfig?.temperature || 0.7,
     };
   } else {
-    isMarcaBlanca = true;
+    isBeticoPlatformAI = true;
     const usage = await getTenantCurrentMonthUsage(tenantId);
     if (usage.isExceeded) {
       return {
@@ -450,8 +450,8 @@ Humano: <<<COMMAND_HANDOFF: {"reason":"motivo"}>>>`;
   });
   let replyText = aiResult.text;
 
-  // Track token usage for Marca Blanca tenants
-  if (isMarcaBlanca && aiResult.tokensUsed > 0) {
+  // Track token usage for Betico AI platform users
+  if (isBeticoPlatformAI && aiResult.tokensUsed > 0) {
     await incrementTenantUsage(tenantId, aiResult.tokensUsed);
   }
 

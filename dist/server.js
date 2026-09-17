@@ -318,6 +318,7 @@ __export(evolution_exports, {
   markAsRead: () => markAsRead,
   sendMedia: () => sendMedia,
   sendMessage: () => sendMessage,
+  sendWhatsAppAudio: () => sendWhatsAppAudio,
   setWebhook: () => setWebhook
 });
 function getHeaders() {
@@ -549,6 +550,29 @@ async function fetchWhatsAppContacts(instanceName) {
   } catch (err) {
     console.error("Error fetching whatsapp contacts:", err);
     return [];
+  }
+}
+async function sendWhatsAppAudio(instanceName, number, audioBase64OrUrl) {
+  try {
+    const cleanNumber = (number || "").replace(/@.+$/, "").replace(/\D/g, "");
+    let audioPayload = audioBase64OrUrl;
+    if (!audioPayload.startsWith("http://") && !audioPayload.startsWith("https://") && !audioPayload.startsWith("data:")) {
+      audioPayload = `data:audio/mp3;base64,${audioPayload}`;
+    }
+    const response = await fetchWithTimeout(`${EVOLUTION_API_URL}/message/sendWhatsAppAudio/${instanceName}`, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify({
+        number: cleanNumber,
+        audio: audioPayload,
+        delay: 1200
+      })
+    }, 25e3);
+    const data = await response.json();
+    return { success: response.ok, data };
+  } catch (error) {
+    console.error("[Evolution] Error sending WhatsApp audio:", error);
+    return { success: false, error };
   }
 }
 var EVOLUTION_API_URL, EVOLUTION_API_KEY;
@@ -998,8 +1022,19 @@ function getDefaultModels(provider) {
         "claude-3-5-sonnet-20241022",
         "claude-3-5-haiku-20241022"
       ];
-    case "localai":
+    case "deepseek":
+      return [
+        "deepseek-chat",
+        "deepseek-reasoner"
+      ];
+    case "ollama":
     case "betico_ai":
+      return [
+        "betico-ai",
+        "qwen2.5:1.5b",
+        "qwen2.5:3b"
+      ];
+    case "localai":
       return [
         "gpt-4",
         "gpt-4o"
@@ -1010,7 +1045,7 @@ function getDefaultModels(provider) {
 }
 async function getMasterAIConfig() {
   try {
-    const res = await query("SELECT key, value, value_encrypted FROM platform_settings WHERE key IN ('master_ai_provider', 'master_ai_key', 'master_ai_model', 'localai_url', 'localai_model', 'localai_api_key', 'localai_enabled')");
+    const res = await query("SELECT key, value, value_encrypted FROM platform_settings WHERE key IN ('master_ai_provider', 'master_ai_key', 'master_ai_model', 'localai_url', 'localai_model', 'localai_api_key', 'localai_enabled', 'ollama_url', 'ollama_model', 'ollama_enabled')");
     const settings = {};
     for (const row of res.rows) {
       if (row.value_encrypted) {
@@ -1019,19 +1054,26 @@ async function getMasterAIConfig() {
         settings[row.key] = row.value || "";
       }
     }
-    const localaiEnabled = settings.localai_enabled !== "false";
-    const localaiUrl = settings.localai_url || process.env.LOCALAI_URL || "https://beticoia-localai.qvtdko.easypanel.host/v1";
-    let localaiModel = settings.localai_model || "gpt-4";
-    if (!localaiModel || localaiModel.includes("llama") || localaiModel.includes("qwen") || localaiModel.includes("gemini")) {
-      localaiModel = "gpt-4";
+    const ollamaEnabled = settings.ollama_enabled !== "false";
+    const ollamaUrl = settings.ollama_url || process.env.OLLAMA_URL || "http://beticoia_ollama:11434/v1";
+    const ollamaModel = settings.ollama_model || "betico-ai";
+    if (ollamaEnabled) {
+      return {
+        provider: "betico_ai",
+        apiKey: "ollama",
+        model: ollamaModel,
+        temperature: 0.7,
+        baseUrl: ollamaUrl
+      };
     }
+    const localaiEnabled = settings.localai_enabled === "true";
     if (localaiEnabled) {
       return {
         provider: "localai",
         apiKey: settings.localai_api_key || "localai",
-        model: localaiModel,
+        model: settings.localai_model || "gpt-4",
         temperature: 0.7,
-        baseUrl: localaiUrl
+        baseUrl: settings.localai_url || "http://beticoia_localai:8080/v1"
       };
     }
     const provider = settings.master_ai_provider || "gemini";
@@ -1056,7 +1098,15 @@ async function callAI(config, input) {
   const provider = config.provider || "gemini";
   const apiKey = config.apiKey || (provider === "gemini" ? DEFAULT_GEMINI_KEY : "");
   let chosenModel = config.model;
-  if (provider === "localai" || provider === "betico_ai") {
+  if (provider === "betico_ai" || provider === "ollama") {
+    if (!chosenModel || chosenModel.includes("gpt") || chosenModel.includes("gemini") || chosenModel.includes("claude")) {
+      chosenModel = "betico-ai";
+    }
+  } else if (provider === "deepseek") {
+    if (!chosenModel || !chosenModel.includes("deepseek")) {
+      chosenModel = "deepseek-chat";
+    }
+  } else if (provider === "localai") {
     if (!chosenModel || chosenModel.includes("llama") || chosenModel.includes("qwen") || chosenModel.includes("gemini") || chosenModel.includes("claude")) {
       chosenModel = "gpt-4";
     }
@@ -1078,18 +1128,18 @@ async function callAI(config, input) {
     } catch (error) {
       lastError = error;
       console.error(`Error calling AI with model ${modelName} (${provider}):`, error);
-      if (provider === "localai" || provider === "betico_ai") {
+      if (provider === "localai" || provider === "betico_ai" || provider === "ollama") {
         break;
       }
     }
   }
-  if (provider === "localai" || provider === "betico_ai") {
-    console.warn("[AI-Provider] LocalAI unavailable or timed out. Engaging Master Gemini Failover...");
+  if (provider === "localai" || provider === "betico_ai" || provider === "ollama") {
+    console.warn(`[AI-Provider] ${provider} unavailable or timed out. Engaging Master Gemini Failover...`);
     try {
       let masterKey = DEFAULT_GEMINI_KEY;
       try {
         const masterConf = await getMasterAIConfig();
-        if (masterConf.apiKey && masterConf.apiKey !== "localai") {
+        if (masterConf.apiKey && masterConf.apiKey !== "localai" && masterConf.apiKey !== "ollama") {
           masterKey = masterConf.apiKey;
         }
       } catch (e) {
@@ -1122,9 +1172,21 @@ async function executeProvider(config, input) {
   } else if (config.provider === "anthropic") {
     const anthropic = createAnthropic({ apiKey: config.apiKey });
     model = anthropic(config.model || "claude-3-5-haiku-20241022");
-  } else if (config.provider === "localai" || config.provider === "betico_ai") {
+  } else if (config.provider === "deepseek") {
+    const deepseek = createOpenAI({
+      baseURL: config.baseUrl || "https://api.deepseek.com/v1",
+      apiKey: config.apiKey
+    });
+    model = deepseek(config.model || "deepseek-chat");
+  } else if (config.provider === "ollama" || config.provider === "betico_ai") {
+    const ollama = createOpenAI({
+      baseURL: config.baseUrl || process.env.OLLAMA_URL || "http://beticoia_ollama:11434/v1",
+      apiKey: config.apiKey || "ollama"
+    });
+    model = ollama(config.model || "betico-ai");
+  } else if (config.provider === "localai") {
     const localai = createOpenAI({
-      baseURL: config.baseUrl || process.env.LOCALAI_URL || "https://beticoia-localai.qvtdko.easypanel.host/v1",
+      baseURL: config.baseUrl || process.env.LOCALAI_URL || "http://beticoia_localai:8080/v1",
       apiKey: config.apiKey || "localai"
     });
     model = localai(config.model || "gpt-4");
@@ -7336,7 +7398,7 @@ ${chatHistory.slice(-12).map((h) => `${h.role === "user" ? "Cliente" : "Asistent
 Cliente (${senderName}): ${userMessage}
 Asistente:`;
   let apiKey = "";
-  let isMarcaBlanca = false;
+  let isBeticoPlatformAI = false;
   if (tenant?.aiApiKeyEncrypted) {
     try {
       apiKey = decrypt(tenant.aiApiKeyEncrypted);
@@ -7352,7 +7414,7 @@ Asistente:`;
       temperature: agentConfig?.temperature || 0.7
     };
   } else {
-    isMarcaBlanca = true;
+    isBeticoPlatformAI = true;
     const usage = await getTenantCurrentMonthUsage(tenantId);
     if (usage.isExceeded) {
       return {
@@ -7375,7 +7437,7 @@ Asistente:`;
     messages: structuredMessages
   });
   let replyText = aiResult.text;
-  if (isMarcaBlanca && aiResult.tokensUsed > 0) {
+  if (isBeticoPlatformAI && aiResult.tokensUsed > 0) {
     await incrementTenantUsage(tenantId, aiResult.tokensUsed);
   }
   let isBookingDetected = false;
@@ -7565,31 +7627,35 @@ async function getChatSession(tenantId, remoteJid) {
   let result;
   try {
     result = await query(`
-      SELECT is_human_mode as "isHumanMode", unread, notes, human_mode_until as "humanModeUntil"
+      SELECT is_human_mode as "isHumanMode", unread, notes, human_mode_until as "humanModeUntil",
+             allows_voice_notes as "allowsVoiceNotes", voice_preference_asked as "voicePreferenceAsked"
       FROM chat_sessions
       WHERE tenant_id = $1 AND remote_jid = $2
     `, [tenantId, remoteJid]);
   } catch (err) {
-    if (err && (err.message?.includes("human_mode_until") || err.code === "42703")) {
-      await query(`ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS human_mode_until TIMESTAMPTZ;`);
-      result = await query(`
-        SELECT is_human_mode as "isHumanMode", unread, notes, human_mode_until as "humanModeUntil"
-        FROM chat_sessions
-        WHERE tenant_id = $1 AND remote_jid = $2
-      `, [tenantId, remoteJid]);
-    } else {
-      throw err;
-    }
+    await query(`
+      ALTER TABLE chat_sessions 
+      ADD COLUMN IF NOT EXISTS human_mode_until TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS allows_voice_notes BOOLEAN DEFAULT false,
+      ADD COLUMN IF NOT EXISTS voice_preference_asked BOOLEAN DEFAULT false;
+    `).catch(() => {
+    });
+    result = await query(`
+      SELECT is_human_mode as "isHumanMode", unread, notes, human_mode_until as "humanModeUntil",
+             allows_voice_notes as "allowsVoiceNotes", voice_preference_asked as "voicePreferenceAsked"
+      FROM chat_sessions
+      WHERE tenant_id = $1 AND remote_jid = $2
+    `, [tenantId, remoteJid]).catch(() => ({ rows: [] }));
   }
   const session = result.rows[0];
-  if (!session) return { isHumanMode: false, unread: false, notes: "" };
+  if (!session) return { isHumanMode: false, unread: false, notes: "", allowsVoiceNotes: false, voicePreferenceAsked: false };
   if (session.isHumanMode && session.humanModeUntil && new Date(session.humanModeUntil).getTime() < Date.now()) {
     await query(`
       UPDATE chat_sessions 
       SET is_human_mode = false, human_mode_until = NULL, updated_at = CURRENT_TIMESTAMP
       WHERE tenant_id = $1 AND remote_jid = $2
     `, [tenantId, remoteJid]);
-    return { isHumanMode: false, unread: session.unread || false, notes: session.notes || "" };
+    return { ...session, isHumanMode: false };
   }
   return session;
 }
@@ -7597,7 +7663,8 @@ async function getAllChatSessions(tenantId) {
   let result;
   try {
     result = await query(`
-      SELECT remote_jid as "remoteJid", is_human_mode as "isHumanMode", unread, notes, human_mode_until as "humanModeUntil"
+      SELECT remote_jid as "remoteJid", is_human_mode as "isHumanMode", unread, notes, human_mode_until as "humanModeUntil",
+             allows_voice_notes as "allowsVoiceNotes", voice_preference_asked as "voicePreferenceAsked"
       FROM chat_sessions
       WHERE tenant_id = $1
     `, [tenantId]);
@@ -7606,7 +7673,7 @@ async function getAllChatSessions(tenantId) {
       SELECT remote_jid as "remoteJid", is_human_mode as "isHumanMode", unread, notes
       FROM chat_sessions
       WHERE tenant_id = $1
-    `, [tenantId]);
+    `, [tenantId]).catch(() => ({ rows: [] }));
   }
   const map = {};
   result.rows.forEach((r) => {
@@ -7614,10 +7681,42 @@ async function getAllChatSessions(tenantId) {
       isHumanMode: r.isHumanMode || false,
       unread: r.unread || false,
       notes: r.notes || "",
-      humanModeUntil: r.humanModeUntil
+      humanModeUntil: r.humanModeUntil,
+      allowsVoiceNotes: r.allowsVoiceNotes || false,
+      voicePreferenceAsked: r.voicePreferenceAsked || false
     };
   });
   return map;
+}
+async function setChatVoicePreference(tenantId, remoteJid, allowsVoice) {
+  await query(`
+    ALTER TABLE chat_sessions 
+    ADD COLUMN IF NOT EXISTS allows_voice_notes BOOLEAN DEFAULT false,
+    ADD COLUMN IF NOT EXISTS voice_preference_asked BOOLEAN DEFAULT false;
+  `).catch(() => {
+  });
+  await query(`
+    INSERT INTO chat_sessions (tenant_id, remote_jid, allows_voice_notes, voice_preference_asked, updated_at)
+    VALUES ($1, $2, $3, true, CURRENT_TIMESTAMP)
+    ON CONFLICT (tenant_id, remote_jid) DO UPDATE SET
+      allows_voice_notes = EXCLUDED.allows_voice_notes,
+      voice_preference_asked = true,
+      updated_at = CURRENT_TIMESTAMP
+  `, [tenantId, remoteJid, allowsVoice]);
+}
+async function setVoicePreferenceAsked(tenantId, remoteJid, asked = true) {
+  await query(`
+    ALTER TABLE chat_sessions 
+    ADD COLUMN IF NOT EXISTS voice_preference_asked BOOLEAN DEFAULT false;
+  `).catch(() => {
+  });
+  await query(`
+    INSERT INTO chat_sessions (tenant_id, remote_jid, voice_preference_asked, updated_at)
+    VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+    ON CONFLICT (tenant_id, remote_jid) DO UPDATE SET
+      voice_preference_asked = EXCLUDED.voice_preference_asked,
+      updated_at = CURRENT_TIMESTAMP
+  `, [tenantId, remoteJid, asked]);
 }
 async function setChatHumanMode(tenantId, remoteJid, isHumanMode, hoursUntilExpire = 4) {
   const safeHours = Math.max(1, Math.min(168, Number(hoursUntilExpire) || 4));
@@ -7932,6 +8031,87 @@ async function createOrderFromWhatsApp(tenantId, orderData) {
 // src/server/services/message-queue.service.ts
 init_evolution();
 
+// src/server/services/kokoro-tts.service.ts
+var KOKORO_URL = process.env.KOKORO_URL || "http://beticoia_kokoro:80";
+var KOKORO_API_KEY = process.env.KOKORO_API_KEY || "0wluti7ql4met803knws0rbspo502cxz";
+function sanitizeTextForSpeech(rawText) {
+  if (!rawText) return "";
+  let text = rawText;
+  text = text.replace(/<<<[A-Z_]+:\s*\{.*?\}>>>/gs, "");
+  text = text.replace(/\*([^*]+)\*/g, "$1");
+  text = text.replace(/_([^_]+)_/g, "$1");
+  text = text.replace(/~([^~]+)~/g, "$1");
+  text = text.replace(/`([^`]+)`/g, "$1");
+  text = text.replace(/https?:\/\/\S+/gi, "en el enlace que te adjunto");
+  text = text.replace(/[👉📍📅⏰🚗✨👤📝💳✅❌🔴🟢⚡💬🛍️🛒]/g, " ");
+  text = text.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, "");
+  text = text.replace(/₡\s*([0-9]+(?:[\.,][0-9]+)?)/g, "$1 colones");
+  text = text.replace(/\$\s*([0-9]+(?:[\.,][0-9]+)?)/g, "$1 d\xF3lares");
+  text = text.replace(/\s+/g, " ").trim();
+  text = text.replace(/\s+([.,;:!?])/g, "$1");
+  if (text.length > 450) {
+    const truncated = text.substring(0, 450);
+    const lastPeriod = truncated.lastIndexOf(".");
+    if (lastPeriod > 200) {
+      text = truncated.substring(0, lastPeriod + 1);
+    } else {
+      text = truncated + "...";
+    }
+  }
+  return text;
+}
+async function generateSpeechWithKokoro(text, options = {}) {
+  const cleanText = sanitizeTextForSpeech(text);
+  if (!cleanText || cleanText.trim().length === 0) {
+    return { success: false, error: "Texto vac\xEDo para sintetizar voz" };
+  }
+  const voice = options.voice || "ef_dora";
+  const speed = Math.min(1.3, Math.max(0.7, options.speed ?? 1));
+  const format = options.format || "mp3";
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15e3);
+    const response = await fetch(`${KOKORO_URL}/api/v1/audio/speech`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${KOKORO_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: "model",
+        input: cleanText,
+        voice,
+        response_format: format,
+        speed
+      }),
+      signal: controller.signal
+    });
+    clearTimeout(timeout);
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error(`[KokoroTTS] Error response from Kokoro (${response.status}):`, errText);
+      return { success: false, error: `Kokoro API error ${response.status}: ${errText}` };
+    }
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const base64 = buffer.toString("base64");
+    const mimeType = format === "mp3" ? "audio/mpeg" : "audio/wav";
+    console.log(`[KokoroTTS] Generated ${buffer.length} bytes of speech for voice "${voice}"`);
+    return {
+      success: true,
+      buffer,
+      base64,
+      mimeType
+    };
+  } catch (error) {
+    console.error("[KokoroTTS] Synthesis request failed:", error.message || error);
+    return {
+      success: false,
+      error: error.message || "Error al conectar con el servidor Kokoro TTS"
+    };
+  }
+}
+
 // src/server/db/ai-command-logs.repo.ts
 init_pool();
 async function logAICommand(tenantId, remoteJid, commandType, payload, status, errorMessage) {
@@ -8038,6 +8218,57 @@ async function processSingleMessage(msg) {
       fullUserMessage += "\n" + additionalMessages.join("\n");
       console.log(`[Queue] Debounced ${additionalMessages.length} burst messages for ${msg.pushName}`);
     }
+    const lowerMsg = fullUserMessage.toLowerCase();
+    const wantsTextKeywords = [
+      "por texto",
+      "prefiero texto",
+      "escr\xEDbemelo",
+      "escribemelo",
+      "por escrito",
+      "no me mandes audio",
+      "no me mandes audios",
+      "no mandes audio",
+      "no mandes audios",
+      "no audios",
+      "no puedo escuchar",
+      "solo texto",
+      "en texto"
+    ];
+    const wantsAudioKeywords = [
+      "m\xE1ndame un audio",
+      "mandame un audio",
+      "nota de voz",
+      "por nota de voz",
+      "por audio",
+      "prefiero audio",
+      "prefiero audios",
+      "en audio",
+      "en nota de voz",
+      "m\xE1ndame audio",
+      "mandame audio",
+      "env\xEDame un audio",
+      "enviame un audio",
+      "me puedes mandar un audio",
+      "me puedes enviar un audio",
+      "responder por audio",
+      "mandame notas de voz",
+      "m\xE1ndame notas de voz",
+      "prefiero notas de voz",
+      "notas de voz"
+    ];
+    let allowsVoiceNotes = Boolean(session?.allowsVoiceNotes);
+    let voicePreferenceAsked = Boolean(session?.voicePreferenceAsked);
+    if (wantsTextKeywords.some((kw) => lowerMsg.includes(kw))) {
+      allowsVoiceNotes = false;
+      voicePreferenceAsked = true;
+      await setChatVoicePreference(msg.tenantId, msg.remoteJid, false);
+      console.log(`[Queue] Chat ${msg.remoteJid} opted OUT of voice notes.`);
+    } else if (wantsAudioKeywords.some((kw) => lowerMsg.includes(kw))) {
+      allowsVoiceNotes = true;
+      voicePreferenceAsked = true;
+      await setChatVoicePreference(msg.tenantId, msg.remoteJid, true);
+      console.log(`[Queue] Chat ${msg.remoteJid} opted IN to voice notes.`);
+    }
     const allChats = await getChatMessagesByTenant(msg.tenantId, 50);
     const history = allChats.filter((c) => (c.remoteJid || c.remote_jid) === msg.remoteJid).map((c) => ({
       role: c.fromMe || c.from_me ? "assistant" : "user",
@@ -8084,6 +8315,13 @@ async function processSingleMessage(msg) {
       return;
     }
     let finalReplyText = aiResult.replyText;
+    const voiceRepliesEnabled = agentConfig?.voiceRepliesEnabled === true;
+    if (msg.isVoiceNote && voiceRepliesEnabled && !voicePreferenceAsked && !allowsVoiceNotes) {
+      if (!finalReplyText.includes("notas de voz") && !finalReplyText.includes("mensaje de texto")) {
+        finalReplyText += "\n\n\u{1F399}\uFE0F _\xBFPrefieres que te responda por notas de voz o por mensaje de texto?_";
+      }
+      await setVoicePreferenceAsked(msg.tenantId, msg.remoteJid, true);
+    }
     if (aiResult.isBookingDetected && aiResult.bookingData) {
       try {
         const bResult = await createBookingFromCommand(msg.tenantId, { ...aiResult.bookingData, customerPhone: aiResult.bookingData.customerPhone || msg.cleanPhone, customerName: aiResult.bookingData.customerName || msg.pushName });
@@ -8170,8 +8408,33 @@ async function processSingleMessage(msg) {
       }
     }
     let sendRes;
+    let sentAsAudio = false;
     if (aiResult.isMediaDetected && aiResult.mediaData?.mediaUrl) {
       sendRes = await sendMedia(msg.instanceName, msg.cleanPhone, aiResult.mediaData.mediaUrl, finalReplyText || aiResult.mediaData.caption || "");
+    } else if (voiceRepliesEnabled && allowsVoiceNotes) {
+      try {
+        const chosenVoice = agentConfig?.voiceId || "ef_dora";
+        const chosenSpeed = Number(agentConfig?.voiceSpeed) || 1;
+        console.log(`[Queue] Synthesizing voice note with Kokoro (voice: ${chosenVoice}, speed: ${chosenSpeed}) for ${msg.pushName}...`);
+        const kokoroRes = await generateSpeechWithKokoro(finalReplyText, {
+          voice: chosenVoice,
+          speed: chosenSpeed
+        });
+        if (kokoroRes.success && kokoroRes.base64) {
+          sendRes = await sendWhatsAppAudio(msg.instanceName, msg.cleanPhone, kokoroRes.base64);
+          sentAsAudio = sendRes.success;
+          if (sentAsAudio) {
+            console.log(`[Queue] \u2705 Voice note delivered to ${msg.pushName} (+${msg.cleanPhone})`);
+          }
+        } else {
+          console.warn("[Queue] Kokoro TTS failed, falling back to text:", kokoroRes.error);
+        }
+      } catch (voiceErr) {
+        console.error("[Queue] Voice synthesis error, falling back to text:", voiceErr?.message);
+      }
+      if (!sentAsAudio) {
+        sendRes = await sendMessage(msg.instanceName, msg.cleanPhone, finalReplyText);
+      }
     } else {
       sendRes = await sendMessage(msg.instanceName, msg.cleanPhone, finalReplyText);
     }
@@ -10857,13 +11120,21 @@ var chats_routes_default = router6;
 
 // src/server/routes/agent.routes.ts
 import { Router as Router7 } from "express";
+init_encryption();
+init_pool();
 var router7 = Router7();
 router7.use(authenticateToken);
 router7.use(tenantContext);
 router7.get("/prompt", async (req, res) => {
   try {
     const config = await getAgentConfig(req.tenantId);
-    res.json(config);
+    const tenant = await getTenantById(req.tenantId);
+    res.json({
+      ...config,
+      provider: tenant?.aiProvider || config?.provider || "betico_ai",
+      model: tenant?.aiModel || config?.model || "betico-ai",
+      isUsingOwnKey: !!tenant?.aiApiKeyEncrypted
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Error al obtener prompt" });
@@ -10871,10 +11142,30 @@ router7.get("/prompt", async (req, res) => {
 });
 router7.post("/prompt", async (req, res) => {
   try {
+    const { provider, apiKey, model } = req.body;
+    if (provider) {
+      if (provider === "betico_ai" || provider === "ollama" || provider === "localai" || !apiKey && !req.body.isKeepingExistingKey) {
+        await query(
+          `UPDATE tenants SET ai_provider = $1, ai_model = $2, ai_api_key_encrypted = NULL WHERE id = $3`,
+          ["betico_ai", model || "betico-ai", req.tenantId]
+        );
+      } else if (apiKey && apiKey.trim()) {
+        const encrypted = encrypt(apiKey.trim());
+        await query(
+          `UPDATE tenants SET ai_provider = $1, ai_model = $2, ai_api_key_encrypted = $3 WHERE id = $4`,
+          [provider, model, encrypted, req.tenantId]
+        );
+      } else if (model) {
+        await query(
+          `UPDATE tenants SET ai_provider = $1, ai_model = $2 WHERE id = $3`,
+          [provider, model, req.tenantId]
+        );
+      }
+    }
     const saved = await saveAgentConfig(req.tenantId, req.body);
     res.json(saved);
   } catch (error) {
-    console.error(error);
+    console.error("Error al guardar prompt:", error);
     res.status(500).json({ error: "Error al guardar prompt" });
   }
 });
@@ -12511,7 +12802,7 @@ async function transcribeAudioWithGemini(base64Audio, mimetype = "audio/ogg", ap
 }
 async function transcribeAudioWithWhisper(base64Audio, mimetype = "audio/ogg") {
   try {
-    const LOCALAI_URL = process.env.LOCALAI_URL || "https://beticoia-localai.qvtdko.easypanel.host/v1";
+    const LOCALAI_URL = process.env.LOCALAI_URL || "http://beticoia_localai:8080/v1";
     const cleanBase64 = base64Audio.replace(/^data:audio\/[a-z0-9]+;base64,/, "").trim();
     if (!cleanBase64) return { success: false, text: "", error: "Audio base64 vac\xEDo" };
     const audioBuffer = Buffer.from(cleanBase64, "base64");
@@ -13739,16 +14030,24 @@ router21.get("/settings", async (req, res) => {
       masterAiProvider: settings.master_ai_provider || "gemini",
       masterAiKey: settings.master_ai_key ? "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022" + settings.master_ai_key.slice(-4) : "",
       masterAiModel: settings.master_ai_model || "gemini-2.5-flash",
-      localaiUrl: settings.localai_url || "http://localhost:8080/v1",
-      localaiModel: settings.localai_model || "llama-3.1-8b-instruct",
+      localaiUrl: settings.localai_url || "http://beticoia_localai:8080/v1",
+      localaiModel: settings.localai_model || "whisper-1",
       localaiApiKey: settings.localai_api_key ? "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022" + settings.localai_api_key.slice(-4) : "",
-      localaiEnabled: settings.localai_enabled !== "false",
+      localaiEnabled: settings.localai_enabled === "true",
+      ollamaUrl: settings.ollama_url || "http://beticoia_ollama:11434/v1",
+      ollamaModel: settings.ollama_model || "betico-ai",
+      ollamaEnabled: settings.ollama_enabled !== "false",
+      kokoroUrl: settings.kokoro_url || "http://beticoia_kokoro:80",
+      kokoroVoice: settings.kokoro_voice || "ef_dora",
       quotaStarterTokens: parseInt(settings.quota_starter_tokens || "25000", 10),
       quotaProTokens: parseInt(settings.quota_pro_tokens || "100000", 10),
       quotaBusinessTokens: parseInt(settings.quota_business_tokens || "300000", 10),
       superadminNotifyPhone: settings.superadmin_notify_phone || "",
       deployWebhookApp: settings.deploy_webhook_app || process.env.DEPLOY_WEBHOOK_APP || "http://2.25.103.200:3000/api/deploy/f5abd18bdaaff3ce20c24522c9c72beac7c756d9260d995b",
-      deployWebhookLocalai: settings.deploy_webhook_localai || process.env.DEPLOY_WEBHOOK_LOCALAI || "http://2.25.103.200:3000/api/deploy/4317a4ff5a1ed51532fc824fb9547b6ae20847cd3ef8ea4e"
+      deployWebhookLocalai: settings.deploy_webhook_localai || process.env.DEPLOY_WEBHOOK_LOCALAI || "http://2.25.103.200:3000/api/deploy/4317a4ff5a1ed51532fc824fb9547b6ae20847cd3ef8ea4e",
+      deployWebhookOllama: settings.deploy_webhook_ollama || "http://2.25.103.200:3000/api/deploy/60c915e106dd05cb92ed6acab19c1b72ccd317db2949a785",
+      deployWebhookKokoro: settings.deploy_webhook_kokoro || "http://2.25.103.200:3000/api/deploy/cee45b178f9ab10ff50bc0bd9bc39f7384f24d4c91bba200",
+      deployWebhookOllamaWeb: settings.deploy_webhook_ollama_web || "http://2.25.103.200:3000/api/deploy/e3a839613067ac5359c3a0e222976d62ec9b22a3e039cd15"
     });
   } catch (error) {
     console.error("Error fetching platform settings:", error);
@@ -13765,12 +14064,20 @@ router21.post("/settings", async (req, res) => {
       localaiModel,
       localaiApiKey,
       localaiEnabled,
+      ollamaUrl,
+      ollamaModel,
+      ollamaEnabled,
+      kokoroUrl,
+      kokoroVoice,
       quotaStarterTokens,
       quotaProTokens,
       quotaBusinessTokens,
       superadminNotifyPhone,
       deployWebhookApp,
-      deployWebhookLocalai
+      deployWebhookLocalai,
+      deployWebhookOllama,
+      deployWebhookKokoro,
+      deployWebhookOllamaWeb
     } = req.body;
     const upsertSetting = async (key, value) => {
       await query(`
@@ -13781,6 +14088,22 @@ router21.post("/settings", async (req, res) => {
     if (masterAiProvider) await upsertSetting("master_ai_provider", masterAiProvider);
     if (masterAiModel) await upsertSetting("master_ai_model", masterAiModel);
     if (localaiUrl) await upsertSetting("localai_url", localaiUrl.trim());
+    if (localaiModel) await upsertSetting("localai_model", localaiModel.trim());
+    if (localaiEnabled !== void 0) await upsertSetting("localai_enabled", String(localaiEnabled));
+    if (ollamaUrl) await upsertSetting("ollama_url", ollamaUrl.trim());
+    if (ollamaModel) await upsertSetting("ollama_model", ollamaModel.trim());
+    if (ollamaEnabled !== void 0) await upsertSetting("ollama_enabled", String(ollamaEnabled));
+    if (kokoroUrl) await upsertSetting("kokoro_url", kokoroUrl.trim());
+    if (kokoroVoice) await upsertSetting("kokoro_voice", kokoroVoice.trim());
+    if (quotaStarterTokens) await upsertSetting("quota_starter_tokens", String(quotaStarterTokens));
+    if (quotaProTokens) await upsertSetting("quota_pro_tokens", String(quotaProTokens));
+    if (quotaBusinessTokens) await upsertSetting("quota_business_tokens", String(quotaBusinessTokens));
+    if (superadminNotifyPhone !== void 0) await upsertSetting("superadmin_notify_phone", superadminNotifyPhone.trim());
+    if (deployWebhookApp) await upsertSetting("deploy_webhook_app", deployWebhookApp.trim());
+    if (deployWebhookLocalai) await upsertSetting("deploy_webhook_localai", deployWebhookLocalai.trim());
+    if (deployWebhookOllama) await upsertSetting("deploy_webhook_ollama", deployWebhookOllama.trim());
+    if (deployWebhookKokoro) await upsertSetting("deploy_webhook_kokoro", deployWebhookKokoro.trim());
+    if (deployWebhookOllamaWeb) await upsertSetting("deploy_webhook_ollama_web", deployWebhookOllamaWeb.trim());
     if (localaiModel) await upsertSetting("localai_model", localaiModel.trim());
     if (localaiEnabled !== void 0) await upsertSetting("localai_enabled", String(localaiEnabled));
     if (quotaStarterTokens !== void 0) await upsertSetting("quota_starter_tokens", String(quotaStarterTokens));

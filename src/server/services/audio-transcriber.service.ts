@@ -83,7 +83,7 @@ export async function transcribeAudioWithWhisper(
   mimetype: string = 'audio/ogg'
 ): Promise<TranscriptionResult> {
   try {
-    const LOCALAI_URL = process.env.LOCALAI_URL || 'https://beticoia-localai.qvtdko.easypanel.host/v1';
+    const LOCALAI_URL = process.env.LOCALAI_URL || 'http://beticoia_localai:8080/v1';
     const cleanBase64 = base64Audio.replace(/^data:audio\/[a-z0-9]+;base64,/, '').trim();
     if (!cleanBase64) return { success: false, text: '', error: 'Audio base64 vacío' };
     

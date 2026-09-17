@@ -63,29 +63,41 @@ export async function createChatMessage(tenantIdOrData: string | Partial<ChatMes
   return result.rows[0];
 }
 
-export async function getChatSession(tenantId: string, remoteJid: string): Promise<{ isHumanMode: boolean; unread: boolean; notes: string; humanModeUntil?: string } | null> {
+export interface ChatSessionData {
+  isHumanMode: boolean;
+  unread: boolean;
+  notes: string;
+  humanModeUntil?: string;
+  allowsVoiceNotes?: boolean;
+  voicePreferenceAsked?: boolean;
+}
+
+export async function getChatSession(tenantId: string, remoteJid: string): Promise<ChatSessionData | null> {
   let result;
   try {
     result = await query(`
-      SELECT is_human_mode as "isHumanMode", unread, notes, human_mode_until as "humanModeUntil"
+      SELECT is_human_mode as "isHumanMode", unread, notes, human_mode_until as "humanModeUntil",
+             allows_voice_notes as "allowsVoiceNotes", voice_preference_asked as "voicePreferenceAsked"
       FROM chat_sessions
       WHERE tenant_id = $1 AND remote_jid = $2
     `, [tenantId, remoteJid]);
   } catch (err: any) {
-    if (err && (err.message?.includes('human_mode_until') || err.code === '42703')) {
-      await query(`ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS human_mode_until TIMESTAMPTZ;`);
-      result = await query(`
-        SELECT is_human_mode as "isHumanMode", unread, notes, human_mode_until as "humanModeUntil"
-        FROM chat_sessions
-        WHERE tenant_id = $1 AND remote_jid = $2
-      `, [tenantId, remoteJid]);
-    } else {
-      throw err;
-    }
+    await query(`
+      ALTER TABLE chat_sessions 
+      ADD COLUMN IF NOT EXISTS human_mode_until TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS allows_voice_notes BOOLEAN DEFAULT false,
+      ADD COLUMN IF NOT EXISTS voice_preference_asked BOOLEAN DEFAULT false;
+    `).catch(() => {});
+    result = await query(`
+      SELECT is_human_mode as "isHumanMode", unread, notes, human_mode_until as "humanModeUntil",
+             allows_voice_notes as "allowsVoiceNotes", voice_preference_asked as "voicePreferenceAsked"
+      FROM chat_sessions
+      WHERE tenant_id = $1 AND remote_jid = $2
+    `, [tenantId, remoteJid]).catch(() => ({ rows: [] }));
   }
 
   const session = result.rows[0];
-  if (!session) return { isHumanMode: false, unread: false, notes: '' };
+  if (!session) return { isHumanMode: false, unread: false, notes: '', allowsVoiceNotes: false, voicePreferenceAsked: false };
 
   // Check TTL expiration: if humanModeUntil has passed, automatically restore AI auto-reply
   if (session.isHumanMode && session.humanModeUntil && new Date(session.humanModeUntil).getTime() < Date.now()) {
@@ -94,17 +106,18 @@ export async function getChatSession(tenantId: string, remoteJid: string): Promi
       SET is_human_mode = false, human_mode_until = NULL, updated_at = CURRENT_TIMESTAMP
       WHERE tenant_id = $1 AND remote_jid = $2
     `, [tenantId, remoteJid]);
-    return { isHumanMode: false, unread: session.unread || false, notes: session.notes || '' };
+    return { ...session, isHumanMode: false };
   }
 
   return session;
 }
 
-export async function getAllChatSessions(tenantId: string): Promise<Record<string, { isHumanMode: boolean; unread: boolean; notes: string; humanModeUntil?: string }>> {
+export async function getAllChatSessions(tenantId: string): Promise<Record<string, ChatSessionData>> {
   let result;
   try {
     result = await query(`
-      SELECT remote_jid as "remoteJid", is_human_mode as "isHumanMode", unread, notes, human_mode_until as "humanModeUntil"
+      SELECT remote_jid as "remoteJid", is_human_mode as "isHumanMode", unread, notes, human_mode_until as "humanModeUntil",
+             allows_voice_notes as "allowsVoiceNotes", voice_preference_asked as "voicePreferenceAsked"
       FROM chat_sessions
       WHERE tenant_id = $1
     `, [tenantId]);
@@ -113,19 +126,53 @@ export async function getAllChatSessions(tenantId: string): Promise<Record<strin
       SELECT remote_jid as "remoteJid", is_human_mode as "isHumanMode", unread, notes
       FROM chat_sessions
       WHERE tenant_id = $1
-    `, [tenantId]);
+    `, [tenantId]).catch(() => ({ rows: [] }));
   }
   
-  const map: Record<string, { isHumanMode: boolean; unread: boolean; notes: string; humanModeUntil?: string }> = {};
-  result.rows.forEach(r => {
+  const map: Record<string, ChatSessionData> = {};
+  result.rows.forEach((r: any) => {
     map[r.remoteJid] = {
       isHumanMode: r.isHumanMode || false,
       unread: r.unread || false,
       notes: r.notes || '',
-      humanModeUntil: r.humanModeUntil
+      humanModeUntil: r.humanModeUntil,
+      allowsVoiceNotes: r.allowsVoiceNotes || false,
+      voicePreferenceAsked: r.voicePreferenceAsked || false
     };
   });
   return map;
+}
+
+export async function setChatVoicePreference(tenantId: string, remoteJid: string, allowsVoice: boolean): Promise<void> {
+  await query(`
+    ALTER TABLE chat_sessions 
+    ADD COLUMN IF NOT EXISTS allows_voice_notes BOOLEAN DEFAULT false,
+    ADD COLUMN IF NOT EXISTS voice_preference_asked BOOLEAN DEFAULT false;
+  `).catch(() => {});
+
+  await query(`
+    INSERT INTO chat_sessions (tenant_id, remote_jid, allows_voice_notes, voice_preference_asked, updated_at)
+    VALUES ($1, $2, $3, true, CURRENT_TIMESTAMP)
+    ON CONFLICT (tenant_id, remote_jid) DO UPDATE SET
+      allows_voice_notes = EXCLUDED.allows_voice_notes,
+      voice_preference_asked = true,
+      updated_at = CURRENT_TIMESTAMP
+  `, [tenantId, remoteJid, allowsVoice]);
+}
+
+export async function setVoicePreferenceAsked(tenantId: string, remoteJid: string, asked: boolean = true): Promise<void> {
+  await query(`
+    ALTER TABLE chat_sessions 
+    ADD COLUMN IF NOT EXISTS voice_preference_asked BOOLEAN DEFAULT false;
+  `).catch(() => {});
+
+  await query(`
+    INSERT INTO chat_sessions (tenant_id, remote_jid, voice_preference_asked, updated_at)
+    VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+    ON CONFLICT (tenant_id, remote_jid) DO UPDATE SET
+      voice_preference_asked = EXCLUDED.voice_preference_asked,
+      updated_at = CURRENT_TIMESTAMP
+  `, [tenantId, remoteJid, asked]);
 }
 
 export async function setChatHumanMode(tenantId: string, remoteJid: string, isHumanMode: boolean, hoursUntilExpire: number = 4): Promise<void> {

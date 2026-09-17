@@ -83,16 +83,24 @@ router.get('/settings', async (req, res) => {
       masterAiProvider: settings.master_ai_provider || 'gemini',
       masterAiKey: settings.master_ai_key ? '••••••••' + settings.master_ai_key.slice(-4) : '',
       masterAiModel: settings.master_ai_model || 'gemini-2.5-flash',
-      localaiUrl: settings.localai_url || 'http://localhost:8080/v1',
-      localaiModel: settings.localai_model || 'llama-3.1-8b-instruct',
+      localaiUrl: settings.localai_url || 'http://beticoia_localai:8080/v1',
+      localaiModel: settings.localai_model || 'whisper-1',
       localaiApiKey: settings.localai_api_key ? '••••••••' + settings.localai_api_key.slice(-4) : '',
-      localaiEnabled: settings.localai_enabled !== 'false',
+      localaiEnabled: settings.localai_enabled === 'true',
+      ollamaUrl: settings.ollama_url || 'http://beticoia_ollama:11434/v1',
+      ollamaModel: settings.ollama_model || 'betico-ai',
+      ollamaEnabled: settings.ollama_enabled !== 'false',
+      kokoroUrl: settings.kokoro_url || 'http://beticoia_kokoro:80',
+      kokoroVoice: settings.kokoro_voice || 'ef_dora',
       quotaStarterTokens: parseInt(settings.quota_starter_tokens || '25000', 10),
       quotaProTokens: parseInt(settings.quota_pro_tokens || '100000', 10),
       quotaBusinessTokens: parseInt(settings.quota_business_tokens || '300000', 10),
       superadminNotifyPhone: settings.superadmin_notify_phone || '',
       deployWebhookApp: settings.deploy_webhook_app || process.env.DEPLOY_WEBHOOK_APP || 'http://2.25.103.200:3000/api/deploy/f5abd18bdaaff3ce20c24522c9c72beac7c756d9260d995b',
-      deployWebhookLocalai: settings.deploy_webhook_localai || process.env.DEPLOY_WEBHOOK_LOCALAI || 'http://2.25.103.200:3000/api/deploy/4317a4ff5a1ed51532fc824fb9547b6ae20847cd3ef8ea4e'
+      deployWebhookLocalai: settings.deploy_webhook_localai || process.env.DEPLOY_WEBHOOK_LOCALAI || 'http://2.25.103.200:3000/api/deploy/4317a4ff5a1ed51532fc824fb9547b6ae20847cd3ef8ea4e',
+      deployWebhookOllama: settings.deploy_webhook_ollama || 'http://2.25.103.200:3000/api/deploy/60c915e106dd05cb92ed6acab19c1b72ccd317db2949a785',
+      deployWebhookKokoro: settings.deploy_webhook_kokoro || 'http://2.25.103.200:3000/api/deploy/cee45b178f9ab10ff50bc0bd9bc39f7384f24d4c91bba200',
+      deployWebhookOllamaWeb: settings.deploy_webhook_ollama_web || 'http://2.25.103.200:3000/api/deploy/e3a839613067ac5359c3a0e222976d62ec9b22a3e039cd15'
     });
   } catch (error) {
     console.error('Error fetching platform settings:', error);
@@ -110,12 +118,20 @@ router.post('/settings', async (req, res) => {
       localaiModel,
       localaiApiKey,
       localaiEnabled,
+      ollamaUrl,
+      ollamaModel,
+      ollamaEnabled,
+      kokoroUrl,
+      kokoroVoice,
       quotaStarterTokens,
       quotaProTokens,
       quotaBusinessTokens,
       superadminNotifyPhone,
       deployWebhookApp,
-      deployWebhookLocalai
+      deployWebhookLocalai,
+      deployWebhookOllama,
+      deployWebhookKokoro,
+      deployWebhookOllamaWeb
     } = req.body;
 
     const upsertSetting = async (key: string, value: string) => {
@@ -128,6 +144,22 @@ router.post('/settings', async (req, res) => {
     if (masterAiProvider) await upsertSetting('master_ai_provider', masterAiProvider);
     if (masterAiModel) await upsertSetting('master_ai_model', masterAiModel);
     if (localaiUrl) await upsertSetting('localai_url', localaiUrl.trim());
+    if (localaiModel) await upsertSetting('localai_model', localaiModel.trim());
+    if (localaiEnabled !== undefined) await upsertSetting('localai_enabled', String(localaiEnabled));
+    if (ollamaUrl) await upsertSetting('ollama_url', ollamaUrl.trim());
+    if (ollamaModel) await upsertSetting('ollama_model', ollamaModel.trim());
+    if (ollamaEnabled !== undefined) await upsertSetting('ollama_enabled', String(ollamaEnabled));
+    if (kokoroUrl) await upsertSetting('kokoro_url', kokoroUrl.trim());
+    if (kokoroVoice) await upsertSetting('kokoro_voice', kokoroVoice.trim());
+    if (quotaStarterTokens) await upsertSetting('quota_starter_tokens', String(quotaStarterTokens));
+    if (quotaProTokens) await upsertSetting('quota_pro_tokens', String(quotaProTokens));
+    if (quotaBusinessTokens) await upsertSetting('quota_business_tokens', String(quotaBusinessTokens));
+    if (superadminNotifyPhone !== undefined) await upsertSetting('superadmin_notify_phone', superadminNotifyPhone.trim());
+    if (deployWebhookApp) await upsertSetting('deploy_webhook_app', deployWebhookApp.trim());
+    if (deployWebhookLocalai) await upsertSetting('deploy_webhook_localai', deployWebhookLocalai.trim());
+    if (deployWebhookOllama) await upsertSetting('deploy_webhook_ollama', deployWebhookOllama.trim());
+    if (deployWebhookKokoro) await upsertSetting('deploy_webhook_kokoro', deployWebhookKokoro.trim());
+    if (deployWebhookOllamaWeb) await upsertSetting('deploy_webhook_ollama_web', deployWebhookOllamaWeb.trim());
     if (localaiModel) await upsertSetting('localai_model', localaiModel.trim());
     if (localaiEnabled !== undefined) await upsertSetting('localai_enabled', String(localaiEnabled));
     if (quotaStarterTokens !== undefined) await upsertSetting('quota_starter_tokens', String(quotaStarterTokens));
