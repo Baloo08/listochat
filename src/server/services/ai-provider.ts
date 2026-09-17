@@ -64,6 +64,29 @@ export function getDefaultModels(provider: string): string[] {
   }
 }
 
+/**
+ * Warms up Betico AI (Ollama) and pins the model in memory permanently (keep_alive: -1).
+ */
+export async function warmUpBeticoAI(): Promise<void> {
+  try {
+    const ollamaUrl = process.env.OLLAMA_URL || 'http://beticoia_ollama:11434/v1';
+    const baseUrl = ollamaUrl.replace(/\/v1\/?$/, '');
+    const res = await fetch(`${baseUrl}/api/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'betico-ai',
+        keep_alive: -1
+      })
+    });
+    if (res.ok) {
+      console.log('[AI-Provider] Betico AI (Ollama) warmed up and pinned in RAM (keep_alive: -1).');
+    }
+  } catch (e: any) {
+    console.warn('[AI-Provider] Warmup warning (Ollama no disponible en este instante):', e.message);
+  }
+}
+
 export async function getMasterAIConfig(): Promise<TenantAIConfig> {
   try {
     const res = await query("SELECT key, value, value_encrypted FROM platform_settings WHERE key IN ('master_ai_provider', 'master_ai_key', 'master_ai_model', 'localai_url', 'localai_model', 'localai_api_key', 'localai_enabled', 'ollama_url', 'ollama_model', 'ollama_enabled')");
@@ -228,9 +251,13 @@ async function executeProvider(config: TenantAIConfig, input: AIPromptInput) {
     throw new Error("Unsupported provider: " + config.provider);
   }
 
-  // 120s timeout — user prefers slow AI response over generic fallback
+  // Dynamic inference timeout: 240s (4 minutes) for local Betico AI on CPU, or customizable via AI_TIMEOUT_MS
+  const isLocalEngine = config.provider === 'betico_ai' || config.provider === 'ollama' || config.provider === 'localai';
+  const defaultTimeout = isLocalEngine ? 240000 : 90000;
+  const timeoutMs = parseInt(process.env.AI_TIMEOUT_MS || String(defaultTimeout), 10);
+
   const timeoutPromise = new Promise<{ text: string, tokensUsed: number }>((_, reject) => {
-    setTimeout(() => reject(new Error('AI inference timeout after 120s')), 120000);
+    setTimeout(() => reject(new Error(`AI inference timeout after ${Math.round(timeoutMs / 1000)}s`)), timeoutMs);
   });
 
   const t0 = Date.now();

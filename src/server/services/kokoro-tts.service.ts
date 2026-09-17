@@ -86,7 +86,7 @@ export async function generateSpeechWithKokoro(
 
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000); // 15s max timeout
+    const timeout = setTimeout(() => controller.abort(), 45000); // 45s max timeout for TTS on CPU
 
     const response = await fetch(`${KOKORO_URL}/api/v1/audio/speech`, {
       method: 'POST',

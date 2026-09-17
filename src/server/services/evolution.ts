@@ -132,6 +132,37 @@ export async function setWebhook(instanceName: string, webhookUrl: string): Prom
   }
 }
 
+export async function ensureAllTenantsWebhooks(): Promise<void> {
+  try {
+    const { query } = await import('../db/pool.js');
+    const tenants = await query("SELECT id, name, evolution_instance FROM tenants WHERE evolution_instance IS NOT NULL AND active = true");
+    const appUrl = env.APP_URL || 'https://betico.tech';
+    const targetWebhookUrl = `${appUrl}/api/webhook/evolution`;
+
+    for (const t of tenants.rows) {
+      const instName = t.evolution_instance;
+      try {
+        const stateRes = await getInstanceStatus(instName);
+        const state = (stateRes.data as any)?.instance?.state || (stateRes.data as any)?.state;
+        if (state === 'open') {
+          const findRes = await fetchWithTimeout(`${EVOLUTION_API_URL}/webhook/find/${instName}`, {
+            headers: getHeaders()
+          }, 5000);
+          const hookData = await findRes.json().catch(() => null);
+          if (!hookData || !hookData.url || !hookData.enabled) {
+            console.log(`[Evolution Sync] Auto-configurando webhook faltante para ${t.name} (${instName})...`);
+            await setWebhook(instName, targetWebhookUrl);
+          }
+        }
+      } catch (err) {
+        // Continue loop
+      }
+    }
+  } catch (e: any) {
+    console.error('[Evolution Sync] Error al verificar webhooks de tenants:', e.message);
+  }
+}
+
 export async function markAsRead(instanceName: string, remoteJid: string, messageId: string): Promise<EvolutionResponse> {
   try {
     const response = await fetchWithTimeout(`${EVOLUTION_API_URL}/chat/markMessageAsRead/${instanceName}`, {

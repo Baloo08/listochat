@@ -18,6 +18,8 @@ import { startSubscriptionLifecycleWorker } from './services/subscription.servic
 import { startQueueWorker } from './services/message-queue.service.js';
 import { ensureQueueTable } from './db/message-queue.repo.js';
 import { initEvolutionPaymentListeners } from './services/evolution-api.service.js';
+import { ensureAllTenantsWebhooks } from './services/evolution.js';
+import { warmUpBeticoAI } from './services/ai-provider.js';
 
 // Route imports
 import authRoutes from './routes/auth.routes.js';
@@ -305,6 +307,11 @@ async function startServer() {
     startQueueWorker(io);
     // Initialize WhatsApp payment confirmation event listener
     initEvolutionPaymentListeners();
+    // Auto-heal webhooks for all active connected tenant instances
+    ensureAllTenantsWebhooks().catch(e => console.error('[Evolution Sync] Startup check error:', e));
+    setInterval(() => ensureAllTenantsWebhooks().catch(() => {}), 10 * 60 * 1000);
+    // Warm up Betico AI (Ollama) and pin model in RAM permanently (keep_alive: -1)
+    warmUpBeticoAI().catch(e => console.warn('[Warmup] Ollama warmup warning:', e));
   } catch (err) {
     console.error('Failed to run database migrations:', err);
   }
