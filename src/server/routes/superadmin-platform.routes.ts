@@ -538,12 +538,15 @@ router.post('/test-ai', async (req, res) => {
     const { prompt, provider, model, baseUrl } = req.body;
     const master = await getMasterAIConfig();
 
+    const chosenProvider = provider || 'betico_ai';
+    const chosenModel = model || ((chosenProvider === 'betico_ai' || chosenProvider === 'ollama') ? 'betico-ai' : master.model);
+
     const testConfig = {
-      provider: provider || master.provider,
-      apiKey: master.apiKey,
-      model: model || master.model,
+      provider: chosenProvider,
+      apiKey: (chosenProvider === 'betico_ai' || chosenProvider === 'ollama') ? 'ollama' : master.apiKey,
+      model: chosenModel,
       temperature: 0.7,
-      baseUrl: baseUrl || master.baseUrl
+      baseUrl: baseUrl || ((chosenProvider === 'betico_ai' || chosenProvider === 'ollama') ? (process.env.OLLAMA_URL || 'http://beticoia_ollama:11434/v1') : master.baseUrl)
     };
 
     const aiResult = await callAI(testConfig, prompt || 'Hola, ¿cómo funciona este modelo de IA?');
@@ -567,24 +570,86 @@ router.post('/test-ai', async (req, res) => {
   }
 });
 
-// CHECK LOCALAI ENGINE HEALTH / PING
+// CHECK ENGINE HEALTH / PING (OLLAMA, KOKORO, LOCALAI/WHISPER)
 router.get('/ai-engine-status', async (req, res) => {
   const startTime = Date.now();
-  let localaiUrl = (req.query.url as string || '').trim();
+  const engine = (req.query.engine as string || '').toLowerCase();
+  let targetUrl = (req.query.url as string || '').trim();
+
   try {
-    if (!localaiUrl) {
-      const dbRes = await query("SELECT value FROM platform_settings WHERE key = 'localai_url'");
-      localaiUrl = dbRes.rows[0]?.value || 'https://beticoia-localai.qvtdko.easypanel.host/v1';
+    if (engine === 'kokoro' || targetUrl.includes('kokoro')) {
+      if (!targetUrl) {
+        const dbRes = await query("SELECT value FROM platform_settings WHERE key = 'kokoro_url'");
+        targetUrl = dbRes.rows[0]?.value || process.env.KOKORO_URL || 'http://beticoia_kokoro:80';
+      }
+      const baseUrl = targetUrl.replace(/\/+$/, '');
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const response = await fetch(`${baseUrl}/`, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      const latencyMs = Date.now() - startTime;
+      if (response.ok) {
+        return res.json({
+          online: true,
+          engine: 'kokoro',
+          url: targetUrl,
+          latencyMs,
+          voices: ['ef_dora', 'em_alex', 'em_santa'],
+          statusText: 'Kokoro TTS Operativo'
+        });
+      } else {
+        return res.json({
+          online: false,
+          engine: 'kokoro',
+          url: targetUrl,
+          latencyMs,
+          statusText: 'Servidor respondió con código ' + response.status
+        });
+      }
     }
 
-    // Clean URL
-    const baseUrl = localaiUrl.replace(/\/v1\/?$/, '').replace(/\/+$/, '');
+    if (engine === 'whisper' || engine === 'localai' || targetUrl.includes('localai')) {
+      if (!targetUrl) {
+        const dbRes = await query("SELECT value FROM platform_settings WHERE key = 'localai_url'");
+        targetUrl = dbRes.rows[0]?.value || 'http://beticoia_localai:8080/v1';
+      }
+      const baseUrl = targetUrl.replace(/\/v1\/?$/, '').replace(/\/+$/, '');
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const response = await fetch(`${baseUrl}/readyz`, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      const latencyMs = Date.now() - startTime;
+      if (response.ok) {
+        return res.json({
+          online: true,
+          engine: 'whisper',
+          url: targetUrl,
+          latencyMs,
+          models: ['whisper-1'],
+          statusText: 'Whisper Transcripción Operativo'
+        });
+      } else {
+        return res.json({
+          online: false,
+          engine: 'whisper',
+          url: targetUrl,
+          latencyMs,
+          statusText: 'Servidor respondió con código ' + response.status
+        });
+      }
+    }
+
+    // Default: OLLAMA / BETICO AI
+    if (!targetUrl) {
+      const dbRes = await query("SELECT value FROM platform_settings WHERE key = 'ollama_url'");
+      targetUrl = dbRes.rows[0]?.value || process.env.OLLAMA_URL || 'http://beticoia_ollama:11434/v1';
+    }
+
+    const baseUrl = targetUrl.replace(/\/v1\/?$/, '').replace(/\/+$/, '');
     const pingUrl = baseUrl + '/v1/models';
 
-    // Ping /models endpoint with 4s timeout
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 4000);
-
     const response = await fetch(pingUrl, { signal: controller.signal });
     clearTimeout(timeoutId);
 
@@ -592,27 +657,33 @@ router.get('/ai-engine-status', async (req, res) => {
 
     if (response.ok) {
       const data: any = await response.json();
-      const models = Array.isArray(data.data) ? data.data.map((m: any) => m.id) : [];
-      res.json({
+      let models = Array.isArray(data.data) 
+        ? data.data.map((m: any) => m.id.replace(':latest', '')) 
+        : ['betico-ai'];
+      if (!models.includes('betico-ai')) models.unshift('betico-ai');
+      return res.json({
         online: true,
-        url: localaiUrl,
+        engine: 'ollama',
+        url: targetUrl,
         latencyMs,
         models,
-        statusText: 'Operativo & Respondiendo'
+        statusText: 'Betico AI (Ollama) Operativo & Respondiendo'
       });
     } else {
-      res.json({
+      return res.json({
         online: false,
-        url: localaiUrl,
+        engine: 'ollama',
+        url: targetUrl,
         latencyMs,
         statusText: 'Servidor respondió con código ' + response.status
       });
     }
   } catch (e: any) {
     const latencyMs = Date.now() - startTime;
-    res.json({
+    return res.json({
       online: false,
-      url: localaiUrl,
+      engine: engine || 'ollama',
+      url: targetUrl,
       latencyMs,
       statusText: 'Servidor no accesible (' + (e.message || 'Timeout') + ')'
     });

@@ -105,25 +105,31 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
   const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
 
   // 2. AI ENGINE & PLAYGROUND STATE
-  const [localaiUrl, setLocalaiUrl] = useState('https://beticoia-localai.qvtdko.easypanel.host/v1');
-  const [localaiModel, setLocalaiModel] = useState('gpt-4');
+  const [ollamaUrl, setOllamaUrl] = useState('http://beticoia_ollama:11434/v1');
+  const [ollamaModel, setOllamaModel] = useState('betico-ai');
+  const [availableOllamaModels, setAvailableOllamaModels] = useState<string[]>([
+    'betico-ai',
+    'qwen2.5:1.5b'
+  ]);
+  const [kokoroUrl, setKokoroUrl] = useState('http://beticoia_kokoro:80');
+  const [kokoroVoice, setKokoroVoice] = useState('ef_dora');
+  const [kokoroStatus, setKokoroStatus] = useState<any>(null);
+  const [whisperStatus, setWhisperStatus] = useState<any>(null);
+  const [localaiUrl, setLocalaiUrl] = useState('http://beticoia_localai:8080/v1');
+  const [localaiModel, setLocalaiModel] = useState('whisper-1');
   const [availableLocalModels, setAvailableLocalModels] = useState<string[]>([
-    'gpt-4',
-    'gpt-4o',
-    'whisper-1',
-    'stablediffusion',
-    'tts-1'
+    'whisper-1'
   ]);
   const [localaiApiKey, setLocalaiApiKey] = useState('');
-  const [localaiEnabled, setLocalaiEnabled] = useState(true);
+  const [localaiEnabled, setLocalaiEnabled] = useState(false);
   const [masterAiProvider, setMasterAiProvider] = useState('gemini');
   const [masterAiKey, setMasterAiKey] = useState('');
   const [masterAiModel, setMasterAiModel] = useState('gemini-2.5-flash');
   const [aiEngineStatus, setAiEngineStatus] = useState<any>(null);
   const [checkingAiEngine, setCheckingAiEngine] = useState(false);
   const [playgroundPrompt, setPlaygroundPrompt] = useState('Hola, ¿cuáles son tus funciones como asistente inteligente de Betico?');
-  const [playgroundProvider, setPlaygroundProvider] = useState('localai');
-  const [playgroundModel, setPlaygroundModel] = useState('gpt-4o');
+  const [playgroundProvider, setPlaygroundProvider] = useState('betico_ai');
+  const [playgroundModel, setPlaygroundModel] = useState('betico-ai');
   const [playgroundResult, setPlaygroundResult] = useState<any>(null);
   const [testingPlayground, setTestingPlayground] = useState(false);
 
@@ -198,6 +204,10 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
     try {
       const data = await api.get('/api/superadmin/platform/settings');
       if (data) {
+        if (data.ollamaUrl) setOllamaUrl(data.ollamaUrl);
+        if (data.ollamaModel) setOllamaModel(data.ollamaModel);
+        if (data.kokoroUrl) setKokoroUrl(data.kokoroUrl);
+        if (data.kokoroVoice) setKokoroVoice(data.kokoroVoice);
         if (data.masterAiProvider) setMasterAiProvider(data.masterAiProvider);
         if (data.masterAiModel) setMasterAiModel(data.masterAiModel);
         if (data.masterAiKey) setMasterAiKey(data.masterAiKey);
@@ -220,14 +230,27 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
   const checkAiEngine = async () => {
     try {
       setCheckingAiEngine(true);
-      const targetUrl = (localaiUrl || '').trim();
-      const data = await api.get('/api/superadmin/platform/ai-engine-status?url=' + encodeURIComponent(targetUrl));
+      // 1. Ping Ollama (Betico AI)
+      const targetOllama = (ollamaUrl || '').trim();
+      const data = await api.get('/api/superadmin/platform/ai-engine-status?engine=ollama&url=' + encodeURIComponent(targetOllama));
       setAiEngineStatus(data);
       if (data && Array.isArray(data.models) && data.models.length > 0) {
-        setAvailableLocalModels(data.models);
+        setAvailableOllamaModels(data.models);
       }
+
+      // 2. Ping Kokoro TTS
+      try {
+        const kData = await api.get('/api/superadmin/platform/ai-engine-status?engine=kokoro');
+        setKokoroStatus(kData);
+      } catch (err) {}
+
+      // 3. Ping Whisper
+      try {
+        const wData = await api.get('/api/superadmin/platform/ai-engine-status?engine=whisper');
+        setWhisperStatus(wData);
+      } catch (err) {}
     } catch (e) {
-      setAiEngineStatus({ online: false, statusText: 'Error conectando con el servidor' });
+      setAiEngineStatus({ online: false, statusText: 'Error conectando con el servidor Betico AI' });
     } finally {
       setCheckingAiEngine(false);
     }
@@ -310,6 +333,10 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
     setSavingPlatform(true);
     try {
       await api.post('/api/superadmin/platform/settings', {
+        ollamaUrl,
+        ollamaModel,
+        kokoroUrl,
+        kokoroVoice,
         masterAiProvider,
         masterAiModel,
         masterAiKey,
@@ -326,6 +353,7 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
       });
       setPlatformSavedToast(true);
       setTimeout(() => setPlatformSavedToast(false), 3000);
+      checkAiEngine();
     } catch (err) {
       alert('Error guardando ajustes: ' + (err.message || 'Error'));
     } finally {
@@ -342,7 +370,7 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
         prompt: playgroundPrompt,
         provider: playgroundProvider,
         model: playgroundModel,
-        baseUrl: localaiUrl
+        baseUrl: (playgroundProvider === 'betico_ai' || playgroundProvider === 'ollama') ? ollamaUrl : localaiUrl
       });
       setPlaygroundResult(res);
     } catch (err) {
@@ -1371,10 +1399,18 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
               </div>
               <div>
                 <strong style={{ fontSize: '1.05rem', color: aiEngineStatus?.online ? '#166534' : '#991b1b' }}>
-                  {aiEngineStatus?.online ? '🟢 Servidor Betico IA Operativo & Respondiendo' : '🔴 Servidor Betico IA Fuera de Línea'}
+                  {aiEngineStatus?.online ? '🟢 Motor Betico IA (Ollama) Operativo & Respondiendo' : '🔴 Motor Betico IA Fuera de Línea'}
                 </strong>
                 <div style={{ fontSize: '0.8rem', color: aiEngineStatus?.online ? '#15803d' : '#b91c1c', marginTop: '2px' }}>
-                  Endpoint: <code>{localaiUrl}</code> {aiEngineStatus?.latencyMs ? '• Latencia Ping: ' + aiEngineStatus.latencyMs + 'ms' : ''}
+                  Endpoint: <code>{ollamaUrl}</code> {aiEngineStatus?.latencyMs ? '• Latencia Ping: ' + aiEngineStatus.latencyMs + 'ms' : ''} • Modelo: <strong>{ollamaModel}</strong>
+                </div>
+                <div style={{ display: 'flex', gap: '12px', marginTop: '6px', fontSize: '0.75rem' }}>
+                  <span style={{ color: kokoroStatus?.online ? '#166534' : '#991b1b', fontWeight: 'bold' }}>
+                    {kokoroStatus?.online ? '🟢 Kokoro TTS (Audio MP3)' : '⚪ Kokoro TTS'}
+                  </span>
+                  <span style={{ color: whisperStatus?.online ? '#166534' : '#991b1b', fontWeight: 'bold' }}>
+                    {whisperStatus?.online ? '🟢 Whisper (Transcripción)' : '⚪ Whisper'}
+                  </span>
                 </div>
               </div>
             </div>
@@ -1391,15 +1427,83 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
           {/* Server Config & Failover Grid */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '18px' }}>
             
-            {/* LocalAI Config */}
+            {/* Ollama Betico AI Config */}
             <div style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '14px', padding: '22px' }}>
               <h3 style={{ margin: '0 0 14px 0', fontSize: '1.05rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Server size={18} color="var(--primary)" /> Configuración de Betico IA
+                <Server size={18} color="var(--primary)" /> Configuración de Betico IA (Ollama Local)
               </h3>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '4px' }}>URL del Servidor</label>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '4px' }}>URL del Servidor Ollama</label>
+                  <input
+                    type="text"
+                    value={ollamaUrl}
+                    onChange={(e) => setOllamaUrl(e.target.value)}
+                    style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '4px' }}>Modelo Principal</label>
+                  <select
+                    value={ollamaModel}
+                    onChange={(e) => {
+                      setOllamaModel(e.target.value);
+                      setPlaygroundModel(e.target.value);
+                    }}
+                    style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                  >
+                    {availableOllamaModels.map((m) => (
+                      <option key={m} value={m}>
+                        {m} {m === 'betico-ai' ? '⚡ (Modelo Propio Optimizado - Rápido)' : m === 'qwen2.5:1.5b' ? '📦 (Base Qwen 2.5 1.5B)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <button
+                  onClick={() => handleSavePlatformSettings()}
+                  disabled={savingPlatform}
+                  style={{ marginTop: '8px', padding: '10px 16px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.85rem' }}
+                >
+                  {savingPlatform ? 'Guardando...' : 'Guardar Motor Betico IA'}
+                </button>
+              </div>
+            </div>
+
+            {/* Kokoro TTS & Whisper Config */}
+            <div style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '14px', padding: '22px' }}>
+              <h3 style={{ margin: '0 0 14px 0', fontSize: '1.05rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Bot size={18} color="#0284c7" /> Audio: Voz (Kokoro) & Transcripción (Whisper)
+              </h3>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '4px' }}>URL de Kokoro TTS (Generación de Voz)</label>
+                  <input
+                    type="text"
+                    value={kokoroUrl}
+                    onChange={(e) => setKokoroUrl(e.target.value)}
+                    style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '4px' }}>Voz Predeterminada (Español)</label>
+                  <select
+                    value={kokoroVoice}
+                    onChange={(e) => setKokoroVoice(e.target.value)}
+                    style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                  >
+                    <option value="ef_dora">Dora (Femenina - Español)</option>
+                    <option value="em_alex">Alex (Masculina - Español)</option>
+                    <option value="em_santa">Santa (Masculina Cálida - Español)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '4px' }}>URL de Whisper (Transcripción de Audios)</label>
                   <input
                     type="text"
                     value={localaiUrl}
@@ -1408,41 +1512,12 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
                   />
                 </div>
 
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '4px' }}>Modelo Principal</label>
-                  <select
-                    value={localaiModel}
-                    onChange={(e) => {
-                      setLocalaiModel(e.target.value);
-                      setPlaygroundModel(e.target.value);
-                    }}
-                    style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
-                  >
-                    {availableLocalModels.map((m) => (
-                      <option key={m} value={m}>
-                        {m} {m === 'gpt-4' ? '⚡ (Hermes-3 3B - Chat Rápido / Activo)' : m === 'gpt-4o' ? '👁️ (MiniCPM - Visión & Texto)' : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '4px' }}>API Key Betico IA (Opcional)</label>
-                  <input
-                    type="password"
-                    placeholder="••••••••"
-                    value={localaiApiKey}
-                    onChange={(e) => setLocalaiApiKey(e.target.value)}
-                    style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
-                  />
-                </div>
-
                 <button
                   onClick={() => handleSavePlatformSettings()}
                   disabled={savingPlatform}
-                  style={{ marginTop: '8px', padding: '10px 16px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.85rem' }}
+                  style={{ marginTop: '8px', padding: '10px 16px', backgroundColor: '#0284c7', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.85rem' }}
                 >
-                  {savingPlatform ? 'Guardando...' : 'Guardar Configuración'}
+                  {savingPlatform ? 'Guardando...' : 'Guardar Ajustes de Audio'}
                 </button>
               </div>
             </div>
@@ -1454,6 +1529,10 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
               </h3>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ fontSize: '0.78rem', color: '#15803d', backgroundColor: '#f0fdf4', padding: '8px 12px', borderRadius: '6px', border: '1px solid #bbf7d0' }}>
+                  ℹ️ <strong>Betico AI es 100% gratuita</strong> para los inquilinos. Las llamadas a APIs externas comerciales de pago solo se efectúan si un tenant configuró su propia llave BYOK.
+                </div>
+
                 <div>
                   <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '4px' }}>Proveedor de Respaldo</label>
                   <select
@@ -1516,12 +1595,19 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
                 <select
                   value={playgroundProvider}
                   onChange={(e) => {
-                    setPlaygroundProvider(e.target.value);
-                    setPlaygroundModel(e.target.value === 'localai' ? localaiModel : masterAiModel);
+                    const prov = e.target.value;
+                    setPlaygroundProvider(prov);
+                    if (prov === 'betico_ai' || prov === 'ollama') {
+                      setPlaygroundModel(ollamaModel || 'betico-ai');
+                    } else if (prov === 'gemini') {
+                      setPlaygroundModel('gemini-2.5-flash');
+                    } else if (prov === 'openai') {
+                      setPlaygroundModel('gpt-4o-mini');
+                    }
                   }}
                   style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
                 >
-                  <option value="localai">⚡ LocalAI (Servidor Propio)</option>
+                  <option value="betico_ai">⚡ Betico AI (Ollama Local - Gratuito)</option>
                   <option value="gemini">🟢 Google Gemini (Respaldo)</option>
                   <option value="openai">🟣 OpenAI (Respaldo)</option>
                 </select>
