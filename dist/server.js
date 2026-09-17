@@ -312,6 +312,7 @@ __export(evolution_exports, {
   connectInstance: () => connectInstance,
   createInstance: () => createInstance,
   disconnectInstance: () => disconnectInstance,
+  ensureAllTenantsWebhooks: () => ensureAllTenantsWebhooks,
   fetchWhatsAppContacts: () => fetchWhatsAppContacts,
   getBase64FromMediaMessage: () => getBase64FromMediaMessage,
   getInstanceStatus: () => getInstanceStatus,
@@ -436,6 +437,34 @@ async function setWebhook(instanceName, webhookUrl) {
     return { success: response.ok, data };
   } catch (error) {
     return { success: false, error };
+  }
+}
+async function ensureAllTenantsWebhooks() {
+  try {
+    const { query: query3 } = await Promise.resolve().then(() => (init_pool(), pool_exports));
+    const tenants = await query3("SELECT id, name, evolution_instance FROM tenants WHERE evolution_instance IS NOT NULL AND active = true");
+    const appUrl = env.APP_URL || "https://betico.tech";
+    const targetWebhookUrl = `${appUrl}/api/webhook/evolution`;
+    for (const t of tenants.rows) {
+      const instName = t.evolution_instance;
+      try {
+        const stateRes = await getInstanceStatus(instName);
+        const state = stateRes.data?.instance?.state || stateRes.data?.state;
+        if (state === "open") {
+          const findRes = await fetchWithTimeout(`${EVOLUTION_API_URL}/webhook/find/${instName}`, {
+            headers: getHeaders()
+          }, 5e3);
+          const hookData = await findRes.json().catch(() => null);
+          if (!hookData || !hookData.url || !hookData.enabled) {
+            console.log(`[Evolution Sync] Auto-configurando webhook faltante para ${t.name} (${instName})...`);
+            await setWebhook(instName, targetWebhookUrl);
+          }
+        }
+      } catch (err) {
+      }
+    }
+  } catch (e) {
+    console.error("[Evolution Sync] Error al verificar webhooks de tenants:", e.message);
   }
 }
 async function markAsRead(instanceName, remoteJid, messageId) {
@@ -1043,6 +1072,25 @@ function getDefaultModels(provider) {
       return [];
   }
 }
+async function warmUpBeticoAI() {
+  try {
+    const ollamaUrl = process.env.OLLAMA_URL || "http://beticoia_ollama:11434/v1";
+    const baseUrl = ollamaUrl.replace(/\/v1\/?$/, "");
+    const res = await fetch(`${baseUrl}/api/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "betico-ai",
+        keep_alive: -1
+      })
+    });
+    if (res.ok) {
+      console.log("[AI-Provider] Betico AI (Ollama) warmed up and pinned in RAM (keep_alive: -1).");
+    }
+  } catch (e) {
+    console.warn("[AI-Provider] Warmup warning (Ollama no disponible en este instante):", e.message);
+  }
+}
 async function getMasterAIConfig() {
   try {
     const res = await query("SELECT key, value, value_encrypted FROM platform_settings WHERE key IN ('master_ai_provider', 'master_ai_key', 'master_ai_model', 'localai_url', 'localai_model', 'localai_api_key', 'localai_enabled', 'ollama_url', 'ollama_model', 'ollama_enabled')");
@@ -1179,8 +1227,11 @@ async function executeProvider(config, input) {
   } else {
     throw new Error("Unsupported provider: " + config.provider);
   }
+  const isLocalEngine = config.provider === "betico_ai" || config.provider === "ollama" || config.provider === "localai";
+  const defaultTimeout = isLocalEngine ? 24e4 : 9e4;
+  const timeoutMs = parseInt(process.env.AI_TIMEOUT_MS || String(defaultTimeout), 10);
   const timeoutPromise = new Promise((_, reject) => {
-    setTimeout(() => reject(new Error("AI inference timeout after 120s")), 12e4);
+    setTimeout(() => reject(new Error(`AI inference timeout after ${Math.round(timeoutMs / 1e3)}s`)), timeoutMs);
   });
   const t0 = Date.now();
   const generatePromise = (async () => {
@@ -8057,7 +8108,7 @@ async function generateSpeechWithKokoro(text, options = {}) {
   const format = options.format || "mp3";
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15e3);
+    const timeout = setTimeout(() => controller.abort(), 45e3);
     const response = await fetch(`${KOKORO_URL}/api/v1/audio/speech`, {
       method: "POST",
       headers: {
@@ -8650,6 +8701,10 @@ ${payload.tilopayAuthCode ? `\u{1F511} *C\xF3digo de Autorizaci\xF3n:* ${payload
   });
   console.log("[EvolutionApiService] Listener de OrderPaidEvent inicializado correctamente.");
 }
+
+// src/server/index.ts
+init_evolution();
+init_ai_provider();
 
 // src/server/routes/auth.routes.ts
 import { Router } from "express";
@@ -18197,6 +18252,10 @@ async function startServer() {
     startSubscriptionLifecycleWorker();
     startQueueWorker(io2);
     initEvolutionPaymentListeners();
+    ensureAllTenantsWebhooks().catch((e) => console.error("[Evolution Sync] Startup check error:", e));
+    setInterval(() => ensureAllTenantsWebhooks().catch(() => {
+    }), 10 * 60 * 1e3);
+    warmUpBeticoAI().catch((e) => console.warn("[Warmup] Ollama warmup warning:", e));
   } catch (err) {
     console.error("Failed to run database migrations:", err);
   }
