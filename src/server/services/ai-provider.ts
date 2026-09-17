@@ -177,7 +177,12 @@ export async function callAI(config: TenantAIConfig, input: AIPromptInput): Prom
   }
   
   const defaultModels = getDefaultModels(provider);
-  const fallbackModels = [chosenModel, ...defaultModels.filter(m => m !== chosenModel)];
+  let fallbackModels: string[];
+  if ((provider === 'betico_ai' || provider === 'ollama') && chosenModel.startsWith('betico-ai:tenant_')) {
+    fallbackModels = [chosenModel, 'betico-ai'];
+  } else {
+    fallbackModels = [chosenModel, ...defaultModels.filter(m => m !== chosenModel)];
+  }
 
   let lastError: any = null;
 
@@ -193,8 +198,13 @@ export async function callAI(config: TenantAIConfig, input: AIPromptInput): Prom
     } catch (error) {
       lastError = error;
       console.error(`Error calling AI with model ${modelName} (${provider}):`, error);
+      // If a virtual tenant model failed (e.g. not compiled yet in Ollama), fall back to base betico-ai
+      if (modelName.startsWith('betico-ai:tenant_')) {
+        console.warn(`[AI-Provider] Virtual model ${modelName} failed or missing in Ollama. Falling back to base betico-ai.`);
+        continue;
+      }
       if (provider === 'localai' || provider === 'betico_ai' || provider === 'ollama') {
-        break; // For local engines, jump immediately to Gemini failover instead of retrying invalid models
+        break; // For local engines, jump immediately to polite fallback instead of retrying invalid models
       }
     }
   }

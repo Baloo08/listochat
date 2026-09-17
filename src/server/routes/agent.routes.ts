@@ -10,6 +10,7 @@ router.use(tenantContext);
 
 import { encrypt } from '../services/encryption.js';
 import { query } from '../db/pool.js';
+import { debounceSyncTenantModel } from '../services/tenant-model.service.js';
 
 router.get('/prompt', async (req, res) => {
   try {
@@ -56,6 +57,7 @@ router.post('/prompt', async (req, res) => {
     }
 
     const saved = await saveAgentConfig(req.tenantId, req.body);
+    debounceSyncTenantModel(req.tenantId);
     res.json(saved);
   } catch (error) {
     console.error('Error al guardar prompt:', error);

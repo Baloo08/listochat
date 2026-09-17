@@ -20,6 +20,7 @@ import { ensureQueueTable } from './db/message-queue.repo.js';
 import { initEvolutionPaymentListeners } from './services/evolution-api.service.js';
 import { ensureAllTenantsWebhooks } from './services/evolution.js';
 import { warmUpBeticoAI } from './services/ai-provider.js';
+import { ensureAllVirtualModels } from './services/tenant-model.service.js';
 
 // Route imports
 import authRoutes from './routes/auth.routes.js';
@@ -312,6 +313,8 @@ async function startServer() {
     setInterval(() => ensureAllTenantsWebhooks().catch(() => {}), 10 * 60 * 1000);
     // Warm up Betico AI (Ollama) and pin model in RAM permanently (keep_alive: -1)
     warmUpBeticoAI().catch(e => console.warn('[Warmup] Ollama warmup warning:', e));
+    // Ensure all active tenants have their virtual models compiled in Ollama
+    ensureAllVirtualModels().catch(e => console.warn('[VirtualModel Sync] Startup check warning:', e));
   } catch (err) {
     console.error('Failed to run database migrations:', err);
   }

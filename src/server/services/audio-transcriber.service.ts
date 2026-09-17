@@ -80,7 +80,8 @@ export async function transcribeAudioWithGemini(
 
 export async function transcribeAudioWithWhisper(
   base64Audio: string,
-  mimetype: string = 'audio/ogg'
+  mimetype: string = 'audio/ogg',
+  prompt?: string
 ): Promise<TranscriptionResult> {
   try {
     const LOCALAI_URL = process.env.LOCALAI_URL || 'http://beticoia_localai:8080/v1';
@@ -95,6 +96,9 @@ export async function transcribeAudioWithWhisper(
     formData.append('file', blob, `audio.${ext}`);
     formData.append('model', 'whisper-1');
     formData.append('language', 'es');
+    if (prompt && prompt.trim()) {
+      formData.append('prompt', prompt.trim().slice(0, 300));
+    }
     
     const response = await fetch(`${LOCALAI_URL}/audio/transcriptions`, {
       method: 'POST',
@@ -122,10 +126,11 @@ export async function transcribeAudioWithWhisper(
 export async function transcribeAudio(
   base64Audio: string,
   mimetype: string = 'audio/ogg',
-  apiKey?: string
+  apiKey?: string,
+  prompt?: string
 ): Promise<TranscriptionResult> {
-  // Try local Whisper first
-  const whisperResult = await transcribeAudioWithWhisper(base64Audio, mimetype);
+  // Try local Whisper first with tenant vocabulary hint
+  const whisperResult = await transcribeAudioWithWhisper(base64Audio, mimetype, prompt);
   if (whisperResult.success) return whisperResult;
   
   // Fallback to Gemini

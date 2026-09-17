@@ -11,6 +11,7 @@ import { getSpecialistsByTenant } from '../db/specialists.repo.js';
 import { getCourtsByTenant } from '../db/courts.repo.js';
 import { getRecordByPhone } from '../db/records.repo.js';
 import { query } from '../db/pool.js';
+import { getTenantModelName } from './tenant-model.service.js';
 
 export interface AgentProcessResult {
   replyText: string;
@@ -427,8 +428,12 @@ Humano: <<<COMMAND_HANDOFF: {"reason":"motivo"}>>>`;
     isBeticoPlatformAI = true;
     // Betico AI operates free and unlimited for tenants; interactions are tracked positively for SuperAdmin telemetry
     const masterConfig = await getMasterAIConfig();
+    const isLocalOllama = !masterConfig.provider || masterConfig.provider === 'betico_ai' || masterConfig.provider === 'ollama';
+    const virtualModel = (tenant && isLocalOllama) ? getTenantModelName(tenant) : masterConfig.model;
+
     config = {
       ...masterConfig,
+      model: virtualModel || masterConfig.model,
       temperature: agentConfig?.temperature || 0.7
     };
   }

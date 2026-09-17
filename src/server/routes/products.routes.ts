@@ -12,6 +12,7 @@ import { incrementTenantUsage } from '../db/ai-usage.repo.js';
 import { decrypt } from '../services/encryption.js';
 import { env } from '../config/env.js';
 import { query } from '../db/pool.js';
+import { debounceSyncTenantModel } from '../services/tenant-model.service.js';
 
 const router = Router();
 router.use(authenticateToken);
@@ -203,6 +204,7 @@ router.post('/bulk-upload', upload.single('file'), async (req, res) => {
       }
     }
 
+    debounceSyncTenantModel(req.tenantId!);
     res.json({
       success: true,
       createdCount,
@@ -337,6 +339,7 @@ router.post('/', async (req, res) => {
     }
 
     const fullProduct = await getProductById(product.id, req.tenantId!);
+    debounceSyncTenantModel(req.tenantId!);
     res.status(201).json(fullProduct || product);
   } catch (error) {
     console.error(error);
@@ -363,6 +366,7 @@ router.put('/:id', async (req, res) => {
     }
 
     const full = await getProductById(req.params.id, req.tenantId!);
+    debounceSyncTenantModel(req.tenantId!);
     res.json(full || updated);
   } catch (error) {
     console.error(error);
@@ -373,6 +377,7 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     await deleteProduct(req.params.id, req.tenantId!);
+    debounceSyncTenantModel(req.tenantId!);
     res.json({ success: true });
   } catch (error) {
     console.error(error);

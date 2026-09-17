@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import { tenantContext } from '../middleware/tenantContext.js';
 import { getServicesByTenant, getServiceById, createService, updateService, deleteService } from '../db/services.repo.js';
+import { debounceSyncTenantModel } from '../services/tenant-model.service.js';
 
 const router = Router();
 router.use(authenticateToken);
@@ -20,6 +21,7 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const service = await createService(req.tenantId, req.body);
+    debounceSyncTenantModel(req.tenantId);
     res.status(201).json(service);
   } catch (error) {
     console.error(error);
@@ -30,6 +32,7 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const updated = await updateService(req.params.id, req.tenantId, req.body);
+    debounceSyncTenantModel(req.tenantId);
     res.json(updated);
   } catch (error) {
     console.error(error);
@@ -40,6 +43,7 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     await deleteService(req.params.id, req.tenantId);
+    debounceSyncTenantModel(req.tenantId);
     res.json({ success: true });
   } catch (error) {
     console.error(error);

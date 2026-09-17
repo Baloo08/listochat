@@ -6,6 +6,7 @@ import { createUser, updateUser, getUsersByTenant, getAdminUserByTenant, resetTe
 import { saveAgentConfig } from '../db/agent-config.repo.js';
 import { saveStoreSettings } from '../db/store-settings.repo.js';
 import { logAuditEvent } from '../db/audit.repo.js';
+import { syncTenantVirtualModel, deleteTenantVirtualModel } from '../services/tenant-model.service.js';
 
 const router = Router();
 
@@ -132,6 +133,7 @@ router.post('/', async (req, res) => {
     });
 
     await logAuditEvent(tenant.id, req.user!.userId, 'create_tenant', 'tenant', tenant.id, { name, slug: cleanSlug, plan: finalPlan, email: finalEmail, phone: finalPhone, customMonthlyPrice: finalPrice }, req.ip, req.headers['user-agent']);
+    syncTenantVirtualModel(tenant.id).catch(err => console.warn('[Tenant] Error syncing virtual model on create:', err.message));
 
     res.status(201).json({
       ...tenant,
@@ -288,6 +290,7 @@ router.delete('/:id', async (req, res) => {
   try {
     await logAuditEvent(req.user!.tenantId, req.user!.userId, 'delete_tenant', 'tenant', req.params.id, {}, req.ip, req.headers['user-agent']);
     await deleteTenant(req.params.id);
+    deleteTenantVirtualModel(req.params.id).catch(err => console.warn('[Tenant] Error deleting virtual model:', err.message));
     res.json({ success: true, message: 'Inquilino eliminado' });
   } catch (error) {
     console.error('Error al eliminar inquilino:', error);

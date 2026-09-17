@@ -1162,7 +1162,12 @@ async function callAI(config, input) {
     chosenModel = provider === "openai" ? "gpt-4o-mini" : provider === "anthropic" ? "claude-3-5-haiku-20241022" : "gemini-2.5-flash";
   }
   const defaultModels = getDefaultModels(provider);
-  const fallbackModels = [chosenModel, ...defaultModels.filter((m) => m !== chosenModel)];
+  let fallbackModels;
+  if ((provider === "betico_ai" || provider === "ollama") && chosenModel.startsWith("betico-ai:tenant_")) {
+    fallbackModels = [chosenModel, "betico-ai"];
+  } else {
+    fallbackModels = [chosenModel, ...defaultModels.filter((m) => m !== chosenModel)];
+  }
   let lastError = null;
   for (const modelName of fallbackModels) {
     try {
@@ -1176,6 +1181,10 @@ async function callAI(config, input) {
     } catch (error) {
       lastError = error;
       console.error(`Error calling AI with model ${modelName} (${provider}):`, error);
+      if (modelName.startsWith("betico-ai:tenant_")) {
+        console.warn(`[AI-Provider] Virtual model ${modelName} failed or missing in Ollama. Falling back to base betico-ai.`);
+        continue;
+      }
       if (provider === "localai" || provider === "betico_ai" || provider === "ollama") {
         break;
       }
@@ -7102,6 +7111,211 @@ async function getAvailableSlots(tenantId, courtId, date) {
 // src/server/services/agent.ts
 init_records_repo();
 init_pool();
+
+// src/server/services/tenant-model.service.ts
+var debounceTimers = /* @__PURE__ */ new Map();
+function sanitizeModelName(nameOrSlug) {
+  if (!nameOrSlug) return "default";
+  const sanitized = nameOrSlug.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9_-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+  return sanitized || "default";
+}
+function getTenantModelName(tenant) {
+  const tag = tenant.slug ? sanitizeModelName(tenant.slug) : tenant.id.slice(0, 8);
+  return `betico-ai:tenant_${tag}`;
+}
+function escapeModelfileContent(text) {
+  if (!text) return "";
+  return text.replace(/"""/g, '"""');
+}
+async function buildTenantModelfile(tenantId) {
+  const tenant = await getTenantById(tenantId);
+  if (!tenant) {
+    throw new Error(`Tenant ${tenantId} not found`);
+  }
+  const modelName = getTenantModelName(tenant);
+  const agentConfig = await getAgentConfig(tenantId);
+  const services = await getServicesByTenant(tenantId);
+  const products = await getProductsByTenant(tenantId, true);
+  const store = await getStoreSettings(tenantId);
+  const schedule = await getScheduleSettings(tenantId);
+  const courts = await getCourtsByTenant(tenantId);
+  const businessName = agentConfig?.businessName || tenant.name || "Nuestro Negocio";
+  const currency = agentConfig?.currency || "CRC";
+  const currencySymbol = currency === "USD" ? "$" : "\u20A1";
+  const customPrompt = agentConfig?.systemPrompt || "";
+  let servicesBlock = "";
+  if (services && services.length > 0) {
+    const activeServices = services.filter((s) => s.active !== false);
+    if (activeServices.length > 0) {
+      servicesBlock = "\nCAT\xC1LOGO DE SERVICIOS:\n" + activeServices.map(
+        (s) => `- ${s.name}: ${currencySymbol}${Number(s.price || 0).toLocaleString("es-CR")} (${s.duration || `${s.estimatedMinutes || 45} min`})${s.description ? ` - ${s.description}` : ""}`
+      ).join("\n");
+    }
+  }
+  let productsBlock = "";
+  if (products && products.length > 0) {
+    const activeProducts = products.filter((p) => p.active !== false).slice(0, 25);
+    if (activeProducts.length > 0) {
+      productsBlock = "\nCAT\xC1LOGO DE PRODUCTOS:\n" + activeProducts.map(
+        (p) => `- ${p.name}: ${currencySymbol}${Number(p.price || 0).toLocaleString("es-CR")}${p.description ? ` - ${p.description.slice(0, 80)}` : ""}`
+      ).join("\n");
+    }
+  }
+  let courtsBlock = "";
+  if (courts && courts.length > 0) {
+    const activeCourts = courts.filter((c) => c.active !== false);
+    if (activeCourts.length > 0) {
+      courtsBlock = "\nCANCHAS / ESPACIOS DISPONIBLES:\n" + activeCourts.map(
+        (c) => `- ${c.name} (${c.type || "Sint\xE9tica"}): ${currencySymbol}${Number(c.price_per_hour || c.pricePerHour || 0).toLocaleString("es-CR")}/hora`
+      ).join("\n");
+    }
+  }
+  let paymentBlock = "";
+  const pMethods = [];
+  if (store?.acceptSinpe && store.sinpePhone) {
+    pMethods.push(`SINPE M\xF3vil al ${store.sinpePhone} (${store.sinpeName || businessName})`);
+  }
+  if (store?.acceptTransfer && store.bankAccountInfo) {
+    pMethods.push(`Transferencia Bancaria: ${store.bankAccountInfo}`);
+  }
+  if (store?.acceptCashOnDelivery) {
+    pMethods.push("Efectivo contra entrega");
+  }
+  if (pMethods.length > 0) {
+    paymentBlock = "\nM\xC9TODOS DE PAGO ACEPTADOS:\n" + pMethods.map((m) => `- ${m}`).join("\n");
+  }
+  let scheduleBlock = "";
+  if (schedule?.jornadaConfig) {
+    const j = schedule.jornadaConfig;
+    scheduleBlock = `
+HORARIO DE ATENCI\xD3N:
+- Horario regular: ${j.startHour || "08:00"} a ${j.endHour || "17:00"} (${j.slotMinutes || 45} min por turno)`;
+  }
+  const systemPrompt = `Eres el asistente virtual inteligente y cordial de "${businessName}".
+Tu objetivo es atender a los clientes por WhatsApp, responder sus dudas, agendar citas o canchas, tomar pedidos y ofrecer una atenci\xF3n de primer nivel.
+
+REGLAS DE ATENCI\xD3N:
+1. Responde de forma amable, clara y concisa (ideal para WhatsApp). Usa negrita (*palabra*) para resaltar datos importantes.
+2. Nunca inventes servicios, productos, horarios ni precios que no est\xE9n en tu cat\xE1logo oficial.
+3. Si un cliente solicita agendar una cita o cancha, solicita su nombre, fecha y hora preferida.
+4. Si un cliente solicita hacer un pedido, confirma los productos, cantidades y m\xE9todo de pago o entrega.
+5. Si el cliente solicita hablar con un humano o asesor, o si notas frustraci\xF3n o un reclamo urgente, responde amablemente indicando que le comunicar\xE1s con un asesor humano e incluye la directiva <<<COMMAND_HANDOFF: {"reason": "Solicitado por cliente"}>>>.
+6. Cuando se acuerden los datos completos para una cita, emite al final de tu mensaje la directiva:
+<<<COMMAND_BOOKING: {"customerName": "...", "date": "YYYY-MM-DD", "time": "HH:MM", "serviceName": "..."}>>>
+7. Cuando se acuerde una reserva de cancha, emite al final de tu mensaje:
+<<<COMMAND_COURT_BOOKING: {"courtName": "...", "date": "YYYY-MM-DD", "time": "HH:MM", "durationHours": 1}>>>
+8. Cuando se confirme un pedido de productos, emite al final:
+<<<COMMAND_ORDER: {"customerName": "...", "items": [{"productName": "...", "quantity": 1}], "deliveryMethod": "pickup|delivery"}>>>
+
+${customPrompt ? `INSTRUCCIONES ESPEC\xCDFICAS DEL COMERCIO:
+${customPrompt}
+` : ""}
+${servicesBlock}
+${courtsBlock}
+${productsBlock}
+${paymentBlock}
+${scheduleBlock}
+`.trim();
+  const escapedSystem = escapeModelfileContent(systemPrompt);
+  const temperature = agentConfig?.temperature ? Math.min(1, Math.max(0.1, Number(agentConfig.temperature))) : 0.3;
+  const modelfile = `FROM betico-ai
+SYSTEM """${escapedSystem}"""
+PARAMETER temperature ${temperature.toFixed(2)}
+PARAMETER stop "Cliente:"
+PARAMETER stop "Human:"
+PARAMETER stop "Usuario:"
+PARAMETER stop "User:"
+`;
+  return { modelfile, modelName };
+}
+async function syncTenantVirtualModel(tenantId) {
+  try {
+    const { modelfile, modelName } = await buildTenantModelfile(tenantId);
+    const ollamaUrl = process.env.OLLAMA_URL || "http://beticoia_ollama:11434/v1";
+    const baseUrl = ollamaUrl.replace(/\/v1\/?$/, "");
+    console.log(`[VirtualModel] Creando/Actualizando modelo virtual en Ollama: ${modelName}...`);
+    const res = await fetch(`${baseUrl}/api/create`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: modelName,
+        modelfile,
+        stream: false
+      })
+    });
+    if (!res.ok) {
+      const errBody = await res.text().catch(() => "");
+      console.warn(`[VirtualModel] Ollama respondi\xF3 con status ${res.status}: ${errBody}`);
+      return { success: false, modelName, error: `HTTP ${res.status}: ${errBody}` };
+    }
+    console.log(`[VirtualModel] \u2705 Modelo virtual ${modelName} sincronizado con \xE9xito en Ollama.`);
+    return { success: true, modelName };
+  } catch (err) {
+    console.warn(`[VirtualModel] Error al sincronizar modelo virtual para tenant ${tenantId}:`, err.message);
+    return { success: false, modelName: `tenant_${tenantId}`, error: err.message };
+  }
+}
+async function deleteTenantVirtualModel(tenantId) {
+  try {
+    const tenant = await getTenantById(tenantId);
+    if (!tenant) return;
+    const modelName = getTenantModelName(tenant);
+    const ollamaUrl = process.env.OLLAMA_URL || "http://beticoia_ollama:11434/v1";
+    const baseUrl = ollamaUrl.replace(/\/v1\/?$/, "");
+    await fetch(`${baseUrl}/api/delete`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: modelName })
+    });
+    console.log(`[VirtualModel] Modelo virtual ${modelName} eliminado de Ollama.`);
+  } catch (err) {
+    console.warn(`[VirtualModel] Error al eliminar modelo de Ollama:`, err.message);
+  }
+}
+function debounceSyncTenantModel(tenantId, delayMs = 5e3) {
+  const existing = debounceTimers.get(tenantId);
+  if (existing) {
+    clearTimeout(existing);
+  }
+  const timer = setTimeout(() => {
+    debounceTimers.delete(tenantId);
+    syncTenantVirtualModel(tenantId).catch((err) => {
+      console.error(`[VirtualModel] Error en debounceSyncTenantModel para ${tenantId}:`, err);
+    });
+  }, delayMs);
+  debounceTimers.set(tenantId, timer);
+}
+async function ensureAllVirtualModels() {
+  try {
+    const ollamaUrl = process.env.OLLAMA_URL || "http://beticoia_ollama:11434/v1";
+    const baseUrl = ollamaUrl.replace(/\/v1\/?$/, "");
+    const tagsRes = await fetch(`${baseUrl}/api/tags`, { method: "GET" }).catch(() => null);
+    if (!tagsRes || !tagsRes.ok) {
+      console.warn("[VirtualModel] Ollama no disponible para sincronizaci\xF3n inicial de modelos virtuales.");
+      return;
+    }
+    const tagsData = await tagsRes.json().catch(() => ({ models: [] }));
+    const existingModels = new Set((tagsData.models || []).map((m) => m.name));
+    const tenants = await getAllTenants();
+    const activeTenants = tenants.filter((t) => t.active !== false);
+    console.log(`[VirtualModel] Verificando modelos virtuales para ${activeTenants.length} tenants activos...`);
+    for (const t of activeTenants) {
+      const usesLocalAI = !t.aiProvider || t.aiProvider === "betico_ai" || t.aiProvider === "ollama" || t.aiProvider === "localai";
+      if (!usesLocalAI) continue;
+      const targetModel = getTenantModelName(t);
+      const isAlreadyCreated = existingModels.has(targetModel) || existingModels.has(`${targetModel}:latest`);
+      if (!isAlreadyCreated) {
+        console.log(`[VirtualModel] Modelo virtual faltante para ${t.name} (${targetModel}), creando...`);
+        await syncTenantVirtualModel(t.id);
+      }
+    }
+    console.log("[VirtualModel] Auditor\xEDa de modelos virtuales finalizada.");
+  } catch (err) {
+    console.error("[VirtualModel] Error en ensureAllVirtualModels:", err.message);
+  }
+}
+
+// src/server/services/agent.ts
 async function processWhatsAppMessageWithAI(tenantId, userMessage, senderPhone, senderName, chatHistory) {
   const tenant = await getTenantById(tenantId);
   const agentConfig = await getAgentConfig(tenantId);
@@ -7453,8 +7667,11 @@ Asistente:`;
   } else {
     isBeticoPlatformAI = true;
     const masterConfig = await getMasterAIConfig();
+    const isLocalOllama = !masterConfig.provider || masterConfig.provider === "betico_ai" || masterConfig.provider === "ollama";
+    const virtualModel = tenant && isLocalOllama ? getTenantModelName(tenant) : masterConfig.model;
     config = {
       ...masterConfig,
+      model: virtualModel || masterConfig.model,
       temperature: agentConfig?.temperature || 0.7
     };
   }
@@ -9602,6 +9819,7 @@ router2.post("/", async (req, res) => {
       storeModules: { storeEnabled: true, bookingsEnabled: true }
     });
     await logAuditEvent(tenant.id, req.user.userId, "create_tenant", "tenant", tenant.id, { name, slug: cleanSlug, plan: finalPlan, email: finalEmail, phone: finalPhone, customMonthlyPrice: finalPrice }, req.ip, req.headers["user-agent"]);
+    syncTenantVirtualModel(tenant.id).catch((err) => console.warn("[Tenant] Error syncing virtual model on create:", err.message));
     res.status(201).json({
       ...tenant,
       adminEmail: finalEmail || null,
@@ -9733,6 +9951,7 @@ router2.delete("/:id", async (req, res) => {
   try {
     await logAuditEvent(req.user.tenantId, req.user.userId, "delete_tenant", "tenant", req.params.id, {}, req.ip, req.headers["user-agent"]);
     await deleteTenant(req.params.id);
+    deleteTenantVirtualModel(req.params.id).catch((err) => console.warn("[Tenant] Error deleting virtual model:", err.message));
     res.json({ success: true, message: "Inquilino eliminado" });
   } catch (error) {
     console.error("Error al eliminar inquilino:", error);
@@ -10083,6 +10302,7 @@ router4.get("/", async (req, res) => {
 router4.post("/", async (req, res) => {
   try {
     const service = await createService(req.tenantId, req.body);
+    debounceSyncTenantModel(req.tenantId);
     res.status(201).json(service);
   } catch (error) {
     console.error(error);
@@ -10092,6 +10312,7 @@ router4.post("/", async (req, res) => {
 router4.put("/:id", async (req, res) => {
   try {
     const updated = await updateService(req.params.id, req.tenantId, req.body);
+    debounceSyncTenantModel(req.tenantId);
     res.json(updated);
   } catch (error) {
     console.error(error);
@@ -10101,6 +10322,7 @@ router4.put("/:id", async (req, res) => {
 router4.delete("/:id", async (req, res) => {
   try {
     await deleteService(req.params.id, req.tenantId);
+    debounceSyncTenantModel(req.tenantId);
     res.json({ success: true });
   } catch (error) {
     console.error(error);
@@ -11205,6 +11427,7 @@ router7.post("/prompt", async (req, res) => {
       }
     }
     const saved = await saveAgentConfig(req.tenantId, req.body);
+    debounceSyncTenantModel(req.tenantId);
     res.json(saved);
   } catch (error) {
     console.error("Error al guardar prompt:", error);
@@ -11567,6 +11790,7 @@ router11.post("/bulk-upload", upload.single("file"), async (req, res) => {
         errors.push({ row: i + 2, error: `Fila ${i + 2}: ${err.message || "Error al guardar en base de datos"}` });
       }
     }
+    debounceSyncTenantModel(req.tenantId);
     res.json({
       success: true,
       createdCount,
@@ -11703,6 +11927,7 @@ router11.post("/", async (req, res) => {
       }
     }
     const fullProduct = await getProductById(product.id, req.tenantId);
+    debounceSyncTenantModel(req.tenantId);
     res.status(201).json(fullProduct || product);
   } catch (error) {
     console.error(error);
@@ -11726,6 +11951,7 @@ router11.put("/:id", async (req, res) => {
       }
     }
     const full = await getProductById(req.params.id, req.tenantId);
+    debounceSyncTenantModel(req.tenantId);
     res.json(full || updated);
   } catch (error) {
     console.error(error);
@@ -11735,6 +11961,7 @@ router11.put("/:id", async (req, res) => {
 router11.delete("/:id", async (req, res) => {
   try {
     await deleteProduct(req.params.id, req.tenantId);
+    debounceSyncTenantModel(req.tenantId);
     res.json({ success: true });
   } catch (error) {
     console.error(error);
@@ -12842,7 +13069,7 @@ async function transcribeAudioWithGemini(base64Audio, mimetype = "audio/ogg", ap
     return { success: false, text: "", error: error.message || "Error desconocido" };
   }
 }
-async function transcribeAudioWithWhisper(base64Audio, mimetype = "audio/ogg") {
+async function transcribeAudioWithWhisper(base64Audio, mimetype = "audio/ogg", prompt) {
   try {
     const LOCALAI_URL = process.env.LOCALAI_URL || "http://beticoia_localai:8080/v1";
     const cleanBase64 = base64Audio.replace(/^data:audio\/[a-z0-9]+;base64,/, "").trim();
@@ -12854,6 +13081,9 @@ async function transcribeAudioWithWhisper(base64Audio, mimetype = "audio/ogg") {
     formData.append("file", blob, `audio.${ext}`);
     formData.append("model", "whisper-1");
     formData.append("language", "es");
+    if (prompt && prompt.trim()) {
+      formData.append("prompt", prompt.trim().slice(0, 300));
+    }
     const response = await fetch(`${LOCALAI_URL}/audio/transcriptions`, {
       method: "POST",
       headers: { "Authorization": "Bearer localai" },
@@ -12874,8 +13104,8 @@ async function transcribeAudioWithWhisper(base64Audio, mimetype = "audio/ogg") {
     return { success: false, text: "", error: error.message };
   }
 }
-async function transcribeAudio(base64Audio, mimetype = "audio/ogg", apiKey) {
-  const whisperResult = await transcribeAudioWithWhisper(base64Audio, mimetype);
+async function transcribeAudio(base64Audio, mimetype = "audio/ogg", apiKey, prompt) {
+  const whisperResult = await transcribeAudioWithWhisper(base64Audio, mimetype, prompt);
   if (whisperResult.success) return whisperResult;
   console.log("[AudioTranscriber] Falling back to Gemini for transcription...");
   return transcribeAudioWithGemini(base64Audio, mimetype, apiKey);
@@ -12957,7 +13187,8 @@ router17.post("/", async (req, res) => {
         }
       }
       if (base64Audio) {
-        const transcription = await transcribeAudio(base64Audio, audioMime);
+        const promptHint = tenant?.name ? `Comercio: ${tenant.name}` : void 0;
+        const transcription = await transcribeAudio(base64Audio, audioMime, void 0, promptHint);
         if (transcription.success && transcription.text) {
           userMessage = transcription.text;
           isVoiceNote = true;
@@ -18256,6 +18487,7 @@ async function startServer() {
     setInterval(() => ensureAllTenantsWebhooks().catch(() => {
     }), 10 * 60 * 1e3);
     warmUpBeticoAI().catch((e) => console.warn("[Warmup] Ollama warmup warning:", e));
+    ensureAllVirtualModels().catch((e) => console.warn("[VirtualModel Sync] Startup check warning:", e));
   } catch (err) {
     console.error("Failed to run database migrations:", err);
   }

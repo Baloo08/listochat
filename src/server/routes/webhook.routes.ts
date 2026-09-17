@@ -120,7 +120,8 @@ router.post('/', async (req, res) => {
       }
 
       if (base64Audio) {
-        const transcription = await transcribeAudio(base64Audio, audioMime);
+        const promptHint = tenant?.name ? `Comercio: ${tenant.name}` : undefined;
+        const transcription = await transcribeAudio(base64Audio, audioMime, undefined, promptHint);
         if (transcription.success && transcription.text) {
           userMessage = transcription.text;
           isVoiceNote = true;

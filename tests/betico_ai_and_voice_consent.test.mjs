@@ -129,4 +129,64 @@ test('Betico AI & Voice Consent Protocols', async (t) => {
     assert.equal(access.allowed, true, 'Betico AI is never blocked even with heavy usage');
     assert.equal(access.blockCustomer, false, 'Customer is never interrupted');
   });
+
+  await t.test('7. Virtual Tenant Model Naming & Slug Sanitization', () => {
+    function sanitizeModelName(nameOrSlug) {
+      if (!nameOrSlug) return 'default';
+      const sanitized = nameOrSlug
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9_-]/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '');
+      return sanitized || 'default';
+    }
+
+    function getTenantModelName(tenant) {
+      const tag = tenant.slug ? sanitizeModelName(tenant.slug) : tenant.id.slice(0, 8);
+      return `betico-ai:tenant_${tag}`;
+    }
+
+    assert.equal(sanitizeModelName('Canchas El Cartaguito!'), 'canchas-el-cartaguito');
+    assert.equal(sanitizeModelName('Barbería & Estética San José'), 'barberia-estetica-san-jose');
+    assert.equal(sanitizeModelName('   ---Tienda_Online---   '), 'tienda_online');
+
+    const tenantWithSlug = { id: '0a388da1-1234-5678-9abc-def012345678', slug: 'canchas-cartaguito' };
+    assert.equal(getTenantModelName(tenantWithSlug), 'betico-ai:tenant_canchas-cartaguito');
+
+    const tenantWithoutSlug = { id: '0a388da1-1234-5678-9abc-def012345678', slug: null };
+    assert.equal(getTenantModelName(tenantWithoutSlug), 'betico-ai:tenant_0a388da1');
+  });
+
+  await t.test('8. Virtual Tenant Model Fallback Resolution', () => {
+    const defaultModels = ['betico-ai', 'qwen2.5:1.5b', 'qwen2.5:3b'];
+    
+    function resolveFallbackChain(provider, chosenModel) {
+      if ((provider === 'betico_ai' || provider === 'ollama') && chosenModel.startsWith('betico-ai:tenant_')) {
+        return [chosenModel, 'betico-ai'];
+      }
+      return [chosenModel, ...defaultModels.filter(m => m !== chosenModel)];
+    }
+
+    const virtualChain = resolveFallbackChain('betico_ai', 'betico-ai:tenant_canchas-cartaguito');
+    assert.deepEqual(virtualChain, ['betico-ai:tenant_canchas-cartaguito', 'betico-ai']);
+
+    const standardChain = resolveFallbackChain('betico_ai', 'betico-ai');
+    assert.deepEqual(standardChain, ['betico-ai', 'qwen2.5:1.5b', 'qwen2.5:3b']);
+  });
+
+  await t.test('9. Whisper Vocabulary Prompt Injection', () => {
+    function buildWhisperPromptHint(tenantName, services = []) {
+      if (!tenantName) return undefined;
+      const sList = services.slice(0, 3).map(s => s.name).join(', ');
+      return sList ? `Comercio: ${tenantName}. Servicios: ${sList}` : `Comercio: ${tenantName}`;
+    }
+
+    assert.equal(
+      buildWhisperPromptHint('Canchas El Cartaguito', [{ name: 'Cancha 5' }, { name: 'Cancha 7' }]),
+      'Comercio: Canchas El Cartaguito. Servicios: Cancha 5, Cancha 7'
+    );
+    assert.equal(buildWhisperPromptHint(null), undefined);
+  });
 });
