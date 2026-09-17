@@ -1134,27 +1134,13 @@ async function callAI(config, input) {
     }
   }
   if (provider === "localai" || provider === "betico_ai" || provider === "ollama") {
-    console.warn(`[AI-Provider] ${provider} unavailable or timed out. Engaging Master Gemini Failover...`);
-    try {
-      let masterKey = DEFAULT_GEMINI_KEY;
-      try {
-        const masterConf = await getMasterAIConfig();
-        if (masterConf.apiKey && masterConf.apiKey !== "localai" && masterConf.apiKey !== "ollama") {
-          masterKey = masterConf.apiKey;
-        }
-      } catch (e) {
-      }
-      return await executeProvider({
-        provider: "gemini",
-        apiKey: masterKey || DEFAULT_GEMINI_KEY,
-        model: "gemini-2.5-flash",
-        temperature: 0.7
-      }, input);
-    } catch (geminiError) {
-      console.error("[AI-Provider] Master Gemini Failover also failed:", geminiError);
-    }
+    console.warn(`[AI-Provider] Local engine ${provider} unavailable or timed out. Returning polite fallback without invoking paid external APIs.`);
+    return {
+      text: "Hola, gracias por comunicarte con nosotros. En este momento estamos procesando tu solicitud, en breve un asesor te responder\xE1.",
+      tokensUsed: 0
+    };
   }
-  console.error("All AI fallback models failed. Last error:", lastError);
+  console.error("All AI models failed. Last error:", lastError);
   return {
     text: "Hola, gracias por comunicarte con nosotros. En este momento estamos procesando tu solicitud, en breve un asesor te responder\xE1.",
     tokensUsed: 0
@@ -1558,8 +1544,8 @@ async function getRecordsForSpecialist(specialistId, tenantId, search) {
   }
   const sql = `
     SELECT DISTINCT r.*,
-      (SELECT COUNT(*) FROM appointments a2 WHERE a2.specialist_id = $1 AND (a2.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a2.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))) as total_appointments,
-      (SELECT MAX(a2.date) FROM appointments a2 WHERE a2.specialist_id = $1 AND (a2.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a2.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))) as last_appointment_date,
+      (SELECT COUNT(*) FROM appointments a2 WHERE a2.specialist_id = $1 AND a2.tenant_id = $2 AND (a2.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a2.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))) as total_appointments,
+      (SELECT MAX(a2.date) FROM appointments a2 WHERE a2.specialist_id = $1 AND a2.tenant_id = $2 AND (a2.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a2.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))) as last_appointment_date,
       (SELECT re.vital_signs FROM record_entries re WHERE re.record_id = r.id AND re.vital_signs IS NOT NULL ORDER BY re.created_at DESC LIMIT 1) as latest_vital_signs,
       (SELECT COUNT(*) FROM record_entries re WHERE re.record_id = r.id) as recent_entries_count
     FROM customer_records r
@@ -1573,8 +1559,8 @@ async function getRecordsForSpecialist(specialistId, tenantId, search) {
 async function getRecordForSpecialistById(recordId, specialistId, tenantId) {
   const sql = `
     SELECT DISTINCT r.*,
-      (SELECT COUNT(*) FROM appointments a2 WHERE a2.specialist_id = $2 AND (a2.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a2.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))) as total_appointments,
-      (SELECT MAX(a2.date) FROM appointments a2 WHERE a2.specialist_id = $2 AND (a2.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a2.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))) as last_appointment_date,
+      (SELECT COUNT(*) FROM appointments a2 WHERE a2.specialist_id = $2 AND a2.tenant_id = $3 AND (a2.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a2.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))) as total_appointments,
+      (SELECT MAX(a2.date) FROM appointments a2 WHERE a2.specialist_id = $2 AND a2.tenant_id = $3 AND (a2.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a2.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))) as last_appointment_date,
       (SELECT re.vital_signs FROM record_entries re WHERE re.record_id = r.id AND re.vital_signs IS NOT NULL ORDER BY re.created_at DESC LIMIT 1) as latest_vital_signs,
       (SELECT COUNT(*) FROM record_entries re WHERE re.record_id = r.id) as recent_entries_count
     FROM customer_records r
@@ -6783,7 +6769,7 @@ async function createBooking(tenantId, data) {
   let durationMinutes = data.durationMinutes || 60;
   let sportType = data.sportType;
   if (data.courtId && (!totalPrice || !sportType)) {
-    const cRes = await query("SELECT * FROM courts WHERE id = $1", [data.courtId]);
+    const cRes = await query("SELECT * FROM courts WHERE id = $1 AND tenant_id = $2", [data.courtId, tenantId]);
     if (cRes.rows[0]) {
       const c = cRes.rows[0];
       durationMinutes = data.durationMinutes || c.duration_minutes || 60;
@@ -6843,7 +6829,7 @@ async function createBooking(tenantId, data) {
     ]);
     const booking = mapBookingRow(res.rows[0]);
     if (data.courtId) {
-      const cRes = await query("SELECT name FROM courts WHERE id = $1", [data.courtId]);
+      const cRes = await query("SELECT name FROM courts WHERE id = $1 AND tenant_id = $2", [data.courtId, tenantId]);
       booking.courtName = cRes.rows[0]?.name || booking.courtName;
     }
     return booking;
@@ -6979,7 +6965,7 @@ async function joinMatch(id, tenantId, teamBData) {
   ]);
   if (!res.rows[0]) return null;
   const booking = mapBookingRow(res.rows[0]);
-  const cRes = await query("SELECT name FROM courts WHERE id = $1", [booking.courtId]);
+  const cRes = await query("SELECT name FROM courts WHERE id = $1 AND tenant_id = $2", [booking.courtId, tenantId]);
   booking.courtName = cRes.rows[0]?.name || booking.courtName;
   return booking;
 }
@@ -7415,17 +7401,6 @@ Asistente:`;
     };
   } else {
     isBeticoPlatformAI = true;
-    const usage = await getTenantCurrentMonthUsage(tenantId);
-    if (usage.isExceeded) {
-      return {
-        replyText: "Hola, el asistente virtual de este negocio ha completado su cuota mensual de atenci\xF3n autom\xE1tica. Un asesor humano te responder\xE1 en breve.",
-        isBookingDetected: false,
-        isOrderDetected: false,
-        isHandoffRequested: true,
-        handoffReason: "L\xEDmite de cuota mensual de IA alcanzado",
-        tokensUsed: 0
-      };
-    }
     const masterConfig = await getMasterAIConfig();
     config = {
       ...masterConfig,
@@ -7754,6 +7729,18 @@ var saveChatMessage = createChatMessage;
 // src/server/services/booking.service.ts
 init_appointments_repo();
 init_pool();
+function normalizeBookingDate(inputDate) {
+  if (!inputDate) return (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+  const str = String(inputDate).trim();
+  if (str.includes("T")) return str.split("T")[0];
+  if (str.includes("/")) return str.replace(/\//g, "-");
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+  const parsed = new Date(str);
+  if (!isNaN(parsed.getTime())) {
+    return parsed.toISOString().split("T")[0];
+  }
+  return (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+}
 async function createBookingFromCommand(tenantId, bookingData) {
   try {
     const services = await getServicesByTenant(tenantId);
@@ -7761,7 +7748,7 @@ async function createBookingFromCommand(tenantId, bookingData) {
       (s) => s.name.toLowerCase().includes((bookingData.service || "").toLowerCase())
     ) || services[0];
     const price = matchedService ? matchedService.price : 0;
-    const bookingDate = bookingData.date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+    const bookingDate = normalizeBookingDate(bookingData.date);
     const bookingTime = bookingData.time || "10:00 AM";
     const collisionCheck = await query(`
       SELECT id, name, time 
@@ -16330,7 +16317,6 @@ Hola *${apt.name}*, tu cita en *${tenant.name}* ha sido confirmada con \xE9xito.
         });
         if (req.io) {
           req.io.to(`tenant_${booking.tenantId}`).emit("courtBooking:updated", updatedBooking || booking);
-          req.io.to(`tenant_${booking.tenantId}`).emit("court_booking:updated", updatedBooking || booking);
         }
         try {
           const tenant = await getTenantById(booking.tenantId);

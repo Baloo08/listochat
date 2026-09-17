@@ -176,30 +176,16 @@ export async function callAI(config: TenantAIConfig, input: AIPromptInput): Prom
     }
   }
 
-  // RESILIENT FAILOVER: If local engine (Ollama/LocalAI) failed, fallback to Master Gemini 2.5 Flash
+  // Local Betico AI: Never engage paid external APIs as failover to guarantee 100% free local operation
   if (provider === 'localai' || provider === 'betico_ai' || provider === 'ollama') {
-    console.warn(`[AI-Provider] ${provider} unavailable or timed out. Engaging Master Gemini Failover...`);
-    try {
-      let masterKey = DEFAULT_GEMINI_KEY;
-      try {
-        const masterConf = await getMasterAIConfig();
-        if (masterConf.apiKey && masterConf.apiKey !== 'localai' && masterConf.apiKey !== 'ollama') {
-          masterKey = masterConf.apiKey;
-        }
-      } catch (e) {}
-
-      return await executeProvider({
-        provider: 'gemini',
-        apiKey: masterKey || DEFAULT_GEMINI_KEY,
-        model: 'gemini-2.5-flash',
-        temperature: 0.7
-      }, input);
-    } catch (geminiError) {
-      console.error('[AI-Provider] Master Gemini Failover also failed:', geminiError);
-    }
+    console.warn(`[AI-Provider] Local engine ${provider} unavailable or timed out. Returning polite fallback without invoking paid external APIs.`);
+    return {
+      text: 'Hola, gracias por comunicarte con nosotros. En este momento estamos procesando tu solicitud, en breve un asesor te responderá.',
+      tokensUsed: 0
+    };
   }
 
-  console.error('All AI fallback models failed. Last error:', lastError);
+  console.error('All AI models failed. Last error:', lastError);
 
   return {
     text: 'Hola, gracias por comunicarte con nosotros. En este momento estamos procesando tu solicitud, en breve un asesor te responderá.',

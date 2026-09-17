@@ -425,18 +425,7 @@ Humano: <<<COMMAND_HANDOFF: {"reason":"motivo"}>>>`;
     };
   } else {
     isBeticoPlatformAI = true;
-    const usage = await getTenantCurrentMonthUsage(tenantId);
-    if (usage.isExceeded) {
-      return {
-        replyText: 'Hola, el asistente virtual de este negocio ha completado su cuota mensual de atención automática. Un asesor humano te responderá en breve.',
-        isBookingDetected: false,
-        isOrderDetected: false,
-        isHandoffRequested: true,
-        handoffReason: 'Límite de cuota mensual de IA alcanzado',
-        tokensUsed: 0
-      };
-    }
-
+    // Betico AI operates free and unlimited for tenants; interactions are tracked positively for SuperAdmin telemetry
     const masterConfig = await getMasterAIConfig();
     config = {
       ...masterConfig,

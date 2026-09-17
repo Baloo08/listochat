@@ -188,7 +188,7 @@ export async function createBooking(tenantId: string, data: Partial<CourtBooking
   let sportType = data.sportType;
 
   if (data.courtId && (!totalPrice || !sportType)) {
-    const cRes = await query('SELECT * FROM courts WHERE id = $1', [data.courtId]);
+    const cRes = await query('SELECT * FROM courts WHERE id = $1 AND tenant_id = $2', [data.courtId, tenantId]);
     if (cRes.rows[0]) {
       const c = cRes.rows[0];
       durationMinutes = data.durationMinutes || c.duration_minutes || 60;
@@ -231,7 +231,7 @@ export async function createBooking(tenantId: string, data: Partial<CourtBooking
 
     const booking = mapBookingRow(res.rows[0]);
     if (data.courtId) {
-      const cRes = await query('SELECT name FROM courts WHERE id = $1', [data.courtId]);
+      const cRes = await query('SELECT name FROM courts WHERE id = $1 AND tenant_id = $2', [data.courtId, tenantId]);
       booking.courtName = cRes.rows[0]?.name || booking.courtName;
     }
     return booking;
@@ -362,7 +362,7 @@ export async function joinMatch(id: string, tenantId: string, teamBData: any) {
   
   if (!res.rows[0]) return null;
   const booking = mapBookingRow(res.rows[0]);
-  const cRes = await query('SELECT name FROM courts WHERE id = $1', [booking.courtId]);
+  const cRes = await query('SELECT name FROM courts WHERE id = $1 AND tenant_id = $2', [booking.courtId, tenantId]);
   booking.courtName = cRes.rows[0]?.name || booking.courtName;
   return booking;
 }

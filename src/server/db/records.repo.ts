@@ -352,8 +352,8 @@ export async function getRecordsForSpecialist(
 
   const sql = `
     SELECT DISTINCT r.*,
-      (SELECT COUNT(*) FROM appointments a2 WHERE a2.specialist_id = $1 AND (a2.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a2.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))) as total_appointments,
-      (SELECT MAX(a2.date) FROM appointments a2 WHERE a2.specialist_id = $1 AND (a2.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a2.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))) as last_appointment_date,
+      (SELECT COUNT(*) FROM appointments a2 WHERE a2.specialist_id = $1 AND a2.tenant_id = $2 AND (a2.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a2.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))) as total_appointments,
+      (SELECT MAX(a2.date) FROM appointments a2 WHERE a2.specialist_id = $1 AND a2.tenant_id = $2 AND (a2.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a2.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))) as last_appointment_date,
       (SELECT re.vital_signs FROM record_entries re WHERE re.record_id = r.id AND re.vital_signs IS NOT NULL ORDER BY re.created_at DESC LIMIT 1) as latest_vital_signs,
       (SELECT COUNT(*) FROM record_entries re WHERE re.record_id = r.id) as recent_entries_count
     FROM customer_records r
@@ -373,8 +373,8 @@ export async function getRecordForSpecialistById(
 ): Promise<CustomerRecord | null> {
   const sql = `
     SELECT DISTINCT r.*,
-      (SELECT COUNT(*) FROM appointments a2 WHERE a2.specialist_id = $2 AND (a2.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a2.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))) as total_appointments,
-      (SELECT MAX(a2.date) FROM appointments a2 WHERE a2.specialist_id = $2 AND (a2.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a2.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))) as last_appointment_date,
+      (SELECT COUNT(*) FROM appointments a2 WHERE a2.specialist_id = $2 AND a2.tenant_id = $3 AND (a2.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a2.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))) as total_appointments,
+      (SELECT MAX(a2.date) FROM appointments a2 WHERE a2.specialist_id = $2 AND a2.tenant_id = $3 AND (a2.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a2.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))) as last_appointment_date,
       (SELECT re.vital_signs FROM record_entries re WHERE re.record_id = r.id AND re.vital_signs IS NOT NULL ORDER BY re.created_at DESC LIMIT 1) as latest_vital_signs,
       (SELECT COUNT(*) FROM record_entries re WHERE re.record_id = r.id) as recent_entries_count
     FROM customer_records r

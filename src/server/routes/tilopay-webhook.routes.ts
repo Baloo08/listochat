@@ -348,7 +348,6 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
 
         if ((req as any).io) {
           (req as any).io.to(`tenant_${booking.tenantId}`).emit('courtBooking:updated', updatedBooking || booking);
-          (req as any).io.to(`tenant_${booking.tenantId}`).emit('court_booking:updated', updatedBooking || booking);
         }
 
         // Send WhatsApp confirmation to team captain

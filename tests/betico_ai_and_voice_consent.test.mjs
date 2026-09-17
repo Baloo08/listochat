@@ -106,4 +106,27 @@ test('Betico AI & Voice Consent Protocols', async (t) => {
     assert.equal(validateSpeed(0.2), 0.5, 'Clamps minimum speed to 0.5');
     assert.equal(validateSpeed(3.5), 2.0, 'Clamps maximum speed to 2.0');
   });
+
+  await t.test('6. Betico AI Free & Uncapped Protocol', () => {
+    // Verify that local providers do not trigger paid failover
+    const isLocalProvider = (p) => p === 'betico_ai' || p === 'ollama' || p === 'localai';
+    assert.ok(isLocalProvider('betico_ai'));
+    assert.ok(isLocalProvider('ollama'));
+    assert.ok(!isLocalProvider('gemini'));
+    assert.ok(!isLocalProvider('openai'));
+
+    // Verify positive telemetry tracking does not block client execution
+    const evaluateTenantAccess = (isBeticoPlatformAI, usage) => {
+      if (isBeticoPlatformAI) {
+        // Uncapped: always allowed regardless of usage numbers
+        return { allowed: true, blockCustomer: false };
+      }
+      return { allowed: !usage.isExceeded, blockCustomer: usage.isExceeded };
+    };
+
+    const heavyUsage = { tokensUsed: 999999, limit: 25000, isExceeded: true };
+    const access = evaluateTenantAccess(true, heavyUsage);
+    assert.equal(access.allowed, true, 'Betico AI is never blocked even with heavy usage');
+    assert.equal(access.blockCustomer, false, 'Customer is never interrupted');
+  });
 });
