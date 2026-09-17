@@ -944,6 +944,12 @@ export async function runMigrations() {
     ALTER TABLE tenants ADD COLUMN IF NOT EXISTS trial_consumed BOOLEAN DEFAULT false;
     UPDATE tenants SET trial_consumed = true WHERE trial_ends_at < CURRENT_TIMESTAMP OR subscription_status IN ('active', 'cancelled', 'past_due');
 
+    -- Tenant Geographic Location & GPS / Maps
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS address TEXT;
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS latitude NUMERIC(10, 7);
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS longitude NUMERIC(10, 7);
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS google_maps_url TEXT;
+
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_token UUID DEFAULT gen_random_uuid();
     CREATE INDEX IF NOT EXISTS idx_orders_tracking_token ON orders(tracking_token);
 

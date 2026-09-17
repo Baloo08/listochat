@@ -3,7 +3,8 @@ import { useApi } from '../hooks/useApi';
 import {
   X, User, Calendar, CreditCard, Bot, ShoppingBag, MessageSquare, 
   Clock, DollarSign, FileText, CheckCircle, AlertTriangle, Send, 
-  ExternalLink, Key, Plus, RefreshCw, Phone, Mail, ShieldCheck, Tag, Zap, Lock
+  ExternalLink, Key, Plus, RefreshCw, Phone, Mail, ShieldCheck, Tag, Zap, Lock,
+  MapPin, Navigation
 } from 'lucide-react';
 import TenantBillingCardModal from './TenantBillingCardModal';
 
@@ -369,6 +370,61 @@ export default function TenantDossierModal({ tenantId, onClose, onRefresh }: Pro
                 </div>
               </div>
 
+            </div>
+          </div>
+
+          {/* UBICACIÓN GEOGRÁFICA Y NAVEGACIÓN GPS */}
+          <div style={{ backgroundColor: '#1e293b', padding: '16px 20px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.06)' }}>
+            <div style={{ fontSize: '0.78rem', fontWeight: '800', color: '#34d399', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <MapPin size={16} color="#34d399" /> 📍 Ubicación del Negocio & Navegación
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '14px', alignItems: 'center' }}>
+              <div>
+                <span style={{ color: '#94a3b8', fontSize: '0.72rem', textTransform: 'uppercase', fontWeight: '700' }}>Dirección Física / Exacta</span>
+                <div style={{ fontSize: '0.88rem', color: '#f8fafc', fontWeight: '600', marginTop: '4px' }}>
+                  {tenant.address || data?.location?.address || 'No especificada aún'}
+                </div>
+                {((tenant.latitude && tenant.longitude) || (data?.location?.latitude && data?.location?.longitude)) && (
+                  <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '4px', fontFamily: 'monospace' }}>
+                    Coordenadas GPS: {tenant.latitude || data?.location?.latitude}, {tenant.longitude || data?.location?.longitude}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {(tenant.googleMapsUrl || data?.location?.googleMapsUrl || (tenant.latitude && tenant.longitude) || (data?.location?.latitude && data?.location?.longitude)) ? (
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <a
+                      href={tenant.googleMapsUrl || data?.location?.googleMapsUrl || `https://maps.google.com/?q=${tenant.latitude || data?.location?.latitude},${tenant.longitude || data?.location?.longitude}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{
+                        padding: '8px 14px', backgroundColor: '#2563eb', color: 'white', borderRadius: '8px',
+                        textDecoration: 'none', fontSize: '0.78rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px'
+                      }}
+                    >
+                      <ExternalLink size={14} /> Abrir en Google Maps
+                    </a>
+                    {((tenant.latitude && tenant.longitude) || (data?.location?.latitude && data?.location?.longitude)) && (
+                      <a
+                        href={`https://waze.com/ul?ll=${tenant.latitude || data?.location?.latitude},${tenant.longitude || data?.location?.longitude}&navigate=yes`}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{
+                          padding: '8px 14px', backgroundColor: '#0284c7', color: 'white', borderRadius: '8px',
+                          textDecoration: 'none', fontSize: '0.78rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px'
+                        }}
+                      >
+                        <Navigation size={14} /> Navegar con Waze
+                      </a>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
+                    Sin coordenadas ni enlace de navegación registrado.
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 

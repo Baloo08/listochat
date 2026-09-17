@@ -18,7 +18,7 @@ export async function createBookingFromCommand(tenantId: string, bookingData: an
     const collisionCheck = await query(`
       SELECT id, name, time 
       FROM appointments 
-      WHERE tenant_id = $1 AND date = $2 AND time = $3 AND status NOT IN ('cancelled', 'cancelado')
+      WHERE tenant_id = $1 AND date = $2::date AND time = $3 AND status NOT IN ('cancelled', 'cancelado')
       LIMIT 1
     `, [tenantId, bookingDate, bookingTime]);
 
@@ -110,7 +110,7 @@ export async function cancelBookingFromWhatsApp(tenantId: string, phone: string,
     let paramIdx = 3;
 
     if (cancelData?.date) {
-      sql += ` AND date = $${paramIdx++}`;
+      sql += ` AND date = $${paramIdx++}::date`;
       params.push(cancelData.date);
     }
     if (cancelData?.service) {
@@ -148,7 +148,7 @@ export async function rescheduleBookingFromWhatsApp(tenantId: string, phone: str
     let paramIdx = 3;
 
     if (rescheduleData?.currentDate || rescheduleData?.date) {
-      sql += ` AND date = $${paramIdx++}`;
+      sql += ` AND date = $${paramIdx++}::date`;
       params.push(rescheduleData.currentDate || rescheduleData.date);
     }
     if (rescheduleData?.service) {
@@ -171,7 +171,7 @@ export async function rescheduleBookingFromWhatsApp(tenantId: string, phone: str
     // Check collision for target slot
     const collisionCheck = await query(`
       SELECT id FROM appointments 
-      WHERE tenant_id = $1 AND date = $2 AND time = $3 AND status NOT IN ('cancelled', 'cancelado') AND id != $4
+      WHERE tenant_id = $1 AND date = $2::date AND time = $3 AND status NOT IN ('cancelled', 'cancelado') AND id != $4
       LIMIT 1
     `, [tenantId, targetDate, targetTime, appt.id]);
 

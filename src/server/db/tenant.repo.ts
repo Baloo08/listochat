@@ -10,6 +10,7 @@ export async function getAllTenants(): Promise<any[]> {
            billing_currency as "billingCurrency", custom_monthly_price as "customMonthlyPrice",
            trial_ends_at as "trialEndsAt", next_billing_date as "nextBillingDate",
            grace_period_ends_at as "gracePeriodEndsAt", settings_json as "settingsJson", 
+           address, latitude, longitude, google_maps_url as "googleMapsUrl",
            created_at as "createdAt"
     FROM tenants 
     ORDER BY created_at DESC
@@ -26,6 +27,7 @@ export async function getAllTenantsWithAdmin(): Promise<any[]> {
            t.billing_currency as "billingCurrency", t.custom_monthly_price as "customMonthlyPrice",
            t.trial_ends_at as "trialEndsAt", t.next_billing_date as "nextBillingDate",
            t.grace_period_ends_at as "gracePeriodEndsAt", t.settings_json as "settingsJson", 
+           t.address, t.latitude, t.longitude, t.google_maps_url as "googleMapsUrl",
            t.created_at as "createdAt",
            COALESCE(u.email, 'Sin registrar') as "adminEmail",
            u.id as "adminId",
@@ -57,6 +59,7 @@ export async function getTenantById(id: string): Promise<any | null> {
            custom_monthly_price as "customMonthlyPrice", trial_ends_at as "trialEndsAt", 
            next_billing_date as "nextBillingDate", grace_period_ends_at as "gracePeriodEndsAt",
            calendar_token as "calendarToken",
+           address, latitude, longitude, google_maps_url as "googleMapsUrl",
            settings_json as "settingsJson", created_at as "createdAt",
            id as "postgresTenantId",
            'whatsapp_saas' as "postgresDb",
@@ -120,20 +123,24 @@ export async function createTenant(data: Partial<Tenant> & Record<string, any>):
     INSERT INTO tenants (
       name, slug, custom_domain, ai_provider, ai_api_key_encrypted, 
       ai_model, evolution_instance, whatsapp_number, plan, active,
-      custom_monthly_price, billing_currency, subscription_status, trial_ends_at, settings_json
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+      custom_monthly_price, billing_currency, subscription_status, trial_ends_at, settings_json,
+      address, latitude, longitude, google_maps_url
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
     RETURNING id, name, slug, custom_domain as "customDomain", 
            ai_provider as "aiProvider", ai_model as "aiModel", 
            evolution_instance as "evolutionInstance", whatsapp_number as "whatsappNumber",
            plan, active, custom_monthly_price as "customMonthlyPrice", billing_currency as "billingCurrency",
            subscription_status as "subscriptionStatus", trial_ends_at as "trialEndsAt",
-           settings_json as "settingsJson", created_at as "createdAt"
+           settings_json as "settingsJson", address, latitude, longitude, google_maps_url as "googleMapsUrl",
+           created_at as "createdAt"
   `, [
     data.name, data.slug, data.customDomain, data.aiProvider || 'gemini', 
     data.aiApiKeyEncrypted, data.aiModel || 'gemini-2.5-flash', data.evolutionInstance, 
     data.whatsappNumber || data.phone || null, data.plan || 'pro', data.active !== false,
     finalPrice, data.billingCurrency || 'CRC', data.subscriptionStatus || 'active',
-    data.trialEndsAt || null, data.settingsJson || null
+    data.trialEndsAt || null, data.settingsJson || null,
+    data.address || null, data.latitude ? Number(data.latitude) : null,
+    data.longitude ? Number(data.longitude) : null, data.googleMapsUrl || data.google_maps_url || null
   ]);
   return result.rows[0];
 }
@@ -170,7 +177,12 @@ export async function updateTenant(id: string, data: Record<string, any>): Promi
     nextBillingDate: 'next_billing_date',
     next_billing_date: 'next_billing_date',
     gracePeriodEndsAt: 'grace_period_ends_at',
-    grace_period_ends_at: 'grace_period_ends_at'
+    grace_period_ends_at: 'grace_period_ends_at',
+    address: 'address',
+    latitude: 'latitude',
+    longitude: 'longitude',
+    googleMapsUrl: 'google_maps_url',
+    google_maps_url: 'google_maps_url'
   };
 
   const validEntries = Object.entries(data).filter(([k, v]) => allowedColumns[k] !== undefined && v !== undefined);
@@ -191,7 +203,9 @@ export async function updateTenant(id: string, data: Record<string, any>): Promi
            evolution_instance as "evolutionInstance", whatsapp_number as "whatsappNumber",
            plan, active, subscription_status as "subscriptionStatus",
            billing_currency as "billingCurrency", custom_monthly_price as "customMonthlyPrice",
-           trial_ends_at as "trialEndsAt", settings_json as "settingsJson", created_at as "createdAt"
+           trial_ends_at as "trialEndsAt", settings_json as "settingsJson",
+           address, latitude, longitude, google_maps_url as "googleMapsUrl",
+           created_at as "createdAt"
   `, [id, ...values]);
 
   return result.rows[0] || null;

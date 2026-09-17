@@ -151,11 +151,11 @@ export async function getCompletedAppointmentsForSpecialist(specialistId: string
   const params: any[] = [specialistId];
   if (fromDate) {
     params.push(fromDate);
-    sql += ` AND a.date >= $${params.length}`;
+    sql += ` AND a.date >= $${params.length}::date`;
   }
   if (toDate) {
     params.push(toDate);
-    sql += ` AND a.date <= $${params.length}`;
+    sql += ` AND a.date <= $${params.length}::date`;
   }
   sql += ' ORDER BY a.date DESC, a.time DESC';
   const res = await query(sql, params);

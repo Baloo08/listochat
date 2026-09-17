@@ -41,7 +41,8 @@ router.post('/', async (req, res) => {
   try {
     const { 
       name, slug, plan, email, adminEmail, phone, whatsappNumber, 
-      contactName, customMonthlyPrice, billingCurrency, isTrial, trialDays 
+      contactName, customMonthlyPrice, billingCurrency, isTrial, trialDays,
+      address, latitude, longitude, googleMapsUrl, google_maps_url
     } = req.body;
     
     if (!name) {
@@ -53,6 +54,26 @@ router.post('/', async (req, res) => {
     const finalEmail = (email || adminEmail || '').toLowerCase().trim();
     const finalPhone = (phone || whatsappNumber || '').trim();
     const finalPlan = plan || 'pro';
+
+    let finalLat = latitude !== undefined && latitude !== '' ? Number(latitude) : undefined;
+    let finalLng = longitude !== undefined && longitude !== '' ? Number(longitude) : undefined;
+    let finalMapsUrl = (googleMapsUrl || google_maps_url || '').trim();
+
+    if (finalMapsUrl && (!finalLat || !finalLng)) {
+      const match1 = finalMapsUrl.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/);
+      const match2 = finalMapsUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+      if (match1) {
+        finalLat = parseFloat(match1[1]);
+        finalLng = parseFloat(match1[2]);
+      } else if (match2) {
+        finalLat = parseFloat(match2[1]);
+        finalLng = parseFloat(match2[2]);
+      }
+    }
+
+    if (finalLat && finalLng && !finalMapsUrl) {
+      finalMapsUrl = `https://maps.google.com/?q=${finalLat},${finalLng}`;
+    }
     
     let defaultPrice = 55000;
     if (finalPlan === 'enterprise') defaultPrice = 85000;
@@ -72,6 +93,10 @@ router.post('/', async (req, res) => {
       billingCurrency: billingCurrency || 'CRC',
       subscriptionStatus: isTrial ? 'trial' : 'active',
       trialEndsAt: isTrial ? new Date(Date.now() + (Number(trialDays) || 15) * 86400000) : null,
+      address: address ? String(address).trim() : undefined,
+      latitude: finalLat,
+      longitude: finalLng,
+      googleMapsUrl: finalMapsUrl || undefined,
       aiModel: 'gemini-2.5-flash',
       aiProvider: 'gemini',
       active: true
@@ -147,6 +172,36 @@ router.put('/:id', async (req, res) => {
     if (body.subscriptionStatus !== undefined) {
       tenantUpdateData.subscriptionStatus = body.subscriptionStatus;
     }
+
+    if (body.address !== undefined) {
+      tenantUpdateData.address = body.address ? String(body.address).trim() : null;
+    }
+
+    let lat = body.latitude !== undefined && body.latitude !== '' ? Number(body.latitude) : (body.latitude === '' || body.latitude === null ? null : undefined);
+    let lng = body.longitude !== undefined && body.longitude !== '' ? Number(body.longitude) : (body.longitude === '' || body.longitude === null ? null : undefined);
+    let mapsUrl = (body.googleMapsUrl !== undefined || body.google_maps_url !== undefined) 
+      ? ((body.googleMapsUrl || body.google_maps_url || '').trim() || null) 
+      : undefined;
+
+    if (mapsUrl && (lat === undefined || lng === undefined || lat === null || lng === null)) {
+      const match1 = mapsUrl.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/);
+      const match2 = mapsUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+      if (match1) {
+        lat = parseFloat(match1[1]);
+        lng = parseFloat(match1[2]);
+      } else if (match2) {
+        lat = parseFloat(match2[1]);
+        lng = parseFloat(match2[2]);
+      }
+    }
+
+    if (lat && lng && !mapsUrl && body.googleMapsUrl === undefined && body.google_maps_url === undefined) {
+      mapsUrl = `https://maps.google.com/?q=${lat},${lng}`;
+    }
+
+    if (lat !== undefined) tenantUpdateData.latitude = lat;
+    if (lng !== undefined) tenantUpdateData.longitude = lng;
+    if (mapsUrl !== undefined) tenantUpdateData.googleMapsUrl = mapsUrl;
 
     const updated = await updateTenant(id, tenantUpdateData);
     if (!updated) {
@@ -311,6 +366,12 @@ router.get('/:id/dossier', async (req, res) => {
         adminPhone: tenant.whatsappNumber || null
       },
       storeModules,
+      location: {
+        address: tenant.address || null,
+        latitude: tenant.latitude ? Number(tenant.latitude) : null,
+        longitude: tenant.longitude ? Number(tenant.longitude) : null,
+        googleMapsUrl: tenant.googleMapsUrl || null
+      },
       infrastructure: {
         postgresDb: 'whatsapp_saas',
         postgresSchema: 'public',

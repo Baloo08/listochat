@@ -60,31 +60,31 @@ router.get('/stats', async (req, res) => {
       recentApptsRes
     ] = await Promise.all([
       hasDateRange
-        ? query(`SELECT COUNT(DISTINCT remote_jid) as count FROM chat_messages WHERE tenant_id = $1 AND created_at::date >= $2 AND created_at::date <= $3`, [tenantId, fromDate, toDate])
+        ? query(`SELECT COUNT(DISTINCT remote_jid) as count FROM chat_messages WHERE tenant_id = $1 AND created_at::date >= $2::date AND created_at::date <= $3::date`, [tenantId, fromDate, toDate])
         : query(`SELECT COUNT(DISTINCT remote_jid) as count FROM chat_messages WHERE tenant_id = $1`, [tenantId]),
 
       hasDateRange
-        ? query(`SELECT COUNT(*) as count FROM appointments WHERE tenant_id = $1 AND date >= $2 AND date <= $3`, [tenantId, fromDate, toDate])
+        ? query(`SELECT COUNT(*) as count FROM appointments WHERE tenant_id = $1 AND date >= $2::date AND date <= $3::date`, [tenantId, fromDate, toDate])
         : query(`SELECT COUNT(*) as count FROM appointments WHERE tenant_id = $1`, [tenantId]),
 
       hasDateRange
-        ? query(`SELECT COUNT(*) as count FROM appointments WHERE tenant_id = $1 AND (payment_status = 'paid' OR LOWER(status) IN ('completed', 'completado', 'completada', 'realizada', 'finalizada', 'atendida', 'done')) AND date >= $2 AND date <= $3`, [tenantId, fromDate, toDate])
+        ? query(`SELECT COUNT(*) as count FROM appointments WHERE tenant_id = $1 AND (payment_status = 'paid' OR LOWER(status) IN ('completed', 'completado', 'completada', 'realizada', 'finalizada', 'atendida', 'done')) AND date >= $2::date AND date <= $3::date`, [tenantId, fromDate, toDate])
         : query(`SELECT COUNT(*) as count FROM appointments WHERE tenant_id = $1 AND (payment_status = 'paid' OR LOWER(status) IN ('completed', 'completado', 'completada', 'realizada', 'finalizada', 'atendida', 'done'))`, [tenantId]),
 
       hasDateRange
-        ? query(`SELECT COALESCE(SUM(amount), 0) as total FROM appointments WHERE tenant_id = $1 AND (payment_status = 'paid' OR LOWER(status) IN ('completed', 'completado', 'completada', 'realizada', 'finalizada', 'atendida', 'done')) AND date >= $2 AND date <= $3`, [tenantId, fromDate, toDate])
+        ? query(`SELECT COALESCE(SUM(amount), 0) as total FROM appointments WHERE tenant_id = $1 AND (payment_status = 'paid' OR LOWER(status) IN ('completed', 'completado', 'completada', 'realizada', 'finalizada', 'atendida', 'done')) AND date >= $2::date AND date <= $3::date`, [tenantId, fromDate, toDate])
         : query(`SELECT COALESCE(SUM(amount), 0) as total FROM appointments WHERE tenant_id = $1 AND (payment_status = 'paid' OR LOWER(status) IN ('completed', 'completado', 'completada', 'realizada', 'finalizada', 'atendida', 'done'))`, [tenantId]),
 
       hasDateRange
-        ? query(`SELECT COUNT(*) as count FROM orders WHERE tenant_id = $1 AND created_at::date >= $2 AND created_at::date <= $3`, [tenantId, fromDate, toDate])
+        ? query(`SELECT COUNT(*) as count FROM orders WHERE tenant_id = $1 AND created_at::date >= $2::date AND created_at::date <= $3::date`, [tenantId, fromDate, toDate])
         : query(`SELECT COUNT(*) as count FROM orders WHERE tenant_id = $1`, [tenantId]),
 
       hasDateRange
-        ? query(`SELECT COUNT(*) as count FROM orders WHERE tenant_id = $1 AND payment_status = 'paid' AND created_at::date >= $2 AND created_at::date <= $3`, [tenantId, fromDate, toDate])
+        ? query(`SELECT COUNT(*) as count FROM orders WHERE tenant_id = $1 AND payment_status = 'paid' AND created_at::date >= $2::date AND created_at::date <= $3::date`, [tenantId, fromDate, toDate])
         : query(`SELECT COUNT(*) as count FROM orders WHERE tenant_id = $1 AND payment_status = 'paid'`, [tenantId]),
 
       hasDateRange
-        ? query(`SELECT COALESCE(SUM(total), 0) as total FROM orders WHERE tenant_id = $1 AND payment_status = 'paid' AND created_at::date >= $2 AND created_at::date <= $3`, [tenantId, fromDate, toDate])
+        ? query(`SELECT COALESCE(SUM(total), 0) as total FROM orders WHERE tenant_id = $1 AND payment_status = 'paid' AND created_at::date >= $2::date AND created_at::date <= $3::date`, [tenantId, fromDate, toDate])
         : query(`SELECT COALESCE(SUM(total), 0) as total FROM orders WHERE tenant_id = $1 AND payment_status = 'paid'`, [tenantId]),
 
       query(`SELECT COUNT(*) as count FROM orders WHERE tenant_id = $1 AND status = 'pending'`, [tenantId]),
@@ -106,7 +106,7 @@ router.get('/stats', async (req, res) => {
     let courtBookingsCount = 0;
     try {
       const cbRes = hasDateRange
-        ? await query(`SELECT COUNT(*) as count, COALESCE(SUM(total_price), 0) as total FROM court_bookings WHERE tenant_id = $1 AND status NOT IN ('cancelled', 'rejected') AND date >= $2 AND date <= $3`, [tenantId, fromDate, toDate])
+        ? await query(`SELECT COUNT(*) as count, COALESCE(SUM(total_price), 0) as total FROM court_bookings WHERE tenant_id = $1 AND status NOT IN ('cancelled', 'rejected') AND date >= $2::date AND date <= $3::date`, [tenantId, fromDate, toDate])
         : await query(`SELECT COUNT(*) as count, COALESCE(SUM(total_price), 0) as total FROM court_bookings WHERE tenant_id = $1 AND status NOT IN ('cancelled', 'rejected')`, [tenantId]);
       courtBookingsCount = parseInt(cbRes.rows[0]?.count || '0', 10);
       courtRevenue = parseFloat(cbRes.rows[0]?.total || '0');

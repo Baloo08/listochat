@@ -122,7 +122,7 @@ export async function processWhatsAppMessageWithAI(
       const busySlotsRes = await query(`
         SELECT date, time, service
         FROM appointments
-        WHERE tenant_id = $1 AND date >= $2 AND status NOT IN ('cancelled', 'cancelado')
+        WHERE tenant_id = $1 AND date >= $2::date AND status NOT IN ('cancelled', 'cancelado')
         ORDER BY date ASC, time ASC
         LIMIT 40
       `, [tenantId, todayStr]);

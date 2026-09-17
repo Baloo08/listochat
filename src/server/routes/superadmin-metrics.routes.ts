@@ -324,6 +324,76 @@ router.get('/financials', async (req, res) => {
   }
 });
 
+// 4. GROWTH & USER ANALYTICS
+router.get('/growth', async (req, res) => {
+  try {
+    // Monthly new tenants
+    const tenantsGrowthRes = await query(`
+      SELECT 
+        TO_CHAR(created_at, 'YYYY-MM') as month,
+        COUNT(*)::int as count
+      FROM tenants
+      GROUP BY TO_CHAR(created_at, 'YYYY-MM')
+      ORDER BY month ASC
+    `);
+
+    // Monthly new users
+    const usersGrowthRes = await query(`
+      SELECT 
+        TO_CHAR(created_at, 'YYYY-MM') as month,
+        COUNT(*)::int as count
+      FROM users
+      GROUP BY TO_CHAR(created_at, 'YYYY-MM')
+      ORDER BY month ASC
+    `);
+
+    // Total counts
+    const totalTenantsRes = await query(`SELECT COUNT(*)::int as total FROM tenants`);
+    const totalUsersRes = await query(`
+      SELECT 
+        COUNT(*)::int as total,
+        COUNT(*) FILTER (WHERE role = 'superadmin')::int as superadmins,
+        COUNT(*) FILTER (WHERE role = 'admin' OR role = 'tenant_admin')::int as admins,
+        COUNT(*) FILTER (WHERE role = 'staff')::int as staff,
+        COUNT(*) FILTER (WHERE role = 'viewer')::int as viewers,
+        COUNT(*) FILTER (WHERE created_at >= (CURRENT_DATE - INTERVAL '30 days'))::int as new_last_30_days
+      FROM users
+    `);
+
+    // Plans distribution
+    const plansRes = await query(`
+      SELECT 
+        LOWER(COALESCE(plan, 'starter')) as plan,
+        COUNT(*)::int as count
+      FROM tenants
+      GROUP BY LOWER(COALESCE(plan, 'starter'))
+    `);
+
+    // Subscriptions status distribution
+    const statusRes = await query(`
+      SELECT 
+        COALESCE(subscription_status, 'trial') as status,
+        COUNT(*)::int as count
+      FROM tenants
+      GROUP BY COALESCE(subscription_status, 'trial')
+    `);
+
+    res.json({
+      tenantsByMonth: tenantsGrowthRes.rows,
+      usersByMonth: usersGrowthRes.rows,
+      totals: {
+        tenants: totalTenantsRes.rows[0]?.total || 0,
+        users: totalUsersRes.rows[0] || {}
+      },
+      plansDistribution: plansRes.rows,
+      statusDistribution: statusRes.rows
+    });
+  } catch (error) {
+    console.error('Error fetching growth analytics:', error);
+    res.status(500).json({ error: 'Error al obtener analítica de crecimiento' });
+  }
+});
+
 function formatDuration(seconds: number): string {
   const days = Math.floor(seconds / (3600 * 24));
   const hours = Math.floor((seconds % (3600 * 24)) / 3600);

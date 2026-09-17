@@ -457,7 +457,7 @@ export async function getAvailableSlots(tenantId: string, courtId: string, date:
   const bookingsRes = await query(`
     SELECT time 
     FROM court_bookings 
-    WHERE tenant_id = $1 AND court_id = $2 AND date = $3 AND status != 'cancelled'
+    WHERE tenant_id = $1 AND court_id = $2 AND date = $3::date AND status != 'cancelled'
   `, [tenantId, courtId, date]);
 
   const bookedTimes = bookingsRes.rows.map(r => {

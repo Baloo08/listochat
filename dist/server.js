@@ -4311,6 +4311,12 @@ async function runMigrations() {
     ALTER TABLE tenants ADD COLUMN IF NOT EXISTS trial_consumed BOOLEAN DEFAULT false;
     UPDATE tenants SET trial_consumed = true WHERE trial_ends_at < CURRENT_TIMESTAMP OR subscription_status IN ('active', 'cancelled', 'past_due');
 
+    -- Tenant Geographic Location & GPS / Maps
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS address TEXT;
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS latitude NUMERIC(10, 7);
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS longitude NUMERIC(10, 7);
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS google_maps_url TEXT;
+
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_token UUID DEFAULT gen_random_uuid();
     CREATE INDEX IF NOT EXISTS idx_orders_tracking_token ON orders(tracking_token);
 
@@ -4422,6 +4428,7 @@ async function getAllTenants() {
            billing_currency as "billingCurrency", custom_monthly_price as "customMonthlyPrice",
            trial_ends_at as "trialEndsAt", next_billing_date as "nextBillingDate",
            grace_period_ends_at as "gracePeriodEndsAt", settings_json as "settingsJson", 
+           address, latitude, longitude, google_maps_url as "googleMapsUrl",
            created_at as "createdAt"
     FROM tenants 
     ORDER BY created_at DESC
@@ -4437,6 +4444,7 @@ async function getAllTenantsWithAdmin() {
            t.billing_currency as "billingCurrency", t.custom_monthly_price as "customMonthlyPrice",
            t.trial_ends_at as "trialEndsAt", t.next_billing_date as "nextBillingDate",
            t.grace_period_ends_at as "gracePeriodEndsAt", t.settings_json as "settingsJson", 
+           t.address, t.latitude, t.longitude, t.google_maps_url as "googleMapsUrl",
            t.created_at as "createdAt",
            COALESCE(u.email, 'Sin registrar') as "adminEmail",
            u.id as "adminId",
@@ -4467,6 +4475,7 @@ async function getTenantById(id) {
            custom_monthly_price as "customMonthlyPrice", trial_ends_at as "trialEndsAt", 
            next_billing_date as "nextBillingDate", grace_period_ends_at as "gracePeriodEndsAt",
            calendar_token as "calendarToken",
+           address, latitude, longitude, google_maps_url as "googleMapsUrl",
            settings_json as "settingsJson", created_at as "createdAt",
            id as "postgresTenantId",
            'whatsapp_saas' as "postgresDb",
@@ -4512,14 +4521,16 @@ async function createTenant(data) {
     INSERT INTO tenants (
       name, slug, custom_domain, ai_provider, ai_api_key_encrypted, 
       ai_model, evolution_instance, whatsapp_number, plan, active,
-      custom_monthly_price, billing_currency, subscription_status, trial_ends_at, settings_json
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+      custom_monthly_price, billing_currency, subscription_status, trial_ends_at, settings_json,
+      address, latitude, longitude, google_maps_url
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
     RETURNING id, name, slug, custom_domain as "customDomain", 
            ai_provider as "aiProvider", ai_model as "aiModel", 
            evolution_instance as "evolutionInstance", whatsapp_number as "whatsappNumber",
            plan, active, custom_monthly_price as "customMonthlyPrice", billing_currency as "billingCurrency",
            subscription_status as "subscriptionStatus", trial_ends_at as "trialEndsAt",
-           settings_json as "settingsJson", created_at as "createdAt"
+           settings_json as "settingsJson", address, latitude, longitude, google_maps_url as "googleMapsUrl",
+           created_at as "createdAt"
   `, [
     data.name,
     data.slug,
@@ -4535,7 +4546,11 @@ async function createTenant(data) {
     data.billingCurrency || "CRC",
     data.subscriptionStatus || "active",
     data.trialEndsAt || null,
-    data.settingsJson || null
+    data.settingsJson || null,
+    data.address || null,
+    data.latitude ? Number(data.latitude) : null,
+    data.longitude ? Number(data.longitude) : null,
+    data.googleMapsUrl || data.google_maps_url || null
   ]);
   return result.rows[0];
 }
@@ -4571,7 +4586,12 @@ async function updateTenant(id, data) {
     nextBillingDate: "next_billing_date",
     next_billing_date: "next_billing_date",
     gracePeriodEndsAt: "grace_period_ends_at",
-    grace_period_ends_at: "grace_period_ends_at"
+    grace_period_ends_at: "grace_period_ends_at",
+    address: "address",
+    latitude: "latitude",
+    longitude: "longitude",
+    googleMapsUrl: "google_maps_url",
+    google_maps_url: "google_maps_url"
   };
   const validEntries = Object.entries(data).filter(([k, v]) => allowedColumns[k] !== void 0 && v !== void 0);
   if (validEntries.length === 0) return getTenantById(id);
@@ -4588,7 +4608,9 @@ async function updateTenant(id, data) {
            evolution_instance as "evolutionInstance", whatsapp_number as "whatsappNumber",
            plan, active, subscription_status as "subscriptionStatus",
            billing_currency as "billingCurrency", custom_monthly_price as "customMonthlyPrice",
-           trial_ends_at as "trialEndsAt", settings_json as "settingsJson", created_at as "createdAt"
+           trial_ends_at as "trialEndsAt", settings_json as "settingsJson",
+           address, latitude, longitude, google_maps_url as "googleMapsUrl",
+           created_at as "createdAt"
   `, [id, ...values]);
   return result.rows[0] || null;
 }
@@ -6500,11 +6522,11 @@ async function getCompletedAppointmentsForSpecialist(specialistId, fromDate, toD
   const params = [specialistId];
   if (fromDate) {
     params.push(fromDate);
-    sql += ` AND a.date >= $${params.length}`;
+    sql += ` AND a.date >= $${params.length}::date`;
   }
   if (toDate) {
     params.push(toDate);
-    sql += ` AND a.date <= $${params.length}`;
+    sql += ` AND a.date <= $${params.length}::date`;
   }
   sql += " ORDER BY a.date DESC, a.time DESC";
   const res = await query(sql, params);
@@ -6961,7 +6983,7 @@ async function getAvailableSlots(tenantId, courtId, date) {
   const bookingsRes = await query(`
     SELECT time 
     FROM court_bookings 
-    WHERE tenant_id = $1 AND court_id = $2 AND date = $3 AND status != 'cancelled'
+    WHERE tenant_id = $1 AND court_id = $2 AND date = $3::date AND status != 'cancelled'
   `, [tenantId, courtId, date]);
   const bookedTimes = bookingsRes.rows.map((r) => {
     return typeof r.time === "string" ? r.time : r.time.toString();
@@ -7054,7 +7076,7 @@ async function processWhatsAppMessageWithAI(tenantId, userMessage, senderPhone, 
       const busySlotsRes = await query(`
         SELECT date, time, service
         FROM appointments
-        WHERE tenant_id = $1 AND date >= $2 AND status NOT IN ('cancelled', 'cancelado')
+        WHERE tenant_id = $1 AND date >= $2::date AND status NOT IN ('cancelled', 'cancelado')
         ORDER BY date ASC, time ASC
         LIMIT 40
       `, [tenantId, todayStr]);
@@ -7645,7 +7667,7 @@ async function createBookingFromCommand(tenantId, bookingData) {
     const collisionCheck = await query(`
       SELECT id, name, time 
       FROM appointments 
-      WHERE tenant_id = $1 AND date = $2 AND time = $3 AND status NOT IN ('cancelled', 'cancelado')
+      WHERE tenant_id = $1 AND date = $2::date AND time = $3 AND status NOT IN ('cancelled', 'cancelado')
       LIMIT 1
     `, [tenantId, bookingDate, bookingTime]);
     if (collisionCheck.rows.length > 0) {
@@ -7726,7 +7748,7 @@ async function cancelBookingFromWhatsApp(tenantId, phone, cancelData) {
     const params = [tenantId, clean.slice(-8)];
     let paramIdx = 3;
     if (cancelData?.date) {
-      sql += ` AND date = $${paramIdx++}`;
+      sql += ` AND date = $${paramIdx++}::date`;
       params.push(cancelData.date);
     }
     if (cancelData?.service) {
@@ -7759,7 +7781,7 @@ async function rescheduleBookingFromWhatsApp(tenantId, phone, rescheduleData) {
     const params = [tenantId, clean.slice(-8)];
     let paramIdx = 3;
     if (rescheduleData?.currentDate || rescheduleData?.date) {
-      sql += ` AND date = $${paramIdx++}`;
+      sql += ` AND date = $${paramIdx++}::date`;
       params.push(rescheduleData.currentDate || rescheduleData.date);
     }
     if (rescheduleData?.service) {
@@ -7777,7 +7799,7 @@ async function rescheduleBookingFromWhatsApp(tenantId, phone, rescheduleData) {
     const targetTime = rescheduleData.newTime || appt.time;
     const collisionCheck = await query(`
       SELECT id FROM appointments 
-      WHERE tenant_id = $1 AND date = $2 AND time = $3 AND status NOT IN ('cancelled', 'cancelado') AND id != $4
+      WHERE tenant_id = $1 AND date = $2::date AND time = $3 AND status NOT IN ('cancelled', 'cancelado') AND id != $4
       LIMIT 1
     `, [tenantId, targetDate, targetTime, appt.id]);
     if (collisionCheck.rows.length > 0) {
@@ -9192,7 +9214,12 @@ router2.post("/", async (req, res) => {
       customMonthlyPrice,
       billingCurrency,
       isTrial,
-      trialDays
+      trialDays,
+      address,
+      latitude,
+      longitude,
+      googleMapsUrl,
+      google_maps_url
     } = req.body;
     if (!name) {
       res.status(400).json({ error: "El nombre del negocio es requerido" });
@@ -9202,6 +9229,23 @@ router2.post("/", async (req, res) => {
     const finalEmail = (email || adminEmail || "").toLowerCase().trim();
     const finalPhone = (phone || whatsappNumber || "").trim();
     const finalPlan = plan || "pro";
+    let finalLat = latitude !== void 0 && latitude !== "" ? Number(latitude) : void 0;
+    let finalLng = longitude !== void 0 && longitude !== "" ? Number(longitude) : void 0;
+    let finalMapsUrl = (googleMapsUrl || google_maps_url || "").trim();
+    if (finalMapsUrl && (!finalLat || !finalLng)) {
+      const match1 = finalMapsUrl.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/);
+      const match2 = finalMapsUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+      if (match1) {
+        finalLat = parseFloat(match1[1]);
+        finalLng = parseFloat(match1[2]);
+      } else if (match2) {
+        finalLat = parseFloat(match2[1]);
+        finalLng = parseFloat(match2[2]);
+      }
+    }
+    if (finalLat && finalLng && !finalMapsUrl) {
+      finalMapsUrl = `https://maps.google.com/?q=${finalLat},${finalLng}`;
+    }
     let defaultPrice = 55e3;
     if (finalPlan === "enterprise") defaultPrice = 85e3;
     else if (finalPlan === "aliado") defaultPrice = 0;
@@ -9218,6 +9262,10 @@ router2.post("/", async (req, res) => {
       billingCurrency: billingCurrency || "CRC",
       subscriptionStatus: isTrial ? "trial" : "active",
       trialEndsAt: isTrial ? new Date(Date.now() + (Number(trialDays) || 15) * 864e5) : null,
+      address: address ? String(address).trim() : void 0,
+      latitude: finalLat,
+      longitude: finalLng,
+      googleMapsUrl: finalMapsUrl || void 0,
       aiModel: "gemini-2.5-flash",
       aiProvider: "gemini",
       active: true
@@ -9285,6 +9333,29 @@ router2.put("/:id", async (req, res) => {
     if (body.subscriptionStatus !== void 0) {
       tenantUpdateData.subscriptionStatus = body.subscriptionStatus;
     }
+    if (body.address !== void 0) {
+      tenantUpdateData.address = body.address ? String(body.address).trim() : null;
+    }
+    let lat = body.latitude !== void 0 && body.latitude !== "" ? Number(body.latitude) : body.latitude === "" || body.latitude === null ? null : void 0;
+    let lng = body.longitude !== void 0 && body.longitude !== "" ? Number(body.longitude) : body.longitude === "" || body.longitude === null ? null : void 0;
+    let mapsUrl = body.googleMapsUrl !== void 0 || body.google_maps_url !== void 0 ? (body.googleMapsUrl || body.google_maps_url || "").trim() || null : void 0;
+    if (mapsUrl && (lat === void 0 || lng === void 0 || lat === null || lng === null)) {
+      const match1 = mapsUrl.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/);
+      const match2 = mapsUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+      if (match1) {
+        lat = parseFloat(match1[1]);
+        lng = parseFloat(match1[2]);
+      } else if (match2) {
+        lat = parseFloat(match2[1]);
+        lng = parseFloat(match2[2]);
+      }
+    }
+    if (lat && lng && !mapsUrl && body.googleMapsUrl === void 0 && body.google_maps_url === void 0) {
+      mapsUrl = `https://maps.google.com/?q=${lat},${lng}`;
+    }
+    if (lat !== void 0) tenantUpdateData.latitude = lat;
+    if (lng !== void 0) tenantUpdateData.longitude = lng;
+    if (mapsUrl !== void 0) tenantUpdateData.googleMapsUrl = mapsUrl;
     const updated = await updateTenant(id, tenantUpdateData);
     if (!updated) {
       res.status(404).json({ error: "Inquilino no encontrado" });
@@ -9420,6 +9491,12 @@ router2.get("/:id/dossier", async (req, res) => {
         adminPhone: tenant.whatsappNumber || null
       },
       storeModules,
+      location: {
+        address: tenant.address || null,
+        latitude: tenant.latitude ? Number(tenant.latitude) : null,
+        longitude: tenant.longitude ? Number(tenant.longitude) : null,
+        googleMapsUrl: tenant.googleMapsUrl || null
+      },
       infrastructure: {
         postgresDb: "whatsapp_saas",
         postgresSchema: "public",
@@ -10336,7 +10413,7 @@ router5.get("/public/:slug/available-slots", async (req, res) => {
       maxParallelSlots = 1;
       const activeAppts = await query(`
         SELECT time FROM appointments 
-        WHERE tenant_id = $1 AND date = $2 AND specialist_id = $3 AND status IN ('pending', 'scheduled', 'confirmed')
+        WHERE tenant_id = $1 AND date = $2::date AND specialist_id = $3 AND status IN ('pending', 'scheduled', 'confirmed')
       `, [tenant.id, dateStr, specialistId]);
       activeApptsRows = activeAppts.rows;
     } else {
@@ -10349,7 +10426,7 @@ router5.get("/public/:slug/available-slots", async (req, res) => {
       }
       const activeAppts = await query(`
         SELECT time FROM appointments 
-        WHERE tenant_id = $1 AND date = $2 AND status IN ('pending', 'scheduled', 'confirmed')
+        WHERE tenant_id = $1 AND date = $2::date AND status IN ('pending', 'scheduled', 'confirmed')
       `, [tenant.id, dateStr]);
       activeApptsRows = activeAppts.rows;
     }
@@ -10410,7 +10487,7 @@ router5.post("/public/:slug/book", async (req, res) => {
       const specCountRes = await query(`
         SELECT COUNT(*)::int as count 
         FROM appointments 
-        WHERE tenant_id = $1 AND date = $2 AND time = $3 AND specialist_id = $4 AND status IN ('pending', 'scheduled', 'confirmed')
+        WHERE tenant_id = $1 AND date = $2::date AND time = $3 AND specialist_id = $4 AND status IN ('pending', 'scheduled', 'confirmed')
       `, [tenant.id, date, time, specialistId]);
       if ((specCountRes.rows[0]?.count || 0) >= 1) {
         res.status(409).json({
@@ -10431,7 +10508,7 @@ router5.post("/public/:slug/book", async (req, res) => {
     const countRes = await query(`
       SELECT COUNT(*)::int as count 
       FROM appointments 
-      WHERE tenant_id = $1 AND date = $2 AND time = $3 AND status IN ('pending', 'scheduled', 'confirmed')
+      WHERE tenant_id = $1 AND date = $2::date AND time = $3 AND status IN ('pending', 'scheduled', 'confirmed')
     `, [tenant.id, date, time]);
     if ((countRes.rows[0]?.count || 0) >= maxParallelSlots) {
       res.status(409).json({
@@ -11706,13 +11783,13 @@ router13.get("/stats", async (req, res) => {
       recentOrdersRes,
       recentApptsRes
     ] = await Promise.all([
-      hasDateRange ? query(`SELECT COUNT(DISTINCT remote_jid) as count FROM chat_messages WHERE tenant_id = $1 AND created_at::date >= $2 AND created_at::date <= $3`, [tenantId, fromDate, toDate]) : query(`SELECT COUNT(DISTINCT remote_jid) as count FROM chat_messages WHERE tenant_id = $1`, [tenantId]),
-      hasDateRange ? query(`SELECT COUNT(*) as count FROM appointments WHERE tenant_id = $1 AND date >= $2 AND date <= $3`, [tenantId, fromDate, toDate]) : query(`SELECT COUNT(*) as count FROM appointments WHERE tenant_id = $1`, [tenantId]),
-      hasDateRange ? query(`SELECT COUNT(*) as count FROM appointments WHERE tenant_id = $1 AND (payment_status = 'paid' OR LOWER(status) IN ('completed', 'completado', 'completada', 'realizada', 'finalizada', 'atendida', 'done')) AND date >= $2 AND date <= $3`, [tenantId, fromDate, toDate]) : query(`SELECT COUNT(*) as count FROM appointments WHERE tenant_id = $1 AND (payment_status = 'paid' OR LOWER(status) IN ('completed', 'completado', 'completada', 'realizada', 'finalizada', 'atendida', 'done'))`, [tenantId]),
-      hasDateRange ? query(`SELECT COALESCE(SUM(amount), 0) as total FROM appointments WHERE tenant_id = $1 AND (payment_status = 'paid' OR LOWER(status) IN ('completed', 'completado', 'completada', 'realizada', 'finalizada', 'atendida', 'done')) AND date >= $2 AND date <= $3`, [tenantId, fromDate, toDate]) : query(`SELECT COALESCE(SUM(amount), 0) as total FROM appointments WHERE tenant_id = $1 AND (payment_status = 'paid' OR LOWER(status) IN ('completed', 'completado', 'completada', 'realizada', 'finalizada', 'atendida', 'done'))`, [tenantId]),
-      hasDateRange ? query(`SELECT COUNT(*) as count FROM orders WHERE tenant_id = $1 AND created_at::date >= $2 AND created_at::date <= $3`, [tenantId, fromDate, toDate]) : query(`SELECT COUNT(*) as count FROM orders WHERE tenant_id = $1`, [tenantId]),
-      hasDateRange ? query(`SELECT COUNT(*) as count FROM orders WHERE tenant_id = $1 AND payment_status = 'paid' AND created_at::date >= $2 AND created_at::date <= $3`, [tenantId, fromDate, toDate]) : query(`SELECT COUNT(*) as count FROM orders WHERE tenant_id = $1 AND payment_status = 'paid'`, [tenantId]),
-      hasDateRange ? query(`SELECT COALESCE(SUM(total), 0) as total FROM orders WHERE tenant_id = $1 AND payment_status = 'paid' AND created_at::date >= $2 AND created_at::date <= $3`, [tenantId, fromDate, toDate]) : query(`SELECT COALESCE(SUM(total), 0) as total FROM orders WHERE tenant_id = $1 AND payment_status = 'paid'`, [tenantId]),
+      hasDateRange ? query(`SELECT COUNT(DISTINCT remote_jid) as count FROM chat_messages WHERE tenant_id = $1 AND created_at::date >= $2::date AND created_at::date <= $3::date`, [tenantId, fromDate, toDate]) : query(`SELECT COUNT(DISTINCT remote_jid) as count FROM chat_messages WHERE tenant_id = $1`, [tenantId]),
+      hasDateRange ? query(`SELECT COUNT(*) as count FROM appointments WHERE tenant_id = $1 AND date >= $2::date AND date <= $3::date`, [tenantId, fromDate, toDate]) : query(`SELECT COUNT(*) as count FROM appointments WHERE tenant_id = $1`, [tenantId]),
+      hasDateRange ? query(`SELECT COUNT(*) as count FROM appointments WHERE tenant_id = $1 AND (payment_status = 'paid' OR LOWER(status) IN ('completed', 'completado', 'completada', 'realizada', 'finalizada', 'atendida', 'done')) AND date >= $2::date AND date <= $3::date`, [tenantId, fromDate, toDate]) : query(`SELECT COUNT(*) as count FROM appointments WHERE tenant_id = $1 AND (payment_status = 'paid' OR LOWER(status) IN ('completed', 'completado', 'completada', 'realizada', 'finalizada', 'atendida', 'done'))`, [tenantId]),
+      hasDateRange ? query(`SELECT COALESCE(SUM(amount), 0) as total FROM appointments WHERE tenant_id = $1 AND (payment_status = 'paid' OR LOWER(status) IN ('completed', 'completado', 'completada', 'realizada', 'finalizada', 'atendida', 'done')) AND date >= $2::date AND date <= $3::date`, [tenantId, fromDate, toDate]) : query(`SELECT COALESCE(SUM(amount), 0) as total FROM appointments WHERE tenant_id = $1 AND (payment_status = 'paid' OR LOWER(status) IN ('completed', 'completado', 'completada', 'realizada', 'finalizada', 'atendida', 'done'))`, [tenantId]),
+      hasDateRange ? query(`SELECT COUNT(*) as count FROM orders WHERE tenant_id = $1 AND created_at::date >= $2::date AND created_at::date <= $3::date`, [tenantId, fromDate, toDate]) : query(`SELECT COUNT(*) as count FROM orders WHERE tenant_id = $1`, [tenantId]),
+      hasDateRange ? query(`SELECT COUNT(*) as count FROM orders WHERE tenant_id = $1 AND payment_status = 'paid' AND created_at::date >= $2::date AND created_at::date <= $3::date`, [tenantId, fromDate, toDate]) : query(`SELECT COUNT(*) as count FROM orders WHERE tenant_id = $1 AND payment_status = 'paid'`, [tenantId]),
+      hasDateRange ? query(`SELECT COALESCE(SUM(total), 0) as total FROM orders WHERE tenant_id = $1 AND payment_status = 'paid' AND created_at::date >= $2::date AND created_at::date <= $3::date`, [tenantId, fromDate, toDate]) : query(`SELECT COALESCE(SUM(total), 0) as total FROM orders WHERE tenant_id = $1 AND payment_status = 'paid'`, [tenantId]),
       query(`SELECT COUNT(*) as count FROM orders WHERE tenant_id = $1 AND status = 'pending'`, [tenantId]),
       query(`
         SELECT id, order_number as "orderNumber", customer_name as "customerName", total, status, 
@@ -11728,7 +11805,7 @@ router13.get("/stats", async (req, res) => {
     let courtRevenue = 0;
     let courtBookingsCount = 0;
     try {
-      const cbRes = hasDateRange ? await query(`SELECT COUNT(*) as count, COALESCE(SUM(total_price), 0) as total FROM court_bookings WHERE tenant_id = $1 AND status NOT IN ('cancelled', 'rejected') AND date >= $2 AND date <= $3`, [tenantId, fromDate, toDate]) : await query(`SELECT COUNT(*) as count, COALESCE(SUM(total_price), 0) as total FROM court_bookings WHERE tenant_id = $1 AND status NOT IN ('cancelled', 'rejected')`, [tenantId]);
+      const cbRes = hasDateRange ? await query(`SELECT COUNT(*) as count, COALESCE(SUM(total_price), 0) as total FROM court_bookings WHERE tenant_id = $1 AND status NOT IN ('cancelled', 'rejected') AND date >= $2::date AND date <= $3::date`, [tenantId, fromDate, toDate]) : await query(`SELECT COUNT(*) as count, COALESCE(SUM(total_price), 0) as total FROM court_bookings WHERE tenant_id = $1 AND status NOT IN ('cancelled', 'rejected')`, [tenantId]);
       courtBookingsCount = parseInt(cbRes.rows[0]?.count || "0", 10);
       courtRevenue = parseFloat(cbRes.rows[0]?.total || "0");
     } catch (e) {
@@ -13525,6 +13602,64 @@ router20.get("/financials", async (req, res) => {
   } catch (error) {
     console.error("Error fetching financial dashboard:", error);
     res.status(500).json({ error: "Error al obtener datos financieros del SaaS" });
+  }
+});
+router20.get("/growth", async (req, res) => {
+  try {
+    const tenantsGrowthRes = await query(`
+      SELECT 
+        TO_CHAR(created_at, 'YYYY-MM') as month,
+        COUNT(*)::int as count
+      FROM tenants
+      GROUP BY TO_CHAR(created_at, 'YYYY-MM')
+      ORDER BY month ASC
+    `);
+    const usersGrowthRes = await query(`
+      SELECT 
+        TO_CHAR(created_at, 'YYYY-MM') as month,
+        COUNT(*)::int as count
+      FROM users
+      GROUP BY TO_CHAR(created_at, 'YYYY-MM')
+      ORDER BY month ASC
+    `);
+    const totalTenantsRes = await query(`SELECT COUNT(*)::int as total FROM tenants`);
+    const totalUsersRes = await query(`
+      SELECT 
+        COUNT(*)::int as total,
+        COUNT(*) FILTER (WHERE role = 'superadmin')::int as superadmins,
+        COUNT(*) FILTER (WHERE role = 'admin' OR role = 'tenant_admin')::int as admins,
+        COUNT(*) FILTER (WHERE role = 'staff')::int as staff,
+        COUNT(*) FILTER (WHERE role = 'viewer')::int as viewers,
+        COUNT(*) FILTER (WHERE created_at >= (CURRENT_DATE - INTERVAL '30 days'))::int as new_last_30_days
+      FROM users
+    `);
+    const plansRes = await query(`
+      SELECT 
+        LOWER(COALESCE(plan, 'starter')) as plan,
+        COUNT(*)::int as count
+      FROM tenants
+      GROUP BY LOWER(COALESCE(plan, 'starter'))
+    `);
+    const statusRes = await query(`
+      SELECT 
+        COALESCE(subscription_status, 'trial') as status,
+        COUNT(*)::int as count
+      FROM tenants
+      GROUP BY COALESCE(subscription_status, 'trial')
+    `);
+    res.json({
+      tenantsByMonth: tenantsGrowthRes.rows,
+      usersByMonth: usersGrowthRes.rows,
+      totals: {
+        tenants: totalTenantsRes.rows[0]?.total || 0,
+        users: totalUsersRes.rows[0] || {}
+      },
+      plansDistribution: plansRes.rows,
+      statusDistribution: statusRes.rows
+    });
+  } catch (error) {
+    console.error("Error fetching growth analytics:", error);
+    res.status(500).json({ error: "Error al obtener anal\xEDtica de crecimiento" });
   }
 });
 function formatDuration(seconds) {

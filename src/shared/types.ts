@@ -19,6 +19,10 @@ export interface Tenant {
   plan: SubscriptionPlan;
   active: boolean;
   trialConsumed?: boolean;
+  address?: string;
+  latitude?: number;
+  longitude?: number;
+  googleMapsUrl?: string;
   postgresDb?: string;
   postgresSchema?: string;
   postgresTenantId?: string;

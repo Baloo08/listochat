@@ -8,7 +8,8 @@ import {
   Activity, Users, RefreshCw, Copy, Check, Lock, CheckCircle, AlertCircle,
   MessageSquare, Bot, ArrowRight, Clock, Award, Wallet, Percent, Layers,
   Phone, Key, Calendar, CheckSquare, XCircle, Sliders, Smartphone, QrCode,
-  Zap, Search, Send, Play, FileText, CheckCircle2
+  Zap, Search, Send, Play, FileText, CheckCircle2, MapPin, Navigation, Sparkles,
+  AlertTriangle, ChevronDown, ChevronUp, BarChart2
 } from 'lucide-react';
 
 interface Tenant {
@@ -30,6 +31,14 @@ interface Tenant {
   lastPaymentAmount?: number;
   paymentNotes?: string;
   settingsJson?: any;
+  address?: string;
+  latitude?: number;
+  longitude?: number;
+  googleMapsUrl?: string;
+  postgresTenantId?: string;
+  postgresDb?: string;
+  postgresSchema?: string;
+  evolutionInstance?: string;
   createdAt: string;
 }
 
@@ -67,6 +76,10 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [editingTenant, setEditingTenant] = useState<Tenant | null>(null);
   const [showModal, setShowModal] = useState(false);
+  const [kpiFilter, setKpiFilter] = useState<'all' | 'active' | 'trial' | 'suspended' | 'grace' | 'aliado'>('all');
+  const [showGrowthAnalytics, setShowGrowthAnalytics] = useState(false);
+  const [growthData, setGrowthData] = useState<any>(null);
+  const [loadingGrowth, setLoadingGrowth] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     slug: '',
@@ -77,7 +90,11 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
     customMonthlyPrice: 29,
     billingCurrency: 'CRC',
     isTrial: true,
-    trialDays: 15
+    trialDays: 15,
+    address: '',
+    latitude: '',
+    longitude: '',
+    googleMapsUrl: ''
   });
   const [savingTenant, setSavingTenant] = useState(false);
   const [extendModalTenant, setExtendModalTenant] = useState<Tenant | null>(null);
@@ -162,6 +179,18 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
       console.error(e);
     } finally {
       setLoadingTenants(false);
+    }
+  };
+
+  const loadGrowthAnalytics = async () => {
+    try {
+      setLoadingGrowth(true);
+      const data = await api.get('/api/superadmin/growth');
+      if (data) setGrowthData(data);
+    } catch (e) {
+      console.warn('Error al cargar analítica de crecimiento:', e);
+    } finally {
+      setLoadingGrowth(false);
     }
   };
 
@@ -254,7 +283,10 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
 
   // Run loader on activeTab change
   useEffect(() => {
-    if (activeTab === 'tenants' || activeTab === 'financials') loadTenants();
+    if (activeTab === 'tenants' || activeTab === 'financials') {
+      loadTenants();
+      loadGrowthAnalytics();
+    }
     if (activeTab === 'ai_engine') {
       loadPlatformSettings();
       checkAiEngine();
@@ -431,11 +463,44 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
     return currency === 'USD' ? '$' + val : '₡' + val.toLocaleString('es-CR');
   };
 
-  const filteredTenants = tenants.filter(t => 
-    t.name.toLowerCase().includes(tenantSearch.toLowerCase()) || 
-    t.slug.toLowerCase().includes(tenantSearch.toLowerCase()) ||
-    (t.adminEmail && t.adminEmail.toLowerCase().includes(tenantSearch.toLowerCase()))
-  );
+  const filteredTenants = tenants.filter(t => {
+    const term = tenantSearch.toLowerCase().trim();
+    const matchesSearch = !term || (
+      t.name.toLowerCase().includes(term) || 
+      t.slug.toLowerCase().includes(term) ||
+      (t.adminEmail && t.adminEmail.toLowerCase().includes(term)) ||
+      (t.address && t.address.toLowerCase().includes(term)) ||
+      (t.whatsappNumber && t.whatsappNumber.includes(term))
+    );
+
+    if (!matchesSearch) return false;
+
+    if (kpiFilter === 'active') {
+      return t.active && t.subscriptionStatus === 'active' && t.plan?.toLowerCase() !== 'aliado';
+    }
+    if (kpiFilter === 'trial') {
+      return t.subscriptionStatus === 'trial';
+    }
+    if (kpiFilter === 'suspended') {
+      return t.subscriptionStatus === 'suspended' || (!t.active && t.subscriptionStatus !== 'grace_period');
+    }
+    if (kpiFilter === 'grace') {
+      return t.subscriptionStatus === 'grace_period';
+    }
+    if (kpiFilter === 'aliado') {
+      return t.plan?.toLowerCase() === 'aliado';
+    }
+    return true;
+  });
+
+  const kpiStats = {
+    total: tenants.length,
+    active: tenants.filter(t => t.active && t.subscriptionStatus === 'active' && t.plan?.toLowerCase() !== 'aliado').length,
+    trial: tenants.filter(t => t.subscriptionStatus === 'trial').length,
+    suspended: tenants.filter(t => t.subscriptionStatus === 'suspended' || (!t.active && t.subscriptionStatus !== 'grace_period')).length,
+    grace: tenants.filter(t => t.subscriptionStatus === 'grace_period').length,
+    aliado: tenants.filter(t => t.plan?.toLowerCase() === 'aliado').length,
+  };
 
   return (
     <div style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
@@ -470,49 +535,377 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
               </p>
             </div>
 
-            <button
-              onClick={() => {
-                setEditingTenant(null);
-                setFormData({
-                  name: '', slug: '', contactName: '', email: '', phone: '',
-                  plan: 'starter', customMonthlyPrice: 29, billingCurrency: 'CRC', isTrial: true, trialDays: 15
-                });
-                setShowModal(true);
-              }}
-              style={{
-                padding: '10px 18px', backgroundColor: 'var(--primary)', color: 'white', border: 'none',
-                borderRadius: '8px', fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px'
-              }}
-            >
-              <Plus size={16} /> Crear Inquilino con Onboarding
-            </button>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowGrowthAnalytics(!showGrowthAnalytics);
+                  if (!growthData && !loadingGrowth) loadGrowthAnalytics();
+                }}
+                style={{
+                  padding: '9px 15px',
+                  backgroundColor: showGrowthAnalytics ? '#eff6ff' : 'var(--surface)',
+                  color: showGrowthAnalytics ? '#2563eb' : 'var(--text-main)',
+                  border: showGrowthAnalytics ? '1px solid #bfdbfe' : '1px solid var(--border)',
+                  borderRadius: '8px',
+                  fontWeight: 'bold',
+                  fontSize: '0.84rem',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <BarChart2 size={16} />
+                {showGrowthAnalytics ? 'Ocultar Analítica' : '📊 Gráficos de Crecimiento'}
+                {showGrowthAnalytics ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              </button>
+
+              <button
+                onClick={() => {
+                  setEditingTenant(null);
+                  setFormData({
+                    name: '', slug: '', contactName: '', email: '', phone: '',
+                    plan: 'starter', customMonthlyPrice: 29, billingCurrency: 'CRC', isTrial: true, trialDays: 15,
+                    address: '', latitude: '', longitude: '', googleMapsUrl: ''
+                  });
+                  setShowModal(true);
+                }}
+                style={{
+                  padding: '10px 18px', backgroundColor: 'var(--primary)', color: 'white', border: 'none',
+                  borderRadius: '8px', fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px'
+                }}
+              >
+                <Plus size={16} /> Crear Inquilino con Onboarding
+              </button>
+            </div>
           </div>
 
-          {/* Stats Cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
-            <div style={{ backgroundColor: 'var(--surface)', padding: '16px', borderRadius: '10px', border: '1px solid var(--border)' }}>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 'bold' }}>TOTAL NEGOCIOS</div>
-              <div style={{ fontSize: '1.6rem', fontWeight: 'bold', marginTop: '4px' }}>{tenants.length}</div>
-            </div>
-            <div style={{ backgroundColor: 'var(--surface)', padding: '16px', borderRadius: '10px', border: '1px solid var(--border)' }}>
-              <div style={{ fontSize: '0.75rem', color: '#16a34a', fontWeight: 'bold' }}>ACTIVOS Y AL DÍA</div>
-              <div style={{ fontSize: '1.6rem', fontWeight: 'bold', color: '#16a34a', marginTop: '4px' }}>
-                {tenants.filter(t => t.active && t.subscriptionStatus !== 'suspended').length}
+          {/* 6 KPI Cards: Total de negocios | Activos | Prueba | Suspendidos | En Gracia | Aliados */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px' }}>
+            
+            {/* 1. TOTAL DE NEGOCIOS */}
+            <div 
+              onClick={() => setKpiFilter('all')}
+              title="Mostrar todos los negocios"
+              style={{
+                backgroundColor: 'var(--surface)', padding: '14px 16px', borderRadius: '10px',
+                border: kpiFilter === 'all' ? '2px solid var(--primary)' : '1px solid var(--border)',
+                cursor: 'pointer', transition: 'all 0.15s ease',
+                boxShadow: kpiFilter === 'all' ? '0 0 0 2px rgba(37,99,235,0.1)' : 'none',
+                position: 'relative'
+              }}
+            >
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 'bold', letterSpacing: '0.5px' }}>
+                TOTAL NEGOCIOS
+              </div>
+              <div style={{ fontSize: '1.65rem', fontWeight: 'bold', marginTop: '4px', color: 'var(--text-main)' }}>
+                {kpiStats.total}
+              </div>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                {kpiFilter === 'all' ? '● Mostrando todos' : 'Ver todos'}
               </div>
             </div>
-            <div style={{ backgroundColor: 'var(--surface)', padding: '16px', borderRadius: '10px', border: '1px solid var(--border)' }}>
-              <div style={{ fontSize: '0.75rem', color: '#2563eb', fontWeight: 'bold' }}>EN PERIODO DE PRUEBA</div>
-              <div style={{ fontSize: '1.6rem', fontWeight: 'bold', color: '#2563eb', marginTop: '4px' }}>
-                {tenants.filter(t => t.subscriptionStatus === 'trial').length}
+
+            {/* 2. ACTIVOS */}
+            <div 
+              onClick={() => setKpiFilter(kpiFilter === 'active' ? 'all' : 'active')}
+              title="Filtrar comercios activos y al día"
+              style={{
+                backgroundColor: kpiFilter === 'active' ? '#f0fdf4' : 'var(--surface)', padding: '14px 16px', borderRadius: '10px',
+                border: kpiFilter === 'active' ? '2px solid #16a34a' : '1px solid var(--border)',
+                cursor: 'pointer', transition: 'all 0.15s ease',
+                boxShadow: kpiFilter === 'active' ? '0 0 0 2px rgba(22,163,74,0.15)' : 'none'
+              }}
+            >
+              <div style={{ fontSize: '0.72rem', color: '#16a34a', fontWeight: 'bold', letterSpacing: '0.5px' }}>
+                ACTIVOS
+              </div>
+              <div style={{ fontSize: '1.65rem', fontWeight: 'bold', color: '#16a34a', marginTop: '4px' }}>
+                {kpiStats.active}
+              </div>
+              <div style={{ fontSize: '0.7rem', color: '#15803d', marginTop: '2px' }}>
+                {kpiFilter === 'active' ? '● Filtrado activo' : 'Suscripción al día'}
               </div>
             </div>
-            <div style={{ backgroundColor: 'var(--surface)', padding: '16px', borderRadius: '10px', border: '1px solid var(--border)' }}>
-              <div style={{ fontSize: '0.75rem', color: '#dc2626', fontWeight: 'bold' }}>SUSPENDIDOS / GRACIA</div>
-              <div style={{ fontSize: '1.6rem', fontWeight: 'bold', color: '#dc2626', marginTop: '4px' }}>
-                {tenants.filter(t => t.subscriptionStatus === 'suspended' || t.subscriptionStatus === 'grace_period').length}
+
+            {/* 3. PRUEBA */}
+            <div 
+              onClick={() => setKpiFilter(kpiFilter === 'trial' ? 'all' : 'trial')}
+              title="Filtrar comercios en período de prueba"
+              style={{
+                backgroundColor: kpiFilter === 'trial' ? '#eff6ff' : 'var(--surface)', padding: '14px 16px', borderRadius: '10px',
+                border: kpiFilter === 'trial' ? '2px solid #2563eb' : '1px solid var(--border)',
+                cursor: 'pointer', transition: 'all 0.15s ease',
+                boxShadow: kpiFilter === 'trial' ? '0 0 0 2px rgba(37,99,235,0.15)' : 'none'
+              }}
+            >
+              <div style={{ fontSize: '0.72rem', color: '#2563eb', fontWeight: 'bold', letterSpacing: '0.5px' }}>
+                PRUEBA
+              </div>
+              <div style={{ fontSize: '1.65rem', fontWeight: 'bold', color: '#2563eb', marginTop: '4px' }}>
+                {kpiStats.trial}
+              </div>
+              <div style={{ fontSize: '0.7rem', color: '#1d4ed8', marginTop: '2px' }}>
+                {kpiFilter === 'trial' ? '● Filtrado activo' : 'En período de prueba'}
               </div>
             </div>
+
+            {/* 4. SUSPENDIDOS */}
+            <div 
+              onClick={() => setKpiFilter(kpiFilter === 'suspended' ? 'all' : 'suspended')}
+              title="Filtrar comercios suspendidos o inactivos"
+              style={{
+                backgroundColor: kpiFilter === 'suspended' ? '#fef2f2' : 'var(--surface)', padding: '14px 16px', borderRadius: '10px',
+                border: kpiFilter === 'suspended' ? '2px solid #dc2626' : '1px solid var(--border)',
+                cursor: 'pointer', transition: 'all 0.15s ease',
+                boxShadow: kpiFilter === 'suspended' ? '0 0 0 2px rgba(220,38,38,0.15)' : 'none'
+              }}
+            >
+              <div style={{ fontSize: '0.72rem', color: '#dc2626', fontWeight: 'bold', letterSpacing: '0.5px' }}>
+                SUSPENDIDOS
+              </div>
+              <div style={{ fontSize: '1.65rem', fontWeight: 'bold', color: '#dc2626', marginTop: '4px' }}>
+                {kpiStats.suspended}
+              </div>
+              <div style={{ fontSize: '0.7rem', color: '#b91c1c', marginTop: '2px' }}>
+                {kpiFilter === 'suspended' ? '● Filtrado activo' : 'Acceso bloqueado'}
+              </div>
+            </div>
+
+            {/* 5. EN GRACIA */}
+            <div 
+              onClick={() => setKpiFilter(kpiFilter === 'grace' ? 'all' : 'grace')}
+              title="Filtrar comercios en período de gracia"
+              style={{
+                backgroundColor: kpiFilter === 'grace' ? '#fffbeb' : 'var(--surface)', padding: '14px 16px', borderRadius: '10px',
+                border: kpiFilter === 'grace' ? '2px solid #d97706' : '1px solid var(--border)',
+                cursor: 'pointer', transition: 'all 0.15s ease',
+                boxShadow: kpiFilter === 'grace' ? '0 0 0 2px rgba(217,119,6,0.15)' : 'none'
+              }}
+            >
+              <div style={{ fontSize: '0.72rem', color: '#d97706', fontWeight: 'bold', letterSpacing: '0.5px' }}>
+                EN GRACIA
+              </div>
+              <div style={{ fontSize: '1.65rem', fontWeight: 'bold', color: '#d97706', marginTop: '4px' }}>
+                {kpiStats.grace}
+              </div>
+              <div style={{ fontSize: '0.7rem', color: '#b45309', marginTop: '2px' }}>
+                {kpiFilter === 'grace' ? '● Filtrado activo' : 'Tolerancia de pago'}
+              </div>
+            </div>
+
+            {/* 6. ALIADOS */}
+            <div 
+              onClick={() => setKpiFilter(kpiFilter === 'aliado' ? 'all' : 'aliado')}
+              title="Filtrar comercios con Plan Aliado (Exentos)"
+              style={{
+                backgroundColor: kpiFilter === 'aliado' ? '#faf5ff' : 'var(--surface)', padding: '14px 16px', borderRadius: '10px',
+                border: kpiFilter === 'aliado' ? '2px solid #8b5cf6' : '1px solid var(--border)',
+                cursor: 'pointer', transition: 'all 0.15s ease',
+                boxShadow: kpiFilter === 'aliado' ? '0 0 0 2px rgba(139,92,246,0.15)' : 'none'
+              }}
+            >
+              <div style={{ fontSize: '0.72rem', color: '#8b5cf6', fontWeight: 'bold', letterSpacing: '0.5px' }}>
+                ALIADOS
+              </div>
+              <div style={{ fontSize: '1.65rem', fontWeight: 'bold', color: '#8b5cf6', marginTop: '4px' }}>
+                {kpiStats.aliado}
+              </div>
+              <div style={{ fontSize: '0.7rem', color: '#7c3aed', marginTop: '2px' }}>
+                {kpiFilter === 'aliado' ? '● Filtrado activo' : 'Exentos de por vida'}
+              </div>
+            </div>
+
           </div>
+
+          {/* ACTIVE FILTER BANNER */}
+          {kpiFilter !== 'all' && (
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '8px 14px', backgroundColor: '#f1f5f9', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '0.8rem'
+            }}>
+              <span style={{ color: 'var(--text-main)' }}>
+                🔍 Filtrando por estado: <strong style={{ textTransform: 'uppercase' }}>{kpiFilter === 'active' ? 'Activos' : kpiFilter === 'trial' ? 'Prueba' : kpiFilter === 'suspended' ? 'Suspendidos' : kpiFilter === 'grace' ? 'En Gracia' : 'Aliados'}</strong> ({filteredTenants.length} resultados)
+              </span>
+              <button
+                type="button"
+                onClick={() => setKpiFilter('all')}
+                style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.78rem' }}
+              >
+                ✕ Ver todos ({tenants.length})
+              </button>
+            </div>
+          )}
+
+          {/* GROWTH & USERS ANALYTICS PANEL (Collapsible) */}
+          {showGrowthAnalytics && (
+            <div style={{
+              backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '14px',
+              padding: '20px', display: 'flex', flexDirection: 'column', gap: '18px',
+              boxShadow: '0 4px 16px rgba(0,0,0,0.03)'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <BarChart2 size={20} color="var(--primary)" />
+                  <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 'bold' }}>
+                    Analítica de Crecimiento & Usuarios
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={loadGrowthAnalytics}
+                  disabled={loadingGrowth}
+                  style={{
+                    padding: '5px 12px', fontSize: '0.75rem', borderRadius: '6px',
+                    border: '1px solid var(--border)', background: 'white', cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600
+                  }}
+                >
+                  <RefreshCw size={12} className={loadingGrowth ? 'animate-spin' : ''} />
+                  {loadingGrowth ? 'Actualizando...' : 'Actualizar'}
+                </button>
+              </div>
+
+              {/* Counters Summary */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '10px' }}>
+                <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600 }}>TOTAL USUARIOS EQUIPO</div>
+                  <div style={{ fontSize: '1.35rem', fontWeight: 'bold', color: 'var(--text-main)', marginTop: '2px' }}>
+                    {growthData?.totals?.users?.total || 0}
+                  </div>
+                  <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>En todos los comercios</div>
+                </div>
+
+                <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: '0.72rem', color: '#16a34a', fontWeight: 600 }}>ADMINISTRADORES</div>
+                  <div style={{ fontSize: '1.35rem', fontWeight: 'bold', color: '#16a34a', marginTop: '2px' }}>
+                    {growthData?.totals?.users?.admins || 0}
+                  </div>
+                  <div style={{ fontSize: '0.68rem', color: '#15803d' }}>Dueños de negocio</div>
+                </div>
+
+                <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: '0.72rem', color: '#2563eb', fontWeight: 600 }}>STAFF & COLABORADORES</div>
+                  <div style={{ fontSize: '1.35rem', fontWeight: 'bold', color: '#2563eb', marginTop: '2px' }}>
+                    {growthData?.totals?.users?.staff || 0}
+                  </div>
+                  <div style={{ fontSize: '0.68rem', color: '#1d4ed8' }}>Especialistas / Operadores</div>
+                </div>
+
+                <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: '0.72rem', color: '#8b5cf6', fontWeight: 600 }}>NUEVOS EN ÚLTIMOS 30 DÍAS</div>
+                  <div style={{ fontSize: '1.35rem', fontWeight: 'bold', color: '#8b5cf6', marginTop: '2px' }}>
+                    +{growthData?.totals?.users?.new_last_30_days || 0}
+                  </div>
+                  <div style={{ fontSize: '0.68rem', color: '#7c3aed' }}>Usuarios registrados</div>
+                </div>
+              </div>
+
+              {/* SVG Charts Grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '16px' }}>
+                
+                {/* Chart 1: Negocios por Mes */}
+                <div style={{ padding: '14px', background: '#f8fafc', borderRadius: '10px', border: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--text-main)', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Building2 size={14} color="var(--primary)" /> Comercios Registrados por Mes
+                  </div>
+                  {growthData?.tenantsByMonth && growthData.tenantsByMonth.length > 0 ? (
+                    <div style={{ display: 'flex', alignItems: 'flex-end', gap: '14px', height: '120px', paddingTop: '20px', borderBottom: '1px solid var(--border)' }}>
+                      {growthData.tenantsByMonth.map((item: any) => {
+                        const maxCount = Math.max(...growthData.tenantsByMonth.map((m: any) => m.count), 1);
+                        const heightPercent = Math.max(18, Math.round((item.count / maxCount) * 100));
+                        return (
+                          <div key={item.month} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', height: '100%', justifyContent: 'flex-end' }}>
+                            <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: 'var(--primary)' }}>
+                              {item.count}
+                            </span>
+                            <div 
+                              style={{
+                                width: '100%', maxWidth: '42px', height: `${heightPercent}%`,
+                                backgroundColor: 'var(--primary)', borderRadius: '4px 4px 0 0',
+                                transition: 'height 0.3s ease'
+                              }}
+                              title={`${item.month}: ${item.count} comercios`}
+                            />
+                            <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                              {item.month}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', textAlign: 'center', padding: '30px 0' }}>
+                      Cargando histórico de comercios...
+                    </div>
+                  )}
+                </div>
+
+                {/* Chart 2: Nuevos Usuarios por Mes */}
+                <div style={{ padding: '14px', background: '#f8fafc', borderRadius: '10px', border: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--text-main)', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Users size={14} color="#16a34a" /> Nuevos Usuarios de Equipo por Mes
+                  </div>
+                  {growthData?.usersByMonth && growthData.usersByMonth.length > 0 ? (
+                    <div style={{ display: 'flex', alignItems: 'flex-end', gap: '14px', height: '120px', paddingTop: '20px', borderBottom: '1px solid var(--border)' }}>
+                      {growthData.usersByMonth.map((item: any) => {
+                        const maxCount = Math.max(...growthData.usersByMonth.map((m: any) => m.count), 1);
+                        const heightPercent = Math.max(18, Math.round((item.count / maxCount) * 100));
+                        return (
+                          <div key={item.month} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', height: '100%', justifyContent: 'flex-end' }}>
+                            <span style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#16a34a' }}>
+                              {item.count}
+                            </span>
+                            <div 
+                              style={{
+                                width: '100%', maxWidth: '42px', height: `${heightPercent}%`,
+                                backgroundColor: '#16a34a', borderRadius: '4px 4px 0 0',
+                                transition: 'height 0.3s ease'
+                              }}
+                              title={`${item.month}: ${item.count} usuarios`}
+                            />
+                            <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                              {item.month}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', textAlign: 'center', padding: '30px 0' }}>
+                      Cargando histórico de usuarios...
+                    </div>
+                  )}
+                </div>
+
+              </div>
+
+              {/* Distribution by Plan */}
+              {growthData?.plansDistribution && growthData.plansDistribution.length > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', paddingTop: '6px', borderTop: '1px solid var(--border)' }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--text-muted)' }}>
+                    Distribución por Plan:
+                  </span>
+                  {growthData.plansDistribution.map((p: any) => (
+                    <span 
+                      key={p.plan}
+                      style={{
+                        padding: '3px 10px', borderRadius: '12px', fontSize: '0.72rem', fontWeight: 600,
+                        backgroundColor: p.plan === 'aliado' ? '#faf5ff' : p.plan === 'enterprise' ? '#fef3c7' : '#eff6ff',
+                        color: p.plan === 'aliado' ? '#7c3aed' : p.plan === 'enterprise' ? '#b45309' : '#1d4ed8',
+                        border: '1px solid var(--border)'
+                      }}
+                    >
+                      {p.plan.toUpperCase()}: <strong>{p.count}</strong>
+                    </span>
+                  ))}
+                </div>
+              )}
+
+            </div>
+          )}
 
           {/* Search & View Toggle */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
@@ -580,6 +973,29 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
                     <div>📱 WhatsApp: {t.whatsappNumber ? '🟢 Conectado (' + t.whatsappNumber + ')' : '⚪ No vinculado'}</div>
                     <div>💎 Plan: <strong style={{ textTransform: 'uppercase', color: 'var(--text-main)' }}>{t.plan}</strong> ({formatPrice(t.customMonthlyPrice, t.billingCurrency)}/mes)</div>
                   </div>
+
+                  {/* Ubicación Física y Enlace Maps */}
+                  {(t.address || t.googleMapsUrl || t.latitude) ? (
+                    <div style={{ fontSize: '0.76rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', padding: '6px 10px', background: '#f8fafc', borderRadius: '6px', border: '1px solid var(--border)' }}>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '190px' }} title={t.address || 'Ubicación registrada'}>
+                        📍 {t.address || 'Ubicación registrada'}
+                      </span>
+                      {(t.googleMapsUrl || (t.latitude && t.longitude)) && (
+                        <a
+                          href={t.googleMapsUrl || `https://maps.google.com/?q=${t.latitude},${t.longitude}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{ fontSize: '0.72rem', color: '#2563eb', textDecoration: 'none', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '2px', whiteSpace: 'nowrap' }}
+                        >
+                          <Navigation size={11} /> Maps ↗
+                        </a>
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: '0.73rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      📍 Sin ubicación registrada
+                    </div>
+                  )}
 
                   {/* Infraestructura Backend (Solo Lectura) */}
                   <div style={{ backgroundColor: 'rgba(0,0,0,0.03)', border: '1px solid var(--border)', borderRadius: '8px', padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.74rem' }}>
@@ -664,7 +1080,11 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
                           customMonthlyPrice: actualPrice, 
                           billingCurrency: t.billingCurrency || 'CRC',
                           isTrial: t.subscriptionStatus === 'trial', 
-                          trialDays: 15
+                          trialDays: 15,
+                          address: t.address || '',
+                          latitude: t.latitude != null ? String(t.latitude) : '',
+                          longitude: t.longitude != null ? String(t.longitude) : '',
+                          googleMapsUrl: t.googleMapsUrl || ''
                         });
                         setShowModal(true);
                       }}
@@ -705,6 +1125,26 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
                       <td style={{ padding: '12px 14px' }}>
                         <strong>{t.name}</strong>
                         <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t.adminEmail} • <code>/{t.slug}</code></div>
+                        
+                        {/* Ubicación en tabla */}
+                        {(t.address || t.googleMapsUrl || t.latitude) ? (
+                          <div style={{ fontSize: '0.73rem', color: '#334155', display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px', flexWrap: 'wrap' }}>
+                            <span style={{ maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={t.address || 'Ubicación registrada'}>
+                              📍 {t.address || 'Ubicación registrada'}
+                            </span>
+                            {(t.googleMapsUrl || (t.latitude && t.longitude)) && (
+                              <a
+                                href={t.googleMapsUrl || `https://maps.google.com/?q=${t.latitude},${t.longitude}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{ color: '#2563eb', textDecoration: 'none', fontWeight: 'bold', fontSize: '0.71rem', display: 'flex', alignItems: 'center', gap: '2px' }}
+                              >
+                                Maps ↗
+                              </a>
+                            )}
+                          </div>
+                        ) : null}
+
                         {/* Infraestructura Backend (Solo Lectura) */}
                         <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '5px', flexWrap: 'wrap', fontSize: '0.72rem' }}>
                           <button
@@ -820,7 +1260,11 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
                                 customMonthlyPrice: actualPrice, 
                                 billingCurrency: t.billingCurrency || 'CRC',
                                 isTrial: t.subscriptionStatus === 'trial', 
-                                trialDays: 15
+                                trialDays: 15,
+                                address: t.address || '',
+                                latitude: t.latitude != null ? String(t.latitude) : '',
+                                longitude: t.longitude != null ? String(t.longitude) : '',
+                                googleMapsUrl: t.googleMapsUrl || ''
                               });
                               setShowModal(true);
                             }}
@@ -1725,6 +2169,103 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
                       <option value="USD">$ USD</option>
                     </select>
                   </div>
+                </div>
+              </div>
+
+              {/* UBICACIÓN DEL NEGOCIO & NAVEGACIÓN GPS */}
+              <div style={{ backgroundColor: '#f8fafc', border: '1px solid var(--border)', borderRadius: '10px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontWeight: 'bold', fontSize: '0.82rem', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <MapPin size={15} color="#ef4444" /> Ubicación Física & Enlace GPS
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!navigator.geolocation) {
+                        alert('La geolocalización no está soportada por su navegador.');
+                        return;
+                      }
+                      navigator.geolocation.getCurrentPosition(
+                        (pos) => {
+                          const lat = Number(pos.coords.latitude.toFixed(7));
+                          const lng = Number(pos.coords.longitude.toFixed(7));
+                          const mapsUrl = `https://maps.google.com/?q=${lat},${lng}`;
+                          setFormData(prev => ({
+                            ...prev,
+                            latitude: String(lat),
+                            longitude: String(lng),
+                            googleMapsUrl: prev.googleMapsUrl || mapsUrl
+                          }));
+                          alert(`📍 Coordenadas detectadas: ${lat}, ${lng}`);
+                        },
+                        (err) => {
+                          alert('No se pudo obtener la ubicación GPS: ' + err.message);
+                        },
+                        { enableHighAccuracy: true, timeout: 10000 }
+                      );
+                    }}
+                    style={{
+                      padding: '4px 9px', fontSize: '0.72rem', backgroundColor: '#e0f2fe', color: '#0369a1',
+                      border: '1px solid #bae6fd', borderRadius: '5px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600
+                    }}
+                  >
+                    <Navigation size={12} /> Detectar mi GPS
+                  </button>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 'bold', marginBottom: '4px', color: 'var(--text-muted)' }}>
+                    Dirección Física Exacta
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ej: 100m Este de la Iglesia, Local Esquinero, San José"
+                    value={formData.address || ''}
+                    onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                    style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.82rem' }}
+                  />
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 'bold', marginBottom: '4px', color: 'var(--text-muted)' }}>
+                      Latitud GPS
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      placeholder="Ej: 9.9333"
+                      value={formData.latitude || ''}
+                      onChange={(e) => setFormData({ ...formData, latitude: e.target.value })}
+                      style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.82rem' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 'bold', marginBottom: '4px', color: 'var(--text-muted)' }}>
+                      Longitud GPS
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      placeholder="Ej: -84.0833"
+                      value={formData.longitude || ''}
+                      onChange={(e) => setFormData({ ...formData, longitude: e.target.value })}
+                      style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.82rem' }}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 'bold', marginBottom: '4px', color: 'var(--text-muted)' }}>
+                    Enlace Google Maps (o pegar link corto maps.app.goo.gl)
+                  </label>
+                  <input
+                    type="url"
+                    placeholder="https://maps.google.com/?q=... o https://maps.app.goo.gl/..."
+                    value={formData.googleMapsUrl || ''}
+                    onChange={(e) => setFormData({ ...formData, googleMapsUrl: e.target.value })}
+                    style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.82rem' }}
+                  />
                 </div>
               </div>
 

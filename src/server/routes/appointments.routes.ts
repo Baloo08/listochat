@@ -291,7 +291,7 @@ router.get('/public/:slug/available-slots', async (req, res) => {
       maxParallelSlots = 1;
       const activeAppts = await query(`
         SELECT time FROM appointments 
-        WHERE tenant_id = $1 AND date = $2 AND specialist_id = $3 AND status IN ('pending', 'scheduled', 'confirmed')
+        WHERE tenant_id = $1 AND date = $2::date AND specialist_id = $3 AND status IN ('pending', 'scheduled', 'confirmed')
       `, [tenant.id, dateStr, specialistId]);
       activeApptsRows = activeAppts.rows;
     } else {
@@ -304,7 +304,7 @@ router.get('/public/:slug/available-slots', async (req, res) => {
       }
       const activeAppts = await query(`
         SELECT time FROM appointments 
-        WHERE tenant_id = $1 AND date = $2 AND status IN ('pending', 'scheduled', 'confirmed')
+        WHERE tenant_id = $1 AND date = $2::date AND status IN ('pending', 'scheduled', 'confirmed')
       `, [tenant.id, dateStr]);
       activeApptsRows = activeAppts.rows;
     }
@@ -382,7 +382,7 @@ router.post('/public/:slug/book', async (req, res) => {
       const specCountRes = await query(`
         SELECT COUNT(*)::int as count 
         FROM appointments 
-        WHERE tenant_id = $1 AND date = $2 AND time = $3 AND specialist_id = $4 AND status IN ('pending', 'scheduled', 'confirmed')
+        WHERE tenant_id = $1 AND date = $2::date AND time = $3 AND specialist_id = $4 AND status IN ('pending', 'scheduled', 'confirmed')
       `, [tenant.id, date, time, specialistId]);
 
       if ((specCountRes.rows[0]?.count || 0) >= 1) {
@@ -406,7 +406,7 @@ router.post('/public/:slug/book', async (req, res) => {
     const countRes = await query(`
       SELECT COUNT(*)::int as count 
       FROM appointments 
-      WHERE tenant_id = $1 AND date = $2 AND time = $3 AND status IN ('pending', 'scheduled', 'confirmed')
+      WHERE tenant_id = $1 AND date = $2::date AND time = $3 AND status IN ('pending', 'scheduled', 'confirmed')
     `, [tenant.id, date, time]);
 
     if ((countRes.rows[0]?.count || 0) >= maxParallelSlots) {
