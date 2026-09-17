@@ -7226,11 +7226,11 @@ PARAMETER stop "Human:"
 PARAMETER stop "Usuario:"
 PARAMETER stop "User:"
 `;
-  return { modelfile, modelName };
+  return { systemPrompt, temperature, modelfile, modelName };
 }
 async function syncTenantVirtualModel(tenantId) {
   try {
-    const { modelfile, modelName } = await buildTenantModelfile(tenantId);
+    const { systemPrompt, temperature, modelfile, modelName } = await buildTenantModelfile(tenantId);
     const ollamaUrl = process.env.OLLAMA_URL || "http://beticoia_ollama:11434/v1";
     const baseUrl = ollamaUrl.replace(/\/v1\/?$/, "");
     console.log(`[VirtualModel] Creando/Actualizando modelo virtual en Ollama: ${modelName}...`);
@@ -7239,7 +7239,11 @@ async function syncTenantVirtualModel(tenantId) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: modelName,
-        modelfile,
+        from: "betico-ai",
+        system: systemPrompt,
+        parameters: {
+          temperature: Number(temperature.toFixed(2))
+        },
         stream: false
       })
     });

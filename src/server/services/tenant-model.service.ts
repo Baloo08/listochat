@@ -160,16 +160,16 @@ PARAMETER stop "Usuario:"
 PARAMETER stop "User:"
 `;
 
-  return { modelfile, modelName };
+  return { systemPrompt, temperature, modelfile, modelName };
 }
 
 /**
  * Synchronizes a tenant's virtual model in Ollama:
- * Compiles the Modelfile and sends POST /api/create to Ollama.
+ * Uses the structured from + system API of Ollama for instant manifest creation.
  */
 export async function syncTenantVirtualModel(tenantId: string): Promise<{ success: boolean; modelName: string; error?: string }> {
   try {
-    const { modelfile, modelName } = await buildTenantModelfile(tenantId);
+    const { systemPrompt, temperature, modelfile, modelName } = await buildTenantModelfile(tenantId);
     const ollamaUrl = process.env.OLLAMA_URL || 'http://beticoia_ollama:11434/v1';
     const baseUrl = ollamaUrl.replace(/\/v1\/?$/, '');
 
@@ -179,7 +179,11 @@ export async function syncTenantVirtualModel(tenantId: string): Promise<{ succes
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name: modelName,
-        modelfile,
+        from: 'betico-ai',
+        system: systemPrompt,
+        parameters: {
+          temperature: Number(temperature.toFixed(2))
+        },
         stream: false
       })
     });
