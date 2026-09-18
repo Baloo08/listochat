@@ -756,6 +756,19 @@ export async function runMigrations() {
     ALTER TABLE court_bookings ADD COLUMN IF NOT EXISTS tilopay_auth_code_a VARCHAR(100);
     ALTER TABLE court_bookings ADD COLUMN IF NOT EXISTS tilopay_transaction_id_b VARCHAR(100);
     ALTER TABLE court_bookings ADD COLUMN IF NOT EXISTS tilopay_auth_code_b VARCHAR(100);
+    ALTER TABLE court_bookings ADD COLUMN IF NOT EXISTS booking_code VARCHAR(30) UNIQUE;
+
+    -- Backfill existing court bookings with CRT-XXXXXX format
+    UPDATE court_bookings 
+    SET booking_code = UPPER('CRT-' || SUBSTRING(id::text, 1, 8))
+    WHERE booking_code IS NULL;
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_cb_booking_code ON court_bookings(booking_code);
+    CREATE INDEX IF NOT EXISTS idx_cb_uncompleted_purge ON court_bookings(status, match_status, updated_at);
+
+    -- Ensure active unique constraint excludes cancelled, rejected and uncompleted bookings
+    DROP INDEX IF EXISTS idx_unique_active_court_slot;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_active_court_slot ON court_bookings(tenant_id, court_id, date, time) WHERE status NOT IN ('cancelled', 'rejected', 'uncompleted');
 
     ALTER TABLE tenant_websites ADD COLUMN IF NOT EXISTS tiktok_url VARCHAR(255);
     ALTER TABLE tenants ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;

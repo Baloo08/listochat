@@ -29,6 +29,8 @@ export interface AgentProcessResult {
   cancelBookingData?: any;
   isRescheduleBookingDetected?: boolean;
   rescheduleBookingData?: any;
+  isRescheduleCourtDetected?: boolean;
+  rescheduleCourtData?: any;
   tokensUsed?: number;
 }
 
@@ -380,10 +382,13 @@ REGLAS OBLIGATORIAS:
 - Si el cliente pregunta por canchas o partidos, ofrécele las canchas del catálogo con sus precios por hora. Pregúntale fecha, hora y modalidad ("full" para cancha completa o "seek_match" si busca rival / partido abierto).
 - Cuando el cliente confirme la reserva de cancha, añade al final:
   <<<COMMAND_COURT_BOOKING: {"courtName":"nombre cancha", "date":"YYYY-MM-DD", "time":"HH:MM", "bookingMode":"full"|"seek_match", "teamAName":"${senderName}"}>>>
+- Para REAGENDAR CANCHA: Si el cliente desea cambiar fecha, hora o cancha de su partido, pídele su código de reserva (ej. CRT-8F2A1C o #RES-...). Ofrécele los horarios libres disponibles. Cuando confirme la nueva fecha y hora, añade:
+  <<<COMMAND_RESCHEDULE_COURT: {"bookingCode":"código", "newDate":"YYYY-MM-DD", "newTime":"HH:MM", "newCourtName":"opcional"}>>>
 
 Acciones disponibles (añade al final SOLO cuando el cliente confirme explícitamente):
 Cita: <<<COMMAND_BOOKING: {"service":"nombre","date":"YYYY-MM-DD","time":"HH:MM","customerName":"${customerRecord?.fullName || senderName}","recordId":"${customerRecord?.id || ''}","specialistName":"opcional"}>>>
 Cancha: <<<COMMAND_COURT_BOOKING: {"courtName":"nombre", "date":"YYYY-MM-DD", "time":"HH:MM", "bookingMode":"full"|"seek_match", "teamAName":"${senderName}"}>>>
+Reagendar Cancha: <<<COMMAND_RESCHEDULE_COURT: {"bookingCode":"código", "newDate":"YYYY-MM-DD", "newTime":"HH:MM", "newCourtName":"opcional"}>>>
 Cancelar Cita: <<<COMMAND_CANCEL_BOOKING: {"date":"YYYY-MM-DD","service":"opcional","reason":"motivo"}>>>
 Reagendar Cita: <<<COMMAND_RESCHEDULE_BOOKING: {"newDate":"YYYY-MM-DD","newTime":"HH:MM"}>>>
 Compra / Pedido: <<<COMMAND_ORDER: {"items":[{"productName":"nombre","variantName":"opcional","quantity":1}], "deliveryMethod":"delivery"|"pickup", "deliveryAddress":"dirección si aplica", "customerName":"${senderName}"}>>>
@@ -463,9 +468,12 @@ Humano: <<<COMMAND_HANDOFF: {"reason":"motivo"}>>>`;
   let rescheduleBookingData;
   let isCourtBookingDetected = false;
   let courtBookingData;
+  let isRescheduleCourtDetected = false;
+  let rescheduleCourtData;
 
   const bookingRegex = /<<<COMMAND_BOOKING:\s*({.*?})>>>/s;
   const courtBookingRegex = /<<<COMMAND_COURT_BOOKING:\s*({.*?})>>>/s;
+  const courtRescheduleRegex = /<<<COMMAND_RESCHEDULE_COURT:\s*({.*?})>>>/s;
   const orderRegex = /<<<COMMAND_ORDER:\s*({.*?})>>>/s;
   const handoffRegex = /<<<COMMAND_HANDOFF:\s*({.*?})>>>/s;
   const mediaRegex = /<<<COMMAND_SEND_MEDIA:\s*({.*?})>>>/s;
@@ -539,6 +547,15 @@ function safeParseJSON(rawStr: string): any {
     }
   }
 
+  const courtRescheduleMatch = replyText.match(courtRescheduleRegex);
+  if (courtRescheduleMatch && courtRescheduleMatch[1]) {
+    const parsed = safeParseJSON(courtRescheduleMatch[1]);
+    if (parsed && (parsed.bookingCode || parsed.code) && (parsed.newDate || parsed.newTime)) {
+      isRescheduleCourtDetected = true;
+      rescheduleCourtData = parsed;
+    }
+  }
+
   const orderMatch = replyText.match(orderRegex);
   if (orderMatch && orderMatch[1]) {
     const parsed = safeParseJSON(orderMatch[1]);
@@ -570,6 +587,7 @@ function safeParseJSON(rawStr: string): any {
   replyText = replyText
     .replace(bookingRegex, '')
     .replace(courtBookingRegex, '')
+    .replace(courtRescheduleRegex, '')
     .replace(orderRegex, '')
     .replace(handoffRegex, '')
     .replace(mediaRegex, '')
@@ -584,6 +602,8 @@ function safeParseJSON(rawStr: string): any {
     bookingData,
     isCourtBookingDetected,
     courtBookingData,
+    isRescheduleCourtDetected,
+    rescheduleCourtData,
     isOrderDetected,
     orderData,
     isHandoffRequested,

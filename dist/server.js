@@ -4231,6 +4231,19 @@ async function runMigrations() {
     ALTER TABLE court_bookings ADD COLUMN IF NOT EXISTS tilopay_auth_code_a VARCHAR(100);
     ALTER TABLE court_bookings ADD COLUMN IF NOT EXISTS tilopay_transaction_id_b VARCHAR(100);
     ALTER TABLE court_bookings ADD COLUMN IF NOT EXISTS tilopay_auth_code_b VARCHAR(100);
+    ALTER TABLE court_bookings ADD COLUMN IF NOT EXISTS booking_code VARCHAR(30) UNIQUE;
+
+    -- Backfill existing court bookings with CRT-XXXXXX format
+    UPDATE court_bookings 
+    SET booking_code = UPPER('CRT-' || SUBSTRING(id::text, 1, 8))
+    WHERE booking_code IS NULL;
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_cb_booking_code ON court_bookings(booking_code);
+    CREATE INDEX IF NOT EXISTS idx_cb_uncompleted_purge ON court_bookings(status, match_status, updated_at);
+
+    -- Ensure active unique constraint excludes cancelled, rejected and uncompleted bookings
+    DROP INDEX IF EXISTS idx_unique_active_court_slot;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_active_court_slot ON court_bookings(tenant_id, court_id, date, time) WHERE status NOT IN ('cancelled', 'rejected', 'uncompleted');
 
     ALTER TABLE tenant_websites ADD COLUMN IF NOT EXISTS tiktok_url VARCHAR(255);
     ALTER TABLE tenants ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
@@ -4517,6 +4530,630 @@ async function checkAndSendReminders() {
     }
   } catch (err) {
     console.error("[ReminderService] General error in checkAndSendReminders:", err);
+  }
+}
+
+// src/server/db/courts.repo.ts
+init_pool();
+function mapCourtRow(row) {
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    name: row.name,
+    sportType: row.sport_type,
+    customSportType: row.custom_sport_type,
+    description: row.description,
+    surface: row.surface,
+    isIndoor: row.is_indoor,
+    hasLighting: row.has_lighting,
+    basePrice: Number(row.base_price),
+    priceDisplay: row.price_display,
+    durationMinutes: row.duration_minutes,
+    teamSize: row.team_size,
+    maxExtraPlayers: row.max_extra_players,
+    extraPlayerFee: Number(row.extra_player_fee),
+    imageUrl: row.image_url || void 0,
+    scheduleConfig: row.schedule_config ? typeof row.schedule_config === "string" ? JSON.parse(row.schedule_config) : row.schedule_config : void 0,
+    active: row.active,
+    sortOrder: row.sort_order,
+    createdAt: row.created_at
+  };
+}
+function generateBookingCode() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let code = "";
+  for (let i = 0; i < 6; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return `CRT-${code}`;
+}
+function mapBookingRow(row) {
+  return {
+    id: row.id,
+    bookingCode: row.booking_code || (row.id ? `CRT-${row.id.substring(0, 8).toUpperCase()}` : void 0),
+    tenantId: row.tenant_id,
+    courtId: row.court_id,
+    courtName: row.court_name || row.name,
+    // in case of join
+    date: row.date,
+    time: row.time,
+    durationMinutes: row.duration_minutes,
+    bookingMode: row.booking_mode,
+    matchStatus: row.match_status,
+    matchExpiryHours: Number(row.match_expiry_hours),
+    teamAName: row.team_a_name,
+    teamACaptain: row.team_a_captain,
+    teamAPhone: row.team_a_phone,
+    teamAPlayers: row.team_a_players,
+    teamAExtraPlayers: row.team_a_extra_players,
+    teamAPaid: row.team_a_paid,
+    teamBName: row.team_b_name,
+    teamBCaptain: row.team_b_captain,
+    teamBPhone: row.team_b_phone,
+    teamBPlayers: row.team_b_players,
+    teamBExtraPlayers: row.team_b_extra_players,
+    teamBPaid: row.team_b_paid,
+    totalPrice: Number(row.total_price),
+    pricePerTeam: row.price_per_team ? Number(row.price_per_team) : void 0,
+    paymentMode: row.payment_mode,
+    paymentMethod: row.payment_method,
+    paymentReference: row.payment_reference,
+    tilopayTransactionIdA: row.tilopay_transaction_id_a,
+    tilopayAuthCodeA: row.tilopay_auth_code_a,
+    tilopayTransactionIdB: row.tilopay_transaction_id_b,
+    tilopayAuthCodeB: row.tilopay_auth_code_b,
+    sportType: row.sport_type,
+    skillLevel: row.skill_level,
+    notes: row.notes,
+    status: row.status,
+    billingInfo: row.billing_info,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+async function getCourtsByTenant(tenantId) {
+  const res = await query(`SELECT * FROM courts WHERE tenant_id = $1 ORDER BY sort_order, name`, [tenantId]);
+  return res.rows.map(mapCourtRow);
+}
+async function getCourtById(id, tenantId) {
+  const res = await query(`SELECT * FROM courts WHERE id = $1 AND tenant_id = $2`, [id, tenantId]);
+  return res.rows[0] ? mapCourtRow(res.rows[0]) : null;
+}
+async function createCourt(tenantId, data) {
+  const scheduleJson = data.scheduleConfig ? JSON.stringify(data.scheduleConfig) : null;
+  const res = await query(`
+    INSERT INTO courts (
+      tenant_id, name, sport_type, custom_sport_type, description, surface, 
+      is_indoor, has_lighting, base_price, price_display, duration_minutes, 
+      team_size, max_extra_players, extra_player_fee, active, sort_order,
+      image_url, schedule_config
+    ) VALUES (
+      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
+    ) RETURNING *
+  `, [
+    tenantId,
+    data.name,
+    data.sportType,
+    data.customSportType,
+    data.description,
+    data.surface,
+    data.isIndoor,
+    data.hasLighting,
+    data.basePrice,
+    data.priceDisplay,
+    data.durationMinutes,
+    data.teamSize,
+    data.maxExtraPlayers,
+    data.extraPlayerFee,
+    data.active !== false,
+    data.sortOrder || 0,
+    data.imageUrl || null,
+    scheduleJson
+  ]);
+  return mapCourtRow(res.rows[0]);
+}
+async function updateCourt(id, tenantId, data) {
+  const allowed = {
+    name: "name",
+    sportType: "sport_type",
+    customSportType: "custom_sport_type",
+    description: "description",
+    surface: "surface",
+    isIndoor: "is_indoor",
+    hasLighting: "has_lighting",
+    basePrice: "base_price",
+    priceDisplay: "price_display",
+    durationMinutes: "duration_minutes",
+    teamSize: "team_size",
+    maxExtraPlayers: "max_extra_players",
+    extraPlayerFee: "extra_player_fee",
+    active: "active",
+    sortOrder: "sort_order",
+    imageUrl: "image_url",
+    scheduleConfig: "schedule_config"
+  };
+  const processedData = { ...data };
+  if (data.scheduleConfig !== void 0) {
+    processedData.scheduleConfig = data.scheduleConfig ? JSON.stringify(data.scheduleConfig) : null;
+  }
+  const entries = Object.entries(processedData).filter(([k, v]) => allowed[k] !== void 0 && v !== void 0);
+  if (entries.length === 0) return getCourtById(id, tenantId);
+  const setClause = entries.map(([k], i) => `${allowed[k]} = $${i + 3}`).join(", ");
+  const values = entries.map((e) => e[1]);
+  const res = await query(`
+    UPDATE courts SET ${setClause} WHERE id = $1 AND tenant_id = $2 RETURNING *
+  `, [id, tenantId, ...values]);
+  return res.rows[0] ? mapCourtRow(res.rows[0]) : null;
+}
+async function deleteCourt(id, tenantId) {
+  const res = await query(`DELETE FROM courts WHERE id = $1 AND tenant_id = $2`, [id, tenantId]);
+  return (res.rowCount || 0) > 0;
+}
+async function getBookingsByTenant(tenantId, date) {
+  let q = `
+    SELECT cb.*, c.name as court_name 
+    FROM court_bookings cb
+    JOIN courts c ON c.id = cb.court_id
+    WHERE cb.tenant_id = $1
+  `;
+  const params = [tenantId];
+  if (date) {
+    q += ` AND cb.date = $2`;
+    params.push(date);
+  }
+  q += ` ORDER BY cb.date DESC, cb.time DESC`;
+  const res = await query(q, params);
+  return res.rows.map(mapBookingRow);
+}
+async function getBookingById(id, tenantId) {
+  const res = await query(`
+    SELECT cb.*, c.name as court_name 
+    FROM court_bookings cb
+    JOIN courts c ON c.id = cb.court_id
+    WHERE cb.id = $1 AND cb.tenant_id = $2
+  `, [id, tenantId]);
+  return res.rows[0] ? mapBookingRow(res.rows[0]) : null;
+}
+async function getBookingByIdUnsafe(id) {
+  const res = await query(`
+    SELECT cb.*, c.name as court_name 
+    FROM court_bookings cb
+    JOIN courts c ON c.id = cb.court_id
+    WHERE cb.id = $1
+  `, [id]);
+  return res.rows[0] ? mapBookingRow(res.rows[0]) : null;
+}
+async function createBooking(tenantId, data) {
+  const bookingMode = data.bookingMode || "full";
+  const matchStatus = data.matchStatus || (bookingMode === "seek_match" ? "open" : "confirmed");
+  let totalPrice = Number(data.totalPrice || 0);
+  let durationMinutes = data.durationMinutes || 60;
+  let sportType = data.sportType;
+  if (data.courtId && (!totalPrice || !sportType)) {
+    const cRes = await query("SELECT * FROM courts WHERE id = $1 AND tenant_id = $2", [data.courtId, tenantId]);
+    if (cRes.rows[0]) {
+      const c = cRes.rows[0];
+      durationMinutes = data.durationMinutes || c.duration_minutes || 60;
+      sportType = sportType || c.sport_type || "futbol";
+      if (!totalPrice) {
+        totalPrice = Number(c.base_price || 0) + Number(data.teamAExtraPlayers || 0) * Number(c.extra_player_fee || 0);
+      }
+    }
+  }
+  const pricePerTeam = data.pricePerTeam ? Number(data.pricePerTeam) : totalPrice > 0 ? totalPrice / 2 : void 0;
+  const bookingCode = data.bookingCode || generateBookingCode();
+  try {
+    const res = await query(`
+      INSERT INTO court_bookings (
+        tenant_id, court_id, date, time, duration_minutes, booking_mode,
+        match_status, match_expiry_hours, team_a_name, team_a_captain,
+        team_a_phone, team_a_players, team_a_extra_players, team_a_paid,
+        team_b_name, team_b_captain, team_b_phone, team_b_players,
+        team_b_extra_players, team_b_paid, total_price, price_per_team,
+        payment_mode, sport_type, skill_level, notes, status,
+        payment_method, payment_reference, billing_info, booking_code
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
+        $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27,
+        $28, $29, $30, $31
+      ) RETURNING *
+    `, [
+      tenantId,
+      data.courtId,
+      data.date,
+      data.time,
+      durationMinutes,
+      bookingMode,
+      matchStatus,
+      data.matchExpiryHours || 1,
+      data.teamAName || "Equipo A",
+      data.teamACaptain,
+      data.teamAPhone,
+      data.teamAPlayers || 5,
+      data.teamAExtraPlayers || 0,
+      data.teamAPaid || false,
+      data.teamBName,
+      data.teamBCaptain,
+      data.teamBPhone,
+      data.teamBPlayers || 5,
+      data.teamBExtraPlayers || 0,
+      data.teamBPaid || false,
+      totalPrice,
+      pricePerTeam,
+      data.paymentMode || "both",
+      sportType,
+      data.skillLevel,
+      data.notes,
+      data.status || "confirmed",
+      data.paymentMethod || "cash",
+      data.paymentReference || null,
+      data.billingInfo ? JSON.stringify(data.billingInfo) : null,
+      bookingCode
+    ]);
+    const booking = mapBookingRow(res.rows[0]);
+    if (data.courtId) {
+      const cRes = await query("SELECT name FROM courts WHERE id = $1 AND tenant_id = $2", [data.courtId, tenantId]);
+      booking.courtName = cRes.rows[0]?.name || booking.courtName;
+    }
+    return booking;
+  } catch (err) {
+    if (err?.code === "23505") {
+      const conflictErr = new Error("El horario seleccionado ya ha sido reservado por otro cliente. Por favor elige otro turno.");
+      conflictErr.statusCode = 409;
+      throw conflictErr;
+    }
+    throw err;
+  }
+}
+async function updateBooking(id, tenantId, data) {
+  const allowed = {
+    date: "date",
+    time: "time",
+    durationMinutes: "duration_minutes",
+    bookingMode: "booking_mode",
+    matchStatus: "match_status",
+    matchExpiryHours: "match_expiry_hours",
+    teamAName: "team_a_name",
+    teamACaptain: "team_a_captain",
+    teamAPhone: "team_a_phone",
+    teamAPlayers: "team_a_players",
+    teamAExtraPlayers: "team_a_extra_players",
+    teamAPaid: "team_a_paid",
+    teamBName: "team_b_name",
+    teamBCaptain: "team_b_captain",
+    teamBPhone: "team_b_phone",
+    teamBPlayers: "team_b_players",
+    teamBExtraPlayers: "team_b_extra_players",
+    teamBPaid: "team_b_paid",
+    totalPrice: "total_price",
+    pricePerTeam: "price_per_team",
+    paymentMode: "payment_mode",
+    paymentMethod: "payment_method",
+    paymentReference: "payment_reference",
+    tilopayTransactionIdA: "tilopay_transaction_id_a",
+    tilopayAuthCodeA: "tilopay_auth_code_a",
+    tilopayTransactionIdB: "tilopay_transaction_id_b",
+    tilopayAuthCodeB: "tilopay_auth_code_b",
+    sportType: "sport_type",
+    skillLevel: "skill_level",
+    notes: "notes",
+    status: "status",
+    billingInfo: "billing_info",
+    bookingCode: "booking_code"
+  };
+  const entries = Object.entries(data).filter(([k, v]) => allowed[k] !== void 0 && v !== void 0);
+  if (entries.length === 0) return getBookingById(id, tenantId);
+  const setClause = entries.map(([k], i) => k === "billingInfo" ? `${allowed[k]} = $${i + 3}::jsonb` : `${allowed[k]} = $${i + 3}`).join(", ");
+  const values = entries.map(([k, v]) => k === "billingInfo" && v ? JSON.stringify(v) : v);
+  const res = await query(`
+    UPDATE court_bookings SET ${setClause}, updated_at = CURRENT_TIMESTAMP 
+    WHERE id = $1 AND tenant_id = $2 RETURNING *
+  `, [id, tenantId, ...values]);
+  return res.rows[0] ? mapBookingRow(res.rows[0]) : null;
+}
+async function updateCourtBookingPayment(id, team, data) {
+  const updates = [];
+  const params = [id];
+  let paramIdx = 2;
+  if (team === "a") {
+    updates.push(`team_a_paid = true`);
+    if (data.tilopayTxId) {
+      updates.push(`tilopay_transaction_id_a = $${paramIdx++}`);
+      params.push(data.tilopayTxId);
+    }
+    if (data.tilopayAuth) {
+      updates.push(`tilopay_auth_code_a = $${paramIdx++}`);
+      params.push(data.tilopayAuth);
+    }
+  } else {
+    updates.push(`team_b_paid = true`);
+    if (data.tilopayTxId) {
+      updates.push(`tilopay_transaction_id_b = $${paramIdx++}`);
+      params.push(data.tilopayTxId);
+    }
+    if (data.tilopayAuth) {
+      updates.push(`tilopay_auth_code_b = $${paramIdx++}`);
+      params.push(data.tilopayAuth);
+    }
+  }
+  if (data.paymentMethod) {
+    updates.push(`payment_method = $${paramIdx++}`);
+    params.push(data.paymentMethod);
+  }
+  if (data.paymentReference) {
+    updates.push(`payment_reference = $${paramIdx++}`);
+    params.push(data.paymentReference);
+  }
+  updates.push(`updated_at = CURRENT_TIMESTAMP`);
+  const res = await query(`
+    UPDATE court_bookings SET ${updates.join(", ")}
+    WHERE id = $1 RETURNING *
+  `, params);
+  return res.rows[0] ? mapBookingRow(res.rows[0]) : null;
+}
+async function cancelBooking(id, tenantId) {
+  const res = await query(`
+    UPDATE court_bookings SET status = 'cancelled', match_status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+    WHERE id = $1 AND tenant_id = $2 RETURNING *
+  `, [id, tenantId]);
+  return res.rows[0] ? mapBookingRow(res.rows[0]) : null;
+}
+async function getOpenMatches(tenantId) {
+  const res = await query(`
+    SELECT cb.*, c.name as court_name 
+    FROM court_bookings cb
+    JOIN courts c ON c.id = cb.court_id
+    WHERE cb.tenant_id = $1 
+      AND cb.status != 'cancelled'
+      AND (cb.match_status = 'open' OR (cb.booking_mode = 'seek_match' AND (cb.team_b_name IS NULL OR cb.team_b_name = '')))
+      AND cb.date >= (CURRENT_DATE - INTERVAL '1 day')::date
+    ORDER BY cb.date, cb.time
+  `, [tenantId]);
+  return res.rows.map(mapBookingRow);
+}
+async function joinMatch(id, tenantId, teamBData) {
+  const res = await query(`
+    UPDATE court_bookings 
+    SET team_b_name = $1, team_b_captain = $2, team_b_phone = $3,
+        team_b_players = $4, team_b_extra_players = $5,
+        match_status = 'matched', updated_at = CURRENT_TIMESTAMP
+    WHERE id = $6 AND tenant_id = $7 RETURNING *
+  `, [
+    teamBData.teamBName || "Equipo B",
+    teamBData.teamBCaptain,
+    teamBData.teamBPhone,
+    teamBData.teamBPlayers || 5,
+    teamBData.teamBExtraPlayers || 0,
+    id,
+    tenantId
+  ]);
+  if (!res.rows[0]) return null;
+  const booking = mapBookingRow(res.rows[0]);
+  const cRes = await query("SELECT name FROM courts WHERE id = $1 AND tenant_id = $2", [booking.courtId, tenantId]);
+  booking.courtName = cRes.rows[0]?.name || booking.courtName;
+  return booking;
+}
+async function expireOldMatches() {
+  const res = await query(`
+    UPDATE court_bookings 
+    SET match_status = 'expired', status = 'uncompleted', updated_at = CURRENT_TIMESTAMP
+    WHERE status NOT IN ('cancelled', 'uncompleted')
+      AND (
+        (match_status = 'open' AND (date + time - (match_expiry_hours || ' hours')::interval) <= NOW())
+        OR (booking_mode = 'seek_match' AND (team_b_name IS NULL OR team_b_name = '') AND (date + time) <= NOW())
+        OR (status = 'pending' AND (date + time) <= NOW())
+      )
+    RETURNING id
+  `);
+  return res.rowCount || 0;
+}
+async function purgeOldUncompletedBookings() {
+  const res = await query(`
+    DELETE FROM court_bookings 
+    WHERE (status = 'uncompleted' OR match_status = 'expired')
+      AND updated_at < NOW() - INTERVAL '15 days'
+    RETURNING id
+  `);
+  return res.rowCount || 0;
+}
+async function getUncompletedBookings(tenantId) {
+  const res = await query(`
+    SELECT cb.*, c.name as court_name,
+           GREATEST(0, 15 - FLOOR(EXTRACT(EPOCH FROM (NOW() - cb.updated_at)) / 86400))::int AS days_left
+    FROM court_bookings cb
+    JOIN courts c ON c.id = cb.court_id
+    WHERE cb.tenant_id = $1 
+      AND (cb.status = 'uncompleted' OR cb.match_status = 'expired')
+    ORDER BY cb.updated_at DESC
+  `, [tenantId]);
+  return res.rows.map((r) => ({
+    ...mapBookingRow(r),
+    daysLeft: r.days_left ?? 15
+  }));
+}
+async function purgeBookingNow(id, tenantId) {
+  const res = await query(`
+    DELETE FROM court_bookings 
+    WHERE id = $1 AND tenant_id = $2 AND (status = 'uncompleted' OR match_status = 'expired' OR status = 'cancelled')
+  `, [id, tenantId]);
+  return (res.rowCount || 0) > 0;
+}
+async function getBookingByCode(codeOrId, tenantId) {
+  if (!codeOrId) return null;
+  let cleanCode = codeOrId.trim().toUpperCase().replace(/^#/, "");
+  if (cleanCode.startsWith("RES-")) {
+    cleanCode = "CRT-" + cleanCode.slice(4);
+  }
+  const rawSuffix = cleanCode.replace(/^CRT-/, "");
+  let q = `
+    SELECT cb.*, c.name as court_name 
+    FROM court_bookings cb
+    JOIN courts c ON c.id = cb.court_id
+    WHERE (
+      UPPER(cb.booking_code) = $1 
+      OR UPPER(cb.booking_code) = UPPER('CRT-' || $2)
+      OR cb.id::text = $3
+      OR UPPER(SUBSTRING(cb.id::text, 1, 8)) = $2
+    )
+  `;
+  const params = [cleanCode, rawSuffix, codeOrId.trim()];
+  if (tenantId) {
+    q += ` AND cb.tenant_id = $4`;
+    params.push(tenantId);
+  }
+  q += ` LIMIT 1`;
+  const res = await query(q, params);
+  return res.rows[0] ? mapBookingRow(res.rows[0]) : null;
+}
+async function rescheduleCourtBooking(idOrCode, tenantId, data) {
+  let booking = null;
+  if (tenantId) {
+    booking = await getBookingById(idOrCode, tenantId);
+    if (!booking) {
+      booking = await getBookingByCode(idOrCode, tenantId);
+    }
+  } else {
+    booking = await getBookingByIdUnsafe(idOrCode);
+    if (!booking) {
+      booking = await getBookingByCode(idOrCode);
+    }
+  }
+  if (!booking) {
+    const notFoundErr = new Error("Reserva no encontrada");
+    notFoundErr.statusCode = 404;
+    throw notFoundErr;
+  }
+  const targetTenantId = booking.tenantId;
+  const targetCourtId = data.newCourtId || booking.courtId;
+  const rawTime = (data.newTime || "").trim();
+  const cleanTime = rawTime.length === 5 ? `${rawTime}:00` : rawTime;
+  if (targetCourtId === booking.courtId && data.newDate === booking.date && cleanTime === booking.time) {
+    return booking;
+  }
+  const availableSlots = await getAvailableSlots(targetTenantId, targetCourtId, data.newDate);
+  const isAvailable = availableSlots.some((s) => s === cleanTime || s.startsWith(cleanTime.slice(0, 5)));
+  if (!isAvailable) {
+    const conflictErr = new Error("El nuevo horario o cancha seleccionada no est\xE1 disponible. Por favor elige otro turno.");
+    conflictErr.statusCode = 409;
+    throw conflictErr;
+  }
+  let newPrice = booking.totalPrice;
+  if (targetCourtId !== booking.courtId) {
+    const cRes = await query("SELECT base_price, extra_player_fee FROM courts WHERE id = $1", [targetCourtId]);
+    if (cRes.rows[0]) {
+      const c = cRes.rows[0];
+      newPrice = Number(c.base_price || 0) + Number(booking.teamAExtraPlayers || 0) * Number(c.extra_player_fee || 0);
+    }
+  }
+  const auditEntry = `[Reagendado el ${(/* @__PURE__ */ new Date()).toLocaleString("es-CR", { timeZone: "America/Costa_Rica" })} de ${booking.date} ${booking.time.substring(0, 5)} a ${data.newDate} ${cleanTime.substring(0, 5)}${data.changedBy ? ` por ${data.changedBy}` : ""}]`;
+  const updatedNotes = booking.notes ? `${booking.notes}
+${auditEntry}` : auditEntry;
+  const res = await query(`
+    UPDATE court_bookings 
+    SET court_id = $1, date = $2::date, time = $3::time, total_price = $4,
+        notes = $5, status = 'confirmed', updated_at = CURRENT_TIMESTAMP
+    WHERE id = $6 AND tenant_id = $7 RETURNING *
+  `, [targetCourtId, data.newDate, cleanTime, newPrice, updatedNotes, booking.id, targetTenantId]);
+  if (!res.rows[0]) return null;
+  const updated = mapBookingRow(res.rows[0]);
+  const courtRes = await query("SELECT name FROM courts WHERE id = $1", [updated.courtId]);
+  updated.courtName = courtRes.rows[0]?.name || updated.courtName;
+  return updated;
+}
+async function getAvailableSlots(tenantId, courtId, date) {
+  const nowCR = new Date((/* @__PURE__ */ new Date()).toLocaleString("en-US", { timeZone: "America/Costa_Rica" }));
+  const todayCR = `${nowCR.getFullYear()}-${String(nowCR.getMonth() + 1).padStart(2, "0")}-${String(nowCR.getDate()).padStart(2, "0")}`;
+  const currentMinutesNow = nowCR.getHours() * 60 + nowCR.getMinutes();
+  if (date < todayCR) {
+    return [];
+  }
+  const cRes = await query("SELECT * FROM courts WHERE id = $1 AND tenant_id = $2", [courtId, tenantId]);
+  const courtRow = cRes.rows[0];
+  if (!courtRow || courtRow.active === false) {
+    return [];
+  }
+  const selectedDate = /* @__PURE__ */ new Date(`${date}T00:00:00`);
+  const dayOfWeek = selectedDate.getDay() === 0 ? 7 : selectedDate.getDay();
+  let startMinutes = 8 * 60;
+  let endMinutes = 22 * 60;
+  let slotMinutes = Number(courtRow.duration_minutes) || 60;
+  const courtSched = courtRow.schedule_config ? typeof courtRow.schedule_config === "string" ? JSON.parse(courtRow.schedule_config) : courtRow.schedule_config : null;
+  if (courtSched && courtSched.useBusinessHours === false) {
+    if (Array.isArray(courtSched.daysEnabled) && !courtSched.daysEnabled.includes(dayOfWeek)) {
+      return [];
+    }
+    if (courtSched.perDaySchedule && courtSched.perDaySchedule[dayOfWeek]) {
+      const dayConf = courtSched.perDaySchedule[dayOfWeek];
+      if (dayConf.enabled === false) return [];
+      if (dayConf.startHour) {
+        const [sh, sm] = dayConf.startHour.split(":").map(Number);
+        startMinutes = sh * 60 + sm;
+      }
+      if (dayConf.endHour) {
+        const [eh, em] = dayConf.endHour.split(":").map(Number);
+        endMinutes = eh * 60 + em;
+      }
+    } else {
+      if (courtSched.startHour) {
+        const [sh, sm] = courtSched.startHour.split(":").map(Number);
+        startMinutes = sh * 60 + sm;
+      }
+      if (courtSched.endHour) {
+        const [eh, em] = courtSched.endHour.split(":").map(Number);
+        endMinutes = eh * 60 + em;
+      }
+    }
+  } else {
+    const tRes = await query("SELECT settings_json FROM tenants WHERE id = $1", [tenantId]);
+    const settingsJson = tRes.rows[0]?.settings_json || {};
+    const scheduleSettings = settingsJson.scheduleSettings || { startHour: 8, endHour: 22, slotMinutes: 60 };
+    startMinutes = (Number(scheduleSettings.startHour) || 8) * 60;
+    endMinutes = (Number(scheduleSettings.endHour) || 22) * 60;
+  }
+  const slots = [];
+  let currentMinutes = startMinutes;
+  while (currentMinutes + slotMinutes <= endMinutes) {
+    const h = Math.floor(currentMinutes / 60);
+    const m = currentMinutes % 60;
+    const timeStr = `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:00`;
+    slots.push(timeStr);
+    currentMinutes += slotMinutes;
+  }
+  const bookingsRes = await query(`
+    SELECT time 
+    FROM court_bookings 
+    WHERE tenant_id = $1 AND court_id = $2 AND date = $3::date AND status NOT IN ('cancelled', 'rejected', 'uncompleted')
+  `, [tenantId, courtId, date]);
+  const bookedTimes = bookingsRes.rows.map((r) => {
+    return typeof r.time === "string" ? r.time : r.time.toString();
+  });
+  const isToday = date === todayCR;
+  return slots.filter((slot) => {
+    if (isToday) {
+      const [sh, sm] = slot.split(":").map(Number);
+      if (sh * 60 + sm <= currentMinutesNow) {
+        return false;
+      }
+    }
+    return !bookedTimes.includes(slot);
+  });
+}
+
+// src/server/services/court-cleanup.service.ts
+function startCourtCleanupScheduler() {
+  console.log("[CourtCleanup] Starting automated court cleanup scheduler (interval: 6h)...");
+  setTimeout(runCourtCleanup, 15e3);
+  setInterval(runCourtCleanup, 6 * 60 * 60 * 1e3);
+}
+async function runCourtCleanup() {
+  try {
+    const expiredCount = await expireOldMatches();
+    const purgedCount = await purgeOldUncompletedBookings();
+    if (expiredCount > 0 || purgedCount > 0) {
+      console.log(`[CourtCleanup] Cleanup run complete: ${expiredCount} partidos/retos pasaron a no concretados, ${purgedCount} reservas no concretadas (>15 d\xEDas) fueron eliminadas.`);
+    }
+  } catch (err) {
+    console.error("[CourtCleanup] Error running court cleanup task:", err?.message || err);
   }
 }
 
@@ -6641,473 +7278,6 @@ async function getCompletedAppointmentsForSpecialist(specialistId, fromDate, toD
   return res.rows;
 }
 
-// src/server/db/courts.repo.ts
-init_pool();
-function mapCourtRow(row) {
-  return {
-    id: row.id,
-    tenantId: row.tenant_id,
-    name: row.name,
-    sportType: row.sport_type,
-    customSportType: row.custom_sport_type,
-    description: row.description,
-    surface: row.surface,
-    isIndoor: row.is_indoor,
-    hasLighting: row.has_lighting,
-    basePrice: Number(row.base_price),
-    priceDisplay: row.price_display,
-    durationMinutes: row.duration_minutes,
-    teamSize: row.team_size,
-    maxExtraPlayers: row.max_extra_players,
-    extraPlayerFee: Number(row.extra_player_fee),
-    imageUrl: row.image_url || void 0,
-    scheduleConfig: row.schedule_config ? typeof row.schedule_config === "string" ? JSON.parse(row.schedule_config) : row.schedule_config : void 0,
-    active: row.active,
-    sortOrder: row.sort_order,
-    createdAt: row.created_at
-  };
-}
-function mapBookingRow(row) {
-  return {
-    id: row.id,
-    tenantId: row.tenant_id,
-    courtId: row.court_id,
-    courtName: row.court_name || row.name,
-    // in case of join
-    date: row.date,
-    time: row.time,
-    durationMinutes: row.duration_minutes,
-    bookingMode: row.booking_mode,
-    matchStatus: row.match_status,
-    matchExpiryHours: Number(row.match_expiry_hours),
-    teamAName: row.team_a_name,
-    teamACaptain: row.team_a_captain,
-    teamAPhone: row.team_a_phone,
-    teamAPlayers: row.team_a_players,
-    teamAExtraPlayers: row.team_a_extra_players,
-    teamAPaid: row.team_a_paid,
-    teamBName: row.team_b_name,
-    teamBCaptain: row.team_b_captain,
-    teamBPhone: row.team_b_phone,
-    teamBPlayers: row.team_b_players,
-    teamBExtraPlayers: row.team_b_extra_players,
-    teamBPaid: row.team_b_paid,
-    totalPrice: Number(row.total_price),
-    pricePerTeam: row.price_per_team ? Number(row.price_per_team) : void 0,
-    paymentMode: row.payment_mode,
-    paymentMethod: row.payment_method,
-    paymentReference: row.payment_reference,
-    tilopayTransactionIdA: row.tilopay_transaction_id_a,
-    tilopayAuthCodeA: row.tilopay_auth_code_a,
-    tilopayTransactionIdB: row.tilopay_transaction_id_b,
-    tilopayAuthCodeB: row.tilopay_auth_code_b,
-    sportType: row.sport_type,
-    skillLevel: row.skill_level,
-    notes: row.notes,
-    status: row.status,
-    billingInfo: row.billing_info,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at
-  };
-}
-async function getCourtsByTenant(tenantId) {
-  const res = await query(`SELECT * FROM courts WHERE tenant_id = $1 ORDER BY sort_order, name`, [tenantId]);
-  return res.rows.map(mapCourtRow);
-}
-async function getCourtById(id, tenantId) {
-  const res = await query(`SELECT * FROM courts WHERE id = $1 AND tenant_id = $2`, [id, tenantId]);
-  return res.rows[0] ? mapCourtRow(res.rows[0]) : null;
-}
-async function createCourt(tenantId, data) {
-  const scheduleJson = data.scheduleConfig ? JSON.stringify(data.scheduleConfig) : null;
-  const res = await query(`
-    INSERT INTO courts (
-      tenant_id, name, sport_type, custom_sport_type, description, surface, 
-      is_indoor, has_lighting, base_price, price_display, duration_minutes, 
-      team_size, max_extra_players, extra_player_fee, active, sort_order,
-      image_url, schedule_config
-    ) VALUES (
-      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
-    ) RETURNING *
-  `, [
-    tenantId,
-    data.name,
-    data.sportType,
-    data.customSportType,
-    data.description,
-    data.surface,
-    data.isIndoor,
-    data.hasLighting,
-    data.basePrice,
-    data.priceDisplay,
-    data.durationMinutes,
-    data.teamSize,
-    data.maxExtraPlayers,
-    data.extraPlayerFee,
-    data.active !== false,
-    data.sortOrder || 0,
-    data.imageUrl || null,
-    scheduleJson
-  ]);
-  return mapCourtRow(res.rows[0]);
-}
-async function updateCourt(id, tenantId, data) {
-  const allowed = {
-    name: "name",
-    sportType: "sport_type",
-    customSportType: "custom_sport_type",
-    description: "description",
-    surface: "surface",
-    isIndoor: "is_indoor",
-    hasLighting: "has_lighting",
-    basePrice: "base_price",
-    priceDisplay: "price_display",
-    durationMinutes: "duration_minutes",
-    teamSize: "team_size",
-    maxExtraPlayers: "max_extra_players",
-    extraPlayerFee: "extra_player_fee",
-    active: "active",
-    sortOrder: "sort_order",
-    imageUrl: "image_url",
-    scheduleConfig: "schedule_config"
-  };
-  const processedData = { ...data };
-  if (data.scheduleConfig !== void 0) {
-    processedData.scheduleConfig = data.scheduleConfig ? JSON.stringify(data.scheduleConfig) : null;
-  }
-  const entries = Object.entries(processedData).filter(([k, v]) => allowed[k] !== void 0 && v !== void 0);
-  if (entries.length === 0) return getCourtById(id, tenantId);
-  const setClause = entries.map(([k], i) => `${allowed[k]} = $${i + 3}`).join(", ");
-  const values = entries.map((e) => e[1]);
-  const res = await query(`
-    UPDATE courts SET ${setClause} WHERE id = $1 AND tenant_id = $2 RETURNING *
-  `, [id, tenantId, ...values]);
-  return res.rows[0] ? mapCourtRow(res.rows[0]) : null;
-}
-async function deleteCourt(id, tenantId) {
-  const res = await query(`DELETE FROM courts WHERE id = $1 AND tenant_id = $2`, [id, tenantId]);
-  return (res.rowCount || 0) > 0;
-}
-async function getBookingsByTenant(tenantId, date) {
-  let q = `
-    SELECT cb.*, c.name as court_name 
-    FROM court_bookings cb
-    JOIN courts c ON c.id = cb.court_id
-    WHERE cb.tenant_id = $1
-  `;
-  const params = [tenantId];
-  if (date) {
-    q += ` AND cb.date = $2`;
-    params.push(date);
-  }
-  q += ` ORDER BY cb.date DESC, cb.time DESC`;
-  const res = await query(q, params);
-  return res.rows.map(mapBookingRow);
-}
-async function getBookingById(id, tenantId) {
-  const res = await query(`
-    SELECT cb.*, c.name as court_name 
-    FROM court_bookings cb
-    JOIN courts c ON c.id = cb.court_id
-    WHERE cb.id = $1 AND cb.tenant_id = $2
-  `, [id, tenantId]);
-  return res.rows[0] ? mapBookingRow(res.rows[0]) : null;
-}
-async function getBookingByIdUnsafe(id) {
-  const res = await query(`
-    SELECT cb.*, c.name as court_name 
-    FROM court_bookings cb
-    JOIN courts c ON c.id = cb.court_id
-    WHERE cb.id = $1
-  `, [id]);
-  return res.rows[0] ? mapBookingRow(res.rows[0]) : null;
-}
-async function createBooking(tenantId, data) {
-  const bookingMode = data.bookingMode || "full";
-  const matchStatus = data.matchStatus || (bookingMode === "seek_match" ? "open" : "confirmed");
-  let totalPrice = Number(data.totalPrice || 0);
-  let durationMinutes = data.durationMinutes || 60;
-  let sportType = data.sportType;
-  if (data.courtId && (!totalPrice || !sportType)) {
-    const cRes = await query("SELECT * FROM courts WHERE id = $1 AND tenant_id = $2", [data.courtId, tenantId]);
-    if (cRes.rows[0]) {
-      const c = cRes.rows[0];
-      durationMinutes = data.durationMinutes || c.duration_minutes || 60;
-      sportType = sportType || c.sport_type || "futbol";
-      if (!totalPrice) {
-        totalPrice = Number(c.base_price || 0) + Number(data.teamAExtraPlayers || 0) * Number(c.extra_player_fee || 0);
-      }
-    }
-  }
-  const pricePerTeam = data.pricePerTeam ? Number(data.pricePerTeam) : totalPrice > 0 ? totalPrice / 2 : void 0;
-  try {
-    const res = await query(`
-      INSERT INTO court_bookings (
-        tenant_id, court_id, date, time, duration_minutes, booking_mode,
-        match_status, match_expiry_hours, team_a_name, team_a_captain,
-        team_a_phone, team_a_players, team_a_extra_players, team_a_paid,
-        team_b_name, team_b_captain, team_b_phone, team_b_players,
-        team_b_extra_players, team_b_paid, total_price, price_per_team,
-        payment_mode, sport_type, skill_level, notes, status,
-        payment_method, payment_reference, billing_info
-      ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
-        $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27,
-        $28, $29, $30
-      ) RETURNING *
-    `, [
-      tenantId,
-      data.courtId,
-      data.date,
-      data.time,
-      durationMinutes,
-      bookingMode,
-      matchStatus,
-      data.matchExpiryHours || 1,
-      data.teamAName || "Equipo A",
-      data.teamACaptain,
-      data.teamAPhone,
-      data.teamAPlayers || 5,
-      data.teamAExtraPlayers || 0,
-      data.teamAPaid || false,
-      data.teamBName,
-      data.teamBCaptain,
-      data.teamBPhone,
-      data.teamBPlayers || 5,
-      data.teamBExtraPlayers || 0,
-      data.teamBPaid || false,
-      totalPrice,
-      pricePerTeam,
-      data.paymentMode || "both",
-      sportType,
-      data.skillLevel,
-      data.notes,
-      data.status || "confirmed",
-      data.paymentMethod || "cash",
-      data.paymentReference || null,
-      data.billingInfo ? JSON.stringify(data.billingInfo) : null
-    ]);
-    const booking = mapBookingRow(res.rows[0]);
-    if (data.courtId) {
-      const cRes = await query("SELECT name FROM courts WHERE id = $1 AND tenant_id = $2", [data.courtId, tenantId]);
-      booking.courtName = cRes.rows[0]?.name || booking.courtName;
-    }
-    return booking;
-  } catch (err) {
-    if (err?.code === "23505") {
-      const conflictErr = new Error("El horario seleccionado ya ha sido reservado por otro cliente. Por favor elige otro turno.");
-      conflictErr.statusCode = 409;
-      throw conflictErr;
-    }
-    throw err;
-  }
-}
-async function updateBooking(id, tenantId, data) {
-  const allowed = {
-    date: "date",
-    time: "time",
-    durationMinutes: "duration_minutes",
-    bookingMode: "booking_mode",
-    matchStatus: "match_status",
-    matchExpiryHours: "match_expiry_hours",
-    teamAName: "team_a_name",
-    teamACaptain: "team_a_captain",
-    teamAPhone: "team_a_phone",
-    teamAPlayers: "team_a_players",
-    teamAExtraPlayers: "team_a_extra_players",
-    teamAPaid: "team_a_paid",
-    teamBName: "team_b_name",
-    teamBCaptain: "team_b_captain",
-    teamBPhone: "team_b_phone",
-    teamBPlayers: "team_b_players",
-    teamBExtraPlayers: "team_b_extra_players",
-    teamBPaid: "team_b_paid",
-    totalPrice: "total_price",
-    pricePerTeam: "price_per_team",
-    paymentMode: "payment_mode",
-    paymentMethod: "payment_method",
-    paymentReference: "payment_reference",
-    tilopayTransactionIdA: "tilopay_transaction_id_a",
-    tilopayAuthCodeA: "tilopay_auth_code_a",
-    tilopayTransactionIdB: "tilopay_transaction_id_b",
-    tilopayAuthCodeB: "tilopay_auth_code_b",
-    sportType: "sport_type",
-    skillLevel: "skill_level",
-    notes: "notes",
-    status: "status",
-    billingInfo: "billing_info"
-  };
-  const entries = Object.entries(data).filter(([k, v]) => allowed[k] !== void 0 && v !== void 0);
-  if (entries.length === 0) return getBookingById(id, tenantId);
-  const setClause = entries.map(([k], i) => k === "billingInfo" ? `${allowed[k]} = $${i + 3}::jsonb` : `${allowed[k]} = $${i + 3}`).join(", ");
-  const values = entries.map(([k, v]) => k === "billingInfo" && v ? JSON.stringify(v) : v);
-  const res = await query(`
-    UPDATE court_bookings SET ${setClause}, updated_at = CURRENT_TIMESTAMP 
-    WHERE id = $1 AND tenant_id = $2 RETURNING *
-  `, [id, tenantId, ...values]);
-  return res.rows[0] ? mapBookingRow(res.rows[0]) : null;
-}
-async function updateCourtBookingPayment(id, team, data) {
-  const updates = [];
-  const params = [id];
-  let paramIdx = 2;
-  if (team === "a") {
-    updates.push(`team_a_paid = true`);
-    if (data.tilopayTxId) {
-      updates.push(`tilopay_transaction_id_a = $${paramIdx++}`);
-      params.push(data.tilopayTxId);
-    }
-    if (data.tilopayAuth) {
-      updates.push(`tilopay_auth_code_a = $${paramIdx++}`);
-      params.push(data.tilopayAuth);
-    }
-  } else {
-    updates.push(`team_b_paid = true`);
-    if (data.tilopayTxId) {
-      updates.push(`tilopay_transaction_id_b = $${paramIdx++}`);
-      params.push(data.tilopayTxId);
-    }
-    if (data.tilopayAuth) {
-      updates.push(`tilopay_auth_code_b = $${paramIdx++}`);
-      params.push(data.tilopayAuth);
-    }
-  }
-  if (data.paymentMethod) {
-    updates.push(`payment_method = $${paramIdx++}`);
-    params.push(data.paymentMethod);
-  }
-  if (data.paymentReference) {
-    updates.push(`payment_reference = $${paramIdx++}`);
-    params.push(data.paymentReference);
-  }
-  updates.push(`updated_at = CURRENT_TIMESTAMP`);
-  const res = await query(`
-    UPDATE court_bookings SET ${updates.join(", ")}
-    WHERE id = $1 RETURNING *
-  `, params);
-  return res.rows[0] ? mapBookingRow(res.rows[0]) : null;
-}
-async function cancelBooking(id, tenantId) {
-  const res = await query(`
-    UPDATE court_bookings SET status = 'cancelled', match_status = 'cancelled', updated_at = CURRENT_TIMESTAMP
-    WHERE id = $1 AND tenant_id = $2 RETURNING *
-  `, [id, tenantId]);
-  return res.rows[0] ? mapBookingRow(res.rows[0]) : null;
-}
-async function getOpenMatches(tenantId) {
-  const res = await query(`
-    SELECT cb.*, c.name as court_name 
-    FROM court_bookings cb
-    JOIN courts c ON c.id = cb.court_id
-    WHERE cb.tenant_id = $1 
-      AND cb.status != 'cancelled'
-      AND (cb.match_status = 'open' OR (cb.booking_mode = 'seek_match' AND (cb.team_b_name IS NULL OR cb.team_b_name = '')))
-      AND cb.date >= (CURRENT_DATE - INTERVAL '1 day')::date
-    ORDER BY cb.date, cb.time
-  `, [tenantId]);
-  return res.rows.map(mapBookingRow);
-}
-async function joinMatch(id, tenantId, teamBData) {
-  const res = await query(`
-    UPDATE court_bookings 
-    SET team_b_name = $1, team_b_captain = $2, team_b_phone = $3,
-        team_b_players = $4, team_b_extra_players = $5,
-        match_status = 'matched', updated_at = CURRENT_TIMESTAMP
-    WHERE id = $6 AND tenant_id = $7 RETURNING *
-  `, [
-    teamBData.teamBName || "Equipo B",
-    teamBData.teamBCaptain,
-    teamBData.teamBPhone,
-    teamBData.teamBPlayers || 5,
-    teamBData.teamBExtraPlayers || 0,
-    id,
-    tenantId
-  ]);
-  if (!res.rows[0]) return null;
-  const booking = mapBookingRow(res.rows[0]);
-  const cRes = await query("SELECT name FROM courts WHERE id = $1 AND tenant_id = $2", [booking.courtId, tenantId]);
-  booking.courtName = cRes.rows[0]?.name || booking.courtName;
-  return booking;
-}
-async function getAvailableSlots(tenantId, courtId, date) {
-  const nowCR = new Date((/* @__PURE__ */ new Date()).toLocaleString("en-US", { timeZone: "America/Costa_Rica" }));
-  const todayCR = `${nowCR.getFullYear()}-${String(nowCR.getMonth() + 1).padStart(2, "0")}-${String(nowCR.getDate()).padStart(2, "0")}`;
-  const currentMinutesNow = nowCR.getHours() * 60 + nowCR.getMinutes();
-  if (date < todayCR) {
-    return [];
-  }
-  const cRes = await query("SELECT * FROM courts WHERE id = $1 AND tenant_id = $2", [courtId, tenantId]);
-  const courtRow = cRes.rows[0];
-  if (!courtRow || courtRow.active === false) {
-    return [];
-  }
-  const selectedDate = /* @__PURE__ */ new Date(`${date}T00:00:00`);
-  const dayOfWeek = selectedDate.getDay() === 0 ? 7 : selectedDate.getDay();
-  let startMinutes = 8 * 60;
-  let endMinutes = 22 * 60;
-  let slotMinutes = Number(courtRow.duration_minutes) || 60;
-  const courtSched = courtRow.schedule_config ? typeof courtRow.schedule_config === "string" ? JSON.parse(courtRow.schedule_config) : courtRow.schedule_config : null;
-  if (courtSched && courtSched.useBusinessHours === false) {
-    if (Array.isArray(courtSched.daysEnabled) && !courtSched.daysEnabled.includes(dayOfWeek)) {
-      return [];
-    }
-    if (courtSched.perDaySchedule && courtSched.perDaySchedule[dayOfWeek]) {
-      const dayConf = courtSched.perDaySchedule[dayOfWeek];
-      if (dayConf.enabled === false) return [];
-      if (dayConf.startHour) {
-        const [sh, sm] = dayConf.startHour.split(":").map(Number);
-        startMinutes = sh * 60 + sm;
-      }
-      if (dayConf.endHour) {
-        const [eh, em] = dayConf.endHour.split(":").map(Number);
-        endMinutes = eh * 60 + em;
-      }
-    } else {
-      if (courtSched.startHour) {
-        const [sh, sm] = courtSched.startHour.split(":").map(Number);
-        startMinutes = sh * 60 + sm;
-      }
-      if (courtSched.endHour) {
-        const [eh, em] = courtSched.endHour.split(":").map(Number);
-        endMinutes = eh * 60 + em;
-      }
-    }
-  } else {
-    const tRes = await query("SELECT settings_json FROM tenants WHERE id = $1", [tenantId]);
-    const settingsJson = tRes.rows[0]?.settings_json || {};
-    const scheduleSettings = settingsJson.scheduleSettings || { startHour: 8, endHour: 22, slotMinutes: 60 };
-    startMinutes = (Number(scheduleSettings.startHour) || 8) * 60;
-    endMinutes = (Number(scheduleSettings.endHour) || 22) * 60;
-  }
-  const slots = [];
-  let currentMinutes = startMinutes;
-  while (currentMinutes + slotMinutes <= endMinutes) {
-    const h = Math.floor(currentMinutes / 60);
-    const m = currentMinutes % 60;
-    const timeStr = `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:00`;
-    slots.push(timeStr);
-    currentMinutes += slotMinutes;
-  }
-  const bookingsRes = await query(`
-    SELECT time 
-    FROM court_bookings 
-    WHERE tenant_id = $1 AND court_id = $2 AND date = $3::date AND status != 'cancelled'
-  `, [tenantId, courtId, date]);
-  const bookedTimes = bookingsRes.rows.map((r) => {
-    return typeof r.time === "string" ? r.time : r.time.toString();
-  });
-  const isToday = date === todayCR;
-  return slots.filter((slot) => {
-    if (isToday) {
-      const [sh, sm] = slot.split(":").map(Number);
-      if (sh * 60 + sm <= currentMinutesNow) {
-        return false;
-      }
-    }
-    return !bookedTimes.includes(slot);
-  });
-}
-
 // src/server/services/agent.ts
 init_records_repo();
 init_pool();
@@ -7624,10 +7794,13 @@ REGLAS OBLIGATORIAS:
 - Si el cliente pregunta por canchas o partidos, ofr\xE9cele las canchas del cat\xE1logo con sus precios por hora. Preg\xFAntale fecha, hora y modalidad ("full" para cancha completa o "seek_match" si busca rival / partido abierto).
 - Cuando el cliente confirme la reserva de cancha, a\xF1ade al final:
   <<<COMMAND_COURT_BOOKING: {"courtName":"nombre cancha", "date":"YYYY-MM-DD", "time":"HH:MM", "bookingMode":"full"|"seek_match", "teamAName":"${senderName}"}>>>
+- Para REAGENDAR CANCHA: Si el cliente desea cambiar fecha, hora o cancha de su partido, p\xEDdele su c\xF3digo de reserva (ej. CRT-8F2A1C o #RES-...). Ofr\xE9cele los horarios libres disponibles. Cuando confirme la nueva fecha y hora, a\xF1ade:
+  <<<COMMAND_RESCHEDULE_COURT: {"bookingCode":"c\xF3digo", "newDate":"YYYY-MM-DD", "newTime":"HH:MM", "newCourtName":"opcional"}>>>
 
 Acciones disponibles (a\xF1ade al final SOLO cuando el cliente confirme expl\xEDcitamente):
 Cita: <<<COMMAND_BOOKING: {"service":"nombre","date":"YYYY-MM-DD","time":"HH:MM","customerName":"${customerRecord?.fullName || senderName}","recordId":"${customerRecord?.id || ""}","specialistName":"opcional"}>>>
 Cancha: <<<COMMAND_COURT_BOOKING: {"courtName":"nombre", "date":"YYYY-MM-DD", "time":"HH:MM", "bookingMode":"full"|"seek_match", "teamAName":"${senderName}"}>>>
+Reagendar Cancha: <<<COMMAND_RESCHEDULE_COURT: {"bookingCode":"c\xF3digo", "newDate":"YYYY-MM-DD", "newTime":"HH:MM", "newCourtName":"opcional"}>>>
 Cancelar Cita: <<<COMMAND_CANCEL_BOOKING: {"date":"YYYY-MM-DD","service":"opcional","reason":"motivo"}>>>
 Reagendar Cita: <<<COMMAND_RESCHEDULE_BOOKING: {"newDate":"YYYY-MM-DD","newTime":"HH:MM"}>>>
 Compra / Pedido: <<<COMMAND_ORDER: {"items":[{"productName":"nombre","variantName":"opcional","quantity":1}], "deliveryMethod":"delivery"|"pickup", "deliveryAddress":"direcci\xF3n si aplica", "customerName":"${senderName}"}>>>
@@ -7701,8 +7874,11 @@ Asistente:`;
   let rescheduleBookingData;
   let isCourtBookingDetected = false;
   let courtBookingData;
+  let isRescheduleCourtDetected = false;
+  let rescheduleCourtData;
   const bookingRegex = /<<<COMMAND_BOOKING:\s*({.*?})>>>/s;
   const courtBookingRegex = /<<<COMMAND_COURT_BOOKING:\s*({.*?})>>>/s;
+  const courtRescheduleRegex = /<<<COMMAND_RESCHEDULE_COURT:\s*({.*?})>>>/s;
   const orderRegex = /<<<COMMAND_ORDER:\s*({.*?})>>>/s;
   const handoffRegex = /<<<COMMAND_HANDOFF:\s*({.*?})>>>/s;
   const mediaRegex = /<<<COMMAND_SEND_MEDIA:\s*({.*?})>>>/s;
@@ -7761,6 +7937,14 @@ Asistente:`;
       rescheduleBookingData = parsed;
     }
   }
+  const courtRescheduleMatch = replyText.match(courtRescheduleRegex);
+  if (courtRescheduleMatch && courtRescheduleMatch[1]) {
+    const parsed = safeParseJSON(courtRescheduleMatch[1]);
+    if (parsed && (parsed.bookingCode || parsed.code) && (parsed.newDate || parsed.newTime)) {
+      isRescheduleCourtDetected = true;
+      rescheduleCourtData = parsed;
+    }
+  }
   const orderMatch = replyText.match(orderRegex);
   if (orderMatch && orderMatch[1]) {
     const parsed = safeParseJSON(orderMatch[1]);
@@ -7786,13 +7970,15 @@ Asistente:`;
       mediaData = { mediaUrl: parsed.mediaUrl || parsed.url, caption: parsed.caption };
     }
   }
-  replyText = replyText.replace(bookingRegex, "").replace(courtBookingRegex, "").replace(orderRegex, "").replace(handoffRegex, "").replace(mediaRegex, "").replace(cancelRegex, "").replace(rescheduleRegex, "").replace(/\*\*/g, "*").trim();
+  replyText = replyText.replace(bookingRegex, "").replace(courtBookingRegex, "").replace(courtRescheduleRegex, "").replace(orderRegex, "").replace(handoffRegex, "").replace(mediaRegex, "").replace(cancelRegex, "").replace(rescheduleRegex, "").replace(/\*\*/g, "*").trim();
   return {
     replyText,
     isBookingDetected,
     bookingData,
     isCourtBookingDetected,
     courtBookingData,
+    isRescheduleCourtDetected,
+    rescheduleCourtData,
     isOrderDetected,
     orderData,
     isHandoffRequested,
@@ -8641,6 +8827,47 @@ async function processSingleMessage(msg) {
             commandType: "court_booking",
             clientName: msg.pushName,
             errorMessage: courtErr?.message || "Error al reservar cancha"
+          });
+        }
+      }
+    }
+    if (aiResult.isRescheduleCourtDetected && aiResult.rescheduleCourtData) {
+      try {
+        const rcData = aiResult.rescheduleCourtData;
+        const bookingCode = rcData.bookingCode || rcData.code;
+        let targetCourtId;
+        if (rcData.newCourtName) {
+          const allCourts = await getCourtsByTenant(msg.tenantId);
+          const matchedCourt = allCourts.find(
+            (c) => c.name.toLowerCase().includes((rcData.newCourtName || "").toLowerCase()) || (rcData.newCourtName || "").toLowerCase().includes(c.name.toLowerCase())
+          );
+          if (matchedCourt) targetCourtId = matchedCourt.id;
+        }
+        const rawTime = rcData.newTime || "19:00";
+        const cleanTime = rawTime.includes(":") ? rawTime.split(":").slice(0, 2).join(":") + ":00" : "19:00:00";
+        const updatedCourtBooking = await rescheduleCourtBooking(bookingCode, msg.tenantId, {
+          newCourtId: targetCourtId,
+          newDate: rcData.newDate,
+          newTime: cleanTime,
+          changedBy: `WhatsApp (${msg.pushName})`
+        });
+        if (updatedCourtBooking) {
+          console.log(`[Queue] Court booking ${updatedCourtBooking.bookingCode} rescheduled via WhatsApp for ${msg.pushName}`);
+          await logAICommand(msg.tenantId, msg.remoteJid, "reschedule_court", rcData, "success");
+          if (io) {
+            io.to(`tenant_${msg.tenantId}`).emit("courtBooking:updated", updatedCourtBooking);
+          }
+        }
+      } catch (courtErr) {
+        console.error("[Queue] Failed to process court reschedule:", courtErr);
+        await logAICommand(msg.tenantId, msg.remoteJid, "reschedule_court", aiResult.rescheduleCourtData, "failed", courtErr?.message);
+        finalReplyText = `Disculpa *${msg.pushName}*, no pudimos reagendar tu partido: ${courtErr?.message || "el horario no est\xE1 disponible o no se encontr\xF3 la reserva"}. \xBFDeseas verificar tu c\xF3digo o consultar otro horario?`;
+        if (io) {
+          io.to(`tenant_${msg.tenantId}`).emit("ai:command_failed", {
+            remoteJid: msg.remoteJid,
+            commandType: "reschedule_court",
+            clientName: msg.pushName,
+            errorMessage: courtErr?.message || "Error al reagendar cancha"
           });
         }
       }
@@ -16170,6 +16397,124 @@ router28.post("/public/:slug/pay/:bookingId", async (req, res) => {
     res.status(400).json({ error: safeMsg });
   }
 });
+async function sendRescheduleNotification(tenantId, booking) {
+  try {
+    const tRes = await query("SELECT evolution_instance, name FROM tenants WHERE id = $1", [tenantId]);
+    const evolutionInstance = tRes.rows[0]?.evolution_instance;
+    const businessName = tRes.rows[0]?.name || "el complejo deportivo";
+    if (!evolutionInstance) return;
+    const dParts = (booking.date || "").split("-");
+    const formattedDate = dParts.length === 3 ? `${dParts[2]}/${dParts[1]}/${dParts[0]}` : booking.date;
+    const code = booking.bookingCode || `#RES-${booking.id.substring(0, 8).toUpperCase()}`;
+    const timeShort = (booking.time || "").substring(0, 5);
+    if (booking.teamAPhone) {
+      const cleanA = booking.teamAPhone.replace(/\D/g, "");
+      const msgA = `\u{1F504} *\xA1Tu Reserva ha sido Reagendada!*
+
+Hola *${booking.teamACaptain}*,
+Tu partido para el equipo *${booking.teamAName}* en *${businessName}* ha sido reprogramado con \xE9xito:
+
+\u{1F4CB} *C\xF3digo:* ${code}
+\u{1F3C6} *Cancha:* ${booking.courtName || "Cancha Deportiva"}
+\u{1F4C5} *Nueva Fecha:* ${formattedDate}
+\u23F0 *Nueva Hora:* ${timeShort}
+
+\xA1Los esperamos en la cancha!`;
+      await sendMessage(evolutionInstance, `${cleanA}@s.whatsapp.net`, msgA).catch(console.error);
+    }
+    if (booking.teamBPhone && booking.teamBName) {
+      const cleanB = booking.teamBPhone.replace(/\D/g, "");
+      const msgB = `\u{1F504} *\xA1Partido Reagendado!*
+
+Hola *${booking.teamBCaptain}*,
+El partido entre *${booking.teamAName}* y *${booking.teamBName}* en *${businessName}* ha sido reprogramado:
+
+\u{1F4CB} *C\xF3digo:* ${code}
+\u{1F3C6} *Cancha:* ${booking.courtName || "Cancha Deportiva"}
+\u{1F4C5} *Nueva Fecha:* ${formattedDate}
+\u23F0 *Nueva Hora:* ${timeShort}
+
+\xA1Prep\xE1rense para jugar!`;
+      await sendMessage(evolutionInstance, `${cleanB}@s.whatsapp.net`, msgB).catch(console.error);
+    }
+  } catch (err) {
+    console.error("[Courts] Error sending reschedule notification:", err);
+  }
+}
+router28.get("/public/:slug/booking-by-code", async (req, res) => {
+  try {
+    const { code } = req.query;
+    if (!code) return res.status(400).json({ error: "Falta el c\xF3digo de reserva" });
+    const tenant = await getTenantBySlug(req.params.slug);
+    if (!tenant) return res.status(404).json({ error: "Negocio no encontrado" });
+    const booking = await getBookingByCode(String(code), tenant.id);
+    if (!booking) {
+      return res.status(404).json({ error: "No se encontr\xF3 ninguna reserva con este c\xF3digo" });
+    }
+    const sRes = await query(`SELECT store_modules FROM store_settings WHERE tenant_id = $1`, [tenant.id]);
+    const courtsConfig = sRes.rows[0]?.store_modules?.courtsConfig || {};
+    const allowPublicReschedule = courtsConfig.allowPublicReschedule !== false;
+    const minRescheduleHoursBefore = Number(courtsConfig.minRescheduleHoursBefore ?? 2);
+    res.json({
+      booking,
+      policy: {
+        allowPublicReschedule,
+        minRescheduleHoursBefore
+      }
+    });
+  } catch (error) {
+    console.error("[Courts] Error fetching booking by code:", error);
+    res.status(500).json({ error: "Error al consultar reserva" });
+  }
+});
+router28.post("/public/:slug/reschedule", async (req, res) => {
+  try {
+    const { bookingCode, newCourtId, newDate, newTime, reason } = req.body;
+    if (!bookingCode || !newDate || !newTime) {
+      return res.status(400).json({ error: "Faltan datos requeridos (bookingCode, newDate, newTime)" });
+    }
+    const tenant = await getTenantBySlug(req.params.slug);
+    if (!tenant) return res.status(404).json({ error: "Negocio no encontrado" });
+    const booking = await getBookingByCode(bookingCode, tenant.id);
+    if (!booking) return res.status(404).json({ error: "Reserva no encontrada" });
+    if (booking.status === "cancelled") {
+      return res.status(400).json({ error: "No se puede reagendar una reserva cancelada" });
+    }
+    const sRes = await query(`SELECT store_modules FROM store_settings WHERE tenant_id = $1`, [tenant.id]);
+    const courtsConfig = sRes.rows[0]?.store_modules?.courtsConfig || {};
+    if (courtsConfig.allowPublicReschedule === false) {
+      return res.status(403).json({ error: "El reagendamiento p\xFAblico est\xE1 deshabilitado para este comercio. Por favor comun\xEDcate directamente con la administraci\xF3n." });
+    }
+    const minHours = Number(courtsConfig.minRescheduleHoursBefore ?? 2);
+    const bookingDateTime = /* @__PURE__ */ new Date(`${booking.date}T${booking.time}`);
+    const now = /* @__PURE__ */ new Date();
+    const diffHours = (bookingDateTime.getTime() - now.getTime()) / (1e3 * 60 * 60);
+    if (diffHours < minHours) {
+      return res.status(400).json({
+        error: `Las reservas solo pueden modificarse con al menos ${minHours} hora(s) de anticipaci\xF3n. Por favor comun\xEDcate directamente con la administraci\xF3n.`
+      });
+    }
+    const updated = await rescheduleCourtBooking(booking.id, tenant.id, {
+      newCourtId,
+      newDate,
+      newTime,
+      notes: reason,
+      changedBy: "Cliente (Portal Web)"
+    });
+    if (!updated) {
+      return res.status(400).json({ error: "No se pudo reagendar la reserva" });
+    }
+    if (req.io) {
+      req.io.to(`tenant_${tenant.id}`).emit("courtBooking:updated", updated);
+    }
+    await sendRescheduleNotification(tenant.id, updated);
+    res.json(updated);
+  } catch (error) {
+    console.error("[Courts] Error rescheduling public booking:", error);
+    const status = error?.statusCode || 500;
+    res.status(status).json({ error: error?.message || "Error al reagendar reserva" });
+  }
+});
 router28.use(authenticateToken);
 router28.use(tenantContext);
 router28.get("/", async (req, res) => {
@@ -16268,6 +16613,59 @@ router28.put("/bookings/:id", async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Error al actualizar reserva" });
+  }
+});
+router28.put("/bookings/:id/reschedule", async (req, res) => {
+  try {
+    const isSuperAdmin = req.user?.role === "superadmin";
+    const targetTenantId = isSuperAdmin ? null : req.tenantId;
+    const { newCourtId, newDate, newTime, notes } = req.body;
+    if (!newDate || !newTime) {
+      return res.status(400).json({ error: "Faltan campos obligatorios: newDate y newTime" });
+    }
+    const updated = await rescheduleCourtBooking(req.params.id, targetTenantId, {
+      newCourtId,
+      newDate,
+      newTime,
+      notes,
+      changedBy: req.user?.name || "Administrador"
+    });
+    if (!updated) {
+      return res.status(400).json({ error: "No se pudo reagendar la reserva" });
+    }
+    if (req.io) {
+      req.io.to(`tenant_${updated.tenantId}`).emit("courtBooking:updated", updated);
+    }
+    await sendRescheduleNotification(updated.tenantId, updated);
+    res.json(updated);
+  } catch (error) {
+    console.error("[Courts] Error rescheduling court booking (admin):", error);
+    const status = error?.statusCode || 500;
+    res.status(status).json({ error: error?.message || "Error al reagendar reserva" });
+  }
+});
+router28.get("/bookings/uncompleted", async (req, res) => {
+  try {
+    const list = await getUncompletedBookings(req.tenantId);
+    res.json(list);
+  } catch (error) {
+    console.error("[Courts] Error getting uncompleted bookings:", error);
+    res.status(500).json({ error: "Error al obtener reservas no concretadas" });
+  }
+});
+router28.delete("/bookings/:id/purge-now", async (req, res) => {
+  try {
+    const success = await purgeBookingNow(req.params.id, req.tenantId);
+    if (!success) {
+      return res.status(404).json({ error: "Reserva no encontrada o no es candidata a purga" });
+    }
+    if (req.io) {
+      req.io.to(`tenant_${req.tenantId}`).emit("courtBooking:updated", { id: req.params.id, purged: true });
+    }
+    res.json({ success: true });
+  } catch (error) {
+    console.error("[Courts] Error purging court booking now:", error);
+    res.status(500).json({ error: "Error al purgar reserva" });
   }
 });
 router28.delete("/bookings/:id", async (req, res) => {
@@ -18879,6 +19277,7 @@ async function startServer() {
     console.log("Database migrations completed.");
     await ensureQueueTable();
     startReminderScheduler();
+    startCourtCleanupScheduler();
     recoverInterruptedCampaigns();
     startScheduledCampaignScanner();
     startSubscriptionLifecycleWorker();

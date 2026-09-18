@@ -8,7 +8,7 @@ import { createOrderFromWhatsApp } from './order.service.js';
 import { sendMessage, sendMedia, sendWhatsAppAudio } from './evolution.js';
 import { generateSpeechWithKokoro } from './kokoro-tts.service.js';
 import { getTenantById } from '../db/tenant.repo.js';
-import { createBooking as createCourtBooking, getCourtsByTenant } from '../db/courts.repo.js';
+import { createBooking as createCourtBooking, getCourtsByTenant, rescheduleCourtBooking } from '../db/courts.repo.js';
 import { logAICommand } from '../db/ai-command-logs.repo.js';
 import { query } from '../db/pool.js';
 
@@ -251,6 +251,54 @@ async function processSingleMessage(msg: any) {
             commandType: 'court_booking',
             clientName: msg.pushName,
             errorMessage: courtErr?.message || 'Error al reservar cancha'
+          });
+        }
+      }
+    }
+
+    // 2.5 Handle court reschedule command prior to dispatching WhatsApp message
+    if (aiResult.isRescheduleCourtDetected && aiResult.rescheduleCourtData) {
+      try {
+        const rcData = aiResult.rescheduleCourtData;
+        const bookingCode = rcData.bookingCode || rcData.code;
+
+        let targetCourtId: string | undefined;
+        if (rcData.newCourtName) {
+          const allCourts = await getCourtsByTenant(msg.tenantId);
+          const matchedCourt = allCourts.find((c: any) => 
+            c.name.toLowerCase().includes((rcData.newCourtName || '').toLowerCase()) ||
+            (rcData.newCourtName || '').toLowerCase().includes(c.name.toLowerCase())
+          );
+          if (matchedCourt) targetCourtId = matchedCourt.id;
+        }
+
+        const rawTime = rcData.newTime || '19:00';
+        const cleanTime = rawTime.includes(':') ? rawTime.split(':').slice(0, 2).join(':') + ':00' : '19:00:00';
+
+        const updatedCourtBooking = await rescheduleCourtBooking(bookingCode, msg.tenantId, {
+          newCourtId: targetCourtId,
+          newDate: rcData.newDate,
+          newTime: cleanTime,
+          changedBy: `WhatsApp (${msg.pushName})`
+        });
+
+        if (updatedCourtBooking) {
+          console.log(`[Queue] Court booking ${updatedCourtBooking.bookingCode} rescheduled via WhatsApp for ${msg.pushName}`);
+          await logAICommand(msg.tenantId, msg.remoteJid, 'reschedule_court', rcData, 'success');
+          if (io) {
+            io.to(`tenant_${msg.tenantId}`).emit('courtBooking:updated', updatedCourtBooking);
+          }
+        }
+      } catch (courtErr: any) {
+        console.error('[Queue] Failed to process court reschedule:', courtErr);
+        await logAICommand(msg.tenantId, msg.remoteJid, 'reschedule_court', aiResult.rescheduleCourtData, 'failed', courtErr?.message);
+        finalReplyText = `Disculpa *${msg.pushName}*, no pudimos reagendar tu partido: ${courtErr?.message || 'el horario no está disponible o no se encontró la reserva'}. ¿Deseas verificar tu código o consultar otro horario?`;
+        if (io) {
+          io.to(`tenant_${msg.tenantId}`).emit('ai:command_failed', {
+            remoteJid: msg.remoteJid,
+            commandType: 'reschedule_court',
+            clientName: msg.pushName,
+            errorMessage: courtErr?.message || 'Error al reagendar cancha'
           });
         }
       }

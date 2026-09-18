@@ -548,6 +548,7 @@ export interface Specialist {
 
 export interface CourtBooking {
   id: string;
+  bookingCode?: string;
   tenantId: string;
   courtId: string;
   courtName?: string;
@@ -581,7 +582,7 @@ export interface CourtBooking {
   sportType: string;
   skillLevel?: string;
   notes?: string;
-  status: string;
+  status: 'confirmed' | 'pending' | 'cancelled' | 'uncompleted' | string;
   billingInfo?: CustomerBillingInfo;
   createdAt?: string;
   updatedAt?: string;
@@ -608,6 +609,8 @@ export interface CourtsConfig {
   allowSeekMatch: boolean;
   sportTypes: string[];
   theme?: CourtsTheme;
+  allowPublicReschedule?: boolean;
+  minRescheduleHoursBefore?: number;
 }
 
 export interface BookingField {

@@ -26,9 +26,19 @@ function mapCourtRow(row: any): Court {
   };
 }
 
+function generateBookingCode(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i = 0; i < 6; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return `CRT-${code}`;
+}
+
 function mapBookingRow(row: any): CourtBooking {
   return {
     id: row.id,
+    bookingCode: row.booking_code || (row.id ? `CRT-${row.id.substring(0, 8).toUpperCase()}` : undefined),
     tenantId: row.tenant_id,
     courtId: row.court_id,
     courtName: row.court_name || row.name, // in case of join
@@ -200,6 +210,7 @@ export async function createBooking(tenantId: string, data: Partial<CourtBooking
   }
 
   const pricePerTeam = data.pricePerTeam ? Number(data.pricePerTeam) : (totalPrice > 0 ? totalPrice / 2 : undefined);
+  const bookingCode = data.bookingCode || generateBookingCode();
 
   try {
     const res = await query(`
@@ -210,11 +221,11 @@ export async function createBooking(tenantId: string, data: Partial<CourtBooking
         team_b_name, team_b_captain, team_b_phone, team_b_players,
         team_b_extra_players, team_b_paid, total_price, price_per_team,
         payment_mode, sport_type, skill_level, notes, status,
-        payment_method, payment_reference, billing_info
+        payment_method, payment_reference, billing_info, booking_code
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
         $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27,
-        $28, $29, $30
+        $28, $29, $30, $31
       ) RETURNING *
     `, [
       tenantId, data.courtId, data.date, data.time, durationMinutes,
@@ -226,7 +237,8 @@ export async function createBooking(tenantId: string, data: Partial<CourtBooking
       pricePerTeam, data.paymentMode || 'both', sportType, data.skillLevel,
       data.notes, data.status || 'confirmed',
       data.paymentMethod || 'cash', data.paymentReference || null,
-      data.billingInfo ? JSON.stringify(data.billingInfo) : null
+      data.billingInfo ? JSON.stringify(data.billingInfo) : null,
+      bookingCode
     ]);
 
     const booking = mapBookingRow(res.rows[0]);
@@ -258,7 +270,7 @@ export async function updateBooking(id: string, tenantId: string, data: Partial<
     tilopayTransactionIdA: 'tilopay_transaction_id_a', tilopayAuthCodeA: 'tilopay_auth_code_a',
     tilopayTransactionIdB: 'tilopay_transaction_id_b', tilopayAuthCodeB: 'tilopay_auth_code_b',
     sportType: 'sport_type', skillLevel: 'skill_level', notes: 'notes', status: 'status',
-    billingInfo: 'billing_info'
+    billingInfo: 'billing_info', bookingCode: 'booking_code'
   };
 
   const entries = Object.entries(data).filter(([k, v]) => (allowed as any)[k] !== undefined && v !== undefined);
@@ -368,12 +380,160 @@ export async function joinMatch(id: string, tenantId: string, teamBData: any) {
 }
 
 export async function expireOldMatches() {
-  await query(`
+  const res = await query(`
     UPDATE court_bookings 
-    SET match_status = 'expired', updated_at = CURRENT_TIMESTAMP
-    WHERE match_status = 'open' 
-      AND (date + time - (match_expiry_hours || ' hours')::interval) <= NOW()
+    SET match_status = 'expired', status = 'uncompleted', updated_at = CURRENT_TIMESTAMP
+    WHERE status NOT IN ('cancelled', 'uncompleted')
+      AND (
+        (match_status = 'open' AND (date + time - (match_expiry_hours || ' hours')::interval) <= NOW())
+        OR (booking_mode = 'seek_match' AND (team_b_name IS NULL OR team_b_name = '') AND (date + time) <= NOW())
+        OR (status = 'pending' AND (date + time) <= NOW())
+      )
+    RETURNING id
   `);
+  return res.rowCount || 0;
+}
+
+export async function purgeOldUncompletedBookings() {
+  const res = await query(`
+    DELETE FROM court_bookings 
+    WHERE (status = 'uncompleted' OR match_status = 'expired')
+      AND updated_at < NOW() - INTERVAL '15 days'
+    RETURNING id
+  `);
+  return res.rowCount || 0;
+}
+
+export async function getUncompletedBookings(tenantId: string) {
+  const res = await query(`
+    SELECT cb.*, c.name as court_name,
+           GREATEST(0, 15 - FLOOR(EXTRACT(EPOCH FROM (NOW() - cb.updated_at)) / 86400))::int AS days_left
+    FROM court_bookings cb
+    JOIN courts c ON c.id = cb.court_id
+    WHERE cb.tenant_id = $1 
+      AND (cb.status = 'uncompleted' OR cb.match_status = 'expired')
+    ORDER BY cb.updated_at DESC
+  `, [tenantId]);
+  return res.rows.map(r => ({
+    ...mapBookingRow(r),
+    daysLeft: r.days_left ?? 15
+  }));
+}
+
+export async function purgeBookingNow(id: string, tenantId: string) {
+  const res = await query(`
+    DELETE FROM court_bookings 
+    WHERE id = $1 AND tenant_id = $2 AND (status = 'uncompleted' OR match_status = 'expired' OR status = 'cancelled')
+  `, [id, tenantId]);
+  return (res.rowCount || 0) > 0;
+}
+
+export async function getBookingByCode(codeOrId: string, tenantId?: string) {
+  if (!codeOrId) return null;
+  let cleanCode = codeOrId.trim().toUpperCase().replace(/^#/, '');
+  if (cleanCode.startsWith('RES-')) {
+    cleanCode = 'CRT-' + cleanCode.slice(4);
+  }
+  const rawSuffix = cleanCode.replace(/^CRT-/, '');
+
+  let q = `
+    SELECT cb.*, c.name as court_name 
+    FROM court_bookings cb
+    JOIN courts c ON c.id = cb.court_id
+    WHERE (
+      UPPER(cb.booking_code) = $1 
+      OR UPPER(cb.booking_code) = UPPER('CRT-' || $2)
+      OR cb.id::text = $3
+      OR UPPER(SUBSTRING(cb.id::text, 1, 8)) = $2
+    )
+  `;
+  const params: any[] = [cleanCode, rawSuffix, codeOrId.trim()];
+  if (tenantId) {
+    q += ` AND cb.tenant_id = $4`;
+    params.push(tenantId);
+  }
+  q += ` LIMIT 1`;
+  const res = await query(q, params);
+  return res.rows[0] ? mapBookingRow(res.rows[0]) : null;
+}
+
+export async function rescheduleCourtBooking(
+  idOrCode: string,
+  tenantId: string | null,
+  data: {
+    newCourtId?: string;
+    newDate: string;
+    newTime: string;
+    notes?: string;
+    changedBy?: string;
+  }
+) {
+  // 1. Locate booking
+  let booking: CourtBooking | null = null;
+  if (tenantId) {
+    booking = await getBookingById(idOrCode, tenantId);
+    if (!booking) {
+      booking = await getBookingByCode(idOrCode, tenantId);
+    }
+  } else {
+    // SuperAdmin without pre-scoped tenantId
+    booking = await getBookingByIdUnsafe(idOrCode);
+    if (!booking) {
+      booking = await getBookingByCode(idOrCode);
+    }
+  }
+
+  if (!booking) {
+    const notFoundErr = new Error('Reserva no encontrada');
+    (notFoundErr as any).statusCode = 404;
+    throw notFoundErr;
+  }
+
+  const targetTenantId = booking.tenantId;
+  const targetCourtId = data.newCourtId || booking.courtId;
+  const rawTime = (data.newTime || '').trim();
+  const cleanTime = rawTime.length === 5 ? `${rawTime}:00` : rawTime;
+
+  // If exact same court, date and time, no changes needed
+  if (targetCourtId === booking.courtId && data.newDate === booking.date && cleanTime === booking.time) {
+    return booking;
+  }
+
+  // 2. Validate slot availability for new date/time/court
+  const availableSlots = await getAvailableSlots(targetTenantId, targetCourtId, data.newDate);
+  const isAvailable = availableSlots.some(s => s === cleanTime || s.startsWith(cleanTime.slice(0, 5)));
+  if (!isAvailable) {
+    const conflictErr = new Error('El nuevo horario o cancha seleccionada no está disponible. Por favor elige otro turno.');
+    (conflictErr as any).statusCode = 409;
+    throw conflictErr;
+  }
+
+  // 3. Recalculate price if court changed
+  let newPrice = booking.totalPrice;
+  if (targetCourtId !== booking.courtId) {
+    const cRes = await query('SELECT base_price, extra_player_fee FROM courts WHERE id = $1', [targetCourtId]);
+    if (cRes.rows[0]) {
+      const c = cRes.rows[0];
+      newPrice = Number(c.base_price || 0) + (Number(booking.teamAExtraPlayers || 0) * Number(c.extra_player_fee || 0));
+    }
+  }
+
+  // 4. Record audit notes
+  const auditEntry = `[Reagendado el ${new Date().toLocaleString('es-CR', { timeZone: 'America/Costa_Rica' })} de ${booking.date} ${booking.time.substring(0, 5)} a ${data.newDate} ${cleanTime.substring(0, 5)}${data.changedBy ? ` por ${data.changedBy}` : ''}]`;
+  const updatedNotes = booking.notes ? `${booking.notes}\n${auditEntry}` : auditEntry;
+
+  const res = await query(`
+    UPDATE court_bookings 
+    SET court_id = $1, date = $2::date, time = $3::time, total_price = $4,
+        notes = $5, status = 'confirmed', updated_at = CURRENT_TIMESTAMP
+    WHERE id = $6 AND tenant_id = $7 RETURNING *
+  `, [targetCourtId, data.newDate, cleanTime, newPrice, updatedNotes, booking.id, targetTenantId]);
+
+  if (!res.rows[0]) return null;
+  const updated = mapBookingRow(res.rows[0]);
+  const courtRes = await query('SELECT name FROM courts WHERE id = $1', [updated.courtId]);
+  updated.courtName = courtRes.rows[0]?.name || updated.courtName;
+  return updated;
 }
 
 export async function getAvailableSlots(tenantId: string, courtId: string, date: string) {
@@ -453,11 +613,11 @@ export async function getAvailableSlots(tenantId: string, courtId: string, date:
     currentMinutes += slotMinutes;
   }
 
-  // 3. Get existing bookings for this court and date (not cancelled)
+  // 3. Get existing bookings for this court and date (exclude cancelled, rejected, uncompleted)
   const bookingsRes = await query(`
     SELECT time 
     FROM court_bookings 
-    WHERE tenant_id = $1 AND court_id = $2 AND date = $3::date AND status != 'cancelled'
+    WHERE tenant_id = $1 AND court_id = $2 AND date = $3::date AND status NOT IN ('cancelled', 'rejected', 'uncompleted')
   `, [tenantId, courtId, date]);
 
   const bookedTimes = bookingsRes.rows.map(r => {
@@ -476,3 +636,4 @@ export async function getAvailableSlots(tenantId: string, courtId: string, date:
     return !bookedTimes.includes(slot);
   });
 }
+

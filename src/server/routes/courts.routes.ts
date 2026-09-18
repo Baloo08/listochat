@@ -4,7 +4,8 @@ import { tenantContext } from '../middleware/tenantContext.js';
 import { 
   getCourtsByTenant, getCourtById, createCourt, updateCourt, deleteCourt,
   getBookingsByTenant, getBookingById, createBooking, updateBooking, cancelBooking,
-  getOpenMatches, joinMatch, getAvailableSlots
+  getOpenMatches, joinMatch, getAvailableSlots, getBookingByCode, rescheduleCourtBooking,
+  getUncompletedBookings, purgeBookingNow
 } from '../db/courts.repo.js';
 import { getTenantBySlug } from '../db/tenant.repo.js';
 import { getTenantPaymentConfigRaw } from '../db/tenant-payment.repo.js';
@@ -279,6 +280,126 @@ router.post('/public/:slug/pay/:bookingId', async (req, res) => {
   }
 });
 
+async function sendRescheduleNotification(tenantId: string, booking: any) {
+  try {
+    const tRes = await query('SELECT evolution_instance, name FROM tenants WHERE id = $1', [tenantId]);
+    const evolutionInstance = tRes.rows[0]?.evolution_instance;
+    const businessName = tRes.rows[0]?.name || 'el complejo deportivo';
+    if (!evolutionInstance) return;
+
+    const dParts = (booking.date || '').split('-');
+    const formattedDate = dParts.length === 3 ? `${dParts[2]}/${dParts[1]}/${dParts[0]}` : booking.date;
+    const code = booking.bookingCode || `#RES-${booking.id.substring(0, 8).toUpperCase()}`;
+    const timeShort = (booking.time || '').substring(0, 5);
+
+    // Notify Team A
+    if (booking.teamAPhone) {
+      const cleanA = booking.teamAPhone.replace(/\D/g, '');
+      const msgA = `🔄 *¡Tu Reserva ha sido Reagendada!*\n\nHola *${booking.teamACaptain}*,\nTu partido para el equipo *${booking.teamAName}* en *${businessName}* ha sido reprogramado con éxito:\n\n📋 *Código:* ${code}\n🏆 *Cancha:* ${booking.courtName || 'Cancha Deportiva'}\n📅 *Nueva Fecha:* ${formattedDate}\n⏰ *Nueva Hora:* ${timeShort}\n\n¡Los esperamos en la cancha!`;
+      await sendMessage(evolutionInstance, `${cleanA}@s.whatsapp.net`, msgA).catch(console.error);
+    }
+
+    // Notify Team B if match is joined
+    if (booking.teamBPhone && booking.teamBName) {
+      const cleanB = booking.teamBPhone.replace(/\D/g, '');
+      const msgB = `🔄 *¡Partido Reagendado!*\n\nHola *${booking.teamBCaptain}*,\nEl partido entre *${booking.teamAName}* y *${booking.teamBName}* en *${businessName}* ha sido reprogramado:\n\n📋 *Código:* ${code}\n🏆 *Cancha:* ${booking.courtName || 'Cancha Deportiva'}\n📅 *Nueva Fecha:* ${formattedDate}\n⏰ *Nueva Hora:* ${timeShort}\n\n¡Prepárense para jugar!`;
+      await sendMessage(evolutionInstance, `${cleanB}@s.whatsapp.net`, msgB).catch(console.error);
+    }
+  } catch (err) {
+    console.error('[Courts] Error sending reschedule notification:', err);
+  }
+}
+
+router.get('/public/:slug/booking-by-code', async (req, res) => {
+  try {
+    const { code } = req.query;
+    if (!code) return res.status(400).json({ error: 'Falta el código de reserva' });
+    const tenant = await getTenantBySlug(req.params.slug);
+    if (!tenant) return res.status(404).json({ error: 'Negocio no encontrado' });
+
+    const booking = await getBookingByCode(String(code), tenant.id);
+    if (!booking) {
+      return res.status(404).json({ error: 'No se encontró ninguna reserva con este código' });
+    }
+
+    const sRes = await query(`SELECT store_modules FROM store_settings WHERE tenant_id = $1`, [tenant.id]);
+    const courtsConfig = sRes.rows[0]?.store_modules?.courtsConfig || {};
+    const allowPublicReschedule = courtsConfig.allowPublicReschedule !== false;
+    const minRescheduleHoursBefore = Number(courtsConfig.minRescheduleHoursBefore ?? 2);
+
+    res.json({
+      booking,
+      policy: {
+        allowPublicReschedule,
+        minRescheduleHoursBefore
+      }
+    });
+  } catch (error) {
+    console.error('[Courts] Error fetching booking by code:', error);
+    res.status(500).json({ error: 'Error al consultar reserva' });
+  }
+});
+
+router.post('/public/:slug/reschedule', async (req, res) => {
+  try {
+    const { bookingCode, newCourtId, newDate, newTime, reason } = req.body;
+    if (!bookingCode || !newDate || !newTime) {
+      return res.status(400).json({ error: 'Faltan datos requeridos (bookingCode, newDate, newTime)' });
+    }
+
+    const tenant = await getTenantBySlug(req.params.slug);
+    if (!tenant) return res.status(404).json({ error: 'Negocio no encontrado' });
+
+    const booking = await getBookingByCode(bookingCode, tenant.id);
+    if (!booking) return res.status(404).json({ error: 'Reserva no encontrada' });
+
+    if (booking.status === 'cancelled') {
+      return res.status(400).json({ error: 'No se puede reagendar una reserva cancelada' });
+    }
+
+    const sRes = await query(`SELECT store_modules FROM store_settings WHERE tenant_id = $1`, [tenant.id]);
+    const courtsConfig = sRes.rows[0]?.store_modules?.courtsConfig || {};
+    if (courtsConfig.allowPublicReschedule === false) {
+      return res.status(403).json({ error: 'El reagendamiento público está deshabilitado para este comercio. Por favor comunícate directamente con la administración.' });
+    }
+
+    const minHours = Number(courtsConfig.minRescheduleHoursBefore ?? 2);
+    const bookingDateTime = new Date(`${booking.date}T${booking.time}`);
+    const now = new Date();
+    const diffHours = (bookingDateTime.getTime() - now.getTime()) / (1000 * 60 * 60);
+    if (diffHours < minHours) {
+      return res.status(400).json({
+        error: `Las reservas solo pueden modificarse con al menos ${minHours} hora(s) de anticipación. Por favor comunícate directamente con la administración.`
+      });
+    }
+
+    const updated = await rescheduleCourtBooking(booking.id, tenant.id, {
+      newCourtId,
+      newDate,
+      newTime,
+      notes: reason,
+      changedBy: 'Cliente (Portal Web)'
+    });
+
+    if (!updated) {
+      return res.status(400).json({ error: 'No se pudo reagendar la reserva' });
+    }
+
+    if ((req as any).io) {
+      (req as any).io.to(`tenant_${tenant.id}`).emit('courtBooking:updated', updated);
+    }
+
+    await sendRescheduleNotification(tenant.id, updated);
+
+    res.json(updated);
+  } catch (error: any) {
+    console.error('[Courts] Error rescheduling public booking:', error);
+    const status = error?.statusCode || 500;
+    res.status(status).json({ error: error?.message || 'Error al reagendar reserva' });
+  }
+});
+
+
 
 // ==========================================
 // PRIVATE ROUTES (Require Auth)
@@ -386,6 +507,68 @@ router.put('/bookings/:id', async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Error al actualizar reserva' });
+  }
+});
+
+router.put('/bookings/:id/reschedule', async (req, res) => {
+  try {
+    const isSuperAdmin = (req.user as any)?.role === 'superadmin';
+    const targetTenantId = isSuperAdmin ? null : req.tenantId;
+
+    const { newCourtId, newDate, newTime, notes } = req.body;
+    if (!newDate || !newTime) {
+      return res.status(400).json({ error: 'Faltan campos obligatorios: newDate y newTime' });
+    }
+
+    const updated = await rescheduleCourtBooking(req.params.id, targetTenantId, {
+      newCourtId,
+      newDate,
+      newTime,
+      notes,
+      changedBy: (req.user as any)?.name || 'Administrador'
+    });
+
+    if (!updated) {
+      return res.status(400).json({ error: 'No se pudo reagendar la reserva' });
+    }
+
+    if ((req as any).io) {
+      (req as any).io.to(`tenant_${updated.tenantId}`).emit('courtBooking:updated', updated);
+    }
+
+    await sendRescheduleNotification(updated.tenantId, updated);
+
+    res.json(updated);
+  } catch (error: any) {
+    console.error('[Courts] Error rescheduling court booking (admin):', error);
+    const status = error?.statusCode || 500;
+    res.status(status).json({ error: error?.message || 'Error al reagendar reserva' });
+  }
+});
+
+router.get('/bookings/uncompleted', async (req, res) => {
+  try {
+    const list = await getUncompletedBookings(req.tenantId);
+    res.json(list);
+  } catch (error: any) {
+    console.error('[Courts] Error getting uncompleted bookings:', error);
+    res.status(500).json({ error: 'Error al obtener reservas no concretadas' });
+  }
+});
+
+router.delete('/bookings/:id/purge-now', async (req, res) => {
+  try {
+    const success = await purgeBookingNow(req.params.id, req.tenantId);
+    if (!success) {
+      return res.status(404).json({ error: 'Reserva no encontrada o no es candidata a purga' });
+    }
+    if ((req as any).io) {
+      (req as any).io.to(`tenant_${req.tenantId}`).emit('courtBooking:updated', { id: req.params.id, purged: true });
+    }
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('[Courts] Error purging court booking now:', error);
+    res.status(500).json({ error: 'Error al purgar reserva' });
   }
 });
 

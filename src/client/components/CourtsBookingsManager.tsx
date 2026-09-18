@@ -17,7 +17,7 @@ export default function CourtsBookingsManager() {
   
   // Views & Filters
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pending_pay' | 'paid' | 'seeking' | 'matched' | 'confirmed' | 'cancelled'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending_pay' | 'paid' | 'seeking' | 'matched' | 'confirmed' | 'cancelled' | 'uncompleted'>('all');
   const [selectedCourtFilter, setSelectedCourtFilter] = useState<string>('all');
   const [selectedDate, setSelectedDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -25,6 +25,18 @@ export default function CourtsBookingsManager() {
   // Selected detail modal
   const [selectedBooking, setSelectedBooking] = useState<CourtBooking | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+
+  // Copy code feedback
+  const [copiedCodeId, setCopiedCodeId] = useState<string | null>(null);
+
+  // Reschedule Modal state
+  const [rescheduleBooking, setRescheduleBooking] = useState<CourtBooking | null>(null);
+  const [rescheduleCourtId, setRescheduleCourtId] = useState('');
+  const [rescheduleDate, setRescheduleDate] = useState('');
+  const [rescheduleTime, setRescheduleTime] = useState('');
+  const [rescheduleSlots, setRescheduleSlots] = useState<string[]>([]);
+  const [rescheduleReason, setRescheduleReason] = useState('');
+  const [rescheduling, setRescheduling] = useState(false);
   
   // Reminder Modal state
   const [reminderBooking, setReminderBooking] = useState<CourtBooking | null>(null);
@@ -119,6 +131,95 @@ export default function CourtsBookingsManager() {
       fetchSlots();
     }
   }, [isManualModalOpen, manualCourtId, manualDate]);
+
+  // Fetch available slots for reschedule modal
+  useEffect(() => {
+    if (rescheduleBooking && rescheduleCourtId && rescheduleDate) {
+      const fetchSlots = async () => {
+        try {
+          const storeRes = await api.get('/api/store');
+          const slug = storeRes?.storeSlug;
+          if (slug) {
+            const slots = await api.get(`/api/courts/public/${slug}/available-slots?courtId=${rescheduleCourtId}&date=${rescheduleDate}`);
+            const parsed = Array.isArray(slots) ? slots : (slots?.availableSlots || []);
+            // Include current booking's slot if looking at same court and date
+            if (rescheduleCourtId === rescheduleBooking.courtId && rescheduleDate === rescheduleBooking.date) {
+              if (!parsed.includes(rescheduleBooking.time)) {
+                parsed.push(rescheduleBooking.time);
+                parsed.sort();
+              }
+            }
+            setRescheduleSlots(parsed);
+            if (parsed.length > 0 && !rescheduleTime) {
+              setRescheduleTime(parsed[0]);
+            }
+          }
+        } catch (e) {
+          setRescheduleSlots([]);
+        }
+      };
+      fetchSlots();
+    }
+  }, [rescheduleBooking, rescheduleCourtId, rescheduleDate]);
+
+  const handleOpenRescheduleModal = (b: CourtBooking) => {
+    setRescheduleBooking(b);
+    setRescheduleCourtId(b.courtId);
+    setRescheduleDate(b.date);
+    setRescheduleTime(b.time);
+    setRescheduleReason('');
+    setRescheduleSlots([]);
+  };
+
+  const handleConfirmReschedule = async () => {
+    if (!rescheduleBooking || !rescheduleCourtId || !rescheduleDate || !rescheduleTime) {
+      alert('Por favor selecciona la cancha, fecha y horario.');
+      return;
+    }
+
+    setRescheduling(true);
+    try {
+      const res = await api.put(`/api/courts/bookings/${rescheduleBooking.id}/reschedule`, {
+        newCourtId: rescheduleCourtId,
+        newDate: rescheduleDate,
+        newTime: rescheduleTime,
+        notes: rescheduleReason
+      });
+
+      if (res) {
+        alert('✅ ¡Reserva reagendada con éxito! Se ha notificado automáticamente por WhatsApp al cliente.');
+        setRescheduleBooking(null);
+        if (selectedBooking && selectedBooking.id === rescheduleBooking.id) {
+          setSelectedBooking(res);
+        }
+        loadData();
+      }
+    } catch (err: any) {
+      alert(err.message || 'Error al reagendar reserva');
+    } finally {
+      setRescheduling(false);
+    }
+  };
+
+  const handlePurgeNow = async (b: CourtBooking) => {
+    const codeLabel = b.bookingCode || `#RES-${b.id.substring(0, 8).toUpperCase()}`;
+    if (!confirm(`¿Eliminar definitivamente la reserva no concretada ${codeLabel}? Esta acción no se puede deshacer.`)) return;
+
+    try {
+      await api.delete(`/api/courts/bookings/${b.id}/purge-now`);
+      alert('Reserva eliminada de la base de datos.');
+      if (selectedBooking && selectedBooking.id === b.id) setSelectedBooking(null);
+      loadData();
+    } catch (err: any) {
+      alert(err.message || 'Error al purgar reserva');
+    }
+  };
+
+  const handleCopyCode = (code: string, id: string) => {
+    navigator.clipboard.writeText(code);
+    setCopiedCodeId(id);
+    setTimeout(() => setCopiedCodeId(null), 2000);
+  };
 
   const handleOpenManualModal = () => {
     if (courts.length > 0) {
@@ -268,30 +369,38 @@ export default function CourtsBookingsManager() {
 
   // KPIs
   const totalBookings = bookings.length;
-  const pendingPayCount = bookings.filter(b => b.status !== 'cancelled' && (!b.teamAPaid || (b.teamBName && !b.teamBPaid))).length;
-  const fullyPaidCount = bookings.filter(b => b.status !== 'cancelled' && b.teamAPaid && (!b.teamBName || b.teamBPaid)).length;
-  const openMatchesCount = bookings.filter(b => b.status !== 'cancelled' && (b.matchStatus === 'open' || (b.bookingMode === 'seek_match' && !b.teamBName))).length;
+  const pendingPayCount = bookings.filter(b => b.status !== 'cancelled' && b.status !== 'uncompleted' && b.matchStatus !== 'expired' && (!b.teamAPaid || (b.teamBName && !b.teamBPaid))).length;
+  const fullyPaidCount = bookings.filter(b => b.status !== 'cancelled' && b.status !== 'uncompleted' && b.matchStatus !== 'expired' && b.teamAPaid && (!b.teamBName || b.teamBPaid)).length;
+  const openMatchesCount = bookings.filter(b => b.status !== 'cancelled' && b.status !== 'uncompleted' && (b.matchStatus === 'open' || (b.bookingMode === 'seek_match' && !b.teamBName))).length;
+  const uncompletedCount = bookings.filter(b => b.status === 'uncompleted' || b.matchStatus === 'expired').length;
 
   // Filtered Bookings
   const filteredBookings = bookings.filter(b => {
     if (selectedCourtFilter !== 'all' && b.courtId !== selectedCourtFilter) return false;
     
-    if (statusFilter === 'pending_pay') {
-      if (b.status === 'cancelled') return false;
-      const isPending = !b.teamAPaid || (b.teamBName && !b.teamBPaid);
-      if (!isPending) return false;
-    } else if (statusFilter === 'paid') {
-      if (b.status === 'cancelled') return false;
-      const isPaid = b.teamAPaid && (!b.teamBName || b.teamBPaid);
-      if (!isPaid) return false;
-    } else if (statusFilter === 'seeking') {
-      if (b.status === 'cancelled' || (b.matchStatus !== 'open' && (b.bookingMode !== 'seek_match' || !!b.teamBName))) return false;
-    } else if (statusFilter === 'matched') {
-      if (b.matchStatus !== 'matched' || b.status === 'cancelled') return false;
-    } else if (statusFilter === 'confirmed') {
-      if (b.status !== 'confirmed') return false;
-    } else if (statusFilter === 'cancelled') {
-      if (b.status !== 'cancelled') return false;
+    if (statusFilter === 'uncompleted') {
+      if (b.status !== 'uncompleted' && b.matchStatus !== 'expired') return false;
+    } else {
+      if (statusFilter !== 'all' && (b.status === 'uncompleted' || b.matchStatus === 'expired')) {
+        return false;
+      }
+      if (statusFilter === 'pending_pay') {
+        if (b.status === 'cancelled' || b.status === 'uncompleted' || b.matchStatus === 'expired') return false;
+        const isPending = !b.teamAPaid || (b.teamBName && !b.teamBPaid);
+        if (!isPending) return false;
+      } else if (statusFilter === 'paid') {
+        if (b.status === 'cancelled' || b.status === 'uncompleted' || b.matchStatus === 'expired') return false;
+        const isPaid = b.teamAPaid && (!b.teamBName || b.teamBPaid);
+        if (!isPaid) return false;
+      } else if (statusFilter === 'seeking') {
+        if (b.status === 'cancelled' || b.status === 'uncompleted' || (b.matchStatus !== 'open' && (b.bookingMode !== 'seek_match' || !!b.teamBName))) return false;
+      } else if (statusFilter === 'matched') {
+        if (b.matchStatus !== 'matched' || b.status === 'cancelled') return false;
+      } else if (statusFilter === 'confirmed') {
+        if (b.status !== 'confirmed') return false;
+      } else if (statusFilter === 'cancelled') {
+        if (b.status !== 'cancelled') return false;
+      }
     }
 
     if (viewMode === 'calendar') {
@@ -299,18 +408,31 @@ export default function CourtsBookingsManager() {
     }
 
     if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
+      const q = searchQuery.toLowerCase().trim();
+      const codeStr = (b.bookingCode || '').toLowerCase();
+      const uuidStr = (b.id || '').toLowerCase();
+      const resPrefix = `#res-${(b.id || '').substring(0, 8)}`.toLowerCase();
+      const crtPrefix = `crt-${(b.id || '').substring(0, 8)}`.toLowerCase();
+      const matchCode = codeStr.includes(q) || uuidStr.includes(q) || resPrefix.includes(q) || crtPrefix.includes(q);
+      const matchPhone = (b.teamAPhone || '').includes(q) || (b.teamBPhone || '').includes(q);
       const matchCourt = (b.courtName || '').toLowerCase().includes(q);
       const matchTeamA = (b.teamAName || '').toLowerCase().includes(q) || (b.teamACaptain || '').toLowerCase().includes(q);
       const matchTeamB = (b.teamBName || '').toLowerCase().includes(q) || (b.teamBCaptain || '').toLowerCase().includes(q);
       const matchDate = (b.date || '').includes(q);
-      if (!matchCourt && !matchTeamA && !matchTeamB && !matchDate) return false;
+      if (!matchCode && !matchPhone && !matchCourt && !matchTeamA && !matchTeamB && !matchDate) return false;
     }
 
     return true;
   });
 
   const getStatusBadge = (b: CourtBooking) => {
+    if (b.status === 'uncompleted' || b.matchStatus === 'expired') {
+      return (
+        <span style={{ backgroundColor: '#f1f5f9', color: '#64748b', border: '1px solid #cbd5e1', padding: '4px 10px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '700' }}>
+          ⏳ No Concretada (Expirada)
+        </span>
+      );
+    }
     if (b.status === 'cancelled') {
       return <span style={{ backgroundColor: '#fee2e2', color: '#dc2626', padding: '4px 10px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '700' }}>Cancelado</span>;
     }
@@ -461,6 +583,18 @@ export default function CourtsBookingsManager() {
           <div style={{ fontSize: '0.75rem', fontWeight: '700', color: '#d97706', textTransform: 'uppercase', marginBottom: '6px' }}>Esperando Reto</div>
           <div style={{ fontSize: '1.6rem', fontWeight: '800', color: '#d97706' }}>{openMatchesCount}</div>
         </div>
+
+        <div 
+          onClick={() => setStatusFilter('uncompleted')}
+          style={{ 
+            backgroundColor: 'var(--surface)', padding: '16px', borderRadius: '12px', 
+            border: `1.5px solid ${statusFilter === 'uncompleted' ? '#64748b' : 'var(--border)'}`, 
+            cursor: 'pointer', transition: 'all 0.2s' 
+          }}
+        >
+          <div style={{ fontSize: '0.75rem', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '6px' }}>No Concretadas (15d)</div>
+          <div style={{ fontSize: '1.6rem', fontWeight: '800', color: '#64748b' }}>{uncompletedCount}</div>
+        </div>
       </div>
 
       {/* FILTER CONTROLS */}
@@ -475,7 +609,7 @@ export default function CourtsBookingsManager() {
           <Search size={16} color="var(--text-muted)" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
           <input
             type="text"
-            placeholder="Buscar por equipo, capitán, cancha o fecha..."
+            placeholder="Buscar por código (CRT-...), teléfono, capitán, equipo o cancha..."
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             style={{
@@ -502,6 +636,7 @@ export default function CourtsBookingsManager() {
             <option value="seeking">⚔️ Esperando Reto</option>
             <option value="matched">🎾 Reto Aceptado</option>
             <option value="confirmed">Confirmados</option>
+            <option value="uncompleted">⏳ No Concretadas / Expiradas (15 días)</option>
             <option value="cancelled">Cancelados</option>
           </select>
 
@@ -595,12 +730,38 @@ export default function CourtsBookingsManager() {
                     transition: 'border-color 0.2s'
                   }}
                 >
-                  {/* Top Bar: Court + Date/Time + Badges */}
+                  {/* Top Bar: Court + Booking Code + Date/Time + Badges */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                       <div style={{ fontSize: '1.1rem', fontWeight: '800', color: 'var(--text)' }}>
                         {b.courtName || 'Cancha Deportiva'}
                       </div>
+
+                      {/* Booking Code Pill with Copy */}
+                      <div 
+                        onClick={(e) => { e.stopPropagation(); handleCopyCode(b.bookingCode || `CRT-${b.id.substring(0, 8).toUpperCase()}`, b.id); }}
+                        title="Haz clic para copiar el código de reserva"
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: '5px',
+                          backgroundColor: 'rgba(37, 99, 235, 0.08)',
+                          color: '#2563eb', border: '1px solid rgba(37, 99, 235, 0.25)',
+                          padding: '3px 8px', borderRadius: '6px', fontSize: '0.78rem',
+                          fontWeight: '800', cursor: 'pointer', fontFamily: 'monospace'
+                        }}
+                      >
+                        {copiedCodeId === b.id ? (
+                          <>
+                            <Check size={12} color="#16a34a" />
+                            <span style={{ color: '#16a34a' }}>¡Copiado!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy size={12} />
+                            <span>{b.bookingCode || `CRT-${b.id.substring(0, 8).toUpperCase()}`}</span>
+                          </>
+                        )}
+                      </div>
+
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', color: 'var(--primary)', fontWeight: '700' }}>
                         <Calendar size={14} /> {friendlyDate}
                         <Clock size={14} style={{ marginLeft: '6px' }} /> {friendlyTime} ({b.durationMinutes} min)
@@ -629,7 +790,7 @@ export default function CourtsBookingsManager() {
                         <button
                           type="button"
                           onClick={() => handleTogglePaymentA(b)}
-                          disabled={updatingId === b.id || b.status === 'cancelled'}
+                          disabled={updatingId === b.id || b.status === 'cancelled' || b.status === 'uncompleted'}
                           style={{
                             padding: '3px 8px', borderRadius: '6px', border: 'none',
                             backgroundColor: b.teamAPaid ? '#dcfce7' : '#fee2e2',
@@ -678,7 +839,7 @@ export default function CourtsBookingsManager() {
                               <button
                                 type="button"
                                 onClick={() => handleTogglePaymentB(b)}
-                                disabled={updatingId === b.id || b.status === 'cancelled'}
+                                disabled={updatingId === b.id || b.status === 'cancelled' || b.status === 'uncompleted'}
                                 style={{
                                   padding: '3px 8px', borderRadius: '6px', border: 'none',
                                   backgroundColor: b.teamBPaid ? '#dcfce7' : '#fee2e2',
@@ -711,17 +872,46 @@ export default function CourtsBookingsManager() {
 
                   {/* Bottom Footer: Price + Quick Actions */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', paddingTop: '4px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Monto Total:</span>
-                      <span style={{ fontSize: '1.1rem', fontWeight: '800', color: 'var(--text)' }}>₡{total.toLocaleString()}</span>
-                      {b.bookingMode === 'seek_match' && (
-                        <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>(₡{perTeam.toLocaleString()} por equipo)</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                      <div>
+                        <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Monto Total: </span>
+                        <span style={{ fontSize: '1.1rem', fontWeight: '800', color: 'var(--text)' }}>₡{total.toLocaleString()}</span>
+                        {b.bookingMode === 'seek_match' && (
+                          <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}> (₡{perTeam.toLocaleString()} por equipo)</span>
+                        )}
+                      </div>
+
+                      {/* If uncompleted/expired match: show countdown */}
+                      {(b.status === 'uncompleted' || b.matchStatus === 'expired') && (
+                        <div style={{
+                          backgroundColor: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca',
+                          padding: '3px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '700',
+                          display: 'inline-flex', alignItems: 'center', gap: '4px'
+                        }}>
+                          <Clock size={12} />
+                          <span>Se eliminará automáticamente en {Math.max(0, 15 - Math.floor((Date.now() - new Date(b.updatedAt || b.createdAt || Date.now()).getTime()) / 86400000))} día(s)</span>
+                        </div>
                       )}
                     </div>
 
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                      {/* Enviar Recordatorio WhatsApp Button */}
+                      {/* Reagendar Button for active or uncompleted bookings */}
                       {b.status !== 'cancelled' && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenRescheduleModal(b)}
+                          style={{
+                            padding: '7px 12px', borderRadius: '8px', border: '1px solid #bfdbfe',
+                            backgroundColor: '#eff6ff', color: '#1d4ed8', fontSize: '0.8rem',
+                            fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px'
+                          }}
+                        >
+                          <Clock size={13} /> {b.status === 'uncompleted' ? 'Reactivar / Reagendar' : 'Reagendar'}
+                        </button>
+                      )}
+
+                      {/* Enviar Recordatorio WhatsApp Button */}
+                      {b.status !== 'cancelled' && b.status !== 'uncompleted' && (
                         <button
                           type="button"
                           onClick={() => setReminderBooking(b)}
@@ -747,7 +937,22 @@ export default function CourtsBookingsManager() {
                         <Eye size={14} /> Detalle
                       </button>
 
-                      {b.status !== 'cancelled' && (
+                      {/* Purge Now button if uncompleted */}
+                      {(b.status === 'uncompleted' || b.matchStatus === 'expired') && (
+                        <button
+                          type="button"
+                          onClick={() => handlePurgeNow(b)}
+                          style={{
+                            padding: '7px 12px', borderRadius: '8px', border: '1px solid #fecaca',
+                            backgroundColor: '#fee2e2', color: '#b91c1c', fontSize: '0.8rem',
+                            fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px'
+                          }}
+                        >
+                          <Trash2 size={13} /> Eliminar ahora
+                        </button>
+                      )}
+
+                      {b.status !== 'cancelled' && b.status !== 'uncompleted' && (
                         <button
                           type="button"
                           onClick={() => handleCancelBooking(b.id)}
@@ -1161,9 +1366,25 @@ export default function CourtsBookingsManager() {
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', fontSize: '0.9rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ color: 'var(--text-muted)' }}>Código de Reserva:</span>
-                <strong style={{ color: 'var(--primary)', letterSpacing: '0.04em' }}>#RES-{selectedBooking.id.substring(0, 8).toUpperCase()}</strong>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <strong style={{ color: 'var(--primary)', letterSpacing: '0.04em', fontFamily: 'monospace', fontSize: '1rem' }}>
+                    {selectedBooking.bookingCode || `CRT-${selectedBooking.id.substring(0, 8).toUpperCase()}`}
+                  </strong>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyCode(selectedBooking.bookingCode || `CRT-${selectedBooking.id.substring(0, 8).toUpperCase()}`, selectedBooking.id)}
+                    style={{
+                      border: 'none', background: copiedCodeId === selectedBooking.id ? '#dcfce7' : 'rgba(37,99,235,0.1)',
+                      color: copiedCodeId === selectedBooking.id ? '#15803d' : '#2563eb', padding: '4px 8px',
+                      borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '4px'
+                    }}
+                  >
+                    {copiedCodeId === selectedBooking.id ? <Check size={12} /> : <Copy size={12} />}
+                    {copiedCodeId === selectedBooking.id ? 'Copiado' : 'Copiar'}
+                  </button>
+                </div>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -1226,14 +1447,194 @@ export default function CourtsBookingsManager() {
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
+            <div style={{ display: 'flex', gap: '10px', marginTop: '20px', flexWrap: 'wrap' }}>
+              {selectedBooking.status !== 'cancelled' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const b = selectedBooking;
+                    setSelectedBooking(null);
+                    handleOpenRescheduleModal(b);
+                  }}
+                  style={{
+                    flex: '1 1 180px', padding: '10px', borderRadius: '8px', border: '1px solid #bfdbfe',
+                    backgroundColor: '#eff6ff', color: '#1d4ed8', fontWeight: '700', cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '0.85rem'
+                  }}
+                >
+                  <Clock size={15} /> Reagendar Cancha / Hora
+                </button>
+              )}
+              {(selectedBooking.status === 'uncompleted' || selectedBooking.matchStatus === 'expired') && (
+                <button
+                  type="button"
+                  onClick={() => handlePurgeNow(selectedBooking)}
+                  style={{
+                    flex: '1 1 140px', padding: '10px', borderRadius: '8px', border: '1px solid #fecaca',
+                    backgroundColor: '#fee2e2', color: '#b91c1c', fontWeight: '700', cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '0.85rem'
+                  }}
+                >
+                  <Trash2 size={15} /> Eliminar ahora
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setSelectedBooking(null)}
-                style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: 'transparent', color: 'var(--text)', fontWeight: '700', cursor: 'pointer' }}
+                style={{ flex: '1 1 100px', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: 'transparent', color: 'var(--text)', fontWeight: '700', cursor: 'pointer' }}
               >
                 Cerrar
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* RESCHEDULE MODAL */}
+      {rescheduleBooking && (
+        <div style={{
+          position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(3px)',
+          zIndex: 999999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px'
+        }}>
+          <div style={{
+            backgroundColor: 'var(--surface)', borderRadius: '16px', maxWidth: '520px', width: '100%',
+            padding: '24px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)', border: '1px solid var(--border)',
+            maxHeight: '90vh', overflowY: 'auto'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid var(--border)', paddingBottom: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Clock size={20} color="var(--primary)" />
+                <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '800', color: 'var(--text)' }}>
+                  Reagendar Turno o Cancha
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRescheduleBooking(null)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '1.2rem', fontWeight: 'bold' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ backgroundColor: 'var(--bg-elevated)', padding: '12px 14px', borderRadius: '8px', marginBottom: '16px', fontSize: '0.85rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Reserva:</span>
+                <strong style={{ color: 'var(--primary)', fontFamily: 'monospace' }}>
+                  {rescheduleBooking.bookingCode || `CRT-${rescheduleBooking.id.substring(0, 8).toUpperCase()}`}
+                </strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Horario actual:</span>
+                <span><strong>{formatFriendlyDate(rescheduleBooking.date)}</strong> a las <strong>{formatTime12h(rescheduleBooking.time)}</strong></span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Equipos:</span>
+                <span>{rescheduleBooking.teamAName} {rescheduleBooking.teamBName ? `vs ${rescheduleBooking.teamBName}` : ''}</span>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', marginBottom: '6px', color: 'var(--text)' }}>
+                  Seleccionar Cancha *
+                </label>
+                <select
+                  value={rescheduleCourtId}
+                  onChange={e => setRescheduleCourtId(e.target.value)}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: 'var(--background)', color: 'var(--text)', fontWeight: '600' }}
+                >
+                  {courts.map(c => (
+                    <option key={c.id} value={c.id}>{c.name} (₡{Number(c.basePrice).toLocaleString()})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', marginBottom: '6px', color: 'var(--text)' }}>
+                  Nueva Fecha *
+                </label>
+                <input
+                  type="date"
+                  value={rescheduleDate}
+                  min={new Date().toISOString().split('T')[0]}
+                  onChange={e => {
+                    setRescheduleDate(e.target.value);
+                    setRescheduleTime('');
+                  }}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: 'var(--background)', color: 'var(--text)', fontWeight: '600', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', marginBottom: '6px', color: 'var(--text)' }}>
+                  Nuevo Horario * {rescheduleDate && <span style={{ color: 'var(--primary)', fontWeight: 'normal' }}>({formatFriendlyDate(rescheduleDate)})</span>}
+                </label>
+                {rescheduleSlots.length > 0 ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(85px, 1fr))', gap: '6px', maxHeight: '140px', overflowY: 'auto', padding: '4px' }}>
+                    {rescheduleSlots.map(slot => (
+                      <button
+                        key={slot}
+                        type="button"
+                        onClick={() => setRescheduleTime(slot)}
+                        style={{
+                          padding: '7px 4px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: '700',
+                          border: rescheduleTime === slot ? '2px solid var(--primary)' : '1px solid var(--border)',
+                          backgroundColor: rescheduleTime === slot ? 'var(--primary)' : 'var(--bg-elevated)',
+                          color: rescheduleTime === slot ? 'white' : 'var(--text)',
+                          textAlign: 'center'
+                        }}
+                      >
+                        {formatTime12h(slot)}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ padding: '12px', textAlign: 'center', color: '#ea580c', backgroundColor: '#fffbeb', borderRadius: '8px', fontSize: '0.82rem', border: '1px solid #fef3c7' }}>
+                    No hay turnos disponibles para esta cancha en la fecha seleccionada.
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', marginBottom: '6px', color: 'var(--text)' }}>
+                  Motivo o Nota del Reagendamiento (Opcional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ej. Solicitud del cliente por lluvia / cambio de mutuo acuerdo"
+                  value={rescheduleReason}
+                  onChange={e => setRescheduleReason(e.target.value)}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: 'var(--background)', color: 'var(--text)', fontSize: '0.85rem', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              <div style={{ fontSize: '0.78rem', color: '#15803d', backgroundColor: '#f0fdf4', padding: '10px 12px', borderRadius: '8px', border: '1px solid #bbf7d0', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <CheckCircle2 size={15} color="#15803d" />
+                <span>Se enviará automáticamente un mensaje por WhatsApp a los capitanes confirmando el nuevo horario.</span>
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => setRescheduleBooking(null)}
+                  style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: 'transparent', color: 'var(--text)', fontWeight: '700', cursor: 'pointer' }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmReschedule}
+                  disabled={rescheduling || !rescheduleTime}
+                  style={{
+                    flex: 1.5, padding: '10px', borderRadius: '8px', border: 'none',
+                    backgroundColor: 'var(--primary)', color: 'white', fontWeight: '800', cursor: 'pointer',
+                    opacity: (!rescheduleTime || rescheduling) ? 0.6 : 1
+                  }}
+                >
+                  {rescheduling ? 'Guardando y notificando...' : 'Confirmar Reagendamiento'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

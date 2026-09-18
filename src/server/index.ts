@@ -13,6 +13,7 @@ import { env } from './config/env.js';
 import { runMigrations } from './db/migrations.js';
 import { query } from './db/pool.js';
 import { startReminderScheduler } from './services/reminder.service.js';
+import { startCourtCleanupScheduler } from './services/court-cleanup.service.js';
 import { recoverInterruptedCampaigns, startScheduledCampaignScanner } from './services/campaign-queue.service.js';
 import { startSubscriptionLifecycleWorker } from './services/subscription.service.js';
 import { startQueueWorker } from './services/message-queue.service.js';
@@ -305,6 +306,8 @@ async function startServer() {
     await ensureQueueTable();
     // Start automated appointment reminder background scheduler
     startReminderScheduler();
+    // Start automated court cleanup scheduler (expired retos to uncompleted & 15-day purge)
+    startCourtCleanupScheduler();
     // Recover any active WhatsApp campaigns & start scheduled scanner
     recoverInterruptedCampaigns();
     startScheduledCampaignScanner();
