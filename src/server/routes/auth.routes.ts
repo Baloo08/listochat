@@ -370,6 +370,7 @@ router.get('/me', authenticateToken, async (req: any, res) => {
       tenantId: activeTenantId,
       tenantName: tenant?.name || 'Mi Negocio',
       tenantSlug: tenant?.slug || '',
+      tenantPlan: tenant?.plan || 'starter',
       calendarToken: (tenant as any)?.calendarToken || (tenant as any)?.calendar_token || ''
     });
   } catch (err) {

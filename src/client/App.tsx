@@ -272,10 +272,16 @@ function MainApp({ pathname }: { pathname: string }) {
 
   // Tenant customization
   const [storeMode, setStoreMode] = useState<'retail' | 'restaurant'>('retail');
-  const [storeModules, setStoreModules] = useState<{ storeEnabled: boolean; bookingsEnabled: boolean; courtsEnabled?: boolean }>({
+  const [storeModules, setStoreModules] = useState<{
+    storeEnabled: boolean;
+    bookingsEnabled: boolean;
+    courtsEnabled?: boolean;
+    branchesEnabled?: boolean;
+  }>({
     storeEnabled: true,
     bookingsEnabled: true,
-    courtsEnabled: false
+    courtsEnabled: false,
+    branchesEnabled: false
   });
 
   const toggleSidebar = () => {
@@ -327,7 +333,8 @@ function MainApp({ pathname }: { pathname: string }) {
               setStoreModules({
                 storeEnabled: data.storeModules.storeEnabled !== false,
                 bookingsEnabled: data.storeModules.bookingsEnabled !== false,
-                courtsEnabled: data.storeModules.courtsEnabled === true
+                courtsEnabled: data.storeModules.courtsEnabled === true,
+                branchesEnabled: data.storeModules.branchesEnabled === true
               });
             }
           }
@@ -482,75 +489,103 @@ function MainApp({ pathname }: { pathname: string }) {
     }
   ];
 
+  const isEnterpriseOrFranchise = ['enterprise', 'business', 'franquicia', 'empresa'].includes((user as any)?.tenantPlan || '');
+  const branchesEnabled = storeModules.branchesEnabled === true || isEnterpriseOrFranchise;
+
   const tenantNavGroups: NavGroup[] = [
+    // 1. OPERACIONES
     {
-      title: 'OPERACIONES EN VIVO',
+      title: 'OPERACIONES',
       items: [
-        { id: 'dashboard', label: 'Dashboard', icon: <Home size={18} /> },
+        { id: 'dashboard', label: 'Dashboard', icon: <Home size={18} /> }
+      ]
+    },
+
+    // 2. COMUNICACIÓN
+    {
+      title: 'COMUNICACIÓN',
+      items: [
+        { id: 'whatsapp', label: 'WhatsApp & Bot', icon: <Phone size={18} /> },
         { id: 'chats', label: 'Chats en Vivo', icon: <MessageSquare size={18} /> },
         { id: 'queue', label: 'Cola de Mensajes', icon: <Clock size={18} /> },
-        ...(storeModules.storeEnabled !== false ? [{
-          id: 'ordenes',
-          label: storeMode === 'restaurant' ? 'Comandas & Cocina' : 'Pedidos & Despacho',
-          icon: <ClipboardList size={18} />,
-          badge: unreadOrdersCount > 0 ? unreadOrdersCount : undefined
-        }] : []),
-        ...(storeModules.bookingsEnabled !== false ? [{
-          id: 'reservas',
-          label: 'Reservas & Citas',
-          icon: <Calendar size={18} />
-        }] : []),
-        ...(storeModules.courtsEnabled ? [{
-          id: 'canchas_reservas',
-          label: 'Reservas Canchas',
-          icon: <CalendarCheck size={18} />
-        }] : [])
+        { id: 'campaigns', label: 'Difusión & Campañas', icon: <Send size={18} /> },
+        { id: 'agente', label: 'Personalidad Agente IA', icon: <Bot size={18} /> }
       ]
     },
+
+    // 3. SITIO WEB
     {
-      title: 'CATÁLOGO & SERVICIOS',
+      title: 'SITIO WEB',
       items: [
-        ...(storeModules.storeEnabled !== false ? [{
-          id: 'productos',
-          label: storeMode === 'restaurant' ? 'Menú & Platillos' : 'Productos & Catálogo',
-          icon: <Package size={18} />
-        }] : []),
-        ...(storeModules.bookingsEnabled !== false ? [{
-          id: 'servicios',
-          label: 'Servicios Profesionales',
-          icon: <Wrench size={18} />
-        }] : []),
-        ...(storeModules.courtsEnabled ? [{
-          id: 'canchas',
-          label: 'Gestión de Canchas',
-          icon: <Trophy size={18} />
-        }] : []),
-        { id: 'campaigns', label: 'Difusión & Campañas', icon: <Send size={18} /> }
+        { id: 'sitio', label: 'Sitio Web', icon: <Globe size={18} /> }
       ]
     },
-    {
-      title: 'CANALES DIGITALES',
+
+    // 4. TIENDA o MENÚ (Condicional por storeEnabled y storeMode)
+    ...(storeModules.storeEnabled !== false ? [
+      storeMode === 'restaurant' ? {
+        title: 'MENÚ',
+        items: [
+          { id: 'tienda', label: 'Ajuste de Tienda', icon: <ShoppingBag size={18} /> },
+          { id: 'productos', label: 'Menú & Platillos', icon: <Package size={18} /> },
+          {
+            id: 'ordenes',
+            label: 'Comandas & Cocina',
+            icon: <ClipboardList size={18} />,
+            badge: unreadOrdersCount > 0 ? unreadOrdersCount : undefined
+          }
+        ]
+      } : {
+        title: 'TIENDA',
+        items: [
+          { id: 'tienda', label: 'Ajuste de Tienda', icon: <ShoppingBag size={18} /> },
+          { id: 'productos', label: 'Productos & Catálogo', icon: <Package size={18} /> },
+          {
+            id: 'ordenes',
+            label: 'Pedidos & Despacho',
+            icon: <ClipboardList size={18} />,
+            badge: unreadOrdersCount > 0 ? unreadOrdersCount : undefined
+          }
+        ]
+      }
+    ] : []),
+
+    // 5. CANCHAS (Condicional por courtsEnabled)
+    ...(storeModules.courtsEnabled ? [{
+      title: 'CANCHAS',
       items: [
-        { id: 'whatsapp', label: 'WhatsApp & Bots', icon: <Phone size={18} /> },
-        { id: 'sitio', label: 'Sitio Web & Tienda', icon: <Globe size={18} /> }
+        { id: 'canchas', label: 'Gestión de Canchas', icon: <Trophy size={18} /> },
+        { id: 'canchas_reservas', label: 'Reserva de Canchas', icon: <CalendarCheck size={18} /> }
       ]
-    },
-    {
-      title: 'CONFIGURACIÓN DEL NEGOCIO',
+    }] : []),
+
+    // 6. RESERVAS Y CITAS (Condicional por bookingsEnabled)
+    ...(storeModules.bookingsEnabled !== false ? [{
+      title: 'RESERVAS Y CITAS',
       items: [
-        ...(storeModules.storeEnabled !== false ? [{
-          id: 'tienda',
-          label: 'Ajustes Tienda & Pagos',
-          icon: <ShoppingBag size={18} />
-        }] : []),
-        { id: 'sucursales', label: 'Sedes & Sucursales', icon: <Building2 size={18} /> },
-        { id: 'agente', label: 'Personalidad Agente IA', icon: <Bot size={18} /> },
-        { id: 'usuarios', label: 'Equipo & Usuarios', icon: <Users size={18} /> },
-        { id: 'facturacion', label: 'Facturación Electrónica', icon: <FileText size={18} /> },
+        { id: 'reservas', label: 'Reservas', icon: <Calendar size={18} /> },
+        { id: 'servicios', label: 'Servicios Profesionales', icon: <Wrench size={18} /> }
+      ]
+    }] : []),
+
+    // 7. CONFIGURACIÓN
+    {
+      title: 'CONFIGURACIÓN',
+      items: [
+        { id: 'configuracion', label: 'Ajustes Generales', icon: <Settings size={18} /> },
         { id: 'suscripcion', label: 'Mi Suscripción & Pagos', icon: <CreditCard size={18} /> },
-        { id: 'configuracion', label: 'Ajustes Generales', icon: <Settings size={18} /> }
+        { id: 'facturacion', label: 'Facturación Electrónica', icon: <FileText size={18} /> },
+        { id: 'usuarios', label: 'Equipo & Usuarios', icon: <Users size={18} /> }
       ]
-    }
+    },
+
+    // 8. SEDES Y SUCURSALES (Condicional por plan / branchesEnabled)
+    ...(branchesEnabled ? [{
+      title: 'SEDES Y SUCURSALES',
+      items: [
+        { id: 'sucursales', label: 'Sedes & Sucursales', icon: <Building2 size={18} /> }
+      ]
+    }] : [])
   ];
 
   const navGroups = user?.role === 'superadmin' ? superAdminNavGroups : tenantNavGroups;
@@ -992,24 +1027,26 @@ function MainApp({ pathname }: { pathname: string }) {
                 currentPage === 'sa_system' ? 'Servidor & Recursos' :
                 currentPage === 'sa_apis' ? 'APIs & Tráfico' :
                 currentPage === 'sa_audit' ? 'Auditoría & Seguridad' :
-                currentPage === 'ordenes' ? (storeMode === 'restaurant' ? 'Comandas' : 'Pedidos') :
                 currentPage === 'dashboard' ? 'Dashboard' :
+                currentPage === 'whatsapp' ? 'WhatsApp & Bot' :
                 currentPage === 'chats' ? 'Chats en Vivo' :
-                currentPage === 'campaigns' ? 'Difusión & CRM' :
-                currentPage === 'whatsapp' ? 'WhatsApp' :
-                currentPage === 'productos' ? (storeMode === 'restaurant' ? 'Menú / Platillos' : 'Productos') :
-                currentPage === 'tienda' ? 'Tienda & Envíos' :
-                currentPage === 'sitio' ? 'Mi Sitio Web' :
-                currentPage === 'reservas' ? 'Reservas & Agenda' :
+                currentPage === 'queue' ? 'Cola de Mensajes' :
+                currentPage === 'campaigns' ? 'Difusión & Campañas' :
+                currentPage === 'agente' ? 'Personalidad Agente IA' :
+                currentPage === 'sitio' ? 'Sitio Web' :
+                currentPage === 'tienda' ? 'Ajuste de Tienda' :
+                currentPage === 'productos' ? (storeMode === 'restaurant' ? 'Menú & Platillos' : 'Productos & Catálogo') :
+                currentPage === 'ordenes' ? (storeMode === 'restaurant' ? 'Comandas & Cocina' : 'Pedidos & Despacho') :
                 currentPage === 'canchas' ? 'Gestión de Canchas' :
-                currentPage === 'canchas_reservas' ? 'Reservas de Canchas' :
-                currentPage === 'servicios' ? 'Servicios' :
-                currentPage === 'agente' ? 'Agente IA' :
-                currentPage === 'notificaciones' ? 'Notificaciones' :
-                currentPage === 'sucursales' ? 'Sucursales' :
-                currentPage === 'usuarios' ? 'Usuarios' :
+                currentPage === 'canchas_reservas' ? 'Reserva de Canchas' :
+                currentPage === 'reservas' ? 'Reservas' :
+                currentPage === 'servicios' ? 'Servicios Profesionales' :
+                currentPage === 'configuracion' ? 'Ajustes Generales' :
+                currentPage === 'suscripcion' ? 'Mi Suscripción & Pagos' :
                 currentPage === 'facturacion' ? 'Facturación Electrónica' :
-                currentPage === 'configuracion' ? 'Configuración' :
+                currentPage === 'usuarios' ? 'Equipo & Usuarios' :
+                currentPage === 'sucursales' ? 'Sedes & Sucursales' :
+                currentPage === 'notificaciones' ? 'Notificaciones' :
                 currentPage
               }
             </h1>
@@ -1143,7 +1180,7 @@ function MainApp({ pathname }: { pathname: string }) {
             </button>
           )}
 
-          {user?.role !== 'superadmin' && (
+          {user?.role !== 'superadmin' && storeModules.storeEnabled !== false && (
             <button
               type="button"
               onClick={() => handleNavClick('ordenes')}
@@ -1160,11 +1197,28 @@ function MainApp({ pathname }: { pathname: string }) {
                   {unreadOrdersCount}
                 </span>
               )}
-              <span style={{ fontSize: '0.68rem', fontWeight: currentPage === 'ordenes' ? '800' : '600' }}>Pedidos</span>
+              <span style={{ fontSize: '0.68rem', fontWeight: currentPage === 'ordenes' ? '800' : '600' }}>
+                {storeMode === 'restaurant' ? 'Comandas' : 'Pedidos'}
+              </span>
             </button>
           )}
 
-          {user?.role !== 'superadmin' && (
+          {user?.role !== 'superadmin' && storeModules.courtsEnabled && storeModules.storeEnabled === false && (
+            <button
+              type="button"
+              onClick={() => handleNavClick('canchas_reservas')}
+              style={{
+                flex: 1, border: 'none', background: 'none', cursor: 'pointer',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px',
+                color: currentPage === 'canchas_reservas' ? 'var(--primary)' : 'var(--text-muted)'
+              }}
+            >
+              <CalendarCheck size={20} />
+              <span style={{ fontSize: '0.68rem', fontWeight: currentPage === 'canchas_reservas' ? '800' : '600' }}>Canchas</span>
+            </button>
+          )}
+
+          {user?.role !== 'superadmin' && storeModules.bookingsEnabled !== false && (
             <button
               type="button"
               onClick={() => handleNavClick('reservas')}

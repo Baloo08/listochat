@@ -10,6 +10,7 @@ export interface User {
   name: string;
   tenantName?: string;
   tenantSlug?: string;
+  tenantPlan?: string;
 }
 
 export function useAuth() {
