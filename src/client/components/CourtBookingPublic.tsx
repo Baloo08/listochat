@@ -76,7 +76,12 @@ export default function CourtBookingPublic({ slug }: { slug: string }) {
           api.get(`/api/courts/public/${slug}/courts`)
         ]);
         
-        if (info) setPublicData(info);
+        if (info) {
+          setPublicData(info);
+          if (info?.businessName) {
+            document.title = `Reserva de Canchas Deportivas | ${info.businessName}`;
+          }
+        }
         if (cData) setCourts(cData);
 
         // Fetch Almendro public configuration for courts

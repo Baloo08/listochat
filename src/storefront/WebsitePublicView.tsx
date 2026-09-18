@@ -64,6 +64,9 @@ export default function WebsitePublicView({ slug }: WebsitePublicViewProps) {
         throw new Error(json.error || 'Sitio web no encontrado');
       }
       setData(json);
+      if (json?.tenant?.name) {
+        document.title = `${json.tenant.name} | Sitio Web Oficial y Citas`;
+      }
     } catch (err: any) {
       setError(err.message || 'Error al cargar el sitio web');
     } finally {

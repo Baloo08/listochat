@@ -18280,6 +18280,401 @@ router35.post("/emit-subscription-invoice/:chargeId", async (req, res) => {
 });
 var superadmin_almendro_routes_default = router35;
 
+// src/server/routes/seo.routes.ts
+init_pool();
+import { Router as Router36 } from "express";
+var router36 = Router36();
+var sitemapCache = null;
+var SITEMAP_TTL_MS = 60 * 60 * 1e3;
+router36.get("/robots.txt", (req, res) => {
+  const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
+  const host = req.headers["x-forwarded-host"] || req.get("host") || "betico.tech";
+  const baseUrl = `${protocol}://${host}`;
+  const content = `User-agent: *
+Allow: /
+Allow: /sitio/
+Allow: /web/
+Allow: /tienda/
+Allow: /reservas/
+Allow: /canchas/
+Disallow: /admin/
+Disallow: /acceso/
+Disallow: /portal/
+Disallow: /kds/
+Disallow: /repartidor/
+Disallow: /especialista/
+Disallow: /colaborador/
+Disallow: /equipo/
+Disallow: /api/
+Disallow: /subscription/
+Disallow: /suscripcion/
+
+Sitemap: ${baseUrl}/sitemap.xml
+`;
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.setHeader("Cache-Control", "public, max-age=86400");
+  res.send(content);
+});
+router36.get("/sitemap.xml", async (req, res) => {
+  const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
+  const host = req.headers["x-forwarded-host"] || req.get("host") || "betico.tech";
+  const baseUrl = `${protocol}://${host}`;
+  if (sitemapCache && sitemapCache.expiresAt > Date.now()) {
+    res.setHeader("Content-Type", "application/xml; charset=utf-8");
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    res.send(sitemapCache.xml);
+    return;
+  }
+  try {
+    const result = await query(`
+      SELECT slug, updated_at, created_at 
+      FROM tenants 
+      WHERE active = true 
+      ORDER BY created_at DESC
+    `);
+    const now = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+    const tenants = result.rows;
+    let xml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <!-- P\xE1gina Principal Betico.tech -->
+  <url>
+    <loc>${baseUrl}/</loc>
+    <lastmod>${now}</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>1.0</priority>
+  </url>
+`;
+    for (const t of tenants) {
+      if (!t.slug) continue;
+      const lastMod = t.updated_at ? new Date(t.updated_at).toISOString().split("T")[0] : now;
+      xml += `  <url>
+    <loc>${baseUrl}/sitio/${t.slug}</loc>
+    <lastmod>${lastMod}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+`;
+      xml += `  <url>
+    <loc>${baseUrl}/tienda/${t.slug}</loc>
+    <lastmod>${lastMod}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+`;
+      xml += `  <url>
+    <loc>${baseUrl}/reservas/${t.slug}</loc>
+    <lastmod>${lastMod}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+`;
+      xml += `  <url>
+    <loc>${baseUrl}/canchas/${t.slug}</loc>
+    <lastmod>${lastMod}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+`;
+    }
+    xml += `</urlset>`;
+    sitemapCache = {
+      xml,
+      expiresAt: Date.now() + SITEMAP_TTL_MS
+    };
+    res.setHeader("Content-Type", "application/xml; charset=utf-8");
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    res.send(xml);
+  } catch (error) {
+    console.error("[SEO] Error generating sitemap.xml:", error);
+    res.status(500).send("Error generating sitemap");
+  }
+});
+var seo_routes_default = router36;
+
+// src/server/services/seo.service.ts
+var seoCache = /* @__PURE__ */ new Map();
+var CACHE_TTL_MS = 10 * 60 * 1e3;
+function toAbsoluteUrl(imagePath, baseUrl) {
+  if (!imagePath || typeof imagePath !== "string" || imagePath.trim() === "") {
+    return `${baseUrl}/logo.png`;
+  }
+  const clean = imagePath.trim();
+  if (clean.startsWith("http://") || clean.startsWith("https://")) {
+    return clean;
+  }
+  const pathPart = clean.startsWith("/") ? clean : `/${clean}`;
+  return `${baseUrl}${pathPart}`;
+}
+function escapeHtmlAttr(text) {
+  if (!text) return "";
+  return text.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/'/g, "&#39;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/[\r\n]+/g, " ").trim();
+}
+function inferSchemaType(category) {
+  if (!category) return "LocalBusiness";
+  const c = category.toLowerCase();
+  if (c.includes("barber") || c.includes("peluquer") || c.includes("salon") || c.includes("estil") || c.includes("u\xF1as")) {
+    return "HealthAndBeautyBusiness";
+  }
+  if (c.includes("auto") || c.includes("taller") || c.includes("mecanic") || c.includes("detailing") || c.includes("lavado")) {
+    return "AutoRepair";
+  }
+  if (c.includes("comida") || c.includes("restaurante") || c.includes("soda") || c.includes("cafe") || c.includes("bar")) {
+    return "FoodEstablishment";
+  }
+  if (c.includes("dental") || c.includes("medico") || c.includes("salud") || c.includes("terapia") || c.includes("nutri")) {
+    return "MedicalBusiness";
+  }
+  if (c.includes("cancha") || c.includes("deporte") || c.includes("futbol") || c.includes("padel") || c.includes("gym")) {
+    return "SportsActivityLocation";
+  }
+  return "LocalBusiness";
+}
+async function getSeoMetadata(pathname, baseUrl) {
+  const cleanPath = pathname.split("?")[0].split("#")[0];
+  const cacheKey = `${baseUrl}:${cleanPath}`;
+  const cached = seoCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.metadata;
+  }
+  try {
+    let metadata = null;
+    if (cleanPath === "/" || cleanPath === "" || cleanPath === "/index.html") {
+      metadata = {
+        title: "Betico | Software de Citas, Tienda SINPE M\xF3vil y Chatbot WhatsApp en Costa Rica",
+        description: "Automatiza tu negocio en Costa Rica con Betico: agendamiento de citas, cat\xE1logo con carrito SINPE M\xF3vil, facturaci\xF3n electr\xF3nica y atenci\xF3n al cliente 24/7 con Inteligencia Artificial.",
+        image: `${baseUrl}/logo.png`,
+        canonicalUrl: `${baseUrl}/`,
+        type: "website",
+        siteName: "Betico.tech",
+        jsonLd: {
+          "@context": "https://schema.org",
+          "@type": "SoftwareApplication",
+          "name": "Betico SaaS",
+          "operatingSystem": "Web, WhatsApp, iOS, Android",
+          "applicationCategory": "BusinessApplication",
+          "url": baseUrl,
+          "image": `${baseUrl}/logo.png`,
+          "description": "Plataforma integral para pymes y empresas en Costa Rica: agendamiento inteligente, tienda virtual con pagos SINPE M\xF3vil y asistente virtual en WhatsApp.",
+          "offers": {
+            "@type": "AggregateOffer",
+            "priceCurrency": "USD",
+            "lowPrice": "29",
+            "highPrice": "99"
+          }
+        }
+      };
+    } else if (cleanPath.startsWith("/sitio/") || cleanPath.startsWith("/web/")) {
+      const slug = cleanPath.replace("/sitio/", "").replace("/web/", "").split("/")[0]?.toLowerCase().trim();
+      if (slug) {
+        const tenant = await getTenantBySlug(slug);
+        if (tenant && tenant.active !== false) {
+          const [website, store, services] = await Promise.all([
+            getWebsiteSettingsByTenant(tenant.id).catch(() => null),
+            getStoreSettings(tenant.id).catch(() => null),
+            getServicesByTenant(tenant.id).catch(() => [])
+          ]);
+          const businessName = tenant.name || "Negocio";
+          const headline = website?.headline || store?.storeName || businessName;
+          const desc = website?.subheadline || website?.aboutText || store?.storeDescription || `Sitio web oficial, cat\xE1logo de servicios y citas en l\xEDnea de ${businessName} en Costa Rica.`;
+          const rawImage = website?.bannerImageUrl || website?.logoUrl || store?.storeBannerUrl || store?.storeLogoUrl;
+          const image = toAbsoluteUrl(rawImage, baseUrl);
+          const schemaType = inferSchemaType(website?.category || store?.storeCategory || tenant.category);
+          const offerList = (services || []).filter((s) => s.active !== false).slice(0, 5).map((s) => ({
+            "@type": "Offer",
+            "itemOffered": {
+              "@type": "Service",
+              "name": s.name,
+              "description": s.description || void 0
+            },
+            "price": s.price || void 0,
+            "priceCurrency": "CRC"
+          }));
+          metadata = {
+            title: `${businessName} | Sitio Web Oficial y Citas en L\xEDnea`,
+            description: desc.slice(0, 165),
+            image,
+            canonicalUrl: `${baseUrl}/sitio/${slug}`,
+            type: "business.business",
+            siteName: businessName,
+            jsonLd: {
+              "@context": "https://schema.org",
+              "@type": schemaType,
+              "name": businessName,
+              "url": `${baseUrl}/sitio/${slug}`,
+              "image": image,
+              "telephone": tenant.whatsappNumber ? `+${tenant.whatsappNumber.replace(/\D/g, "")}` : void 0,
+              "priceRange": "CRC",
+              "description": desc.slice(0, 250),
+              ...offerList.length > 0 ? {
+                "hasOfferCatalog": {
+                  "@type": "OfferCatalog",
+                  "name": "Cat\xE1logo de Servicios",
+                  "itemListElement": offerList
+                }
+              } : {}
+            }
+          };
+        }
+      }
+    } else if (cleanPath.startsWith("/tienda/")) {
+      const slug = cleanPath.replace("/tienda/", "").split("/")[0]?.toLowerCase().trim();
+      if (slug) {
+        const tenant = await getTenantBySlug(slug);
+        if (tenant && tenant.active !== false) {
+          const store = await getStoreSettings(tenant.id).catch(() => null);
+          const storeName = store?.storeName || tenant.name || "Tienda en L\xEDnea";
+          const desc = store?.storeDescription || `Tienda en l\xEDnea y cat\xE1logo oficial de ${storeName}. Realiza tus pedidos con SINPE M\xF3vil y entrega a domicilio.`;
+          const rawImage = store?.storeLogoUrl || store?.storeBannerUrl;
+          const image = toAbsoluteUrl(rawImage, baseUrl);
+          metadata = {
+            title: `${storeName} | Tienda en L\xEDnea y Cat\xE1logo Oficial`,
+            description: desc.slice(0, 165),
+            image,
+            canonicalUrl: `${baseUrl}/tienda/${slug}`,
+            type: "website",
+            siteName: storeName,
+            jsonLd: {
+              "@context": "https://schema.org",
+              "@type": "Store",
+              "name": storeName,
+              "url": `${baseUrl}/tienda/${slug}`,
+              "image": image,
+              "telephone": tenant.whatsappNumber ? `+${tenant.whatsappNumber.replace(/\D/g, "")}` : void 0,
+              "priceRange": store?.currency || "CRC",
+              "description": desc.slice(0, 250),
+              "currenciesAccepted": store?.currency || "CRC",
+              "paymentAccepted": "SINPE M\xF3vil, Transferencia Bancaria, Tarjeta de Cr\xE9dito/D\xE9bito"
+            }
+          };
+        }
+      }
+    } else if (cleanPath.startsWith("/reservas/")) {
+      const slug = cleanPath.replace("/reservas/", "").split("/")[0]?.toLowerCase().trim();
+      if (slug) {
+        const tenant = await getTenantBySlug(slug);
+        if (tenant && tenant.active !== false) {
+          const businessName = tenant.name || "Agendamiento";
+          const desc = `Agenda tu cita en l\xEDnea de forma r\xE1pida y sencilla con ${businessName}. Consulta horarios disponibles y reserva tu espacio.`;
+          const store = await getStoreSettings(tenant.id).catch(() => null);
+          const image = toAbsoluteUrl(store?.storeLogoUrl || store?.storeBannerUrl, baseUrl);
+          metadata = {
+            title: `Reservar Cita en L\xEDnea | ${businessName}`,
+            description: desc.slice(0, 165),
+            image,
+            canonicalUrl: `${baseUrl}/reservas/${slug}`,
+            type: "website",
+            siteName: businessName,
+            jsonLd: {
+              "@context": "https://schema.org",
+              "@type": "LocalBusiness",
+              "name": businessName,
+              "url": `${baseUrl}/reservas/${slug}`,
+              "image": image,
+              "telephone": tenant.whatsappNumber ? `+${tenant.whatsappNumber.replace(/\D/g, "")}` : void 0,
+              "description": desc
+            }
+          };
+        }
+      }
+    } else if (cleanPath.startsWith("/canchas/")) {
+      const slug = cleanPath.replace("/canchas/", "").split("/")[0]?.toLowerCase().trim();
+      if (slug) {
+        const tenant = await getTenantBySlug(slug);
+        if (tenant && tenant.active !== false) {
+          const businessName = tenant.name || "Canchas Deportivas";
+          const desc = `Reserva tu cancha deportiva en ${businessName}. Consulta disponibilidad de horarios y confirma tu reserva al instante.`;
+          const store = await getStoreSettings(tenant.id).catch(() => null);
+          const image = toAbsoluteUrl(store?.storeLogoUrl || store?.storeBannerUrl, baseUrl);
+          metadata = {
+            title: `Reserva de Canchas Deportivas | ${businessName}`,
+            description: desc.slice(0, 165),
+            image,
+            canonicalUrl: `${baseUrl}/canchas/${slug}`,
+            type: "website",
+            siteName: businessName,
+            jsonLd: {
+              "@context": "https://schema.org",
+              "@type": "SportsActivityLocation",
+              "name": businessName,
+              "url": `${baseUrl}/canchas/${slug}`,
+              "image": image,
+              "telephone": tenant.whatsappNumber ? `+${tenant.whatsappNumber.replace(/\D/g, "")}` : void 0,
+              "description": desc
+            }
+          };
+        }
+      }
+    }
+    seoCache.set(cacheKey, {
+      metadata,
+      expiresAt: Date.now() + CACHE_TTL_MS
+    });
+    return metadata;
+  } catch (error) {
+    console.error(`[SEO] Error fetching metadata for ${pathname}:`, error);
+    return null;
+  }
+}
+async function injectSeoMetadata(html, req) {
+  const pathname = req.path;
+  if (pathname.startsWith("/admin") || pathname.startsWith("/acceso") || pathname.startsWith("/portal") || pathname.startsWith("/kds") || pathname.startsWith("/repartidor") || pathname.startsWith("/especialista") || pathname.startsWith("/colaborador") || pathname.startsWith("/equipo") || pathname.startsWith("/api") || pathname.startsWith("/assets") || pathname.startsWith("/uploads")) {
+    return html;
+  }
+  const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
+  const host = req.headers["x-forwarded-host"] || req.get("host") || "betico.tech";
+  const baseUrl = `${protocol}://${host}`;
+  try {
+    const meta = await getSeoMetadata(pathname, baseUrl);
+    if (!meta) {
+      return html;
+    }
+    let modifiedHtml = html;
+    if (meta.title) {
+      modifiedHtml = modifiedHtml.replace(
+        /<title>.*?<\/title>/i,
+        `<title>${escapeHtmlAttr(meta.title)}</title>`
+      );
+    }
+    const metaTags = `
+    <!-- Dynamic SEO & Open Graph (SSR Injected) -->
+    <meta name="description" content="${escapeHtmlAttr(meta.description)}" />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <link rel="canonical" href="${escapeHtmlAttr(meta.canonicalUrl)}" />
+
+    <!-- Open Graph / WhatsApp / Facebook -->
+    <meta property="og:site_name" content="${escapeHtmlAttr(meta.siteName)}" />
+    <meta property="og:type" content="${escapeHtmlAttr(meta.type)}" />
+    <meta property="og:title" content="${escapeHtmlAttr(meta.title)}" />
+    <meta property="og:description" content="${escapeHtmlAttr(meta.description)}" />
+    <meta property="og:image" content="${escapeHtmlAttr(meta.image)}" />
+    <meta property="og:url" content="${escapeHtmlAttr(meta.canonicalUrl)}" />
+    <meta property="og:locale" content="es_CR" />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="${escapeHtmlAttr(meta.title)}" />
+    <meta name="twitter:description" content="${escapeHtmlAttr(meta.description)}" />
+    <meta name="twitter:image" content="${escapeHtmlAttr(meta.image)}" />
+
+    <!-- Schema.org Structured Data -->
+    <script type="application/ld+json">
+    ${JSON.stringify(meta.jsonLd, null, 2)}
+    </script>
+    `;
+    if (modifiedHtml.includes("</head>")) {
+      modifiedHtml = modifiedHtml.replace("</head>", `${metaTags}
+</head>`);
+    } else {
+      modifiedHtml = `${metaTags}
+${modifiedHtml}`;
+    }
+    return modifiedHtml;
+  } catch (err) {
+    console.error("[SEO] Failed to inject SEO tags, falling back to clean HTML:", err);
+    return html;
+  }
+}
+
 // src/server/index.ts
 var __filename = fileURLToPath(import.meta.url);
 var __dirname = path2.dirname(__filename);
@@ -18429,10 +18824,11 @@ async function startServer() {
   app.use("/api/records", records_routes_default);
   app.use("/api/almendro", almendro_routes_default);
   app.use("/api/superadmin/almendro", superadmin_almendro_routes_default);
+  app.use("/", seo_routes_default);
   if (env2.NODE_ENV === "production") {
     app.use("/assets", express.static(path2.join(__dirname, "assets"), { maxAge: "1y", immutable: true }));
     app.use(express.static(__dirname));
-    app.get("*", (req, res) => {
+    app.get("*", async (req, res) => {
       res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0");
       res.setHeader("Pragma", "no-cache");
       res.setHeader("Expires", "0");
@@ -18462,8 +18858,9 @@ async function startServer() {
           console.error("Error scanning assets dir:", e);
         }
       }
+      const finalHtml = await injectSeoMetadata(html, req);
       res.setHeader("Content-Type", "text/html; charset=utf-8");
-      res.send(html);
+      res.send(finalHtml);
     });
   } else {
     try {

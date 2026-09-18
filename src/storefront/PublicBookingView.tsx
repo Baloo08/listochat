@@ -54,6 +54,9 @@ export default function PublicBookingView({ slug }: PublicBookingViewProps) {
         const data = await res.json();
         setBusinessInfo(data);
         setServices(data.services || []);
+        if (data?.name) {
+          document.title = `Reservar Cita en Línea | ${data.name}`;
+        }
         if (data.bookingPaymentMode === 'solo_reserva') {
           setPaymentMethod('solo_reserva');
         }

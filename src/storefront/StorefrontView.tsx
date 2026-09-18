@@ -173,6 +173,9 @@ export default function StorefrontView({ slug }: StorefrontProps) {
         }
         const data = await res.json();
         setStore(data);
+        if (data?.storeName) {
+          document.title = `${data.storeName} | Tienda Oficial y Catálogo en Línea`;
+        }
         if (data.acceptSinpe === false) {
           if (data.acceptTransfer !== false) {
             setPaymentMethod('transfer');

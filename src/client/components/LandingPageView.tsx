@@ -67,6 +67,7 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
   const [isMobile, setIsMobile] = useState<boolean>(false);
 
   useEffect(() => {
+    document.title = 'Betico | Software de Citas, Tienda SINPE Móvil y Chatbot WhatsApp en Costa Rica';
     const checkMobile = () => setIsMobile(window.innerWidth < 1024);
     checkMobile();
     window.addEventListener('resize', checkMobile);

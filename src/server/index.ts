@@ -58,6 +58,8 @@ import tenantSubscriptionRoutes from './routes/tenant-subscription.routes.js';
 import recordsRoutes from './routes/records.routes.js';
 import almendroRoutes from './routes/almendro.routes.js';
 import superadminAlmendroRoutes from './routes/superadmin-almendro.routes.js';
+import seoRoutes from './routes/seo.routes.js';
+import { injectSeoMetadata } from './services/seo.service.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -235,12 +237,13 @@ async function startServer() {
   app.use('/api/records', recordsRoutes);
   app.use('/api/almendro', almendroRoutes);
   app.use('/api/superadmin/almendro', superadminAlmendroRoutes);
+  app.use('/', seoRoutes);
 
   // Serve static assets in production, setup vite dev server in dev
   if (env.NODE_ENV === 'production') {
     app.use('/assets', express.static(path.join(__dirname, 'assets'), { maxAge: '1y', immutable: true }));
     app.use(express.static(__dirname));
-    app.get('*', (req, res) => {
+    app.get('*', async (req, res) => {
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
       res.setHeader('Pragma', 'no-cache');
       res.setHeader('Expires', '0');
@@ -275,8 +278,11 @@ async function startServer() {
         }
       }
 
+      // Dynamic SSR SEO & Open Graph Injection
+      const finalHtml = await injectSeoMetadata(html, req);
+
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
-      res.send(html);
+      res.send(finalHtml);
     });
   } else {
     try {
