@@ -202,9 +202,18 @@ export default function App() {
 function MainApp({ pathname }: { pathname: string }) {
   const { isAuthenticated, user, loading, logout } = useAuth();
   const [currentPage, setCurrentPage] = useState<string>(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('sa_tab') === 'cobranza') return 'sa_collections';
-    if (params.get('card_status') === 'success' || params.get('tab') === 'suscripcion') return 'configuracion';
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get('tab') || params.get('p');
+      if (tabParam) return tabParam;
+      if (params.get('sa_tab') === 'cobranza') return 'sa_collections';
+      if (params.get('card_status') === 'success' || params.get('tab') === 'suscripcion') return 'configuracion';
+
+      const saSaved = sessionStorage.getItem('betico_active_tab_superadmin');
+      const tenantSaved = sessionStorage.getItem('betico_active_tab_tenant');
+      if (saSaved && saSaved.startsWith('sa_')) return saSaved;
+      if (tenantSaved) return tenantSaved;
+    } catch (e) {}
     return 'dashboard';
   });
   const [showTourModal, setShowTourModal] = useState<boolean>(() => {
@@ -217,6 +226,28 @@ function MainApp({ pathname }: { pathname: string }) {
     return localStorage.getItem('sidebar_collapsed') === 'true';
   });
 
+  const navigateToTab = (pageId: string) => {
+    const target = pageId === 'website_builder' ? 'sitio' : pageId;
+    setCurrentPage(target);
+    setMobileMenuOpen(false);
+
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set('tab', target);
+      url.searchParams.delete('sa_tab');
+      url.searchParams.delete('card_status');
+      window.history.replaceState(null, '', url.pathname + url.search);
+    } catch (e) {}
+
+    try {
+      const scope = user?.role === 'superadmin' ? 'superadmin' : (user?.tenantId || 'tenant');
+      sessionStorage.setItem(`betico_active_tab_${scope}`, target);
+      if (user?.role !== 'superadmin') {
+        sessionStorage.setItem('betico_active_tab_tenant', target);
+      }
+    } catch (e) {}
+  };
+
   useEffect(() => {
     const handleResize = () => {
       const mobile = window.innerWidth < 768;
@@ -226,6 +257,18 @@ function MainApp({ pathname }: { pathname: string }) {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get('tab') || params.get('p');
+      if (tabParam && tabParam !== currentPage) {
+        setCurrentPage(tabParam);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [currentPage]);
 
   // Tenant customization
   const [storeMode, setStoreMode] = useState<'retail' | 'restaurant'>('retail');
@@ -244,16 +287,31 @@ function MainApp({ pathname }: { pathname: string }) {
   useEffect(() => {
     if (!isAuthenticated || !user) return;
 
+    const params = new URLSearchParams(window.location.search);
+    const tabParam = params.get('tab') || params.get('p');
+
     if (user?.role === 'superadmin') {
-      const params = new URLSearchParams(window.location.search);
       if (params.get('sa_tab') === 'cobranza') {
-        setCurrentPage('sa_collections');
+        navigateToTab('sa_collections');
         return;
       }
-      if (currentPage === 'dashboard') {
+      const saSaved = sessionStorage.getItem('betico_active_tab_superadmin');
+      if (tabParam) {
+        const resolved = tabParam.startsWith('sa_') ? tabParam : `sa_${tabParam}`;
+        if (currentPage !== resolved) setCurrentPage(resolved);
+      } else if (saSaved && saSaved.startsWith('sa_')) {
+        if (currentPage !== saSaved) setCurrentPage(saSaved);
+      } else if (currentPage === 'dashboard') {
         setCurrentPage('sa_tenants');
       }
       return;
+    } else {
+      const tenantSaved = sessionStorage.getItem(`betico_active_tab_${user.tenantId || 'tenant'}`) || sessionStorage.getItem('betico_active_tab_tenant');
+      if (tabParam && currentPage !== tabParam) {
+        setCurrentPage(tabParam);
+      } else if (!tabParam && tenantSaved && currentPage !== tenantSaved) {
+        setCurrentPage(tenantSaved);
+      }
     }
 
     const fetchTenantStoreConfig = async () => {
@@ -498,9 +556,7 @@ function MainApp({ pathname }: { pathname: string }) {
   const navGroups = user?.role === 'superadmin' ? superAdminNavGroups : tenantNavGroups;
 
   const handleNavClick = (pageId: string) => {
-    let target = pageId === 'website_builder' ? 'sitio' : pageId;
-    setCurrentPage(target);
-    setMobileMenuOpen(false);
+    navigateToTab(pageId);
   };
 
   const renderContent = () => {
@@ -523,7 +579,7 @@ function MainApp({ pathname }: { pathname: string }) {
       return (
         <SuperAdminPanel
           activeTabProp={activeTab}
-          onTabChangeProp={(tab) => setCurrentPage(`sa_${tab}`)}
+          onTabChangeProp={(tab) => navigateToTab(`sa_${tab}`)}
           hideTabBar={true}
         />
       );
