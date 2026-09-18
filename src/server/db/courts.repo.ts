@@ -148,6 +148,7 @@ export async function deleteCourt(id: string, tenantId: string) {
 // ================= COURT BOOKINGS =================
 
 export async function getBookingsByTenant(tenantId: string, date?: string) {
+  await expireOldMatches().catch(() => {});
   let q = `
     SELECT cb.*, c.name as court_name 
     FROM court_bookings cb
@@ -190,6 +191,7 @@ export async function getBookingByIdUnsafe(id: string) {
 }
 
 export async function createBooking(tenantId: string, data: Partial<CourtBooking>) {
+  await expireOldMatches().catch(() => {});
   const bookingMode = data.bookingMode || 'full';
   const matchStatus = data.matchStatus || (bookingMode === 'seek_match' ? 'open' : 'confirmed');
   
@@ -385,9 +387,16 @@ export async function expireOldMatches() {
     SET match_status = 'expired', status = 'uncompleted', updated_at = CURRENT_TIMESTAMP
     WHERE status NOT IN ('cancelled', 'uncompleted')
       AND (
-        (match_status = 'open' AND (date + time - (match_expiry_hours || ' hours')::interval) <= NOW())
+        -- 1. Inmediatamente si no se confirmó el pago 2 horas después de la reserva:
+        ((team_a_paid = false OR status = 'pending') AND created_at <= NOW() - INTERVAL '2 hours')
+        -- 2. El horario pactado del partido ya llegó o pasó sin confirmación de pago:
+        OR ((team_a_paid = false OR status = 'pending') AND (date + time) <= NOW())
+        -- 3. Reto abierto sin rival cuyo límite de tiempo expiró:
+        OR (match_status = 'open' AND (date + time - (match_expiry_hours || ' hours')::interval) <= NOW())
+        -- 4. Reto abierto sin rival cuyo horario del partido ya pasó:
         OR (booking_mode = 'seek_match' AND (team_b_name IS NULL OR team_b_name = '') AND (date + time) <= NOW())
-        OR (status = 'pending' AND (date + time) <= NOW())
+        -- 5. Partidos explícitamente marcados como expirados:
+        OR (match_status = 'expired')
       )
     RETURNING id
   `);
@@ -537,6 +546,9 @@ export async function rescheduleCourtBooking(
 }
 
 export async function getAvailableSlots(tenantId: string, courtId: string, date: string) {
+  // Proactively run expiration so unconfirmed slots (>2h) are immediately freed up
+  await expireOldMatches().catch(() => {});
+
   // 0. Filter past dates (Costa Rica UTC-6)
   const nowCR = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Costa_Rica' }));
   const todayCR = `${nowCR.getFullYear()}-${String(nowCR.getMonth() + 1).padStart(2, '0')}-${String(nowCR.getDate()).padStart(2, '0')}`;
@@ -613,11 +625,14 @@ export async function getAvailableSlots(tenantId: string, courtId: string, date:
     currentMinutes += slotMinutes;
   }
 
-  // 3. Get existing bookings for this court and date (exclude cancelled, rejected, uncompleted)
+  // 3. Get existing bookings for this court and date (exclude cancelled, rejected, uncompleted, and unconfirmed >2h)
   const bookingsRes = await query(`
     SELECT time 
     FROM court_bookings 
-    WHERE tenant_id = $1 AND court_id = $2 AND date = $3::date AND status NOT IN ('cancelled', 'rejected', 'uncompleted')
+    WHERE tenant_id = $1 AND court_id = $2 AND date = $3::date 
+      AND status NOT IN ('cancelled', 'rejected', 'uncompleted')
+      AND match_status != 'expired'
+      AND NOT ((team_a_paid = false OR status = 'pending') AND created_at <= NOW() - INTERVAL '2 hours')
   `, [tenantId, courtId, date]);
 
   const bookedTimes = bookingsRes.rows.map(r => {

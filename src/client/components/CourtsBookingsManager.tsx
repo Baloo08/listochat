@@ -338,6 +338,24 @@ export default function CourtsBookingsManager() {
     }
   };
 
+  const handleMarkUncompleted = async (b: CourtBooking) => {
+    const code = b.bookingCode || `#RES-${b.id.substring(0, 8).toUpperCase()}`;
+    if (!confirm(`¿Mover la reserva ${code} a la lista de reservas no concretadas? Se liberará el horario de la cancha y se eliminará automáticamente en 15 días.`)) return;
+    setUpdatingId(b.id);
+    try {
+      await api.put(`/api/courts/bookings/${b.id}`, { status: 'uncompleted', matchStatus: 'expired' });
+      setBookings(prev => prev.map(item => item.id === b.id ? { ...item, status: 'uncompleted', matchStatus: 'expired', updatedAt: new Date().toISOString() } : item));
+      if (selectedBooking?.id === b.id) {
+        setSelectedBooking(prev => prev ? { ...prev, status: 'uncompleted', matchStatus: 'expired', updatedAt: new Date().toISOString() } : null);
+      }
+      loadData();
+    } catch (error) {
+      alert('Error al marcar reserva como no concretada');
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
   const handleSendApiReminder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!reminderBooking) return;
@@ -955,6 +973,21 @@ export default function CourtsBookingsManager() {
                       {b.status !== 'cancelled' && b.status !== 'uncompleted' && (
                         <button
                           type="button"
+                          onClick={() => handleMarkUncompleted(b)}
+                          title="Mover a lista de no concretadas (se eliminará en 15 días)"
+                          style={{
+                            padding: '7px 10px', borderRadius: '8px', border: '1px solid #fed7aa',
+                            backgroundColor: '#fff7ed', color: '#c2410c', fontSize: '0.8rem',
+                            fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px'
+                          }}
+                        >
+                          <AlertCircle size={13} /> No concretar
+                        </button>
+                      )}
+
+                      {b.status !== 'cancelled' && b.status !== 'uncompleted' && (
+                        <button
+                          type="button"
                           onClick={() => handleCancelBooking(b.id)}
                           style={{
                             padding: '7px 12px', borderRadius: '8px', border: '1px solid #fecaca',
@@ -1463,6 +1496,19 @@ export default function CourtsBookingsManager() {
                   }}
                 >
                   <Clock size={15} /> Reagendar Cancha / Hora
+                </button>
+              )}
+              {selectedBooking.status !== 'uncompleted' && selectedBooking.status !== 'cancelled' && (
+                <button
+                  type="button"
+                  onClick={() => handleMarkUncompleted(selectedBooking)}
+                  style={{
+                    flex: '1 1 170px', padding: '10px', borderRadius: '8px', border: '1px solid #fed7aa',
+                    backgroundColor: '#fff7ed', color: '#c2410c', fontWeight: '700', cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '0.85rem'
+                  }}
+                >
+                  <AlertCircle size={15} /> No Concretar (Expirar)
                 </button>
               )}
               {(selectedBooking.status === 'uncompleted' || selectedBooking.matchStatus === 'expired') && (

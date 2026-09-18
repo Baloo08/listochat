@@ -174,6 +174,34 @@ test('Court Booking Rescheduling, Codes & 15-Day Auto-Purge Architecture Tests',
     assert.equal(isEligibleFor15DayPurge(expiredReto, now), true, 'Expired reto older than 15 days must be purged');
   });
 
+// Helper: Immediate expiration checker (matches expireOldMatches SQL logic)
+function isEligibleForImmediateExpiration(booking, nowMs = Date.now()) {
+  if (booking.status === 'cancelled' || booking.status === 'uncompleted') return false;
+
+  const createdAtMs = new Date(booking.createdAt).getTime();
+  const twoHoursMs = 2 * 60 * 60 * 1000;
+  const isUnpaid = !booking.teamAPaid || booking.status === 'pending';
+
+  // Condition 1: 2 hours after reservation without payment confirmed
+  if (isUnpaid && (nowMs - createdAtMs) >= twoHoursMs) {
+    return true;
+  }
+
+  // Condition 2: Match scheduled time arrived without payment confirmed
+  if (booking.date && booking.time && isUnpaid) {
+    const timeFormatted = booking.time.length === 5 ? `${booking.time}:00` : booking.time;
+    const matchTimeMs = new Date(`${booking.date}T${timeFormatted}Z`).getTime();
+    if (matchTimeMs <= nowMs) return true;
+  }
+
+  // Condition 3: Explicitly marked as expired
+  if (booking.matchStatus === 'expired') {
+    return true;
+  }
+
+  return false;
+}
+
   await t.test('4. WhatsApp AI Rescheduling Tag Detection & Clean Message Extraction', () => {
     const aiOutput = `¡Con mucho gusto! Procedo a reagendar tu partido al nuevo horario solicitado.
 <<<COMMAND_RESCHEDULE_COURT: {"bookingCode": "CRT-8F2A1C", "newDate": "2026-09-22", "newTime": "19:00", "reason": "Cambio solicitado por WhatsApp"}>>>
@@ -189,4 +217,61 @@ Quedas agendado para el martes 22 a las 7:00 PM. ¡Te esperamos!`;
     assert.match(parsed.cleanText, /Quedas agendado para el martes 22/);
   });
 
+  await t.test('5. Immediate Expiration Protocol: 2h Unconfirmed Payment or Explicitly Marked', () => {
+    const now = new Date('2026-09-18T14:00:00Z').getTime();
+    const hourMs = 60 * 60 * 1000;
+
+    // A. Unpaid booking created 3 hours ago -> MUST expire immediately
+    const unpaid3h = {
+      status: 'pending',
+      teamAPaid: false,
+      createdAt: new Date(now - 3 * hourMs).toISOString(),
+      date: '2026-09-25',
+      time: '18:00'
+    };
+    assert.equal(isEligibleForImmediateExpiration(unpaid3h, now), true, 'Unconfirmed booking after 2 hours must expire');
+
+    // B. Unpaid booking created only 45 minutes ago -> MUST NOT expire yet
+    const unpaid45m = {
+      status: 'pending',
+      teamAPaid: false,
+      createdAt: new Date(now - 45 * 60 * 1000).toISOString(),
+      date: '2026-09-25',
+      time: '18:00'
+    };
+    assert.equal(isEligibleForImmediateExpiration(unpaid45m, now), false, 'Unpaid booking under 2h must NOT expire yet');
+
+    // C. Paid booking created 5 hours ago -> MUST NOT expire
+    const paid5h = {
+      status: 'confirmed',
+      teamAPaid: true,
+      createdAt: new Date(now - 5 * hourMs).toISOString(),
+      date: '2026-09-25',
+      time: '18:00'
+    };
+    assert.equal(isEligibleForImmediateExpiration(paid5h, now), false, 'Confirmed paid booking must NEVER expire');
+
+    // D. Booking explicitly marked with matchStatus = 'expired' -> MUST be processed to uncompleted
+    const markedExpired = {
+      status: 'confirmed',
+      matchStatus: 'expired',
+      teamAPaid: true,
+      createdAt: new Date(now - 30 * 60 * 1000).toISOString(),
+      date: '2026-09-25',
+      time: '18:00'
+    };
+    assert.equal(isEligibleForImmediateExpiration(markedExpired, now), true, 'Explicitly expired match must transition');
+
+    // E. Match scheduled time passed without payment -> MUST expire immediately
+    const matchTimePassed = {
+      status: 'confirmed',
+      teamAPaid: false,
+      createdAt: new Date(now - 1 * hourMs).toISOString(), // created only 1h ago
+      date: '2026-09-18',
+      time: '13:00' // 1 hour ago
+    };
+    assert.equal(isEligibleForImmediateExpiration(matchTimePassed, now), true, 'Match time in past without payment must expire');
+  });
+
 });
+

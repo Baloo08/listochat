@@ -4690,6 +4690,8 @@ async function deleteCourt(id, tenantId) {
   return (res.rowCount || 0) > 0;
 }
 async function getBookingsByTenant(tenantId, date) {
+  await expireOldMatches().catch(() => {
+  });
   let q = `
     SELECT cb.*, c.name as court_name 
     FROM court_bookings cb
@@ -4724,6 +4726,8 @@ async function getBookingByIdUnsafe(id) {
   return res.rows[0] ? mapBookingRow(res.rows[0]) : null;
 }
 async function createBooking(tenantId, data) {
+  await expireOldMatches().catch(() => {
+  });
   const bookingMode = data.bookingMode || "full";
   const matchStatus = data.matchStatus || (bookingMode === "seek_match" ? "open" : "confirmed");
   let totalPrice = Number(data.totalPrice || 0);
@@ -4939,9 +4943,16 @@ async function expireOldMatches() {
     SET match_status = 'expired', status = 'uncompleted', updated_at = CURRENT_TIMESTAMP
     WHERE status NOT IN ('cancelled', 'uncompleted')
       AND (
-        (match_status = 'open' AND (date + time - (match_expiry_hours || ' hours')::interval) <= NOW())
+        -- 1. Inmediatamente si no se confirm\xF3 el pago 2 horas despu\xE9s de la reserva:
+        ((team_a_paid = false OR status = 'pending') AND created_at <= NOW() - INTERVAL '2 hours')
+        -- 2. El horario pactado del partido ya lleg\xF3 o pas\xF3 sin confirmaci\xF3n de pago:
+        OR ((team_a_paid = false OR status = 'pending') AND (date + time) <= NOW())
+        -- 3. Reto abierto sin rival cuyo l\xEDmite de tiempo expir\xF3:
+        OR (match_status = 'open' AND (date + time - (match_expiry_hours || ' hours')::interval) <= NOW())
+        -- 4. Reto abierto sin rival cuyo horario del partido ya pas\xF3:
         OR (booking_mode = 'seek_match' AND (team_b_name IS NULL OR team_b_name = '') AND (date + time) <= NOW())
-        OR (status = 'pending' AND (date + time) <= NOW())
+        -- 5. Partidos expl\xEDcitamente marcados como expirados:
+        OR (match_status = 'expired')
       )
     RETURNING id
   `);
@@ -5061,6 +5072,8 @@ ${auditEntry}` : auditEntry;
   return updated;
 }
 async function getAvailableSlots(tenantId, courtId, date) {
+  await expireOldMatches().catch(() => {
+  });
   const nowCR = new Date((/* @__PURE__ */ new Date()).toLocaleString("en-US", { timeZone: "America/Costa_Rica" }));
   const todayCR = `${nowCR.getFullYear()}-${String(nowCR.getMonth() + 1).padStart(2, "0")}-${String(nowCR.getDate()).padStart(2, "0")}`;
   const currentMinutesNow = nowCR.getHours() * 60 + nowCR.getMinutes();
@@ -5122,7 +5135,10 @@ async function getAvailableSlots(tenantId, courtId, date) {
   const bookingsRes = await query(`
     SELECT time 
     FROM court_bookings 
-    WHERE tenant_id = $1 AND court_id = $2 AND date = $3::date AND status NOT IN ('cancelled', 'rejected', 'uncompleted')
+    WHERE tenant_id = $1 AND court_id = $2 AND date = $3::date 
+      AND status NOT IN ('cancelled', 'rejected', 'uncompleted')
+      AND match_status != 'expired'
+      AND NOT ((team_a_paid = false OR status = 'pending') AND created_at <= NOW() - INTERVAL '2 hours')
   `, [tenantId, courtId, date]);
   const bookedTimes = bookingsRes.rows.map((r) => {
     return typeof r.time === "string" ? r.time : r.time.toString();
@@ -5141,16 +5157,16 @@ async function getAvailableSlots(tenantId, courtId, date) {
 
 // src/server/services/court-cleanup.service.ts
 function startCourtCleanupScheduler() {
-  console.log("[CourtCleanup] Starting automated court cleanup scheduler (interval: 6h)...");
-  setTimeout(runCourtCleanup, 15e3);
-  setInterval(runCourtCleanup, 6 * 60 * 60 * 1e3);
+  console.log("[CourtCleanup] Starting automated court cleanup scheduler (interval: 2 mins)...");
+  setTimeout(runCourtCleanup, 1e4);
+  setInterval(runCourtCleanup, 2 * 60 * 1e3);
 }
 async function runCourtCleanup() {
   try {
     const expiredCount = await expireOldMatches();
     const purgedCount = await purgeOldUncompletedBookings();
     if (expiredCount > 0 || purgedCount > 0) {
-      console.log(`[CourtCleanup] Cleanup run complete: ${expiredCount} partidos/retos pasaron a no concretados, ${purgedCount} reservas no concretadas (>15 d\xEDas) fueron eliminadas.`);
+      console.log(`[CourtCleanup] Cleanup run complete: ${expiredCount} reservas no pagadas tras 2h o expiradas pasaron a no concretadas, ${purgedCount} reservas no concretadas (>15 d\xEDas) fueron purgadas.`);
     }
   } catch (err) {
     console.error("[CourtCleanup] Error running court cleanup task:", err?.message || err);
