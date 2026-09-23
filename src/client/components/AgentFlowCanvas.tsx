@@ -1130,16 +1130,17 @@ export default function AgentFlowCanvas({
                 </div>
               </div>
 
-              {/* Custom Links & Web Resources (Fuentes RAG de FAQ) */}
-              <div style={{
-                backgroundColor: '#0b1324',
-                border: '1.5px solid #1e3a5f',
-                borderRadius: '12px',
-                padding: '16px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '12px'
-              }}>
+              {/* Custom Links & Web Resources (Fuentes RAG exclusivas de Identidad & FAQ) */}
+              {selectedSubagentKey === 'general' && (
+                <div style={{
+                  backgroundColor: '#0b1324',
+                  border: '1.5px solid #1e3a5f',
+                  borderRadius: '12px',
+                  padding: '16px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '12px'
+                }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
                   <div>
                     <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.88rem', fontWeight: '700', color: '#38bdf8' }}>
@@ -1243,6 +1244,7 @@ export default function AgentFlowCanvas({
                   </div>
                 )}
               </div>
+              )}
 
             </div>
 
