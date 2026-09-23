@@ -28,12 +28,12 @@ const DEFAULT_NODE_POSITIONS: Record<string, NodePosition> = {
 
 const NODE_DIMENSIONS: Record<string, { w: number; h: number }> = {
   whatsapp: { w: 260, h: 80 },
-  orchestrator: { w: 320, h: 105 },
-  sales: { w: 290, h: 360 },
-  booking: { w: 290, h: 360 },
-  courts: { w: 290, h: 360 },
-  handoff: { w: 290, h: 360 },
-  general: { w: 290, h: 360 }
+  orchestrator: { w: 320, h: 115 },
+  sales: { w: 290, h: 370 },
+  booking: { w: 290, h: 370 },
+  courts: { w: 290, h: 370 },
+  handoff: { w: 290, h: 370 },
+  general: { w: 290, h: 370 }
 };
 
 export default function AgentFlowCanvas({
@@ -43,6 +43,7 @@ export default function AgentFlowCanvas({
   activeSimulatedAgentId
 }: AgentFlowCanvasProps) {
   const [selectedSubagentKey, setSelectedSubagentKey] = useState<string | null>(null);
+  const [isOrchestratorModalOpen, setIsOrchestratorModalOpen] = useState<boolean>(false);
   const [zoom, setZoom] = useState<number>(0.85);
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState<boolean>(false);
@@ -112,6 +113,14 @@ export default function AgentFlowCanvas({
     onChange(updated);
   };
 
+  const handleUpdateSupervisorPrompt = (newPrompt: string) => {
+    const updated: OrchestratorConfig = {
+      ...orchestratorConfig,
+      prompt: newPrompt
+    };
+    onChange(updated);
+  };
+
   // Zoom controls
   const zoomIn = () => setZoom(prev => Math.min(1.4, Math.round((prev + 0.1) * 100) / 100));
   const zoomOut = () => setZoom(prev => Math.max(0.5, Math.round((prev - 0.1) * 100) / 100));
@@ -135,7 +144,6 @@ export default function AgentFlowCanvas({
 
   // Node Drag Handlers
   const handleNodeMouseDown = (id: string, e: React.MouseEvent) => {
-    // Only drag on left click and avoid inputs/buttons
     if (e.button !== 0) return;
     const target = e.target as HTMLElement;
     if (target.tagName === 'INPUT' || target.tagName === 'BUTTON' || target.tagName === 'TEXTAREA' || target.closest('button')) {
@@ -189,7 +197,6 @@ export default function AgentFlowCanvas({
 
   const handleMouseUp = () => {
     if (draggingNode) {
-      // Persist node positions to orchestrator config
       onChange({
         ...orchestratorConfig,
         nodePositions: {
@@ -376,7 +383,7 @@ export default function AgentFlowCanvas({
           flex: 1,
           padding: '20px', 
           overflow: 'hidden', 
-          minHeight: isFullscreen ? 'calc(100vh - 60px)' : '740px', 
+          minHeight: isFullscreen ? 'calc(100vh - 60px)' : '750px', 
           position: 'relative',
           cursor: isPanning ? 'grabbing' : (draggingNode ? 'move' : 'grab'),
           userSelect: 'none'
@@ -412,7 +419,7 @@ export default function AgentFlowCanvas({
           backdropFilter: 'blur(4px)'
         }}>
           <Move size={13} color="#38bdf8" />
-          <span>Haz clic y arrastra cualquier nodo para posicionarlo libremente. Arrastra el fondo para desplazarte.</span>
+          <span>Haz clic y arrastra cualquier nodo para posicionarlo libremente. Haz clic en "Configurar" en cualquier nodo para ajustar sus directrices.</span>
         </div>
 
         {/* Scalable & Pannable Canvas Container */}
@@ -422,7 +429,7 @@ export default function AgentFlowCanvas({
             transformOrigin: 'top left',
             transition: (isPanning || draggingNode) ? 'none' : 'transform 0.15s ease-out',
             width: '1650px',
-            height: '820px',
+            height: '840px',
             position: 'relative'
           }}
         >
@@ -434,7 +441,7 @@ export default function AgentFlowCanvas({
               top: 0,
               left: 0,
               width: '1650px',
-              height: '820px',
+              height: '840px',
               pointerEvents: 'none',
               zIndex: 0
             }}
@@ -621,20 +628,61 @@ export default function AgentFlowCanvas({
                   <strong style={{ fontSize: '0.95rem' }}>Agente Orquestador</strong>
                 </div>
               </div>
-              <span style={{ backgroundColor: '#6366f120', color: '#a5b4fc', fontSize: '0.68rem', padding: '3px 8px', borderRadius: '12px', border: '1px solid #6366f140', fontWeight: 'bold' }}>
-                &lt;5ms Router
-              </span>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsOrchestratorModalOpen(true);
+                  }}
+                  title="Configurar directrices del supervisor y prioridades de enrutamiento"
+                  style={{
+                    background: '#1e293b',
+                    border: '1px solid #334155',
+                    color: '#38bdf8',
+                    padding: '4px 8px',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    fontSize: '0.7rem',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  <Sliders size={12} />
+                  <span>Configurar</span>
+                </button>
+              </div>
             </div>
 
             <p style={{ fontSize: '0.73rem', color: '#94a3b8', margin: '0 0 8px 0', lineHeight: '1.3' }}>
-              Analiza la intención del cliente y delega al subagente experto con sus fuentes RAG y acciones.
+              Supervisa la intención del cliente, prioriza jerarquías comerciales y delega en &lt;5ms al subagente experto.
             </p>
 
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.68rem', color: '#64748b', borderTop: '1px solid #1e293b', paddingTop: '6px' }}>
+            <div 
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsOrchestratorModalOpen(true);
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                fontSize: '0.68rem',
+                color: '#64748b',
+                borderTop: '1px solid #1e293b',
+                paddingTop: '6px',
+                cursor: 'pointer'
+              }}
+            >
               <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                 <Sparkles size={11} color="#38bdf8" /> 5 Subagentes vinculados
               </span>
-              <span style={{ color: '#818cf8', fontWeight: '600' }}>Arrastrar para mover</span>
+              <span style={{ color: '#818cf8', fontWeight: '600' }}>
+                Directrices Supervisor &gt;
+              </span>
             </div>
 
             {/* Bottom Output Port */}
@@ -664,10 +712,11 @@ export default function AgentFlowCanvas({
             '#0284c7',
             '#38bdf8',
             activeSimulatedAgentId === 'sales',
-            'Asesora productos, variantes y crea pedidos.',
+            'Venta consultiva, sugerencias cruzadas (*up-selling*) y comanda.',
             [
               { icon: <Database size={12} color="#38bdf8" />, label: 'Catálogo Tienda', detail: `${dataSourcesSummary?.productsCount ?? 0} ítems` },
-              { icon: <Database size={12} color="#38bdf8" />, label: 'Pasarela SINPE & Pagos', detail: 'Conectado' }
+              { icon: <Database size={12} color="#38bdf8" />, label: 'Pasarela SINPE & Pagos', detail: 'Conectado' },
+              { icon: <Database size={12} color="#38bdf8" />, label: 'Venta Cruzada', detail: 'Complementos/Extras' }
             ],
             [
               { name: 'COMMAND_ORDER', label: 'Crear pedido en tienda' },
@@ -683,11 +732,11 @@ export default function AgentFlowCanvas({
             '#9333ea',
             '#c084fc',
             activeSimulatedAgentId === 'booking',
-            'Revisa agenda y reserva citas con especialistas.',
+            'Agenda citas, propone huecos libres alternativos y suma tiempos.',
             [
               { icon: <Database size={12} color="#c084fc" />, label: 'Servicios del Negocio', detail: `${dataSourcesSummary?.servicesCount ?? 0} serv.` },
               { icon: <Database size={12} color="#c084fc" />, label: 'Staff / Especialistas', detail: `${dataSourcesSummary?.specialistsCount ?? 0} activos` },
-              { icon: <Database size={12} color="#c084fc" />, label: 'Disponibilidad de Horario', detail: 'En tiempo real' }
+              { icon: <Database size={12} color="#c084fc" />, label: 'Disponibilidad de Horario', detail: 'Propuesta de huecos' }
             ],
             [
               { name: 'COMMAND_BOOKING', label: 'Crear cita en agenda' },
@@ -704,10 +753,10 @@ export default function AgentFlowCanvas({
             '#ca8a04',
             '#facc15',
             activeSimulatedAgentId === 'courts',
-            'Aparta canchas y valida códigos CRT-XXXXXX.',
+            'Aparta canchas, tarifas nocturnas con luz y códigos CRT.',
             [
               { icon: <Database size={12} color="#facc15" />, label: 'Canchas & Espacios', detail: `${dataSourcesSummary?.courtsCount ?? 0} canchas` },
-              { icon: <Database size={12} color="#facc15" />, label: 'Horarios & Iluminación', detail: 'Tarifas activas' }
+              { icon: <Database size={12} color="#facc15" />, label: 'Tarifa Iluminación', detail: 'Nocturna activa' }
             ],
             [
               { name: 'COMMAND_COURT_BOOKING', label: 'Apartar cancha deportiva' },
@@ -723,17 +772,17 @@ export default function AgentFlowCanvas({
             '#e11d48',
             '#fb7185',
             activeSimulatedAgentId === 'handoff',
-            'Detecta quejas o pedidos de asesor y pausa el bot.',
+            'Contención empática, toma previa de datos y pausa del bot.',
             [
-              { icon: <Database size={12} color="#fb7185" />, label: 'Palabras Clave de Alerta', detail: 'humano, asesor...' },
-              { icon: <Database size={12} color="#fb7185" />, label: 'Teléfono de Notificación', detail: 'Configurado' }
+              { icon: <Database size={12} color="#fb7185" />, label: 'Palabras Clave de Alerta', detail: 'humano, queja...' },
+              { icon: <Database size={12} color="#fb7185" />, label: 'Captura de Motivo', detail: 'Datos para asesor' }
             ],
             [
               { name: 'COMMAND_HANDOFF', label: 'Pausar bot y alertar equipo' }
             ]
           )}
 
-          {/* 5. AGENTE GENERAL & FAQ */}
+          {/* 5. AGENTE IDENTIDAD, POLÍTICAS & FAQ */}
           {renderSubagentHierarchicalNode(
             'general',
             subagents.general,
@@ -741,13 +790,15 @@ export default function AgentFlowCanvas({
             '#475569',
             '#94a3b8',
             activeSimulatedAgentId === 'general',
-            'Bienvenida cordial, horarios y dudas frecuentes.',
+            'Conserje y anfitrión: horarios, ubicación, políticas y puente comercial.',
             [
-              { icon: <Database size={12} color="#94a3b8" />, label: 'Identidad del Negocio', detail: 'Ubicación y Datos' },
-              { icon: <Database size={12} color="#94a3b8" />, label: 'Horarios de Atención', detail: 'Configurados' }
+              { icon: <Database size={12} color="#94a3b8" />, label: 'Ubicación & Waze', detail: 'Datos Negocio' },
+              { icon: <Database size={12} color="#94a3b8" />, label: 'Formas de Pago & Factura', detail: 'SINPE / Electrónica' },
+              { icon: <Database size={12} color="#94a3b8" />, label: 'Políticas & Comodidades', detail: 'Parqueo, Pet Friendly' }
             ],
             [
-              { name: 'RESPUESTA_DIRECTA', label: 'Conversación natural WhatsApp' }
+              { name: 'RESPUESTA_DIRECTA', label: 'Conversación natural WhatsApp' },
+              { name: 'PUENTE_COMERCIAL', label: 'Invitación a catálogo / cita' }
             ]
           )}
 
@@ -755,7 +806,113 @@ export default function AgentFlowCanvas({
 
       </div>
 
+      {/* ============================================================== */}
+      {/* SUPERVISOR ORCHESTRATOR CONFIGURATION MODAL */}
+      {/* ============================================================== */}
+      {isOrchestratorModalOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.75)',
+          backdropFilter: 'blur(5px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 99999,
+          padding: '20px'
+        }}>
+          <div style={{
+            backgroundColor: '#0f172a',
+            border: '1px solid #334155',
+            borderRadius: '16px',
+            width: '100%',
+            maxWidth: '680px',
+            maxHeight: '90vh',
+            display: 'flex',
+            flexDirection: 'column',
+            boxShadow: '0 25px 50px -12px rgba(0,0,0,0.8)',
+            overflow: 'hidden'
+          }}>
+            
+            {/* Modal Header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 24px', borderBottom: '1px solid #334155', backgroundColor: '#0b1120' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ backgroundColor: '#6366f125', padding: '10px', borderRadius: '10px', color: '#818cf8' }}>
+                  <Bot size={22} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 'bold' }}>Configurar Agente Orquestador (Supervisor)</h3>
+                  <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Directrices maestras de atención y reglas de delegación</span>
+                </div>
+              </div>
+
+              <button 
+                onClick={() => setIsOrchestratorModalOpen(false)}
+                style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '6px' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: '24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              
+              <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '10px', padding: '14px' }}>
+                <strong style={{ fontSize: '0.88rem', color: '#38bdf8', display: 'block', marginBottom: '4px' }}>
+                  🎯 Rol del Orquestador Supervisor
+                </strong>
+                <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: 0, lineHeight: '1.4' }}>
+                  El orquestador recibe el mensaje entrante de WhatsApp, evalúa la intención del cliente en &lt;5ms y asigna la conversación al subagente experto (Ventas, Citas, Canchas, Escalado o FAQ). Sus directrices aplican a toda la orquesta.
+                </p>
+              </div>
+
+              {/* Supervisor Prompt */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <label style={{ fontSize: '0.85rem', fontWeight: '600' }}>Directrices Maestras del Supervisor</label>
+                  <span style={{ fontSize: '0.75rem', color: '#818cf8' }}>Reglas de prioridad y tono corporativo</span>
+                </div>
+                <textarea 
+                  rows={8}
+                  value={orchestratorConfig.prompt || ''}
+                  onChange={e => handleUpdateSupervisorPrompt(e.target.value)}
+                  placeholder="Ej: Eres el Director de Operaciones y Supervisor Agéntico de nuestro negocio. Prioriza siempre reclamos hacia Escalado Humano..."
+                  style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: '#1e293b', color: '#f8fafc', fontSize: '0.85rem', lineHeight: '1.5', fontFamily: 'monospace' }}
+                />
+                <span style={{ fontSize: '0.72rem', color: '#64748b', display: 'block', marginTop: '4px' }}>
+                  💡 Define aquí cómo resolver consultas mixtas (ej. si el cliente pide cita y producto a la vez) y la calidez costarricense esperada.
+                </span>
+              </div>
+
+            </div>
+
+            {/* Modal Footer */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '16px 24px', borderTop: '1px solid #334155', backgroundColor: '#0b1120' }}>
+              <button
+                type="button"
+                onClick={() => setIsOrchestratorModalOpen(false)}
+                style={{
+                  backgroundColor: '#38bdf8',
+                  color: '#0f172a',
+                  border: 'none',
+                  padding: '9px 22px',
+                  borderRadius: '8px',
+                  fontWeight: 'bold',
+                  fontSize: '0.85rem',
+                  cursor: 'pointer'
+                }}
+              >
+                Listo y Cerrar
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
       {/* SUBAGENT CONFIGURATION MODAL / DRAWER */}
+      {/* ============================================================== */}
       {selectedSubagentKey && currentModalAgent && (
         <div style={{
           position: 'fixed',
@@ -848,7 +1005,7 @@ export default function AgentFlowCanvas({
                   <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Instrucciones específicas de este rol</span>
                 </div>
                 <textarea 
-                  rows={6}
+                  rows={7}
                   value={currentModalAgent.prompt}
                   onChange={e => handleUpdateCurrentSubagent({ ...currentModalAgent, prompt: e.target.value })}
                   placeholder="Instrucciones para este subagente..."
@@ -977,7 +1134,7 @@ export default function AgentFlowCanvas({
     if (!agent) return null;
     const isEnabled = agent.enabled !== false;
     const pos = nodePositions[key] || DEFAULT_NODE_POSITIONS[key] || { x: 100, y: 350 };
-    const dim = NODE_DIMENSIONS[key] || { w: 290, h: 360 };
+    const dim = NODE_DIMENSIONS[key] || { w: 290, h: 370 };
 
     return (
       <div 

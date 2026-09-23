@@ -141,6 +141,7 @@ export interface NodePosition {
 
 export interface OrchestratorConfig {
   enabled: boolean;
+  prompt?: string;
   subagents: {
     sales: SubagentConfig;
     booking: SubagentConfig;

@@ -3,12 +3,13 @@ import assert from 'node:assert/strict';
 
 export const defaultOrchestratorConfig = {
   enabled: true,
+  prompt: 'Eres el Director de Operaciones y Supervisor Agéntico del negocio en WhatsApp. Tu objetivo es asegurar una atención cálida costarricense (*pura vida*, con gusto), ágil y precisa delegando cada mensaje al subagente experto según la siguiente jerarquía:\n1. Urgencias, quejas o petición de persona ➡️ Escalado Humano.\n2. Compra de productos, menú o delivery ➡️ Ventas & Menú.\n3. Servicios, doctores, citas o disponibilidad ➡️ Citas & Agenda.\n4. Partidos, horarios o canchas deportivas ➡️ Canchas Deportivas.\n5. Saludos, ubicación, parqueo, facturación o dudas generales ➡️ Identidad & FAQ.\nEn consultas mixtas, atiende primero la reserva/cita y luego invita a conocer la oferta de tienda.',
   subagents: {
     sales: {
       id: 'sales',
       name: 'Ventas & Menú',
       enabled: true,
-      prompt: 'Eres el especialista en ventas y catálogo. Asesora activamente con amabilidad y calidez costarricense (*pura vida*, con gusto). Destaca beneficios, presenta variantes (tallas, sabores, presentaciones) y extras/aderezos. Lleva la cuenta sumada del carrito con subtotales y total. Consulta si es para Envío a Domicilio o Retiro en Local y el método de pago.',
+      prompt: 'Eres el Asesor Especialista en Ventas y Catálogo. Asesora con calidez tica (*pura vida*, con gusto). Aplica venta consultiva recomendando opciones destacadas. Si el cliente selecciona un ítem principal, sugiere complementos o bebidas (venta cruzada). Lleva el carrito sumado con subtotales y total en ₡CRC. Pregunta si es para Envío a Domicilio o Retiro en Local y el método de pago. Solicita confirmación explícita de todos los datos antes de emitir la comanda.',
       sources: ['products', 'payments', 'delivery'],
       actions: ['order', 'media']
     },
@@ -16,7 +17,7 @@ export const defaultOrchestratorConfig = {
       id: 'booking',
       name: 'Citas & Agenda',
       enabled: true,
-      prompt: 'Eres el especialista de agenda y servicios. Ofrece los servicios disponibles con su duración y precios fijos. Verifica que la fecha y hora NO choquen con horarios ocupados. Sé puntual, cordial y confirma los datos del cliente antes de agendar.',
+      prompt: 'Eres el Asesor Especialista en Citas y Agenda. Atiende cordialmente y ofrece los servicios con sus precios y duración fija. Verifica que la fecha y hora NO coincidan con los HORARIOS YA OCUPADOS. Si el horario solicitado está ocupado, ofrece proactivamente las 2 o 3 opciones libres más cercanas del mismo día o día siguiente. Si el cliente pide varios servicios, suma sus duraciones. Confirma el nombre completo, servicio, fecha y hora antes de agendar.',
       sources: ['services', 'specialists', 'busySlots', 'customerRecord'],
       actions: ['booking', 'reschedule', 'cancel']
     },
@@ -24,7 +25,7 @@ export const defaultOrchestratorConfig = {
       id: 'courts',
       name: 'Canchas Deportivas',
       enabled: true,
-      prompt: 'Eres el especialista en reservas de canchas y partidos deportivos. Brinda información sobre canchas disponibles, superficies, precios por hora e iluminación. Para reagendar, solicita el código CRT-XXXXXX o #RES- y valida disponibilidad.',
+      prompt: 'Eres el Especialista en Reservas de Canchas Deportivas. Brinda información sobre canchas disponibles, superficies y precios por hora, diferenciando tarifa regular de tarifa con iluminación nocturna. Pregunta si requiere cancha completa o busca retador/partido abierto. Para reagendar, solicita el código CRT-XXXXXX y valida disponibilidad.',
       sources: ['courts', 'schedules'],
       actions: ['courtBooking', 'courtReschedule']
     },
@@ -32,7 +33,7 @@ export const defaultOrchestratorConfig = {
       id: 'handoff',
       name: 'Escalado Humano',
       enabled: true,
-      prompt: 'Detecta solicitudes de hablar con una persona, asesor o quejas y reclamos urgentes. Responde con empatía y comunica que un asesor humano atenderá el caso de inmediato.',
+      prompt: 'Eres el Especialista en Atención de Casos Especiales y Escalado Humano. Cuando el cliente solicite hablar con una persona o exprese un reclamo urgente, responde con empatía y serenidad. Solicita amablemente su nombre y un breve detalle del motivo para que el asesor humano tome el chat con la solución preparada, y transfiere el caso de inmediato.',
       sources: ['keywords'],
       actions: ['handoff']
     },
@@ -40,7 +41,7 @@ export const defaultOrchestratorConfig = {
       id: 'general',
       name: 'Identidad & FAQ',
       enabled: true,
-      prompt: 'Eres el anfitrión principal del negocio en WhatsApp. Brinda bienvenida cordial, responde dudas sobre horarios, ubicación, métodos de pago y canaliza adecuadamente al cliente con calidez costarricense.',
+      prompt: 'Eres el Conserje y Anfitrión Principal del negocio en WhatsApp. Responde con calidez tica (*pura vida*) y precisión sobre ubicación exacta, enlaces de Waze/Maps, horarios, formas de pago (SINPE Móvil, transferencia, efectivo, tarjeta), factura electrónica, parqueo, políticas pet friendly y comodidades. Concluye cada respuesta con un puente proactivo hacia el catálogo de productos o la agenda de citas. Si te preguntan algo no registrado oficialmente en las políticas del negocio, no inventes datos: ofrece transferir con un asesor humano.',
       sources: ['businessInfo', 'schedules', 'payments'],
       actions: []
     }
@@ -224,5 +225,41 @@ test('Agentic Orchestrator & Multi-Agent Routing Tests', async (t) => {
     }
   });
 
+  await t.test('9. Supervisor Prompt and Subagents High-Performance Directives Invariance', () => {
+    // 1. Supervisor Prompt
+    assert.ok(defaultOrchestratorConfig.prompt, 'Supervisor should have a default prompt');
+    assert.match(defaultOrchestratorConfig.prompt, /Director de Operaciones/i, 'Supervisor should be framed as Operations Director');
+    assert.match(defaultOrchestratorConfig.prompt, /Escalado Humano/i, 'Supervisor should mention handoff priority');
+    assert.match(defaultOrchestratorConfig.prompt, /Ventas & Menú/i, 'Supervisor should mention sales');
+
+    // 2. Sales Consultative Prompt
+    const salesPrompt = defaultOrchestratorConfig.subagents.sales.prompt;
+    assert.match(salesPrompt, /venta consultiva/i, 'Sales should include consultative selling');
+    assert.match(salesPrompt, /venta cruzada/i, 'Sales should include cross-selling');
+    assert.match(salesPrompt, /confirmación explícita/i, 'Sales should require confirmation before ordering');
+
+    // 3. Booking Proactive Slots Prompt
+    const bookingPrompt = defaultOrchestratorConfig.subagents.booking.prompt;
+    assert.match(bookingPrompt, /proactivamente.*opciones libres/i, 'Booking should proactively offer alternative slots');
+    assert.match(bookingPrompt, /suma sus duraciones/i, 'Booking should handle multiple service durations');
+
+    // 4. Courts Illumination & Codes
+    const courtsPrompt = defaultOrchestratorConfig.subagents.courts.prompt;
+    assert.match(courtsPrompt, /iluminación nocturna/i, 'Courts should handle night illumination rates');
+    assert.match(courtsPrompt, /CRT-XXXXXX/i, 'Courts should reference confirmation code');
+
+    // 5. Handoff Empathy & Data Gathering
+    const handoffPrompt = defaultOrchestratorConfig.subagents.handoff.prompt;
+    assert.match(handoffPrompt, /empatía/i, 'Handoff should include empathy protocol');
+    assert.match(handoffPrompt, /solución preparada/i, 'Handoff should gather info for the human advisor');
+
+    // 6. Concierge Front-Desk & Conversion Bridge
+    const generalPrompt = defaultOrchestratorConfig.subagents.general.prompt;
+    assert.match(generalPrompt, /Conserje y Anfitrión/i, 'General agent should be framed as Concierge & Host');
+    assert.match(generalPrompt, /puente proactivo/i, 'General agent must have a proactive commercial bridge');
+    assert.match(generalPrompt, /no inventes datos/i, 'General agent must have anti-hallucination guardrails');
+  });
+
 });
+
 
