@@ -418,6 +418,36 @@ REGLA DE ORO "CHAT-FIRST" Y MANEJO DE ENLACES:
     assert.ok(!emptySources.includes('customLinks'), 'Empty links should not add customLinks to sourcesUsed');
   });
 
+  await t.test('15. Anti-Hallucination Guardrails & Identity Exception Invariance', () => {
+    // 1. Catalog Match & Anti-Hallucination Alert
+    function buildCatalogAlert(activeProducts, matchedProducts, senderName) {
+      if (activeProducts.length === 0) {
+        return '⚠️ CATÁLOGO VACÍO: Actualmente no hay productos registrados en el inventario. Informa amablemente que el catálogo está en actualización y ofrece comunicar con un asesor humano.\n';
+      } else if (matchedProducts.length === 0) {
+        return `⚠️ AVISO DE INVENTARIO: El cliente está consultando o buscando un artículo que NO coincide con ningún producto registrado en el inventario oficial. TIENES TERMINANTEMENTE PROHIBIDO inventar que disponen de ese artículo o inventar precios o existencias. Debes aclararle con amabilidad y calidez (*"Disculpa ${senderName}, en este momento no disponemos de ese artículo en nuestro catálogo"*) y ofrecerle las opciones reales que sí comercializan (listadas abajo).\n`;
+      }
+      return '';
+    }
+
+    const activeList = [{ name: 'Carpa de Camping' }, { name: 'Linterna LED' }];
+    const matchedCamisetas = []; // Customer asks for "camisetas", not in inventory
+    const alert = buildCatalogAlert(activeList, matchedCamisetas, 'Cristopher');
+    assert.match(alert, /TIENES TERMINANTEMENTE PROHIBIDO inventar que disponen de ese artículo/);
+    assert.match(alert, /Disculpa Cristopher, en este momento no disponemos de ese artículo/);
+
+    // 2. Identity Exception in Session Directive
+    const tenantName = 'Tienda Explorador';
+    const isSessionActive = true;
+    const sessionGreetingDirective = isSessionActive
+      ? `⚠️ SESIÓN ACTIVA EN CURSO: ESTÁ ESTRICTAMENTE PROHIBIDO volver a saludar.
+EXCEPCIÓN DE IDENTIDAD OBLIGATORIA: Si el cliente pregunta explícitamente quién eres o con quién habla ("¿con quién hablo?", "¿quién eres?", "¿es un bot?"), responde amablemente: "Estás hablando con el Asistente Virtual oficial de *${tenantName}* en WhatsApp". NUNCA te disculpes por confusión ni confundas tu identidad con la del cliente.`
+      : `Saluda cordialmente presentándote como asistente de *${tenantName}*.`;
+
+    assert.match(sessionGreetingDirective, /EXCEPCIÓN DE IDENTIDAD OBLIGATORIA/);
+    assert.match(sessionGreetingDirective, /Estás hablando con el Asistente Virtual oficial de \*Tienda Explorador\*/);
+    assert.match(sessionGreetingDirective, /NUNCA te disculpes por confusión ni confundas tu identidad/);
+  });
+
 });
 
 

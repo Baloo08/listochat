@@ -169,11 +169,15 @@ export async function processWithOrchestrator(
         return lowerContext.includes(pName) || (pCat && lowerContext.includes(pCat)) || (pDesc && pDesc.split(' ').some(w => w.length > 3 && lowerContext.includes(w)));
       });
 
-      if (matchedProducts.length === 0) {
+      let catalogAlert = '';
+      if (activeProducts.length === 0) {
+        catalogAlert = '⚠️ CATÁLOGO VACÍO: Actualmente no hay productos registrados en el inventario. Informa amablemente que el catálogo está en actualización y ofrece comunicar con un asesor humano.\n';
+      } else if (matchedProducts.length === 0) {
+        catalogAlert = `⚠️ AVISO DE INVENTARIO: El cliente está consultando o buscando un artículo que NO coincide con ningún producto registrado en el inventario oficial. TIENES TERMINANTEMENTE PROHIBIDO inventar que disponen de ese artículo o inventar precios o existencias. Debes aclararle con amabilidad y calidez (*"Disculpa ${senderName}, en este momento no disponemos de ese artículo en nuestro catálogo"*) y ofrecerle las opciones reales que sí comercializan (listadas abajo).\n`;
         matchedProducts = activeProducts.slice(0, 6);
       }
 
-      let catalogText = '🛍️ Catálogo de Productos y Precios:\n' + matchedProducts.map(p => {
+      let catalogText = '🛍️ Catálogo Oficial de Productos y Precios:\n' + matchedProducts.map(p => {
         let line = `• *${p.name}* [${p.category || 'General'}]: ₡${Number(p.price || 0).toLocaleString('es-CR')}`;
         if (p.compareAtPrice && Number(p.compareAtPrice) > Number(p.price)) {
           line += ` (Antes: ₡${Number(p.compareAtPrice).toLocaleString('es-CR')})`;
@@ -211,18 +215,21 @@ INFORMACIÓN ACTUALIZADA:
 Fecha/Hora CR: ${crTime}
 ${storeUrl ? `Tienda Online: ${storeUrl}\n` : ''}
 ${paymentText}
+${catalogAlert}
 ${catalogText}
 
-REGLAS DE VENTA CONSULTIVA:
-1. Responde con calidez tica (*pura vida*, con gusto, claro que sí).
-2. Aplica venta consultiva: si el cliente duda o pide recomendaciones, sugiérele los productos destacados del catálogo.
-3. Venta cruzada (up-selling): si el cliente elige un plato o producto principal, sugiere amablemente un acompañamiento, bebida o extra del catálogo.
-4. Si el producto tiene variantes (sabores, tallas) u opciones, pregúntale cuál prefiere antes de continuar.
-5. Desglose transparente: Lleva la cuenta sumada del pedido (Subtotal + Envío si aplica = Total en ₡CRC).
-6. Pregunta si la entrega es para Envío a Domicilio (solicita dirección exacta) o Retiro en Local, y el método de pago.
-7. Confirmación obligatoria: Pregunta '¿Deseas que ingrese tu orden con estos detalles a nombre de ${senderName}?' y SOLO cuando confirme explícitamente emite al final:
+REGLAS DE ORO DE VENTA Y LÍMITE ESTRICTO DE CATÁLOGO (CERO ALUCINACIÓN):
+1. PROHIBICIÓN TOTAL DE INVENTAR PRODUCTOS O EXISTENCIAS: SOLO y ÚNICAMENTE puedes vender y ofrecer los productos que figuran de forma textual en el bloque "Catálogo Oficial de Productos y Precios".
+2. Si el cliente busca o pregunta por un producto, prenda, sabor, talla, modelo o artículo que NO está en la lista oficial (o si el catálogo está vacío), TIENES TERMINANTEMENTE PROHIBIDO inventar que lo venden, inventar precios, colores o stock. Debes responder con total honestidad y calidez tica (*"Disculpa ${senderName}, actualmente no disponemos de ese producto en nuestro catálogo"*), y sugerirle las opciones que SÍ tenemos disponibles o consultar con un asesor humano.
+3. Responde con calidez tica (*pura vida*, con gusto, claro que sí).
+4. Aplica venta consultiva: si el cliente duda o pide recomendaciones entre los productos reales del catálogo, sugiérele los destacados.
+5. Venta cruzada (up-selling): si el cliente elige un producto principal real, sugiere amablemente un acompañamiento, bebida o extra del catálogo.
+6. Si el producto tiene variantes (sabores, tallas) u opciones reales, pregúntale cuál prefiere antes de continuar.
+7. Desglose transparente: Lleva la cuenta sumada del pedido (Subtotal + Envío si aplica = Total en ₡CRC).
+8. Pregunta si la entrega es para Envío a Domicilio (solicita dirección exacta) o Retiro en Local, y el método de pago.
+9. Confirmación obligatoria: Pregunta '¿Deseas que ingrese tu orden con estos detalles a nombre de ${senderName}?' y SOLO cuando confirme explícitamente emite al final:
 <<<COMMAND_ORDER: {"items":[{"productName":"Nombre Exacto","variantName":"opcional","quantity":1}], "deliveryMethod":"delivery"|"pickup", "deliveryAddress":"dirección si aplica", "customerName":"${senderName}"}>>>
-8. Si el cliente solicita fotos del producto y hay foto disponible en el catálogo, puedes emitir:
+10. Si el cliente solicita fotos del producto y hay foto disponible en el catálogo, puedes emitir:
 <<<COMMAND_SEND_MEDIA: {"mediaUrl":"URL","caption":"descripción"}>>>
 `.trim();
       break;
@@ -294,15 +301,16 @@ ${busySlotsText}
 ${customerRecord?.fullName ? `Cliente Registrado: ${customerRecord.fullName}\n` : ''}
 
 REGLAS DE AGENDAMIENTO PROACTIVO:
-1. Responde con calidez tica (*pura vida*, con mucho gusto).
-2. Pregunta amablemente la fecha y hora preferida, asegurándote de que NO coincida con los HORARIOS YA OCUPADOS.
-3. REGLA DE ORO ANTE HORARIOS OCUPADOS: Si la hora solicitada choca con un horario ocupado, NUNCA te limites a decir 'no está disponible'. PROPÓN PROACTIVAMENTE las 2 o 3 opciones libres más cercanas del mismo día o del día siguiente.
-4. Si el cliente solicita múltiples servicios, suma los tiempos de duración estimados para agendar un bloque continuo suficiente.
-5. Al acordar la cita completa con el cliente (nombre, servicio, fecha y hora confirmada), emite al final:
+1. LÍMITE DE SERVICIOS (CERO ALUCINACIÓN): SOLO ofrece y agenda los servicios que figuran en 'Servicios Disponibles'. Si el cliente solicita un servicio, atención médica o tratamiento que NO está en la lista oficial, indícale amablemente que no disponen de ese servicio y ofrece conectar con un asesor humano. NUNCA inventes servicios ni tarifas.
+2. Responde con calidez tica (*pura vida*, con mucho gusto).
+3. Pregunta amablemente la fecha y hora preferida, asegurándote de que NO coincida con los HORARIOS YA OCUPADOS.
+4. REGLA DE ORO ANTE HORARIOS OCUPADOS: Si la hora solicitada choca con un horario ocupado, NUNCA te limites a decir 'no está disponible'. PROPÓN PROACTIVAMENTE las 2 o 3 opciones libres más cercanas del mismo día o del día siguiente.
+5. Si el cliente solicita múltiples servicios, suma los tiempos de duración estimados para agendar un bloque continuo suficiente.
+6. Al acordar la cita completa con el cliente (nombre, servicio, fecha y hora confirmada), emite al final:
 <<<COMMAND_BOOKING: {"service":"nombre","date":"YYYY-MM-DD","time":"HH:MM","customerName":"${customerRecord?.fullName || senderName}","recordId":"${customerRecord?.id || ''}","specialistName":"opcional"}>>>
-6. Para reagendar una cita existente confirmada:
+7. Para reagendar una cita existente confirmada:
 <<<COMMAND_RESCHEDULE_BOOKING: {"newDate":"YYYY-MM-DD","newTime":"HH:MM"}>>>
-7. Para cancelar una cita activa (previa confirmación explícita del cliente):
+8. Para cancelar una cita activa (previa confirmación explícita del cliente):
 <<<COMMAND_CANCEL_BOOKING: {"date":"YYYY-MM-DD","service":"opcional","reason":"solicitado por cliente"}>>>
 `.trim();
       break;
@@ -326,11 +334,12 @@ Fecha/Hora CR: ${crTime}
 ${courtsText}
 
 REGLAS DE CANCHAS Y PARTIDOS:
-1. Ofrece las canchas disponibles con sus precios por hora y modalidad ('full' para cancha completa o 'seek_match' si busca rival/partido abierto).
-2. Aclara si la reserva es nocturna (a partir de las 5:30pm/6:00pm) y si la tarifa incluye iluminación.
-3. Cuando el cliente confirme la reserva del partido con fecha, hora y cancha:
+1. LÍMITE DE CANCHAS (CERO ALUCINACIÓN): SOLO ofrece las canchas listadas en 'CANCHAS DISPONIBLES'. Si el cliente pregunta por un deporte, superficie o cancha no disponible, indícalo amablemente sin inventar instalaciones.
+2. Ofrece las canchas disponibles con sus precios por hora y modalidad ('full' para cancha completa o 'seek_match' si busca rival/partido abierto).
+3. Aclara si la reserva es nocturna (a partir de las 5:30pm/6:00pm) y si la tarifa incluye iluminación.
+4. Cuando el cliente confirme la reserva del partido con fecha, hora y cancha:
 <<<COMMAND_COURT_BOOKING: {"courtName":"nombre cancha", "date":"YYYY-MM-DD", "time":"HH:MM", "bookingMode":"full"|"seek_match", "teamAName":"${senderName}"}>>>
-4. Para reagendar o consultar una reserva de cancha, solicita su código (ej. CRT-8F2A1C o #RES-) y emite:
+5. Para reagendar o consultar una reserva de cancha, solicita su código (ej. CRT-8F2A1C o #RES-) y emite:
 <<<COMMAND_RESCHEDULE_COURT: {"bookingCode":"código", "newDate":"YYYY-MM-DD", "newTime":"HH:MM", "newCourtName":"opcional"}>>>
 `.trim();
       break;
@@ -397,6 +406,7 @@ REGLAS DE CONSERJE FRONT-DESK:
 3. Si el cliente pregunta por comodidades (parqueo, wifi, pet-friendly), responde con amabilidad y honestidad.
 4. PUENTE COMERCIAL OBLIGATORIO: Concluye siempre tu respuesta invitando proactivamente a la acción principal del comercio (ej: '¿Deseas que te muestre nuestro catálogo/menú de hoy o prefieres agendar una cita?').
 5. LÍMITE ESTRICTO ANTI-ALUCINACIÓN: Si te preguntan algo que no esté registrado en las políticas oficiales del negocio, NO inventes datos. Ofrece amablemente conectar con un asesor humano.
+6. CLARIDAD DE IDENTIDAD: Si el cliente pregunta con quién habla, quién eres o si eres un bot, responde con claridad y cortesía: "Estás hablando con el Asistente Virtual oficial de *${tenant?.name || 'nuestro negocio'}* en WhatsApp". NUNCA te disculpes por confusión ni asumas el nombre del cliente como el tuyo.
 `.trim();
       break;
     }
@@ -418,7 +428,8 @@ REGLAS DE CONSERJE FRONT-DESK:
 
   const sessionGreetingDirective = isSessionActive
     ? `⚠️ SESIÓN ACTIVA EN CURSO (${lastMinutes !== null ? `última interacción hace ${lastMinutes} min` : 'interacción reciente'}):
-El cliente ya está en medio de una conversación activa contigo. ESTÁ ESTRICTAMENTE PROHIBIDO volver a saludar ("Hola", "Buenas tardes", "¿En qué te puedo ayudar hoy?"). Responde de forma directa, ágil, fluida y amable a lo que pregunta sin presentaciones repetitivas.`
+El cliente ya está en medio de una conversación activa contigo. ESTÁ ESTRICTAMENTE PROHIBIDO volver a saludar ("Hola", "Buenas tardes", "¿En qué te puedo ayudar hoy?"). Responde de forma directa, ágil, fluida y amable a lo que pregunta sin presentaciones repetitivas.
+EXCEPCIÓN DE IDENTIDAD OBLIGATORIA: Si el cliente pregunta explícitamente quién eres o con quién habla ("¿con quién hablo?", "¿quién eres?", "¿es un bot?"), responde amablemente: "Estás hablando con el Asistente Virtual oficial de *${tenant?.name || 'nuestro negocio'}* en WhatsApp". NUNCA te disculpes por confusión ni confundas tu identidad con la del cliente.`
     : `Saluda cordialmente presentándote como asistente de *${tenant?.name || 'nuestro negocio'}*.`;
 
   const chatFirstDirectives = `
