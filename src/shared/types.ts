@@ -177,6 +177,7 @@ export interface AgentPromptConfig {
   handoffNotifyPhone?: string;
   orchestratorConfig?: OrchestratorConfig;
   dataSourcesSummary?: DataSourcesSummary;
+  storeModules?: StoreModulesConfig;
   updatedAt?: Date;
 }
 

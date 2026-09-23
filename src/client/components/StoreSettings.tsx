@@ -40,7 +40,8 @@ export default function StoreSettings() {
   const [storeMode, setStoreMode] = useState<'retail' | 'restaurant'>('retail');
   const [storeModules, setStoreModules] = useState<StoreModulesConfig>({
     storeEnabled: true,
-    bookingsEnabled: true
+    bookingsEnabled: true,
+    courtsEnabled: false
   });
   const [storeName, setStoreName] = useState('');
   const [storeSlug, setStoreSlug] = useState('');
@@ -248,7 +249,8 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
           if (data.storeModules) {
             setStoreModules({
               storeEnabled: data.storeModules.storeEnabled !== false,
-              bookingsEnabled: data.storeModules.bookingsEnabled !== false
+              bookingsEnabled: data.storeModules.bookingsEnabled !== false,
+              courtsEnabled: data.storeModules.courtsEnabled === true
             });
           }
           if (data.storeSchedule) {
@@ -850,7 +852,7 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
               Activa o desactiva las funciones principales para simplificar la barra lateral según tu tipo de negocio.
             </p>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px' }}>
               <label style={{ padding: '16px', borderRadius: '10px', border: `2px solid ${storeModules.storeEnabled ? 'var(--primary)' : '#e2e8f0'}`, backgroundColor: storeModules.storeEnabled ? 'rgba(22, 163, 74, 0.05)' : '#f8fafc', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div>
                   <div style={{ fontWeight: 'bold', fontSize: '0.95rem', color: '#1e293b' }}>Módulo de Tienda / Menú & Pedidos</div>
@@ -873,6 +875,19 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
                   type="checkbox"
                   checked={storeModules.bookingsEnabled}
                   onChange={(e) => setStoreModules({ ...storeModules, bookingsEnabled: e.target.checked })}
+                  style={{ width: '20px', height: '20px', cursor: 'pointer' }}
+                />
+              </label>
+
+              <label style={{ padding: '16px', borderRadius: '10px', border: `2px solid ${storeModules.courtsEnabled ? '#10b981' : '#e2e8f0'}`, backgroundColor: storeModules.courtsEnabled ? 'rgba(16, 185, 129, 0.05)' : '#f8fafc', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div>
+                  <div style={{ fontWeight: 'bold', fontSize: '0.95rem', color: '#1e293b' }}>Módulo de Canchas Deportivas</div>
+                  <div style={{ fontSize: '0.8rem', color: '#64748b' }}>Alquiler de canchas, horarios nocturnos y partidos.</div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={Boolean(storeModules.courtsEnabled)}
+                  onChange={(e) => setStoreModules({ ...storeModules, courtsEnabled: e.target.checked })}
                   style={{ width: '20px', height: '20px', cursor: 'pointer' }}
                 />
               </label>

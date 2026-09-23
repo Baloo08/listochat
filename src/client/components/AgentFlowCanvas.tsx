@@ -13,6 +13,11 @@ interface AgentFlowCanvasProps {
   dataSourcesSummary?: DataSourcesSummary;
   activeSimulatedAgentId?: string | null;
   onSelectSubagent?: (subagentId: string) => void;
+  storeModules?: {
+    storeEnabled?: boolean;
+    bookingsEnabled?: boolean;
+    courtsEnabled?: boolean;
+  };
 }
 
 // Default Hierarchical Top-to-Bottom Node Layout
@@ -40,8 +45,13 @@ export default function AgentFlowCanvas({
   orchestratorConfig,
   onChange,
   dataSourcesSummary,
-  activeSimulatedAgentId
+  activeSimulatedAgentId,
+  storeModules
 }: AgentFlowCanvasProps) {
+  const isSalesVisible = storeModules ? storeModules.storeEnabled !== false : true;
+  const isBookingVisible = storeModules ? storeModules.bookingsEnabled !== false : true;
+  const isCourtsVisible = storeModules ? storeModules.courtsEnabled === true : true;
+
   const [selectedSubagentKey, setSelectedSubagentKey] = useState<string | null>(null);
   const [isOrchestratorModalOpen, setIsOrchestratorModalOpen] = useState<boolean>(false);
   const [zoom, setZoom] = useState<number>(0.85);
@@ -133,12 +143,34 @@ export default function AgentFlowCanvas({
     setPan({ x: 40, y: 10 });
   };
 
-  // Auto-Layout: Reset all node positions to hierarchical default
+  // Auto-Layout: Reset all node positions to hierarchical default, adapting dynamically to visible subagents
   const handleResetHierarchicalLayout = () => {
-    setNodePositions(DEFAULT_NODE_POSITIONS);
+    const visibleSubagents = [
+      isSalesVisible ? 'sales' : null,
+      isBookingVisible ? 'booking' : null,
+      isCourtsVisible ? 'courts' : null,
+      'handoff',
+      'general'
+    ].filter(Boolean) as string[];
+
+    const subagentSpacing = 320;
+    const totalW = visibleSubagents.length * 290 + (visibleSubagents.length - 1) * 30;
+    const centerX = 800;
+    const startX = Math.max(30, centerX - totalW / 2);
+
+    const dynamicPositions: Record<string, NodePosition> = {
+      whatsapp: { x: centerX - 130, y: 30 },
+      orchestrator: { x: centerX - 160, y: 165 }
+    };
+
+    visibleSubagents.forEach((key, idx) => {
+      dynamicPositions[key] = { x: startX + idx * subagentSpacing, y: 350 };
+    });
+
+    setNodePositions(dynamicPositions);
     onChange({
       ...orchestratorConfig,
-      nodePositions: DEFAULT_NODE_POSITIONS
+      nodePositions: dynamicPositions
     });
   };
 
@@ -487,31 +519,37 @@ export default function AgentFlowCanvas({
             />
 
             {/* Level 2 -> Level 3: Orquestador -> Sales Subagent */}
-            <path
-              d={getTopToBottomCurve('orchestrator', 'sales')}
-              fill="none"
-              stroke={activeSimulatedAgentId === 'sales' ? '#38bdf8' : (subagents.sales?.enabled ? 'url(#grad-sales)' : '#334155')}
-              strokeWidth={activeSimulatedAgentId === 'sales' ? '4' : '2.5'}
-              strokeDasharray={subagents.sales?.enabled ? (activeSimulatedAgentId === 'sales' ? "6 3" : "none") : "4 4"}
-            />
+            {isSalesVisible && (
+              <path
+                d={getTopToBottomCurve('orchestrator', 'sales')}
+                fill="none"
+                stroke={activeSimulatedAgentId === 'sales' ? '#38bdf8' : (subagents.sales?.enabled ? 'url(#grad-sales)' : '#334155')}
+                strokeWidth={activeSimulatedAgentId === 'sales' ? '4' : '2.5'}
+                strokeDasharray={subagents.sales?.enabled ? (activeSimulatedAgentId === 'sales' ? "6 3" : "none") : "4 4"}
+              />
+            )}
 
             {/* Level 2 -> Level 3: Orquestador -> Booking Subagent */}
-            <path
-              d={getTopToBottomCurve('orchestrator', 'booking')}
-              fill="none"
-              stroke={activeSimulatedAgentId === 'booking' ? '#c084fc' : (subagents.booking?.enabled ? 'url(#grad-booking)' : '#334155')}
-              strokeWidth={activeSimulatedAgentId === 'booking' ? '4' : '2.5'}
-              strokeDasharray={subagents.booking?.enabled ? (activeSimulatedAgentId === 'booking' ? "6 3" : "none") : "4 4"}
-            />
+            {isBookingVisible && (
+              <path
+                d={getTopToBottomCurve('orchestrator', 'booking')}
+                fill="none"
+                stroke={activeSimulatedAgentId === 'booking' ? '#c084fc' : (subagents.booking?.enabled ? 'url(#grad-booking)' : '#334155')}
+                strokeWidth={activeSimulatedAgentId === 'booking' ? '4' : '2.5'}
+                strokeDasharray={subagents.booking?.enabled ? (activeSimulatedAgentId === 'booking' ? "6 3" : "none") : "4 4"}
+              />
+            )}
 
             {/* Level 2 -> Level 3: Orquestador -> Courts Subagent */}
-            <path
-              d={getTopToBottomCurve('orchestrator', 'courts')}
-              fill="none"
-              stroke={activeSimulatedAgentId === 'courts' ? '#facc15' : (subagents.courts?.enabled ? 'url(#grad-courts)' : '#334155')}
-              strokeWidth={activeSimulatedAgentId === 'courts' ? '4' : '2.5'}
-              strokeDasharray={subagents.courts?.enabled ? (activeSimulatedAgentId === 'courts' ? "6 3" : "none") : "4 4"}
-            />
+            {isCourtsVisible && (
+              <path
+                d={getTopToBottomCurve('orchestrator', 'courts')}
+                fill="none"
+                stroke={activeSimulatedAgentId === 'courts' ? '#facc15' : (subagents.courts?.enabled ? 'url(#grad-courts)' : '#334155')}
+                strokeWidth={activeSimulatedAgentId === 'courts' ? '4' : '2.5'}
+                strokeDasharray={subagents.courts?.enabled ? (activeSimulatedAgentId === 'courts' ? "6 3" : "none") : "4 4"}
+              />
+            )}
 
             {/* Level 2 -> Level 3: Orquestador -> Handoff Subagent */}
             <path
@@ -705,7 +743,7 @@ export default function AgentFlowCanvas({
           {/* ============================================================== */}
 
           {/* 1. AGENTE VENTAS & MENÚ */}
-          {renderSubagentHierarchicalNode(
+          {isSalesVisible && renderSubagentHierarchicalNode(
             'sales',
             subagents.sales,
             <ShoppingBag size={18} color="#38bdf8" />,
@@ -725,7 +763,7 @@ export default function AgentFlowCanvas({
           )}
 
           {/* 2. AGENTE CITAS & AGENDA */}
-          {renderSubagentHierarchicalNode(
+          {isBookingVisible && renderSubagentHierarchicalNode(
             'booking',
             subagents.booking,
             <Calendar size={18} color="#c084fc" />,
@@ -746,7 +784,7 @@ export default function AgentFlowCanvas({
           )}
 
           {/* 3. AGENTE CANCHAS DEPORTIVAS */}
-          {renderSubagentHierarchicalNode(
+          {isCourtsVisible && renderSubagentHierarchicalNode(
             'courts',
             subagents.courts,
             <Trophy size={18} color="#facc15" />,

@@ -1142,7 +1142,7 @@ async function getMasterAIConfig() {
     };
   }
 }
-async function callAI(config, input) {
+async function callAI(config, input, fallbackConfig) {
   const provider = config.provider || "gemini";
   const apiKey = config.apiKey || (provider === "gemini" ? DEFAULT_GEMINI_KEY : "");
   let chosenModel = config.model;
@@ -1190,14 +1190,16 @@ async function callAI(config, input) {
       }
     }
   }
-  if (provider === "localai" || provider === "betico_ai" || provider === "ollama") {
-    console.warn(`[AI-Provider] Local engine ${provider} unavailable or timed out. Returning polite fallback without invoking paid external APIs.`);
-    return {
-      text: "Hola, gracias por comunicarte con nosotros. En este momento estamos procesando tu solicitud, en breve un asesor te responder\xE1.",
-      tokensUsed: 0
-    };
+  const effectiveFallbackConfig = fallbackConfig || (provider === "betico_ai" || provider === "ollama" || provider === "localai" ? { provider: "gemini", apiKey: DEFAULT_GEMINI_KEY, model: "gemini-2.5-flash", temperature: config.temperature ?? 0.7 } : { provider: "betico_ai", apiKey: "ollama", model: "betico-ai", temperature: config.temperature ?? 0.7, baseUrl: process.env.OLLAMA_URL || "http://beticoia_ollama:11434/v1" });
+  if (effectiveFallbackConfig && effectiveFallbackConfig.provider !== provider) {
+    try {
+      console.warn(`[AI-Provider] Primary ${provider} failed or timed out. Engaging resilient cross-fallback -> ${effectiveFallbackConfig.provider}/${effectiveFallbackConfig.model}`);
+      return await executeProvider(effectiveFallbackConfig, input);
+    } catch (fallbackErr) {
+      console.error(`[AI-Provider] Cross-fallback ${effectiveFallbackConfig.provider} also failed:`, fallbackErr?.message || fallbackErr);
+    }
   }
-  console.error("All AI models failed. Last error:", lastError);
+  console.error("All AI models and fallback engines failed. Last error:", lastError);
   return {
     text: "Hola, gracias por comunicarte con nosotros. En este momento estamos procesando tu solicitud, en breve un asesor te responder\xE1.",
     tokensUsed: 0
@@ -1237,7 +1239,7 @@ async function executeProvider(config, input) {
     throw new Error("Unsupported provider: " + config.provider);
   }
   const isLocalEngine = config.provider === "betico_ai" || config.provider === "ollama" || config.provider === "localai";
-  const defaultTimeout = isLocalEngine ? 24e4 : 9e4;
+  const defaultTimeout = isLocalEngine ? 12e4 : 45e3;
   const timeoutMs = parseInt(process.env.AI_TIMEOUT_MS || String(defaultTimeout), 10);
   const timeoutPromise = new Promise((_, reject) => {
     setTimeout(() => reject(new Error(`AI inference timeout after ${Math.round(timeoutMs / 1e3)}s`)), timeoutMs);
@@ -7559,6 +7561,218 @@ async function ensureAllVirtualModels() {
 init_ai_provider();
 init_encryption();
 init_records_repo();
+
+// src/server/db/website.repo.ts
+init_pool();
+async function getWebsiteSettingsByTenant(tenantId) {
+  const res = await query(
+    `SELECT * FROM tenant_websites WHERE tenant_id = $1`,
+    [tenantId]
+  );
+  if (res.rows.length === 0) {
+    return {
+      tenantId,
+      websiteEnabled: true,
+      headline: "Bienvenido a nuestro sitio oficial",
+      subheadline: "Calidad, confianza y la mejor atenci\xF3n personalizada directo a tu WhatsApp.",
+      aboutTitle: "Conoce Nuestra Historia",
+      aboutText: "Somos un negocio apasionado por brindar el mejor servicio y productos de primera categor\xEDa. Nuestro compromiso es tu satisfacci\xF3n total.",
+      primaryColor: "#2563eb",
+      accentColor: "#f59e0b",
+      fontFamily: "Inter",
+      buttonStyle: "rounded",
+      buttonHoverEffect: true,
+      buttonTextColor: "#ffffff",
+      showStoreButton: true,
+      showBookingButton: true,
+      showCourtsButton: false,
+      storeButtonText: "Ver Men\xFA y Productos",
+      bookingButtonText: "Agendar Cita en L\xEDnea",
+      courtsButtonText: "Reservar Cancha",
+      showWhatsappButton: true,
+      whatsappButtonText: "WhatsApp Directo",
+      headerLayout: "split",
+      overlayColor: "#0f172a",
+      overlayOpacity: 0,
+      showAboutSection: true,
+      showFeaturesSection: true,
+      showProductsSection: true,
+      showServicesSection: true,
+      showTestimonialsSection: true,
+      showContactSection: true,
+      featuresJson: [
+        { title: "Calidad Garantizada", desc: "Productos y servicios seleccionados con los m\xE1s altos est\xE1ndares." },
+        { title: "Atenci\xF3n R\xE1pida", desc: "Respuestas y pedidos inmediatos con asistencia 24/7." },
+        { title: "Pagos Seguros", desc: "Aceptamos SINPE M\xF3vil, transferencias y tarjetas." }
+      ],
+      testimonialsJson: [
+        { name: "Cliente Satisfecho", comment: "\xA1Excelente servicio y atenci\xF3n r\xE1pida! 100% recomendado.", rating: 5 }
+      ]
+    };
+  }
+  const r = res.rows[0];
+  return {
+    id: r.id,
+    tenantId: r.tenant_id,
+    websiteEnabled: r.website_enabled !== false,
+    headline: r.headline || "Bienvenido a nuestro sitio oficial",
+    subheadline: r.subheadline || "Calidad, confianza y la mejor atenci\xF3n personalizada directo a tu WhatsApp.",
+    aboutTitle: r.about_title || "Conoce Nuestra Historia",
+    aboutText: r.about_text || "",
+    aboutImageUrl: r.about_image_url,
+    bannerImageUrl: r.banner_image_url,
+    logoUrl: r.logo_url,
+    logoWhiteUrl: r.logo_white_url,
+    primaryColor: r.primary_color || "#2563eb",
+    accentColor: r.accent_color || "#f59e0b",
+    fontFamily: r.font_family || "Inter",
+    buttonStyle: r.button_style || "rounded",
+    buttonHoverEffect: r.button_hover_effect !== false,
+    buttonTextColor: r.button_text_color || "#ffffff",
+    showStoreButton: r.show_store_button !== false,
+    showBookingButton: r.show_booking_button !== false,
+    showCourtsButton: r.show_courts_button === true,
+    storeButtonText: r.store_button_text || "Ver Men\xFA y Productos",
+    bookingButtonText: r.booking_button_text || "Agendar Cita en L\xEDnea",
+    courtsButtonText: r.courts_button_text || "Reservar Cancha",
+    showWhatsappButton: r.show_whatsapp_button !== false,
+    whatsappButtonText: r.whatsapp_button_text || "WhatsApp Directo",
+    headerLayout: r.header_layout || "split",
+    overlayColor: r.overlay_color || "#0f172a",
+    overlayOpacity: r.overlay_opacity !== void 0 ? Number(r.overlay_opacity) : 0,
+    showAboutSection: r.show_about_section !== false,
+    showFeaturesSection: r.show_features_section !== false,
+    showProductsSection: r.show_products_section !== false,
+    showServicesSection: r.show_services_section !== false,
+    showTestimonialsSection: r.show_testimonials_section !== false,
+    showContactSection: r.show_contact_section !== false,
+    featuresJson: Array.isArray(r.features_json) ? r.features_json : [],
+    testimonialsJson: Array.isArray(r.testimonials_json) ? r.testimonials_json : [],
+    contactEmail: r.contact_email,
+    contactPhone: r.contact_phone,
+    contactAddress: r.contact_address,
+    instagramUrl: r.instagram_url,
+    facebookUrl: r.facebook_url,
+    tiktokUrl: r.tiktok_url,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at
+  };
+}
+async function saveWebsiteSettings(tenantId, data) {
+  const sql = `
+    INSERT INTO tenant_websites (
+      tenant_id, website_enabled, headline, subheadline, about_title, about_text,
+      about_image_url, banner_image_url, logo_url, logo_white_url, primary_color, accent_color, font_family,
+      button_style, button_hover_effect, button_text_color,
+      show_store_button, show_booking_button, show_courts_button, store_button_text, booking_button_text, courts_button_text,
+      show_whatsapp_button, whatsapp_button_text, header_layout, overlay_color, overlay_opacity,
+      show_about_section, show_features_section, show_products_section,
+      show_services_section, show_testimonials_section, show_contact_section,
+      features_json, testimonials_json, contact_email, contact_phone, contact_address,
+      instagram_url, facebook_url, tiktok_url, updated_at
+    ) VALUES (
+      $1, $2, $3, $4, $5, $6,
+      $7, $8, $9, $10, $11, $12, $13,
+      $14, $15, $16,
+      $17, $18, $19, $20, $21, $22,
+      $23, $24, $25, $26, $27,
+      $28, $29, $30,
+      $31, $32, $33,
+      $34, $35, $36, $37, $38,
+      $39, $40, $41, CURRENT_TIMESTAMP
+    )
+    ON CONFLICT (tenant_id) DO UPDATE SET
+      website_enabled = EXCLUDED.website_enabled,
+      headline = EXCLUDED.headline,
+      subheadline = EXCLUDED.subheadline,
+      about_title = EXCLUDED.about_title,
+      about_text = EXCLUDED.about_text,
+      about_image_url = EXCLUDED.about_image_url,
+      banner_image_url = EXCLUDED.banner_image_url,
+      logo_url = EXCLUDED.logo_url,
+      logo_white_url = EXCLUDED.logo_white_url,
+      primary_color = EXCLUDED.primary_color,
+      accent_color = EXCLUDED.accent_color,
+      font_family = EXCLUDED.font_family,
+      button_style = EXCLUDED.button_style,
+      button_hover_effect = EXCLUDED.button_hover_effect,
+      button_text_color = EXCLUDED.button_text_color,
+      show_store_button = EXCLUDED.show_store_button,
+      show_booking_button = EXCLUDED.show_booking_button,
+      show_courts_button = EXCLUDED.show_courts_button,
+      store_button_text = EXCLUDED.store_button_text,
+      booking_button_text = EXCLUDED.booking_button_text,
+      courts_button_text = EXCLUDED.courts_button_text,
+      show_whatsapp_button = EXCLUDED.show_whatsapp_button,
+      whatsapp_button_text = EXCLUDED.whatsapp_button_text,
+      header_layout = EXCLUDED.header_layout,
+      overlay_color = EXCLUDED.overlay_color,
+      overlay_opacity = EXCLUDED.overlay_opacity,
+      show_about_section = EXCLUDED.show_about_section,
+      show_features_section = EXCLUDED.show_features_section,
+      show_products_section = EXCLUDED.show_products_section,
+      show_services_section = EXCLUDED.show_services_section,
+      show_testimonials_section = EXCLUDED.show_testimonials_section,
+      show_contact_section = EXCLUDED.show_contact_section,
+      features_json = EXCLUDED.features_json,
+      testimonials_json = EXCLUDED.testimonials_json,
+      contact_email = EXCLUDED.contact_email,
+      contact_phone = EXCLUDED.contact_phone,
+      contact_address = EXCLUDED.contact_address,
+      instagram_url = EXCLUDED.instagram_url,
+      facebook_url = EXCLUDED.facebook_url,
+      tiktok_url = EXCLUDED.tiktok_url,
+      updated_at = CURRENT_TIMESTAMP
+    RETURNING *;
+  `;
+  const values = [
+    tenantId,
+    data.websiteEnabled !== false,
+    data.headline || "Bienvenido a nuestro sitio oficial",
+    data.subheadline || "",
+    data.aboutTitle || "Conoce Nuestra Historia",
+    data.aboutText || "",
+    data.aboutImageUrl || null,
+    data.bannerImageUrl || null,
+    data.logoUrl || null,
+    data.logoWhiteUrl || null,
+    data.primaryColor || "#2563eb",
+    data.accentColor || "#f59e0b",
+    data.fontFamily || "Inter",
+    data.buttonStyle || "rounded",
+    data.buttonHoverEffect !== false,
+    data.buttonTextColor || "#ffffff",
+    data.showStoreButton !== false,
+    data.showBookingButton !== false,
+    data.showCourtsButton === true,
+    data.storeButtonText || "Ver Men\xFA y Productos",
+    data.bookingButtonText || "Agendar Cita en L\xEDnea",
+    data.courtsButtonText || "Reservar Cancha",
+    data.showWhatsappButton !== false,
+    data.whatsappButtonText || "WhatsApp Directo",
+    data.headerLayout || "split",
+    data.overlayColor || "#0f172a",
+    data.overlayOpacity !== void 0 ? Number(data.overlayOpacity) : 0,
+    data.showAboutSection !== false,
+    data.showFeaturesSection !== false,
+    data.showProductsSection !== false,
+    data.showServicesSection !== false,
+    data.showTestimonialsSection !== false,
+    data.showContactSection !== false,
+    JSON.stringify(data.featuresJson || []),
+    JSON.stringify(data.testimonialsJson || []),
+    data.contactEmail || null,
+    data.contactPhone || null,
+    data.contactAddress || null,
+    data.instagramUrl || null,
+    data.facebookUrl || null,
+    data.tiktokUrl || null
+  ];
+  await query(sql, values);
+  return getWebsiteSettingsByTenant(tenantId);
+}
+
+// src/server/services/agent-orchestrator.ts
 init_pool();
 function safeParseJSON(rawStr) {
   if (!rawStr || typeof rawStr !== "string") return null;
@@ -7575,7 +7789,7 @@ function safeParseJSON(rawStr) {
     }
   }
 }
-function routeIntent(userMessage, chatHistory, orchestratorConfig) {
+function routeIntent(userMessage, chatHistory, orchestratorConfig, storeModules) {
   const lowerMsg = userMessage.toLowerCase().trim();
   const recentHistory = (chatHistory || []).slice(-6).map((h) => h.content).join(" ").toLowerCase();
   const context = `${recentHistory} ${lowerMsg}`;
@@ -7584,39 +7798,52 @@ function routeIntent(userMessage, chatHistory, orchestratorConfig) {
   if (isHandoff) {
     return subagents.handoff?.enabled !== false ? "handoff" : "general";
   }
+  const courtsAllowed = storeModules ? storeModules.courtsEnabled === true : true;
+  const salesAllowed = storeModules ? storeModules.storeEnabled !== false : true;
+  const bookingsAllowed = storeModules ? storeModules.bookingsEnabled !== false : true;
   const isCourts = /cancha|canchas|partido|futbol|fútbol|padel|pádel|mejenga|gramilla|reservar cancha|alquiler cancha|crt-|#res-/i.test(context);
-  if (isCourts) {
+  if (isCourts && courtsAllowed) {
     return subagents.courts?.enabled !== false ? "courts" : "general";
   }
   const isSales = /precio|costo|cuanto|venden|catalogo|catálogo|menu|menú|producto|productos|comprar|pedir|orden|foto|imagen|plato|comida|pizza|hamburguesa|variante|talla|sabor|llevar|delivery|envio|envío|agregar al carrito|confirmo/i.test(context);
   const isBooking = /servicio|servicios|cita|citas|agenda|agendar|turno|atencion|atención|doctor|especialista|cancelar cita|reagendar|disponibilidad de horario|horario de cita/i.test(context);
-  if (isSales && !isBooking) {
+  if (isSales && salesAllowed && (!isBooking || !bookingsAllowed)) {
     return subagents.sales?.enabled !== false ? "sales" : "general";
   }
-  if (isBooking && !isSales) {
+  if (isBooking && bookingsAllowed && (!isSales || !salesAllowed)) {
     return subagents.booking?.enabled !== false ? "booking" : "general";
   }
-  if (isSales) {
+  if (isSales && salesAllowed) {
     return subagents.sales?.enabled !== false ? "sales" : "general";
   }
-  if (isBooking) {
+  if (isBooking && bookingsAllowed) {
     return subagents.booking?.enabled !== false ? "booking" : "general";
   }
   return "general";
 }
-async function processWithOrchestrator(tenantId, userMessage, senderPhone, senderName, chatHistory) {
+async function processWithOrchestrator(tenantId, userMessage, senderPhone, senderName, chatHistory, options) {
   const tenant = await getTenantById(tenantId);
   const agentConfig = await getAgentConfig(tenantId);
   const orchConfig = agentConfig?.orchestratorConfig || defaultOrchestratorConfig;
-  const routedAgentId = routeIntent(userMessage, chatHistory, orchConfig);
-  const currentSubagent = orchConfig.subagents[routedAgentId] || defaultOrchestratorConfig.subagents[routedAgentId];
-  const routedAgentName = currentSubagent?.name || "Agente Betico";
   const store = await getStoreSettings(tenantId);
   const schedule = await getScheduleSettings(tenantId);
+  const website = await getWebsiteSettingsByTenant(tenantId).catch(() => null);
+  const routedAgentId = routeIntent(userMessage, chatHistory, orchConfig, store?.storeModules);
+  const currentSubagent = orchConfig.subagents[routedAgentId] || defaultOrchestratorConfig.subagents[routedAgentId];
+  const routedAgentName = currentSubagent?.name || "Agente Betico";
   const cleanPhone = senderPhone.replace(/\D/g, "");
   const baseUrl = process.env.APP_URL || "https://betico.tech";
   const bookingUrl = tenant?.slug ? `${baseUrl}/reservas/${tenant.slug}` : "";
   const storeUrl = tenant?.slug ? `${baseUrl}/tienda/${tenant.slug}` : "";
+  const courtUrl = tenant?.slug ? `${baseUrl}/canchas/${tenant.slug}` : "";
+  const mapsUrl = tenant?.googleMapsUrl || "";
+  const officialWebUrl = tenant?.customDomain ? `https://${tenant.customDomain}` : tenant?.slug ? `${baseUrl}/web/${tenant.slug}` : "";
+  const socialLinksArr = [
+    website?.instagramUrl ? `Instagram: ${website.instagramUrl}` : null,
+    website?.facebookUrl ? `Facebook: ${website.facebookUrl}` : null,
+    website?.tiktokUrl ? `TikTok: ${website.tiktokUrl}` : null
+  ].filter(Boolean);
+  const socialLinksStr = socialLinksArr.join(" | ");
   const now = /* @__PURE__ */ new Date();
   const crTime = new Intl.DateTimeFormat("es-CR", {
     timeZone: "America/Costa_Rica",
@@ -7836,15 +8063,25 @@ ${currentSubagent?.prompt || "Atiende cordialmente con calidez costarricense (*p
 
 INFORMACI\xD3N GENERAL DEL NEGOCIO:
 Fecha/Hora CR: ${crTime}
-${bookingUrl ? `Reservas Web: ${bookingUrl}
+${tenant?.address ? `\u{1F4CD} Direcci\xF3n F\xEDsica: ${tenant.address}
 ` : ""}
-${storeUrl ? `Tienda Web: ${storeUrl}
+${mapsUrl ? `\u{1F5FA}\uFE0F Waze / Google Maps: ${mapsUrl}
+` : ""}
+${officialWebUrl ? `\u{1F310} Sitio Web Oficial: ${officialWebUrl}
+` : ""}
+${socialLinksStr ? `\u{1F4F1} Redes Sociales: ${socialLinksStr}
+` : ""}
+${storeUrl ? `\u{1F6CD}\uFE0F Tienda Web: ${storeUrl}
+` : ""}
+${bookingUrl ? `\u{1F4C5} Reservas Web: ${bookingUrl}
+` : ""}
+${courtUrl ? `\u26BD Canchas Deportivas: ${courtUrl}
 ` : ""}
 ${scheduleText}${paymentSummary}
 
 REGLAS DE CONSERJE FRONT-DESK:
 1. Responde amablemente con calidez tica (*pura vida*, con gusto, bienvenido).
-2. Responde con precisi\xF3n sobre horarios, ubicaci\xF3n, formas de pago (SINPE M\xF3vil, transferencia, efectivo, tarjeta) y facturaci\xF3n electr\xF3nica.
+2. Responde con precisi\xF3n sobre horarios, ubicaci\xF3n f\xEDsica, formas de pago (SINPE M\xF3vil, transferencia, efectivo, tarjeta) y facturaci\xF3n electr\xF3nica.
 3. Si el cliente pregunta por comodidades (parqueo, wifi, pet-friendly), responde con amabilidad y honestidad.
 4. PUENTE COMERCIAL OBLIGATORIO: Concluye siempre tu respuesta invitando proactivamente a la acci\xF3n principal del comercio (ej: '\xBFDeseas que te muestre nuestro cat\xE1logo/men\xFA de hoy o prefieres agendar una cita?').
 5. L\xCDMITE ESTRICTO ANTI-ALUCINACI\xD3N: Si te preguntan algo que no est\xE9 registrado en las pol\xEDticas oficiales del negocio, NO inventes datos. Ofrece amablemente conectar con un asesor humano.
@@ -7852,15 +8089,39 @@ REGLAS DE CONSERJE FRONT-DESK:
       break;
     }
   }
-  const isConversationOngoing = chatHistory && chatHistory.length > 0;
-  const antiGreetingInstruction = isConversationOngoing ? `\u26A0\uFE0F CONVERSACI\xD3N EN CURSO: El cliente ya est\xE1 interactuando contigo. NO vuelvas a saludar ("Hola", "Buenas"). Responde directo al grano con entusiasmo.` : `Saluda cordialmente present\xE1ndote como asistente de *${tenant?.name || "nuestro negocio"}*.`;
+  let isSessionActive = options?.isWithin2Hours ?? false;
+  let lastMinutes = options?.lastInteractionMinutesAgo ?? null;
+  if (options?.isWithin2Hours === void 0 && chatHistory && chatHistory.length > 0) {
+    const lastMsg = chatHistory[chatHistory.length - 1];
+    if (lastMsg.createdAt) {
+      const diff = Math.floor((Date.now() - new Date(lastMsg.createdAt).getTime()) / (1e3 * 60));
+      isSessionActive = diff < 120;
+      lastMinutes = diff;
+    } else {
+      isSessionActive = chatHistory.length >= 2;
+    }
+  }
+  const sessionGreetingDirective = isSessionActive ? `\u26A0\uFE0F SESI\xD3N ACTIVA EN CURSO (${lastMinutes !== null ? `\xFAltima interacci\xF3n hace ${lastMinutes} min` : "interacci\xF3n reciente"}):
+El cliente ya est\xE1 en medio de una conversaci\xF3n activa contigo. EST\xC1 ESTRICTAMENTE PROHIBIDO volver a saludar ("Hola", "Buenas tardes", "\xBFEn qu\xE9 te puedo ayudar hoy?"). Responde de forma directa, \xE1gil, fluida y amable a lo que pregunta sin presentaciones repetitivas.` : `Saluda cordialmente present\xE1ndote como asistente de *${tenant?.name || "nuestro negocio"}*.`;
+  const chatFirstDirectives = `
+REGLA DE ORO "CHAT-FIRST" Y MANEJO DE ENLACES:
+1. VENTA Y ASESOR\xCDA CONVERSACIONAL DIRECTA: Tu objetivo principal es atender, asesorar, cotizar y cerrar pedidos o citas directamente en este chat de WhatsApp.
+2. ENLACES DE TIENDA Y RESERVAS (ESTRICTAMENTE BAJO DEMANDA):
+   - PROHIBIDO enviar los enlaces de la tienda (${storeUrl}) o reservas (${bookingUrl}) por iniciativa propia si el cliente solo est\xE1 preguntando por productos, precios, men\xFA, citas o turnos. Ati\xE9ndelo y cierra la venta por aqu\xED.
+   - SOLO y \xDANICAMENTE entrega el link de la tienda web o reservas web SI EL CLIENTE LO PIDE EXPRESAMENTE (ej: "p\xE1same el link", "\xBFtienen p\xE1gina web?", "m\xE1ndame el cat\xE1logo en l\xEDnea", "prefiero pedir por la web").
+3. ENLACES INFORMATIVOS GENERALES (BAJO DEMANDA NATURAL):
+   - Si el cliente pregunta c\xF3mo llegar, d\xF3nde est\xE1n o por ubicaci\xF3n: comparte la direcci\xF3n f\xEDsica y el enlace de Waze / Google Maps (${mapsUrl || "disponible previa solicitud"}).
+   - Si el cliente pregunta por redes sociales o p\xE1gina web: comparte los perfiles oficiales (${socialLinksStr || officialWebUrl || "disponibles previa solicitud"}).
+`.trim();
   const supervisorDirectives = orchConfig.prompt ? `DIRECTRICES DEL SUPERVISOR:
 ${orchConfig.prompt}
 
 ` : "";
   const finalSystemPrompt = `${supervisorDirectives}${specializedPrompt}
 
-${antiGreetingInstruction}`;
+${chatFirstDirectives}
+
+${sessionGreetingDirective}`;
   const structuredMessages = [];
   if (chatHistory && chatHistory.length > 0) {
     const recent = chatHistory.slice(-8);
@@ -7869,39 +8130,55 @@ ${antiGreetingInstruction}`;
     }
   }
   structuredMessages.push({ role: "user", content: userMessage });
-  let config;
+  let primaryConfig;
+  let fallbackConfig;
   const temperature = currentSubagent?.temperature ?? 0.3;
   let isBeticoPlatformAI = false;
+  const masterConfig = await getMasterAIConfig();
   if (tenant?.aiApiKeyEncrypted) {
     try {
       const apiKey = decrypt(tenant.aiApiKeyEncrypted);
-      config = {
+      primaryConfig = {
         provider: tenant.aiProvider || "gemini",
         apiKey,
         model: tenant.aiModel || agentConfig?.model || "gemini-2.5-flash",
         temperature
       };
+      fallbackConfig = {
+        provider: "betico_ai",
+        apiKey: "ollama",
+        model: "betico-ai",
+        temperature,
+        baseUrl: masterConfig.baseUrl || process.env.OLLAMA_URL || "http://beticoia_ollama:11434/v1"
+      };
+      isBeticoPlatformAI = false;
     } catch (e) {
-      config = { provider: "betico_ai", apiKey: "ollama", model: "betico-ai", temperature };
+      primaryConfig = { provider: "betico_ai", apiKey: "ollama", model: "betico-ai", temperature, baseUrl: masterConfig.baseUrl };
+      fallbackConfig = { provider: "gemini", apiKey: masterConfig.apiKey, model: "gemini-2.5-flash", temperature };
       isBeticoPlatformAI = true;
     }
   } else {
     isBeticoPlatformAI = true;
-    const masterConfig = await getMasterAIConfig();
     const isLocalOllama = masterConfig.provider === "betico_ai" || masterConfig.provider === "ollama";
     const virtualModel = tenant && isLocalOllama ? getTenantModelName(tenant) : masterConfig.model;
-    config = {
+    primaryConfig = {
       provider: masterConfig.provider,
       apiKey: masterConfig.apiKey,
       model: virtualModel,
       temperature,
       baseUrl: masterConfig.baseUrl
     };
+    fallbackConfig = {
+      provider: "gemini",
+      apiKey: masterConfig.apiKey,
+      model: "gemini-2.5-flash",
+      temperature
+    };
   }
-  const aiResult = await callAI(config, {
+  const aiResult = await callAI(primaryConfig, {
     system: finalSystemPrompt,
     messages: structuredMessages
-  });
+  }, fallbackConfig);
   if (isBeticoPlatformAI && aiResult.tokensUsed > 0) {
     await incrementTenantUsage(tenantId, aiResult.tokensUsed);
   }
@@ -8011,11 +8288,11 @@ ${antiGreetingInstruction}`;
 }
 
 // src/server/services/agent.ts
-async function processWhatsAppMessageWithAI(tenantId, userMessage, senderPhone, senderName, chatHistory) {
+async function processWhatsAppMessageWithAI(tenantId, userMessage, senderPhone, senderName, chatHistory, options) {
   const agentConfig = await getAgentConfig(tenantId);
   if (agentConfig?.orchestratorConfig?.enabled !== false) {
     try {
-      return await processWithOrchestrator(tenantId, userMessage, senderPhone, senderName, chatHistory);
+      return await processWithOrchestrator(tenantId, userMessage, senderPhone, senderName, chatHistory, options);
     } catch (orchErr) {
       console.error("[Agent] Orchestrator error, falling back to legacy prompt:", orchErr);
     }
@@ -8709,6 +8986,37 @@ async function setChatHumanMode(tenantId, remoteJid, isHumanMode, hoursUntilExpi
     }
   }
 }
+async function getChatHistoryForContact(tenantId, remoteJid, limit = 20) {
+  const result = await query(`
+    SELECT id, from_me as "fromMe", message_text as "messageText", ai_response as "aiResponse",
+           created_at as "createdAt"
+    FROM chat_messages 
+    WHERE tenant_id = $1 AND remote_jid = $2
+    ORDER BY created_at DESC
+    LIMIT $3
+  `, [tenantId, remoteJid, limit]);
+  const rows = result.rows || [];
+  if (rows.length === 0) {
+    return {
+      messages: [],
+      isWithin2Hours: false,
+      lastInteractionMinutesAgo: null
+    };
+  }
+  const latestMessageDate = new Date(rows[0].createdAt);
+  const diffMinutes = Math.floor((Date.now() - latestMessageDate.getTime()) / (1e3 * 60));
+  const isWithin2Hours = diffMinutes < 120;
+  const chronological = [...rows].reverse().map((r) => ({
+    role: r.fromMe ? "assistant" : "user",
+    content: (r.messageText || r.aiResponse || "").trim(),
+    createdAt: new Date(r.createdAt)
+  })).filter((m) => m.content.length > 0);
+  return {
+    messages: chronological,
+    isWithin2Hours,
+    lastInteractionMinutesAgo: diffMinutes
+  };
+}
 var getChatMessagesByTenant = getChatsByTenant;
 var saveChatMessage = createChatMessage;
 
@@ -9242,17 +9550,14 @@ async function processSingleMessage(msg) {
       await setChatVoicePreference(msg.tenantId, msg.remoteJid, true);
       console.log(`[Queue] Chat ${msg.remoteJid} opted IN to voice notes.`);
     }
-    const allChats = await getChatMessagesByTenant(msg.tenantId, 50);
-    const history = allChats.filter((c) => (c.remoteJid || c.remote_jid) === msg.remoteJid).map((c) => ({
-      role: c.fromMe || c.from_me ? "assistant" : "user",
-      content: c.messageText || c.message_text || c.aiResponse || c.ai_response || ""
-    }));
+    const { messages: history, isWithin2Hours, lastInteractionMinutesAgo } = await getChatHistoryForContact(msg.tenantId, msg.remoteJid, 20);
     const aiResult = await processWhatsAppMessageWithAI(
       msg.tenantId,
       fullUserMessage,
       msg.cleanPhone,
       msg.pushName,
-      history
+      history,
+      { isWithin2Hours, lastInteractionMinutesAgo }
     );
     const handoffEnabled = agentConfig?.humanHandoffEnabled !== false;
     const defaultKeywords = ["humano", "asesor", "persona", "agente", "hablar con alguien", "queja", "reclamo", "urgente"];
@@ -9735,218 +10040,6 @@ function requireSuperAdmin(req, res, next) {
 // src/server/routes/auth.routes.ts
 init_users_repo();
 init_users_repo();
-
-// src/server/db/website.repo.ts
-init_pool();
-async function getWebsiteSettingsByTenant(tenantId) {
-  const res = await query(
-    `SELECT * FROM tenant_websites WHERE tenant_id = $1`,
-    [tenantId]
-  );
-  if (res.rows.length === 0) {
-    return {
-      tenantId,
-      websiteEnabled: true,
-      headline: "Bienvenido a nuestro sitio oficial",
-      subheadline: "Calidad, confianza y la mejor atenci\xF3n personalizada directo a tu WhatsApp.",
-      aboutTitle: "Conoce Nuestra Historia",
-      aboutText: "Somos un negocio apasionado por brindar el mejor servicio y productos de primera categor\xEDa. Nuestro compromiso es tu satisfacci\xF3n total.",
-      primaryColor: "#2563eb",
-      accentColor: "#f59e0b",
-      fontFamily: "Inter",
-      buttonStyle: "rounded",
-      buttonHoverEffect: true,
-      buttonTextColor: "#ffffff",
-      showStoreButton: true,
-      showBookingButton: true,
-      showCourtsButton: false,
-      storeButtonText: "Ver Men\xFA y Productos",
-      bookingButtonText: "Agendar Cita en L\xEDnea",
-      courtsButtonText: "Reservar Cancha",
-      showWhatsappButton: true,
-      whatsappButtonText: "WhatsApp Directo",
-      headerLayout: "split",
-      overlayColor: "#0f172a",
-      overlayOpacity: 0,
-      showAboutSection: true,
-      showFeaturesSection: true,
-      showProductsSection: true,
-      showServicesSection: true,
-      showTestimonialsSection: true,
-      showContactSection: true,
-      featuresJson: [
-        { title: "Calidad Garantizada", desc: "Productos y servicios seleccionados con los m\xE1s altos est\xE1ndares." },
-        { title: "Atenci\xF3n R\xE1pida", desc: "Respuestas y pedidos inmediatos con asistencia 24/7." },
-        { title: "Pagos Seguros", desc: "Aceptamos SINPE M\xF3vil, transferencias y tarjetas." }
-      ],
-      testimonialsJson: [
-        { name: "Cliente Satisfecho", comment: "\xA1Excelente servicio y atenci\xF3n r\xE1pida! 100% recomendado.", rating: 5 }
-      ]
-    };
-  }
-  const r = res.rows[0];
-  return {
-    id: r.id,
-    tenantId: r.tenant_id,
-    websiteEnabled: r.website_enabled !== false,
-    headline: r.headline || "Bienvenido a nuestro sitio oficial",
-    subheadline: r.subheadline || "Calidad, confianza y la mejor atenci\xF3n personalizada directo a tu WhatsApp.",
-    aboutTitle: r.about_title || "Conoce Nuestra Historia",
-    aboutText: r.about_text || "",
-    aboutImageUrl: r.about_image_url,
-    bannerImageUrl: r.banner_image_url,
-    logoUrl: r.logo_url,
-    logoWhiteUrl: r.logo_white_url,
-    primaryColor: r.primary_color || "#2563eb",
-    accentColor: r.accent_color || "#f59e0b",
-    fontFamily: r.font_family || "Inter",
-    buttonStyle: r.button_style || "rounded",
-    buttonHoverEffect: r.button_hover_effect !== false,
-    buttonTextColor: r.button_text_color || "#ffffff",
-    showStoreButton: r.show_store_button !== false,
-    showBookingButton: r.show_booking_button !== false,
-    showCourtsButton: r.show_courts_button === true,
-    storeButtonText: r.store_button_text || "Ver Men\xFA y Productos",
-    bookingButtonText: r.booking_button_text || "Agendar Cita en L\xEDnea",
-    courtsButtonText: r.courts_button_text || "Reservar Cancha",
-    showWhatsappButton: r.show_whatsapp_button !== false,
-    whatsappButtonText: r.whatsapp_button_text || "WhatsApp Directo",
-    headerLayout: r.header_layout || "split",
-    overlayColor: r.overlay_color || "#0f172a",
-    overlayOpacity: r.overlay_opacity !== void 0 ? Number(r.overlay_opacity) : 0,
-    showAboutSection: r.show_about_section !== false,
-    showFeaturesSection: r.show_features_section !== false,
-    showProductsSection: r.show_products_section !== false,
-    showServicesSection: r.show_services_section !== false,
-    showTestimonialsSection: r.show_testimonials_section !== false,
-    showContactSection: r.show_contact_section !== false,
-    featuresJson: Array.isArray(r.features_json) ? r.features_json : [],
-    testimonialsJson: Array.isArray(r.testimonials_json) ? r.testimonials_json : [],
-    contactEmail: r.contact_email,
-    contactPhone: r.contact_phone,
-    contactAddress: r.contact_address,
-    instagramUrl: r.instagram_url,
-    facebookUrl: r.facebook_url,
-    tiktokUrl: r.tiktok_url,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at
-  };
-}
-async function saveWebsiteSettings(tenantId, data) {
-  const sql = `
-    INSERT INTO tenant_websites (
-      tenant_id, website_enabled, headline, subheadline, about_title, about_text,
-      about_image_url, banner_image_url, logo_url, logo_white_url, primary_color, accent_color, font_family,
-      button_style, button_hover_effect, button_text_color,
-      show_store_button, show_booking_button, show_courts_button, store_button_text, booking_button_text, courts_button_text,
-      show_whatsapp_button, whatsapp_button_text, header_layout, overlay_color, overlay_opacity,
-      show_about_section, show_features_section, show_products_section,
-      show_services_section, show_testimonials_section, show_contact_section,
-      features_json, testimonials_json, contact_email, contact_phone, contact_address,
-      instagram_url, facebook_url, tiktok_url, updated_at
-    ) VALUES (
-      $1, $2, $3, $4, $5, $6,
-      $7, $8, $9, $10, $11, $12, $13,
-      $14, $15, $16,
-      $17, $18, $19, $20, $21, $22,
-      $23, $24, $25, $26, $27,
-      $28, $29, $30,
-      $31, $32, $33,
-      $34, $35, $36, $37, $38,
-      $39, $40, $41, CURRENT_TIMESTAMP
-    )
-    ON CONFLICT (tenant_id) DO UPDATE SET
-      website_enabled = EXCLUDED.website_enabled,
-      headline = EXCLUDED.headline,
-      subheadline = EXCLUDED.subheadline,
-      about_title = EXCLUDED.about_title,
-      about_text = EXCLUDED.about_text,
-      about_image_url = EXCLUDED.about_image_url,
-      banner_image_url = EXCLUDED.banner_image_url,
-      logo_url = EXCLUDED.logo_url,
-      logo_white_url = EXCLUDED.logo_white_url,
-      primary_color = EXCLUDED.primary_color,
-      accent_color = EXCLUDED.accent_color,
-      font_family = EXCLUDED.font_family,
-      button_style = EXCLUDED.button_style,
-      button_hover_effect = EXCLUDED.button_hover_effect,
-      button_text_color = EXCLUDED.button_text_color,
-      show_store_button = EXCLUDED.show_store_button,
-      show_booking_button = EXCLUDED.show_booking_button,
-      show_courts_button = EXCLUDED.show_courts_button,
-      store_button_text = EXCLUDED.store_button_text,
-      booking_button_text = EXCLUDED.booking_button_text,
-      courts_button_text = EXCLUDED.courts_button_text,
-      show_whatsapp_button = EXCLUDED.show_whatsapp_button,
-      whatsapp_button_text = EXCLUDED.whatsapp_button_text,
-      header_layout = EXCLUDED.header_layout,
-      overlay_color = EXCLUDED.overlay_color,
-      overlay_opacity = EXCLUDED.overlay_opacity,
-      show_about_section = EXCLUDED.show_about_section,
-      show_features_section = EXCLUDED.show_features_section,
-      show_products_section = EXCLUDED.show_products_section,
-      show_services_section = EXCLUDED.show_services_section,
-      show_testimonials_section = EXCLUDED.show_testimonials_section,
-      show_contact_section = EXCLUDED.show_contact_section,
-      features_json = EXCLUDED.features_json,
-      testimonials_json = EXCLUDED.testimonials_json,
-      contact_email = EXCLUDED.contact_email,
-      contact_phone = EXCLUDED.contact_phone,
-      contact_address = EXCLUDED.contact_address,
-      instagram_url = EXCLUDED.instagram_url,
-      facebook_url = EXCLUDED.facebook_url,
-      tiktok_url = EXCLUDED.tiktok_url,
-      updated_at = CURRENT_TIMESTAMP
-    RETURNING *;
-  `;
-  const values = [
-    tenantId,
-    data.websiteEnabled !== false,
-    data.headline || "Bienvenido a nuestro sitio oficial",
-    data.subheadline || "",
-    data.aboutTitle || "Conoce Nuestra Historia",
-    data.aboutText || "",
-    data.aboutImageUrl || null,
-    data.bannerImageUrl || null,
-    data.logoUrl || null,
-    data.logoWhiteUrl || null,
-    data.primaryColor || "#2563eb",
-    data.accentColor || "#f59e0b",
-    data.fontFamily || "Inter",
-    data.buttonStyle || "rounded",
-    data.buttonHoverEffect !== false,
-    data.buttonTextColor || "#ffffff",
-    data.showStoreButton !== false,
-    data.showBookingButton !== false,
-    data.showCourtsButton === true,
-    data.storeButtonText || "Ver Men\xFA y Productos",
-    data.bookingButtonText || "Agendar Cita en L\xEDnea",
-    data.courtsButtonText || "Reservar Cancha",
-    data.showWhatsappButton !== false,
-    data.whatsappButtonText || "WhatsApp Directo",
-    data.headerLayout || "split",
-    data.overlayColor || "#0f172a",
-    data.overlayOpacity !== void 0 ? Number(data.overlayOpacity) : 0,
-    data.showAboutSection !== false,
-    data.showFeaturesSection !== false,
-    data.showProductsSection !== false,
-    data.showServicesSection !== false,
-    data.showTestimonialsSection !== false,
-    data.showContactSection !== false,
-    JSON.stringify(data.featuresJson || []),
-    JSON.stringify(data.testimonialsJson || []),
-    data.contactEmail || null,
-    data.contactPhone || null,
-    data.contactAddress || null,
-    data.instagramUrl || null,
-    data.facebookUrl || null,
-    data.tiktokUrl || null
-  ];
-  await query(sql, values);
-  return getWebsiteSettingsByTenant(tenantId);
-}
-
-// src/server/routes/auth.routes.ts
 init_pool();
 
 // src/server/db/audit.repo.ts
@@ -12153,6 +12246,7 @@ router7.get("/prompt", async (req, res) => {
   try {
     const config = await getAgentConfig(req.tenantId);
     const tenant = await getTenantById(req.tenantId);
+    const store = await getStoreSettings(req.tenantId).catch(() => null);
     let dataSourcesSummary = {
       productsCount: 0,
       servicesCount: 0,
@@ -12180,7 +12274,8 @@ router7.get("/prompt", async (req, res) => {
       provider: tenant?.aiProvider || config?.provider || "betico_ai",
       model: tenant?.aiModel || config?.model || "betico-ai",
       isUsingOwnKey: !!tenant?.aiApiKeyEncrypted,
-      dataSourcesSummary
+      dataSourcesSummary,
+      storeModules: store?.storeModules || { storeEnabled: true, bookingsEnabled: true, courtsEnabled: false }
     });
   } catch (error) {
     console.error(error);

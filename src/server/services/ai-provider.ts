@@ -154,7 +154,11 @@ export interface StructuredPrompt {
 
 export type AIPromptInput = string | StructuredPrompt;
 
-export async function callAI(config: TenantAIConfig, input: AIPromptInput): Promise<{ text: string, tokensUsed: number }> {
+export async function callAI(
+  config: TenantAIConfig,
+  input: AIPromptInput,
+  fallbackConfig?: TenantAIConfig
+): Promise<{ text: string, tokensUsed: number }> {
   const provider = config.provider || 'gemini';
   const apiKey = config.apiKey || (provider === 'gemini' ? DEFAULT_GEMINI_KEY : '');
   
@@ -209,16 +213,25 @@ export async function callAI(config: TenantAIConfig, input: AIPromptInput): Prom
     }
   }
 
-  // Local Betico AI: Never engage paid external APIs as failover to guarantee 100% free local operation
-  if (provider === 'localai' || provider === 'betico_ai' || provider === 'ollama') {
-    console.warn(`[AI-Provider] Local engine ${provider} unavailable or timed out. Returning polite fallback without invoking paid external APIs.`);
-    return {
-      text: 'Hola, gracias por comunicarte con nosotros. En este momento estamos procesando tu solicitud, en breve un asesor te responderá.',
-      tokensUsed: 0
-    };
+  // Cross-Engine Resilient Fallback:
+  // If primary local Betico AI fails or times out (120s), fail over to BYOK or Platform Gemini Flash
+  // If primary BYOK fails (rate limit/quota), fail over to Local Betico AI on VPS
+  const effectiveFallbackConfig = fallbackConfig || (
+    (provider === 'betico_ai' || provider === 'ollama' || provider === 'localai')
+      ? { provider: 'gemini' as const, apiKey: DEFAULT_GEMINI_KEY, model: 'gemini-2.5-flash', temperature: config.temperature ?? 0.7 }
+      : { provider: 'betico_ai' as const, apiKey: 'ollama', model: 'betico-ai', temperature: config.temperature ?? 0.7, baseUrl: process.env.OLLAMA_URL || 'http://beticoia_ollama:11434/v1' }
+  );
+
+  if (effectiveFallbackConfig && effectiveFallbackConfig.provider !== provider) {
+    try {
+      console.warn(`[AI-Provider] Primary ${provider} failed or timed out. Engaging resilient cross-fallback -> ${effectiveFallbackConfig.provider}/${effectiveFallbackConfig.model}`);
+      return await executeProvider(effectiveFallbackConfig, input);
+    } catch (fallbackErr: any) {
+      console.error(`[AI-Provider] Cross-fallback ${effectiveFallbackConfig.provider} also failed:`, fallbackErr?.message || fallbackErr);
+    }
   }
 
-  console.error('All AI models failed. Last error:', lastError);
+  console.error('All AI models and fallback engines failed. Last error:', lastError);
 
   return {
     text: 'Hola, gracias por comunicarte con nosotros. En este momento estamos procesando tu solicitud, en breve un asesor te responderá.',
@@ -261,9 +274,9 @@ async function executeProvider(config: TenantAIConfig, input: AIPromptInput) {
     throw new Error("Unsupported provider: " + config.provider);
   }
 
-  // Dynamic inference timeout: 240s (4 minutes) for local Betico AI on CPU, or customizable via AI_TIMEOUT_MS
+  // SLA Timeout: 120s (2 minutes) for local Betico AI on VPS CPU, 45s for external APIs, or customizable via AI_TIMEOUT_MS
   const isLocalEngine = config.provider === 'betico_ai' || config.provider === 'ollama' || config.provider === 'localai';
-  const defaultTimeout = isLocalEngine ? 240000 : 90000;
+  const defaultTimeout = isLocalEngine ? 120000 : 45000;
   const timeoutMs = parseInt(process.env.AI_TIMEOUT_MS || String(defaultTimeout), 10);
 
   const timeoutPromise = new Promise<{ text: string, tokensUsed: number }>((_, reject) => {

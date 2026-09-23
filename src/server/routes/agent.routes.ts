@@ -16,11 +16,14 @@ import { getProductsByTenant } from '../db/products.repo.js';
 import { getServicesByTenant } from '../db/services.repo.js';
 import { getCourtsByTenant } from '../db/courts.repo.js';
 import { getSpecialistsByTenant } from '../db/specialists.repo.js';
+import { getStoreSettings } from '../db/store-settings.repo.js';
+import { getTenantById } from '../db/tenant.repo.js';
 
 router.get('/prompt', async (req, res) => {
   try {
     const config = await getAgentConfig(req.tenantId);
     const tenant = await getTenantById(req.tenantId);
+    const store = await getStoreSettings(req.tenantId).catch(() => null);
 
     // Fetch counts for live visual node data badges
     let dataSourcesSummary = {
@@ -51,7 +54,8 @@ router.get('/prompt', async (req, res) => {
       provider: tenant?.aiProvider || config?.provider || 'betico_ai',
       model: tenant?.aiModel || config?.model || 'betico-ai',
       isUsingOwnKey: !!tenant?.aiApiKeyEncrypted,
-      dataSourcesSummary
+      dataSourcesSummary,
+      storeModules: store?.storeModules || { storeEnabled: true, bookingsEnabled: true, courtsEnabled: false }
     });
   } catch (error) {
     console.error(error);
@@ -114,7 +118,6 @@ router.post('/simulate', async (req, res) => {
 });
 
 import { getTenantCurrentMonthUsage } from '../db/ai-usage.repo.js';
-import { getTenantById } from '../db/tenant.repo.js';
 
 router.get('/ai-quota', async (req, res) => {
   try {

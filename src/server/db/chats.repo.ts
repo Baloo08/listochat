@@ -217,5 +217,51 @@ export async function updateChatStatus(id: string, tenantId: string, status: str
   `, [status, id, tenantId]);
 }
 
+/**
+ * Retrieve messages specifically for a contact (remoteJid), ordered chronologically.
+ * Also returns whether the session is an active returning customer session (interaction < 2 hours).
+ */
+export async function getChatHistoryForContact(tenantId: string, remoteJid: string, limit = 20): Promise<{
+  messages: Array<{ role: 'user' | 'assistant', content: string, createdAt: Date }>;
+  isWithin2Hours: boolean;
+  lastInteractionMinutesAgo: number | null;
+}> {
+  const result = await query(`
+    SELECT id, from_me as "fromMe", message_text as "messageText", ai_response as "aiResponse",
+           created_at as "createdAt"
+    FROM chat_messages 
+    WHERE tenant_id = $1 AND remote_jid = $2
+    ORDER BY created_at DESC
+    LIMIT $3
+  `, [tenantId, remoteJid, limit]);
+
+  const rows = result.rows || [];
+  if (rows.length === 0) {
+    return {
+      messages: [],
+      isWithin2Hours: false,
+      lastInteractionMinutesAgo: null
+    };
+  }
+
+  const latestMessageDate = new Date(rows[0].createdAt);
+  const diffMinutes = Math.floor((Date.now() - latestMessageDate.getTime()) / (1000 * 60));
+  const isWithin2Hours = diffMinutes < 120;
+
+  // Reverse to get chronological order (oldest to newest)
+  const chronological = [...rows].reverse().map(r => ({
+    role: (r.fromMe ? 'assistant' : 'user') as 'assistant' | 'user',
+    content: (r.messageText || r.aiResponse || '').trim(),
+    createdAt: new Date(r.createdAt)
+  })).filter(m => m.content.length > 0);
+
+  return {
+    messages: chronological,
+    isWithin2Hours,
+    lastInteractionMinutesAgo: diffMinutes
+  };
+}
+
 export const getChatMessagesByTenant = getChatsByTenant;
 export const saveChatMessage = createChatMessage;
+

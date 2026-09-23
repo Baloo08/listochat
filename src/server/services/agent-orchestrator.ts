@@ -10,6 +10,7 @@ import { incrementTenantUsage } from '../db/ai-usage.repo.js';
 import { getSpecialistsByTenant } from '../db/specialists.repo.js';
 import { getCourtsByTenant } from '../db/courts.repo.js';
 import { getRecordByPhone } from '../db/records.repo.js';
+import { getWebsiteSettingsByTenant } from '../db/website.repo.js';
 import { query } from '../db/pool.js';
 import { getTenantModelName } from './tenant-model.service.js';
 import { AgentProcessResult } from './agent.js';
@@ -53,7 +54,8 @@ export function safeParseJSON(rawStr: string): any {
 export function routeIntent(
   userMessage: string,
   chatHistory: { role: 'user' | 'assistant', content: string }[],
-  orchestratorConfig?: OrchestratorConfig
+  orchestratorConfig?: OrchestratorConfig,
+  storeModules?: { storeEnabled?: boolean; bookingsEnabled?: boolean; courtsEnabled?: boolean }
 ): SubagentId {
   const lowerMsg = userMessage.toLowerCase().trim();
   const recentHistory = (chatHistory || []).slice(-6).map(h => h.content).join(' ').toLowerCase();
@@ -67,9 +69,14 @@ export function routeIntent(
     return subagents.handoff?.enabled !== false ? 'handoff' : 'general';
   }
 
-  // 2. Canchas deportivas
+  // Check which modules are allowed by tenant store settings
+  const courtsAllowed = storeModules ? storeModules.courtsEnabled === true : true;
+  const salesAllowed = storeModules ? storeModules.storeEnabled !== false : true;
+  const bookingsAllowed = storeModules ? storeModules.bookingsEnabled !== false : true;
+
+  // 2. Canchas deportivas (Only if tenant has courtsEnabled activated)
   const isCourts = /cancha|canchas|partido|futbol|fútbol|padel|pádel|mejenga|gramilla|reservar cancha|alquiler cancha|crt-|#res-/i.test(context);
-  if (isCourts) {
+  if (isCourts && courtsAllowed) {
     return subagents.courts?.enabled !== false ? 'courts' : 'general';
   }
 
@@ -79,19 +86,19 @@ export function routeIntent(
   // 4. Citas y Servicios
   const isBooking = /servicio|servicios|cita|citas|agenda|agendar|turno|atencion|atención|doctor|especialista|cancelar cita|reagendar|disponibilidad de horario|horario de cita/i.test(context);
 
-  if (isSales && !isBooking) {
+  if (isSales && salesAllowed && (!isBooking || !bookingsAllowed)) {
     return subagents.sales?.enabled !== false ? 'sales' : 'general';
   }
 
-  if (isBooking && !isSales) {
+  if (isBooking && bookingsAllowed && (!isSales || !salesAllowed)) {
     return subagents.booking?.enabled !== false ? 'booking' : 'general';
   }
 
-  if (isSales) {
+  if (isSales && salesAllowed) {
     return subagents.sales?.enabled !== false ? 'sales' : 'general';
   }
 
-  if (isBooking) {
+  if (isBooking && bookingsAllowed) {
     return subagents.booking?.enabled !== false ? 'booking' : 'general';
   }
 
@@ -103,24 +110,36 @@ export async function processWithOrchestrator(
   userMessage: string,
   senderPhone: string,
   senderName: string,
-  chatHistory: { role: 'user' | 'assistant', content: string }[]
+  chatHistory: { role: 'user' | 'assistant', content: string, createdAt?: Date }[],
+  options?: { isWithin2Hours?: boolean; lastInteractionMinutesAgo?: number | null }
 ): Promise<OrchestratorProcessResult> {
   const tenant = await getTenantById(tenantId);
   const agentConfig: any = await getAgentConfig(tenantId);
   const orchConfig: OrchestratorConfig = agentConfig?.orchestratorConfig || defaultOrchestratorConfig;
 
-  // 1. Supervisor / Router: Determine which subagent handles the turn
-  const routedAgentId = routeIntent(userMessage, chatHistory, orchConfig);
+  // 1. Fetch base tenant & website settings
+  const store = await getStoreSettings(tenantId);
+  const schedule = await getScheduleSettings(tenantId);
+  const website = await getWebsiteSettingsByTenant(tenantId).catch(() => null);
+
+  // 2. Supervisor / Router: Determine which subagent handles the turn, respecting tenant active modules
+  const routedAgentId = routeIntent(userMessage, chatHistory, orchConfig, store?.storeModules);
   const currentSubagent = orchConfig.subagents[routedAgentId] || defaultOrchestratorConfig.subagents[routedAgentId];
   const routedAgentName = currentSubagent?.name || 'Agente Betico';
 
-  // 2. Fetch base tenant settings
-  const store = await getStoreSettings(tenantId);
-  const schedule = await getScheduleSettings(tenantId);
   const cleanPhone = senderPhone.replace(/\D/g, '');
   const baseUrl = process.env.APP_URL || 'https://betico.tech';
   const bookingUrl = tenant?.slug ? `${baseUrl}/reservas/${tenant.slug}` : '';
   const storeUrl = tenant?.slug ? `${baseUrl}/tienda/${tenant.slug}` : '';
+  const courtUrl = tenant?.slug ? `${baseUrl}/canchas/${tenant.slug}` : '';
+  const mapsUrl = tenant?.googleMapsUrl || '';
+  const officialWebUrl = tenant?.customDomain ? `https://${tenant.customDomain}` : (tenant?.slug ? `${baseUrl}/web/${tenant.slug}` : '');
+  const socialLinksArr = [
+    website?.instagramUrl ? `Instagram: ${website.instagramUrl}` : null,
+    website?.facebookUrl ? `Facebook: ${website.facebookUrl}` : null,
+    website?.tiktokUrl ? `TikTok: ${website.tiktokUrl}` : null
+  ].filter(Boolean);
+  const socialLinksStr = socialLinksArr.join(' | ');
 
   // Get current Costa Rica time
   const now = new Date();
@@ -355,13 +374,18 @@ ${currentSubagent?.prompt || 'Atiende cordialmente con calidez costarricense (*p
 
 INFORMACIÓN GENERAL DEL NEGOCIO:
 Fecha/Hora CR: ${crTime}
-${bookingUrl ? `Reservas Web: ${bookingUrl}\n` : ''}
-${storeUrl ? `Tienda Web: ${storeUrl}\n` : ''}
+${tenant?.address ? `📍 Dirección Física: ${tenant.address}\n` : ''}
+${mapsUrl ? `🗺️ Waze / Google Maps: ${mapsUrl}\n` : ''}
+${officialWebUrl ? `🌐 Sitio Web Oficial: ${officialWebUrl}\n` : ''}
+${socialLinksStr ? `📱 Redes Sociales: ${socialLinksStr}\n` : ''}
+${storeUrl ? `🛍️ Tienda Web: ${storeUrl}\n` : ''}
+${bookingUrl ? `📅 Reservas Web: ${bookingUrl}\n` : ''}
+${courtUrl ? `⚽ Canchas Deportivas: ${courtUrl}\n` : ''}
 ${scheduleText}${paymentSummary}
 
 REGLAS DE CONSERJE FRONT-DESK:
 1. Responde amablemente con calidez tica (*pura vida*, con gusto, bienvenido).
-2. Responde con precisión sobre horarios, ubicación, formas de pago (SINPE Móvil, transferencia, efectivo, tarjeta) y facturación electrónica.
+2. Responde con precisión sobre horarios, ubicación física, formas de pago (SINPE Móvil, transferencia, efectivo, tarjeta) y facturación electrónica.
 3. Si el cliente pregunta por comodidades (parqueo, wifi, pet-friendly), responde con amabilidad y honestidad.
 4. PUENTE COMERCIAL OBLIGATORIO: Concluye siempre tu respuesta invitando proactivamente a la acción principal del comercio (ej: '¿Deseas que te muestre nuestro catálogo/menú de hoy o prefieres agendar una cita?').
 5. LÍMITE ESTRICTO ANTI-ALUCINACIÓN: Si te preguntan algo que no esté registrado en las políticas oficiales del negocio, NO inventes datos. Ofrece amablemente conectar con un asesor humano.
@@ -370,14 +394,38 @@ REGLAS DE CONSERJE FRONT-DESK:
     }
   }
 
-  // 4. Construct AI Messages Array with Supervisor Directives
-  const isConversationOngoing = (chatHistory && chatHistory.length > 0);
-  const antiGreetingInstruction = isConversationOngoing
-    ? `⚠️ CONVERSACIÓN EN CURSO: El cliente ya está interactuando contigo. NO vuelvas a saludar ("Hola", "Buenas"). Responde directo al grano con entusiasmo.`
+  // 4. Construct AI Messages Array with Supervisor Directives & 2-Hour Session Memory
+  let isSessionActive = options?.isWithin2Hours ?? false;
+  let lastMinutes = options?.lastInteractionMinutesAgo ?? null;
+  if (options?.isWithin2Hours === undefined && chatHistory && chatHistory.length > 0) {
+    const lastMsg = chatHistory[chatHistory.length - 1];
+    if (lastMsg.createdAt) {
+      const diff = Math.floor((Date.now() - new Date(lastMsg.createdAt).getTime()) / (1000 * 60));
+      isSessionActive = diff < 120;
+      lastMinutes = diff;
+    } else {
+      isSessionActive = chatHistory.length >= 2;
+    }
+  }
+
+  const sessionGreetingDirective = isSessionActive
+    ? `⚠️ SESIÓN ACTIVA EN CURSO (${lastMinutes !== null ? `última interacción hace ${lastMinutes} min` : 'interacción reciente'}):
+El cliente ya está en medio de una conversación activa contigo. ESTÁ ESTRICTAMENTE PROHIBIDO volver a saludar ("Hola", "Buenas tardes", "¿En qué te puedo ayudar hoy?"). Responde de forma directa, ágil, fluida y amable a lo que pregunta sin presentaciones repetitivas.`
     : `Saluda cordialmente presentándote como asistente de *${tenant?.name || 'nuestro negocio'}*.`;
 
+  const chatFirstDirectives = `
+REGLA DE ORO "CHAT-FIRST" Y MANEJO DE ENLACES:
+1. VENTA Y ASESORÍA CONVERSACIONAL DIRECTA: Tu objetivo principal es atender, asesorar, cotizar y cerrar pedidos o citas directamente en este chat de WhatsApp.
+2. ENLACES DE TIENDA Y RESERVAS (ESTRICTAMENTE BAJO DEMANDA):
+   - PROHIBIDO enviar los enlaces de la tienda (${storeUrl}) o reservas (${bookingUrl}) por iniciativa propia si el cliente solo está preguntando por productos, precios, menú, citas o turnos. Atiéndelo y cierra la venta por aquí.
+   - SOLO y ÚNICAMENTE entrega el link de la tienda web o reservas web SI EL CLIENTE LO PIDE EXPRESAMENTE (ej: "pásame el link", "¿tienen página web?", "mándame el catálogo en línea", "prefiero pedir por la web").
+3. ENLACES INFORMATIVOS GENERALES (BAJO DEMANDA NATURAL):
+   - Si el cliente pregunta cómo llegar, dónde están o por ubicación: comparte la dirección física y el enlace de Waze / Google Maps (${mapsUrl || 'disponible previa solicitud'}).
+   - Si el cliente pregunta por redes sociales o página web: comparte los perfiles oficiales (${socialLinksStr || officialWebUrl || 'disponibles previa solicitud'}).
+`.trim();
+
   const supervisorDirectives = orchConfig.prompt ? `DIRECTRICES DEL SUPERVISOR:\n${orchConfig.prompt}\n\n` : '';
-  const finalSystemPrompt = `${supervisorDirectives}${specializedPrompt}\n\n${antiGreetingInstruction}`;
+  const finalSystemPrompt = `${supervisorDirectives}${specializedPrompt}\n\n${chatFirstDirectives}\n\n${sessionGreetingDirective}`;
 
   const structuredMessages: Array<{ role: 'system' | 'user' | 'assistant', content: string }> = [];
   if (chatHistory && chatHistory.length > 0) {
@@ -388,43 +436,62 @@ REGLAS DE CONSERJE FRONT-DESK:
   }
   structuredMessages.push({ role: 'user', content: userMessage });
 
-  // 5. Model Resolution (BYOK vs Betico AI)
-  let config: TenantAIConfig;
+  // 5. Model Resolution with Resilient Cross-Fallback
+  let primaryConfig: TenantAIConfig;
+  let fallbackConfig: TenantAIConfig;
   const temperature = currentSubagent?.temperature ?? 0.3;
   let isBeticoPlatformAI = false;
+
+  const masterConfig = await getMasterAIConfig();
 
   if (tenant?.aiApiKeyEncrypted) {
     try {
       const apiKey = decrypt(tenant.aiApiKeyEncrypted);
-      config = {
+      primaryConfig = {
         provider: tenant.aiProvider || 'gemini',
         apiKey,
         model: tenant.aiModel || agentConfig?.model || 'gemini-2.5-flash',
         temperature
       };
+      // For BYOK accounts, cross-fallback is Local Betico AI on VPS!
+      fallbackConfig = {
+        provider: 'betico_ai',
+        apiKey: 'ollama',
+        model: 'betico-ai',
+        temperature,
+        baseUrl: masterConfig.baseUrl || process.env.OLLAMA_URL || 'http://beticoia_ollama:11434/v1'
+      };
+      isBeticoPlatformAI = false;
     } catch (e) {
-      config = { provider: 'betico_ai', apiKey: 'ollama', model: 'betico-ai', temperature };
+      primaryConfig = { provider: 'betico_ai', apiKey: 'ollama', model: 'betico-ai', temperature, baseUrl: masterConfig.baseUrl };
+      fallbackConfig = { provider: 'gemini', apiKey: masterConfig.apiKey, model: 'gemini-2.5-flash', temperature };
       isBeticoPlatformAI = true;
     }
   } else {
     isBeticoPlatformAI = true;
-    const masterConfig = await getMasterAIConfig();
     const isLocalOllama = (masterConfig.provider === 'betico_ai' || masterConfig.provider === 'ollama');
     const virtualModel = (tenant && isLocalOllama) ? getTenantModelName(tenant) : masterConfig.model;
-    config = {
+    primaryConfig = {
       provider: masterConfig.provider,
       apiKey: masterConfig.apiKey,
       model: virtualModel,
       temperature,
       baseUrl: masterConfig.baseUrl
     };
+    // For Betico AI accounts, cross-fallback is Gemini Flash Master!
+    fallbackConfig = {
+      provider: 'gemini',
+      apiKey: masterConfig.apiKey,
+      model: 'gemini-2.5-flash',
+      temperature
+    };
   }
 
-  // 6. Execute Inference
-  const aiResult = await callAI(config, {
+  // 6. Execute Inference with Resilient Cross-Fallback
+  const aiResult = await callAI(primaryConfig, {
     system: finalSystemPrompt,
     messages: structuredMessages
-  });
+  }, fallbackConfig);
 
   if (isBeticoPlatformAI && aiResult.tokensUsed > 0) {
     await incrementTenantUsage(tenantId, aiResult.tokensUsed);

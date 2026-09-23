@@ -41,12 +41,13 @@ export async function processWhatsAppMessageWithAI(
   userMessage: string,
   senderPhone: string,
   senderName: string,
-  chatHistory: { role: 'user' | 'assistant', content: string }[]
+  chatHistory: { role: 'user' | 'assistant', content: string, createdAt?: Date }[],
+  options?: { isWithin2Hours?: boolean; lastInteractionMinutesAgo?: number | null }
 ): Promise<AgentProcessResult> {
   const agentConfig: any = await getAgentConfig(tenantId);
   if (agentConfig?.orchestratorConfig?.enabled !== false) {
     try {
-      return await processWithOrchestrator(tenantId, userMessage, senderPhone, senderName, chatHistory);
+      return await processWithOrchestrator(tenantId, userMessage, senderPhone, senderName, chatHistory, options);
     } catch (orchErr) {
       console.error('[Agent] Orchestrator error, falling back to legacy prompt:', orchErr);
     }

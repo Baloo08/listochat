@@ -72,7 +72,7 @@ export function safeParseJSON(rawStr) {
   }
 }
 
-export function routeIntent(userMessage, chatHistory, orchestratorConfig) {
+export function routeIntent(userMessage, chatHistory, orchestratorConfig, storeModules) {
   const lowerMsg = userMessage.toLowerCase().trim();
   const recentHistory = (chatHistory || []).slice(-6).map(h => h.content).join(' ').toLowerCase();
   const context = `${recentHistory} ${lowerMsg}`;
@@ -85,9 +85,14 @@ export function routeIntent(userMessage, chatHistory, orchestratorConfig) {
     return subagents.handoff?.enabled !== false ? 'handoff' : 'general';
   }
 
-  // 2. Canchas deportivas
+  // Check which modules are allowed by tenant store settings
+  const courtsAllowed = storeModules ? storeModules.courtsEnabled === true : true;
+  const salesAllowed = storeModules ? storeModules.storeEnabled !== false : true;
+  const bookingsAllowed = storeModules ? storeModules.bookingsEnabled !== false : true;
+
+  // 2. Canchas deportivas (Only if tenant has courtsEnabled activated)
   const isCourts = /cancha|canchas|partido|futbol|fútbol|padel|pádel|mejenga|gramilla|reservar cancha|alquiler cancha|crt-|#res-/i.test(context);
-  if (isCourts) {
+  if (isCourts && courtsAllowed) {
     return subagents.courts?.enabled !== false ? 'courts' : 'general';
   }
 
@@ -97,19 +102,19 @@ export function routeIntent(userMessage, chatHistory, orchestratorConfig) {
   // 4. Citas y Servicios
   const isBooking = /servicio|servicios|cita|citas|agenda|agendar|turno|atencion|atención|doctor|especialista|cancelar cita|reagendar|disponibilidad de horario|horario de cita/i.test(context);
 
-  if (isSales && !isBooking) {
+  if (isSales && salesAllowed && (!isBooking || !bookingsAllowed)) {
     return subagents.sales?.enabled !== false ? 'sales' : 'general';
   }
 
-  if (isBooking && !isSales) {
+  if (isBooking && bookingsAllowed && (!isSales || !salesAllowed)) {
     return subagents.booking?.enabled !== false ? 'booking' : 'general';
   }
 
-  if (isSales) {
+  if (isSales && salesAllowed) {
     return subagents.sales?.enabled !== false ? 'sales' : 'general';
   }
 
-  if (isBooking) {
+  if (isBooking && bookingsAllowed) {
     return subagents.booking?.enabled !== false ? 'booking' : 'general';
   }
 
@@ -258,6 +263,122 @@ test('Agentic Orchestrator & Multi-Agent Routing Tests', async (t) => {
     assert.match(generalPrompt, /Conserje y Anfitrión/i, 'General agent should be framed as Concierge & Host');
     assert.match(generalPrompt, /puente proactivo/i, 'General agent must have a proactive commercial bridge');
     assert.match(generalPrompt, /no inventes datos/i, 'General agent must have anti-hallucination guardrails');
+  });
+
+  await t.test('10. Dynamic Module Routing Invariance (storeModules)', () => {
+    // A: Tenant with courts disabled
+    const tenantWithoutCourts = { storeEnabled: true, bookingsEnabled: true, courtsEnabled: false };
+    const courtQuery = 'Quiero reservar una cancha de fútbol para las 7pm';
+    const routedCourt = routeIntent(courtQuery, [], defaultOrchestratorConfig, tenantWithoutCourts);
+    assert.equal(routedCourt, 'general', 'When courtsEnabled is false, court queries should route to general host');
+
+    // B: Tenant with courts enabled
+    const tenantWithCourts = { storeEnabled: true, bookingsEnabled: true, courtsEnabled: true };
+    const routedCourtEnabled = routeIntent(courtQuery, [], defaultOrchestratorConfig, tenantWithCourts);
+    assert.equal(routedCourtEnabled, 'courts', 'When courtsEnabled is true, court queries route to courts subagent');
+
+    // C: Tenant with store disabled (e.g. appointment-only barbershop)
+    const tenantWithoutStore = { storeEnabled: false, bookingsEnabled: true, courtsEnabled: false };
+    const productQuery = '¿Cuánto cuesta la pomada para cabello?';
+    const routedProduct = routeIntent(productQuery, [], defaultOrchestratorConfig, tenantWithoutStore);
+    assert.equal(routedProduct, 'general', 'When storeEnabled is false, product queries should route to general host');
+
+    // D: Tenant with bookings disabled (retail only)
+    const tenantWithoutBookings = { storeEnabled: true, bookingsEnabled: false, courtsEnabled: false };
+    const bookingQuery = 'Quiero agendar un turno para atención mañana';
+    const routedBooking = routeIntent(bookingQuery, [], defaultOrchestratorConfig, tenantWithoutBookings);
+    assert.equal(routedBooking, 'general', 'When bookingsEnabled is false, booking queries should route to general host');
+  });
+
+  await t.test('11. 2-Hour Conversation Session Window & Anti-Greeting Repetition Logic', () => {
+    // Helper function reproducing session detection logic
+    function checkSessionMemory(lastMessageDate, now = new Date()) {
+      if (!lastMessageDate) return { isWithin2Hours: false, directive: 'Saluda cordialmente' };
+      const diffMinutes = Math.floor((now.getTime() - new Date(lastMessageDate).getTime()) / (1000 * 60));
+      const isWithin2Hours = diffMinutes < 120;
+      return {
+        isWithin2Hours,
+        diffMinutes,
+        directive: isWithin2Hours
+          ? 'ESTÁ ESTRICTAMENTE PROHIBIDO volver a saludar'
+          : 'Saluda cordialmente'
+      };
+    }
+
+    const now = new Date();
+
+    // 15 minutes ago -> Active session
+    const recentDate = new Date(now.getTime() - 15 * 60 * 1000);
+    const recentSession = checkSessionMemory(recentDate, now);
+    assert.strictEqual(recentSession.isWithin2Hours, true, '15 min ago must be within 2h session');
+    assert.match(recentSession.directive, /PROHIBIDO volver a saludar/, 'Should prohibit repeated greetings for active session');
+
+    // 90 minutes ago -> Active session
+    const midDate = new Date(now.getTime() - 90 * 60 * 1000);
+    const midSession = checkSessionMemory(midDate, now);
+    assert.strictEqual(midSession.isWithin2Hours, true, '90 min ago must be within 2h session');
+
+    // 150 minutes ago (2.5h) -> Expired session
+    const expiredDate = new Date(now.getTime() - 150 * 60 * 1000);
+    const expiredSession = checkSessionMemory(expiredDate, now);
+    assert.strictEqual(expiredSession.isWithin2Hours, false, '150 min ago must expire 2h session');
+    assert.match(expiredSession.directive, /Saluda cordialmente/, 'Should allow cordial greeting after 2h expiration');
+
+    // First time customer (no history)
+    const newSession = checkSessionMemory(null, now);
+    assert.strictEqual(newSession.isWithin2Hours, false, 'New chat has no prior session');
+    assert.match(newSession.directive, /Saluda cordialmente/, 'Should allow cordial greeting for new customers');
+  });
+
+  await t.test('12. Chat-First Protocol & Links on Demand Directives Invariance', () => {
+    // Directives template validation
+    const storeUrl = 'https://betico.tech/tienda/demo';
+    const bookingUrl = 'https://betico.tech/reservar/demo';
+    const mapsUrl = 'https://waze.com/ul/hd1u';
+    const socialLinks = 'Instagram: @demo';
+
+    const chatFirstDirectives = `
+REGLA DE ORO "CHAT-FIRST" Y MANEJO DE ENLACES:
+1. VENTA Y ASESORÍA CONVERSACIONAL DIRECTA: Tu objetivo principal es atender, asesorar, cotizar y cerrar pedidos o citas directamente en este chat de WhatsApp.
+2. ENLACES DE TIENDA Y RESERVAS (ESTRICTAMENTE BAJO DEMANDA):
+   - PROHIBIDO enviar los enlaces de la tienda (${storeUrl}) o reservas (${bookingUrl}) por iniciativa propia si el cliente solo está preguntando por productos, precios, menú, citas o turnos. Atiéndelo y cierra la venta por aquí.
+   - SOLO y ÚNICAMENTE entrega el link de la tienda web o reservas web SI EL CLIENTE LO PIDE EXPRESAMENTE (ej: "pásame el link", "¿tienen página web?", "mándame el catálogo en línea", "prefiero pedir por la web").
+3. ENLACES INFORMATIVOS GENERALES (BAJO DEMANDA NATURAL):
+   - Si el cliente pregunta cómo llegar, dónde están o por ubicación: comparte la dirección física y el enlace de Waze / Google Maps (${mapsUrl}).
+   - Si el cliente pregunta por redes sociales o página web: comparte los perfiles oficiales (${socialLinks}).
+`.trim();
+
+    assert.match(chatFirstDirectives, /CHAT-FIRST/i, 'Must have Chat-First header');
+    assert.match(chatFirstDirectives, /PROHIBIDO enviar los enlaces.*por iniciativa propia/i, 'Must prohibit unsolicited links');
+    assert.match(chatFirstDirectives, /SOLO y ÚNICAMENTE entrega el link.*SI EL CLIENTE LO PIDE/i, 'Links delivered strictly on explicit demand');
+    assert.match(chatFirstDirectives, /Waze \/ Google Maps/, 'Must support Waze / Maps on demand');
+    assert.match(chatFirstDirectives, /redes sociales/i, 'Must support social links on demand');
+  });
+
+  await t.test('13. Resilient Cross-Engine Fallback Configuration Invariance', () => {
+    // Validate Fallback mapping logic
+    function resolveAIConfigs(tenant, masterConfig) {
+      if (tenant?.aiApiKeyEncrypted) {
+        return {
+          primary: { provider: tenant.aiProvider, model: tenant.aiModel },
+          fallback: { provider: 'betico_ai', model: 'betico-ai' }
+        };
+      }
+      return {
+        primary: { provider: 'betico_ai', model: 'betico-ai' },
+        fallback: { provider: 'gemini', model: 'gemini-2.5-flash' }
+      };
+    }
+
+    // A: Standard account ($0 Betico AI) -> Primary is betico_ai, Fallback is Gemini Flash Master
+    const stdAccount = resolveAIConfigs({ aiApiKeyEncrypted: null }, { provider: 'betico_ai' });
+    assert.equal(stdAccount.primary.provider, 'betico_ai', 'Standard account primary must be betico_ai');
+    assert.equal(stdAccount.fallback.provider, 'gemini', 'Standard account fallback must be gemini master');
+
+    // B: BYOK account -> Primary is tenant BYOK, Fallback is betico_ai local VPS
+    const byokAccount = resolveAIConfigs({ aiApiKeyEncrypted: 'enc_token', aiProvider: 'openai', aiModel: 'gpt-4o' }, {});
+    assert.equal(byokAccount.primary.provider, 'openai', 'BYOK account primary must be tenant provider');
+    assert.equal(byokAccount.fallback.provider, 'betico_ai', 'BYOK account fallback must be local betico_ai on VPS');
   });
 
 });

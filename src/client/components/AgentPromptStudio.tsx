@@ -78,6 +78,12 @@ export default function AgentPromptStudio() {
     specialistsCount: 0
   });
 
+  const [storeModules, setStoreModules] = useState<{ storeEnabled?: boolean; bookingsEnabled?: boolean; courtsEnabled?: boolean }>({
+    storeEnabled: true,
+    bookingsEnabled: true,
+    courtsEnabled: false
+  });
+
   const [simInput, setSimInput] = useState('');
   const [simOutput, setSimOutput] = useState('');
   const [activeSimulatedAgentId, setActiveSimulatedAgentId] = useState<string | null>(null);
@@ -120,6 +126,9 @@ export default function AgentPromptStudio() {
           setConfig(newConf);
           if (data.dataSourcesSummary) {
             setDataSourcesSummary(data.dataSourcesSummary);
+          }
+          if (data.storeModules) {
+            setStoreModules(data.storeModules);
           }
           try { sessionStorage.setItem('betico_cached_agent_prompt', JSON.stringify(newConf)); } catch(e) {}
         }
@@ -269,6 +278,7 @@ export default function AgentPromptStudio() {
         onChange={(newOrch) => setConfig({ ...config, orchestratorConfig: newOrch })}
         dataSourcesSummary={dataSourcesSummary}
         activeSimulatedAgentId={activeSimulatedAgentId}
+        storeModules={storeModules}
       />
 
       {/* LIVE ORCHESTRATOR SIMULATOR WITH VISUAL TRACE */}

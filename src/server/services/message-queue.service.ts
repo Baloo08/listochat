@@ -1,7 +1,7 @@
 import { Server as SocketServer } from 'socket.io';
 import { takeNextPending, markDone, markFailed, consumePendingForChat, recoverStaleProcessingMessages } from '../db/message-queue.repo.js';
 import { processWhatsAppMessageWithAI } from './agent.js';
-import { getChatMessagesByTenant, getChatSession, setChatHumanMode, setChatVoicePreference, setVoicePreferenceAsked, saveChatMessage } from '../db/chats.repo.js';
+import { getChatMessagesByTenant, getChatHistoryForContact, getChatSession, setChatHumanMode, setChatVoicePreference, setVoicePreferenceAsked, saveChatMessage } from '../db/chats.repo.js';
 import { getAgentConfig } from '../db/agent-config.repo.js';
 import { createBookingFromCommand, cancelBookingFromWhatsApp, rescheduleBookingFromWhatsApp } from './booking.service.js';
 import { createOrderFromWhatsApp } from './order.service.js';
@@ -121,14 +121,8 @@ async function processSingleMessage(msg: any) {
       console.log(`[Queue] Chat ${msg.remoteJid} opted IN to voice notes.`);
     }
 
-    // Fetch history (last 50 tenant messages to ensure rich history for this specific customer)
-    const allChats = await getChatMessagesByTenant(msg.tenantId, 50);
-    const history = allChats
-      .filter((c: any) => (c.remoteJid || c.remote_jid) === msg.remoteJid)
-      .map((c: any) => ({
-        role: (c.fromMe || c.from_me) ? 'assistant' as const : 'user' as const,
-        content: c.messageText || c.message_text || c.aiResponse || c.ai_response || ''
-      }));
+    // Fetch contact-specific history with 2-hour session awareness (ISO 25010 Confiabilidad & Usabilidad)
+    const { messages: history, isWithin2Hours, lastInteractionMinutesAgo } = await getChatHistoryForContact(msg.tenantId, msg.remoteJid, 20);
     
     // Process with AI
     const aiResult = await processWhatsAppMessageWithAI(
@@ -136,7 +130,8 @@ async function processSingleMessage(msg: any) {
       fullUserMessage,
       msg.cleanPhone,
       msg.pushName,
-      history
+      history,
+      { isWithin2Hours, lastInteractionMinutesAgo }
     );
     
     // Handle human handoff
