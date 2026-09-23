@@ -124,6 +124,34 @@ export interface Appointment {
   createdAt?: Date;
 }
 
+export interface SubagentConfig {
+  id: string;
+  name: string;
+  enabled: boolean;
+  prompt: string;
+  sources: string[];
+  actions: string[];
+  temperature?: number;
+}
+
+export interface OrchestratorConfig {
+  enabled: boolean;
+  subagents: {
+    sales: SubagentConfig;
+    booking: SubagentConfig;
+    courts: SubagentConfig;
+    handoff: SubagentConfig;
+    general: SubagentConfig;
+  };
+}
+
+export interface DataSourcesSummary {
+  productsCount: number;
+  servicesCount: number;
+  courtsCount: number;
+  specialistsCount: number;
+}
+
 export interface AgentPromptConfig {
   id?: string;
   tenantId: string;
@@ -140,6 +168,8 @@ export interface AgentPromptConfig {
   humanHandoffEnabled?: boolean;
   handoffKeywords?: string[];
   handoffNotifyPhone?: string;
+  orchestratorConfig?: OrchestratorConfig;
+  dataSourcesSummary?: DataSourcesSummary;
   updatedAt?: Date;
 }
 

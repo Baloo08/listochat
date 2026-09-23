@@ -1,10 +1,62 @@
 import React, { useState, useEffect } from 'react';
-import { Bot, Save, Play, Sparkles, Wand2, CheckCircle, HelpCircle, X, ArrowRight, ArrowLeft } from 'lucide-react';
+import { 
+  Bot, Save, Play, Sparkles, Wand2, CheckCircle, HelpCircle, X, 
+  ArrowRight, ArrowLeft, GitFork, Sliders, CheckCircle2, MessageSquare, Zap
+} from 'lucide-react';
+import AgentFlowCanvas from './AgentFlowCanvas';
+import { OrchestratorConfig, DataSourcesSummary } from '../../shared/types';
 
 export default function AgentPromptStudio() {
   const cachedPrompt = typeof window !== 'undefined' ? sessionStorage.getItem('betico_cached_agent_prompt') : null;
   const initialData = cachedPrompt ? (()=>{ try { return JSON.parse(cachedPrompt); } catch(e){ return null; } })() : null;
 
+  const defaultOrchestrator: OrchestratorConfig = {
+    enabled: true,
+    subagents: {
+      sales: {
+        id: 'sales',
+        name: 'Ventas & Menú',
+        enabled: true,
+        prompt: 'Eres el especialista en ventas y catálogo. Asesora activamente con amabilidad y calidez costarricense (*pura vida*, con gusto). Destaca beneficios, presenta variantes (tallas, sabores, presentaciones) y extras/aderezos. Lleva la cuenta sumada del carrito con subtotales y total. Consulta si es para Envío a Domicilio o Retiro en Local y el método de pago.',
+        sources: ['products', 'payments', 'delivery'],
+        actions: ['order', 'media']
+      },
+      booking: {
+        id: 'booking',
+        name: 'Citas & Agenda',
+        enabled: true,
+        prompt: 'Eres el especialista de agenda y servicios. Ofrece los servicios disponibles con su duración y precios fijos. Verifica que la fecha y hora NO choquen con horarios ocupados. Sé puntual, cordial y confirma los datos del cliente antes de agendar.',
+        sources: ['services', 'specialists', 'busySlots', 'customerRecord'],
+        actions: ['booking', 'reschedule', 'cancel']
+      },
+      courts: {
+        id: 'courts',
+        name: 'Canchas Deportivas',
+        enabled: true,
+        prompt: 'Eres el especialista en reservas de canchas y partidos deportivos. Brinda información sobre canchas disponibles, superficies, precios por hora e iluminación. Para reagendar, solicita el código CRT-XXXXXX o #RES- y valida disponibilidad.',
+        sources: ['courts', 'schedules'],
+        actions: ['courtBooking', 'courtReschedule']
+      },
+      handoff: {
+        id: 'handoff',
+        name: 'Escalado Humano',
+        enabled: true,
+        prompt: 'Detecta solicitudes de hablar con una persona, asesor o quejas y reclamos urgentes. Responde con empatía y comunica que un asesor humano atenderá el caso de inmediato.',
+        sources: ['keywords'],
+        actions: ['handoff']
+      },
+      general: {
+        id: 'general',
+        name: 'Identidad & FAQ',
+        enabled: true,
+        prompt: 'Eres el anfitrión principal del negocio en WhatsApp. Brinda bienvenida cordial, responde dudas sobre horarios, ubicación, métodos de pago y canaliza adecuadamente al cliente con calidez costarricense.',
+        sources: ['businessInfo', 'schedules', 'payments'],
+        actions: []
+      }
+    }
+  };
+
+  const [activeTab, setActiveTab] = useState<'flow' | 'classic'>('flow');
   const [config, setConfig] = useState({
     aiChatbotEnabled: initialData ? (initialData.aiChatbotEnabled !== false) : true,
     systemPrompt: initialData?.systemPrompt || '',
@@ -16,29 +68,23 @@ export default function AgentPromptStudio() {
     humanHandoffEnabled: initialData ? (initialData.humanHandoffEnabled !== false) : true,
     handoffNotifyPhone: initialData?.handoffNotifyPhone || '',
     handoffKeywords: Array.isArray(initialData?.handoffKeywords) ? initialData.handoffKeywords : ['humano', 'asesor', 'persona', 'agente', 'hablar con alguien', 'queja', 'reclamo', 'urgente'],
+    orchestratorConfig: initialData?.orchestratorConfig || defaultOrchestrator
   });
+
+  const [dataSourcesSummary, setDataSourcesSummary] = useState<DataSourcesSummary>({
+    productsCount: 0,
+    servicesCount: 0,
+    courtsCount: 0,
+    specialistsCount: 0
+  });
+
   const [simInput, setSimInput] = useState('');
   const [simOutput, setSimOutput] = useState('');
+  const [activeSimulatedAgentId, setActiveSimulatedAgentId] = useState<string | null>(null);
+  const [simMetadata, setSimMetadata] = useState<{ agentName?: string; sources?: string[]; command?: string } | null>(null);
   const [loading, setLoading] = useState(!initialData);
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
-
-  // 10-Question Wizard State
-  const [isWizardOpen, setIsWizardOpen] = useState(false);
-  const [wizardStep, setWizardStep] = useState(1);
-  const [wizardAnswers, setWizardAnswers] = useState({
-    businessName: '',
-    industry: '',
-    targetAudience: 'Familias, profesionales y público general',
-    tone: 'Cálido, profesional, empático y resolutivo',
-    valueProposition: 'Atención personalizada, calidad garantizada y respuesta rápida',
-    primaryGoal: 'Agendar citas y responder dudas sobre catálogo de servicios/productos',
-    locationAndHours: 'San José, Costa Rica. Lunes a Sábado de 8:00 AM a 6:00 PM',
-    appointmentPolicies: 'Confirmar asistencia con anticipación, tolerancia máxima de 10 minutos',
-    paymentMethods: 'SINPE Móvil, Transferencia Bancaria, Efectivo y Tarjeta',
-    goldenRules: 'No inventar promociones ni precios fuera del catálogo. Siempre ser cortés y usar formato de WhatsApp (*negrita* y emojis).',
-    humanEscalation: 'Si el cliente solicita hablar con un asesor humano o presenta un reclamo urgente'
-  });
 
   useEffect(() => {
     fetchPrompt();
@@ -54,9 +100,7 @@ export default function AgentPromptStudio() {
 
   const fetchPrompt = async () => {
     try {
-      const promptPromise = fetch('/api/agent/prompt', { headers: getHeaders() });
-      
-      const res = await promptPromise;
+      const res = await fetch('/api/agent/prompt', { headers: getHeaders() });
       if (res.ok) {
         const data = await res.json();
         if (data) {
@@ -71,46 +115,16 @@ export default function AgentPromptStudio() {
             humanHandoffEnabled: data.humanHandoffEnabled !== false,
             handoffNotifyPhone: data.handoffNotifyPhone || '',
             handoffKeywords: Array.isArray(data.handoffKeywords) ? data.handoffKeywords : ['humano', 'asesor', 'persona', 'agente', 'hablar con alguien', 'queja', 'reclamo', 'urgente'],
+            orchestratorConfig: data.orchestratorConfig || defaultOrchestrator
           };
           setConfig(newConf);
-          try { sessionStorage.setItem('betico_cached_agent_prompt', JSON.stringify(newConf)); } catch(e) {}
-          if (data.businessName) {
-            setWizardAnswers(prev => ({ ...prev, businessName: data.businessName }));
+          if (data.dataSourcesSummary) {
+            setDataSourcesSummary(data.dataSourcesSummary);
           }
+          try { sessionStorage.setItem('betico_cached_agent_prompt', JSON.stringify(newConf)); } catch(e) {}
         }
       }
       setLoading(false);
-
-      // Fetch auxiliary settings asynchronously in parallel without blocking prompt render
-      Promise.all([
-        fetch('/api/store', { headers: getHeaders() }).then(r => r.ok ? r.json() : null).catch(() => null),
-        fetch('/api/appointments/schedule', { headers: getHeaders() }).then(r => r.ok ? r.json() : null).catch(() => null)
-      ]).then(([store, sch]) => {
-        if (store || sch) {
-          setWizardAnswers(prev => {
-            let pm = prev.paymentMethods;
-            if (store) {
-              const methods: string[] = [];
-              if (store.acceptSinpe && store.sinpePhone) methods.push(`SINPE Móvil (${store.sinpePhone})`);
-              if (store.acceptTransfer) methods.push('Transferencia Bancaria IBAN');
-              if (store.acceptCashOnDelivery) methods.push('Efectivo contra entrega');
-              if (methods.length > 0) pm = methods.join(', ');
-            }
-
-            let lh = prev.locationAndHours;
-            if (sch?.jornadaConfig) {
-              lh = `Lunes a Sábado de ${sch.jornadaConfig.startHour || '08:00'} a ${sch.jornadaConfig.endHour || '17:00'}`;
-            }
-
-            return {
-              ...prev,
-              businessName: store?.storeName || prev.businessName,
-              paymentMethods: pm,
-              locationAndHours: lh
-            };
-          });
-        }
-      });
     } catch (error) {
       console.error('Error fetching prompt:', error);
       setLoading(false);
@@ -129,7 +143,7 @@ export default function AgentPromptStudio() {
         setSaveSuccess(true);
         setTimeout(() => setSaveSuccess(false), 3000);
       } else {
-        alert('Error al guardar el prompt.');
+        alert('Error al guardar la orquesta del agente.');
       }
     } catch (error) {
       console.error('Error saving prompt:', error);
@@ -138,18 +152,38 @@ export default function AgentPromptStudio() {
     }
   };
 
-  const handleSimulate = async () => {
-    if (!simInput.trim()) return;
-    setSimOutput('Simulando respuesta con IA...');
+  const handleSimulate = async (customText?: string) => {
+    const textToSimulate = (customText || simInput).trim();
+    if (!textToSimulate) return;
+    
+    setSimOutput('Analizando intención con el Router y ejecutando subagente...');
+    setActiveSimulatedAgentId(null);
+    setSimMetadata(null);
+
     try {
       const res = await fetch('/api/agent/simulate', {
         method: 'POST',
         headers: getHeaders(),
-        body: JSON.stringify({ message: simInput })
+        body: JSON.stringify({ message: textToSimulate })
       });
       if (res.ok) {
         const data = await res.json();
         setSimOutput(data.replyText || data.reply || data.text || 'Sin respuesta.');
+        if (data.routedAgentId) {
+          setActiveSimulatedAgentId(data.routedAgentId);
+          let cmd = '';
+          if (data.isOrderDetected) cmd = 'COMMAND_ORDER';
+          else if (data.isBookingDetected) cmd = 'COMMAND_BOOKING';
+          else if (data.isCourtBookingDetected) cmd = 'COMMAND_COURT_BOOKING';
+          else if (data.isHandoffRequested) cmd = 'COMMAND_HANDOFF';
+          else if (data.isMediaDetected) cmd = 'COMMAND_SEND_MEDIA';
+
+          setSimMetadata({
+            agentName: data.routedAgentName,
+            sources: data.sourcesUsed,
+            command: cmd || undefined
+          });
+        }
       } else {
         setSimOutput('Error en la simulación.');
       }
@@ -158,130 +192,133 @@ export default function AgentPromptStudio() {
     }
   };
 
-  const applyPreset = (preset: string) => {
-    let text = '';
-    switch (preset) {
-      case 'auto':
-        text = `Eres el Asistente Virtual Oficial de detallado automotriz. Tu objetivo es asesorar a los clientes en servicios de lavado, pulido, corrección de pintura y protección cerámica, y facilitar el agendamiento de citas.
-- Tono: Profesional, experto en autos y muy servicial.
-- Siempre invita amablemente a indicar el modelo de vehículo y elegir la fecha ideal para su servicio.`;
-        break;
-      case 'medical':
-        text = `Eres la Recepcionista Virtual Oficial de la clínica. Tu objetivo es brindar información clara y empática sobre nuestros tratamientos de salud y agendar citas médicas o de valoración.
-- Tono: Respetuoso, empático, cálido y confidencial.
-- Recuerda siempre indicar la importancia de puntualidad y solicitar el motivo de consulta.`;
-        break;
-      case 'restaurant':
-        text = `Eres el Anfitrión Virtual del restaurante. Tu objetivo es presentar nuestro menú, tomar pedidos para llevar o entregas a domicilio y reservar mesas.
-- Tono: Amigable, dinámico y enfocado en una experiencia culinaria deliciosa.
-- Confirma siempre la cantidad de personas y hora estimada.`;
-        break;
-      case 'store':
-        text = `Eres el Asesor de Ventas Oficial de la tienda. Tu objetivo es orientar a los clientes en nuestro catálogo de productos, disponibilidad de stock, tallas/colores y coordinar compras por WhatsApp o entrega a domicilio.
-- Tono: Entusiasta, cercano y eficiente.`;
-        break;
-    }
-    if (text) setConfig({ ...config, systemPrompt: text });
-  };
-
-  // Generate robust prompt from 10 questions
-  const generatePromptFromWizard = () => {
-    const generated = `Eres el Asistente Virtual Oficial de WhatsApp de *${wizardAnswers.businessName || config.businessName || 'nuestro negocio'}* (${wizardAnswers.industry || 'Servicios y Productos'}).
-
-🎯 *MISIÓN Y OBJETIVO PRINCIPAL:*
-${wizardAnswers.primaryGoal || 'Atender amablemente a nuestros clientes, brindar información precisa sobre nuestros servicios y productos, y coordinar citas o pedidos.'}
-
-👥 *PÚBLICO OBJETIVO Y TONO DE COMUNICACIÓN:*
-- Público: ${wizardAnswers.targetAudience}
-- Tono: ${wizardAnswers.tone}. Usa un lenguaje natural, utiliza formato de WhatsApp (*negrita* para resaltar puntos clave) y emojis con moderación para que la interacción sea agradable.
-
-⭐ *PROPUESTA DE VALOR:*
-${wizardAnswers.valueProposition}
-
-📍 *UBICACIÓN Y HORARIOS DE ATENCIÓN:*
-${wizardAnswers.locationAndHours}
-
-📋 *POLÍTICAS DE RESERVAS Y CITAS:*
-${wizardAnswers.appointmentPolicies}
-
-💳 *MÉTODOS DE PAGO Y CONDICIONES:*
-${wizardAnswers.paymentMethods}
-
-🚫 *REGLAS DE ORO Y LÍMITES:*
-- ${wizardAnswers.goldenRules}
-- Nunca inventes precios, promociones o servicios que no estén en la base de datos o catálogo.
-- Si no conoces una respuesta específica, no desinformes: ofrece consultar con el equipo humano.
-
-👤 *ESCALADO A ASESOR HUMANO:*
-- ${wizardAnswers.humanEscalation}
-- Si el cliente lo requiere, infórmale cordialmente que un asesor humano continuará la conversación en breve.`;
-
-    setConfig({
-      ...config,
-      systemPrompt: generated,
-      businessName: wizardAnswers.businessName || config.businessName
-    });
-    setIsWizardOpen(false);
-    setWizardStep(1);
-  };
+  if (loading) {
+    return (
+      <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
+        Cargando Orquestador Agéntico...
+      </div>
+    );
+  }
 
   return (
-    <div style={{ maxWidth: '1050px' }}>
+    <div style={{ maxWidth: '1300px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
       
-      {/* Top Bar */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
+      {/* Header bar */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
         <div>
-          <h2 style={{ margin: '0 0 4px 0', fontSize: '1.5rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Bot size={26} color="var(--primary)" /> Estudio del Agente IA
-          </h2>
-          <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-            Personaliza el comportamiento, instrucciones y personalidad del bot de WhatsApp
-          </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ backgroundColor: 'var(--primary)', color: 'white', padding: '8px', borderRadius: '10px' }}>
+              <GitFork size={24} />
+            </div>
+            <div>
+              <h1 style={{ fontSize: '1.4rem', fontWeight: 'bold', margin: 0, color: 'var(--text)' }}>
+                Personalidad & Orquestador Agéntico IA
+              </h1>
+              <p style={{ margin: '3px 0 0 0', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                Arquitectura Supervisor-Worker: organiza subagentes especializados y sus fuentes de datos
+              </p>
+            </div>
+          </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <button
-            onClick={() => setIsWizardOpen(true)}
-            style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 16px', backgroundColor: '#8b5cf6', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', fontSize: '0.9rem', boxShadow: '0 2px 4px rgba(139, 92, 246, 0.25)' }}
-          >
-            <Sparkles size={16} /> 🧙‍♂️ Asistente de Prompt (10 Preguntas)
-          </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {/* Tab Selector */}
+          <div style={{ display: 'flex', backgroundColor: '#e2e8f0', padding: '4px', borderRadius: '10px' }}>
+            <button
+              onClick={() => setActiveTab('flow')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '7px 14px',
+                borderRadius: '7px',
+                border: 'none',
+                fontWeight: '600',
+                fontSize: '0.85rem',
+                cursor: 'pointer',
+                backgroundColor: activeTab === 'flow' ? '#0f172a' : 'transparent',
+                color: activeTab === 'flow' ? '#f8fafc' : '#475569',
+                boxShadow: activeTab === 'flow' ? '0 2px 4px rgba(0,0,0,0.1)' : 'none'
+              }}
+            >
+              <GitFork size={15} /> Diagrama de Nodos (Flow)
+            </button>
+            <button
+              onClick={() => setActiveTab('classic')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '7px 14px',
+                borderRadius: '7px',
+                border: 'none',
+                fontWeight: '600',
+                fontSize: '0.85rem',
+                cursor: 'pointer',
+                backgroundColor: activeTab === 'classic' ? '#0f172a' : 'transparent',
+                color: activeTab === 'classic' ? '#f8fafc' : '#475569',
+                boxShadow: activeTab === 'classic' ? '0 2px 4px rgba(0,0,0,0.1)' : 'none'
+              }}
+            >
+              <Sliders size={15} /> Ajustes Clásicos
+            </button>
+          </div>
 
           <button
             onClick={handleSave}
             disabled={saving}
-            style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 18px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', fontSize: '0.9rem' }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '9px 20px',
+              backgroundColor: 'var(--primary)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              fontWeight: '600',
+              fontSize: '0.9rem',
+              boxShadow: '0 4px 10px rgba(0,0,0,0.1)'
+            }}
           >
-            <Save size={16} /> {saving ? 'Guardando...' : 'Guardar Cambios'}
+            <Save size={16} /> {saving ? 'Guardando...' : 'Guardar Orquesta'}
           </button>
         </div>
       </div>
 
       {saveSuccess && (
-        <div style={{ padding: '12px 16px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534', borderRadius: '8px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '600', fontSize: '0.9rem' }}>
-          <CheckCircle size={18} /> ¡Instrucciones del Agente IA guardadas exitosamente!
+        <div style={{ padding: '12px 18px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '10px', fontWeight: '600', fontSize: '0.9rem' }}>
+          <CheckCircle size={18} /> ¡Configuración agéntica guardada y sincronizada exitosamente con la orquesta!
         </div>
       )}
 
-      {/* Main Grid: Studio Editor + Simulator */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: '20px', alignItems: 'start' }}>
-        
-        {/* Left Column: Prompt Configuration */}
-        <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+      {/* VIEW 1: AGENT FLOW CANVAS (N8N STYLE) */}
+      {activeTab === 'flow' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <AgentFlowCanvas
+            orchestratorConfig={config.orchestratorConfig || defaultOrchestrator}
+            onChange={(newOrch) => setConfig({ ...config, orchestratorConfig: newOrch })}
+            dataSourcesSummary={dataSourcesSummary}
+            activeSimulatedAgentId={activeSimulatedAgentId}
+          />
+        </div>
+      )}
+
+      {/* VIEW 2: CLASSIC / GLOBAL SETTINGS */}
+      {activeTab === 'classic' && (
+        <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '14px', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '20px' }}>
           
-          {/* AI Chatbot vs Notifications-Only Mode Switcher */}
           <div style={{ padding: '16px', borderRadius: '10px', border: `2px solid ${config.aiChatbotEnabled !== false ? '#16a34a' : '#64748b'}`, backgroundColor: config.aiChatbotEnabled !== false ? '#f0fdf4' : '#f8fafc' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <Bot size={24} color={config.aiChatbotEnabled !== false ? '#16a34a' : '#64748b'} />
                 <div>
                   <strong style={{ fontSize: '0.95rem', color: '#1e293b' }}>
-                    {config.aiChatbotEnabled !== false ? 'Agente de IA para WhatsApp: ACTIVO' : 'Modo Solo Notificaciones Automáticas'}
+                    {config.aiChatbotEnabled !== false ? 'Motor de IA Activo para WhatsApp' : 'Modo Solo Notificaciones'}
                   </strong>
-                  <p style={{ margin: '2px 0 0 0', fontSize: '0.8rem', color: '#64748b', maxWidth: '520px' }}>
-                    {config.aiChatbotEnabled !== false 
-                      ? 'El chatbot responderá automáticamente con IA a los clientes según las instrucciones y catálogo.' 
-                      : 'El sistema enviará notificaciones de pedidos, comandas, enlaces y despachos por WhatsApp sin requerir API Key de IA ni generar respuestas automáticas.'}
+                  <p style={{ margin: '2px 0 0 0', fontSize: '0.8rem', color: '#64748b' }}>
+                    Controla si la inteligencia artificial responde chats entrantes o si solo despacha alertas.
                   </p>
                 </div>
               </div>
@@ -300,383 +337,134 @@ ${wizardAnswers.paymentMethods}
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
             <div>
-              <label style={{ display: 'block', marginBottom: '5px', fontWeight: '600', fontSize: '0.85rem' }}>Nombre Comercial del Negocio</label>
+              <label style={{ display: 'block', marginBottom: '6px', fontWeight: '600', fontSize: '0.85rem' }}>Nombre Comercial</label>
               <input
                 type="text"
                 value={config.businessName}
                 onChange={e => setConfig({ ...config, businessName: e.target.value })}
-                placeholder="Ej: Clínica Dental Sonrisas"
-                style={{ width: '100%', padding: '9px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.9rem' }}
+                placeholder="Ej: Clínica Dental o Canchas El Gol"
+                style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '0.9rem' }}
               />
             </div>
             <div>
-              <label style={{ display: 'block', marginBottom: '5px', fontWeight: '600', fontSize: '0.85rem' }}>Moneda Principal</label>
+              <label style={{ display: 'block', marginBottom: '6px', fontWeight: '600', fontSize: '0.85rem' }}>Moneda Principal</label>
               <input
                 type="text"
                 value={config.currency}
                 onChange={e => setConfig({ ...config, currency: e.target.value })}
                 placeholder="CRC o USD"
-                style={{ width: '100%', padding: '9px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.9rem' }}
+                style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '0.9rem' }}
               />
             </div>
           </div>
 
           <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-              <label style={{ fontWeight: '600', fontSize: '0.9rem' }}>Instrucciones del Sistema (System Prompt)</label>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Define la personalidad y reglas</span>
-            </div>
-
+            <label style={{ display: 'block', marginBottom: '6px', fontWeight: '600', fontSize: '0.85rem' }}>
+              System Prompt General de Respaldo (Fallback)
+            </label>
             <textarea
-              rows={14}
+              rows={6}
               value={config.systemPrompt}
               onChange={e => setConfig({ ...config, systemPrompt: e.target.value })}
-              placeholder="Escribe las instrucciones detalladas del agente aquí..."
+              placeholder="Instrucciones generales de la empresa..."
               style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '0.85rem', lineHeight: '1.5', fontFamily: 'monospace' }}
             />
           </div>
 
-          {/* Links Configuration */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-            <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid var(--border)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <strong style={{ fontSize: '0.9rem', color: '#1e293b', display: 'block' }}>Enlace de Reservas</strong>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Incluir en respuestas</span>
-                </div>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.8rem', color: 'var(--primary)' }}>
-                  <input
-                    type="checkbox"
-                    checked={config.showBookingLink !== false}
-                    onChange={e => setConfig({ ...config, showBookingLink: e.target.checked })}
-                  />
-                  <span>{config.showBookingLink !== false ? 'Sí' : 'No'}</span>
-                </label>
-              </div>
-            </div>
-
-            <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid var(--border)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <strong style={{ fontSize: '0.9rem', color: '#1e293b', display: 'block' }}>Enlace de Tienda</strong>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Incluir en respuestas</span>
-                </div>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.8rem', color: 'var(--primary)' }}>
-                  <input
-                    type="checkbox"
-                    checked={config.showStoreLink !== false}
-                    onChange={e => setConfig({ ...config, showStoreLink: e.target.checked })}
-                  />
-                  <span>{config.showStoreLink !== false ? 'Sí' : 'No'}</span>
-                </label>
-              </div>
-            </div>
-          </div>
-
-          {/* Human Handoff & Escalation Card */}
-          <div style={{ backgroundColor: '#fefce8', padding: '16px', borderRadius: '8px', border: '1px solid #fef08a' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '1.1rem' }}>🚨</span>
-                <div>
-                  <strong style={{ fontSize: '0.9rem', color: '#854d0e', display: 'block' }}>Escalado y Modo de Atención Humana</strong>
-                  <span style={{ fontSize: '0.75rem', color: '#a16207' }}>Pausa la IA y notifica al administrador cuando el cliente requiera un asesor humano</span>
-                </div>
-              </div>
-
-              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.8rem', color: '#854d0e' }}>
-                <input
-                  type="checkbox"
-                  checked={config.humanHandoffEnabled !== false}
-                  onChange={e => setConfig({ ...config, humanHandoffEnabled: e.target.checked })}
-                />
-                <span>Habilitado</span>
-              </label>
-            </div>
-
-            {config.humanHandoffEnabled !== false && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '10px' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', color: '#854d0e', marginBottom: '3px' }}>
-                    📱 Teléfono del Administrador para Alertas (WhatsApp):
-                  </label>
-                  <input
-                    type="tel"
-                    value={config.handoffNotifyPhone || config.notifyNumber || ''}
-                    onChange={e => setConfig({ ...config, handoffNotifyPhone: e.target.value, notifyNumber: e.target.value })}
-                    placeholder="Ej: 50688888888"
-                    style={{ width: '100%', padding: '7px 10px', borderRadius: '6px', border: '1px solid #fde047', backgroundColor: 'white', fontSize: '0.85rem' }}
-                  />
-                  <span style={{ fontSize: '0.7rem', color: '#a16207', display: 'block', marginTop: '2px' }}>
-                    Recibirá un resumen por WhatsApp cuando la IA detecte que un cliente solicita atención humana.
-                  </span>
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', color: '#854d0e', marginBottom: '3px' }}>
-                    🔑 Palabras Clave de Activación (separadas por comas):
-                  </label>
-                  <input
-                    type="text"
-                    value={(config.handoffKeywords || ['humano', 'asesor', 'persona', 'agente', 'hablar con alguien', 'queja', 'reclamo', 'urgente']).join(', ')}
-                    onChange={e => setConfig({ ...config, handoffKeywords: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
-                    placeholder="humano, asesor, persona, queja, hablar con alguien"
-                    style={{ width: '100%', padding: '7px 10px', borderRadius: '6px', border: '1px solid #fde047', backgroundColor: 'white', fontSize: '0.85rem' }}
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Quick Presets */}
-          <div style={{ backgroundColor: '#f8fafc', padding: '14px', borderRadius: '8px', border: '1px solid var(--border)' }}>
-            <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--text-muted)', display: 'block', marginBottom: '8px' }}>
-              ⚡ Plantillas Rápidas por Industria:
-            </span>
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-              <button onClick={() => applyPreset('auto')} style={{ padding: '6px 10px', backgroundColor: 'white', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: '600' }}>🚗 Taller / Detallado</button>
-              <button onClick={() => applyPreset('medical')} style={{ padding: '6px 10px', backgroundColor: 'white', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: '600' }}>🏥 Clínica Médica/Dental</button>
-              <button onClick={() => applyPreset('restaurant')} style={{ padding: '6px 10px', backgroundColor: 'white', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: '600' }}>🍔 Restaurante / Café</button>
-              <button onClick={() => applyPreset('store')} style={{ padding: '6px 10px', backgroundColor: 'white', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: '600' }}>🛍️ Tienda de Ropa / Retail</button>
-            </div>
-          </div>
-        </div>
-
-        {/* Right Column: Built-in Live Simulator */}
-        <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)', position: 'sticky', top: '20px' }}>
-          <h3 style={{ margin: '0 0 8px 0', fontSize: '1.1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <Play size={18} color="var(--primary)" /> Simulador de Conversación
-          </h3>
-          <p style={{ margin: '0 0 16px 0', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-            Prueba cómo responderá tu agente a los mensajes de los clientes en tiempo real.
-          </p>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <div>
-              <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.8rem', fontWeight: '600' }}>Mensaje de Prueba del Cliente:</label>
-              <input
-                type="text"
-                value={simInput}
-                onChange={e => setSimInput(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleSimulate()}
-                placeholder="Ej: Hola, ¿qué servicios tienen para mañana?"
-                style={{ width: '100%', padding: '9px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
-              />
-            </div>
-
-            <button
-              onClick={handleSimulate}
-              style={{ padding: '9px', backgroundColor: '#0f172a', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '600', fontSize: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
-            >
-              <Play size={14} /> Enviar al Simulador
-            </button>
-
-            <div>
-              <label style={{ display: 'block', marginBottom: '4px', fontSize: '0.8rem', fontWeight: '600' }}>Respuesta de la IA:</label>
-              <div style={{ backgroundColor: '#f1f5f9', padding: '12px', borderRadius: '8px', minHeight: '140px', fontSize: '0.85rem', color: '#1e293b', whiteSpace: 'pre-wrap', border: '1px solid var(--border)' }}>
-                {simOutput || 'Escribe un mensaje arriba y presiona Enviar para probar.'}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ==========================================
-          10-QUESTION PROMPT GENERATOR WIZARD MODAL
-      ========================================== */}
-      {isWizardOpen && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-          <div style={{ backgroundColor: 'white', borderRadius: '16px', maxWidth: '680px', width: '100%', padding: '30px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}>
-            
-            {/* Modal Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #e2e8f0', paddingBottom: '14px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <div style={{ width: '38px', height: '38px', backgroundColor: '#ede9fe', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Wand2 size={20} color="#7c3aed" />
-                </div>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 'bold', color: '#1e1b4b' }}>
-                    Asistente de Creación de System Prompt
-                  </h3>
-                  <p style={{ margin: 0, fontSize: '0.8rem', color: '#6b7280' }}>
-                    Responde estas 10 preguntas para generar un prompt robusto y 100% personalizado
-                  </p>
-                </div>
-              </div>
-
-              <button onClick={() => setIsWizardOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af' }}>
-                <X size={22} />
-              </button>
-            </div>
-
-            {/* Questions Form */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              
-              {/* Q1 & Q2 */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '4px', color: '#374151' }}>
-                    1. Nombre Comercial *
-                  </label>
-                  <input
-                    type="text"
-                    value={wizardAnswers.businessName}
-                    onChange={e => setWizardAnswers({ ...wizardAnswers, businessName: e.target.value })}
-                    placeholder="Ej: Clínica Sonrisas"
-                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '0.85rem' }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '4px', color: '#374151' }}>
-                    2. Industria / Rubro *
-                  </label>
-                  <input
-                    type="text"
-                    value={wizardAnswers.industry}
-                    onChange={e => setWizardAnswers({ ...wizardAnswers, industry: e.target.value })}
-                    placeholder="Ej: Odontología, Detallado de autos"
-                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '0.85rem' }}
-                  />
-                </div>
-              </div>
-
-              {/* Q3 */}
-              <div>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '4px', color: '#374151' }}>
-                  3. ¿Quién es tu cliente ideal y público objetivo?
-                </label>
-                <input
-                  type="text"
-                  value={wizardAnswers.targetAudience}
-                  onChange={e => setWizardAnswers({ ...wizardAnswers, targetAudience: e.target.value })}
-                  placeholder="Ej: Familias, jóvenes profesionales, amantes de los autos..."
-                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '0.85rem' }}
-                />
-              </div>
-
-              {/* Q4 */}
-              <div>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '4px', color: '#374151' }}>
-                  4. ¿Cuál es el tono de comunicación deseado?
-                </label>
-                <input
-                  type="text"
-                  value={wizardAnswers.tone}
-                  onChange={e => setWizardAnswers({ ...wizardAnswers, tone: e.target.value })}
-                  placeholder="Ej: Cálido, empático, formal, jovial, resolutivo..."
-                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '0.85rem' }}
-                />
-              </div>
-
-              {/* Q5 */}
-              <div>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '4px', color: '#374151' }}>
-                  5. ¿Cuál es tu principal propuesta de valor o promesa de marca?
-                </label>
-                <input
-                  type="text"
-                  value={wizardAnswers.valueProposition}
-                  onChange={e => setWizardAnswers({ ...wizardAnswers, valueProposition: e.target.value })}
-                  placeholder="Ej: Calidad garantizada, tecnología sin dolor, entrega express en 24h..."
-                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '0.85rem' }}
-                />
-              </div>
-
-              {/* Q6 */}
-              <div>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '4px', color: '#374151' }}>
-                  6. ¿Cuál es el rol principal del bot en WhatsApp?
-                </label>
-                <input
-                  type="text"
-                  value={wizardAnswers.primaryGoal}
-                  onChange={e => setWizardAnswers({ ...wizardAnswers, primaryGoal: e.target.value })}
-                  placeholder="Ej: Agendar citas, vender productos, resolver preguntas frecuentes..."
-                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '0.85rem' }}
-                />
-              </div>
-
-              {/* Q7 */}
-              <div>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '4px', color: '#374151' }}>
-                  7. Ubicación física y horarios de atención
-                </label>
-                <input
-                  type="text"
-                  value={wizardAnswers.locationAndHours}
-                  onChange={e => setWizardAnswers({ ...wizardAnswers, locationAndHours: e.target.value })}
-                  placeholder="Ej: San Pedro, Montes de Oca. Lunes a Viernes 8am-6pm, Sábados 9am-2pm"
-                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '0.85rem' }}
-                />
-              </div>
-
-              {/* Q8 */}
-              <div>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '4px', color: '#374151' }}>
-                  8. Políticas de citas, cancelaciones o entregas
-                </label>
-                <input
-                  type="text"
-                  value={wizardAnswers.appointmentPolicies}
-                  onChange={e => setWizardAnswers({ ...wizardAnswers, appointmentPolicies: e.target.value })}
-                  placeholder="Ej: Confirmar asistencia con 2 horas de anticipación, 10 min de tolerancia..."
-                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '0.85rem' }}
-                />
-              </div>
-
-              {/* Q9 */}
-              <div>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '4px', color: '#374151' }}>
-                  9. Métodos y condiciones de pago aceptados
-                </label>
-                <input
-                  type="text"
-                  value={wizardAnswers.paymentMethods}
-                  onChange={e => setWizardAnswers({ ...wizardAnswers, paymentMethods: e.target.value })}
-                  placeholder="Ej: SINPE Móvil, Transferencia bancaria, Efectivo y Tarjeta contra entrega"
-                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '0.85rem' }}
-                />
-              </div>
-
-              {/* Q10 */}
-              <div>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '4px', color: '#374151' }}>
-                  10. Reglas clave: ¿Qué cosas NUNCA debe decir o hacer el bot?
-                </label>
-                <textarea
-                  rows={2}
-                  value={wizardAnswers.goldenRules}
-                  onChange={e => setWizardAnswers({ ...wizardAnswers, goldenRules: e.target.value })}
-                  placeholder="Ej: No dar diagnósticos médicos finales, no inventar precios fuera de catálogo..."
-                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '0.85rem' }}
-                />
-              </div>
-            </div>
-
-            {/* Actions */}
-            <div style={{ display: 'flex', gap: '12px', marginTop: '25px', borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
-              <button
-                type="button"
-                onClick={() => setIsWizardOpen(false)}
-                style={{ flex: 1, padding: '12px', backgroundColor: 'transparent', border: '1px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontWeight: '600' }}
-              >
-                Cancelar
-              </button>
-
-              <button
-                type="button"
-                onClick={generatePromptFromWizard}
-                style={{ flex: 2, padding: '12px', backgroundColor: '#7c3aed', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.95rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-              >
-                <Sparkles size={18} /> ✨ Generar System Prompt Personalizado
-              </button>
-            </div>
-          </div>
         </div>
       )}
+
+      {/* LIVE ORCHESTRATOR SIMULATOR WITH VISUAL TRACE */}
+      <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '14px', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Play size={18} color="var(--primary)" /> Simulador de Conversación Agéntica en Vivo
+            </h3>
+            <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+              Prueba un mensaje para ver qué subagente toma el control y qué acciones se disparan
+            </span>
+          </div>
+
+          {simMetadata?.agentName && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '0.8rem', backgroundColor: '#38bdf815', color: '#0284c7', border: '1px solid #38bdf840', padding: '4px 10px', borderRadius: '20px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <CheckCircle2 size={14} /> Atendido por: {simMetadata.agentName}
+              </span>
+              {simMetadata.command && (
+                <span style={{ fontSize: '0.8rem', backgroundColor: '#10b98115', color: '#059669', border: '1px solid #10b98140', padding: '4px 10px', borderRadius: '20px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Zap size={14} /> Acción: {simMetadata.command}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Quick Suggestion Pills */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 'bold' }}>Probar con:</span>
+          {[
+            '¿Qué precio tiene el producto y cómo puedo pedir?',
+            'Quiero agendar una cita para mañana',
+            '¿Tienen cancha libre para un partido el viernes?',
+            'Necesito hablar con una persona urgente'
+          ].map(sample => (
+            <button
+              key={sample}
+              type="button"
+              onClick={() => {
+                setSimInput(sample);
+                handleSimulate(sample);
+              }}
+              style={{
+                backgroundColor: '#f1f5f9',
+                border: '1px solid #cbd5e1',
+                borderRadius: '16px',
+                padding: '4px 12px',
+                fontSize: '0.75rem',
+                color: '#334155',
+                cursor: 'pointer'
+              }}
+            >
+              "{sample}"
+            </button>
+          ))}
+        </div>
+
+        {/* Input box */}
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <input
+            type="text"
+            value={simInput}
+            onChange={e => setSimInput(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleSimulate()}
+            placeholder="Escribe un mensaje de prueba como si fueras un cliente en WhatsApp..."
+            style={{ flex: 1, padding: '12px 16px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '0.9rem' }}
+          />
+          <button
+            type="button"
+            onClick={() => handleSimulate()}
+            style={{ padding: '0 24px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px' }}
+          >
+            <Play size={16} /> Probar
+          </button>
+        </div>
+
+        {/* Output Box */}
+        {simOutput && (
+          <div style={{ backgroundColor: '#0f172a', color: '#f8fafc', padding: '16px', borderRadius: '10px', fontSize: '0.9rem', lineHeight: '1.5', border: '1px solid #1e293b' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', borderBottom: '1px solid #1e293b', paddingBottom: '6px' }}>
+              <MessageSquare size={16} color="#38bdf8" />
+              <strong style={{ fontSize: '0.8rem', color: '#38bdf8', textTransform: 'uppercase' }}>Respuesta de WhatsApp</strong>
+            </div>
+            <div style={{ whiteSpace: 'pre-wrap' }}>{simOutput}</div>
+          </div>
+        )}
+
+      </div>
+
     </div>
   );
 }

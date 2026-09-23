@@ -6487,6 +6487,51 @@ init_encryption();
 // src/server/db/agent-config.repo.ts
 init_pool();
 var defaultSystemPrompt = `You are an AI assistant. Help customers politely and concisely.`;
+var defaultOrchestratorConfig = {
+  enabled: true,
+  subagents: {
+    sales: {
+      id: "sales",
+      name: "Ventas & Men\xFA",
+      enabled: true,
+      prompt: "Eres el especialista en ventas y cat\xE1logo. Asesora activamente con amabilidad y calidez costarricense (*pura vida*, con gusto). Destaca beneficios, presenta variantes (tallas, sabores, presentaciones) y extras/aderezos. Lleva la cuenta sumada del carrito con subtotales y total. Consulta si es para Env\xEDo a Domicilio o Retiro en Local y el m\xE9todo de pago.",
+      sources: ["products", "payments", "delivery"],
+      actions: ["order", "media"]
+    },
+    booking: {
+      id: "booking",
+      name: "Citas & Agenda",
+      enabled: true,
+      prompt: "Eres el especialista de agenda y servicios. Ofrece los servicios disponibles con su duraci\xF3n y precios fijos. Verifica que la fecha y hora NO choquen con horarios ocupados. S\xE9 puntual, cordial y confirma los datos del cliente antes de agendar.",
+      sources: ["services", "specialists", "busySlots", "customerRecord"],
+      actions: ["booking", "reschedule", "cancel"]
+    },
+    courts: {
+      id: "courts",
+      name: "Canchas Deportivas",
+      enabled: true,
+      prompt: "Eres el especialista en reservas de canchas y partidos deportivos. Brinda informaci\xF3n sobre canchas disponibles, superficies, precios por hora e iluminaci\xF3n. Para reagendar, solicita el c\xF3digo CRT-XXXXXX o #RES- y valida disponibilidad.",
+      sources: ["courts", "schedules"],
+      actions: ["courtBooking", "courtReschedule"]
+    },
+    handoff: {
+      id: "handoff",
+      name: "Escalado Humano",
+      enabled: true,
+      prompt: "Detecta solicitudes de hablar con una persona, asesor o quejas y reclamos urgentes. Responde con empat\xEDa y comunica que un asesor humano atender\xE1 el caso de inmediato.",
+      sources: ["keywords"],
+      actions: ["handoff"]
+    },
+    general: {
+      id: "general",
+      name: "Identidad & FAQ",
+      enabled: true,
+      prompt: "Eres el anfitri\xF3n principal del negocio en WhatsApp. Brinda bienvenida cordial, responde dudas sobre horarios, ubicaci\xF3n, m\xE9todos de pago y canaliza adecuadamente al cliente con calidez costarricense.",
+      sources: ["businessInfo", "schedules", "payments"],
+      actions: []
+    }
+  }
+};
 async function getAgentConfig(tenantId) {
   const result = await query(`
     SELECT id, tenant_id as "tenantId", config_json as "configJson", updated_at as "updatedAt"
@@ -6503,7 +6548,8 @@ async function getAgentConfig(tenantId) {
       humanHandoffEnabled: true,
       handoffKeywords: ["humano", "asesor", "persona", "agente", "hablar con alguien", "queja", "reclamo", "urgente"],
       showBookingLink: true,
-      showStoreLink: true
+      showStoreLink: true,
+      orchestratorConfig: defaultOrchestratorConfig
     };
   }
   const data = result.rows[0].configJson || {};
@@ -6523,6 +6569,7 @@ async function getAgentConfig(tenantId) {
     handoffNotifyPhone: data.handoffNotifyPhone || data.notifyNumber,
     showBookingLink: data.showBookingLink ?? true,
     showStoreLink: data.showStoreLink ?? true,
+    orchestratorConfig: data.orchestratorConfig || defaultOrchestratorConfig,
     updatedAt: result.rows[0].updatedAt
   };
 }
@@ -6540,7 +6587,8 @@ async function saveAgentConfig(tenantId, config) {
     handoffKeywords: config.handoffKeywords,
     handoffNotifyPhone: config.handoffNotifyPhone,
     showBookingLink: config.showBookingLink,
-    showStoreLink: config.showStoreLink
+    showStoreLink: config.showStoreLink,
+    orchestratorConfig: config.orchestratorConfig
   };
   const result = await query(`
     INSERT INTO agent_settings (tenant_id, config_json, updated_at)
@@ -6565,6 +6613,7 @@ async function saveAgentConfig(tenantId, config) {
     handoffNotifyPhone: data.handoffNotifyPhone,
     showBookingLink: data.showBookingLink ?? true,
     showStoreLink: data.showStoreLink ?? true,
+    orchestratorConfig: data.orchestratorConfig || defaultOrchestratorConfig,
     updatedAt: result.rows[0].updatedAt
   };
 }
@@ -7505,10 +7554,458 @@ async function ensureAllVirtualModels() {
   }
 }
 
-// src/server/services/agent.ts
-async function processWhatsAppMessageWithAI(tenantId, userMessage, senderPhone, senderName, chatHistory) {
+// src/server/services/agent-orchestrator.ts
+init_ai_provider();
+init_encryption();
+init_records_repo();
+init_pool();
+function safeParseJSON(rawStr) {
+  if (!rawStr || typeof rawStr !== "string") return null;
+  let cleaned = rawStr.trim();
+  cleaned = cleaned.replace(/[\u201C\u201D\u201E\u201F\u2033\u2036]/g, '"').replace(/[\u2018\u2019\u201A\u201B\u2032\u2035]/g, "'").replace(/,\s*}/g, "}").replace(/,\s*]/g, "]");
+  try {
+    return JSON.parse(cleaned);
+  } catch (e1) {
+    try {
+      const relaxed = cleaned.replace(/([{,]\s*)([a-zA-Z0-9_]+)\s*:/g, '$1"$2":').replace(/,\s*}/g, "}").replace(/,\s*]/g, "]");
+      return JSON.parse(relaxed);
+    } catch (e2) {
+      return null;
+    }
+  }
+}
+function routeIntent(userMessage, chatHistory, orchestratorConfig) {
+  const lowerMsg = userMessage.toLowerCase().trim();
+  const recentHistory = (chatHistory || []).slice(-6).map((h) => h.content).join(" ").toLowerCase();
+  const context = `${recentHistory} ${lowerMsg}`;
+  const subagents = orchestratorConfig?.subagents || defaultOrchestratorConfig.subagents;
+  const isHandoff = /humano|asesor|persona|agente|hablar con alguien|queja|reclamo|urgente|hablar con un asesor/i.test(lowerMsg);
+  if (isHandoff) {
+    return subagents.handoff?.enabled !== false ? "handoff" : "general";
+  }
+  const isCourts = /cancha|canchas|partido|futbol|fútbol|padel|pádel|mejenga|gramilla|reservar cancha|alquiler cancha|crt-|#res-/i.test(context);
+  if (isCourts) {
+    return subagents.courts?.enabled !== false ? "courts" : "general";
+  }
+  const isSales = /precio|costo|cuanto|venden|catalogo|catálogo|menu|menú|producto|productos|comprar|pedir|orden|foto|imagen|plato|comida|pizza|hamburguesa|variante|talla|sabor|llevar|delivery|envio|envío|agregar al carrito|confirmo/i.test(context);
+  const isBooking = /servicio|servicios|cita|citas|agenda|agendar|turno|atencion|atención|doctor|especialista|cancelar cita|reagendar|disponibilidad de horario|horario de cita/i.test(context);
+  if (isSales && !isBooking) {
+    return subagents.sales?.enabled !== false ? "sales" : "general";
+  }
+  if (isBooking && !isSales) {
+    return subagents.booking?.enabled !== false ? "booking" : "general";
+  }
+  if (isSales) {
+    return subagents.sales?.enabled !== false ? "sales" : "general";
+  }
+  if (isBooking) {
+    return subagents.booking?.enabled !== false ? "booking" : "general";
+  }
+  return "general";
+}
+async function processWithOrchestrator(tenantId, userMessage, senderPhone, senderName, chatHistory) {
   const tenant = await getTenantById(tenantId);
   const agentConfig = await getAgentConfig(tenantId);
+  const orchConfig = agentConfig?.orchestratorConfig || defaultOrchestratorConfig;
+  const routedAgentId = routeIntent(userMessage, chatHistory, orchConfig);
+  const currentSubagent = orchConfig.subagents[routedAgentId] || defaultOrchestratorConfig.subagents[routedAgentId];
+  const routedAgentName = currentSubagent?.name || "Agente Betico";
+  const store = await getStoreSettings(tenantId);
+  const schedule = await getScheduleSettings(tenantId);
+  const cleanPhone = senderPhone.replace(/\D/g, "");
+  const baseUrl = process.env.APP_URL || "https://betico.tech";
+  const bookingUrl = tenant?.slug ? `${baseUrl}/reservas/${tenant.slug}` : "";
+  const storeUrl = tenant?.slug ? `${baseUrl}/tienda/${tenant.slug}` : "";
+  const now = /* @__PURE__ */ new Date();
+  const crTime = new Intl.DateTimeFormat("es-CR", {
+    timeZone: "America/Costa_Rica",
+    dateStyle: "full",
+    timeStyle: "medium"
+  }).format(now);
+  const sourcesUsed = [];
+  let specializedPrompt = "";
+  let allowedActions = currentSubagent?.actions || [];
+  switch (routedAgentId) {
+    case "sales": {
+      sourcesUsed.push("products", "payments", "storeSettings");
+      const products = await getProductsByTenant(tenantId, true);
+      const activeProducts = products.filter((p) => p.active !== false);
+      const lowerContext = `${(chatHistory || []).slice(-4).map((h) => h.content).join(" ")} ${userMessage}`.toLowerCase();
+      let matchedProducts = activeProducts.filter((p) => {
+        const pName = p.name.toLowerCase();
+        const pCat = (p.category || "").toLowerCase();
+        const pDesc = (p.description || "").toLowerCase();
+        return lowerContext.includes(pName) || pCat && lowerContext.includes(pCat) || pDesc && pDesc.split(" ").some((w) => w.length > 3 && lowerContext.includes(w));
+      });
+      if (matchedProducts.length === 0) {
+        matchedProducts = activeProducts.slice(0, 6);
+      }
+      let catalogText = "\u{1F6CD}\uFE0F Cat\xE1logo de Productos y Precios:\n" + matchedProducts.map((p) => {
+        let line = `\u2022 *${p.name}* [${p.category || "General"}]: \u20A1${Number(p.price || 0).toLocaleString("es-CR")}`;
+        if (p.compareAtPrice && Number(p.compareAtPrice) > Number(p.price)) {
+          line += ` (Antes: \u20A1${Number(p.compareAtPrice).toLocaleString("es-CR")})`;
+        }
+        line += ` | Stock: ${p.stock ?? "disponible"}`;
+        if (p.description) line += `
+  Descripci\xF3n: ${p.description.slice(0, 120)}`;
+        if (p.variants && p.variants.length > 0) {
+          const varStr = p.variants.map((v) => `${v.name}${v.priceOverride ? ` (\u20A1${Number(v.priceOverride).toLocaleString("es-CR")})` : ""}`).join(", ");
+          line += `
+  Variantes: ${varStr}`;
+        }
+        if (p.customVariables && p.customVariables.length > 0) {
+          const optStr = p.customVariables.map((cv) => `${cv.name}: [${(cv.options || []).map((o) => o.name).join(", ")}]`).join(" | ");
+          line += `
+  Opciones/Extras: ${optStr}`;
+        }
+        if (p.images && p.images.length > 0) {
+          const pUrl = p.images[0].url.startsWith("http") ? p.images[0].url : `${baseUrl}${p.images[0].url}`;
+          line += `
+  Foto oficial: ${pUrl}`;
+        }
+        return line;
+      }).join("\n\n");
+      let paymentText = "";
+      const pMethods = [];
+      if (store?.acceptSinpe && store.sinpePhone) pMethods.push(`SINPE M\xF3vil al ${store.sinpePhone} (${store.sinpeName || tenant?.name})`);
+      if (store?.acceptTransfer && store.bankAccountInfo) pMethods.push(`Transferencia: ${store.bankAccountInfo}`);
+      if (store?.acceptCashOnDelivery) pMethods.push("Efectivo contra entrega");
+      if (store?.deliveryEnabled) pMethods.push(`Env\xEDo a domicilio disponible (\u20A1${Number(store.deliveryFee || 0).toLocaleString("es-CR")})`);
+      if (pMethods.length > 0) paymentText = "\u{1F4B3} M\xE9todos de Pago: " + pMethods.join(" | ") + "\n";
+      specializedPrompt = `
+ROL: Eres el Asesor Especialista de Ventas y Cat\xE1logo de *${tenant?.name || "nuestro negocio"}*.
+${currentSubagent.prompt}
+
+INFORMACI\xD3N ACTUALIZADA:
+Fecha/Hora CR: ${crTime}
+${storeUrl ? `Tienda Online: ${storeUrl}
+` : ""}
+${paymentText}
+${catalogText}
+
+REGLAS DE VENTA:
+1. Responde con calidez tica (*pura vida*, con gusto, claro que s\xED).
+2. Si el producto tiene variantes (sabores, tallas) o extras, preg\xFAntale cu\xE1l prefiere.
+3. Lleva la cuenta sumada de todos los productos solicitados a lo largo de la conversaci\xF3n con el monto total acumulado.
+4. Consulta si la entrega es para Env\xEDo a Domicilio (solicita direcci\xF3n) o Retiro en Local, y el m\xE9todo de pago.
+5. Cuando el cliente confirme la compra expl\xEDcitamente ("s\xED confirmo", "listo", "procedamos"), emite al final:
+<<<COMMAND_ORDER: {"items":[{"productName":"Nombre Exacto","variantName":"opcional","quantity":1}], "deliveryMethod":"delivery"|"pickup", "deliveryAddress":"direcci\xF3n si aplica", "customerName":"${senderName}"}>>>
+6. Si el cliente solicita fotos del producto y hay foto disponible, puedes emitir:
+<<<COMMAND_SEND_MEDIA: {"mediaUrl":"URL","caption":"descripci\xF3n"}>>>
+`.trim();
+      break;
+    }
+    case "booking": {
+      sourcesUsed.push("services", "specialists", "busySlots", "schedule");
+      const services = await getServicesByTenant(tenantId);
+      const activeServices = (services || []).filter((s) => s.active !== false);
+      let servicesText = "\u{1F697}/\u{1F4BC} Servicios Disponibles:\n" + activeServices.map(
+        (s) => `\u2022 ${s.name}: \u20A1${Number(s.price || 0).toLocaleString("es-CR")} (${s.duration || `${s.estimatedMinutes || 45} min`})`
+      ).join("\n") + "\n";
+      let busySlotsText = "";
+      try {
+        const todayStr = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+        const busyRes = await query(`
+          SELECT date, time, service
+          FROM appointments
+          WHERE tenant_id = $1 AND date >= $2::date AND status NOT IN ('cancelled', 'cancelado')
+          ORDER BY date ASC, time ASC
+          LIMIT 30
+        `, [tenantId, todayStr]);
+        if (busyRes.rows.length > 0) {
+          const grouped = {};
+          busyRes.rows.forEach((r) => {
+            const d = r.date;
+            if (!grouped[d]) grouped[d] = [];
+            grouped[d].push(r.time);
+          });
+          busySlotsText = "\u{1F6AB} HORARIOS YA OCUPADOS (PROHIBIDO OFRECERLOS):\n" + Object.entries(grouped).map(([d, times]) => `  \u2022 ${d}: ${times.join(", ")} (OCUPADO)`).join("\n") + "\n";
+        }
+      } catch (e) {
+      }
+      let specialistsText = "";
+      try {
+        const specialists = await getSpecialistsByTenant(tenantId);
+        const activeSpecs = (specialists || []).filter((s) => s.active !== false);
+        if (activeSpecs.length > 0) {
+          specialistsText = "\u{1F465} Profesionales / Equipo: " + activeSpecs.map((s) => `${s.name}${s.specialty ? ` (${s.specialty})` : ""}`).join(", ") + "\n";
+        }
+      } catch (e) {
+      }
+      let customerRecord = null;
+      try {
+        customerRecord = await getRecordByPhone(senderPhone, tenantId);
+      } catch (e) {
+      }
+      let scheduleText = "";
+      if (schedule?.jornadaConfig) {
+        const j = schedule.jornadaConfig;
+        scheduleText = `\u23F0 Horario de Atenci\xF3n: ${j.startHour || "08:00"} a ${j.endHour || "17:00"} (${j.slotMinutes || 45}m por turno)
+`;
+      }
+      specializedPrompt = `
+ROL: Eres el Asesor Especialista de Citas y Servicios de *${tenant?.name || "nuestro negocio"}*.
+${currentSubagent.prompt}
+
+INFORMACI\xD3N ACTUALIZADA:
+Fecha/Hora CR: ${crTime}
+${bookingUrl ? `Reservas Online: ${bookingUrl}
+` : ""}
+${scheduleText}
+${servicesText}
+${specialistsText}
+${busySlotsText}
+${customerRecord?.fullName ? `Cliente Registrado: ${customerRecord.fullName}
+` : ""}
+
+REGLAS DE AGENDAMIENTO:
+1. Responde con calidez tica (*pura vida*, con mucho gusto).
+2. Pregunta amablemente la fecha y hora preferida, asegur\xE1ndote de que NO coincida con los HORARIOS YA OCUPADOS.
+3. Al acordar la cita completa con el cliente, emite al final:
+<<<COMMAND_BOOKING: {"service":"nombre","date":"YYYY-MM-DD","time":"HH:MM","customerName":"${customerRecord?.fullName || senderName}","recordId":"${customerRecord?.id || ""}","specialistName":"opcional"}>>>
+4. Para reagendar una cita existente confirmada:
+<<<COMMAND_RESCHEDULE_BOOKING: {"newDate":"YYYY-MM-DD","newTime":"HH:MM"}>>>
+5. Para cancelar una cita activa (previa confirmaci\xF3n expl\xEDcita del cliente):
+<<<COMMAND_CANCEL_BOOKING: {"date":"YYYY-MM-DD","service":"opcional","reason":"solicitado por cliente"}>>>
+`.trim();
+      break;
+    }
+    case "courts": {
+      sourcesUsed.push("courts", "schedule");
+      const courts = await getCourtsByTenant(tenantId);
+      const activeCourts = (courts || []).filter((c) => c.active !== false);
+      let courtsText = "\u26BD CANCHAS DISPONIBLES:\n" + activeCourts.map(
+        (c) => `\u2022 *${c.name}* [${c.sportType || "Cancha"}${c.surface ? `, ${c.surface}` : ""}]: \u20A1${Number(c.basePrice || 0).toLocaleString("es-CR")}/hora${c.hasLighting ? " (iluminaci\xF3n incluida)" : ""}`
+      ).join("\n") + "\n";
+      specializedPrompt = `
+ROL: Eres el Asesor Especialista en Reservas de Canchas Deportivas de *${tenant?.name || "nuestro negocio"}*.
+${currentSubagent.prompt}
+
+INFORMACI\xD3N DE CANCHAS:
+Fecha/Hora CR: ${crTime}
+${courtsText}
+
+REGLAS DE CANCHAS:
+1. Ofrece las canchas disponibles con sus precios por hora y modalidad ("full" para cancha completa o "seek_match" si busca rival).
+2. Cuando el cliente confirme la reserva del partido:
+<<<COMMAND_COURT_BOOKING: {"courtName":"nombre cancha", "date":"YYYY-MM-DD", "time":"HH:MM", "bookingMode":"full"|"seek_match", "teamAName":"${senderName}"}>>>
+3. Para reagendar una reserva de cancha, solicita su c\xF3digo (ej. CRT-8F2A1C o #RES-) y emite:
+<<<COMMAND_RESCHEDULE_COURT: {"bookingCode":"c\xF3digo", "newDate":"YYYY-MM-DD", "newTime":"HH:MM", "newCourtName":"opcional"}>>>
+`.trim();
+      break;
+    }
+    case "handoff": {
+      sourcesUsed.push("handoffKeywords");
+      specializedPrompt = `
+ROL: Eres el Asistente de Escalado y Atenci\xF3n de Emergencia de *${tenant?.name || "nuestro negocio"}*.
+${currentSubagent.prompt}
+
+El cliente ha solicitado comunicarse con un asesor humano o presenta una duda/reclamo urgente.
+Responde de forma muy educada, emp\xE1tica y cordial, asegur\xE1ndole que en este momento un asesor de nuestro equipo tomar\xE1 el control del chat para atenderle personalmente.
+Emite al final:
+<<<COMMAND_HANDOFF: {"reason":"Solicitado por cliente"}>>>
+`.trim();
+      break;
+    }
+    case "general":
+    default: {
+      sourcesUsed.push("businessInfo", "schedule", "payments");
+      let scheduleText = "";
+      if (schedule?.jornadaConfig) {
+        const j = schedule.jornadaConfig;
+        scheduleText = `\u23F0 Horario: ${j.startHour || "08:00"} a ${j.endHour || "17:00"}
+`;
+      }
+      let paymentSummary = "";
+      const pArr = [];
+      if (store?.acceptSinpe && store.sinpePhone) pArr.push(`SINPE M\xF3vil (${store.sinpePhone})`);
+      if (store?.acceptTransfer) pArr.push("Transferencia");
+      if (store?.acceptCashOnDelivery) pArr.push("Efectivo");
+      if (pArr.length > 0) paymentSummary = "\u{1F4B3} Pagos: " + pArr.join(", ") + "\n";
+      specializedPrompt = `
+ROL: Eres el Asistente Virtual Principal de *${tenant?.name || "nuestro negocio"}* en WhatsApp.
+${currentSubagent?.prompt || "Atiende cordialmente al cliente con calidez costarricense."}
+
+Fecha/Hora CR: ${crTime}
+${bookingUrl ? `Reservas Web: ${bookingUrl}
+` : ""}
+${storeUrl ? `Tienda Web: ${storeUrl}
+` : ""}
+${scheduleText}${paymentSummary}
+
+REGLAS GENERALES:
+1. Responde amablemente con lenguaje tico (*pura vida*, con gusto, bienvenido).
+2. Si el cliente pregunta qu\xE9 ofrecen, menciona de forma concisa si manejan productos, citas o canchas e inv\xEDtale a consultar.
+3. No inventes precios ni promociones que no figuren en la informaci\xF3n oficial.
+`.trim();
+      break;
+    }
+  }
+  const isConversationOngoing = chatHistory && chatHistory.length > 0;
+  const antiGreetingInstruction = isConversationOngoing ? `\u26A0\uFE0F CONVERSACI\xD3N EN CURSO: El cliente ya est\xE1 interactuando contigo. NO vuelvas a saludar ("Hola", "Buenas"). Responde directo al grano con entusiasmo.` : `Saluda cordialmente present\xE1ndote como asistente de *${tenant?.name || "nuestro negocio"}*.`;
+  const finalSystemPrompt = `${specializedPrompt}
+
+${antiGreetingInstruction}`;
+  const structuredMessages = [];
+  if (chatHistory && chatHistory.length > 0) {
+    const recent = chatHistory.slice(-8);
+    for (const h of recent) {
+      structuredMessages.push({ role: h.role, content: h.content });
+    }
+  }
+  structuredMessages.push({ role: "user", content: userMessage });
+  let config;
+  const temperature = currentSubagent?.temperature ?? 0.3;
+  let isBeticoPlatformAI = false;
+  if (tenant?.aiApiKeyEncrypted) {
+    try {
+      const apiKey = decrypt(tenant.aiApiKeyEncrypted);
+      config = {
+        provider: tenant.aiProvider || "gemini",
+        apiKey,
+        model: tenant.aiModel || agentConfig?.model || "gemini-2.5-flash",
+        temperature
+      };
+    } catch (e) {
+      config = { provider: "betico_ai", apiKey: "ollama", model: "betico-ai", temperature };
+      isBeticoPlatformAI = true;
+    }
+  } else {
+    isBeticoPlatformAI = true;
+    const masterConfig = await getMasterAIConfig();
+    const isLocalOllama = masterConfig.provider === "betico_ai" || masterConfig.provider === "ollama";
+    const virtualModel = tenant && isLocalOllama ? getTenantModelName(tenant) : masterConfig.model;
+    config = {
+      provider: masterConfig.provider,
+      apiKey: masterConfig.apiKey,
+      model: virtualModel,
+      temperature,
+      baseUrl: masterConfig.baseUrl
+    };
+  }
+  const aiResult = await callAI(config, {
+    system: finalSystemPrompt,
+    messages: structuredMessages
+  });
+  if (isBeticoPlatformAI && aiResult.tokensUsed > 0) {
+    await incrementTenantUsage(tenantId, aiResult.tokensUsed);
+  }
+  const rawReply = aiResult.text || "";
+  let isBookingDetected = false;
+  let bookingData;
+  let isCourtBookingDetected = false;
+  let courtBookingData;
+  let isOrderDetected = false;
+  let orderData;
+  let isHandoffRequested = false;
+  let handoffReason;
+  let isMediaDetected = false;
+  let mediaData;
+  let isCancelBookingDetected = false;
+  let cancelBookingData;
+  let isRescheduleBookingDetected = false;
+  let rescheduleBookingData;
+  let isRescheduleCourtDetected = false;
+  let rescheduleCourtData;
+  const bookingMatch = rawReply.match(/<<<COMMAND_BOOKING:\s*({.*?})>>>/s);
+  if (bookingMatch && bookingMatch[1] && allowedActions.includes("booking")) {
+    const parsed = safeParseJSON(bookingMatch[1]);
+    if (parsed && (parsed.service || parsed.serviceName) && (parsed.date || parsed.time)) {
+      isBookingDetected = true;
+      bookingData = parsed;
+    }
+  }
+  const courtMatch = rawReply.match(/<<<COMMAND_COURT_BOOKING:\s*({.*?})>>>/s);
+  if (courtMatch && courtMatch[1] && allowedActions.includes("courtBooking")) {
+    const parsed = safeParseJSON(courtMatch[1]);
+    if (parsed && (parsed.courtName || parsed.courtId) && (parsed.date || parsed.time)) {
+      isCourtBookingDetected = true;
+      courtBookingData = parsed;
+    }
+  }
+  const courtReschedMatch = rawReply.match(/<<<COMMAND_RESCHEDULE_COURT:\s*({.*?})>>>/s);
+  if (courtReschedMatch && courtReschedMatch[1] && allowedActions.includes("courtReschedule")) {
+    const parsed = safeParseJSON(courtReschedMatch[1]);
+    if (parsed && (parsed.bookingCode || parsed.code)) {
+      isRescheduleCourtDetected = true;
+      rescheduleCourtData = parsed;
+    }
+  }
+  const orderMatch = rawReply.match(/<<<COMMAND_ORDER:\s*({.*?})>>>/s);
+  if (orderMatch && orderMatch[1] && allowedActions.includes("order")) {
+    const parsed = safeParseJSON(orderMatch[1]);
+    if (parsed && Array.isArray(parsed.items) && parsed.items.length > 0) {
+      isOrderDetected = true;
+      orderData = parsed;
+    }
+  }
+  const mediaMatch = rawReply.match(/<<<COMMAND_SEND_MEDIA:\s*({.*?})>>>/s);
+  if (mediaMatch && mediaMatch[1] && allowedActions.includes("media")) {
+    const parsed = safeParseJSON(mediaMatch[1]);
+    if (parsed && parsed.mediaUrl) {
+      isMediaDetected = true;
+      mediaData = parsed;
+    }
+  }
+  const handoffMatch = rawReply.match(/<<<COMMAND_HANDOFF:\s*({.*?})>>>/s);
+  if (handoffMatch && handoffMatch[1] && allowedActions.includes("handoff")) {
+    const parsed = safeParseJSON(handoffMatch[1]);
+    isHandoffRequested = true;
+    handoffReason = parsed?.reason || "Solicitado por cliente";
+  }
+  const reschedMatch = rawReply.match(/<<<COMMAND_RESCHEDULE_BOOKING:\s*({.*?})>>>/s);
+  if (reschedMatch && reschedMatch[1] && allowedActions.includes("reschedule")) {
+    const parsed = safeParseJSON(reschedMatch[1]);
+    if (parsed && (parsed.newDate || parsed.newTime)) {
+      isRescheduleBookingDetected = true;
+      rescheduleBookingData = parsed;
+    }
+  }
+  const cancelMatch = rawReply.match(/<<<COMMAND_CANCEL_BOOKING:\s*({.*?})>>>/s);
+  if (cancelMatch && cancelMatch[1] && allowedActions.includes("cancel")) {
+    const parsed = safeParseJSON(cancelMatch[1]);
+    if (parsed) {
+      isCancelBookingDetected = true;
+      cancelBookingData = parsed;
+    }
+  }
+  let cleanReply = rawReply.replace(/<<<COMMAND_.*?>>>/gs, "").trim().replace(/\n{3,}/g, "\n\n").replace(/\*\*(.*?)\*\*/g, "*$1*");
+  return {
+    replyText: cleanReply,
+    isBookingDetected,
+    bookingData,
+    isCourtBookingDetected,
+    courtBookingData,
+    isOrderDetected,
+    orderData,
+    isHandoffRequested,
+    handoffReason,
+    isMediaDetected,
+    mediaData,
+    isCancelBookingDetected,
+    cancelBookingData,
+    isRescheduleBookingDetected,
+    rescheduleBookingData,
+    isRescheduleCourtDetected,
+    rescheduleCourtData,
+    tokensUsed: aiResult.tokensUsed,
+    routedAgentId,
+    routedAgentName,
+    sourcesUsed
+  };
+}
+
+// src/server/services/agent.ts
+async function processWhatsAppMessageWithAI(tenantId, userMessage, senderPhone, senderName, chatHistory) {
+  const agentConfig = await getAgentConfig(tenantId);
+  if (agentConfig?.orchestratorConfig?.enabled !== false) {
+    try {
+      return await processWithOrchestrator(tenantId, userMessage, senderPhone, senderName, chatHistory);
+    } catch (orchErr) {
+      console.error("[Agent] Orchestrator error, falling back to legacy prompt:", orchErr);
+    }
+  }
+  const tenant = await getTenantById(tenantId);
   const services = await getServicesByTenant(tenantId);
   const products = await getProductsByTenant(tenantId, true);
   const store = await getStoreSettings(tenantId);
@@ -7900,7 +8397,7 @@ Asistente:`;
   const mediaRegex = /<<<COMMAND_SEND_MEDIA:\s*({.*?})>>>/s;
   const cancelRegex = /<<<COMMAND_CANCEL_BOOKING:\s*({.*?})>>>/s;
   const rescheduleRegex = /<<<COMMAND_RESCHEDULE_BOOKING:\s*({.*?})>>>/s;
-  function safeParseJSON(rawStr) {
+  function safeParseJSON2(rawStr) {
     if (!rawStr || typeof rawStr !== "string") return null;
     let cleaned = rawStr.trim();
     cleaned = cleaned.replace(/[\u201C\u201D\u201E\u201F\u2033\u2036]/g, '"').replace(/[\u2018\u2019\u201A\u201B\u2032\u2035]/g, "'").replace(/,\s*}/g, "}").replace(/,\s*]/g, "]");
@@ -7917,7 +8414,7 @@ Asistente:`;
   }
   const bookingMatch = replyText.match(bookingRegex);
   if (bookingMatch && bookingMatch[1]) {
-    const parsed = safeParseJSON(bookingMatch[1]);
+    const parsed = safeParseJSON2(bookingMatch[1]);
     if (parsed && parsed.service && (parsed.date || parsed.time)) {
       if (customerRecord?.id && !parsed.recordId) {
         parsed.recordId = customerRecord.id;
@@ -7931,7 +8428,7 @@ Asistente:`;
   }
   const courtMatch = replyText.match(courtBookingRegex);
   if (courtMatch && courtMatch[1]) {
-    const parsed = safeParseJSON(courtMatch[1]);
+    const parsed = safeParseJSON2(courtMatch[1]);
     if (parsed && (parsed.courtName || parsed.courtId) && (parsed.date || parsed.time)) {
       isCourtBookingDetected = true;
       courtBookingData = parsed;
@@ -7939,7 +8436,7 @@ Asistente:`;
   }
   const cancelMatch = replyText.match(cancelRegex);
   if (cancelMatch && cancelMatch[1]) {
-    const parsed = safeParseJSON(cancelMatch[1]);
+    const parsed = safeParseJSON2(cancelMatch[1]);
     if (parsed) {
       isCancelBookingDetected = true;
       cancelBookingData = parsed;
@@ -7947,7 +8444,7 @@ Asistente:`;
   }
   const rescheduleMatch = replyText.match(rescheduleRegex);
   if (rescheduleMatch && rescheduleMatch[1]) {
-    const parsed = safeParseJSON(rescheduleMatch[1]);
+    const parsed = safeParseJSON2(rescheduleMatch[1]);
     if (parsed && (parsed.newDate || parsed.newTime)) {
       isRescheduleBookingDetected = true;
       rescheduleBookingData = parsed;
@@ -7955,7 +8452,7 @@ Asistente:`;
   }
   const courtRescheduleMatch = replyText.match(courtRescheduleRegex);
   if (courtRescheduleMatch && courtRescheduleMatch[1]) {
-    const parsed = safeParseJSON(courtRescheduleMatch[1]);
+    const parsed = safeParseJSON2(courtRescheduleMatch[1]);
     if (parsed && (parsed.bookingCode || parsed.code) && (parsed.newDate || parsed.newTime)) {
       isRescheduleCourtDetected = true;
       rescheduleCourtData = parsed;
@@ -7963,7 +8460,7 @@ Asistente:`;
   }
   const orderMatch = replyText.match(orderRegex);
   if (orderMatch && orderMatch[1]) {
-    const parsed = safeParseJSON(orderMatch[1]);
+    const parsed = safeParseJSON2(orderMatch[1]);
     if (parsed && Array.isArray(parsed.items) && parsed.items.length > 0) {
       const validItems = parsed.items.filter((it) => it.productName && it.productName.trim().length > 0);
       if (validItems.length > 0) {
@@ -7975,12 +8472,12 @@ Asistente:`;
   const handoffMatch = replyText.match(handoffRegex);
   if (handoffMatch && handoffMatch[1]) {
     isHandoffRequested = true;
-    const parsed = safeParseJSON(handoffMatch[1]);
+    const parsed = safeParseJSON2(handoffMatch[1]);
     if (parsed?.reason) handoffReason = parsed.reason;
   }
   const mediaMatch = replyText.match(mediaRegex);
   if (mediaMatch && mediaMatch[1]) {
-    const parsed = safeParseJSON(mediaMatch[1]);
+    const parsed = safeParseJSON2(mediaMatch[1]);
     if (parsed && (parsed.mediaUrl || parsed.url)) {
       isMediaDetected = true;
       mediaData = { mediaUrl: parsed.mediaUrl || parsed.url, caption: parsed.caption };
@@ -11641,11 +12138,34 @@ router7.get("/prompt", async (req, res) => {
   try {
     const config = await getAgentConfig(req.tenantId);
     const tenant = await getTenantById(req.tenantId);
+    let dataSourcesSummary = {
+      productsCount: 0,
+      servicesCount: 0,
+      courtsCount: 0,
+      specialistsCount: 0
+    };
+    try {
+      const [products, services, courts, specialists] = await Promise.all([
+        getProductsByTenant(req.tenantId, true).catch(() => []),
+        getServicesByTenant(req.tenantId).catch(() => []),
+        getCourtsByTenant(req.tenantId).catch(() => []),
+        getSpecialistsByTenant(req.tenantId).catch(() => [])
+      ]);
+      dataSourcesSummary = {
+        productsCount: (products || []).filter((p) => p.active !== false).length,
+        servicesCount: (services || []).filter((s) => s.active !== false).length,
+        courtsCount: (courts || []).filter((c) => c.active !== false).length,
+        specialistsCount: (specialists || []).filter((s) => s.active !== false).length
+      };
+    } catch (e) {
+      console.warn("[AgentRoute] Error fetching data source summary:", e);
+    }
     res.json({
       ...config,
       provider: tenant?.aiProvider || config?.provider || "betico_ai",
       model: tenant?.aiModel || config?.model || "betico-ai",
-      isUsingOwnKey: !!tenant?.aiApiKeyEncrypted
+      isUsingOwnKey: !!tenant?.aiApiKeyEncrypted,
+      dataSourcesSummary
     });
   } catch (error) {
     console.error(error);

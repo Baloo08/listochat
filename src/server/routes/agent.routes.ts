@@ -12,15 +12,46 @@ import { encrypt } from '../services/encryption.js';
 import { query } from '../db/pool.js';
 import { debounceSyncTenantModel } from '../services/tenant-model.service.js';
 
+import { getProductsByTenant } from '../db/products.repo.js';
+import { getServicesByTenant } from '../db/services.repo.js';
+import { getCourtsByTenant } from '../db/courts.repo.js';
+import { getSpecialistsByTenant } from '../db/specialists.repo.js';
+
 router.get('/prompt', async (req, res) => {
   try {
     const config = await getAgentConfig(req.tenantId);
     const tenant = await getTenantById(req.tenantId);
+
+    // Fetch counts for live visual node data badges
+    let dataSourcesSummary = {
+      productsCount: 0,
+      servicesCount: 0,
+      courtsCount: 0,
+      specialistsCount: 0
+    };
+    try {
+      const [products, services, courts, specialists] = await Promise.all([
+        getProductsByTenant(req.tenantId, true).catch(() => []),
+        getServicesByTenant(req.tenantId).catch(() => []),
+        getCourtsByTenant(req.tenantId).catch(() => []),
+        getSpecialistsByTenant(req.tenantId).catch(() => [])
+      ]);
+      dataSourcesSummary = {
+        productsCount: (products || []).filter((p: any) => p.active !== false).length,
+        servicesCount: (services || []).filter((s: any) => s.active !== false).length,
+        courtsCount: (courts || []).filter((c: any) => c.active !== false).length,
+        specialistsCount: (specialists || []).filter((s: any) => s.active !== false).length
+      };
+    } catch (e) {
+      console.warn('[AgentRoute] Error fetching data source summary:', e);
+    }
+
     res.json({
       ...config,
       provider: tenant?.aiProvider || config?.provider || 'betico_ai',
       model: tenant?.aiModel || config?.model || 'betico-ai',
-      isUsingOwnKey: !!tenant?.aiApiKeyEncrypted
+      isUsingOwnKey: !!tenant?.aiApiKeyEncrypted,
+      dataSourcesSummary
     });
   } catch (error) {
     console.error(error);

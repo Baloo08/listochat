@@ -3,6 +3,52 @@ import { AgentPromptConfig } from '../../shared/types.js';
 
 const defaultSystemPrompt = `You are an AI assistant. Help customers politely and concisely.`;
 
+export const defaultOrchestratorConfig: OrchestratorConfig = {
+  enabled: true,
+  subagents: {
+    sales: {
+      id: 'sales',
+      name: 'Ventas & Menú',
+      enabled: true,
+      prompt: 'Eres el especialista en ventas y catálogo. Asesora activamente con amabilidad y calidez costarricense (*pura vida*, con gusto). Destaca beneficios, presenta variantes (tallas, sabores, presentaciones) y extras/aderezos. Lleva la cuenta sumada del carrito con subtotales y total. Consulta si es para Envío a Domicilio o Retiro en Local y el método de pago.',
+      sources: ['products', 'payments', 'delivery'],
+      actions: ['order', 'media']
+    },
+    booking: {
+      id: 'booking',
+      name: 'Citas & Agenda',
+      enabled: true,
+      prompt: 'Eres el especialista de agenda y servicios. Ofrece los servicios disponibles con su duración y precios fijos. Verifica que la fecha y hora NO choquen con horarios ocupados. Sé puntual, cordial y confirma los datos del cliente antes de agendar.',
+      sources: ['services', 'specialists', 'busySlots', 'customerRecord'],
+      actions: ['booking', 'reschedule', 'cancel']
+    },
+    courts: {
+      id: 'courts',
+      name: 'Canchas Deportivas',
+      enabled: true,
+      prompt: 'Eres el especialista en reservas de canchas y partidos deportivos. Brinda información sobre canchas disponibles, superficies, precios por hora e iluminación. Para reagendar, solicita el código CRT-XXXXXX o #RES- y valida disponibilidad.',
+      sources: ['courts', 'schedules'],
+      actions: ['courtBooking', 'courtReschedule']
+    },
+    handoff: {
+      id: 'handoff',
+      name: 'Escalado Humano',
+      enabled: true,
+      prompt: 'Detecta solicitudes de hablar con una persona, asesor o quejas y reclamos urgentes. Responde con empatía y comunica que un asesor humano atenderá el caso de inmediato.',
+      sources: ['keywords'],
+      actions: ['handoff']
+    },
+    general: {
+      id: 'general',
+      name: 'Identidad & FAQ',
+      enabled: true,
+      prompt: 'Eres el anfitrión principal del negocio en WhatsApp. Brinda bienvenida cordial, responde dudas sobre horarios, ubicación, métodos de pago y canaliza adecuadamente al cliente con calidez costarricense.',
+      sources: ['businessInfo', 'schedules', 'payments'],
+      actions: []
+    }
+  }
+};
+
 export async function getAgentConfig(tenantId: string): Promise<AgentPromptConfig> {
   const result = await query(`
     SELECT id, tenant_id as "tenantId", config_json as "configJson", updated_at as "updatedAt"
@@ -20,7 +66,8 @@ export async function getAgentConfig(tenantId: string): Promise<AgentPromptConfi
       humanHandoffEnabled: true,
       handoffKeywords: ['humano', 'asesor', 'persona', 'agente', 'hablar con alguien', 'queja', 'reclamo', 'urgente'],
       showBookingLink: true,
-      showStoreLink: true
+      showStoreLink: true,
+      orchestratorConfig: defaultOrchestratorConfig
     };
   }
 
@@ -41,6 +88,7 @@ export async function getAgentConfig(tenantId: string): Promise<AgentPromptConfi
     handoffNotifyPhone: data.handoffNotifyPhone || data.notifyNumber,
     showBookingLink: data.showBookingLink ?? true,
     showStoreLink: data.showStoreLink ?? true,
+    orchestratorConfig: data.orchestratorConfig || defaultOrchestratorConfig,
     updatedAt: result.rows[0].updatedAt
   };
 }
@@ -59,7 +107,8 @@ export async function saveAgentConfig(tenantId: string, config: Partial<AgentPro
     handoffKeywords: config.handoffKeywords,
     handoffNotifyPhone: config.handoffNotifyPhone,
     showBookingLink: config.showBookingLink,
-    showStoreLink: config.showStoreLink
+    showStoreLink: config.showStoreLink,
+    orchestratorConfig: config.orchestratorConfig
   };
 
   const result = await query(`
@@ -86,6 +135,7 @@ export async function saveAgentConfig(tenantId: string, config: Partial<AgentPro
     handoffNotifyPhone: data.handoffNotifyPhone,
     showBookingLink: data.showBookingLink ?? true,
     showStoreLink: data.showStoreLink ?? true,
+    orchestratorConfig: data.orchestratorConfig || defaultOrchestratorConfig,
     updatedAt: result.rows[0].updatedAt
   };
 }

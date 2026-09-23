@@ -34,6 +34,8 @@ export interface AgentProcessResult {
   tokensUsed?: number;
 }
 
+import { processWithOrchestrator } from './agent-orchestrator.js';
+
 export async function processWhatsAppMessageWithAI(
   tenantId: string,
   userMessage: string,
@@ -41,8 +43,16 @@ export async function processWhatsAppMessageWithAI(
   senderName: string,
   chatHistory: { role: 'user' | 'assistant', content: string }[]
 ): Promise<AgentProcessResult> {
-  const tenant = await getTenantById(tenantId);
   const agentConfig: any = await getAgentConfig(tenantId);
+  if (agentConfig?.orchestratorConfig?.enabled !== false) {
+    try {
+      return await processWithOrchestrator(tenantId, userMessage, senderPhone, senderName, chatHistory);
+    } catch (orchErr) {
+      console.error('[Agent] Orchestrator error, falling back to legacy prompt:', orchErr);
+    }
+  }
+
+  const tenant = await getTenantById(tenantId);
   const services: any[] = await getServicesByTenant(tenantId);
   const products: any[] = await getProductsByTenant(tenantId, true);
   const store = await getStoreSettings(tenantId);
