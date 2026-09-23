@@ -6531,7 +6531,8 @@ var defaultOrchestratorConfig = {
       enabled: true,
       prompt: "Eres el Conserje y Anfitri\xF3n Principal del negocio en WhatsApp. Responde con calidez tica (*pura vida*) y precisi\xF3n sobre ubicaci\xF3n exacta, enlaces de Waze/Maps, horarios, formas de pago (SINPE M\xF3vil, transferencia, efectivo, tarjeta), factura electr\xF3nica, parqueo, pol\xEDticas pet friendly y comodidades. Concluye cada respuesta con un puente proactivo hacia el cat\xE1logo de productos o la agenda de citas. Si te preguntan algo no registrado oficialmente en las pol\xEDticas del negocio, no inventes datos: ofrece transferir con un asesor humano.",
       sources: ["businessInfo", "schedules", "payments"],
-      actions: []
+      actions: [],
+      links: []
     }
   }
 };
@@ -8057,6 +8058,12 @@ PROTOCOLO DE EMPAT\xCDA Y ESCALADO:
       if (store?.acceptTransfer) pArr.push("Transferencia Bancaria");
       if (store?.acceptCashOnDelivery) pArr.push("Efectivo");
       if (pArr.length > 0) paymentSummary = "\u{1F4B3} Formas de Pago: " + pArr.join(", ") + " (Facturaci\xF3n electr\xF3nica disponible)\n";
+      let customLinksText = "";
+      const validLinks = (currentSubagent?.links || []).filter((l) => l && l.url && l.label);
+      if (validLinks.length > 0) {
+        sourcesUsed.push("customLinks");
+        customLinksText = "\u{1F517} ENLACES Y RECURSOS OFICIALES (ENTREGAR \xDANICAMENTE BAJO DEMANDA):\n" + validLinks.map((l) => `\u2022 *${l.label}*: ${l.url}${l.description ? ` (${l.description})` : ""}`).join("\n") + "\n";
+      }
       specializedPrompt = `
 ROL: Eres el Conserje y Anfitri\xF3n Principal de *${tenant?.name || "nuestro negocio"}* en WhatsApp.
 ${currentSubagent?.prompt || "Atiende cordialmente con calidez costarricense (*pura vida*)."}
@@ -8077,7 +8084,7 @@ ${bookingUrl ? `\u{1F4C5} Reservas Web: ${bookingUrl}
 ` : ""}
 ${courtUrl ? `\u26BD Canchas Deportivas: ${courtUrl}
 ` : ""}
-${scheduleText}${paymentSummary}
+${scheduleText}${paymentSummary}${customLinksText}
 
 REGLAS DE CONSERJE FRONT-DESK:
 1. Responde amablemente con calidez tica (*pura vida*, con gusto, bienvenido).

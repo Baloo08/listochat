@@ -3,7 +3,7 @@ import {
   Bot, ShoppingBag, Calendar, Trophy, UserCheck, HelpCircle, 
   Database, Zap, MessageSquare, Sparkles, X, Check, Sliders,
   ZoomIn, ZoomOut, RotateCcw, Maximize2, Minimize2, Move,
-  ArrowDown, Network
+  ArrowDown, Network, Globe, Plus, Trash2
 } from 'lucide-react';
 import { OrchestratorConfig, SubagentConfig, DataSourcesSummary, NodePosition } from '../../shared/types';
 
@@ -832,7 +832,12 @@ export default function AgentFlowCanvas({
             [
               { icon: <Database size={12} color="#94a3b8" />, label: 'Ubicación & Waze', detail: 'Datos Negocio' },
               { icon: <Database size={12} color="#94a3b8" />, label: 'Formas de Pago & Factura', detail: 'SINPE / Electrónica' },
-              { icon: <Database size={12} color="#94a3b8" />, label: 'Políticas & Comodidades', detail: 'Parqueo, Pet Friendly' }
+              { icon: <Database size={12} color="#94a3b8" />, label: 'Políticas & Comodidades', detail: 'Parqueo, Pet Friendly' },
+              ...(subagents.general?.links || []).filter(l => l && l.label).map(l => ({
+                icon: <Globe size={12} color="#38bdf8" />,
+                label: l.label,
+                detail: l.url ? (l.url.replace(/^https?:\/\//i, '').slice(0, 16) + (l.url.length > 18 ? '...' : '')) : 'Enlace'
+              }))
             ],
             [
               { name: 'RESPUESTA_DIRECTA', label: 'Conversación natural WhatsApp' },
@@ -1123,6 +1128,120 @@ export default function AgentFlowCanvas({
                     );
                   })}
                 </div>
+              </div>
+
+              {/* Custom Links & Web Resources (Fuentes RAG de FAQ) */}
+              <div style={{
+                backgroundColor: '#0b1324',
+                border: '1.5px solid #1e3a5f',
+                borderRadius: '12px',
+                padding: '16px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                  <div>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.88rem', fontWeight: '700', color: '#38bdf8' }}>
+                      <Globe size={16} /> Enlaces & Recursos Web Oficiales (Fuentes RAG)
+                    </label>
+                    <span style={{ fontSize: '0.74rem', color: '#94a3b8' }}>
+                      Añade links oficiales (Menú PDF, Google Drive, Políticas, etc.). Se sumarán a las fuentes RAG y el bot los entregará bajo demanda en WhatsApp.
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const currentLinks = currentModalAgent.links || [];
+                      const updated = [...currentLinks, { label: '', url: '', description: '' }];
+                      handleUpdateCurrentSubagent({ ...currentModalAgent, links: updated });
+                    }}
+                    style={{
+                      backgroundColor: '#0284c7',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: '8px',
+                      padding: '6px 14px',
+                      fontSize: '0.78rem',
+                      fontWeight: 'bold',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '5px'
+                    }}
+                  >
+                    <Plus size={14} /> Añadir Enlace
+                  </button>
+                </div>
+
+                {(!currentModalAgent.links || currentModalAgent.links.length === 0) ? (
+                  <div style={{ padding: '16px', backgroundColor: '#0f172a', borderRadius: '8px', border: '1px dashed #334155', textAlign: 'center', color: '#64748b', fontSize: '0.78rem' }}>
+                    No hay enlaces configurados aún. Toca <strong>"+ Añadir Enlace"</strong> para registrar cartas digitales, catálogos en Drive, o recursos oficiales.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {currentModalAgent.links.map((link, idx) => (
+                      <div key={idx} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', backgroundColor: '#0f172a', padding: '10px 12px', borderRadius: '8px', border: '1px solid #1e293b' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, gap: '6px' }}>
+                          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                            <input
+                              type="text"
+                              placeholder="Nombre/Título (ej: Menú en PDF)"
+                              value={link.label || ''}
+                              onChange={(e) => {
+                                const currentLinks = [...(currentModalAgent.links || [])];
+                                currentLinks[idx] = { ...currentLinks[idx], label: e.target.value };
+                                handleUpdateCurrentSubagent({ ...currentModalAgent, links: currentLinks });
+                              }}
+                              style={{ flex: 1, minWidth: '160px', padding: '7px 10px', backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '6px', color: '#f8fafc', fontSize: '0.8rem' }}
+                            />
+                            <input
+                              type="url"
+                              placeholder="URL (ej: https://midominio.com/menu.pdf)"
+                              value={link.url || ''}
+                              onChange={(e) => {
+                                const currentLinks = [...(currentModalAgent.links || [])];
+                                currentLinks[idx] = { ...currentLinks[idx], url: e.target.value };
+                                handleUpdateCurrentSubagent({ ...currentModalAgent, links: currentLinks });
+                              }}
+                              style={{ flex: 2, minWidth: '220px', padding: '7px 10px', backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '6px', color: '#f8fafc', fontSize: '0.8rem' }}
+                            />
+                          </div>
+                          <input
+                            type="text"
+                            placeholder="Detalle o cuándo entregarlo (ej: Entregar únicamente si el cliente pide el archivo descargable)"
+                            value={link.description || ''}
+                            onChange={(e) => {
+                              const currentLinks = [...(currentModalAgent.links || [])];
+                              currentLinks[idx] = { ...currentLinks[idx], description: e.target.value };
+                              handleUpdateCurrentSubagent({ ...currentModalAgent, links: currentLinks });
+                            }}
+                            style={{ width: '100%', padding: '6px 10px', backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '6px', color: '#94a3b8', fontSize: '0.75rem' }}
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const currentLinks = (currentModalAgent.links || []).filter((_, i) => i !== idx);
+                            handleUpdateCurrentSubagent({ ...currentModalAgent, links: currentLinks });
+                          }}
+                          title="Eliminar este enlace"
+                          style={{
+                            backgroundColor: '#ef444420',
+                            border: '1px solid #ef444450',
+                            color: '#f87171',
+                            padding: '8px',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            marginTop: '2px'
+                          }}
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
             </div>

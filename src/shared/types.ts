@@ -124,6 +124,12 @@ export interface Appointment {
   createdAt?: Date;
 }
 
+export interface SubagentLinkItem {
+  label: string;
+  url: string;
+  description?: string;
+}
+
 export interface SubagentConfig {
   id: string;
   name: string;
@@ -132,6 +138,7 @@ export interface SubagentConfig {
   sources: string[];
   actions: string[];
   temperature?: number;
+  links?: SubagentLinkItem[];
 }
 
 export interface NodePosition {

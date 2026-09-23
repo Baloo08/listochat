@@ -368,6 +368,14 @@ PROTOCOLO DE EMPATÍA Y ESCALADO:
       if (store?.acceptCashOnDelivery) pArr.push('Efectivo');
       if (pArr.length > 0) paymentSummary = '💳 Formas de Pago: ' + pArr.join(', ') + ' (Facturación electrónica disponible)\n';
 
+      let customLinksText = '';
+      const validLinks = (currentSubagent?.links || []).filter((l: any) => l && l.url && l.label);
+      if (validLinks.length > 0) {
+        sourcesUsed.push('customLinks');
+        customLinksText = '🔗 ENLACES Y RECURSOS OFICIALES (ENTREGAR ÚNICAMENTE BAJO DEMANDA):\n' +
+          validLinks.map((l: any) => `• *${l.label}*: ${l.url}${l.description ? ` (${l.description})` : ''}`).join('\n') + '\n';
+      }
+
       specializedPrompt = `
 ROL: Eres el Conserje y Anfitrión Principal de *${tenant?.name || 'nuestro negocio'}* en WhatsApp.
 ${currentSubagent?.prompt || 'Atiende cordialmente con calidez costarricense (*pura vida*).'}
@@ -381,7 +389,7 @@ ${socialLinksStr ? `📱 Redes Sociales: ${socialLinksStr}\n` : ''}
 ${storeUrl ? `🛍️ Tienda Web: ${storeUrl}\n` : ''}
 ${bookingUrl ? `📅 Reservas Web: ${bookingUrl}\n` : ''}
 ${courtUrl ? `⚽ Canchas Deportivas: ${courtUrl}\n` : ''}
-${scheduleText}${paymentSummary}
+${scheduleText}${paymentSummary}${customLinksText}
 
 REGLAS DE CONSERJE FRONT-DESK:
 1. Responde amablemente con calidez tica (*pura vida*, con gusto, bienvenido).

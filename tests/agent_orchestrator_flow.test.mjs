@@ -381,6 +381,43 @@ REGLA DE ORO "CHAT-FIRST" Y MANEJO DE ENLACES:
     assert.equal(byokAccount.fallback.provider, 'betico_ai', 'BYOK account fallback must be local betico_ai on VPS');
   });
 
+  await t.test('14. FAQ Subagent Custom Links & Web Resources (RAG Invariance)', () => {
+    // Helper replicating orchestrator customLinks injection logic
+    function injectCustomLinks(subagent, sourcesUsed) {
+      let customLinksText = '';
+      const validLinks = (subagent?.links || []).filter(l => l && l.url && l.label);
+      if (validLinks.length > 0) {
+        sourcesUsed.push('customLinks');
+        customLinksText = '🔗 ENLACES Y RECURSOS OFICIALES (ENTREGAR ÚNICAMENTE BAJO DEMANDA):\n' +
+          validLinks.map(l => `• *${l.label}*: ${l.url}${l.description ? ` (${l.description})` : ''}`).join('\n') + '\n';
+      }
+      return customLinksText;
+    }
+
+    // Test with multiple valid links
+    const sources = ['businessInfo', 'schedule', 'payments'];
+    const subagentWithLinks = {
+      id: 'general',
+      name: 'Identidad & FAQ',
+      links: [
+        { label: 'Menú en PDF', url: 'https://betico.tech/menu.pdf', description: 'Descargable' },
+        { label: 'Catálogo Drive', url: 'https://drive.google.com/catalogo', description: 'Fotos HD' }
+      ]
+    };
+
+    const linksText = injectCustomLinks(subagentWithLinks, sources);
+    assert.ok(sources.includes('customLinks'), 'sourcesUsed must contain customLinks');
+    assert.match(linksText, /• \*Menú en PDF\*: https:\/\/betico\.tech\/menu\.pdf \(Descargable\)/);
+    assert.match(linksText, /• \*Catálogo Drive\*: https:\/\/drive\.google\.com\/catalogo \(Fotos HD\)/);
+    assert.match(linksText, /ENTREGAR ÚNICAMENTE BAJO DEMANDA/);
+
+    // Test with empty links
+    const emptySources = ['businessInfo'];
+    const emptyLinksText = injectCustomLinks({ links: [] }, emptySources);
+    assert.equal(emptyLinksText, '', 'Empty links should produce empty string');
+    assert.ok(!emptySources.includes('customLinks'), 'Empty links should not add customLinks to sourcesUsed');
+  });
+
 });
 
 
