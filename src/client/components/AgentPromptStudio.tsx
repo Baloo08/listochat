@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Bot, Save, Play, Sparkles, Wand2, CheckCircle, HelpCircle, X, 
-  ArrowRight, ArrowLeft, GitFork, Sliders, CheckCircle2, MessageSquare, Zap
+  Bot, Save, Play, Sparkles, CheckCircle, GitFork, 
+  CheckCircle2, MessageSquare, Zap, ShieldCheck
 } from 'lucide-react';
 import AgentFlowCanvas from './AgentFlowCanvas';
 import { OrchestratorConfig, DataSourcesSummary } from '../../shared/types';
@@ -56,7 +56,6 @@ export default function AgentPromptStudio() {
     }
   };
 
-  const [activeTab, setActiveTab] = useState<'flow' | 'classic'>('flow');
   const [config, setConfig] = useState({
     aiChatbotEnabled: initialData ? (initialData.aiChatbotEnabled !== false) : true,
     systemPrompt: initialData?.systemPrompt || '',
@@ -201,69 +200,39 @@ export default function AgentPromptStudio() {
   }
 
   return (
-    <div style={{ maxWidth: '1300px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+    <div style={{ width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '20px' }}>
       
-      {/* Header bar */}
+      {/* Top Header Bar */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{ backgroundColor: 'var(--primary)', color: 'white', padding: '8px', borderRadius: '10px' }}>
-              <GitFork size={24} />
-            </div>
-            <div>
-              <h1 style={{ fontSize: '1.4rem', fontWeight: 'bold', margin: 0, color: 'var(--text)' }}>
-                Personalidad & Orquestador Agéntico IA
-              </h1>
-              <p style={{ margin: '3px 0 0 0', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                Arquitectura Supervisor-Worker: organiza subagentes especializados y sus fuentes de datos
-              </p>
-            </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ backgroundColor: 'var(--primary)', color: 'white', padding: '10px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
+            <GitFork size={24} />
+          </div>
+          <div>
+            <h1 style={{ fontSize: '1.35rem', fontWeight: 'bold', margin: 0, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              Orquestador Multi-Agente IA
+            </h1>
+            <p style={{ margin: '3px 0 0 0', fontSize: '0.83rem', color: 'var(--text-muted)' }}>
+              Flujo agéntico visual: cada subagente es especialista en su área con sus propias fuentes y permisos
+            </p>
           </div>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          {/* Tab Selector */}
-          <div style={{ display: 'flex', backgroundColor: '#e2e8f0', padding: '4px', borderRadius: '10px' }}>
-            <button
-              onClick={() => setActiveTab('flow')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                padding: '7px 14px',
-                borderRadius: '7px',
-                border: 'none',
-                fontWeight: '600',
-                fontSize: '0.85rem',
-                cursor: 'pointer',
-                backgroundColor: activeTab === 'flow' ? '#0f172a' : 'transparent',
-                color: activeTab === 'flow' ? '#f8fafc' : '#475569',
-                boxShadow: activeTab === 'flow' ? '0 2px 4px rgba(0,0,0,0.1)' : 'none'
-              }}
-            >
-              <GitFork size={15} /> Diagrama de Nodos (Flow)
-            </button>
-            <button
-              onClick={() => setActiveTab('classic')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                padding: '7px 14px',
-                borderRadius: '7px',
-                border: 'none',
-                fontWeight: '600',
-                fontSize: '0.85rem',
-                cursor: 'pointer',
-                backgroundColor: activeTab === 'classic' ? '#0f172a' : 'transparent',
-                color: activeTab === 'classic' ? '#f8fafc' : '#475569',
-                boxShadow: activeTab === 'classic' ? '0 2px 4px rgba(0,0,0,0.1)' : 'none'
-              }}
-            >
-              <Sliders size={15} /> Ajustes Clásicos
-            </button>
-          </div>
+          {/* Quick Active Switch */}
+          <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', gap: '8px', padding: '8px 14px', backgroundColor: config.aiChatbotEnabled !== false ? '#f0fdf4' : '#f8fafc', borderRadius: '10px', border: `1px solid ${config.aiChatbotEnabled !== false ? '#bbf7d0' : '#cbd5e1'}` }}>
+            <input
+              type="checkbox"
+              checked={config.aiChatbotEnabled !== false}
+              onChange={(e) => setConfig({ ...config, aiChatbotEnabled: e.target.checked })}
+              style={{ width: '15px', height: '15px', cursor: 'pointer' }}
+            />
+            <span style={{ fontSize: '0.82rem', fontWeight: 'bold', color: config.aiChatbotEnabled !== false ? '#166534' : '#64748b' }}>
+              {config.aiChatbotEnabled !== false ? '🟢 Bot Activo' : '⚪ Solo Notificaciones'}
+            </span>
+          </label>
 
+          {/* Save Button */}
           <button
             onClick={handleSave}
             disabled={saving}
@@ -271,15 +240,15 @@ export default function AgentPromptStudio() {
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
-              padding: '9px 20px',
+              padding: '9px 22px',
               backgroundColor: 'var(--primary)',
               color: 'white',
               border: 'none',
-              borderRadius: '8px',
+              borderRadius: '10px',
               cursor: 'pointer',
               fontWeight: '600',
               fontSize: '0.9rem',
-              boxShadow: '0 4px 10px rgba(0,0,0,0.1)'
+              boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
             }}
           >
             <Save size={16} /> {saving ? 'Guardando...' : 'Guardar Orquesta'}
@@ -293,98 +262,23 @@ export default function AgentPromptStudio() {
         </div>
       )}
 
-      {/* VIEW 1: AGENT FLOW CANVAS (N8N STYLE) */}
-      {activeTab === 'flow' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          <AgentFlowCanvas
-            orchestratorConfig={config.orchestratorConfig || defaultOrchestrator}
-            onChange={(newOrch) => setConfig({ ...config, orchestratorConfig: newOrch })}
-            dataSourcesSummary={dataSourcesSummary}
-            activeSimulatedAgentId={activeSimulatedAgentId}
-          />
-        </div>
-      )}
-
-      {/* VIEW 2: CLASSIC / GLOBAL SETTINGS */}
-      {activeTab === 'classic' && (
-        <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '14px', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          
-          <div style={{ padding: '16px', borderRadius: '10px', border: `2px solid ${config.aiChatbotEnabled !== false ? '#16a34a' : '#64748b'}`, backgroundColor: config.aiChatbotEnabled !== false ? '#f0fdf4' : '#f8fafc' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <Bot size={24} color={config.aiChatbotEnabled !== false ? '#16a34a' : '#64748b'} />
-                <div>
-                  <strong style={{ fontSize: '0.95rem', color: '#1e293b' }}>
-                    {config.aiChatbotEnabled !== false ? 'Motor de IA Activo para WhatsApp' : 'Modo Solo Notificaciones'}
-                  </strong>
-                  <p style={{ margin: '2px 0 0 0', fontSize: '0.8rem', color: '#64748b' }}>
-                    Controla si la inteligencia artificial responde chats entrantes o si solo despacha alertas.
-                  </p>
-                </div>
-              </div>
-              
-              <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', gap: '8px', padding: '6px 12px', backgroundColor: 'white', borderRadius: '8px', border: '1px solid var(--border)' }}>
-                <input
-                  type="checkbox"
-                  checked={config.aiChatbotEnabled !== false}
-                  onChange={(e) => setConfig({ ...config, aiChatbotEnabled: e.target.checked })}
-                  style={{ width: '16px', height: '16px', cursor: 'pointer' }}
-                />
-                <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: config.aiChatbotEnabled !== false ? '#16a34a' : '#64748b' }}>
-                  {config.aiChatbotEnabled !== false ? 'Activado' : 'Desactivado'}
-                </span>
-              </label>
-            </div>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-            <div>
-              <label style={{ display: 'block', marginBottom: '6px', fontWeight: '600', fontSize: '0.85rem' }}>Nombre Comercial</label>
-              <input
-                type="text"
-                value={config.businessName}
-                onChange={e => setConfig({ ...config, businessName: e.target.value })}
-                placeholder="Ej: Clínica Dental o Canchas El Gol"
-                style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '0.9rem' }}
-              />
-            </div>
-            <div>
-              <label style={{ display: 'block', marginBottom: '6px', fontWeight: '600', fontSize: '0.85rem' }}>Moneda Principal</label>
-              <input
-                type="text"
-                value={config.currency}
-                onChange={e => setConfig({ ...config, currency: e.target.value })}
-                placeholder="CRC o USD"
-                style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '0.9rem' }}
-              />
-            </div>
-          </div>
-
-          <div>
-            <label style={{ display: 'block', marginBottom: '6px', fontWeight: '600', fontSize: '0.85rem' }}>
-              System Prompt General de Respaldo (Fallback)
-            </label>
-            <textarea
-              rows={6}
-              value={config.systemPrompt}
-              onChange={e => setConfig({ ...config, systemPrompt: e.target.value })}
-              placeholder="Instrucciones generales de la empresa..."
-              style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '0.85rem', lineHeight: '1.5', fontFamily: 'monospace' }}
-            />
-          </div>
-
-        </div>
-      )}
+      {/* INTERACTIVE AGENT FLOW CANVAS (N8N STYLE WITH ZOOM & CONNECTORS) */}
+      <AgentFlowCanvas
+        orchestratorConfig={config.orchestratorConfig || defaultOrchestrator}
+        onChange={(newOrch) => setConfig({ ...config, orchestratorConfig: newOrch })}
+        dataSourcesSummary={dataSourcesSummary}
+        activeSimulatedAgentId={activeSimulatedAgentId}
+      />
 
       {/* LIVE ORCHESTRATOR SIMULATOR WITH VISUAL TRACE */}
-      <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '14px', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <div style={{ backgroundColor: 'var(--surface)', padding: '22px', borderRadius: '14px', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '14px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
           <div>
-            <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Play size={18} color="var(--primary)" /> Simulador de Conversación Agéntica en Vivo
+            <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Play size={17} color="var(--primary)" /> Simulador de Conversación Agéntica en Vivo
             </h3>
             <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-              Prueba un mensaje para ver qué subagente toma el control y qué acciones se disparan
+              Prueba un mensaje para ver qué subagente toma el control y cómo se ilumina la orquesta
             </span>
           </div>
 
@@ -441,12 +335,12 @@ export default function AgentPromptStudio() {
             onChange={e => setSimInput(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleSimulate()}
             placeholder="Escribe un mensaje de prueba como si fueras un cliente en WhatsApp..."
-            style={{ flex: 1, padding: '12px 16px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '0.9rem' }}
+            style={{ flex: 1, padding: '12px 16px', borderRadius: '10px', border: '1px solid var(--border)', fontSize: '0.9rem' }}
           />
           <button
             type="button"
             onClick={() => handleSimulate()}
-            style={{ padding: '0 24px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px' }}
+            style={{ padding: '0 24px', backgroundColor: 'var(--primary)', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px' }}
           >
             <Play size={16} /> Probar
           </button>
@@ -454,7 +348,7 @@ export default function AgentPromptStudio() {
 
         {/* Output Box */}
         {simOutput && (
-          <div style={{ backgroundColor: '#0f172a', color: '#f8fafc', padding: '16px', borderRadius: '10px', fontSize: '0.9rem', lineHeight: '1.5', border: '1px solid #1e293b' }}>
+          <div style={{ backgroundColor: '#0a0f1d', color: '#f8fafc', padding: '16px', borderRadius: '12px', fontSize: '0.9rem', lineHeight: '1.5', border: '1px solid #1e293b' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', borderBottom: '1px solid #1e293b', paddingBottom: '6px' }}>
               <MessageSquare size={16} color="#38bdf8" />
               <strong style={{ fontSize: '0.8rem', color: '#38bdf8', textTransform: 'uppercase' }}>Respuesta de WhatsApp</strong>
