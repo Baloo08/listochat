@@ -2,9 +2,10 @@ import React, { useState, useRef, useEffect } from 'react';
 import { 
   Bot, ShoppingBag, Calendar, Trophy, UserCheck, HelpCircle, 
   Database, Zap, MessageSquare, Sparkles, X, Check, Sliders,
-  ZoomIn, ZoomOut, RotateCcw, Maximize2, Minimize2, Move
+  ZoomIn, ZoomOut, RotateCcw, Maximize2, Minimize2, Move,
+  ArrowDown, Network
 } from 'lucide-react';
-import { OrchestratorConfig, SubagentConfig, DataSourcesSummary } from '../../shared/types';
+import { OrchestratorConfig, SubagentConfig, DataSourcesSummary, NodePosition } from '../../shared/types';
 
 interface AgentFlowCanvasProps {
   orchestratorConfig: OrchestratorConfig;
@@ -14,6 +15,27 @@ interface AgentFlowCanvasProps {
   onSelectSubagent?: (subagentId: string) => void;
 }
 
+// Default Hierarchical Top-to-Bottom Node Layout
+const DEFAULT_NODE_POSITIONS: Record<string, NodePosition> = {
+  whatsapp: { x: 670, y: 30 },
+  orchestrator: { x: 640, y: 165 },
+  sales: { x: 30, y: 350 },
+  booking: { x: 350, y: 350 },
+  courts: { x: 670, y: 350 },
+  handoff: { x: 990, y: 350 },
+  general: { x: 1310, y: 350 }
+};
+
+const NODE_DIMENSIONS: Record<string, { w: number; h: number }> = {
+  whatsapp: { w: 260, h: 80 },
+  orchestrator: { w: 320, h: 105 },
+  sales: { w: 290, h: 360 },
+  booking: { w: 290, h: 360 },
+  courts: { w: 290, h: 360 },
+  handoff: { w: 290, h: 360 },
+  general: { w: 290, h: 360 }
+};
+
 export default function AgentFlowCanvas({
   orchestratorConfig,
   onChange,
@@ -21,19 +43,46 @@ export default function AgentFlowCanvas({
   activeSimulatedAgentId
 }: AgentFlowCanvasProps) {
   const [selectedSubagentKey, setSelectedSubagentKey] = useState<string | null>(null);
-  const [zoom, setZoom] = useState<number>(0.95);
+  const [zoom, setZoom] = useState<number>(0.85);
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const [isDragging, setIsDragging] = useState<boolean>(false);
-  const [dragStart, setDragStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState<boolean>(false);
+  const [panStart, setPanStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+
+  // Draggable Node State
+  const [nodePositions, setNodePositions] = useState<Record<string, NodePosition>>(() => {
+    return {
+      ...DEFAULT_NODE_POSITIONS,
+      ...(orchestratorConfig?.nodePositions || {})
+    };
+  });
+
+  const [draggingNode, setDraggingNode] = useState<{
+    id: string;
+    startMouseX: number;
+    startMouseY: number;
+    startNodeX: number;
+    startNodeY: number;
+  } | null>(null);
+
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // Sync external nodePositions changes if any
+  useEffect(() => {
+    if (orchestratorConfig?.nodePositions) {
+      setNodePositions(prev => ({
+        ...prev,
+        ...orchestratorConfig.nodePositions
+      }));
+    }
+  }, [orchestratorConfig?.nodePositions]);
+
   const subagents = orchestratorConfig?.subagents || {
-    sales: { id: 'sales', name: 'Ventas & Menú', enabled: true, prompt: '', sources: ['products', 'payments'], actions: ['order', 'media'] },
-    booking: { id: 'booking', name: 'Citas & Agenda', enabled: true, prompt: '', sources: ['services', 'specialists', 'busySlots'], actions: ['booking', 'reschedule', 'cancel'] },
+    sales: { id: 'sales', name: 'Ventas & Menú', enabled: true, prompt: '', sources: ['products', 'payments', 'delivery'], actions: ['order', 'media'] },
+    booking: { id: 'booking', name: 'Citas & Agenda', enabled: true, prompt: '', sources: ['services', 'specialists', 'busySlots', 'customerRecord'], actions: ['booking', 'reschedule', 'cancel'] },
     courts: { id: 'courts', name: 'Canchas Deportivas', enabled: true, prompt: '', sources: ['courts', 'schedules'], actions: ['courtBooking', 'courtReschedule'] },
     handoff: { id: 'handoff', name: 'Escalado Humano', enabled: true, prompt: '', sources: ['keywords'], actions: ['handoff'] },
-    general: { id: 'general', name: 'Identidad & FAQ', enabled: true, prompt: '', sources: ['businessInfo', 'schedules'], actions: [] }
+    general: { id: 'general', name: 'Identidad & FAQ', enabled: true, prompt: '', sources: ['businessInfo', 'schedules', 'payments'], actions: [] }
   };
 
   const handleToggleSubagent = (key: string, e: React.MouseEvent) => {
@@ -64,37 +113,115 @@ export default function AgentFlowCanvas({
   };
 
   // Zoom controls
-  const zoomIn = () => setZoom(prev => Math.min(1.4, prev + 0.1));
-  const zoomOut = () => setZoom(prev => Math.max(0.55, prev - 0.1));
+  const zoomIn = () => setZoom(prev => Math.min(1.4, Math.round((prev + 0.1) * 100) / 100));
+  const zoomOut = () => setZoom(prev => Math.max(0.5, Math.round((prev - 0.1) * 100) / 100));
   const resetZoom = () => {
-    setZoom(0.95);
-    setPan({ x: 0, y: 0 });
-  };
-  const fitToView = () => {
     setZoom(0.85);
     setPan({ x: 0, y: 0 });
   };
-
-  // Mouse pan handling
-  const handleMouseDown = (e: React.MouseEvent) => {
-    // Only drag when clicking the canvas background
-    if ((e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).tagName === 'BUTTON' || (e.target as HTMLElement).tagName === 'TEXTAREA') {
-      return;
-    }
-    setIsDragging(true);
-    setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+  const fitToView = () => {
+    setZoom(0.75);
+    setPan({ x: 40, y: 10 });
   };
 
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (!isDragging) return;
-    setPan({
-      x: e.clientX - dragStart.x,
-      y: e.clientY - dragStart.y
+  // Auto-Layout: Reset all node positions to hierarchical default
+  const handleResetHierarchicalLayout = () => {
+    setNodePositions(DEFAULT_NODE_POSITIONS);
+    onChange({
+      ...orchestratorConfig,
+      nodePositions: DEFAULT_NODE_POSITIONS
     });
   };
 
+  // Node Drag Handlers
+  const handleNodeMouseDown = (id: string, e: React.MouseEvent) => {
+    // Only drag on left click and avoid inputs/buttons
+    if (e.button !== 0) return;
+    const target = e.target as HTMLElement;
+    if (target.tagName === 'INPUT' || target.tagName === 'BUTTON' || target.tagName === 'TEXTAREA' || target.closest('button')) {
+      return;
+    }
+    e.stopPropagation();
+
+    const currentPos = nodePositions[id] || DEFAULT_NODE_POSITIONS[id] || { x: 100, y: 100 };
+    setDraggingNode({
+      id,
+      startMouseX: e.clientX,
+      startMouseY: e.clientY,
+      startNodeX: currentPos.x,
+      startNodeY: currentPos.y
+    });
+  };
+
+  // Canvas Pan Handlers
+  const handleCanvasMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    const target = e.target as HTMLElement;
+    if (target.tagName === 'INPUT' || target.tagName === 'BUTTON' || target.tagName === 'TEXTAREA' || target.closest('button')) {
+      return;
+    }
+    setIsPanning(true);
+    setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+  };
+
+  // Global Mouse Move & Up for Smooth Dragging
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (draggingNode) {
+      const dx = (e.clientX - draggingNode.startMouseX) / zoom;
+      const dy = (e.clientY - draggingNode.startMouseY) / zoom;
+      const newX = Math.round(draggingNode.startNodeX + dx);
+      const newY = Math.round(draggingNode.startNodeY + dy);
+
+      setNodePositions(prev => ({
+        ...prev,
+        [draggingNode.id]: { x: newX, y: newY }
+      }));
+      return;
+    }
+
+    if (isPanning) {
+      setPan({
+        x: e.clientX - panStart.x,
+        y: e.clientY - panStart.y
+      });
+    }
+  };
+
   const handleMouseUp = () => {
-    setIsDragging(false);
+    if (draggingNode) {
+      // Persist node positions to orchestrator config
+      onChange({
+        ...orchestratorConfig,
+        nodePositions: {
+          ...nodePositions
+        }
+      });
+      setDraggingNode(null);
+    }
+    if (isPanning) {
+      setIsPanning(false);
+    }
+  };
+
+  // Helper to calculate top-to-bottom Bézier SVG path
+  const getTopToBottomCurve = (sourceId: string, targetId: string) => {
+    const srcPos = nodePositions[sourceId] || DEFAULT_NODE_POSITIONS[sourceId];
+    const srcDim = NODE_DIMENSIONS[sourceId] || { w: 280, h: 100 };
+    const tgtPos = nodePositions[targetId] || DEFAULT_NODE_POSITIONS[targetId];
+    const tgtDim = NODE_DIMENSIONS[targetId] || { w: 280, h: 100 };
+
+    if (!srcPos || !tgtPos) return '';
+
+    // Source bottom center
+    const x1 = srcPos.x + srcDim.w / 2;
+    const y1 = srcPos.y + srcDim.h;
+
+    // Target top center
+    const x2 = tgtPos.x + tgtDim.w / 2;
+    const y2 = tgtPos.y;
+
+    const deltaY = Math.max(35, Math.abs(y2 - y1) * 0.45);
+    return `M ${x1} ${y1} C ${x1} ${y1 + deltaY}, ${x2} ${y2 - deltaY}, ${x2} ${y2}`;
   };
 
   const currentModalAgent = selectedSubagentKey ? subagents[selectedSubagentKey as keyof typeof subagents] : null;
@@ -108,7 +235,7 @@ export default function AgentFlowCanvas({
         left: isFullscreen ? 0 : 'auto',
         right: isFullscreen ? 0 : 'auto',
         bottom: isFullscreen ? 0 : 'auto',
-        zIndex: isFullscreen ? 999 : 'auto',
+        zIndex: isFullscreen ? 9999 : 'auto',
         width: '100%', 
         height: isFullscreen ? '100vh' : 'auto',
         backgroundColor: '#0a0f1d', 
@@ -130,20 +257,44 @@ export default function AgentFlowCanvas({
         padding: '12px 20px', 
         borderBottom: '1px solid #1e293b', 
         backgroundColor: '#0f172a',
-        zIndex: 10
+        zIndex: 10,
+        flexWrap: 'wrap',
+        gap: '12px'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#10b981', boxShadow: '0 0 10px #10b981' }} />
           <span style={{ fontWeight: '700', fontSize: '0.95rem', letterSpacing: '0.02em', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <Sparkles size={16} color="#38bdf8" /> Betico Flow • Canvas de Orquestación Agéntica
+            <Network size={18} color="#38bdf8" /> Betico Flow • Jerarquía Agéntica Visual
           </span>
-          <span style={{ backgroundColor: '#1e293b', color: '#38bdf8', fontSize: '0.75rem', padding: '2px 8px', borderRadius: '20px', border: '1px solid #0284c740' }}>
-            Multi-Agent Supervisor
+          <span style={{ backgroundColor: '#1e293b', color: '#38bdf8', fontSize: '0.72rem', padding: '2px 8px', borderRadius: '20px', border: '1px solid #0284c740', display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <ArrowDown size={12} /> Top-to-Bottom & Nodos Arrastrables
           </span>
         </div>
 
-        {/* Toolbar: Zoom & Viewport */}
+        {/* Toolbar: Auto-Layout, Zoom & Viewport */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <button
+            type="button"
+            onClick={handleResetHierarchicalLayout}
+            title="Reordenar en árbol jerárquico perfecto (De arriba a abajo)"
+            style={{
+              backgroundColor: '#1e293b',
+              border: '1px solid #334155',
+              color: '#38bdf8',
+              borderRadius: '8px',
+              padding: '6px 12px',
+              fontSize: '0.75rem',
+              fontWeight: '600',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+          >
+            <RotateCcw size={13} />
+            <span>Auto-Alinear Jerarquía</span>
+          </button>
+
           <div style={{ display: 'flex', alignItems: 'center', backgroundColor: '#1e293b', borderRadius: '8px', padding: '2px', border: '1px solid #334155' }}>
             <button
               type="button"
@@ -167,7 +318,7 @@ export default function AgentFlowCanvas({
             <button
               type="button"
               onClick={resetZoom}
-              title="Restablecer (100%)"
+              title="Restablecer (85%)"
               style={{ background: 'none', border: 'none', color: '#94a3b8', padding: '6px 8px', cursor: 'pointer', borderRadius: '6px', display: 'flex', alignItems: 'center', borderLeft: '1px solid #334155' }}
             >
               <RotateCcw size={13} />
@@ -217,16 +368,17 @@ export default function AgentFlowCanvas({
 
       {/* Main Interactive Graph Viewport */}
       <div 
-        onMouseDown={handleMouseDown}
+        onMouseDown={handleCanvasMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
         style={{ 
           flex: 1,
-          padding: '40px', 
+          padding: '20px', 
           overflow: 'hidden', 
-          minHeight: isFullscreen ? 'calc(100vh - 60px)' : '620px', 
+          minHeight: isFullscreen ? 'calc(100vh - 60px)' : '740px', 
           position: 'relative',
-          cursor: isDragging ? 'grabbing' : 'grab',
+          cursor: isPanning ? 'grabbing' : (draggingNode ? 'move' : 'grab'),
           userSelect: 'none'
         }}
       >
@@ -235,383 +387,369 @@ export default function AgentFlowCanvas({
         <div style={{
           position: 'absolute',
           top: 0, left: 0, right: 0, bottom: 0,
-          backgroundImage: 'radial-gradient(#334155 1px, transparent 1px)',
+          backgroundImage: 'radial-gradient(#334155 1.2px, transparent 1.2px)',
           backgroundSize: '28px 28px',
           opacity: 0.45,
           pointerEvents: 'none'
         }} />
+
+        {/* Floating UX Hint */}
+        <div style={{
+          position: 'absolute',
+          bottom: '16px',
+          left: '20px',
+          backgroundColor: '#0f172aee',
+          border: '1px solid #334155',
+          borderRadius: '8px',
+          padding: '6px 12px',
+          fontSize: '0.72rem',
+          color: '#94a3b8',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          zIndex: 5,
+          pointerEvents: 'none',
+          backdropFilter: 'blur(4px)'
+        }}>
+          <Move size={13} color="#38bdf8" />
+          <span>Haz clic y arrastra cualquier nodo para posicionarlo libremente. Arrastra el fondo para desplazarte.</span>
+        </div>
 
         {/* Scalable & Pannable Canvas Container */}
         <div 
           style={{
             transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
             transformOrigin: 'top left',
-            transition: isDragging ? 'none' : 'transform 0.15s ease-out',
-            width: '1280px',
+            transition: (isPanning || draggingNode) ? 'none' : 'transform 0.15s ease-out',
+            width: '1650px',
+            height: '820px',
             position: 'relative'
           }}
         >
 
-          {/* SVG CONNECTOR CABLES LAYER */}
+          {/* DYNAMIC SVG CONNECTOR CABLES LAYER */}
           <svg 
             style={{
               position: 'absolute',
               top: 0,
               left: 0,
-              width: '1280px',
-              height: '620px',
+              width: '1650px',
+              height: '820px',
               pointerEvents: 'none',
               zIndex: 0
             }}
           >
             <defs>
-              <linearGradient id="grad-active" x1="0%" y1="0%" x2="100%" y2="0%">
+              <linearGradient id="grad-active" x1="0%" y1="0%" x2="0%" y2="100%">
                 <stop offset="0%" stopColor="#38bdf8" />
                 <stop offset="100%" stopColor="#818cf8" />
               </linearGradient>
-              <linearGradient id="grad-sales" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.8" />
-                <stop offset="100%" stopColor="#0284c7" stopOpacity="0.8" />
+              <linearGradient id="grad-wa-orch" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stopColor="#22c55e" />
+                <stop offset="100%" stopColor="#6366f1" />
               </linearGradient>
-              <linearGradient id="grad-booking" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stopColor="#c084fc" stopOpacity="0.8" />
-                <stop offset="100%" stopColor="#9333ea" stopOpacity="0.8" />
+              <linearGradient id="grad-sales" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stopColor="#6366f1" />
+                <stop offset="100%" stopColor="#38bdf8" />
               </linearGradient>
-              <linearGradient id="grad-courts" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stopColor="#facc15" stopOpacity="0.8" />
-                <stop offset="100%" stopColor="#ca8a04" stopOpacity="0.8" />
+              <linearGradient id="grad-booking" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stopColor="#6366f1" />
+                <stop offset="100%" stopColor="#c084fc" />
+              </linearGradient>
+              <linearGradient id="grad-courts" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stopColor="#6366f1" />
+                <stop offset="100%" stopColor="#facc15" />
+              </linearGradient>
+              <linearGradient id="grad-handoff" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stopColor="#6366f1" />
+                <stop offset="100%" stopColor="#fb7185" />
+              </linearGradient>
+              <linearGradient id="grad-general" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stopColor="#6366f1" />
+                <stop offset="100%" stopColor="#94a3b8" />
               </linearGradient>
             </defs>
 
-            {/* Cable 1: WhatsApp In -> Router Inteligente */}
+            {/* Level 1 -> Level 2: WhatsApp In -> Supervisor Orquestador */}
             <path
-              d="M 190 60 C 230 60, 230 200, 100 240"
+              d={getTopToBottomCurve('whatsapp', 'orchestrator')}
               fill="none"
-              stroke="#22c55e"
-              strokeWidth="2.5"
-              strokeDasharray="4 4"
+              stroke="url(#grad-wa-orch)"
+              strokeWidth="3"
+              strokeDasharray={activeSimulatedAgentId ? "4 4" : "none"}
             />
 
-            {/* Cable 2: Router Inteligente -> Sales Subagent */}
+            {/* Level 2 -> Level 3: Orquestador -> Sales Subagent */}
             <path
-              d="M 210 270 C 400 270, 480 60, 600 60"
+              d={getTopToBottomCurve('orchestrator', 'sales')}
               fill="none"
-              stroke={activeSimulatedAgentId === 'sales' ? '#38bdf8' : (subagents.sales?.enabled ? '#38bdf860' : '#334155')}
-              strokeWidth={activeSimulatedAgentId === 'sales' ? '4' : '2'}
+              stroke={activeSimulatedAgentId === 'sales' ? '#38bdf8' : (subagents.sales?.enabled ? 'url(#grad-sales)' : '#334155')}
+              strokeWidth={activeSimulatedAgentId === 'sales' ? '4' : '2.5'}
+              strokeDasharray={subagents.sales?.enabled ? (activeSimulatedAgentId === 'sales' ? "6 3" : "none") : "4 4"}
             />
 
-            {/* Cable 3: Router Inteligente -> Booking Subagent */}
+            {/* Level 2 -> Level 3: Orquestador -> Booking Subagent */}
             <path
-              d="M 210 270 C 400 270, 480 175, 600 175"
+              d={getTopToBottomCurve('orchestrator', 'booking')}
               fill="none"
-              stroke={activeSimulatedAgentId === 'booking' ? '#c084fc' : (subagents.booking?.enabled ? '#c084fc60' : '#334155')}
-              strokeWidth={activeSimulatedAgentId === 'booking' ? '4' : '2'}
+              stroke={activeSimulatedAgentId === 'booking' ? '#c084fc' : (subagents.booking?.enabled ? 'url(#grad-booking)' : '#334155')}
+              strokeWidth={activeSimulatedAgentId === 'booking' ? '4' : '2.5'}
+              strokeDasharray={subagents.booking?.enabled ? (activeSimulatedAgentId === 'booking' ? "6 3" : "none") : "4 4"}
             />
 
-            {/* Cable 4: Router Inteligente -> Courts Subagent */}
+            {/* Level 2 -> Level 3: Orquestador -> Courts Subagent */}
             <path
-              d="M 210 270 C 400 270, 480 290, 600 290"
+              d={getTopToBottomCurve('orchestrator', 'courts')}
               fill="none"
-              stroke={activeSimulatedAgentId === 'courts' ? '#facc15' : (subagents.courts?.enabled ? '#facc1560' : '#334155')}
-              strokeWidth={activeSimulatedAgentId === 'courts' ? '4' : '2'}
+              stroke={activeSimulatedAgentId === 'courts' ? '#facc15' : (subagents.courts?.enabled ? 'url(#grad-courts)' : '#334155')}
+              strokeWidth={activeSimulatedAgentId === 'courts' ? '4' : '2.5'}
+              strokeDasharray={subagents.courts?.enabled ? (activeSimulatedAgentId === 'courts' ? "6 3" : "none") : "4 4"}
             />
 
-            {/* Cable 5: Router Inteligente -> Handoff Subagent */}
+            {/* Level 2 -> Level 3: Orquestador -> Handoff Subagent */}
             <path
-              d="M 210 270 C 400 270, 480 405, 600 405"
+              d={getTopToBottomCurve('orchestrator', 'handoff')}
               fill="none"
-              stroke={activeSimulatedAgentId === 'handoff' ? '#fb7185' : (subagents.handoff?.enabled ? '#fb718560' : '#334155')}
-              strokeWidth={activeSimulatedAgentId === 'handoff' ? '4' : '2'}
+              stroke={activeSimulatedAgentId === 'handoff' ? '#fb7185' : (subagents.handoff?.enabled ? 'url(#grad-handoff)' : '#334155')}
+              strokeWidth={activeSimulatedAgentId === 'handoff' ? '4' : '2.5'}
+              strokeDasharray={subagents.handoff?.enabled ? (activeSimulatedAgentId === 'handoff' ? "6 3" : "none") : "4 4"}
             />
 
-            {/* Cable 6: Router Inteligente -> General Subagent */}
+            {/* Level 2 -> Level 3: Orquestador -> General Subagent */}
             <path
-              d="M 210 270 C 400 270, 480 520, 600 520"
+              d={getTopToBottomCurve('orchestrator', 'general')}
               fill="none"
-              stroke={activeSimulatedAgentId === 'general' ? '#94a3b8' : '#334155'}
-              strokeWidth={activeSimulatedAgentId === 'general' ? '4' : '2'}
-            />
-
-            {/* Data Source to Sales: Catálogo Tienda -> Sales */}
-            <path
-              d="M 500 50 C 540 50, 560 60, 600 60"
-              fill="none"
-              stroke="#38bdf880"
-              strokeWidth="1.5"
-              strokeDasharray="3 3"
-            />
-
-            {/* Data Source to Booking: Servicios -> Booking */}
-            <path
-              d="M 500 135 C 540 135, 560 170, 600 170"
-              fill="none"
-              stroke="#c084fc80"
-              strokeWidth="1.5"
-              strokeDasharray="3 3"
-            />
-
-            {/* Data Source to Courts: Canchas -> Courts */}
-            <path
-              d="M 500 220 C 540 220, 560 285, 600 285"
-              fill="none"
-              stroke="#facc1580"
-              strokeWidth="1.5"
-              strokeDasharray="3 3"
-            />
-
-            {/* Subagents to Actions: Sales -> COMMAND_ORDER */}
-            <path
-              d="M 890 60 C 940 60, 970 50, 1030 50"
-              fill="none"
-              stroke={subagents.sales?.enabled ? '#38bdf8' : '#334155'}
-              strokeWidth="2"
-            />
-
-            {/* Subagents to Actions: Booking -> COMMAND_BOOKING */}
-            <path
-              d="M 890 175 C 940 175, 970 145, 1030 145"
-              fill="none"
-              stroke={subagents.booking?.enabled ? '#c084fc' : '#334155'}
-              strokeWidth="2"
-            />
-
-            {/* Subagents to Actions: Courts -> COMMAND_COURT_BOOKING */}
-            <path
-              d="M 890 290 C 940 290, 970 240, 1030 240"
-              fill="none"
-              stroke={subagents.courts?.enabled ? '#facc15' : '#334155'}
-              strokeWidth="2"
-            />
-
-            {/* Subagents to Actions: Handoff -> COMMAND_HANDOFF */}
-            <path
-              d="M 890 405 C 940 405, 970 430, 1030 430"
-              fill="none"
-              stroke={subagents.handoff?.enabled ? '#fb7185' : '#334155'}
-              strokeWidth="2"
+              stroke={activeSimulatedAgentId === 'general' ? '#94a3b8' : (subagents.general?.enabled ? 'url(#grad-general)' : '#334155')}
+              strokeWidth={activeSimulatedAgentId === 'general' ? '4' : '2.5'}
+              strokeDasharray={subagents.general?.enabled ? (activeSimulatedAgentId === 'general' ? "6 3" : "none") : "4 4"}
             />
           </svg>
 
-          {/* 4-COLUMN NODE GRID */}
-          <div style={{ display: 'grid', gridTemplateColumns: '200px 240px 290px 240px', gap: '50px', position: 'relative', zIndex: 1, alignItems: 'start' }}>
-            
-            {/* COLUMN 1: TRIGGER & ROUTER */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '60px', paddingTop: '20px' }}>
-              
-              {/* TRIGGER NODE */}
-              <div style={{ 
-                backgroundColor: '#0f172a', 
-                border: '2px solid #22c55e', 
-                borderRadius: '14px', 
-                padding: '16px',
-                boxShadow: '0 8px 20px rgba(34, 197, 94, 0.25)',
-                position: 'relative'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
-                  <div style={{ backgroundColor: '#22c55e20', padding: '8px', borderRadius: '10px', color: '#22c55e' }}>
-                    <MessageSquare size={22} />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '0.68rem', color: '#86efac', textTransform: 'uppercase', fontWeight: 'bold' }}>Trigger</div>
-                    <strong style={{ fontSize: '0.95rem' }}>WhatsApp In</strong>
-                  </div>
+          {/* ============================================================== */}
+          {/* LEVEL 1: NODO WHATSAPP (ENTRADA / TRIGGER) */}
+          {/* ============================================================== */}
+          <div 
+            onMouseDown={(e) => handleNodeMouseDown('whatsapp', e)}
+            style={{
+              position: 'absolute',
+              left: `${nodePositions.whatsapp?.x ?? DEFAULT_NODE_POSITIONS.whatsapp.x}px`,
+              top: `${nodePositions.whatsapp?.y ?? DEFAULT_NODE_POSITIONS.whatsapp.y}px`,
+              width: `${NODE_DIMENSIONS.whatsapp.w}px`,
+              backgroundColor: '#0f172a',
+              border: '2px solid #22c55e',
+              borderRadius: '14px',
+              padding: '12px 16px',
+              boxShadow: '0 10px 25px rgba(34, 197, 94, 0.25)',
+              cursor: 'move',
+              zIndex: draggingNode?.id === 'whatsapp' ? 100 : 2
+            }}
+          >
+            {/* Grip handle bar */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ backgroundColor: '#22c55e20', padding: '6px', borderRadius: '8px', color: '#22c55e' }}>
+                  <MessageSquare size={18} />
                 </div>
-                <p style={{ fontSize: '0.74rem', color: '#94a3b8', margin: 0 }}>Mensajes en tiempo real desde la cola</p>
-                
-                {/* Port */}
-                <div style={{ position: 'absolute', right: '-8px', top: '50%', transform: 'translateY(-50%)', width: '14px', height: '14px', borderRadius: '50%', backgroundColor: '#22c55e', border: '2px solid #0f172a' }} />
-              </div>
-
-              {/* SUPERVISOR / ROUTER NODE */}
-              <div style={{ 
-                backgroundColor: '#0f172a', 
-                border: activeSimulatedAgentId ? '2px solid #38bdf8' : '2px solid #6366f1', 
-                borderRadius: '14px', 
-                padding: '18px',
-                boxShadow: activeSimulatedAgentId ? '0 0 25px rgba(56, 189, 248, 0.5)' : '0 8px 20px rgba(99, 102, 241, 0.25)',
-                position: 'relative',
-                transition: 'all 0.3s ease'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
-                  <div style={{ backgroundColor: '#6366f120', padding: '8px', borderRadius: '10px', color: '#818cf8' }}>
-                    <Bot size={22} />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '0.68rem', color: '#a5b4fc', textTransform: 'uppercase', fontWeight: 'bold' }}>Supervisor</div>
-                    <strong style={{ fontSize: '0.95rem' }}>Router Agéntico</strong>
-                  </div>
+                <div>
+                  <div style={{ fontSize: '0.65rem', color: '#86efac', textTransform: 'uppercase', fontWeight: 'bold' }}>Canal de Entrada</div>
+                  <strong style={{ fontSize: '0.92rem' }}>WhatsApp In</strong>
                 </div>
-                <p style={{ fontSize: '0.74rem', color: '#94a3b8', margin: 0 }}>Enruta en &lt;5ms al subagente experto</p>
-                
-                {/* Port */}
-                <div style={{ position: 'absolute', right: '-8px', top: '50%', transform: 'translateY(-50%)', width: '14px', height: '14px', borderRadius: '50%', backgroundColor: '#818cf8', border: '2px solid #0f172a' }} />
               </div>
-
-            </div>
-
-            {/* COLUMN 2: DATA SOURCES (RAG) */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', paddingTop: '10px' }}>
-              <div style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: '700', letterSpacing: '0.05em', textAlign: 'center' }}>
-                📚 Fuentes RAG
-              </div>
-
-              {/* Source: Products */}
-              <div style={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '12px', padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 4px 10px rgba(0,0,0,0.2)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Database size={16} color="#38bdf8" />
-                  <span style={{ fontSize: '0.85rem', fontWeight: '600' }}>Catálogo Tienda</span>
-                </div>
-                <span style={{ backgroundColor: '#0284c720', color: '#38bdf8', fontSize: '0.72rem', padding: '2px 8px', borderRadius: '12px', fontWeight: 'bold' }}>
-                  {dataSourcesSummary?.productsCount ?? 0} ítems
-                </span>
-              </div>
-
-              {/* Source: Services */}
-              <div style={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '12px', padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 4px 10px rgba(0,0,0,0.2)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Database size={16} color="#c084fc" />
-                  <span style={{ fontSize: '0.85rem', fontWeight: '600' }}>Servicios & Citas</span>
-                </div>
-                <span style={{ backgroundColor: '#9333ea20', color: '#c084fc', fontSize: '0.72rem', padding: '2px 8px', borderRadius: '12px', fontWeight: 'bold' }}>
-                  {dataSourcesSummary?.servicesCount ?? 0} serv.
-                </span>
-              </div>
-
-              {/* Source: Courts */}
-              <div style={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '12px', padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 4px 10px rgba(0,0,0,0.2)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Database size={16} color="#facc15" />
-                  <span style={{ fontSize: '0.85rem', fontWeight: '600' }}>Canchas & Espacios</span>
-                </div>
-                <span style={{ backgroundColor: '#ca8a0420', color: '#facc15', fontSize: '0.72rem', padding: '2px 8px', borderRadius: '12px', fontWeight: 'bold' }}>
-                  {dataSourcesSummary?.courtsCount ?? 0} canchas
-                </span>
-              </div>
-
-              {/* Source: Specialists */}
-              <div style={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '12px', padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 4px 10px rgba(0,0,0,0.2)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Database size={16} color="#10b981" />
-                  <span style={{ fontSize: '0.85rem', fontWeight: '600' }}>Staff / Especialistas</span>
-                </div>
-                <span style={{ backgroundColor: '#05966920', color: '#34d399', fontSize: '0.72rem', padding: '2px 8px', borderRadius: '12px', fontWeight: 'bold' }}>
-                  {dataSourcesSummary?.specialistsCount ?? 0} activos
-                </span>
-              </div>
-
-              {/* Source: Payments / Schedule */}
-              <div style={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '12px', padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 4px 10px rgba(0,0,0,0.2)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Database size={16} color="#fb7185" />
-                  <span style={{ fontSize: '0.85rem', fontWeight: '600' }}>SINPE & Horarios</span>
-                </div>
-                <span style={{ backgroundColor: '#e11d4820', color: '#fb7185', fontSize: '0.72rem', padding: '2px 8px', borderRadius: '12px', fontWeight: 'bold' }}>
-                  Conectado
-                </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: '#22c55e15', padding: '2px 8px', borderRadius: '12px', border: '1px solid #22c55e40' }}>
+                <div style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#22c55e', boxShadow: '0 0 6px #22c55e' }} />
+                <span style={{ fontSize: '0.68rem', color: '#86efac', fontWeight: 'bold' }}>Trigger</span>
               </div>
             </div>
+            <p style={{ fontSize: '0.72rem', color: '#94a3b8', margin: 0 }}>Mensajes en tiempo real desde la cola</p>
 
-            {/* COLUMN 3: SUBAGENTS NODES */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: '700', letterSpacing: '0.05em', textAlign: 'center' }}>
-                🤖 Subagentes
-              </div>
-
-              {/* 1. SALES AGENT */}
-              {renderSubagentCard(
-                'sales',
-                subagents.sales,
-                <ShoppingBag size={18} color="#38bdf8" />,
-                '#0284c7',
-                activeSimulatedAgentId === 'sales',
-                'Lee catálogo, opciones/sabores, arma carritos y crea pedidos'
-              )}
-
-              {/* 2. BOOKING AGENT */}
-              {renderSubagentCard(
-                'booking',
-                subagents.booking,
-                <Calendar size={18} color="#c084fc" />,
-                '#9333ea',
-                activeSimulatedAgentId === 'booking',
-                'Verifica slots ocupados en tiempo real y agenda/reagenda citas'
-              )}
-
-              {/* 3. COURTS AGENT */}
-              {renderSubagentCard(
-                'courts',
-                subagents.courts,
-                <Trophy size={18} color="#facc15" />,
-                '#ca8a04',
-                activeSimulatedAgentId === 'courts',
-                'Aparta canchas, busca partidos y valida códigos CRT-XXXXXX'
-              )}
-
-              {/* 4. HANDOFF AGENT */}
-              {renderSubagentCard(
-                'handoff',
-                subagents.handoff,
-                <UserCheck size={18} color="#fb7185" />,
-                '#e11d48',
-                activeSimulatedAgentId === 'handoff',
-                'Detecta reclamos o pedidos de asesor y pausa el bot'
-              )}
-
-              {/* 5. GENERAL AGENT */}
-              {renderSubagentCard(
-                'general',
-                subagents.general,
-                <HelpCircle size={18} color="#94a3b8" />,
-                '#475569',
-                activeSimulatedAgentId === 'general',
-                'Bienvenida cordial, horarios, pagos y preguntas generales'
-              )}
-            </div>
-
-            {/* COLUMN 4: EXECUTABLE ACTIONS */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', paddingTop: '10px' }}>
-              <div style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: '700', letterSpacing: '0.05em', textAlign: 'center' }}>
-                ⚡ Acciones (Tools)
-              </div>
-
-              <div style={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '12px', padding: '12px', opacity: subagents.sales?.enabled ? 1 : 0.35 }}>
-                <div style={{ fontSize: '0.85rem', fontWeight: '600', color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Zap size={14} /> COMMAND_ORDER
-                </div>
-                <div style={{ fontSize: '0.73rem', color: '#94a3b8' }}>Crear pedido en tienda/comanda</div>
-              </div>
-
-              <div style={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '12px', padding: '12px', opacity: subagents.booking?.enabled ? 1 : 0.35 }}>
-                <div style={{ fontSize: '0.85rem', fontWeight: '600', color: '#c084fc', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Zap size={14} /> COMMAND_BOOKING
-                </div>
-                <div style={{ fontSize: '0.73rem', color: '#94a3b8' }}>Crear / Reagendar citas en agenda</div>
-              </div>
-
-              <div style={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '12px', padding: '12px', opacity: subagents.courts?.enabled ? 1 : 0.35 }}>
-                <div style={{ fontSize: '0.85rem', fontWeight: '600', color: '#facc15', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Zap size={14} /> COMMAND_COURT_BOOKING
-                </div>
-                <div style={{ fontSize: '0.73rem', color: '#94a3b8' }}>Apartar cancha deportiva</div>
-              </div>
-
-              <div style={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '12px', padding: '12px', opacity: subagents.sales?.enabled ? 1 : 0.35 }}>
-                <div style={{ fontSize: '0.85rem', fontWeight: '600', color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Zap size={14} /> COMMAND_SEND_MEDIA
-                </div>
-                <div style={{ fontSize: '0.73rem', color: '#94a3b8' }}>Enviar fotos oficiales de catálogo</div>
-              </div>
-
-              <div style={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '12px', padding: '12px', opacity: subagents.handoff?.enabled ? 1 : 0.35 }}>
-                <div style={{ fontSize: '0.85rem', fontWeight: '600', color: '#fb7185', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Zap size={14} /> COMMAND_HANDOFF
-                </div>
-                <div style={{ fontSize: '0.73rem', color: '#94a3b8' }}>Pausar bot y alertar a equipo</div>
-              </div>
-
-            </div>
-
+            {/* Bottom Output Port */}
+            <div style={{
+              position: 'absolute',
+              bottom: '-7px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              width: '14px',
+              height: '14px',
+              borderRadius: '50%',
+              backgroundColor: '#22c55e',
+              border: '2px solid #0f172a',
+              boxShadow: '0 0 8px #22c55e'
+            }} />
           </div>
+
+          {/* ============================================================== */}
+          {/* LEVEL 2: NODO AGENTE ORQUESTADOR (SUPERVISOR / ROUTER) */}
+          {/* ============================================================== */}
+          <div 
+            onMouseDown={(e) => handleNodeMouseDown('orchestrator', e)}
+            style={{
+              position: 'absolute',
+              left: `${nodePositions.orchestrator?.x ?? DEFAULT_NODE_POSITIONS.orchestrator.x}px`,
+              top: `${nodePositions.orchestrator?.y ?? DEFAULT_NODE_POSITIONS.orchestrator.y}px`,
+              width: `${NODE_DIMENSIONS.orchestrator.w}px`,
+              backgroundColor: '#0f172a',
+              border: activeSimulatedAgentId ? '2px solid #38bdf8' : '2px solid #6366f1',
+              borderRadius: '16px',
+              padding: '14px 18px',
+              boxShadow: activeSimulatedAgentId ? '0 0 30px rgba(56, 189, 248, 0.45)' : '0 10px 25px rgba(99, 102, 241, 0.3)',
+              cursor: 'move',
+              zIndex: draggingNode?.id === 'orchestrator' ? 100 : 2,
+              transition: draggingNode ? 'none' : 'box-shadow 0.3s ease, border-color 0.3s ease'
+            }}
+          >
+            {/* Top Input Port */}
+            <div style={{
+              position: 'absolute',
+              top: '-7px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              width: '14px',
+              height: '14px',
+              borderRadius: '50%',
+              backgroundColor: '#6366f1',
+              border: '2px solid #0f172a',
+              boxShadow: '0 0 8px #6366f1'
+            }} />
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ backgroundColor: '#6366f125', padding: '8px', borderRadius: '10px', color: '#818cf8' }}>
+                  <Bot size={22} />
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.65rem', color: '#a5b4fc', textTransform: 'uppercase', fontWeight: 'bold' }}>Supervisor de Flujo</div>
+                  <strong style={{ fontSize: '0.95rem' }}>Agente Orquestador</strong>
+                </div>
+              </div>
+              <span style={{ backgroundColor: '#6366f120', color: '#a5b4fc', fontSize: '0.68rem', padding: '3px 8px', borderRadius: '12px', border: '1px solid #6366f140', fontWeight: 'bold' }}>
+                &lt;5ms Router
+              </span>
+            </div>
+
+            <p style={{ fontSize: '0.73rem', color: '#94a3b8', margin: '0 0 8px 0', lineHeight: '1.3' }}>
+              Analiza la intención del cliente y delega al subagente experto con sus fuentes RAG y acciones.
+            </p>
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.68rem', color: '#64748b', borderTop: '1px solid #1e293b', paddingTop: '6px' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <Sparkles size={11} color="#38bdf8" /> 5 Subagentes vinculados
+              </span>
+              <span style={{ color: '#818cf8', fontWeight: '600' }}>Arrastrar para mover</span>
+            </div>
+
+            {/* Bottom Output Port */}
+            <div style={{
+              position: 'absolute',
+              bottom: '-7px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              width: '14px',
+              height: '14px',
+              borderRadius: '50%',
+              backgroundColor: '#818cf8',
+              border: '2px solid #0f172a',
+              boxShadow: '0 0 8px #818cf8'
+            }} />
+          </div>
+
+          {/* ============================================================== */}
+          {/* LEVEL 3: CADA AGENTE CON SUS FUENTES Y ACCIONES ASIGNADAS */}
+          {/* ============================================================== */}
+
+          {/* 1. AGENTE VENTAS & MENÚ */}
+          {renderSubagentHierarchicalNode(
+            'sales',
+            subagents.sales,
+            <ShoppingBag size={18} color="#38bdf8" />,
+            '#0284c7',
+            '#38bdf8',
+            activeSimulatedAgentId === 'sales',
+            'Asesora productos, variantes y crea pedidos.',
+            [
+              { icon: <Database size={12} color="#38bdf8" />, label: 'Catálogo Tienda', detail: `${dataSourcesSummary?.productsCount ?? 0} ítems` },
+              { icon: <Database size={12} color="#38bdf8" />, label: 'Pasarela SINPE & Pagos', detail: 'Conectado' }
+            ],
+            [
+              { name: 'COMMAND_ORDER', label: 'Crear pedido en tienda' },
+              { name: 'COMMAND_SEND_MEDIA', label: 'Enviar fotos de catálogo' }
+            ]
+          )}
+
+          {/* 2. AGENTE CITAS & AGENDA */}
+          {renderSubagentHierarchicalNode(
+            'booking',
+            subagents.booking,
+            <Calendar size={18} color="#c084fc" />,
+            '#9333ea',
+            '#c084fc',
+            activeSimulatedAgentId === 'booking',
+            'Revisa agenda y reserva citas con especialistas.',
+            [
+              { icon: <Database size={12} color="#c084fc" />, label: 'Servicios del Negocio', detail: `${dataSourcesSummary?.servicesCount ?? 0} serv.` },
+              { icon: <Database size={12} color="#c084fc" />, label: 'Staff / Especialistas', detail: `${dataSourcesSummary?.specialistsCount ?? 0} activos` },
+              { icon: <Database size={12} color="#c084fc" />, label: 'Disponibilidad de Horario', detail: 'En tiempo real' }
+            ],
+            [
+              { name: 'COMMAND_BOOKING', label: 'Crear cita en agenda' },
+              { name: 'COMMAND_RESCHEDULE', label: 'Reagendar turno' },
+              { name: 'COMMAND_CANCEL', label: 'Cancelar cita' }
+            ]
+          )}
+
+          {/* 3. AGENTE CANCHAS DEPORTIVAS */}
+          {renderSubagentHierarchicalNode(
+            'courts',
+            subagents.courts,
+            <Trophy size={18} color="#facc15" />,
+            '#ca8a04',
+            '#facc15',
+            activeSimulatedAgentId === 'courts',
+            'Aparta canchas y valida códigos CRT-XXXXXX.',
+            [
+              { icon: <Database size={12} color="#facc15" />, label: 'Canchas & Espacios', detail: `${dataSourcesSummary?.courtsCount ?? 0} canchas` },
+              { icon: <Database size={12} color="#facc15" />, label: 'Horarios & Iluminación', detail: 'Tarifas activas' }
+            ],
+            [
+              { name: 'COMMAND_COURT_BOOKING', label: 'Apartar cancha deportiva' },
+              { name: 'COMMAND_COURT_RESCHEDULE', label: 'Mover hora de partido' }
+            ]
+          )}
+
+          {/* 4. AGENTE ESCALADO HUMANO */}
+          {renderSubagentHierarchicalNode(
+            'handoff',
+            subagents.handoff,
+            <UserCheck size={18} color="#fb7185" />,
+            '#e11d48',
+            '#fb7185',
+            activeSimulatedAgentId === 'handoff',
+            'Detecta quejas o pedidos de asesor y pausa el bot.',
+            [
+              { icon: <Database size={12} color="#fb7185" />, label: 'Palabras Clave de Alerta', detail: 'humano, asesor...' },
+              { icon: <Database size={12} color="#fb7185" />, label: 'Teléfono de Notificación', detail: 'Configurado' }
+            ],
+            [
+              { name: 'COMMAND_HANDOFF', label: 'Pausar bot y alertar equipo' }
+            ]
+          )}
+
+          {/* 5. AGENTE GENERAL & FAQ */}
+          {renderSubagentHierarchicalNode(
+            'general',
+            subagents.general,
+            <HelpCircle size={18} color="#94a3b8" />,
+            '#475569',
+            '#94a3b8',
+            activeSimulatedAgentId === 'general',
+            'Bienvenida cordial, horarios y dudas frecuentes.',
+            [
+              { icon: <Database size={12} color="#94a3b8" />, label: 'Identidad del Negocio', detail: 'Ubicación y Datos' },
+              { icon: <Database size={12} color="#94a3b8" />, label: 'Horarios de Atención', detail: 'Configurados' }
+            ],
+            [
+              { name: 'RESPUESTA_DIRECTA', label: 'Conversación natural WhatsApp' }
+            ]
+          )}
 
         </div>
 
@@ -821,90 +959,202 @@ export default function AgentFlowCanvas({
     </div>
   );
 
-  function renderSubagentCard(
+  /**
+   * Renders each specialized subagent as a hierarchical draggable card
+   * with its connected RAG data sources and assigned executable actions.
+   */
+  function renderSubagentHierarchicalNode(
     key: string,
     agent: SubagentConfig | undefined,
     icon: React.ReactNode,
+    accentBorder: string,
     accentColor: string,
     isSimActive: boolean,
-    subtitle: string
+    subtitle: string,
+    sourcesList: Array<{ icon: React.ReactNode; label: string; detail: string }>,
+    actionsList: Array<{ name: string; label: string }>
   ) {
     if (!agent) return null;
     const isEnabled = agent.enabled !== false;
+    const pos = nodePositions[key] || DEFAULT_NODE_POSITIONS[key] || { x: 100, y: 350 };
+    const dim = NODE_DIMENSIONS[key] || { w: 290, h: 360 };
 
     return (
       <div 
-        onClick={() => setSelectedSubagentKey(key)}
+        key={key}
+        onMouseDown={(e) => handleNodeMouseDown(key, e)}
         style={{
+          position: 'absolute',
+          left: `${pos.x}px`,
+          top: `${pos.y}px`,
+          width: `${dim.w}px`,
           backgroundColor: '#0f172a',
           border: isSimActive 
-            ? '2px solid #38bdf8' 
-            : (isEnabled ? `1px solid ${accentColor}` : '1px solid #334155'),
-          borderRadius: '14px',
-          padding: '14px',
-          cursor: 'pointer',
-          position: 'relative',
-          transition: 'all 0.2s ease',
+            ? `2px solid ${accentColor}` 
+            : (isEnabled ? `1.5px solid ${accentBorder}` : '1.5px solid #334155'),
+          borderRadius: '16px',
+          padding: '16px',
           boxShadow: isSimActive 
-            ? '0 0 25px rgba(56, 189, 248, 0.45)' 
-            : (isEnabled ? `0 6px 16px ${accentColor}18` : 'none'),
-          opacity: isEnabled ? 1 : 0.45
+            ? `0 0 30px ${accentColor}60` 
+            : (isEnabled ? `0 10px 25px ${accentBorder}25` : 'none'),
+          opacity: isEnabled ? 1 : 0.5,
+          cursor: 'move',
+          zIndex: draggingNode?.id === key ? 100 : 2,
+          transition: draggingNode?.id === key ? 'none' : 'box-shadow 0.2s ease, border-color 0.2s ease',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '12px'
         }}
       >
-        {/* Left Input Port */}
-        <div style={{ position: 'absolute', left: '-7px', top: '50%', transform: 'translateY(-50%)', width: '12px', height: '12px', borderRadius: '50%', backgroundColor: accentColor, border: '2px solid #0f172a' }} />
+        {/* Top Input Port (Receives cable from Orchestrator) */}
+        <div style={{
+          position: 'absolute',
+          top: '-7px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          width: '14px',
+          height: '14px',
+          borderRadius: '50%',
+          backgroundColor: accentColor,
+          border: '2px solid #0f172a',
+          boxShadow: `0 0 8px ${accentColor}`
+        }} />
 
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+        {/* Card Header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <div style={{ backgroundColor: `${accentColor}25`, padding: '6px', borderRadius: '8px' }}>
               {icon}
             </div>
-            <strong style={{ fontSize: '0.9rem', color: isEnabled ? '#f8fafc' : '#94a3b8' }}>
-              {agent.name}
-            </strong>
+            <div>
+              <div style={{ fontSize: '0.65rem', color: accentColor, textTransform: 'uppercase', fontWeight: 'bold' }}>Subagente Experto</div>
+              <strong style={{ fontSize: '0.92rem', color: isEnabled ? '#f8fafc' : '#94a3b8' }}>
+                {agent.name}
+              </strong>
+            </div>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <button
               type="button"
               onClick={(e) => handleToggleSubagent(key, e)}
+              title={isEnabled ? 'Desactivar subagente' : 'Activar subagente'}
               style={{
                 backgroundColor: isEnabled ? '#10b981' : '#475569',
                 color: '#fff',
                 border: 'none',
                 padding: '3px 8px',
                 borderRadius: '12px',
-                fontSize: '0.7rem',
+                fontSize: '0.68rem',
                 fontWeight: 'bold',
                 cursor: 'pointer'
               }}
             >
               {isEnabled ? 'ON' : 'OFF'}
             </button>
-            <Sliders size={14} color="#94a3b8" />
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedSubagentKey(key);
+              }}
+              title="Configurar prompt, fuentes y acciones"
+              style={{
+                background: '#1e293b',
+                border: '1px solid #334155',
+                color: '#94a3b8',
+                padding: '4px 6px',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center'
+              }}
+            >
+              <Sliders size={13} />
+            </button>
           </div>
         </div>
 
-        <p style={{ fontSize: '0.73rem', color: '#94a3b8', margin: '0 0 10px 0', lineHeight: '1.4' }}>
+        {/* Subtitle / Role description */}
+        <p style={{ fontSize: '0.73rem', color: '#94a3b8', margin: 0, lineHeight: '1.3' }}>
           {subtitle}
         </p>
 
-        {/* Small Data Source Tags */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-          {(agent.sources || []).slice(0, 3).map(s => (
-            <span key={s} style={{ backgroundColor: '#1e293b', color: '#94a3b8', fontSize: '0.68rem', padding: '2px 6px', borderRadius: '4px', border: '1px solid #334155' }}>
-              {getSourceLabel(s)}
-            </span>
-          ))}
-          {(agent.actions || []).slice(0, 2).map(a => (
-            <span key={a} style={{ backgroundColor: '#10b98115', color: '#34d399', fontSize: '0.68rem', padding: '2px 6px', borderRadius: '4px', border: '1px solid #10b98130' }}>
-              {getActionLabel(a)}
-            </span>
-          ))}
+        {/* SECTION 1: FUENTES RAG ASIGNADAS */}
+        <div style={{
+          backgroundColor: '#090d16',
+          border: '1px solid #1e293b',
+          borderRadius: '10px',
+          padding: '10px 12px'
+        }}>
+          <div style={{ fontSize: '0.68rem', color: accentColor, fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <Database size={12} /> Fuentes RAG Asignadas
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {sourcesList.map((src, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.72rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#cbd5e1' }}>
+                  {src.icon}
+                  <span>{src.label}</span>
+                </div>
+                <span style={{ backgroundColor: '#1e293b', color: accentColor, fontSize: '0.65rem', padding: '1px 6px', borderRadius: '8px', fontWeight: 'bold' }}>
+                  {src.detail}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
 
-        {/* Right Output Port */}
-        <div style={{ position: 'absolute', right: '-7px', top: '50%', transform: 'translateY(-50%)', width: '12px', height: '12px', borderRadius: '50%', backgroundColor: accentColor, border: '2px solid #0f172a' }} />
+        {/* SECTION 2: ACCIONES ASIGNADAS (TOOLS) */}
+        <div style={{
+          backgroundColor: '#090d16',
+          border: '1px solid #1e293b',
+          borderRadius: '10px',
+          padding: '10px 12px'
+        }}>
+          <div style={{ fontSize: '0.68rem', color: '#10b981', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <Zap size={12} /> Acciones Asignadas (Tools)
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {actionsList.map((act, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.72rem' }}>
+                <span style={{ color: '#86efac', fontWeight: '600', fontFamily: 'monospace', fontSize: '0.7rem' }}>
+                  {act.name}
+                </span>
+                <span style={{ color: '#94a3b8', fontSize: '0.66rem' }}>
+                  {act.label}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Card Footer: Drag info & Quick edit */}
+        <div 
+          onClick={(e) => {
+            e.stopPropagation();
+            setSelectedSubagentKey(key);
+          }}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            fontSize: '0.68rem',
+            color: '#64748b',
+            borderTop: '1px solid #1e293b',
+            paddingTop: '8px',
+            marginTop: '2px',
+            cursor: 'pointer'
+          }}
+        >
+          <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <Move size={11} color="#64748b" /> Arrastrar para mover
+          </span>
+          <span style={{ color: accentColor, fontWeight: '600' }}>
+            Configurar Prompt &gt;
+          </span>
+        </div>
+
       </div>
     );
   }

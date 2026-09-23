@@ -134,6 +134,11 @@ export interface SubagentConfig {
   temperature?: number;
 }
 
+export interface NodePosition {
+  x: number;
+  y: number;
+}
+
 export interface OrchestratorConfig {
   enabled: boolean;
   subagents: {
@@ -143,6 +148,7 @@ export interface OrchestratorConfig {
     handoff: SubagentConfig;
     general: SubagentConfig;
   };
+  nodePositions?: Record<string, NodePosition>;
 }
 
 export interface DataSourcesSummary {

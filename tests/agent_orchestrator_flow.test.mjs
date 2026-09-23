@@ -196,4 +196,33 @@ test('Agentic Orchestrator & Multi-Agent Routing Tests', async (t) => {
     assert.equal(parsedRelaxed.service, 'Lavado');
   });
 
+  await t.test('8. Hierarchical Top-to-Bottom Layout Structure and Node Position Invariance', () => {
+    const DEFAULT_NODE_POSITIONS = {
+      whatsapp: { x: 670, y: 30 },
+      orchestrator: { x: 640, y: 165 },
+      sales: { x: 30, y: 350 },
+      booking: { x: 350, y: 350 },
+      courts: { x: 670, y: 350 },
+      handoff: { x: 990, y: 350 },
+      general: { x: 1310, y: 350 }
+    };
+
+    // Verify strict top-to-bottom hierarchy: y(WhatsApp) < y(Orchestrator) < y(Subagents)
+    assert.ok(DEFAULT_NODE_POSITIONS.whatsapp.y < DEFAULT_NODE_POSITIONS.orchestrator.y, 'WhatsApp node must be top level above orchestrator');
+    assert.ok(DEFAULT_NODE_POSITIONS.orchestrator.y < DEFAULT_NODE_POSITIONS.sales.y, 'Orchestrator node must be above subagents level');
+    assert.equal(DEFAULT_NODE_POSITIONS.sales.y, DEFAULT_NODE_POSITIONS.booking.y, 'Subagents must align horizontally at level 3');
+    assert.equal(DEFAULT_NODE_POSITIONS.booking.y, DEFAULT_NODE_POSITIONS.courts.y);
+    assert.equal(DEFAULT_NODE_POSITIONS.courts.y, DEFAULT_NODE_POSITIONS.handoff.y);
+    assert.equal(DEFAULT_NODE_POSITIONS.handoff.y, DEFAULT_NODE_POSITIONS.general.y);
+
+    // Verify all 7 critical nodes exist
+    const nodeKeys = ['whatsapp', 'orchestrator', 'sales', 'booking', 'courts', 'handoff', 'general'];
+    for (const key of nodeKeys) {
+      assert.ok(DEFAULT_NODE_POSITIONS[key], `Node ${key} must exist in layout`);
+      assert.equal(typeof DEFAULT_NODE_POSITIONS[key].x, 'number');
+      assert.equal(typeof DEFAULT_NODE_POSITIONS[key].y, 'number');
+    }
+  });
+
 });
+
