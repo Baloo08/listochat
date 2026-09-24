@@ -7373,42 +7373,10 @@ async function buildTenantModelfile(tenantId) {
   }
   const modelName = getTenantModelName(tenant);
   const agentConfig = await getAgentConfig(tenantId);
-  const services = await getServicesByTenant(tenantId);
-  const products = await getProductsByTenant(tenantId, true);
   const store = await getStoreSettings(tenantId);
   const schedule = await getScheduleSettings(tenantId);
-  const courts = await getCourtsByTenant(tenantId);
   const businessName = agentConfig?.businessName || tenant.name || "Nuestro Negocio";
-  const currency = agentConfig?.currency || "CRC";
-  const currencySymbol = currency === "USD" ? "$" : "\u20A1";
   const customPrompt = agentConfig?.systemPrompt || "";
-  let servicesBlock = "";
-  if (services && services.length > 0) {
-    const activeServices = services.filter((s) => s.active !== false);
-    if (activeServices.length > 0) {
-      servicesBlock = "\nCAT\xC1LOGO DE SERVICIOS:\n" + activeServices.map(
-        (s) => `- ${s.name}: ${currencySymbol}${Number(s.price || 0).toLocaleString("es-CR")} (${s.duration || `${s.estimatedMinutes || 45} min`})${s.description ? ` - ${s.description}` : ""}`
-      ).join("\n");
-    }
-  }
-  let productsBlock = "";
-  if (products && products.length > 0) {
-    const activeProducts = products.filter((p) => p.active !== false).slice(0, 25);
-    if (activeProducts.length > 0) {
-      productsBlock = "\nCAT\xC1LOGO DE PRODUCTOS:\n" + activeProducts.map(
-        (p) => `- ${p.name}: ${currencySymbol}${Number(p.price || 0).toLocaleString("es-CR")}${p.description ? ` - ${p.description.slice(0, 80)}` : ""}`
-      ).join("\n");
-    }
-  }
-  let courtsBlock = "";
-  if (courts && courts.length > 0) {
-    const activeCourts = courts.filter((c) => c.active !== false);
-    if (activeCourts.length > 0) {
-      courtsBlock = "\nCANCHAS / ESPACIOS DISPONIBLES:\n" + activeCourts.map(
-        (c) => `- ${c.name} (${c.type || "Sint\xE9tica"}): ${currencySymbol}${Number(c.price_per_hour || c.pricePerHour || 0).toLocaleString("es-CR")}/hora`
-      ).join("\n");
-    }
-  }
   let paymentBlock = "";
   const pMethods = [];
   if (store?.acceptSinpe && store.sinpePhone) {
@@ -7431,13 +7399,13 @@ HORARIO DE ATENCI\xD3N:
 - Horario regular: ${j.startHour || "08:00"} a ${j.endHour || "17:00"} (${j.slotMinutes || 45} min por turno)`;
   }
   const systemPrompt = `Eres el asistente virtual inteligente y cordial de "${businessName}".
-Tu objetivo es atender a los clientes por WhatsApp, responder sus dudas, agendar citas o canchas, tomar pedidos y ofrecer una atenci\xF3n de primer nivel.
+Tu objetivo es atender a los clientes por WhatsApp, responder sus dudas, agendar citas o canchas, tomar pedidos y ofrecer una atenci\xF3n de primer nivel con calidez costarricense (*pura vida*).
 
 REGLAS DE ATENCI\xD3N:
 1. Responde de forma amable, clara y concisa (ideal para WhatsApp). Usa negrita (*palabra*) para resaltar datos importantes.
-2. Nunca inventes servicios, productos, horarios ni precios que no est\xE9n en tu cat\xE1logo oficial.
+2. PROHIBICI\xD3N TOTAL DE ALUCINAR PRODUCTOS, SERVICIOS O PRECIOS: Los cat\xE1logos oficiales, precios y disponibilidad se te proporcionan din\xE1micamente en cada interacci\xF3n. NUNCA inventes productos, prendas, servicios, horarios ni precios que no se te indiquen expl\xEDcitamente en el contexto de la conversaci\xF3n actual.
 3. Si un cliente solicita agendar una cita o cancha, solicita su nombre, fecha y hora preferida.
-4. Si un cliente solicita hacer un pedido, confirma los productos, cantidades y m\xE9todo de pago o entrega.
+4. Si un cliente solicita hacer un pedido, confirma los productos, cantidades y m\xE9todo de pago o entrega bas\xE1ndote \xFAnicamente en el cat\xE1logo oficial provisto en el mensaje.
 5. Si el cliente solicita hablar con un humano o asesor, o si notas frustraci\xF3n o un reclamo urgente, responde amablemente indicando que le comunicar\xE1s con un asesor humano e incluye la directiva <<<COMMAND_HANDOFF: {"reason": "Solicitado por cliente"}>>>.
 6. Cuando se acuerden los datos completos para una cita, emite al final de tu mensaje la directiva:
 <<<COMMAND_BOOKING: {"customerName": "...", "date": "YYYY-MM-DD", "time": "HH:MM", "serviceName": "..."}>>>
@@ -7449,9 +7417,6 @@ REGLAS DE ATENCI\xD3N:
 ${customPrompt ? `INSTRUCCIONES ESPEC\xCDFICAS DEL COMERCIO:
 ${customPrompt}
 ` : ""}
-${servicesBlock}
-${courtsBlock}
-${productsBlock}
 ${paymentBlock}
 ${scheduleBlock}
 `.trim();
@@ -7792,8 +7757,6 @@ function safeParseJSON(rawStr) {
 }
 function routeIntent(userMessage, chatHistory, orchestratorConfig, storeModules) {
   const lowerMsg = userMessage.toLowerCase().trim();
-  const recentHistory = (chatHistory || []).slice(-6).map((h) => h.content).join(" ").toLowerCase();
-  const context = `${recentHistory} ${lowerMsg}`;
   const subagents = orchestratorConfig?.subagents || defaultOrchestratorConfig.subagents;
   const isHandoff = /humano|asesor|persona|agente|hablar con alguien|queja|reclamo|urgente|hablar con un asesor/i.test(lowerMsg);
   if (isHandoff) {
@@ -7802,23 +7765,37 @@ function routeIntent(userMessage, chatHistory, orchestratorConfig, storeModules)
   const courtsAllowed = storeModules ? storeModules.courtsEnabled === true : true;
   const salesAllowed = storeModules ? storeModules.storeEnabled !== false : true;
   const bookingsAllowed = storeModules ? storeModules.bookingsEnabled !== false : true;
+  const currentMsgCourts = /cancha|canchas|partido|futbol|fútbol|padel|pádel|mejenga|gramilla|reservar cancha|alquiler cancha|crt-|#res-/i.test(lowerMsg);
+  const currentMsgBooking = /servicio|servicios|cita|citas|agenda|agendar|turno|atencion|atención|doctor|especialista|cancelar cita|reagendar|disponibilidad de horario|horario de cita/i.test(lowerMsg);
+  const currentMsgSales = /precio|costo|cuanto|venden|catalogo|catálogo|menu|menú|producto|productos|comprar|pedir|orden|foto|imagen|plato|comida|pizza|hamburguesa|variante|talla|sabor|llevar|delivery|envio|envío|agregar al carrito|camisa|camiseta|ropa|zapato/i.test(lowerMsg);
+  if (currentMsgCourts && courtsAllowed && !currentMsgBooking && !currentMsgSales) {
+    return subagents.courts?.enabled !== false ? "courts" : "general";
+  }
+  if (currentMsgBooking && bookingsAllowed && !currentMsgSales && !currentMsgCourts) {
+    return subagents.booking?.enabled !== false ? "booking" : "general";
+  }
+  if (currentMsgSales && salesAllowed && !currentMsgBooking && !currentMsgCourts) {
+    return subagents.sales?.enabled !== false ? "sales" : "general";
+  }
+  const recentHistory = (chatHistory || []).slice(-2).map((h) => h.content).join(" ").toLowerCase();
+  const context = `${recentHistory} ${lowerMsg}`;
   const isCourts = /cancha|canchas|partido|futbol|fútbol|padel|pádel|mejenga|gramilla|reservar cancha|alquiler cancha|crt-|#res-/i.test(context);
+  const isBooking = /servicio|servicios|cita|citas|agenda|agendar|turno|atencion|atención|doctor|especialista|cancelar cita|reagendar|disponibilidad de horario|horario de cita/i.test(context);
+  const isSales = /precio|costo|cuanto|venden|catalogo|catálogo|menu|menú|producto|productos|comprar|pedir|orden|foto|imagen|plato|comida|pizza|hamburguesa|variante|talla|sabor|llevar|delivery|envio|envío|agregar al carrito|camisa|camiseta|ropa|zapato|confirmo/i.test(context);
   if (isCourts && courtsAllowed) {
     return subagents.courts?.enabled !== false ? "courts" : "general";
   }
-  const isSales = /precio|costo|cuanto|venden|catalogo|catálogo|menu|menú|producto|productos|comprar|pedir|orden|foto|imagen|plato|comida|pizza|hamburguesa|variante|talla|sabor|llevar|delivery|envio|envío|agregar al carrito|confirmo/i.test(context);
-  const isBooking = /servicio|servicios|cita|citas|agenda|agendar|turno|atencion|atención|doctor|especialista|cancelar cita|reagendar|disponibilidad de horario|horario de cita/i.test(context);
-  if (isSales && salesAllowed && (!isBooking || !bookingsAllowed)) {
-    return subagents.sales?.enabled !== false ? "sales" : "general";
-  }
-  if (isBooking && bookingsAllowed && (!isSales || !salesAllowed)) {
+  if (isBooking && bookingsAllowed && !isSales) {
     return subagents.booking?.enabled !== false ? "booking" : "general";
   }
-  if (isSales && salesAllowed) {
+  if (isSales && salesAllowed && !isBooking) {
     return subagents.sales?.enabled !== false ? "sales" : "general";
   }
   if (isBooking && bookingsAllowed) {
     return subagents.booking?.enabled !== false ? "booking" : "general";
+  }
+  if (isSales && salesAllowed) {
+    return subagents.sales?.enabled !== false ? "sales" : "general";
   }
   return "general";
 }
@@ -7854,23 +7831,87 @@ async function processWithOrchestrator(tenantId, userMessage, senderPhone, sende
   const sourcesUsed = [];
   let specializedPrompt = "";
   let allowedActions = currentSubagent?.actions || [];
+  let salesActiveProducts = [];
   switch (routedAgentId) {
     case "sales": {
       sourcesUsed.push("products", "payments", "storeSettings");
       const products = await getProductsByTenant(tenantId, true);
       const activeProducts = products.filter((p) => p.active !== false);
-      const lowerContext = `${(chatHistory || []).slice(-4).map((h) => h.content).join(" ")} ${userMessage}`.toLowerCase();
+      salesActiveProducts = activeProducts;
+      const SPANISH_STOP_WORDS = /* @__PURE__ */ new Set([
+        "para",
+        "este",
+        "esta",
+        "estos",
+        "estas",
+        "como",
+        "todo",
+        "toda",
+        "todos",
+        "todas",
+        "puede",
+        "tiene",
+        "tienen",
+        "desde",
+        "hasta",
+        "sobre",
+        "entre",
+        "hacer",
+        "bien",
+        "solo",
+        "otro",
+        "otra",
+        "otros",
+        "otras",
+        "aqu\xED",
+        "aqui",
+        "tambi\xE9n",
+        "tambien",
+        "porque",
+        "cuando",
+        "donde",
+        "pero",
+        "algo",
+        "nada",
+        "est\xE1n",
+        "estan",
+        "hola",
+        "buenas",
+        "buenos",
+        "tardes",
+        "noches",
+        "d\xEDas",
+        "dias",
+        "favor",
+        "gracias",
+        "nuestro",
+        "nuestra",
+        "nuestros",
+        "nuestras",
+        "usted",
+        "ustedes"
+      ]);
+      const lowerMsgOnly = userMessage.toLowerCase();
+      const lowerContext = `${(chatHistory || []).slice(-2).map((h) => h.content).join(" ")} ${userMessage}`.toLowerCase();
       let matchedProducts = activeProducts.filter((p) => {
         const pName = p.name.toLowerCase();
         const pCat = (p.category || "").toLowerCase();
+        if (lowerContext.includes(pName)) return true;
+        const nameTokens = pName.split(/[\s\-_,./]+/).filter((w) => w.length > 3 && !SPANISH_STOP_WORDS.has(w));
+        if (nameTokens.length > 0 && nameTokens.some((t) => lowerContext.includes(t))) return true;
+        if (pCat && pCat.length > 3 && !SPANISH_STOP_WORDS.has(pCat) && lowerContext.includes(pCat)) return true;
         const pDesc = (p.description || "").toLowerCase();
-        return lowerContext.includes(pName) || pCat && lowerContext.includes(pCat) || pDesc && pDesc.split(" ").some((w) => w.length > 3 && lowerContext.includes(w));
+        if (pDesc) {
+          const descTokens = pDesc.split(/[\s\-_,./]+/).filter((w) => w.length > 5 && !SPANISH_STOP_WORDS.has(w));
+          if (descTokens.some((w) => lowerMsgOnly.includes(w))) return true;
+        }
+        return false;
       });
       let catalogAlert = "";
       if (activeProducts.length === 0) {
         catalogAlert = "\u26A0\uFE0F CAT\xC1LOGO VAC\xCDO: Actualmente no hay productos registrados en el inventario. Informa amablemente que el cat\xE1logo est\xE1 en actualizaci\xF3n y ofrece comunicar con un asesor humano.\n";
       } else if (matchedProducts.length === 0) {
-        catalogAlert = `\u26A0\uFE0F AVISO DE INVENTARIO: El cliente est\xE1 consultando o buscando un art\xEDculo que NO coincide con ning\xFAn producto registrado en el inventario oficial. TIENES TERMINANTEMENTE PROHIBIDO inventar que disponen de ese art\xEDculo o inventar precios o existencias. Debes aclararle con amabilidad y calidez (*"Disculpa ${senderName}, en este momento no disponemos de ese art\xEDculo en nuestro cat\xE1logo"*) y ofrecerle las opciones reales que s\xED comercializan (listadas abajo).
+        catalogAlert = `\u26A0\uFE0F AVISO DE INVENTARIO: El cliente est\xE1 consultando o buscando un art\xEDculo que NO coincide con ning\xFAn producto registrado en el inventario oficial. TIENES TERMINANTEMENTE PROHIBIDO inventar que disponen de ese art\xEDculo o inventar precios o existencias. Debes aclararle con amabilidad y calidez (*"Disculpa ${senderName}, en este momento no disponemos de ese art\xEDculo en nuestro cat\xE1logo"*) y ofrecerle las opciones reales que s\xED comercializan (listadas abajo como sugerencias del comercio).
 `;
         matchedProducts = activeProducts.slice(0, 6);
       }
@@ -8148,6 +8189,27 @@ ${sessionGreetingDirective}`;
       structuredMessages.push({ role: h.role, content: h.content });
     }
   }
+  if (routedAgentId === "sales") {
+    structuredMessages.push({
+      role: "system",
+      content: `\u26A0\uFE0F RECORDATORIO CR\xCDTICO DE INVENTARIO Y VERDAD OFICIAL:
+La \xDANICA fuente de verdad sobre lo que comercializa este negocio es el bloque "Cat\xE1logo Oficial de Productos y Precios" provisto en tus instrucciones principales.
+Si en mensajes anteriores del historial t\xFA (el asistente) o el cliente mencionaron prendas, camisetas, art\xEDculos o precios que NO figuran en dicho cat\xE1logo oficial actual, ESO FUE UN ERROR O YA NO FORMAN PARTE DEL INVENTARIO.
+EST\xC1 ESTRICTAMENTE PROHIBIDO volver a ofrecer, listar o confirmar productos fuera del cat\xE1logo oficial actual, sin importar lo que se haya dicho antes en el chat. Responde con honestidad y ofrece \xFAnicamente lo que est\xE1 textualmente en el Cat\xE1logo Oficial.`
+    });
+  } else if (routedAgentId === "booking") {
+    structuredMessages.push({
+      role: "system",
+      content: `\u26A0\uFE0F RECORDATORIO CR\xCDTICO DE SERVICIOS Y DISPONIBILIDAD:
+La \xDANICA fuente de verdad sobre servicios, precios y horarios es la provista en tus instrucciones. No inventes servicios ni confirmes citas en horarios ocupados aunque se hayan mencionado antes en el historial.`
+    });
+  } else if (routedAgentId === "courts") {
+    structuredMessages.push({
+      role: "system",
+      content: `\u26A0\uFE0F RECORDATORIO CR\xCDTICO DE CANCHAS:
+La \xDANICA fuente de verdad sobre canchas y tarifas es la provista en tus instrucciones. No inventes canchas ni confirmes reservas fuera de la disponibilidad oficial.`
+    });
+  }
   structuredMessages.push({ role: "user", content: userMessage });
   let primaryConfig;
   let fallbackConfig;
@@ -8281,6 +8343,54 @@ ${sessionGreetingDirective}`;
     }
   }
   let cleanReply = rawReply.replace(/<<<COMMAND_.*?>>>/gs, "").trim().replace(/\n{3,}/g, "\n\n").replace(/\*\*(.*?)\*\*/g, "*$1*");
+  const hasRawCommandTag = /<<<COMMAND_\w+/i.test(rawReply);
+  const anyCommandParsed = isBookingDetected || isCourtBookingDetected || isOrderDetected || isHandoffRequested || isMediaDetected || isCancelBookingDetected || isRescheduleBookingDetected || isRescheduleCourtDetected;
+  if (hasRawCommandTag && !anyCommandParsed) {
+    console.error(`[Orchestrator] \u26A0\uFE0F ORPHANED COMMAND DETECTED for tenant ${tenantId}. Raw command failed parsing:`, rawReply.slice(0, 300));
+    cleanReply = `Disculpa ${senderName}, tuve un inconveniente t\xE9cnico al registrar tu solicitud en el sistema. \xBFPodr\xEDas confirmarme nuevamente los detalles para procesarla correctamente? \u{1F64F}`;
+  }
+  if (routedAgentId === "sales" && salesActiveProducts.length > 0) {
+    const priceRegex = /₡\s*([0-9]{1,3}(?:[.,][0-9]{3})*|\d+)/g;
+    const mentionedPriceMatches = [...cleanReply.matchAll(priceRegex)];
+    if (mentionedPriceMatches.length > 0) {
+      const activeProductPrices = new Set(
+        salesActiveProducts.flatMap((p) => [
+          Math.round(Number(p.price || 0)),
+          ...(p.variants || []).map((v) => Math.round(Number(v.priceOverride || p.price || 0)))
+        ])
+      );
+      const hallucinatedPrices = mentionedPriceMatches.filter((m) => {
+        const rawNum = m[1].replace(/[.,]/g, "");
+        const num = parseInt(rawNum, 10);
+        return !isNaN(num) && num > 0 && !activeProductPrices.has(num);
+      });
+      const mentionsRealProduct = salesActiveProducts.some((p) => cleanReply.toLowerCase().includes(p.name.toLowerCase()));
+      if (hallucinatedPrices.length >= 2 && !mentionsRealProduct) {
+        console.warn(`[Orchestrator] \u{1F6A8} POST-LLM HALLUCINATION BLOCKED: Reply contained invented prices (${hallucinatedPrices.map((h) => h[0]).join(", ")}) with no catalog match. Replacing with safe reply.`);
+        cleanReply = `Disculpa *${senderName}*, en este momento no disponemos de ese art\xEDculo en nuestro cat\xE1logo oficial. \u{1F6CD}\uFE0F
+
+Nuestros productos disponibles actualmente son:
+` + salesActiveProducts.slice(0, 5).map((p) => `\u2022 *${p.name}*: \u20A1${Number(p.price || 0).toLocaleString("es-CR")}`).join("\n") + `
+
+\xBFTe gustar\xEDa consultar por alguno de estos?`;
+      }
+    }
+  }
+  try {
+    console.log(JSON.stringify({
+      event: "agent_turn",
+      tenantId,
+      routedAgent: routedAgentId,
+      routedAgentName,
+      sourcesUsed,
+      isSessionActive,
+      tokensUsed: aiResult.tokensUsed,
+      commandDetected: isOrderDetected ? "order" : isBookingDetected ? "booking" : isCourtBookingDetected ? "court" : isHandoffRequested ? "handoff" : null,
+      responseLength: cleanReply.length,
+      timestamp: (/* @__PURE__ */ new Date()).toISOString()
+    }));
+  } catch {
+  }
   return {
     replyText: cleanReply,
     isBookingDetected,
@@ -8313,7 +8423,17 @@ async function processWhatsAppMessageWithAI(tenantId, userMessage, senderPhone, 
     try {
       return await processWithOrchestrator(tenantId, userMessage, senderPhone, senderName, chatHistory, options);
     } catch (orchErr) {
-      console.error("[Agent] Orchestrator error, falling back to legacy prompt:", orchErr);
+      console.error("[Agent] \u274C ORCHESTRATOR ERROR \u2014 activating safe fallback:", orchErr);
+      return {
+        replyText: `\xA1Hola ${senderName}! Gracias por escribirnos. En este momento estamos procesando tu solicitud con nuestro equipo. Un asesor te responder\xE1 a la brevedad posible. \u{1F64F}`,
+        isBookingDetected: false,
+        isCourtBookingDetected: false,
+        isOrderDetected: false,
+        isHandoffRequested: true,
+        handoffReason: `Error en orquestador: ${orchErr?.message || "intermitencia t\xE9cnica"}`,
+        isMediaDetected: false,
+        tokensUsed: 0
+      };
     }
   }
   const tenant = await getTenantById(tenantId);
@@ -8663,7 +8783,7 @@ Asistente:`;
       provider: tenant?.aiProvider || "gemini",
       apiKey,
       model: tenant?.aiModel || agentConfig?.model || "gemini-2.5-flash",
-      temperature: agentConfig?.temperature || 0.7
+      temperature: agentConfig?.temperature ?? 0.3
     };
   } else {
     isBeticoPlatformAI = true;
@@ -8673,7 +8793,7 @@ Asistente:`;
     config = {
       ...masterConfig,
       model: virtualModel || masterConfig.model,
-      temperature: agentConfig?.temperature || 0.7
+      temperature: agentConfig?.temperature ?? 0.3
     };
   }
   const aiResult = await callAI(config, {

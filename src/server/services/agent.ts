@@ -48,8 +48,18 @@ export async function processWhatsAppMessageWithAI(
   if (agentConfig?.orchestratorConfig?.enabled !== false) {
     try {
       return await processWithOrchestrator(tenantId, userMessage, senderPhone, senderName, chatHistory, options);
-    } catch (orchErr) {
-      console.error('[Agent] Orchestrator error, falling back to legacy prompt:', orchErr);
+    } catch (orchErr: any) {
+      console.error('[Agent] ❌ ORCHESTRATOR ERROR — activating safe fallback:', orchErr);
+      return {
+        replyText: `¡Hola ${senderName}! Gracias por escribirnos. En este momento estamos procesando tu solicitud con nuestro equipo. Un asesor te responderá a la brevedad posible. 🙏`,
+        isBookingDetected: false,
+        isCourtBookingDetected: false,
+        isOrderDetected: false,
+        isHandoffRequested: true,
+        handoffReason: `Error en orquestador: ${orchErr?.message || 'intermitencia técnica'}`,
+        isMediaDetected: false,
+        tokensUsed: 0
+      };
     }
   }
 
@@ -438,7 +448,7 @@ Humano: <<<COMMAND_HANDOFF: {"reason":"motivo"}>>>`;
       provider: (tenant?.aiProvider as any) || 'gemini',
       apiKey,
       model: tenant?.aiModel || agentConfig?.model || 'gemini-2.5-flash',
-      temperature: agentConfig?.temperature || 0.7,
+      temperature: agentConfig?.temperature ?? 0.3,
     };
   } else {
     isBeticoPlatformAI = true;
@@ -450,7 +460,7 @@ Humano: <<<COMMAND_HANDOFF: {"reason":"motivo"}>>>`;
     config = {
       ...masterConfig,
       model: virtualModel || masterConfig.model,
-      temperature: agentConfig?.temperature || 0.7
+      temperature: agentConfig?.temperature ?? 0.3
     };
   }
 

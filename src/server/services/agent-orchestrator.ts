@@ -58,12 +58,9 @@ export function routeIntent(
   storeModules?: { storeEnabled?: boolean; bookingsEnabled?: boolean; courtsEnabled?: boolean }
 ): SubagentId {
   const lowerMsg = userMessage.toLowerCase().trim();
-  const recentHistory = (chatHistory || []).slice(-6).map(h => h.content).join(' ').toLowerCase();
-  const context = `${recentHistory} ${lowerMsg}`;
-
   const subagents = orchestratorConfig?.subagents || defaultOrchestratorConfig.subagents;
 
-  // 1. Escalation / Handoff
+  // 1. Escalation / Handoff (Always highest priority)
   const isHandoff = /humano|asesor|persona|agente|hablar con alguien|queja|reclamo|urgente|hablar con un asesor/i.test(lowerMsg);
   if (isHandoff) {
     return subagents.handoff?.enabled !== false ? 'handoff' : 'general';
@@ -74,32 +71,44 @@ export function routeIntent(
   const salesAllowed = storeModules ? storeModules.storeEnabled !== false : true;
   const bookingsAllowed = storeModules ? storeModules.bookingsEnabled !== false : true;
 
-  // 2. Canchas deportivas (Only if tenant has courtsEnabled activated)
+  // 2. High-Precision Turn-First Evaluation (Current Message Intent)
+  // This prevents historical context bleed (e.g. user previously asked about price, now wants to book an appointment)
+  const currentMsgCourts = /cancha|canchas|partido|futbol|fútbol|padel|pádel|mejenga|gramilla|reservar cancha|alquiler cancha|crt-|#res-/i.test(lowerMsg);
+  const currentMsgBooking = /servicio|servicios|cita|citas|agenda|agendar|turno|atencion|atención|doctor|especialista|cancelar cita|reagendar|disponibilidad de horario|horario de cita/i.test(lowerMsg);
+  const currentMsgSales = /precio|costo|cuanto|venden|catalogo|catálogo|menu|menú|producto|productos|comprar|pedir|orden|foto|imagen|plato|comida|pizza|hamburguesa|variante|talla|sabor|llevar|delivery|envio|envío|agregar al carrito|camisa|camiseta|ropa|zapato/i.test(lowerMsg);
+
+  if (currentMsgCourts && courtsAllowed && !currentMsgBooking && !currentMsgSales) {
+    return subagents.courts?.enabled !== false ? 'courts' : 'general';
+  }
+  if (currentMsgBooking && bookingsAllowed && !currentMsgSales && !currentMsgCourts) {
+    return subagents.booking?.enabled !== false ? 'booking' : 'general';
+  }
+  if (currentMsgSales && salesAllowed && !currentMsgBooking && !currentMsgCourts) {
+    return subagents.sales?.enabled !== false ? 'sales' : 'general';
+  }
+
+  // 3. Fallback to Short Context Window (last 2 messages only) for follow-up turns (e.g. "a las 3pm", "sí, confirmo", "con papas")
+  const recentHistory = (chatHistory || []).slice(-2).map(h => h.content).join(' ').toLowerCase();
+  const context = `${recentHistory} ${lowerMsg}`;
+
   const isCourts = /cancha|canchas|partido|futbol|fútbol|padel|pádel|mejenga|gramilla|reservar cancha|alquiler cancha|crt-|#res-/i.test(context);
+  const isBooking = /servicio|servicios|cita|citas|agenda|agendar|turno|atencion|atención|doctor|especialista|cancelar cita|reagendar|disponibilidad de horario|horario de cita/i.test(context);
+  const isSales = /precio|costo|cuanto|venden|catalogo|catálogo|menu|menú|producto|productos|comprar|pedir|orden|foto|imagen|plato|comida|pizza|hamburguesa|variante|talla|sabor|llevar|delivery|envio|envío|agregar al carrito|camisa|camiseta|ropa|zapato|confirmo/i.test(context);
+
   if (isCourts && courtsAllowed) {
     return subagents.courts?.enabled !== false ? 'courts' : 'general';
   }
-
-  // 3. Ventas de tienda / restaurante / pedidos
-  const isSales = /precio|costo|cuanto|venden|catalogo|catálogo|menu|menú|producto|productos|comprar|pedir|orden|foto|imagen|plato|comida|pizza|hamburguesa|variante|talla|sabor|llevar|delivery|envio|envío|agregar al carrito|confirmo/i.test(context);
-
-  // 4. Citas y Servicios
-  const isBooking = /servicio|servicios|cita|citas|agenda|agendar|turno|atencion|atención|doctor|especialista|cancelar cita|reagendar|disponibilidad de horario|horario de cita/i.test(context);
-
-  if (isSales && salesAllowed && (!isBooking || !bookingsAllowed)) {
-    return subagents.sales?.enabled !== false ? 'sales' : 'general';
-  }
-
-  if (isBooking && bookingsAllowed && (!isSales || !salesAllowed)) {
+  if (isBooking && bookingsAllowed && !isSales) {
     return subagents.booking?.enabled !== false ? 'booking' : 'general';
   }
-
-  if (isSales && salesAllowed) {
+  if (isSales && salesAllowed && !isBooking) {
     return subagents.sales?.enabled !== false ? 'sales' : 'general';
   }
-
   if (isBooking && bookingsAllowed) {
     return subagents.booking?.enabled !== false ? 'booking' : 'general';
+  }
+  if (isSales && salesAllowed) {
+    return subagents.sales?.enabled !== false ? 'sales' : 'general';
   }
 
   return 'general';
@@ -152,6 +161,7 @@ export async function processWithOrchestrator(
   const sourcesUsed: string[] = [];
   let specializedPrompt = '';
   let allowedActions = currentSubagent?.actions || [];
+  let salesActiveProducts: any[] = [];
 
   // 3. Modular Context Assembly per Subagent
   switch (routedAgentId) {
@@ -159,21 +169,45 @@ export async function processWithOrchestrator(
       sourcesUsed.push('products', 'payments', 'storeSettings');
       const products = await getProductsByTenant(tenantId, true);
       const activeProducts = products.filter(p => p.active !== false);
+      salesActiveProducts = activeProducts;
 
-      // Match products relevant to query
-      const lowerContext = `${(chatHistory || []).slice(-4).map(h => h.content).join(' ')} ${userMessage}`.toLowerCase();
+      // Match products relevant to query with stop-word filtering
+      const SPANISH_STOP_WORDS = new Set([
+        'para', 'este', 'esta', 'estos', 'estas', 'como', 'todo', 'toda', 'todos', 'todas',
+        'puede', 'tiene', 'tienen', 'desde', 'hasta', 'sobre', 'entre', 'hacer', 'bien',
+        'solo', 'otro', 'otra', 'otros', 'otras', 'aquí', 'aqui', 'también', 'tambien',
+        'porque', 'cuando', 'donde', 'pero', 'algo', 'nada', 'están', 'estan', 'hola',
+        'buenas', 'buenos', 'tardes', 'noches', 'días', 'dias', 'favor', 'gracias',
+        'nuestro', 'nuestra', 'nuestros', 'nuestras', 'usted', 'ustedes'
+      ]);
+
+      const lowerMsgOnly = userMessage.toLowerCase();
+      const lowerContext = `${(chatHistory || []).slice(-2).map(h => h.content).join(' ')} ${userMessage}`.toLowerCase();
+
       let matchedProducts = activeProducts.filter(p => {
         const pName = p.name.toLowerCase();
         const pCat = (p.category || '').toLowerCase();
+        // 1. Direct name match
+        if (lowerContext.includes(pName)) return true;
+        // 2. Significant name tokens (>3 chars, not stop words)
+        const nameTokens = pName.split(/[\s\-_,./]+/).filter(w => w.length > 3 && !SPANISH_STOP_WORDS.has(w));
+        if (nameTokens.length > 0 && nameTokens.some(t => lowerContext.includes(t))) return true;
+        // 3. Category match
+        if (pCat && pCat.length > 3 && !SPANISH_STOP_WORDS.has(pCat) && lowerContext.includes(pCat)) return true;
+        // 4. Description keywords (>5 chars, not stop words) evaluated against current message
         const pDesc = (p.description || '').toLowerCase();
-        return lowerContext.includes(pName) || (pCat && lowerContext.includes(pCat)) || (pDesc && pDesc.split(' ').some(w => w.length > 3 && lowerContext.includes(w)));
+        if (pDesc) {
+          const descTokens = pDesc.split(/[\s\-_,./]+/).filter(w => w.length > 5 && !SPANISH_STOP_WORDS.has(w));
+          if (descTokens.some(w => lowerMsgOnly.includes(w))) return true;
+        }
+        return false;
       });
 
       let catalogAlert = '';
       if (activeProducts.length === 0) {
         catalogAlert = '⚠️ CATÁLOGO VACÍO: Actualmente no hay productos registrados en el inventario. Informa amablemente que el catálogo está en actualización y ofrece comunicar con un asesor humano.\n';
       } else if (matchedProducts.length === 0) {
-        catalogAlert = `⚠️ AVISO DE INVENTARIO: El cliente está consultando o buscando un artículo que NO coincide con ningún producto registrado en el inventario oficial. TIENES TERMINANTEMENTE PROHIBIDO inventar que disponen de ese artículo o inventar precios o existencias. Debes aclararle con amabilidad y calidez (*"Disculpa ${senderName}, en este momento no disponemos de ese artículo en nuestro catálogo"*) y ofrecerle las opciones reales que sí comercializan (listadas abajo).\n`;
+        catalogAlert = `⚠️ AVISO DE INVENTARIO: El cliente está consultando o buscando un artículo que NO coincide con ningún producto registrado en el inventario oficial. TIENES TERMINANTEMENTE PROHIBIDO inventar que disponen de ese artículo o inventar precios o existencias. Debes aclararle con amabilidad y calidez (*"Disculpa ${senderName}, en este momento no disponemos de ese artículo en nuestro catálogo"*) y ofrecerle las opciones reales que sí comercializan (listadas abajo como sugerencias del comercio).\n`;
         matchedProducts = activeProducts.slice(0, 6);
       }
 
@@ -453,6 +487,31 @@ REGLA DE ORO "CHAT-FIRST" Y MANEJO DE ENLACES:
       structuredMessages.push({ role: h.role, content: h.content });
     }
   }
+
+  // Phase 1 Anti-Hallucination Guardrail: Neutralize Conversational Drift & History Reinforcement Loop
+  // Injects an authoritative turn-level truth directive directly preceding the user's latest query
+  if (routedAgentId === 'sales') {
+    structuredMessages.push({
+      role: 'system',
+      content: `⚠️ RECORDATORIO CRÍTICO DE INVENTARIO Y VERDAD OFICIAL:
+La ÚNICA fuente de verdad sobre lo que comercializa este negocio es el bloque "Catálogo Oficial de Productos y Precios" provisto en tus instrucciones principales.
+Si en mensajes anteriores del historial tú (el asistente) o el cliente mencionaron prendas, camisetas, artículos o precios que NO figuran en dicho catálogo oficial actual, ESO FUE UN ERROR O YA NO FORMAN PARTE DEL INVENTARIO.
+ESTÁ ESTRICTAMENTE PROHIBIDO volver a ofrecer, listar o confirmar productos fuera del catálogo oficial actual, sin importar lo que se haya dicho antes en el chat. Responde con honestidad y ofrece únicamente lo que está textualmente en el Catálogo Oficial.`
+    });
+  } else if (routedAgentId === 'booking') {
+    structuredMessages.push({
+      role: 'system',
+      content: `⚠️ RECORDATORIO CRÍTICO DE SERVICIOS Y DISPONIBILIDAD:
+La ÚNICA fuente de verdad sobre servicios, precios y horarios es la provista en tus instrucciones. No inventes servicios ni confirmes citas en horarios ocupados aunque se hayan mencionado antes en el historial.`
+    });
+  } else if (routedAgentId === 'courts') {
+    structuredMessages.push({
+      role: 'system',
+      content: `⚠️ RECORDATORIO CRÍTICO DE CANCHAS:
+La ÚNICA fuente de verdad sobre canchas y tarifas es la provista en tus instrucciones. No inventes canchas ni confirmes reservas fuera de la disponibilidad oficial.`
+    });
+  }
+
   structuredMessages.push({ role: 'user', content: userMessage });
 
   // 5. Model Resolution with Resilient Cross-Fallback
@@ -620,6 +679,66 @@ REGLA DE ORO "CHAT-FIRST" Y MANEJO DE ENLACES:
     .trim()
     .replace(/\n{3,}/g, '\n\n')
     .replace(/\*\*(.*?)\*\*/g, '*$1*');
+
+  // Phase 5 Guardrail: Neutralize Silent Failures from Corrupted Command Syntaxes
+  const hasRawCommandTag = /<<<COMMAND_\w+/i.test(rawReply);
+  const anyCommandParsed = isBookingDetected || isCourtBookingDetected || isOrderDetected ||
+    isHandoffRequested || isMediaDetected || isCancelBookingDetected ||
+    isRescheduleBookingDetected || isRescheduleCourtDetected;
+
+  if (hasRawCommandTag && !anyCommandParsed) {
+    console.error(`[Orchestrator] ⚠️ ORPHANED COMMAND DETECTED for tenant ${tenantId}. Raw command failed parsing:`, rawReply.slice(0, 300));
+    cleanReply = `Disculpa ${senderName}, tuve un inconveniente técnico al registrar tu solicitud en el sistema. ¿Podrías confirmarme nuevamente los detalles para procesarla correctamente? 🙏`;
+  }
+
+  // Phase 7: Post-LLM Zero-Hallucination Output Validator
+  // Scans for fabricated product pricing patterns when sales subagent is active
+  if (routedAgentId === 'sales' && salesActiveProducts.length > 0) {
+    const priceRegex = /₡\s*([0-9]{1,3}(?:[.,][0-9]{3})*|\d+)/g;
+    const mentionedPriceMatches = [...cleanReply.matchAll(priceRegex)];
+    if (mentionedPriceMatches.length > 0) {
+      const activeProductPrices = new Set(
+        salesActiveProducts.flatMap((p: any) => [
+          Math.round(Number(p.price || 0)),
+          ...((p.variants || []).map((v: any) => Math.round(Number(v.priceOverride || p.price || 0))))
+        ])
+      );
+
+      const hallucinatedPrices = mentionedPriceMatches.filter(m => {
+        const rawNum = m[1].replace(/[.,]/g, '');
+        const num = parseInt(rawNum, 10);
+        return !isNaN(num) && num > 0 && !activeProductPrices.has(num);
+      });
+
+      // If the reply mentions 2 or more prices that DO NOT EXIST in the catalog,
+      // and none of the catalog product names are mentioned in the reply:
+      const mentionsRealProduct = salesActiveProducts.some((p: any) => cleanReply.toLowerCase().includes(p.name.toLowerCase()));
+      if (hallucinatedPrices.length >= 2 && !mentionsRealProduct) {
+        console.warn(`[Orchestrator] 🚨 POST-LLM HALLUCINATION BLOCKED: Reply contained invented prices (${hallucinatedPrices.map(h => h[0]).join(', ')}) with no catalog match. Replacing with safe reply.`);
+        cleanReply = `Disculpa *${senderName}*, en este momento no disponemos de ese artículo en nuestro catálogo oficial. 🛍️\n\nNuestros productos disponibles actualmente son:\n` +
+          salesActiveProducts.slice(0, 5).map((p: any) => `• *${p.name}*: ₡${Number(p.price || 0).toLocaleString('es-CR')}`).join('\n') +
+          `\n\n¿Te gustaría consultar por alguno de estos?`;
+      }
+    }
+  }
+
+  // Phase 8: Structured Agent Turn Telemetry
+  try {
+    console.log(JSON.stringify({
+      event: 'agent_turn',
+      tenantId,
+      routedAgent: routedAgentId,
+      routedAgentName,
+      sourcesUsed,
+      isSessionActive,
+      tokensUsed: aiResult.tokensUsed,
+      commandDetected: isOrderDetected ? 'order' : isBookingDetected ? 'booking' : isCourtBookingDetected ? 'court' : isHandoffRequested ? 'handoff' : null,
+      responseLength: cleanReply.length,
+      timestamp: new Date().toISOString()
+    }));
+  } catch {
+    // Non-blocking telemetry
+  }
 
   return {
     replyText: cleanReply,

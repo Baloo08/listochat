@@ -74,12 +74,9 @@ export function safeParseJSON(rawStr) {
 
 export function routeIntent(userMessage, chatHistory, orchestratorConfig, storeModules) {
   const lowerMsg = userMessage.toLowerCase().trim();
-  const recentHistory = (chatHistory || []).slice(-6).map(h => h.content).join(' ').toLowerCase();
-  const context = `${recentHistory} ${lowerMsg}`;
-
   const subagents = orchestratorConfig?.subagents || defaultOrchestratorConfig.subagents;
 
-  // 1. Escalation / Handoff
+  // 1. Escalation / Handoff (Always highest priority)
   const isHandoff = /humano|asesor|persona|agente|hablar con alguien|queja|reclamo|urgente|hablar con un asesor/i.test(lowerMsg);
   if (isHandoff) {
     return subagents.handoff?.enabled !== false ? 'handoff' : 'general';
@@ -90,32 +87,44 @@ export function routeIntent(userMessage, chatHistory, orchestratorConfig, storeM
   const salesAllowed = storeModules ? storeModules.storeEnabled !== false : true;
   const bookingsAllowed = storeModules ? storeModules.bookingsEnabled !== false : true;
 
-  // 2. Canchas deportivas (Only if tenant has courtsEnabled activated)
+  // 2. High-Precision Turn-First Evaluation (Current Message Intent)
+  // This prevents historical context bleed (e.g. user previously asked about price, now wants to book an appointment)
+  const currentMsgCourts = /cancha|canchas|partido|futbol|fútbol|padel|pádel|mejenga|gramilla|reservar cancha|alquiler cancha|crt-|#res-/i.test(lowerMsg);
+  const currentMsgBooking = /servicio|servicios|cita|citas|agenda|agendar|turno|atencion|atención|doctor|especialista|cancelar cita|reagendar|disponibilidad de horario|horario de cita/i.test(lowerMsg);
+  const currentMsgSales = /precio|costo|cuanto|venden|catalogo|catálogo|menu|menú|producto|productos|comprar|pedir|orden|foto|imagen|plato|comida|pizza|hamburguesa|variante|talla|sabor|llevar|delivery|envio|envío|agregar al carrito|camisa|camiseta|ropa|zapato/i.test(lowerMsg);
+
+  if (currentMsgCourts && courtsAllowed && !currentMsgBooking && !currentMsgSales) {
+    return subagents.courts?.enabled !== false ? 'courts' : 'general';
+  }
+  if (currentMsgBooking && bookingsAllowed && !currentMsgSales && !currentMsgCourts) {
+    return subagents.booking?.enabled !== false ? 'booking' : 'general';
+  }
+  if (currentMsgSales && salesAllowed && !currentMsgBooking && !currentMsgCourts) {
+    return subagents.sales?.enabled !== false ? 'sales' : 'general';
+  }
+
+  // 3. Fallback to Short Context Window (last 2 messages only) for follow-up turns (e.g. "a las 3pm", "sí, confirmo", "con papas")
+  const recentHistory = (chatHistory || []).slice(-2).map(h => h.content).join(' ').toLowerCase();
+  const context = `${recentHistory} ${lowerMsg}`;
+
   const isCourts = /cancha|canchas|partido|futbol|fútbol|padel|pádel|mejenga|gramilla|reservar cancha|alquiler cancha|crt-|#res-/i.test(context);
+  const isBooking = /servicio|servicios|cita|citas|agenda|agendar|turno|atencion|atención|doctor|especialista|cancelar cita|reagendar|disponibilidad de horario|horario de cita/i.test(context);
+  const isSales = /precio|costo|cuanto|venden|catalogo|catálogo|menu|menú|producto|productos|comprar|pedir|orden|foto|imagen|plato|comida|pizza|hamburguesa|variante|talla|sabor|llevar|delivery|envio|envío|agregar al carrito|camisa|camiseta|ropa|zapato|confirmo/i.test(context);
+
   if (isCourts && courtsAllowed) {
     return subagents.courts?.enabled !== false ? 'courts' : 'general';
   }
-
-  // 3. Ventas de tienda / restaurante / pedidos
-  const isSales = /precio|costo|cuanto|venden|catalogo|catálogo|menu|menú|producto|productos|comprar|pedir|orden|foto|imagen|plato|comida|pizza|hamburguesa|variante|talla|sabor|llevar|delivery|envio|envío|agregar al carrito|confirmo/i.test(context);
-
-  // 4. Citas y Servicios
-  const isBooking = /servicio|servicios|cita|citas|agenda|agendar|turno|atencion|atención|doctor|especialista|cancelar cita|reagendar|disponibilidad de horario|horario de cita/i.test(context);
-
-  if (isSales && salesAllowed && (!isBooking || !bookingsAllowed)) {
-    return subagents.sales?.enabled !== false ? 'sales' : 'general';
-  }
-
-  if (isBooking && bookingsAllowed && (!isSales || !salesAllowed)) {
+  if (isBooking && bookingsAllowed && !isSales) {
     return subagents.booking?.enabled !== false ? 'booking' : 'general';
   }
-
-  if (isSales && salesAllowed) {
+  if (isSales && salesAllowed && !isBooking) {
     return subagents.sales?.enabled !== false ? 'sales' : 'general';
   }
-
   if (isBooking && bookingsAllowed) {
     return subagents.booking?.enabled !== false ? 'booking' : 'general';
+  }
+  if (isSales && salesAllowed) {
+    return subagents.sales?.enabled !== false ? 'sales' : 'general';
   }
 
   return 'general';
@@ -446,6 +455,138 @@ EXCEPCIÓN DE IDENTIDAD OBLIGATORIA: Si el cliente pregunta explícitamente qui�
     assert.match(sessionGreetingDirective, /EXCEPCIÓN DE IDENTIDAD OBLIGATORIA/);
     assert.match(sessionGreetingDirective, /Estás hablando con el Asistente Virtual oficial de \*Tienda Explorador\*/);
     assert.match(sessionGreetingDirective, /NUNCA te disculpes por confusión ni confundas tu identidad/);
+  });
+
+  await t.test('16. Turn-First Intent Switching & Context Bleed Immunity', () => {
+    // History where the client previously asked about sales/products
+    const pastSalesHistory = [
+      { role: 'user', content: '¿Qué precio tienen los productos?' },
+      { role: 'assistant', content: 'Tenemos varios productos en nuestro catálogo.' },
+      { role: 'user', content: '¿Cuánto cuesta el envío?' },
+      { role: 'assistant', content: 'El envío cuesta ₡2,500.' }
+    ];
+
+    // Current turn: User explicitly wants to book an appointment
+    const currentBookingMsg = 'Quiero agendar una cita para mañana a las 2pm';
+    const routed = routeIntent(currentBookingMsg, pastSalesHistory);
+    assert.equal(routed, 'booking', 'Current booking intent MUST override previous sales conversation context');
+
+    // Follow-up: User asks for human
+    const currentHandoffMsg = 'Por favor quiero hablar con un asesor humano';
+    const routedHandoff = routeIntent(currentHandoffMsg, pastSalesHistory);
+    assert.equal(routedHandoff, 'handoff', 'Human handoff MUST always take highest priority regardless of history');
+  });
+
+  await t.test('17. Stop-Words Filtering in Catalog Matching', () => {
+    const SPANISH_STOP_WORDS = new Set([
+      'para', 'este', 'esta', 'estos', 'estas', 'como', 'todo', 'toda', 'todos', 'todas',
+      'puede', 'tiene', 'tienen', 'desde', 'hasta', 'sobre', 'entre', 'hacer', 'bien',
+      'solo', 'otro', 'otra', 'otros', 'otras', 'aquí', 'aqui', 'también', 'tambien',
+      'porque', 'cuando', 'donde', 'pero', 'algo', 'nada', 'están', 'estan', 'hola',
+      'buenas', 'buenos', 'tardes', 'noches', 'días', 'dias', 'favor', 'gracias'
+    ]);
+
+    const activeProducts = [
+      { id: '1', name: 'Mochila de Montaña', description: 'Mochila ideal para toda excursión y viaje largo', price: 25000 },
+      { id: '2', name: 'Carpa Impermeable', description: 'Carpa resistente para camping familiar', price: 45000 }
+    ];
+
+    // User asks a generic greeting containing stop-words "para" and "todo"
+    const userMsg = 'Hola buenas tardes, una consulta para todo';
+    const lowerMsgOnly = userMsg.toLowerCase();
+    const lowerContext = userMsg.toLowerCase();
+
+    const matchedProducts = activeProducts.filter(p => {
+      const pName = p.name.toLowerCase();
+      const pCat = (p.category || '').toLowerCase();
+      if (lowerContext.includes(pName)) return true;
+      const nameTokens = pName.split(/[\s\-_,./]+/).filter(w => w.length > 3 && !SPANISH_STOP_WORDS.has(w));
+      if (nameTokens.length > 0 && nameTokens.some(t => lowerContext.includes(t))) return true;
+      if (pCat && pCat.length > 3 && !SPANISH_STOP_WORDS.has(pCat) && lowerContext.includes(pCat)) return true;
+      const pDesc = (p.description || '').toLowerCase();
+      if (pDesc) {
+        const descTokens = pDesc.split(/[\s\-_,./]+/).filter(w => w.length > 5 && !SPANISH_STOP_WORDS.has(w));
+        if (descTokens.some(w => lowerMsgOnly.includes(w))) return true;
+      }
+      return false;
+    });
+
+    assert.equal(matchedProducts.length, 0, 'Generic stop-words like "para" or "todo" must NOT match product descriptions');
+  });
+
+  await t.test('18. Orphaned / Corrupt Command Detection', () => {
+    function processReplyWithCommandValidation(rawReply, senderName) {
+      let isOrderDetected = false;
+      const orderMatch = rawReply.match(/<<<COMMAND_ORDER:\s*({.*?})>>>/s);
+      if (orderMatch && orderMatch[1]) {
+        const parsed = safeParseJSON(orderMatch[1]);
+        if (parsed && Array.isArray(parsed.items) && parsed.items.length > 0) {
+          isOrderDetected = true;
+        }
+      }
+
+      let cleanReply = rawReply
+        .replace(/<<<COMMAND_.*?>>>/gs, '')
+        .trim();
+
+      const hasRawCommandTag = /<<<COMMAND_\w+/i.test(rawReply);
+      if (hasRawCommandTag && !isOrderDetected) {
+        cleanReply = `Disculpa ${senderName}, tuve un inconveniente técnico al registrar tu solicitud en el sistema. ¿Podrías confirmarme nuevamente los detalles para procesarla correctamente? 🙏`;
+      }
+
+      return { cleanReply, isOrderDetected };
+    }
+
+    // Malformed command where LLM emitted invalid JSON (items is string, not array)
+    const malformedRawReply = '¡Excelente! He tomado tu pedido de camisas. <<<COMMAND_ORDER: {items: "camisas", total: 5000}>>>';
+    const result = processReplyWithCommandValidation(malformedRawReply, 'Cristopher');
+
+    assert.equal(result.isOrderDetected, false, 'Corrupt command must not set isOrderDetected flag');
+    assert.match(result.cleanReply, /tuve un inconveniente técnico al registrar tu solicitud/, 'Corrupt command must trigger honest technical recovery message');
+  });
+
+  await t.test('19. Post-LLM Zero-Hallucination Pricing Validator', () => {
+    function validatePostLLMReply(cleanReply, activeProducts, senderName) {
+      const priceRegex = /₡\s*([0-9]{1,3}(?:[.,][0-9]{3})*|\d+)/g;
+      const mentionedPriceMatches = [...cleanReply.matchAll(priceRegex)];
+      if (mentionedPriceMatches.length > 0) {
+        const activeProductPrices = new Set(
+          activeProducts.flatMap(p => [
+            Math.round(Number(p.price || 0)),
+            ...((p.variants || []).map(v => Math.round(Number(v.priceOverride || p.price || 0))))
+          ])
+        );
+
+        const hallucinatedPrices = mentionedPriceMatches.filter(m => {
+          const rawNum = m[1].replace(/[.,]/g, '');
+          const num = parseInt(rawNum, 10);
+          return !isNaN(num) && num > 0 && !activeProductPrices.has(num);
+        });
+
+        const mentionsRealProduct = activeProducts.some(p => cleanReply.toLowerCase().includes(p.name.toLowerCase()));
+        if (hallucinatedPrices.length >= 2 && !mentionsRealProduct) {
+          return `Disculpa *${senderName}*, en este momento no disponemos de ese artículo en nuestro catálogo oficial. 🛍️\n\nNuestros productos disponibles actualmente son:\n` +
+            activeProducts.slice(0, 5).map(p => `• *${p.name}*: ₡${Number(p.price || 0).toLocaleString('es-CR')}`).join('\n') +
+            `\n\n¿Te gustaría consultar por alguno de estos?`;
+        }
+      }
+      return cleanReply;
+    }
+
+    // Tienda Explorador real inventory: Only camping equipment
+    const realInventory = [
+      { name: 'Tienda de Campaña Pro', price: 45000 },
+      { name: 'Linterna Frontal LED', price: 8500 }
+    ];
+
+    // LLM hallucinated response inventing shirts with fake prices (₡5,000 and ₡4,800)
+    const hallucinatedResponse = '¡Qué bueno! En Tienda Explorador tenemos camisas:\n1. Camisa de manga larga: ₡5,000\n2. Camisa de manga corta: ₡4,800';
+    const sanitized = validatePostLLMReply(hallucinatedResponse, realInventory, 'Cristopher');
+
+    assert.match(sanitized, /no disponemos de ese artículo en nuestro catálogo oficial/);
+    assert.match(sanitized, /Tienda de Campaña Pro/);
+    assert.doesNotMatch(sanitized, /5,000/);
+    assert.doesNotMatch(sanitized, /4,800/);
   });
 
 });

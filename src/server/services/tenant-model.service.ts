@@ -1,10 +1,7 @@
 import { getTenantById, getAllTenants } from '../db/tenant.repo.js';
 import { getAgentConfig } from '../db/agent-config.repo.js';
-import { getServicesByTenant } from '../db/services.repo.js';
-import { getProductsByTenant } from '../db/products.repo.js';
 import { getStoreSettings } from '../db/store-settings.repo.js';
 import { getScheduleSettings } from '../db/schedule.repo.js';
-import { getCourtsByTenant } from '../db/courts.repo.js';
 
 const debounceTimers = new Map<string, NodeJS.Timeout>();
 
@@ -56,51 +53,13 @@ export async function buildTenantModelfile(tenantId: string): Promise<{ modelfil
 
   const modelName = getTenantModelName(tenant);
   const agentConfig: any = await getAgentConfig(tenantId);
-  const services: any[] = await getServicesByTenant(tenantId);
-  const products: any[] = await getProductsByTenant(tenantId, true);
   const store = await getStoreSettings(tenantId);
   const schedule = await getScheduleSettings(tenantId);
-  const courts: any[] = await getCourtsByTenant(tenantId);
 
   const businessName = agentConfig?.businessName || tenant.name || 'Nuestro Negocio';
-  const currency = agentConfig?.currency || 'CRC';
-  const currencySymbol = currency === 'USD' ? '$' : '₡';
   const customPrompt = agentConfig?.systemPrompt || '';
 
-  // 1. Static Services Block
-  let servicesBlock = '';
-  if (services && services.length > 0) {
-    const activeServices = services.filter(s => s.active !== false);
-    if (activeServices.length > 0) {
-      servicesBlock = '\nCATÁLOGO DE SERVICIOS:\n' + activeServices.map(s => 
-        `- ${s.name}: ${currencySymbol}${Number(s.price || 0).toLocaleString('es-CR')} (${s.duration || `${s.estimatedMinutes || 45} min`})${s.description ? ` - ${s.description}` : ''}`
-      ).join('\n');
-    }
-  }
-
-  // 2. Static Products Block (up to 25 items for concise pre-compilation)
-  let productsBlock = '';
-  if (products && products.length > 0) {
-    const activeProducts = products.filter(p => p.active !== false).slice(0, 25);
-    if (activeProducts.length > 0) {
-      productsBlock = '\nCATÁLOGO DE PRODUCTOS:\n' + activeProducts.map(p => 
-        `- ${p.name}: ${currencySymbol}${Number(p.price || 0).toLocaleString('es-CR')}${p.description ? ` - ${p.description.slice(0, 80)}` : ''}`
-      ).join('\n');
-    }
-  }
-
-  // 3. Static Courts Block
-  let courtsBlock = '';
-  if (courts && courts.length > 0) {
-    const activeCourts = courts.filter(c => c.active !== false);
-    if (activeCourts.length > 0) {
-      courtsBlock = '\nCANCHAS / ESPACIOS DISPONIBLES:\n' + activeCourts.map(c => 
-        `- ${c.name} (${c.type || 'Sintética'}): ${currencySymbol}${Number(c.price_per_hour || c.pricePerHour || 0).toLocaleString('es-CR')}/hora`
-      ).join('\n');
-    }
-  }
-
-  // 4. Payment Methods Block
+  // 1. Payment Methods Block
   let paymentBlock = '';
   const pMethods: string[] = [];
   if (store?.acceptSinpe && store.sinpePhone) {
@@ -116,22 +75,23 @@ export async function buildTenantModelfile(tenantId: string): Promise<{ modelfil
     paymentBlock = '\nMÉTODOS DE PAGO ACEPTADOS:\n' + pMethods.map(m => `- ${m}`).join('\n');
   }
 
-  // 5. Schedule Block
+  // 2. Schedule Block
   let scheduleBlock = '';
   if (schedule?.jornadaConfig) {
     const j = schedule.jornadaConfig;
     scheduleBlock = `\nHORARIO DE ATENCIÓN:\n- Horario regular: ${j.startHour || '08:00'} a ${j.endHour || '17:00'} (${j.slotMinutes || 45} min por turno)`;
   }
 
-  // System Prompt Compilation
+  // System Prompt Compilation - Focused on Identity, WhatsApp etiquette & Zero-Hallucination
+  // Catalogs and dynamic availabilities are supplied turn-by-turn by the Agentic Orchestrator
   const systemPrompt = `Eres el asistente virtual inteligente y cordial de "${businessName}".
-Tu objetivo es atender a los clientes por WhatsApp, responder sus dudas, agendar citas o canchas, tomar pedidos y ofrecer una atención de primer nivel.
+Tu objetivo es atender a los clientes por WhatsApp, responder sus dudas, agendar citas o canchas, tomar pedidos y ofrecer una atención de primer nivel con calidez costarricense (*pura vida*).
 
 REGLAS DE ATENCIÓN:
 1. Responde de forma amable, clara y concisa (ideal para WhatsApp). Usa negrita (*palabra*) para resaltar datos importantes.
-2. Nunca inventes servicios, productos, horarios ni precios que no estén en tu catálogo oficial.
+2. PROHIBICIÓN TOTAL DE ALUCINAR PRODUCTOS, SERVICIOS O PRECIOS: Los catálogos oficiales, precios y disponibilidad se te proporcionan dinámicamente en cada interacción. NUNCA inventes productos, prendas, servicios, horarios ni precios que no se te indiquen explícitamente en el contexto de la conversación actual.
 3. Si un cliente solicita agendar una cita o cancha, solicita su nombre, fecha y hora preferida.
-4. Si un cliente solicita hacer un pedido, confirma los productos, cantidades y método de pago o entrega.
+4. Si un cliente solicita hacer un pedido, confirma los productos, cantidades y método de pago o entrega basándote únicamente en el catálogo oficial provisto en el mensaje.
 5. Si el cliente solicita hablar con un humano o asesor, o si notas frustración o un reclamo urgente, responde amablemente indicando que le comunicarás con un asesor humano e incluye la directiva <<<COMMAND_HANDOFF: {"reason": "Solicitado por cliente"}>>>.
 6. Cuando se acuerden los datos completos para una cita, emite al final de tu mensaje la directiva:
 <<<COMMAND_BOOKING: {"customerName": "...", "date": "YYYY-MM-DD", "time": "HH:MM", "serviceName": "..."}>>>
@@ -141,9 +101,6 @@ REGLAS DE ATENCIÓN:
 <<<COMMAND_ORDER: {"customerName": "...", "items": [{"productName": "...", "quantity": 1}], "deliveryMethod": "pickup|delivery"}>>>
 
 ${customPrompt ? `INSTRUCCIONES ESPECÍFICAS DEL COMERCIO:\n${customPrompt}\n` : ''}
-${servicesBlock}
-${courtsBlock}
-${productsBlock}
 ${paymentBlock}
 ${scheduleBlock}
 `.trim();
