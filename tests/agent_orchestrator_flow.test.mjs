@@ -91,7 +91,7 @@ export function routeIntent(userMessage, chatHistory, orchestratorConfig, storeM
   // This prevents historical context bleed (e.g. user previously asked about price, now wants to book an appointment)
   const currentMsgCourts = /cancha|canchas|partido|futbol|fútbol|padel|pádel|mejenga|gramilla|reservar cancha|alquiler cancha|crt-|#res-/i.test(lowerMsg);
   const currentMsgBooking = /servicio|servicios|cita|citas|agenda|agendar|turno|atencion|atención|doctor|especialista|cancelar cita|reagendar|disponibilidad de horario|horario de cita/i.test(lowerMsg);
-  const currentMsgSales = /precio|costo|cuanto|venden|catalogo|catálogo|menu|menú|producto|productos|comprar|pedir|orden|foto|imagen|plato|comida|pizza|hamburguesa|variante|talla|sabor|llevar|delivery|envio|envío|agregar al carrito|camisa|camiseta|ropa|zapato/i.test(lowerMsg);
+  const currentMsgSales = /precio|costo|cuanto|venden|catalogo|catálogo|menu|menú|producto|productos|comprar|pedir|orden|pedido|foto|imagen|plato|comida|pizza|hamburguesa|variante|talla|sabor|llevar|delivery|envio|envío|agregar al carrito|camisa|camiseta|ropa|zapato|sinpe|transferencia|efectivo|tarjeta|pago|pagar|comprobante|recoger|retiro|domicilio|cuenta|total/i.test(lowerMsg);
 
   if (currentMsgCourts && courtsAllowed && !currentMsgBooking && !currentMsgSales) {
     return subagents.courts?.enabled !== false ? 'courts' : 'general';
@@ -107,9 +107,16 @@ export function routeIntent(userMessage, chatHistory, orchestratorConfig, storeM
   const recentHistory = (chatHistory || []).slice(-2).map(h => h.content).join(' ').toLowerCase();
   const context = `${recentHistory} ${lowerMsg}`;
 
+  // Checkout Funnel Persistence: If user is answering a payment/confirmation prompt from sales, stay in sales!
+  const isCheckoutFollowUp = /^(por\s+)?(sinpe|transferencia|efectivo|tarjeta|contra entrega)|^(sí|si|ok|listo|confirmo|confirmar|de acuerdo|dale|correcto|por fa|porfa|por favor)$|^(\d+[\s\w,.-]*)$|direccion|dirección|envio|envío|recoger|retiro/i.test(lowerMsg);
+  const hadSalesContext = /precio|costo|total|pedido|orden|₡|crc|sinpe|producto|productos|botella|tienda|catálogo|comprar/i.test(recentHistory);
+  if (isCheckoutFollowUp && hadSalesContext && salesAllowed && !currentMsgBooking && !currentMsgCourts) {
+    return subagents.sales?.enabled !== false ? 'sales' : 'general';
+  }
+
   const isCourts = /cancha|canchas|partido|futbol|fútbol|padel|pádel|mejenga|gramilla|reservar cancha|alquiler cancha|crt-|#res-/i.test(context);
   const isBooking = /servicio|servicios|cita|citas|agenda|agendar|turno|atencion|atención|doctor|especialista|cancelar cita|reagendar|disponibilidad de horario|horario de cita/i.test(context);
-  const isSales = /precio|costo|cuanto|venden|catalogo|catálogo|menu|menú|producto|productos|comprar|pedir|orden|foto|imagen|plato|comida|pizza|hamburguesa|variante|talla|sabor|llevar|delivery|envio|envío|agregar al carrito|camisa|camiseta|ropa|zapato|confirmo/i.test(context);
+  const isSales = /precio|costo|cuanto|venden|catalogo|catálogo|menu|menú|producto|productos|comprar|pedir|orden|pedido|foto|imagen|plato|comida|pizza|hamburguesa|variante|talla|sabor|llevar|delivery|envio|envío|agregar al carrito|camisa|camiseta|ropa|zapato|sinpe|transferencia|efectivo|tarjeta|pago|pagar|comprobante|recoger|retiro|domicilio|cuenta|total|confirmo/i.test(context);
 
   if (isCourts && courtsAllowed) {
     return subagents.courts?.enabled !== false ? 'courts' : 'general';
@@ -587,6 +594,63 @@ EXCEPCIÓN DE IDENTIDAD OBLIGATORIA: Si el cliente pregunta explícitamente qui�
     assert.match(sanitized, /Tienda de Campaña Pro/);
     assert.doesNotMatch(sanitized, /5,000/);
     assert.doesNotMatch(sanitized, /4,800/);
+  });
+
+  await t.test('20. Checkout Funnel Persistence (Sticky Sales Subagent)', () => {
+    // History where the client just discussed product quantities and prices
+    const salesCheckoutHistory = [
+      { role: 'user', content: 'Quiero 3 botellas azules y 1 blanca' },
+      { role: 'assistant', content: 'Perfecto, el total es ₡14,325. ¿Prefieres pagar por SINPE Móvil o Transferencia?' }
+    ];
+
+    // Client answers payment method: "Por sinpe"
+    const routedSinpe = routeIntent('Por sinpe', salesCheckoutHistory);
+    assert.equal(routedSinpe, 'sales', 'Payment method follow-up "Por sinpe" MUST stay in sales subagent to complete order');
+
+    // Client answers: "En efectivo"
+    const routedCash = routeIntent('En efectivo', salesCheckoutHistory);
+    assert.equal(routedCash, 'sales', 'Payment method follow-up "En efectivo" MUST stay in sales subagent');
+
+    // Client confirms: "Listo, confirmo"
+    const routedConfirm = routeIntent('Listo, confirmo', salesCheckoutHistory);
+    assert.equal(routedConfirm, 'sales', 'Confirmation follow-up "Listo, confirmo" MUST stay in sales subagent');
+  });
+
+  await t.test('21. Drastic Intent Switch Mid-Sales (Immediate Redirection)', () => {
+    // History in the middle of a sales transaction
+    const salesHistory = [
+      { role: 'user', content: '¿Cuánto cuesta la botella?' },
+      { role: 'assistant', content: 'La botella cuesta ₡3,575.' }
+    ];
+
+    // Client drastically changes intent to booking
+    const drasticBooking = routeIntent('Mejor no quiero comprar, ¿tienen citas para mañana a las 3pm?', salesHistory);
+    assert.equal(drasticBooking, 'booking', 'Drastic switch to booking MUST redirect to booking subagent immediately');
+
+    // Client drastically changes intent to human escalation
+    const drasticHuman = routeIntent('Por favor comuníqueme con un asesor humano', salesHistory);
+    assert.equal(drasticHuman, 'handoff', 'Drastic switch to human MUST redirect to handoff subagent immediately');
+  });
+
+  await t.test('22. Natural First-Name Extraction & Payment Placeholder Sanitization', () => {
+    // 1. Natural first-name extraction
+    const rawPushName = 'Cristopher Jiménez';
+    const customerFirstName = rawPushName.trim().split(/\s+/)[0] || 'Cliente';
+    assert.equal(customerFirstName, 'Cristopher', 'Should extract "Cristopher" from "Cristopher Jiménez"');
+
+    // 2. Placeholder sanitization in bankAccountInfo
+    const rawBankPlaceholder = '[Tu número bancario]';
+    const cleanBank = rawBankPlaceholder.replace(/\[.*?\]/g, '').trim();
+    assert.equal(cleanBank, '', 'Template bracket placeholder should be sanitized to empty string');
+
+    const validBank = 'CR05015202001026284000 (Banco Nacional)';
+    const cleanValidBank = validBank.replace(/\[.*?\]/g, '').trim();
+    assert.equal(cleanValidBank, validBank, 'Legitimate bank info should remain intact');
+
+    // 3. Address placeholder sanitization
+    const rawAddressPlaceholder = '[Tu dirección]';
+    const cleanAddress = rawAddressPlaceholder.replace(/\[.*?\]/g, '').trim();
+    assert.equal(cleanAddress, '', 'Address placeholder should be sanitized to empty string');
   });
 
 });

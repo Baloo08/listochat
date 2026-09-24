@@ -51,7 +51,21 @@ export async function enqueueMessage(
   instanceName: string,
   isVoiceNote: boolean = false
 ): Promise<QueueMessage> {
-  // Debouncing: check if there is an existing pending message created within the last 5 seconds for this chat
+  // 1. Strict Idempotency: Prevent duplicate message queueing from network retries or duplicate webhook events
+  const duplicateRes = await query(`
+    SELECT * FROM message_queue
+    WHERE tenant_id = $1 AND remote_jid = $2 AND user_message = $3
+      AND created_at >= (CURRENT_TIMESTAMP - INTERVAL '60 seconds')
+    ORDER BY created_at DESC
+    LIMIT 1
+  `, [tenantId, remoteJid, userMessage]);
+
+  if (duplicateRes.rows.length > 0) {
+    console.log(`[Queue] 🛑 Deduplicated identical message for ${remoteJid} created within last 60s. Skipping duplicate queueing.`);
+    return mapToQueueMessage(duplicateRes.rows[0]);
+  }
+
+  // 2. Debouncing: check if there is an existing pending message created within the last 5 seconds for this chat
   const existingRes = await query(`
     SELECT id, user_message, is_voice_note 
     FROM message_queue

@@ -6348,6 +6348,17 @@ async function ensureQueueTable() {
   await query(sql);
 }
 async function enqueueMessage(tenantId, remoteJid, pushName, cleanPhone, userMessage, instanceName, isVoiceNote = false) {
+  const duplicateRes = await query(`
+    SELECT * FROM message_queue
+    WHERE tenant_id = $1 AND remote_jid = $2 AND user_message = $3
+      AND created_at >= (CURRENT_TIMESTAMP - INTERVAL '60 seconds')
+    ORDER BY created_at DESC
+    LIMIT 1
+  `, [tenantId, remoteJid, userMessage]);
+  if (duplicateRes.rows.length > 0) {
+    console.log(`[Queue] \u{1F6D1} Deduplicated identical message for ${remoteJid} created within last 60s. Skipping duplicate queueing.`);
+    return mapToQueueMessage(duplicateRes.rows[0]);
+  }
   const existingRes = await query(`
     SELECT id, user_message, is_voice_note 
     FROM message_queue
@@ -7767,7 +7778,7 @@ function routeIntent(userMessage, chatHistory, orchestratorConfig, storeModules)
   const bookingsAllowed = storeModules ? storeModules.bookingsEnabled !== false : true;
   const currentMsgCourts = /cancha|canchas|partido|futbol|fútbol|padel|pádel|mejenga|gramilla|reservar cancha|alquiler cancha|crt-|#res-/i.test(lowerMsg);
   const currentMsgBooking = /servicio|servicios|cita|citas|agenda|agendar|turno|atencion|atención|doctor|especialista|cancelar cita|reagendar|disponibilidad de horario|horario de cita/i.test(lowerMsg);
-  const currentMsgSales = /precio|costo|cuanto|venden|catalogo|catálogo|menu|menú|producto|productos|comprar|pedir|orden|foto|imagen|plato|comida|pizza|hamburguesa|variante|talla|sabor|llevar|delivery|envio|envío|agregar al carrito|camisa|camiseta|ropa|zapato/i.test(lowerMsg);
+  const currentMsgSales = /precio|costo|cuanto|venden|catalogo|catálogo|menu|menú|producto|productos|comprar|pedir|orden|pedido|foto|imagen|plato|comida|pizza|hamburguesa|variante|talla|sabor|llevar|delivery|envio|envío|agregar al carrito|camisa|camiseta|ropa|zapato|sinpe|transferencia|efectivo|tarjeta|pago|pagar|comprobante|recoger|retiro|domicilio|cuenta|total/i.test(lowerMsg);
   if (currentMsgCourts && courtsAllowed && !currentMsgBooking && !currentMsgSales) {
     return subagents.courts?.enabled !== false ? "courts" : "general";
   }
@@ -7779,9 +7790,14 @@ function routeIntent(userMessage, chatHistory, orchestratorConfig, storeModules)
   }
   const recentHistory = (chatHistory || []).slice(-2).map((h) => h.content).join(" ").toLowerCase();
   const context = `${recentHistory} ${lowerMsg}`;
+  const isCheckoutFollowUp = /^(por\s+)?(sinpe|transferencia|efectivo|tarjeta|contra entrega)|^(sí|si|ok|listo|confirmo|confirmar|de acuerdo|dale|correcto|por fa|porfa|por favor)$|^(\d+[\s\w,.-]*)$|direccion|dirección|envio|envío|recoger|retiro/i.test(lowerMsg);
+  const hadSalesContext = /precio|costo|total|pedido|orden|₡|crc|sinpe|producto|productos|botella|tienda|catálogo|comprar/i.test(recentHistory);
+  if (isCheckoutFollowUp && hadSalesContext && salesAllowed && !currentMsgBooking && !currentMsgCourts) {
+    return subagents.sales?.enabled !== false ? "sales" : "general";
+  }
   const isCourts = /cancha|canchas|partido|futbol|fútbol|padel|pádel|mejenga|gramilla|reservar cancha|alquiler cancha|crt-|#res-/i.test(context);
   const isBooking = /servicio|servicios|cita|citas|agenda|agendar|turno|atencion|atención|doctor|especialista|cancelar cita|reagendar|disponibilidad de horario|horario de cita/i.test(context);
-  const isSales = /precio|costo|cuanto|venden|catalogo|catálogo|menu|menú|producto|productos|comprar|pedir|orden|foto|imagen|plato|comida|pizza|hamburguesa|variante|talla|sabor|llevar|delivery|envio|envío|agregar al carrito|camisa|camiseta|ropa|zapato|confirmo/i.test(context);
+  const isSales = /precio|costo|cuanto|venden|catalogo|catálogo|menu|menú|producto|productos|comprar|pedir|orden|pedido|foto|imagen|plato|comida|pizza|hamburguesa|variante|talla|sabor|llevar|delivery|envio|envío|agregar al carrito|camisa|camiseta|ropa|zapato|sinpe|transferencia|efectivo|tarjeta|pago|pagar|comprobante|recoger|retiro|domicilio|cuenta|total|confirmo/i.test(context);
   if (isCourts && courtsAllowed) {
     return subagents.courts?.enabled !== false ? "courts" : "general";
   }
@@ -7810,6 +7826,8 @@ async function processWithOrchestrator(tenantId, userMessage, senderPhone, sende
   const currentSubagent = orchConfig.subagents[routedAgentId] || defaultOrchestratorConfig.subagents[routedAgentId];
   const routedAgentName = currentSubagent?.name || "Agente Betico";
   const cleanPhone = senderPhone.replace(/\D/g, "");
+  const rawSenderName = senderName || "Cliente";
+  const customerFirstName = rawSenderName.trim().split(/\s+/)[0] || "Cliente";
   const baseUrl = process.env.APP_URL || "https://betico.tech";
   const bookingUrl = tenant?.slug ? `${baseUrl}/reservas/${tenant.slug}` : "";
   const storeUrl = tenant?.slug ? `${baseUrl}/tienda/${tenant.slug}` : "";
@@ -7943,10 +7961,15 @@ async function processWithOrchestrator(tenantId, userMessage, senderPhone, sende
       let paymentText = "";
       const pMethods = [];
       if (store?.acceptSinpe && store.sinpePhone) pMethods.push(`SINPE M\xF3vil al ${store.sinpePhone} (${store.sinpeName || tenant?.name})`);
-      if (store?.acceptTransfer && store.bankAccountInfo) pMethods.push(`Transferencia: ${store.bankAccountInfo}`);
+      if (store?.acceptTransfer && store.bankAccountInfo) {
+        const cleanBank = store.bankAccountInfo.replace(/\[.*?\]/g, "").trim();
+        if (cleanBank.length > 5 && !cleanBank.toLowerCase().includes("tu cuenta") && !cleanBank.toLowerCase().includes("tu banco") && !cleanBank.toLowerCase().includes("tu n\xFAmero")) {
+          pMethods.push(`Transferencia Bancaria: ${cleanBank}`);
+        }
+      }
       if (store?.acceptCashOnDelivery) pMethods.push("Efectivo contra entrega");
       if (store?.deliveryEnabled) pMethods.push(`Env\xEDo a domicilio disponible (\u20A1${Number(store.deliveryFee || 0).toLocaleString("es-CR")})`);
-      if (pMethods.length > 0) paymentText = "\u{1F4B3} M\xE9todos de Pago: " + pMethods.join(" | ") + "\n";
+      if (pMethods.length > 0) paymentText = "\u{1F4B3} M\xE9todos de Pago Disponibles: " + pMethods.join(" | ") + "\n";
       specializedPrompt = `
 ROL: Eres el Asesor Especialista de Ventas y Cat\xE1logo de *${tenant?.name || "nuestro negocio"}*.
 ${currentSubagent.prompt}
@@ -7959,18 +7982,28 @@ ${paymentText}
 ${catalogAlert}
 ${catalogText}
 
-REGLAS DE ORO DE VENTA Y L\xCDMITE ESTRICTO DE CAT\xC1LOGO (CERO ALUCINACI\xD3N):
+REGLAS DE ORO DE VENTA Y CIERRE DE PEDIDOS (CALIDEZ TICA Y CERO ALUCINACI\xD3N):
 1. PROHIBICI\xD3N TOTAL DE INVENTAR PRODUCTOS O EXISTENCIAS: SOLO y \xDANICAMENTE puedes vender y ofrecer los productos que figuran de forma textual en el bloque "Cat\xE1logo Oficial de Productos y Precios".
-2. Si el cliente busca o pregunta por un producto, prenda, sabor, talla, modelo o art\xEDculo que NO est\xE1 en la lista oficial (o si el cat\xE1logo est\xE1 vac\xEDo), TIENES TERMINANTEMENTE PROHIBIDO inventar que lo venden, inventar precios, colores o stock. Debes responder con total honestidad y calidez tica (*"Disculpa ${senderName}, actualmente no disponemos de ese producto en nuestro cat\xE1logo"*), y sugerirle las opciones que S\xCD tenemos disponibles o consultar con un asesor humano.
-3. Responde con calidez tica (*pura vida*, con gusto, claro que s\xED).
-4. Aplica venta consultiva: si el cliente duda o pide recomendaciones entre los productos reales del cat\xE1logo, sugi\xE9rele los destacados.
-5. Venta cruzada (up-selling): si el cliente elige un producto principal real, sugiere amablemente un acompa\xF1amiento, bebida o extra del cat\xE1logo.
-6. Si el producto tiene variantes (sabores, tallas) u opciones reales, preg\xFAntale cu\xE1l prefiere antes de continuar.
-7. Desglose transparente: Lleva la cuenta sumada del pedido (Subtotal + Env\xEDo si aplica = Total en \u20A1CRC).
-8. Pregunta si la entrega es para Env\xEDo a Domicilio (solicita direcci\xF3n exacta) o Retiro en Local, y el m\xE9todo de pago.
-9. Confirmaci\xF3n obligatoria: Pregunta '\xBFDeseas que ingrese tu orden con estos detalles a nombre de ${senderName}?' y SOLO cuando confirme expl\xEDcitamente emite al final:
-<<<COMMAND_ORDER: {"items":[{"productName":"Nombre Exacto","variantName":"opcional","quantity":1}], "deliveryMethod":"delivery"|"pickup", "deliveryAddress":"direcci\xF3n si aplica", "customerName":"${senderName}"}>>>
-10. Si el cliente solicita fotos del producto y hay foto disponible en el cat\xE1logo, puedes emitir:
+2. Si el cliente busca o pregunta por un producto que NO est\xE1 en la lista oficial (o si el cat\xE1logo est\xE1 vac\xEDo), TIENES TERMINANTEMENTE PROHIBIDO inventar que lo venden, inventar precios o stock. Debes responder con honestidad y calidez tica (*"Disculpa ${customerFirstName}, en este momento no disponemos de ese art\xEDculo en nuestro cat\xE1logo oficial"*), y sugerirle las opciones que s\xED comercializan.
+3. TRATO HUMANO, FRESCO Y NATURAL (CERO ROB\xD3TICO):
+   - Dir\xEDgete al cliente por su primer nombre (*${customerFirstName}*) solo de vez en cuando de forma c\xE1lida y humana (*"\xA1Con mucho gusto!", "\xA1Excelente elecci\xF3n!", "\xA1Claro que s\xED!"*).
+   - EST\xC1 ESTRICTAMENTE PROHIBIDO repetir el nombre completo del cliente en cada mensaje como un robot.
+   - NUNCA uses frases de plantilla r\xEDgidas y vac\xEDas como "Totalizando tus compras" o "Est\xE1s a un click del viaje perfecto".
+4. C\xC1LCULO MATEM\xC1TICO EXACTO Y GRAN TOTAL:
+   - Cuando el cliente indique cantidades o pregunte por el total, calcula la multiplicaci\xF3n y la suma con total exactitud.
+   - Es OBLIGATORIO desglosar los productos y mostrar claramente la l\xEDnea final de suma total:
+     \u2022 3 [Producto A]: \u20A1XX,XXX
+     \u2022 1 [Producto B]: \u20A1XX,XXX
+     *Total a pagar:* \u20A1XX,XXX
+5. CIERRE Y EMISI\xD3N DETERMINISTA DE ORDEN (ACCI\xD3N INMEDIATA):
+   - Tan pronto el cliente haya definido los productos/cantidades e indique su m\xE9todo de pago (ej: "por sinpe", "en efectivo", "transferencia") o confirme la compra (ej: "s\xED", "listo", "de acuerdo", "h\xE1gamelo", "confirmo"):
+     a) Conf\xEDrmale el pedido de inmediato con alegr\xEDa y calidez (*"\xA1Listo ${customerFirstName}! He registrado tu pedido con \xE9xito..."*), resumiendo los art\xEDculos, el gran total a pagar y las instrucciones de pago o entrega.
+     b) ES ESTRICTAMENTE OBLIGATORIO que emitas al final del mensaje la directiva de orden para que el sistema cree el registro en la base de datos:
+     <<<COMMAND_ORDER: {"items":[{"productName":"Nombre Exacto","variantName":"opcional","quantity":1}], "deliveryMethod":"delivery"|"pickup", "deliveryAddress":"direcci\xF3n si aplica", "paymentMethod":"sinpe"|"transfer"|"cash", "customerName":"${customerFirstName}"}>>>
+   - NUNCA digas que el pedido est\xE1 confirmado sin emitir la directiva <<<COMMAND_ORDER: ...>>>.
+6. Si el producto tiene variantes (sabores, colores, tallas) registradas en el cat\xE1logo, cons\xFAltale cu\xE1l prefiere.
+7. Venta consultiva y cruzada: Si el cliente pide recomendaciones, sugi\xE9rele los destacados o un acompa\xF1amiento del cat\xE1logo real.
+8. Si el cliente solicita fotos del producto y hay foto disponible en el cat\xE1logo, puedes emitir:
 <<<COMMAND_SEND_MEDIA: {"mediaUrl":"URL","caption":"descripci\xF3n"}>>>
 `.trim();
       break;
@@ -8115,13 +8148,14 @@ PROTOCOLO DE EMPAT\xCDA Y ESCALADO:
         sourcesUsed.push("customLinks");
         customLinksText = "\u{1F517} ENLACES Y RECURSOS OFICIALES (ENTREGAR \xDANICAMENTE BAJO DEMANDA):\n" + validLinks.map((l) => `\u2022 *${l.label}*: ${l.url}${l.description ? ` (${l.description})` : ""}`).join("\n") + "\n";
       }
+      const cleanAddress = (tenant?.address || "").replace(/\[.*?\]/g, "").trim();
       specializedPrompt = `
 ROL: Eres el Conserje y Anfitri\xF3n Principal de *${tenant?.name || "nuestro negocio"}* en WhatsApp.
 ${currentSubagent?.prompt || "Atiende cordialmente con calidez costarricense (*pura vida*)."}
 
 INFORMACI\xD3N GENERAL DEL NEGOCIO:
 Fecha/Hora CR: ${crTime}
-${tenant?.address ? `\u{1F4CD} Direcci\xF3n F\xEDsica: ${tenant.address}
+${cleanAddress ? `\u{1F4CD} Direcci\xF3n F\xEDsica: ${cleanAddress}
 ` : ""}
 ${mapsUrl ? `\u{1F5FA}\uFE0F Waze / Google Maps: ${mapsUrl}
 ` : ""}
@@ -8141,7 +8175,7 @@ REGLAS DE CONSERJE FRONT-DESK:
 1. Responde amablemente con calidez tica (*pura vida*, con gusto, bienvenido).
 2. Responde con precisi\xF3n sobre horarios, ubicaci\xF3n f\xEDsica, formas de pago (SINPE M\xF3vil, transferencia, efectivo, tarjeta) y facturaci\xF3n electr\xF3nica.
 3. Si el cliente pregunta por comodidades (parqueo, wifi, pet-friendly), responde con amabilidad y honestidad.
-4. PUENTE COMERCIAL OBLIGATORIO: Concluye siempre tu respuesta invitando proactivamente a la acci\xF3n principal del comercio (ej: '\xBFDeseas que te muestre nuestro cat\xE1logo/men\xFA de hoy o prefieres agendar una cita?').
+4. PUENTE COMERCIAL OPORTUNO: Solo si el cliente realiza una consulta general aislada o saludo inicial, inv\xEDtale amablemente a conocer nuestro cat\xE1logo o servicios. NUNCA hagas esta pregunta si el cliente ya est\xE1 en medio de un pedido, compra o consultando un tema espec\xEDfico.
 5. L\xCDMITE ESTRICTO ANTI-ALUCINACI\xD3N: Si te preguntan algo que no est\xE9 registrado en las pol\xEDticas oficiales del negocio, NO inventes datos. Ofrece amablemente conectar con un asesor humano.
 6. CLARIDAD DE IDENTIDAD: Si el cliente pregunta con qui\xE9n habla, qui\xE9n eres o si eres un bot, responde con claridad y cortes\xEDa: "Est\xE1s hablando con el Asistente Virtual oficial de *${tenant?.name || "nuestro negocio"}* en WhatsApp". NUNCA te disculpes por confusi\xF3n ni asumas el nombre del cliente como el tuyo.
 `.trim();
@@ -8173,6 +8207,13 @@ REGLA DE ORO "CHAT-FIRST" Y MANEJO DE ENLACES:
    - Si el cliente pregunta c\xF3mo llegar, d\xF3nde est\xE1n o por ubicaci\xF3n: comparte la direcci\xF3n f\xEDsica y el enlace de Waze / Google Maps (${mapsUrl || "disponible previa solicitud"}).
    - Si el cliente pregunta por redes sociales o p\xE1gina web: comparte los perfiles oficiales (${socialLinksStr || officialWebUrl || "disponibles previa solicitud"}).
 `.trim();
+  const naturalToneDirective = `
+HUMANIZACI\xD3N Y NATURALIDAD CONVERSACIONAL TICA (CERO ROB\xD3TICO):
+1. El cliente se llama ${customerFirstName}. Puedes dirigirte a \xE9l por su primer nombre (*${customerFirstName}*) solo de vez en cuando de forma c\xE1lida y fresca.
+2. PROHIBICI\xD3N ESTRICTA: EST\xC1 TERMINANTEMENTE PROHIBIDO repetir el nombre completo del cliente ("${rawSenderName}") en cada mensaje como un robot.
+3. Comun\xEDcate con calidez, agilidad y frescura costarricense (*pura vida*, con mucho gusto, claro que s\xED, excelente).
+4. Prohibido usar frases r\xEDgidas o de plantilla repetitiva como "Totalizando tus compras" o "Est\xE1s a un click del viaje perfecto".
+`.trim();
   const supervisorDirectives = orchConfig.prompt ? `DIRECTRICES DEL SUPERVISOR:
 ${orchConfig.prompt}
 
@@ -8180,6 +8221,8 @@ ${orchConfig.prompt}
   const finalSystemPrompt = `${supervisorDirectives}${specializedPrompt}
 
 ${chatFirstDirectives}
+
+${naturalToneDirective}
 
 ${sessionGreetingDirective}`;
   const structuredMessages = [];
@@ -14266,6 +14309,17 @@ Hemos recibido tu comprobante para el pedido *#${pendingOrder.orderNumber}* (\u2
       return;
     }
     const msgId = key.id || `msg_${Date.now()}`;
+    if (key.id) {
+      const existingMsg = await query(`
+        SELECT id FROM chat_messages 
+        WHERE id = $1 AND tenant_id = $2
+        LIMIT 1
+      `, [key.id, tenant.id]);
+      if (existingMsg.rows.length > 0) {
+        console.log(`[Webhook] \u{1F6D1} Deduplicated WhatsApp message ${key.id} for tenant '${tenant.name}' (already received). Dropping duplicate event.`);
+        return;
+      }
+    }
     if (fromMe) {
       await saveChatMessage(tenant.id, {
         id: msgId,

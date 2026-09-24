@@ -198,6 +198,20 @@ router.post('/', async (req, res) => {
 
     const msgId = key.id || `msg_${Date.now()}`;
 
+    // WhatsApp Message Deduplication (Anti-Retry Idempotency)
+    // If Evolution API or WhatsApp retries an already received message ID, drop duplicate immediately
+    if (key.id) {
+      const existingMsg = await query(`
+        SELECT id FROM chat_messages 
+        WHERE id = $1 AND tenant_id = $2
+        LIMIT 1
+      `, [key.id, tenant.id]);
+      if (existingMsg.rows.length > 0) {
+        console.log(`[Webhook] 🛑 Deduplicated WhatsApp message ${key.id} for tenant '${tenant.name}' (already received). Dropping duplicate event.`);
+        return;
+      }
+    }
+
     // If message was sent from the business phone itself (manual operator)
     if (fromMe) {
       await saveChatMessage(tenant.id, {
