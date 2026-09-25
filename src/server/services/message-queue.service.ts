@@ -327,7 +327,13 @@ async function processSingleMessage(msg: any) {
     let sentAsAudio = false;
 
     if (aiResult.isMediaDetected && aiResult.mediaData?.mediaUrl) {
-      sendRes = await sendMedia(msg.instanceName, msg.cleanPhone, aiResult.mediaData.mediaUrl, finalReplyText || aiResult.mediaData.caption || '');
+      const captionText = (finalReplyText || aiResult.mediaData.caption || '').slice(0, 1000);
+      sendRes = await sendMedia(msg.instanceName, msg.cleanPhone, aiResult.mediaData.mediaUrl, captionText);
+      // Fallback: If sending media failed (e.g. invalid external image URL or WhatsApp timeout), ensure client receives reply via text!
+      if (!sendRes?.success && finalReplyText) {
+        console.warn(`[Queue] sendMedia failed for ${msg.pushName} (+${msg.cleanPhone}), falling back to text:`, sendRes?.error);
+        sendRes = await sendMessage(msg.instanceName, msg.cleanPhone, finalReplyText);
+      }
     } else if (voiceRepliesEnabled && allowsVoiceNotes) {
       try {
         const chosenVoice = agentConfig?.voiceId || 'ef_dora';

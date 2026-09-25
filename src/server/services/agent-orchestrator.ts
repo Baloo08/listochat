@@ -24,6 +24,14 @@ export interface OrchestratorProcessResult extends AgentProcessResult {
   sourcesUsed: string[];
 }
 
+export function formatMediaUrl(url: string, baseUrl?: string): string {
+  if (!url) return '';
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  const cleanBase = (baseUrl || 'https://betico.tech').replace(/\/+$/, '');
+  const cleanPath = url.replace(/^\/+/, '');
+  return `${cleanBase}/${cleanPath}`;
+}
+
 export function safeParseJSON(rawStr: string): any {
   if (!rawStr || typeof rawStr !== 'string') return null;
   let cleaned = rawStr.trim();
@@ -172,6 +180,7 @@ export async function processWithOrchestrator(
   let specializedPrompt = '';
   let allowedActions = currentSubagent?.actions || [];
   let salesActiveProducts: any[] = [];
+  let salesMatchedProducts: any[] = [];
 
   // 3. Modular Context Assembly per Subagent
   switch (routedAgentId) {
@@ -220,6 +229,7 @@ export async function processWithOrchestrator(
         catalogAlert = `⚠️ AVISO DE INVENTARIO: El cliente está consultando o buscando un artículo que NO coincide con ningún producto registrado en el inventario oficial. TIENES TERMINANTEMENTE PROHIBIDO inventar que disponen de ese artículo o inventar precios o existencias. Debes aclararle con amabilidad y calidez (*"Disculpa ${senderName}, en este momento no disponemos de ese artículo en nuestro catálogo"*) y ofrecerle las opciones reales que sí comercializan (listadas abajo como sugerencias del comercio).\n`;
         matchedProducts = activeProducts.slice(0, 6);
       }
+      salesMatchedProducts = matchedProducts;
 
       let catalogText = '🛍️ Catálogo Oficial de Productos y Precios:\n' + matchedProducts.map(p => {
         let line = `• *${p.name}* [${p.category || 'General'}]: ₡${Number(p.price || 0).toLocaleString('es-CR')}`;
@@ -237,8 +247,12 @@ export async function processWithOrchestrator(
           line += `\n  Opciones/Extras: ${optStr}`;
         }
         if (p.images && p.images.length > 0) {
-          const pUrl = p.images[0].url.startsWith('http') ? p.images[0].url : `${baseUrl}${p.images[0].url}`;
-          line += `\n  Foto oficial: ${pUrl}`;
+          const firstImg = p.images[0];
+          const rawUrl = typeof firstImg === 'string' ? firstImg : firstImg?.url;
+          if (rawUrl) {
+            const pUrl = formatMediaUrl(rawUrl, baseUrl);
+            line += `\n  Foto oficial: ${pUrl}`;
+          }
         }
         return line;
       }).join('\n\n');
@@ -289,8 +303,15 @@ REGLAS DE ORO DE VENTA Y CIERRE DE PEDIDOS (CALIDEZ TICA Y CERO ALUCINACIÓN):
    - NUNCA digas que el pedido está confirmado sin emitir la directiva <<<COMMAND_ORDER: ...>>>.
 6. Si el producto tiene variantes (sabores, colores, tallas) registradas en el catálogo, consúltale cuál prefiere.
 7. Venta consultiva y cruzada: Si el cliente pide recomendaciones, sugiérele los destacados o un acompañamiento del catálogo real.
-8. Si el cliente solicita fotos del producto y hay foto disponible en el catálogo, puedes emitir:
-<<<COMMAND_SEND_MEDIA: {"mediaUrl":"URL","caption":"descripción"}>>>
+8. ENVÍO NATIVO DE FOTOGRAFÍAS Y MULTIMEDIA (CERO CORCHETES / CERO URLs EN EL TEXTO):
+   - Si el cliente solicita fotos, imágenes o ver cómo es un producto y este cuenta con "Foto oficial: <URL>" en el catálogo:
+     a) Descríbele el artículo con calidez y su precio en tu respuesta de texto.
+     b) ES ESTRICTAMENTE OBLIGATORIO emitir al final del mensaje la directiva:
+        <<<COMMAND_SEND_MEDIA: {"mediaUrl":"<URL exacto de Foto oficial>","caption":"<Nombre del producto> - ₡<precio>"}>>>
+     c) PROHIBICIÓN TERMINANTE: NUNCA escribas la URL en el texto de tu respuesta y NUNCA generes textos de plantilla entre corchetes como "[Inserta aquí las URLs de las imágenes]" ni "[Foto]". El sistema se encarga de enviar la fotografía nativa al WhatsApp del cliente con la descripción adjunta.
+   - Si el producto consultado NO cuenta con "Foto oficial" en el catálogo:
+     a) Sé honesto y transparente con calidez tica (*"Con mucho gusto te describo [Producto]... En este momento no dispongo de una fotografía oficial cargada en el sistema, pero con mucho gusto te detallo sus características..."*).
+     b) ESTÁ PROHIBIDO decir que le envías fotos o inventar imágenes o placeholders si no hay foto oficial en el catálogo.
 `.trim();
       break;
     }
@@ -493,12 +514,22 @@ El cliente ya está en medio de una conversación activa contigo. ESTÁ ESTRICTA
 EXCEPCIÓN DE IDENTIDAD OBLIGATORIA: Si el cliente pregunta explícitamente quién eres o con quién habla ("¿con quién hablo?", "¿quién eres?", "¿es un bot?"), responde amablemente: "Estás hablando con el Asistente Virtual oficial de *${tenant?.name || 'nuestro negocio'}* en WhatsApp". NUNCA te disculpes por confusión ni confundas tu identidad con la del cliente.`
     : `Saluda cordialmente presentándote como asistente de *${tenant?.name || 'nuestro negocio'}*.`;
 
+  const storeLinkInstruction = storeUrl
+    ? `- Si el cliente solicita expresamente el link de la tienda o catálogo en línea, compártele el enlace oficial: ${storeUrl}.`
+    : `- Actualmente no hay tienda web externa activa; las compras y pedidos se atienden y despachan exclusivamente por este chat de WhatsApp. Si el cliente pide un link o catálogo web, explícale cordialmente que con gusto le tomas su pedido directamente por aquí. NUNCA inventes enlaces ni uses corchetes como "[Inserta enlace]".`;
+
+  const bookingLinkInstruction = bookingUrl
+    ? `- Si el cliente solicita expresamente el enlace de reservas web, compártele: ${bookingUrl}.`
+    : `- Las reservas se gestionan exclusivamente por WhatsApp. Ofrécele agendar de inmediato en esta conversación.`;
+
   const chatFirstDirectives = `
 REGLA DE ORO "CHAT-FIRST" Y MANEJO DE ENLACES:
 1. VENTA Y ASESORÍA CONVERSACIONAL DIRECTA: Tu objetivo principal es atender, asesorar, cotizar y cerrar pedidos o citas directamente en este chat de WhatsApp.
-2. ENLACES DE TIENDA Y RESERVAS (ESTRICTAMENTE BAJO DEMANDA):
-   - PROHIBIDO enviar los enlaces de la tienda (${storeUrl}) o reservas (${bookingUrl}) por iniciativa propia si el cliente solo está preguntando por productos, precios, menú, citas o turnos. Atiéndelo y cierra la venta por aquí.
-   - SOLO y ÚNICAMENTE entrega el link de la tienda web o reservas web SI EL CLIENTE LO PIDE EXPRESAMENTE (ej: "pásame el link", "¿tienen página web?", "mándame el catálogo en línea", "prefiero pedir por la web").
+2. ENLACES DE TIENDA Y RESERVAS (ESTRICTAMENTE BAJO DEMANDA Y CERO PLACEHOLDERS):
+   - PROHIBIDO enviar enlaces de tienda o reservas por iniciativa propia si el cliente solo está preguntando por productos, precios, menú, citas o turnos. Atiéndelo y cierra la venta por aquí.
+   ${storeLinkInstruction}
+   ${bookingLinkInstruction}
+   - ESTÁ TERMINANTEMENTE PROHIBIDO generar placeholders entre corchetes como "[Inserta aquí el enlace a la tienda]", "[Inserta enlace]" o "[Tu URL]". Si un recurso no tiene enlace configurado, indícale amablemente que la atención es directa por WhatsApp.
 3. ENLACES INFORMATIVOS GENERALES (BAJO DEMANDA NATURAL):
    - Si el cliente pregunta cómo llegar, dónde están o por ubicación: comparte la dirección física y el enlace de Waze / Google Maps (${mapsUrl || 'disponible previa solicitud'}).
    - Si el cliente pregunta por redes sociales o página web: comparte los perfiles oficiales (${socialLinksStr || officialWebUrl || 'disponibles previa solicitud'}).
@@ -676,7 +707,30 @@ La ÚNICA fuente de verdad sobre canchas y tarifas es la provista en tus instruc
     const parsed = safeParseJSON(mediaMatch[1]);
     if (parsed && parsed.mediaUrl) {
       isMediaDetected = true;
-      mediaData = parsed;
+      mediaData = {
+        ...parsed,
+        mediaUrl: formatMediaUrl(parsed.mediaUrl, baseUrl)
+      };
+    }
+  }
+
+  // Auto-Recovery Guardrail: If client explicitly requested photos/images, but the LLM omitted the tag,
+  // find the product in matchedProducts that has a photo and auto-attach the media!
+  if (!isMediaDetected && allowedActions.includes('media') && /foto|imagen|fotos|imagenes|imágenes/i.test(userMessage)) {
+    const prodWithImg = (salesMatchedProducts || []).find((p: any) => {
+      const firstImg = p.images?.[0];
+      const rawUrl = typeof firstImg === 'string' ? firstImg : firstImg?.url;
+      return Boolean(rawUrl);
+    });
+    if (prodWithImg) {
+      const firstImg = prodWithImg.images[0];
+      const rawUrl = typeof firstImg === 'string' ? firstImg : firstImg?.url;
+      isMediaDetected = true;
+      mediaData = {
+        mediaUrl: formatMediaUrl(rawUrl, baseUrl),
+        caption: `${prodWithImg.name} - ₡${Number(prodWithImg.price || 0).toLocaleString('es-CR')}`
+      };
+      console.log(`[Orchestrator] 🎯 AUTO-RECOVERY: Media command automatically attached for product "${prodWithImg.name}"`);
     }
   }
 
@@ -714,6 +768,24 @@ La ÚNICA fuente de verdad sobre canchas y tarifas es la provista en tus instruc
     .trim()
     .replace(/\n{3,}/g, '\n\n')
     .replace(/\*\*(.*?)\*\*/g, '*$1*');
+
+  // Post-LLM Guardrail: Neutralize template placeholder leaks like [Inserta aquí las URLs de las imágenes], [Inserta aquí el enlace], [Tu número bancario]
+  const placeholderRegex = /\[\s*(?:inserta|insert|pega|agregar|pon|tu\s+número|tu\s+dirección|tu\s+enlace|tu\s+cuenta|aquí\s+las?\s+urls?|enlace\s+a\s+la\s+tienda|urls?\s+de\s+las?\s+imágenes)[^\]]*\]/gi;
+  if (placeholderRegex.test(cleanReply)) {
+    console.warn(`[Orchestrator] 🚨 TEMPLATE PLACEHOLDER DETECTED & SANITIZED for tenant ${tenantId}:`, cleanReply.match(placeholderRegex));
+    cleanReply = cleanReply
+      .replace(placeholderRegex, '')
+      .replace(/\n\s*\n\s*\n/g, '\n\n')
+      .trim();
+  }
+
+  // Missing Photo Honesty Guardrail: If client asked for photos, no photo was attached, and reply falsely claims images are attached:
+  if (!isMediaDetected && /foto|imagen|fotos|imagenes|imágenes/i.test(userMessage)) {
+    cleanReply = cleanReply
+      .replace(/¡?claro que sí!?\s*aquí tienes (?:algunas )?(?:imágenes|fotos)[^.\n]*[.:]?/gi, 'En este momento no dispongo de una fotografía oficial cargada en el sistema, pero con gusto te describo sus características.')
+      .replace(/aquí (?:te comparto|tienes|están) las? (?:fotos?|imágenes)[^.\n]*[.:]?/gi, 'En este momento no dispongo de una fotografía oficial cargada en el sistema.')
+      .trim();
+  }
 
   // Phase 5 Guardrail: Neutralize Silent Failures from Corrupted Command Syntaxes
   const hasRawCommandTag = /<<<COMMAND_\w+/i.test(rawReply);

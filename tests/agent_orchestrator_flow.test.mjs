@@ -48,6 +48,14 @@ export const defaultOrchestratorConfig = {
   }
 };
 
+export function formatMediaUrl(url, baseUrl) {
+  if (!url) return '';
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  const cleanBase = (baseUrl || 'https://betico.tech').replace(/\/+$/, '');
+  const cleanPath = url.replace(/^\/+/, '');
+  return `${cleanBase}/${cleanPath}`;
+}
+
 export function safeParseJSON(rawStr) {
   if (!rawStr || typeof rawStr !== 'string') return null;
   let cleaned = rawStr.trim();
@@ -651,6 +659,106 @@ EXCEPCIÓN DE IDENTIDAD OBLIGATORIA: Si el cliente pregunta explícitamente qui�
     const rawAddressPlaceholder = '[Tu dirección]';
     const cleanAddress = rawAddressPlaceholder.replace(/\[.*?\]/g, '').trim();
     assert.equal(cleanAddress, '', 'Address placeholder should be sanitized to empty string');
+  });
+
+  await t.test('23. formatMediaUrl Normalization & COMMAND_SEND_MEDIA Parsing', () => {
+    // Relative path with leading slash
+    assert.equal(
+      formatMediaUrl('/uploads/bottle.jpg', 'https://betico.tech'),
+      'https://betico.tech/uploads/bottle.jpg'
+    );
+    // Relative path without leading slash
+    assert.equal(
+      formatMediaUrl('uploads/bottle.jpg', 'https://betico.tech/'),
+      'https://betico.tech/uploads/bottle.jpg'
+    );
+    // Absolute http/https URL untouched
+    assert.equal(
+      formatMediaUrl('https://cdn.example.com/photo.png', 'https://betico.tech'),
+      'https://cdn.example.com/photo.png'
+    );
+
+    // Parsing of COMMAND_SEND_MEDIA
+    const sampleReply = '¡Claro que sí! Con mucho gusto te muestro la botella.\n<<<COMMAND_SEND_MEDIA: {"mediaUrl":"/uploads/bottle.jpg","caption":"Botella de aluminio - ₡3.575"}>>>';
+    const mediaMatch = sampleReply.match(/<<<COMMAND_SEND_MEDIA:\s*({.*?})>>>/s);
+    assert.ok(mediaMatch, 'Should match COMMAND_SEND_MEDIA regex');
+    const parsed = safeParseJSON(mediaMatch[1]);
+    assert.ok(parsed, 'Should parse JSON payload');
+    assert.equal(parsed.mediaUrl, '/uploads/bottle.jpg');
+    assert.equal(formatMediaUrl(parsed.mediaUrl, 'https://betico.tech'), 'https://betico.tech/uploads/bottle.jpg');
+  });
+
+  await t.test('24. Post-LLM Template Placeholder Sanitization', () => {
+    const placeholderRegex = /\[\s*(?:inserta|insert|pega|agregar|pon|tu\s+número|tu\s+dirección|tu\s+enlace|tu\s+cuenta|aquí\s+las?\s+urls?|enlace\s+a\s+la\s+tienda|urls?\s+de\s+las?\s+imágenes)[^\]]*\]/gi;
+
+    // Test sanitizing image URL placeholders
+    const replyWithImagePlaceholder = '¡Claro que sí! Aquí tienes algunas imágenes del producto:\n\n[Inserta aquí las URLs de las imágenes]\n\n¿Hay alguna otra pregunta?';
+    const sanitizedImage = replyWithImagePlaceholder.replace(placeholderRegex, '').replace(/\n\s*\n\s*\n/g, '\n\n').trim();
+    assert.ok(!sanitizedImage.includes('[Inserta'), 'Should not contain [Inserta...');
+    assert.ok(!sanitizedImage.includes('las URLs de las imágenes]'), 'Should not contain placeholder');
+
+    // Test sanitizing store link placeholders
+    const replyWithStorePlaceholder = 'Con gusto, puedes ver el catálogo en:\n\n[Inserta aquí el enlace a la tienda]\n\n¡Cualquier duda me avisas!';
+    const sanitizedStore = replyWithStorePlaceholder.replace(placeholderRegex, '').replace(/\n\s*\n\s*\n/g, '\n\n').trim();
+    assert.ok(!sanitizedStore.includes('[Inserta'), 'Should strip store placeholder');
+
+    // Test sanitizing bank number placeholder
+    const replyWithBank = 'Puedes pagar por transferencia a: [Tu número bancario].';
+    const sanitizedBank = replyWithBank.replace(placeholderRegex, '').trim();
+    assert.equal(sanitizedBank, 'Puedes pagar por transferencia a: .');
+  });
+
+  await t.test('25. Missing Photo Honesty Guardrail', () => {
+    // When client asked for photos, but no image is available and LLM claimed it is:
+    const userMsg = 'Tiene fotos?';
+    let cleanReply = '¡Claro que sí! Aquí tienes algunas imágenes del producto: botellas de aluminio resistentes.';
+    const isMediaDetected = false;
+
+    if (!isMediaDetected && /foto|imagen|fotos|imagenes|imágenes/i.test(userMsg)) {
+      cleanReply = cleanReply
+        .replace(/¡?claro que sí!?\s*aquí tienes (?:algunas )?(?:imágenes|fotos)[^.\n]*[.:]?/gi, 'En este momento no dispongo de una fotografía oficial cargada en el sistema, pero con gusto te describo sus características.')
+        .replace(/aquí (?:te comparto|tienes|están) las? (?:fotos?|imágenes)[^.\n]*[.:]?/gi, 'En este momento no dispongo de una fotografía oficial cargada en el sistema.')
+        .trim();
+    }
+
+    assert.ok(cleanReply.includes('En este momento no dispongo de una fotografía oficial'), 'Should replace false claims with honest Costa Rican message');
+    assert.ok(!cleanReply.includes('Aquí tienes algunas imágenes'), 'Should not claim images are provided when none exist');
+  });
+
+  await t.test('26. Auto-Recovery Guardrail: Attach media when user asks for photo and LLM omitted tag', () => {
+    const userMessage = 'Cómo son las botellas? Tiene fotos?';
+    let isMediaDetected = false;
+    let mediaData = null;
+    const allowedActions = ['order', 'media'];
+    const salesMatchedProducts = [
+      {
+        id: 'p-1',
+        name: 'Botella de aluminio',
+        price: 3575,
+        images: [{ url: '/uploads/products/bottle.jpg' }]
+      }
+    ];
+
+    if (!isMediaDetected && allowedActions.includes('media') && /foto|imagen|fotos|imagenes|imágenes/i.test(userMessage)) {
+      const prodWithImg = (salesMatchedProducts || []).find((p) => {
+        const firstImg = p.images?.[0];
+        const rawUrl = typeof firstImg === 'string' ? firstImg : firstImg?.url;
+        return Boolean(rawUrl);
+      });
+      if (prodWithImg) {
+        const firstImg = prodWithImg.images[0];
+        const rawUrl = typeof firstImg === 'string' ? firstImg : firstImg?.url;
+        isMediaDetected = true;
+        mediaData = {
+          mediaUrl: formatMediaUrl(rawUrl, 'https://betico.tech'),
+          caption: `${prodWithImg.name} - ₡${Number(prodWithImg.price || 0).toLocaleString('es-CR')}`
+        };
+      }
+    }
+
+    assert.equal(isMediaDetected, true, 'Auto-recovery should set isMediaDetected to true');
+    assert.equal(mediaData.mediaUrl, 'https://betico.tech/uploads/products/bottle.jpg');
+    assert.ok(mediaData.caption.includes('Botella de aluminio'), 'Caption should include product name');
   });
 
 });

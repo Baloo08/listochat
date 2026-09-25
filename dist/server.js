@@ -7751,6 +7751,13 @@ async function saveWebsiteSettings(tenantId, data) {
 
 // src/server/services/agent-orchestrator.ts
 init_pool();
+function formatMediaUrl(url, baseUrl) {
+  if (!url) return "";
+  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  const cleanBase = (baseUrl || "https://betico.tech").replace(/\/+$/, "");
+  const cleanPath = url.replace(/^\/+/, "");
+  return `${cleanBase}/${cleanPath}`;
+}
 function safeParseJSON(rawStr) {
   if (!rawStr || typeof rawStr !== "string") return null;
   let cleaned = rawStr.trim();
@@ -7850,6 +7857,7 @@ async function processWithOrchestrator(tenantId, userMessage, senderPhone, sende
   let specializedPrompt = "";
   let allowedActions = currentSubagent?.actions || [];
   let salesActiveProducts = [];
+  let salesMatchedProducts = [];
   switch (routedAgentId) {
     case "sales": {
       sourcesUsed.push("products", "payments", "storeSettings");
@@ -7933,6 +7941,7 @@ async function processWithOrchestrator(tenantId, userMessage, senderPhone, sende
 `;
         matchedProducts = activeProducts.slice(0, 6);
       }
+      salesMatchedProducts = matchedProducts;
       let catalogText = "\u{1F6CD}\uFE0F Cat\xE1logo Oficial de Productos y Precios:\n" + matchedProducts.map((p) => {
         let line = `\u2022 *${p.name}* [${p.category || "General"}]: \u20A1${Number(p.price || 0).toLocaleString("es-CR")}`;
         if (p.compareAtPrice && Number(p.compareAtPrice) > Number(p.price)) {
@@ -7952,9 +7961,13 @@ async function processWithOrchestrator(tenantId, userMessage, senderPhone, sende
   Opciones/Extras: ${optStr}`;
         }
         if (p.images && p.images.length > 0) {
-          const pUrl = p.images[0].url.startsWith("http") ? p.images[0].url : `${baseUrl}${p.images[0].url}`;
-          line += `
+          const firstImg = p.images[0];
+          const rawUrl = typeof firstImg === "string" ? firstImg : firstImg?.url;
+          if (rawUrl) {
+            const pUrl = formatMediaUrl(rawUrl, baseUrl);
+            line += `
   Foto oficial: ${pUrl}`;
+          }
         }
         return line;
       }).join("\n\n");
@@ -8003,8 +8016,15 @@ REGLAS DE ORO DE VENTA Y CIERRE DE PEDIDOS (CALIDEZ TICA Y CERO ALUCINACI\xD3N):
    - NUNCA digas que el pedido est\xE1 confirmado sin emitir la directiva <<<COMMAND_ORDER: ...>>>.
 6. Si el producto tiene variantes (sabores, colores, tallas) registradas en el cat\xE1logo, cons\xFAltale cu\xE1l prefiere.
 7. Venta consultiva y cruzada: Si el cliente pide recomendaciones, sugi\xE9rele los destacados o un acompa\xF1amiento del cat\xE1logo real.
-8. Si el cliente solicita fotos del producto y hay foto disponible en el cat\xE1logo, puedes emitir:
-<<<COMMAND_SEND_MEDIA: {"mediaUrl":"URL","caption":"descripci\xF3n"}>>>
+8. ENV\xCDO NATIVO DE FOTOGRAF\xCDAS Y MULTIMEDIA (CERO CORCHETES / CERO URLs EN EL TEXTO):
+   - Si el cliente solicita fotos, im\xE1genes o ver c\xF3mo es un producto y este cuenta con "Foto oficial: <URL>" en el cat\xE1logo:
+     a) Descr\xEDbele el art\xEDculo con calidez y su precio en tu respuesta de texto.
+     b) ES ESTRICTAMENTE OBLIGATORIO emitir al final del mensaje la directiva:
+        <<<COMMAND_SEND_MEDIA: {"mediaUrl":"<URL exacto de Foto oficial>","caption":"<Nombre del producto> - \u20A1<precio>"}>>>
+     c) PROHIBICI\xD3N TERMINANTE: NUNCA escribas la URL en el texto de tu respuesta y NUNCA generes textos de plantilla entre corchetes como "[Inserta aqu\xED las URLs de las im\xE1genes]" ni "[Foto]". El sistema se encarga de enviar la fotograf\xEDa nativa al WhatsApp del cliente con la descripci\xF3n adjunta.
+   - Si el producto consultado NO cuenta con "Foto oficial" en el cat\xE1logo:
+     a) S\xE9 honesto y transparente con calidez tica (*"Con mucho gusto te describo [Producto]... En este momento no dispongo de una fotograf\xEDa oficial cargada en el sistema, pero con mucho gusto te detallo sus caracter\xEDsticas..."*).
+     b) EST\xC1 PROHIBIDO decir que le env\xEDas fotos o inventar im\xE1genes o placeholders si no hay foto oficial en el cat\xE1logo.
 `.trim();
       break;
     }
@@ -8197,12 +8217,16 @@ REGLAS DE CONSERJE FRONT-DESK:
   const sessionGreetingDirective = isSessionActive ? `\u26A0\uFE0F SESI\xD3N ACTIVA EN CURSO (${lastMinutes !== null ? `\xFAltima interacci\xF3n hace ${lastMinutes} min` : "interacci\xF3n reciente"}):
 El cliente ya est\xE1 en medio de una conversaci\xF3n activa contigo. EST\xC1 ESTRICTAMENTE PROHIBIDO volver a saludar ("Hola", "Buenas tardes", "\xBFEn qu\xE9 te puedo ayudar hoy?"). Responde de forma directa, \xE1gil, fluida y amable a lo que pregunta sin presentaciones repetitivas.
 EXCEPCI\xD3N DE IDENTIDAD OBLIGATORIA: Si el cliente pregunta expl\xEDcitamente qui\xE9n eres o con qui\xE9n habla ("\xBFcon qui\xE9n hablo?", "\xBFqui\xE9n eres?", "\xBFes un bot?"), responde amablemente: "Est\xE1s hablando con el Asistente Virtual oficial de *${tenant?.name || "nuestro negocio"}* en WhatsApp". NUNCA te disculpes por confusi\xF3n ni confundas tu identidad con la del cliente.` : `Saluda cordialmente present\xE1ndote como asistente de *${tenant?.name || "nuestro negocio"}*.`;
+  const storeLinkInstruction = storeUrl ? `- Si el cliente solicita expresamente el link de la tienda o cat\xE1logo en l\xEDnea, comp\xE1rtele el enlace oficial: ${storeUrl}.` : `- Actualmente no hay tienda web externa activa; las compras y pedidos se atienden y despachan exclusivamente por este chat de WhatsApp. Si el cliente pide un link o cat\xE1logo web, expl\xEDcale cordialmente que con gusto le tomas su pedido directamente por aqu\xED. NUNCA inventes enlaces ni uses corchetes como "[Inserta enlace]".`;
+  const bookingLinkInstruction = bookingUrl ? `- Si el cliente solicita expresamente el enlace de reservas web, comp\xE1rtele: ${bookingUrl}.` : `- Las reservas se gestionan exclusivamente por WhatsApp. Ofr\xE9cele agendar de inmediato en esta conversaci\xF3n.`;
   const chatFirstDirectives = `
 REGLA DE ORO "CHAT-FIRST" Y MANEJO DE ENLACES:
 1. VENTA Y ASESOR\xCDA CONVERSACIONAL DIRECTA: Tu objetivo principal es atender, asesorar, cotizar y cerrar pedidos o citas directamente en este chat de WhatsApp.
-2. ENLACES DE TIENDA Y RESERVAS (ESTRICTAMENTE BAJO DEMANDA):
-   - PROHIBIDO enviar los enlaces de la tienda (${storeUrl}) o reservas (${bookingUrl}) por iniciativa propia si el cliente solo est\xE1 preguntando por productos, precios, men\xFA, citas o turnos. Ati\xE9ndelo y cierra la venta por aqu\xED.
-   - SOLO y \xDANICAMENTE entrega el link de la tienda web o reservas web SI EL CLIENTE LO PIDE EXPRESAMENTE (ej: "p\xE1same el link", "\xBFtienen p\xE1gina web?", "m\xE1ndame el cat\xE1logo en l\xEDnea", "prefiero pedir por la web").
+2. ENLACES DE TIENDA Y RESERVAS (ESTRICTAMENTE BAJO DEMANDA Y CERO PLACEHOLDERS):
+   - PROHIBIDO enviar enlaces de tienda o reservas por iniciativa propia si el cliente solo est\xE1 preguntando por productos, precios, men\xFA, citas o turnos. Ati\xE9ndelo y cierra la venta por aqu\xED.
+   ${storeLinkInstruction}
+   ${bookingLinkInstruction}
+   - EST\xC1 TERMINANTEMENTE PROHIBIDO generar placeholders entre corchetes como "[Inserta aqu\xED el enlace a la tienda]", "[Inserta enlace]" o "[Tu URL]". Si un recurso no tiene enlace configurado, ind\xEDcale amablemente que la atenci\xF3n es directa por WhatsApp.
 3. ENLACES INFORMATIVOS GENERALES (BAJO DEMANDA NATURAL):
    - Si el cliente pregunta c\xF3mo llegar, d\xF3nde est\xE1n o por ubicaci\xF3n: comparte la direcci\xF3n f\xEDsica y el enlace de Waze / Google Maps (${mapsUrl || "disponible previa solicitud"}).
    - Si el cliente pregunta por redes sociales o p\xE1gina web: comparte los perfiles oficiales (${socialLinksStr || officialWebUrl || "disponibles previa solicitud"}).
@@ -8360,7 +8384,27 @@ La \xDANICA fuente de verdad sobre canchas y tarifas es la provista en tus instr
     const parsed = safeParseJSON(mediaMatch[1]);
     if (parsed && parsed.mediaUrl) {
       isMediaDetected = true;
-      mediaData = parsed;
+      mediaData = {
+        ...parsed,
+        mediaUrl: formatMediaUrl(parsed.mediaUrl, baseUrl)
+      };
+    }
+  }
+  if (!isMediaDetected && allowedActions.includes("media") && /foto|imagen|fotos|imagenes|imágenes/i.test(userMessage)) {
+    const prodWithImg = (salesMatchedProducts || []).find((p) => {
+      const firstImg = p.images?.[0];
+      const rawUrl = typeof firstImg === "string" ? firstImg : firstImg?.url;
+      return Boolean(rawUrl);
+    });
+    if (prodWithImg) {
+      const firstImg = prodWithImg.images[0];
+      const rawUrl = typeof firstImg === "string" ? firstImg : firstImg?.url;
+      isMediaDetected = true;
+      mediaData = {
+        mediaUrl: formatMediaUrl(rawUrl, baseUrl),
+        caption: `${prodWithImg.name} - \u20A1${Number(prodWithImg.price || 0).toLocaleString("es-CR")}`
+      };
+      console.log(`[Orchestrator] \u{1F3AF} AUTO-RECOVERY: Media command automatically attached for product "${prodWithImg.name}"`);
     }
   }
   const handoffMatch = rawReply.match(/<<<COMMAND_HANDOFF:\s*({.*?})>>>/s);
@@ -8386,6 +8430,14 @@ La \xDANICA fuente de verdad sobre canchas y tarifas es la provista en tus instr
     }
   }
   let cleanReply = rawReply.replace(/<<<COMMAND_.*?>>>/gs, "").trim().replace(/\n{3,}/g, "\n\n").replace(/\*\*(.*?)\*\*/g, "*$1*");
+  const placeholderRegex = /\[\s*(?:inserta|insert|pega|agregar|pon|tu\s+número|tu\s+dirección|tu\s+enlace|tu\s+cuenta|aquí\s+las?\s+urls?|enlace\s+a\s+la\s+tienda|urls?\s+de\s+las?\s+imágenes)[^\]]*\]/gi;
+  if (placeholderRegex.test(cleanReply)) {
+    console.warn(`[Orchestrator] \u{1F6A8} TEMPLATE PLACEHOLDER DETECTED & SANITIZED for tenant ${tenantId}:`, cleanReply.match(placeholderRegex));
+    cleanReply = cleanReply.replace(placeholderRegex, "").replace(/\n\s*\n\s*\n/g, "\n\n").trim();
+  }
+  if (!isMediaDetected && /foto|imagen|fotos|imagenes|imágenes/i.test(userMessage)) {
+    cleanReply = cleanReply.replace(/¡?claro que sí!?\s*aquí tienes (?:algunas )?(?:imágenes|fotos)[^.\n]*[.:]?/gi, "En este momento no dispongo de una fotograf\xEDa oficial cargada en el sistema, pero con gusto te describo sus caracter\xEDsticas.").replace(/aquí (?:te comparto|tienes|están) las? (?:fotos?|imágenes)[^.\n]*[.:]?/gi, "En este momento no dispongo de una fotograf\xEDa oficial cargada en el sistema.").trim();
+  }
   const hasRawCommandTag = /<<<COMMAND_\w+/i.test(rawReply);
   const anyCommandParsed = isBookingDetected || isCourtBookingDetected || isOrderDetected || isHandoffRequested || isMediaDetected || isCancelBookingDetected || isRescheduleBookingDetected || isRescheduleCourtDetected;
   if (hasRawCommandTag && !anyCommandParsed) {
@@ -9911,7 +9963,12 @@ async function processSingleMessage(msg) {
     let sendRes;
     let sentAsAudio = false;
     if (aiResult.isMediaDetected && aiResult.mediaData?.mediaUrl) {
-      sendRes = await sendMedia(msg.instanceName, msg.cleanPhone, aiResult.mediaData.mediaUrl, finalReplyText || aiResult.mediaData.caption || "");
+      const captionText = (finalReplyText || aiResult.mediaData.caption || "").slice(0, 1e3);
+      sendRes = await sendMedia(msg.instanceName, msg.cleanPhone, aiResult.mediaData.mediaUrl, captionText);
+      if (!sendRes?.success && finalReplyText) {
+        console.warn(`[Queue] sendMedia failed for ${msg.pushName} (+${msg.cleanPhone}), falling back to text:`, sendRes?.error);
+        sendRes = await sendMessage(msg.instanceName, msg.cleanPhone, finalReplyText);
+      }
     } else if (voiceRepliesEnabled && allowsVoiceNotes) {
       try {
         const chosenVoice = agentConfig?.voiceId || "ef_dora";
