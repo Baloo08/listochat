@@ -10,6 +10,7 @@ export interface QueueMessage {
   instanceName: string;
   status: 'pending' | 'processing' | 'done' | 'failed';
   isVoiceNote: boolean;
+  priority?: number;
   errorMessage?: string;
   aiResponse?: string;
   createdAt: string;
@@ -37,6 +38,7 @@ export async function ensureQueueTable(): Promise<void> {
       completed_at TIMESTAMPTZ
     );
     CREATE INDEX IF NOT EXISTS idx_mq_status ON message_queue(status, created_at);
+    CREATE INDEX IF NOT EXISTS idx_mq_priority_status ON message_queue(status, priority DESC, created_at ASC);
     CREATE INDEX IF NOT EXISTS idx_mq_tenant ON message_queue(tenant_id, status);
   `;
   await query(sql);
@@ -49,7 +51,8 @@ export async function enqueueMessage(
   cleanPhone: string,
   userMessage: string,
   instanceName: string,
-  isVoiceNote: boolean = false
+  isVoiceNote: boolean = false,
+  priority: number = 0
 ): Promise<QueueMessage> {
   // 1. Strict Idempotency: Prevent duplicate message queueing from network retries or duplicate webhook events
   const duplicateRes = await query(`
@@ -90,11 +93,11 @@ export async function enqueueMessage(
 
   const sql = `
     INSERT INTO message_queue 
-    (tenant_id, remote_jid, push_name, clean_phone, user_message, instance_name, status, is_voice_note)
-    VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7)
+    (tenant_id, remote_jid, push_name, clean_phone, user_message, instance_name, status, is_voice_note, priority)
+    VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, $8)
     RETURNING *;
   `;
-  const result = await query(sql, [tenantId, remoteJid, pushName, cleanPhone, userMessage, instanceName, isVoiceNote]);
+  const result = await query(sql, [tenantId, remoteJid, pushName, cleanPhone, userMessage, instanceName, isVoiceNote, priority]);
   return mapToQueueMessage(result.rows[0]);
 }
 
@@ -121,7 +124,7 @@ export async function takeNextPending(excludeChatKeys: string[] = []): Promise<Q
     WHERE id = (
       SELECT id FROM message_queue 
       WHERE status = 'pending' ${excludeClause}
-      ORDER BY created_at ASC 
+      ORDER BY priority DESC, created_at ASC 
       LIMIT 1 
       FOR UPDATE SKIP LOCKED
     )
@@ -203,6 +206,7 @@ function mapToQueueMessage(row: any): QueueMessage {
     instanceName: row.instance_name,
     status: row.status,
     isVoiceNote: row.is_voice_note,
+    priority: row.priority ? Number(row.priority) : 0,
     errorMessage: row.error_message,
     aiResponse: row.ai_response,
     createdAt: row.created_at,

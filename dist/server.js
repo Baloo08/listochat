@@ -1202,7 +1202,10 @@ async function callAI(config, input, fallbackConfig) {
   console.error("All AI models and fallback engines failed. Last error:", lastError);
   return {
     text: "Hola, gracias por comunicarte con nosotros. En este momento estamos procesando tu solicitud, en breve un asesor te responder\xE1.",
-    tokensUsed: 0
+    tokensUsed: 0,
+    promptTokens: 0,
+    completionTokens: 0,
+    latencyMs: 0
   };
 }
 async function executeProvider(config, input) {
@@ -1267,10 +1270,17 @@ async function executeProvider(config, input) {
       }
     }
     const { text, usage } = await generateText(callParams);
-    console.log(`[AI-Provider] ${config.provider}/${config.model} responded in ${Date.now() - t0}ms, tokens: ${usage?.totalTokens || "?"}`);
+    const latencyMs = Date.now() - t0;
+    const promptTokens = usage?.promptTokens || Math.ceil(promptLengthEstimate / 4);
+    const completionTokens = usage?.completionTokens || Math.ceil(text.length / 4);
+    const totalTokens = usage?.totalTokens || promptTokens + completionTokens;
+    console.log(`[AI-Provider] ${config.provider}/${config.model} responded in ${latencyMs}ms, tokens: in=${promptTokens}, out=${completionTokens}, total=${totalTokens}`);
     return {
       text,
-      tokensUsed: usage?.totalTokens || Math.ceil((promptLengthEstimate + text.length) / 4)
+      tokensUsed: totalTokens,
+      promptTokens,
+      completionTokens,
+      latencyMs
     };
   })();
   return await Promise.race([generatePromise, timeoutPromise]);
@@ -4444,6 +4454,27 @@ async function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_orders_tracking_token ON orders(tracking_token);
 
     CREATE INDEX IF NOT EXISTS idx_court_bookings_slot ON court_bookings(tenant_id, court_id, date, time) WHERE status != 'cancelled';
+
+    -- Betico AI Pilot & Priority Queue Execution
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS is_ai_pilot BOOLEAN DEFAULT false;
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS ai_priority_level INTEGER DEFAULT 0;
+
+    -- Granular Token Logs and Spend Estimation for BYOK & Platform Tenants
+    CREATE TABLE IF NOT EXISTS tenant_ai_token_logs (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id TEXT NOT NULL,
+      subagent VARCHAR(50) DEFAULT 'general',
+      provider VARCHAR(50) NOT NULL,
+      model VARCHAR(100) NOT NULL,
+      prompt_tokens INTEGER DEFAULT 0,
+      completion_tokens INTEGER DEFAULT 0,
+      total_tokens INTEGER DEFAULT 0,
+      cost_usd NUMERIC(10, 6) DEFAULT 0,
+      latency_ms INTEGER DEFAULT 0,
+      is_byok BOOLEAN DEFAULT false,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_ai_token_logs_tenant_month ON tenant_ai_token_logs(tenant_id, created_at);
   `).catch((err) => {
     console.warn("[Migrations] Columns addition warning:", err?.message || err);
   });
@@ -5192,6 +5223,7 @@ async function getAllTenants() {
            trial_ends_at as "trialEndsAt", next_billing_date as "nextBillingDate",
            grace_period_ends_at as "gracePeriodEndsAt", settings_json as "settingsJson", 
            address, latitude, longitude, google_maps_url as "googleMapsUrl",
+           is_ai_pilot as "isAiPilot", ai_priority_level as "aiPriorityLevel",
            created_at as "createdAt"
     FROM tenants 
     ORDER BY created_at DESC
@@ -5208,6 +5240,7 @@ async function getAllTenantsWithAdmin() {
            t.trial_ends_at as "trialEndsAt", t.next_billing_date as "nextBillingDate",
            t.grace_period_ends_at as "gracePeriodEndsAt", t.settings_json as "settingsJson", 
            t.address, t.latitude, t.longitude, t.google_maps_url as "googleMapsUrl",
+           t.is_ai_pilot as "isAiPilot", t.ai_priority_level as "aiPriorityLevel",
            t.created_at as "createdAt",
            COALESCE(u.email, 'Sin registrar') as "adminEmail",
            u.id as "adminId",
@@ -5239,6 +5272,7 @@ async function getTenantById(id) {
            next_billing_date as "nextBillingDate", grace_period_ends_at as "gracePeriodEndsAt",
            calendar_token as "calendarToken",
            address, latitude, longitude, google_maps_url as "googleMapsUrl",
+           is_ai_pilot as "isAiPilot", ai_priority_level as "aiPriorityLevel",
            settings_json as "settingsJson", created_at as "createdAt",
            id as "postgresTenantId",
            'whatsapp_saas' as "postgresDb",
@@ -5259,6 +5293,8 @@ async function getTenantBySlug(slug) {
            t.subscription_status as "subscriptionStatus", t.billing_currency as "billingCurrency",
            t.custom_monthly_price as "customMonthlyPrice", t.trial_ends_at as "trialEndsAt",
            t.calendar_token as "calendarToken",
+           t.address, t.latitude, t.longitude, t.google_maps_url as "googleMapsUrl",
+           t.is_ai_pilot as "isAiPilot", t.ai_priority_level as "aiPriorityLevel",
            t.settings_json as "settingsJson", t.created_at as "createdAt"
     FROM tenants t
     LEFT JOIN store_settings ss ON ss.tenant_id = t.id
@@ -5273,6 +5309,7 @@ async function getTenantByEvolutionInstance(instanceName) {
            ai_provider as "aiProvider", ai_api_key_encrypted as "aiApiKeyEncrypted",
            ai_model as "aiModel", evolution_instance as "evolutionInstance", 
            whatsapp_number as "whatsappNumber", plan, active, 
+           is_ai_pilot as "isAiPilot", ai_priority_level as "aiPriorityLevel",
            settings_json as "settingsJson", created_at as "createdAt"
     FROM tenants WHERE evolution_instance = $1
   `, [instanceName]);
@@ -5285,14 +5322,15 @@ async function createTenant(data) {
       name, slug, custom_domain, ai_provider, ai_api_key_encrypted, 
       ai_model, evolution_instance, whatsapp_number, plan, active,
       custom_monthly_price, billing_currency, subscription_status, trial_ends_at, settings_json,
-      address, latitude, longitude, google_maps_url
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+      address, latitude, longitude, google_maps_url, is_ai_pilot, ai_priority_level
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
     RETURNING id, name, slug, custom_domain as "customDomain", 
            ai_provider as "aiProvider", ai_model as "aiModel", 
            evolution_instance as "evolutionInstance", whatsapp_number as "whatsappNumber",
            plan, active, custom_monthly_price as "customMonthlyPrice", billing_currency as "billingCurrency",
            subscription_status as "subscriptionStatus", trial_ends_at as "trialEndsAt",
            settings_json as "settingsJson", address, latitude, longitude, google_maps_url as "googleMapsUrl",
+           is_ai_pilot as "isAiPilot", ai_priority_level as "aiPriorityLevel",
            created_at as "createdAt"
   `, [
     data.name,
@@ -5313,7 +5351,9 @@ async function createTenant(data) {
     data.address || null,
     data.latitude ? Number(data.latitude) : null,
     data.longitude ? Number(data.longitude) : null,
-    data.googleMapsUrl || data.google_maps_url || null
+    data.googleMapsUrl || data.google_maps_url || null,
+    Boolean(data.isAiPilot),
+    Number(data.aiPriorityLevel) || 0
   ]);
   return result.rows[0];
 }
@@ -5354,7 +5394,11 @@ async function updateTenant(id, data) {
     latitude: "latitude",
     longitude: "longitude",
     googleMapsUrl: "google_maps_url",
-    google_maps_url: "google_maps_url"
+    google_maps_url: "google_maps_url",
+    isAiPilot: "is_ai_pilot",
+    is_ai_pilot: "is_ai_pilot",
+    aiPriorityLevel: "ai_priority_level",
+    ai_priority_level: "ai_priority_level"
   };
   const validEntries = Object.entries(data).filter(([k, v]) => allowedColumns[k] !== void 0 && v !== void 0);
   if (validEntries.length === 0) return getTenantById(id);
@@ -5373,6 +5417,7 @@ async function updateTenant(id, data) {
            billing_currency as "billingCurrency", custom_monthly_price as "customMonthlyPrice",
            trial_ends_at as "trialEndsAt", settings_json as "settingsJson",
            address, latitude, longitude, google_maps_url as "googleMapsUrl",
+           is_ai_pilot as "isAiPilot", ai_priority_level as "aiPriorityLevel",
            created_at as "createdAt"
   `, [id, ...values]);
   return result.rows[0] || null;
@@ -6343,11 +6388,12 @@ async function ensureQueueTable() {
       completed_at TIMESTAMPTZ
     );
     CREATE INDEX IF NOT EXISTS idx_mq_status ON message_queue(status, created_at);
+    CREATE INDEX IF NOT EXISTS idx_mq_priority_status ON message_queue(status, priority DESC, created_at ASC);
     CREATE INDEX IF NOT EXISTS idx_mq_tenant ON message_queue(tenant_id, status);
   `;
   await query(sql);
 }
-async function enqueueMessage(tenantId, remoteJid, pushName, cleanPhone, userMessage, instanceName, isVoiceNote = false) {
+async function enqueueMessage(tenantId, remoteJid, pushName, cleanPhone, userMessage, instanceName, isVoiceNote = false, priority = 0) {
   const duplicateRes = await query(`
     SELECT * FROM message_queue
     WHERE tenant_id = $1 AND remote_jid = $2 AND user_message = $3
@@ -6382,11 +6428,11 @@ async function enqueueMessage(tenantId, remoteJid, pushName, cleanPhone, userMes
   }
   const sql = `
     INSERT INTO message_queue 
-    (tenant_id, remote_jid, push_name, clean_phone, user_message, instance_name, status, is_voice_note)
-    VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7)
+    (tenant_id, remote_jid, push_name, clean_phone, user_message, instance_name, status, is_voice_note, priority)
+    VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, $8)
     RETURNING *;
   `;
-  const result = await query(sql, [tenantId, remoteJid, pushName, cleanPhone, userMessage, instanceName, isVoiceNote]);
+  const result = await query(sql, [tenantId, remoteJid, pushName, cleanPhone, userMessage, instanceName, isVoiceNote, priority]);
   return mapToQueueMessage(result.rows[0]);
 }
 async function consumePendingForChat(tenantId, remoteJid, currentMessageId) {
@@ -6410,7 +6456,7 @@ async function takeNextPending(excludeChatKeys = []) {
     WHERE id = (
       SELECT id FROM message_queue 
       WHERE status = 'pending' ${excludeClause}
-      ORDER BY created_at ASC 
+      ORDER BY priority DESC, created_at ASC 
       LIMIT 1 
       FOR UPDATE SKIP LOCKED
     )
@@ -6485,6 +6531,7 @@ function mapToQueueMessage(row) {
     instanceName: row.instance_name,
     status: row.status,
     isVoiceNote: row.is_voice_note,
+    priority: row.priority ? Number(row.priority) : 0,
     errorMessage: row.error_message,
     aiResponse: row.ai_response,
     createdAt: row.created_at,
@@ -7206,6 +7253,145 @@ async function getAllTenantsMonthlyUsage(monthYearParam) {
       isExceeded
     };
   });
+}
+var MODEL_PRICING_CATALOG = {
+  // Google Gemini
+  "gemini-2.5-flash": { inputPerMillion: 0.075, outputPerMillion: 0.3 },
+  "gemini-2.5-flash-lite": { inputPerMillion: 0.05, outputPerMillion: 0.2 },
+  "gemini-2.5-pro": { inputPerMillion: 1.25, outputPerMillion: 5 },
+  "gemini-1.5-flash": { inputPerMillion: 0.075, outputPerMillion: 0.3 },
+  "gemini-1.5-pro": { inputPerMillion: 1.25, outputPerMillion: 5 },
+  // DeepSeek
+  "deepseek-chat": { inputPerMillion: 0.14, outputPerMillion: 0.28 },
+  "deepseek-reasoner": { inputPerMillion: 0.55, outputPerMillion: 2.19 },
+  // OpenAI
+  "gpt-4o-mini": { inputPerMillion: 0.15, outputPerMillion: 0.6 },
+  "gpt-4o": { inputPerMillion: 2.5, outputPerMillion: 10 },
+  "o1-mini": { inputPerMillion: 1.1, outputPerMillion: 4.4 },
+  "o3-mini": { inputPerMillion: 1.1, outputPerMillion: 4.4 },
+  // Anthropic
+  "claude-3-5-haiku-20241022": { inputPerMillion: 0.8, outputPerMillion: 4 },
+  "claude-3-5-sonnet-20241022": { inputPerMillion: 3, outputPerMillion: 15 },
+  "claude-3-7-sonnet": { inputPerMillion: 3, outputPerMillion: 15 },
+  // Local / Sovereign
+  "betico-ai": { inputPerMillion: 0, outputPerMillion: 0 },
+  "localai": { inputPerMillion: 0, outputPerMillion: 0 }
+};
+function calculateModelCost(provider, model, promptTokens, completionTokens) {
+  if (provider === "betico_ai" || provider === "ollama" || provider === "localai") {
+    return 0;
+  }
+  const cleanModel = (model || "").toLowerCase();
+  let rates;
+  for (const [key, val] of Object.entries(MODEL_PRICING_CATALOG)) {
+    if (cleanModel.includes(key.toLowerCase())) {
+      rates = val;
+      break;
+    }
+  }
+  if (!rates) {
+    if (provider === "deepseek") rates = { inputPerMillion: 0.14, outputPerMillion: 0.28 };
+    else if (provider === "gemini") rates = { inputPerMillion: 0.075, outputPerMillion: 0.3 };
+    else if (provider === "openai") rates = { inputPerMillion: 0.15, outputPerMillion: 0.6 };
+    else if (provider === "anthropic") rates = { inputPerMillion: 0.8, outputPerMillion: 4 };
+    else rates = { inputPerMillion: 0.15, outputPerMillion: 0.6 };
+  }
+  const inputCost = promptTokens / 1e6 * rates.inputPerMillion;
+  const outputCost = completionTokens / 1e6 * rates.outputPerMillion;
+  return Number((inputCost + outputCost).toFixed(6));
+}
+async function logTokenUsage(tenantId, data) {
+  if (!tenantId) return;
+  const promptTokens = Math.max(0, data.promptTokens || 0);
+  const completionTokens = Math.max(0, data.completionTokens || 0);
+  const totalTokens = promptTokens + completionTokens;
+  const costUsd = calculateModelCost(data.provider, data.model, promptTokens, completionTokens);
+  const latencyMs = Math.max(0, data.latencyMs || 0);
+  const subagent = data.subagent || "general";
+  try {
+    await query(`
+      INSERT INTO tenant_ai_token_logs 
+      (tenant_id, subagent, provider, model, prompt_tokens, completion_tokens, total_tokens, cost_usd, latency_ms, is_byok)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    `, [tenantId, subagent, data.provider, data.model, promptTokens, completionTokens, totalTokens, costUsd, latencyMs, data.isByok]);
+  } catch (err) {
+    console.error(`[AI-Usage] Error inserting token log for tenant ${tenantId}:`, err);
+  }
+  if (totalTokens > 0) {
+    await incrementTenantUsage(tenantId, totalTokens);
+  }
+}
+async function getTenantConsumptionMetrics(tenantId, monthYearParam) {
+  const monthYear = monthYearParam || getCurrentMonthYear();
+  const [year, month] = monthYear.split("-");
+  const startDate = `${year}-${month}-01 00:00:00Z`;
+  const tenantRes = await query(`
+    SELECT ai_provider as "aiProvider", ai_model as "aiModel", 
+           ai_api_key_encrypted as "aiApiKeyEncrypted",
+           is_ai_pilot as "isAiPilot"
+    FROM tenants WHERE id = $1
+  `, [tenantId]);
+  const tenant = tenantRes.rows[0] || {};
+  const isUsingOwnKey = Boolean(tenant.aiApiKeyEncrypted);
+  let summary = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, cost_usd: 0, avg_latency_ms: 0, requests_count: 0 };
+  const subagentBreakdown = {};
+  try {
+    const logsRes = await query(`
+      SELECT 
+        COALESCE(SUM(prompt_tokens), 0)::int as prompt_tokens,
+        COALESCE(SUM(completion_tokens), 0)::int as completion_tokens,
+        COALESCE(SUM(total_tokens), 0)::int as total_tokens,
+        COALESCE(SUM(cost_usd), 0)::numeric as cost_usd,
+        COALESCE(AVG(latency_ms), 0)::int as avg_latency_ms,
+        COUNT(*)::int as requests_count
+      FROM tenant_ai_token_logs
+      WHERE tenant_id = $1 
+        AND created_at >= $2::timestamptz 
+        AND created_at < ($2::timestamptz + INTERVAL '1 month')
+    `, [tenantId, startDate]);
+    if (logsRes.rows.length > 0) {
+      summary = logsRes.rows[0];
+    }
+    const subagentRes = await query(`
+      SELECT 
+        subagent,
+        COALESCE(SUM(total_tokens), 0)::int as tokens,
+        COALESCE(SUM(cost_usd), 0)::numeric as cost_usd,
+        COUNT(*)::int as requests_count
+      FROM tenant_ai_token_logs
+      WHERE tenant_id = $1 
+        AND created_at >= $2::timestamptz 
+        AND created_at < ($2::timestamptz + INTERVAL '1 month')
+      GROUP BY subagent
+    `, [tenantId, startDate]);
+    for (const row of subagentRes.rows) {
+      subagentBreakdown[row.subagent || "general"] = {
+        tokens: Number(row.tokens || 0),
+        costUsd: Number(Number(row.cost_usd || 0).toFixed(4)),
+        requestsCount: Number(row.requests_count || 0)
+      };
+    }
+  } catch (err) {
+    console.warn(`[AI-Usage] Error reading token logs for tenant ${tenantId} (table might be new):`, err);
+  }
+  const bccrExchangeRate = 515;
+  const costUsd = Number(Number(summary.cost_usd || 0).toFixed(4));
+  const costCrc = Math.round(costUsd * bccrExchangeRate);
+  return {
+    monthYear,
+    totalTokens: Number(summary.total_tokens || 0),
+    promptTokens: Number(summary.prompt_tokens || 0),
+    completionTokens: Number(summary.completion_tokens || 0),
+    estimatedCostUsd: costUsd,
+    estimatedCostCrc: costCrc,
+    requestsCount: Number(summary.requests_count || 0),
+    avgLatencyMs: Number(summary.avg_latency_ms || 0),
+    isUsingOwnKey,
+    provider: tenant.aiProvider || "betico_ai",
+    model: tenant.aiModel || "betico-ai",
+    isAiPilot: Boolean(tenant.isAiPilot),
+    subagentBreakdown
+  };
 }
 
 // src/server/db/specialists.repo.ts
@@ -8067,7 +8253,13 @@ REGLAS DE ORO DE VENTA Y CIERRE DE PEDIDOS (CALIDEZ TICA Y CERO ALUCINACI\xD3N):
       }
       let customerRecord = null;
       try {
-        customerRecord = await getRecordByPhone(senderPhone, tenantId);
+        const fullRecord = await getRecordByPhone(senderPhone, tenantId);
+        if (fullRecord) {
+          customerRecord = {
+            id: fullRecord.id,
+            fullName: fullRecord.fullName
+          };
+        }
       } catch (e) {
       }
       let scheduleText = "";
@@ -8329,6 +8521,19 @@ La \xDANICA fuente de verdad sobre canchas y tarifas es la provista en tus instr
   }, fallbackConfig);
   if (isBeticoPlatformAI && aiResult.tokensUsed > 0) {
     await incrementTenantUsage(tenantId, aiResult.tokensUsed);
+  }
+  try {
+    await logTokenUsage(tenantId, {
+      subagent: routedAgentId,
+      provider: primaryConfig.provider,
+      model: primaryConfig.model,
+      promptTokens: aiResult.promptTokens || 0,
+      completionTokens: aiResult.completionTokens || 0,
+      latencyMs: aiResult.latencyMs || 0,
+      isByok: !isBeticoPlatformAI
+    });
+  } catch (tokenLogErr) {
+    console.warn("[Orchestrator] Error logging token usage:", tokenLogErr);
   }
   const rawReply = aiResult.text || "";
   let isBookingDetected = false;
@@ -10880,6 +11085,8 @@ router2.post("/", async (req, res) => {
       latitude: finalLat,
       longitude: finalLng,
       googleMapsUrl: finalMapsUrl || void 0,
+      isAiPilot: req.body.isAiPilot !== void 0 ? Boolean(req.body.isAiPilot) : false,
+      aiPriorityLevel: req.body.aiPriorityLevel !== void 0 ? Number(req.body.aiPriorityLevel) || 0 : 0,
       aiModel: "gemini-2.5-flash",
       aiProvider: "gemini",
       active: true
@@ -10936,6 +11143,8 @@ router2.put("/:id", async (req, res) => {
       tenantUpdateData.whatsappNumber = body.phone || body.whatsappNumber;
     }
     if (body.active !== void 0) tenantUpdateData.active = Boolean(body.active);
+    if (body.isAiPilot !== void 0) tenantUpdateData.isAiPilot = Boolean(body.isAiPilot);
+    if (body.aiPriorityLevel !== void 0) tenantUpdateData.aiPriorityLevel = Number(body.aiPriorityLevel) || 0;
     if (body.isTrial !== void 0) {
       if (body.isTrial) {
         tenantUpdateData.subscriptionStatus = "trial";
@@ -12581,6 +12790,26 @@ router7.get("/ai-quota", async (req, res) => {
   } catch (error) {
     console.error("Error fetching tenant AI quota:", error);
     res.status(500).json({ error: "Error al obtener cuota de IA" });
+  }
+});
+router7.get("/ai-consumption-metrics", async (req, res) => {
+  try {
+    const month = req.query.month;
+    const metrics = await getTenantConsumptionMetrics(req.tenantId, month);
+    const tenant = await getTenantById(req.tenantId);
+    res.json({
+      success: true,
+      tenantId: req.tenantId,
+      isAiPilot: Boolean(tenant?.isAiPilot),
+      aiPriorityLevel: tenant?.aiPriorityLevel || 0,
+      isUsingOwnKey: Boolean(tenant?.aiApiKeyEncrypted),
+      provider: tenant?.aiProvider || "betico_ai",
+      model: tenant?.aiModel || "betico-ai",
+      ...metrics
+    });
+  } catch (error) {
+    console.error("Error fetching tenant AI consumption metrics:", error);
+    res.status(500).json({ error: "Error al obtener m\xE9tricas de consumo de IA" });
   }
 });
 var agent_routes_default = router7;
@@ -14451,8 +14680,16 @@ Hemos recibido tu comprobante para el pedido *#${pendingOrder.orderNumber}* (\u2
       }
       return;
     }
-    console.log(`[Webhook] Enqueueing message for AI processing: tenant='${tenant.name}', from=${pushName}`);
-    await enqueueMessage(tenant.id, remoteJid, pushName, cleanPhone, userMessage, targetInstance, isVoiceNote);
+    let queuePriority = 0;
+    if (tenant.aiPriorityLevel && Number(tenant.aiPriorityLevel) > 0) {
+      queuePriority = Number(tenant.aiPriorityLevel);
+    } else if (tenant.isAiPilot) {
+      queuePriority = 100;
+    } else if (tenant.aiApiKeyEncrypted) {
+      queuePriority = 50;
+    }
+    console.log(`[Webhook] Enqueueing message for AI processing: tenant='${tenant.name}', from=${pushName}, priority=${queuePriority}`);
+    await enqueueMessage(tenant.id, remoteJid, pushName, cleanPhone, userMessage, targetInstance, isVoiceNote, queuePriority);
     if (req.io) {
       req.io.to(`tenant_${tenant.id}`).emit("queue:updated", { tenantId: tenant.id });
     }

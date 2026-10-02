@@ -117,7 +117,7 @@ router.post('/simulate', async (req, res) => {
   }
 });
 
-import { getTenantCurrentMonthUsage } from '../db/ai-usage.repo.js';
+import { getTenantCurrentMonthUsage, getTenantConsumptionMetrics } from '../db/ai-usage.repo.js';
 
 router.get('/ai-quota', async (req, res) => {
   try {
@@ -134,6 +134,28 @@ router.get('/ai-quota', async (req, res) => {
   } catch (error) {
     console.error('Error fetching tenant AI quota:', error);
     res.status(500).json({ error: 'Error al obtener cuota de IA' });
+  }
+});
+
+router.get('/ai-consumption-metrics', async (req, res) => {
+  try {
+    const month = req.query.month as string | undefined;
+    const metrics = await getTenantConsumptionMetrics(req.tenantId, month);
+    const tenant = await getTenantById(req.tenantId);
+
+    res.json({
+      success: true,
+      tenantId: req.tenantId,
+      isAiPilot: Boolean(tenant?.isAiPilot),
+      aiPriorityLevel: tenant?.aiPriorityLevel || 0,
+      isUsingOwnKey: Boolean(tenant?.aiApiKeyEncrypted),
+      provider: tenant?.aiProvider || 'betico_ai',
+      model: tenant?.aiModel || 'betico-ai',
+      ...metrics
+    });
+  } catch (error) {
+    console.error('Error fetching tenant AI consumption metrics:', error);
+    res.status(500).json({ error: 'Error al obtener métricas de consumo de IA' });
   }
 });
 

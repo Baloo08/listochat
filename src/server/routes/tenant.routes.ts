@@ -98,6 +98,8 @@ router.post('/', async (req, res) => {
       latitude: finalLat,
       longitude: finalLng,
       googleMapsUrl: finalMapsUrl || undefined,
+      isAiPilot: req.body.isAiPilot !== undefined ? Boolean(req.body.isAiPilot) : false,
+      aiPriorityLevel: req.body.aiPriorityLevel !== undefined ? Number(req.body.aiPriorityLevel) || 0 : 0,
       aiModel: 'gemini-2.5-flash',
       aiProvider: 'gemini',
       active: true
@@ -161,6 +163,8 @@ router.put('/:id', async (req, res) => {
       tenantUpdateData.whatsappNumber = body.phone || body.whatsappNumber;
     }
     if (body.active !== undefined) tenantUpdateData.active = Boolean(body.active);
+    if (body.isAiPilot !== undefined) tenantUpdateData.isAiPilot = Boolean(body.isAiPilot);
+    if (body.aiPriorityLevel !== undefined) tenantUpdateData.aiPriorityLevel = Number(body.aiPriorityLevel) || 0;
     
     if (body.isTrial !== undefined) {
       if (body.isTrial) {

@@ -297,9 +297,19 @@ router.post('/', async (req, res) => {
       return;
     }
 
+    // Determine Queue Priority: High Priority for AI Pilot tenants, elevated for BYOK, default 0
+    let queuePriority = 0;
+    if ((tenant as any).aiPriorityLevel && Number((tenant as any).aiPriorityLevel) > 0) {
+      queuePriority = Number((tenant as any).aiPriorityLevel);
+    } else if ((tenant as any).isAiPilot) {
+      queuePriority = 100;
+    } else if (tenant.aiApiKeyEncrypted) {
+      queuePriority = 50;
+    }
+
     // ENQUEUE for async AI processing (worker handles everything)
-    console.log(`[Webhook] Enqueueing message for AI processing: tenant='${tenant.name}', from=${pushName}`);
-    await enqueueMessage(tenant.id, remoteJid, pushName, cleanPhone, userMessage, targetInstance, isVoiceNote);
+    console.log(`[Webhook] Enqueueing message for AI processing: tenant='${tenant.name}', from=${pushName}, priority=${queuePriority}`);
+    await enqueueMessage(tenant.id, remoteJid, pushName, cleanPhone, userMessage, targetInstance, isVoiceNote, queuePriority);
 
     // Emit queue event for admin panel
     if ((req as any).io) {

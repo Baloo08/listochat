@@ -39,6 +39,8 @@ interface Tenant {
   postgresDb?: string;
   postgresSchema?: string;
   evolutionInstance?: string;
+  isAiPilot?: boolean;
+  aiPriorityLevel?: number;
   createdAt: string;
 }
 
@@ -94,7 +96,9 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
     address: '',
     latitude: '',
     longitude: '',
-    googleMapsUrl: ''
+    googleMapsUrl: '',
+    isAiPilot: false,
+    aiPriorityLevel: 0
   });
   const [savingTenant, setSavingTenant] = useState(false);
   const [extendModalTenant, setExtendModalTenant] = useState<Tenant | null>(null);
@@ -596,7 +600,8 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
                   setFormData({
                     name: '', slug: '', contactName: '', email: '', phone: '',
                     plan: 'starter', customMonthlyPrice: 29, billingCurrency: 'CRC', isTrial: true, trialDays: 15,
-                    address: '', latitude: '', longitude: '', googleMapsUrl: ''
+                    address: '', latitude: '', longitude: '', googleMapsUrl: '',
+                    isAiPilot: false, aiPriorityLevel: 0
                   });
                   setShowModal(true);
                 }}
@@ -987,13 +992,23 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
                       <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 'bold' }}>{t.name}</h3>
                       <code style={{ fontSize: '0.75rem', color: 'var(--primary)' }}>/{t.slug}</code>
                     </div>
-                    <span style={{
-                      padding: '3px 8px', borderRadius: '12px', fontSize: '0.72rem', fontWeight: 'bold',
-                      backgroundColor: t.subscriptionStatus === 'suspended' ? '#fee2e2' : t.subscriptionStatus === 'trial' ? '#eff6ff' : '#dcfce7',
-                      color: t.subscriptionStatus === 'suspended' ? '#991b1b' : t.subscriptionStatus === 'trial' ? '#1e40af' : '#15803d'
-                    }}>
-                      {t.subscriptionStatus === 'suspended' ? '🔴 Suspendido' : t.subscriptionStatus === 'trial' ? '🔵 En Prueba' : '🟢 Activo'}
-                    </span>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                      <span style={{
+                        padding: '3px 8px', borderRadius: '12px', fontSize: '0.72rem', fontWeight: 'bold',
+                        backgroundColor: t.subscriptionStatus === 'suspended' ? '#fee2e2' : t.subscriptionStatus === 'trial' ? '#eff6ff' : '#dcfce7',
+                        color: t.subscriptionStatus === 'suspended' ? '#991b1b' : t.subscriptionStatus === 'trial' ? '#1e40af' : '#15803d'
+                      }}>
+                        {t.subscriptionStatus === 'suspended' ? '🔴 Suspendido' : t.subscriptionStatus === 'trial' ? '🔵 En Prueba' : '🟢 Activo'}
+                      </span>
+                      {t.isAiPilot && (
+                        <span style={{
+                          padding: '2px 7px', borderRadius: '10px', fontSize: '0.68rem', fontWeight: 'bold',
+                          backgroundColor: '#fef3c7', color: '#b45309', border: '1px solid #fde68a'
+                        }}>
+                          🚀 Piloto VIP (P{t.aiPriorityLevel || 100})
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -1112,7 +1127,9 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
                           address: t.address || '',
                           latitude: t.latitude != null ? String(t.latitude) : '',
                           longitude: t.longitude != null ? String(t.longitude) : '',
-                          googleMapsUrl: t.googleMapsUrl || ''
+                          googleMapsUrl: t.googleMapsUrl || '',
+                          isAiPilot: Boolean(t.isAiPilot),
+                          aiPriorityLevel: t.aiPriorityLevel || 0
                         });
                         setShowModal(true);
                       }}
@@ -1250,6 +1267,16 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
                         }}>
                           {t.subscriptionStatus === 'suspended' ? 'Suspendido' : t.subscriptionStatus === 'trial' ? 'Prueba' : 'Activo'}
                         </span>
+                        {t.isAiPilot && (
+                          <div style={{ marginTop: '4px' }}>
+                            <span style={{
+                              padding: '2px 6px', borderRadius: '8px', fontSize: '0.68rem', fontWeight: 'bold',
+                              backgroundColor: '#fef3c7', color: '#b45309'
+                            }}>
+                              🚀 Piloto (P{t.aiPriorityLevel || 100})
+                            </span>
+                          </div>
+                        )}
                       </td>
                       <td style={{ padding: '12px 14px', textAlign: 'right' }}>
                         <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
@@ -1292,7 +1319,9 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
                                 address: t.address || '',
                                 latitude: t.latitude != null ? String(t.latitude) : '',
                                 longitude: t.longitude != null ? String(t.longitude) : '',
-                                googleMapsUrl: t.googleMapsUrl || ''
+                                googleMapsUrl: t.googleMapsUrl || '',
+                                isAiPilot: Boolean(t.isAiPilot),
+                                aiPriorityLevel: t.aiPriorityLevel || 0
                               });
                               setShowModal(true);
                             }}
@@ -2256,6 +2285,47 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
                     </select>
                   </div>
                 </div>
+              </div>
+
+              {/* PROGRAMA PILOTO BETICO AI & PRIORIDAD DE COLA */}
+              <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '10px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontWeight: 'bold', fontSize: '0.82rem', color: '#166534', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Zap size={15} color="#16a34a" /> Programa Piloto Betico AI & Prioridad en Cola
+                  </div>
+                  <span style={{ fontSize: '0.72rem', backgroundColor: formData.isAiPilot ? '#dcfce7' : '#f1f5f9', color: formData.isAiPilot ? '#15803d' : '#64748b', padding: '2px 8px', borderRadius: '12px', fontWeight: 'bold' }}>
+                    {formData.isAiPilot ? '🚀 Piloto VIP Activo' : '⚪ Estándar'}
+                  </span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', alignItems: 'center' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600, color: '#1e293b' }}>
+                    <input
+                      type="checkbox"
+                      checked={formData.isAiPilot || false}
+                      onChange={(e) => setFormData({ ...formData, isAiPilot: e.target.checked })}
+                      style={{ width: '16px', height: '16px' }}
+                    />
+                    <span>Habilitar en Proyecto Piloto AI</span>
+                  </label>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 'bold', marginBottom: '4px', color: '#166534' }}>
+                      Prioridad en Cola (0 = normal, 100 = VIP)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={formData.aiPriorityLevel !== undefined ? formData.aiPriorityLevel : 0}
+                      onChange={(e) => setFormData({ ...formData, aiPriorityLevel: parseInt(e.target.value, 10) || 0 })}
+                      style={{ width: '100%', padding: '6px 10px', borderRadius: '6px', border: '1px solid #86efac', fontSize: '0.82rem' }}
+                    />
+                  </div>
+                </div>
+                <p style={{ margin: 0, fontSize: '0.72rem', color: '#15803d' }}>
+                  Los mensajes de WhatsApp de clientes con alta prioridad o en el programa piloto se procesan de forma inmediata en la cola del servidor (message_queue fast-track).
+                </p>
               </div>
 
               {/* UBICACIÓN DEL NEGOCIO & NAVEGACIÓN GPS */}

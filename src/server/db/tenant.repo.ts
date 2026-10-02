@@ -11,6 +11,7 @@ export async function getAllTenants(): Promise<any[]> {
            trial_ends_at as "trialEndsAt", next_billing_date as "nextBillingDate",
            grace_period_ends_at as "gracePeriodEndsAt", settings_json as "settingsJson", 
            address, latitude, longitude, google_maps_url as "googleMapsUrl",
+           is_ai_pilot as "isAiPilot", ai_priority_level as "aiPriorityLevel",
            created_at as "createdAt"
     FROM tenants 
     ORDER BY created_at DESC
@@ -28,6 +29,7 @@ export async function getAllTenantsWithAdmin(): Promise<any[]> {
            t.trial_ends_at as "trialEndsAt", t.next_billing_date as "nextBillingDate",
            t.grace_period_ends_at as "gracePeriodEndsAt", t.settings_json as "settingsJson", 
            t.address, t.latitude, t.longitude, t.google_maps_url as "googleMapsUrl",
+           t.is_ai_pilot as "isAiPilot", t.ai_priority_level as "aiPriorityLevel",
            t.created_at as "createdAt",
            COALESCE(u.email, 'Sin registrar') as "adminEmail",
            u.id as "adminId",
@@ -60,6 +62,7 @@ export async function getTenantById(id: string): Promise<any | null> {
            next_billing_date as "nextBillingDate", grace_period_ends_at as "gracePeriodEndsAt",
            calendar_token as "calendarToken",
            address, latitude, longitude, google_maps_url as "googleMapsUrl",
+           is_ai_pilot as "isAiPilot", ai_priority_level as "aiPriorityLevel",
            settings_json as "settingsJson", created_at as "createdAt",
            id as "postgresTenantId",
            'whatsapp_saas' as "postgresDb",
@@ -81,6 +84,8 @@ export async function getTenantBySlug(slug: string): Promise<Tenant | null> {
            t.subscription_status as "subscriptionStatus", t.billing_currency as "billingCurrency",
            t.custom_monthly_price as "customMonthlyPrice", t.trial_ends_at as "trialEndsAt",
            t.calendar_token as "calendarToken",
+           t.address, t.latitude, t.longitude, t.google_maps_url as "googleMapsUrl",
+           t.is_ai_pilot as "isAiPilot", t.ai_priority_level as "aiPriorityLevel",
            t.settings_json as "settingsJson", t.created_at as "createdAt"
     FROM tenants t
     LEFT JOIN store_settings ss ON ss.tenant_id = t.id
@@ -96,6 +101,7 @@ export async function getTenantByCustomDomain(domain: string): Promise<Tenant | 
            ai_provider as "aiProvider", ai_api_key_encrypted as "aiApiKeyEncrypted",
            ai_model as "aiModel", evolution_instance as "evolutionInstance", 
            whatsapp_number as "whatsappNumber", plan, active, 
+           is_ai_pilot as "isAiPilot", ai_priority_level as "aiPriorityLevel",
            settings_json as "settingsJson", created_at as "createdAt"
     FROM tenants WHERE custom_domain = $1
   `, [domain]);
@@ -108,6 +114,7 @@ export async function getTenantByEvolutionInstance(instanceName: string): Promis
            ai_provider as "aiProvider", ai_api_key_encrypted as "aiApiKeyEncrypted",
            ai_model as "aiModel", evolution_instance as "evolutionInstance", 
            whatsapp_number as "whatsappNumber", plan, active, 
+           is_ai_pilot as "isAiPilot", ai_priority_level as "aiPriorityLevel",
            settings_json as "settingsJson", created_at as "createdAt"
     FROM tenants WHERE evolution_instance = $1
   `, [instanceName]);
@@ -124,14 +131,15 @@ export async function createTenant(data: Partial<Tenant> & Record<string, any>):
       name, slug, custom_domain, ai_provider, ai_api_key_encrypted, 
       ai_model, evolution_instance, whatsapp_number, plan, active,
       custom_monthly_price, billing_currency, subscription_status, trial_ends_at, settings_json,
-      address, latitude, longitude, google_maps_url
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+      address, latitude, longitude, google_maps_url, is_ai_pilot, ai_priority_level
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
     RETURNING id, name, slug, custom_domain as "customDomain", 
            ai_provider as "aiProvider", ai_model as "aiModel", 
            evolution_instance as "evolutionInstance", whatsapp_number as "whatsappNumber",
            plan, active, custom_monthly_price as "customMonthlyPrice", billing_currency as "billingCurrency",
            subscription_status as "subscriptionStatus", trial_ends_at as "trialEndsAt",
            settings_json as "settingsJson", address, latitude, longitude, google_maps_url as "googleMapsUrl",
+           is_ai_pilot as "isAiPilot", ai_priority_level as "aiPriorityLevel",
            created_at as "createdAt"
   `, [
     data.name, data.slug, data.customDomain, data.aiProvider || 'gemini', 
@@ -140,7 +148,8 @@ export async function createTenant(data: Partial<Tenant> & Record<string, any>):
     finalPrice, data.billingCurrency || 'CRC', data.subscriptionStatus || 'active',
     data.trialEndsAt || null, data.settingsJson || null,
     data.address || null, data.latitude ? Number(data.latitude) : null,
-    data.longitude ? Number(data.longitude) : null, data.googleMapsUrl || data.google_maps_url || null
+    data.longitude ? Number(data.longitude) : null, data.googleMapsUrl || data.google_maps_url || null,
+    Boolean(data.isAiPilot), Number(data.aiPriorityLevel) || 0
   ]);
   return result.rows[0];
 }
@@ -182,7 +191,11 @@ export async function updateTenant(id: string, data: Record<string, any>): Promi
     latitude: 'latitude',
     longitude: 'longitude',
     googleMapsUrl: 'google_maps_url',
-    google_maps_url: 'google_maps_url'
+    google_maps_url: 'google_maps_url',
+    isAiPilot: 'is_ai_pilot',
+    is_ai_pilot: 'is_ai_pilot',
+    aiPriorityLevel: 'ai_priority_level',
+    ai_priority_level: 'ai_priority_level'
   };
 
   const validEntries = Object.entries(data).filter(([k, v]) => allowedColumns[k] !== undefined && v !== undefined);
@@ -205,6 +218,7 @@ export async function updateTenant(id: string, data: Record<string, any>): Promi
            billing_currency as "billingCurrency", custom_monthly_price as "customMonthlyPrice",
            trial_ends_at as "trialEndsAt", settings_json as "settingsJson",
            address, latitude, longitude, google_maps_url as "googleMapsUrl",
+           is_ai_pilot as "isAiPilot", ai_priority_level as "aiPriorityLevel",
            created_at as "createdAt"
   `, [id, ...values]);
 

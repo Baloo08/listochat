@@ -967,6 +967,27 @@ export async function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_orders_tracking_token ON orders(tracking_token);
 
     CREATE INDEX IF NOT EXISTS idx_court_bookings_slot ON court_bookings(tenant_id, court_id, date, time) WHERE status != 'cancelled';
+
+    -- Betico AI Pilot & Priority Queue Execution
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS is_ai_pilot BOOLEAN DEFAULT false;
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS ai_priority_level INTEGER DEFAULT 0;
+
+    -- Granular Token Logs and Spend Estimation for BYOK & Platform Tenants
+    CREATE TABLE IF NOT EXISTS tenant_ai_token_logs (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id TEXT NOT NULL,
+      subagent VARCHAR(50) DEFAULT 'general',
+      provider VARCHAR(50) NOT NULL,
+      model VARCHAR(100) NOT NULL,
+      prompt_tokens INTEGER DEFAULT 0,
+      completion_tokens INTEGER DEFAULT 0,
+      total_tokens INTEGER DEFAULT 0,
+      cost_usd NUMERIC(10, 6) DEFAULT 0,
+      latency_ms INTEGER DEFAULT 0,
+      is_byok BOOLEAN DEFAULT false,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_ai_token_logs_tenant_month ON tenant_ai_token_logs(tenant_id, created_at);
   `).catch((err) => {
     console.warn('[Migrations] Columns addition warning:', err?.message || err);
   });

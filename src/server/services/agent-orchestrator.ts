@@ -6,7 +6,7 @@ import { getProductsByTenant } from '../db/products.repo.js';
 import { getTenantById } from '../db/tenant.repo.js';
 import { getStoreSettings } from '../db/store-settings.repo.js';
 import { getScheduleSettings } from '../db/schedule.repo.js';
-import { incrementTenantUsage } from '../db/ai-usage.repo.js';
+import { incrementTenantUsage, logTokenUsage } from '../db/ai-usage.repo.js';
 import { getSpecialistsByTenant } from '../db/specialists.repo.js';
 import { getCourtsByTenant } from '../db/courts.repo.js';
 import { getRecordByPhone } from '../db/records.repo.js';
@@ -357,9 +357,22 @@ REGLAS DE ORO DE VENTA Y CIERRE DE PEDIDOS (CALIDEZ TICA Y CERO ALUCINACIÓN):
         }
       } catch (e) {}
 
-      let customerRecord: any = null;
+      // =========================================================================
+      // STRICT CLINICAL PRIVACY BARRIER (HIPAA / Costa Rica Ley 8968 PRODHAB)
+      // =========================================================================
+      // Patient sensitive medical data (pathologicalBackground, allergies, diagnosis,
+      // treatmentPlan, clinical notes, vitalSigns, prescriptions) MUST NEVER be passed
+      // into any AI prompt. We strictly extract ONLY the patient's fullName and internal ID
+      // to link the appointment record without exposing confidential health history.
+      let customerRecord: { id: string; fullName: string } | null = null;
       try {
-        customerRecord = await getRecordByPhone(senderPhone, tenantId);
+        const fullRecord = await getRecordByPhone(senderPhone, tenantId);
+        if (fullRecord) {
+          customerRecord = {
+            id: fullRecord.id,
+            fullName: fullRecord.fullName
+          };
+        }
       } catch (e) {}
 
       let scheduleText = '';
@@ -639,6 +652,21 @@ La ÚNICA fuente de verdad sobre canchas y tarifas es la provista en tus instruc
 
   if (isBeticoPlatformAI && aiResult.tokensUsed > 0) {
     await incrementTenantUsage(tenantId, aiResult.tokensUsed);
+  }
+
+  // Granular Token and Cost Logging (for both BYOK and Platform tenants)
+  try {
+    await logTokenUsage(tenantId, {
+      subagent: routedAgentId,
+      provider: primaryConfig.provider,
+      model: primaryConfig.model,
+      promptTokens: aiResult.promptTokens || 0,
+      completionTokens: aiResult.completionTokens || 0,
+      latencyMs: aiResult.latencyMs || 0,
+      isByok: !isBeticoPlatformAI
+    });
+  } catch (tokenLogErr) {
+    console.warn('[Orchestrator] Error logging token usage:', tokenLogErr);
   }
 
   const rawReply = aiResult.text || '';

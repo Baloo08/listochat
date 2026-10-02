@@ -152,13 +152,21 @@ export interface StructuredPrompt {
   }>;
 }
 
+export interface AIResult {
+  text: string;
+  tokensUsed: number;
+  promptTokens?: number;
+  completionTokens?: number;
+  latencyMs?: number;
+}
+
 export type AIPromptInput = string | StructuredPrompt;
 
 export async function callAI(
   config: TenantAIConfig,
   input: AIPromptInput,
   fallbackConfig?: TenantAIConfig
-): Promise<{ text: string, tokensUsed: number }> {
+): Promise<AIResult> {
   const provider = config.provider || 'gemini';
   const apiKey = config.apiKey || (provider === 'gemini' ? DEFAULT_GEMINI_KEY : '');
   
@@ -235,7 +243,10 @@ export async function callAI(
 
   return {
     text: 'Hola, gracias por comunicarte con nosotros. En este momento estamos procesando tu solicitud, en breve un asesor te responderá.',
-    tokensUsed: 0
+    tokensUsed: 0,
+    promptTokens: 0,
+    completionTokens: 0,
+    latencyMs: 0
   };
 }
 
@@ -279,12 +290,12 @@ async function executeProvider(config: TenantAIConfig, input: AIPromptInput) {
   const defaultTimeout = isLocalEngine ? 120000 : 45000;
   const timeoutMs = parseInt(process.env.AI_TIMEOUT_MS || String(defaultTimeout), 10);
 
-  const timeoutPromise = new Promise<{ text: string, tokensUsed: number }>((_, reject) => {
+  const timeoutPromise = new Promise<AIResult>((_, reject) => {
     setTimeout(() => reject(new Error(`AI inference timeout after ${Math.round(timeoutMs / 1000)}s`)), timeoutMs);
   });
 
   const t0 = Date.now();
-  const generatePromise = (async () => {
+  const generatePromise = (async (): Promise<AIResult> => {
     let callParams: any = {
       model,
       temperature: config.temperature ?? 0.7,
@@ -309,10 +320,18 @@ async function executeProvider(config: TenantAIConfig, input: AIPromptInput) {
     }
 
     const { text, usage } = await generateText(callParams);
-    console.log(`[AI-Provider] ${config.provider}/${config.model} responded in ${Date.now() - t0}ms, tokens: ${usage?.totalTokens || '?'}`);
+    const latencyMs = Date.now() - t0;
+    const promptTokens = usage?.promptTokens || Math.ceil(promptLengthEstimate / 4);
+    const completionTokens = usage?.completionTokens || Math.ceil(text.length / 4);
+    const totalTokens = usage?.totalTokens || (promptTokens + completionTokens);
+
+    console.log(`[AI-Provider] ${config.provider}/${config.model} responded in ${latencyMs}ms, tokens: in=${promptTokens}, out=${completionTokens}, total=${totalTokens}`);
     return {
       text,
-      tokensUsed: usage?.totalTokens || Math.ceil((promptLengthEstimate + text.length) / 4),
+      tokensUsed: totalTokens,
+      promptTokens,
+      completionTokens,
+      latencyMs
     };
   })();
 

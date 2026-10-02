@@ -30,6 +30,8 @@ export interface Tenant {
   easypanelService?: string | null;
   createdAt: Date;
   settingsJson?: Record<string, any>;
+  isAiPilot?: boolean;
+  aiPriorityLevel?: number;
 }
 
 export interface User {
