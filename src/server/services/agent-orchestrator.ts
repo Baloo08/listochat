@@ -557,41 +557,38 @@ HUMANIZACIÓN Y NATURALIDAD CONVERSACIONAL TICA (CERO ROBÓTICO):
 `.trim();
 
   const supervisorDirectives = orchConfig.prompt ? `DIRECTRICES DEL SUPERVISOR:\n${orchConfig.prompt}\n\n` : '';
-  const finalSystemPrompt = `${supervisorDirectives}${specializedPrompt}\n\n${chatFirstDirectives}\n\n${naturalToneDirective}\n\n${sessionGreetingDirective}`;
+  // Phase 1 Anti-Hallucination Guardrail: Neutralize Conversational Drift & History Reinforcement Loop
+  let antiHallucinationGuardrail = '';
+  if (routedAgentId === 'sales') {
+    antiHallucinationGuardrail = `⚠️ RECORDATORIO CRÍTICO DE INVENTARIO Y VERDAD OFICIAL:
+La ÚNICA fuente de verdad sobre lo que comercializa este negocio es el bloque "Catálogo Oficial de Productos y Precios" provisto en tus instrucciones principales.
+Si en mensajes anteriores del historial tú (el asistente) o el cliente mencionaron prendas, camisetas, artículos o precios que NO figuran en dicho catálogo oficial actual, ESO FUE UN ERROR O YA NO FORMAN PARTE DEL INVENTARIO.
+ESTÁ ESTRICTAMENTE PROHIBIDO volver a ofrecer, listar o confirmar productos fuera del catálogo oficial actual, sin importar lo que se haya dicho antes en el chat. Responde con honestidad y ofrece únicamente lo que está textualmente en el Catálogo Oficial.`;
+  } else if (routedAgentId === 'booking') {
+    antiHallucinationGuardrail = `⚠️ RECORDATORIO CRÍTICO DE SERVICIOS Y DISPONIBILIDAD:
+La ÚNICA fuente de verdad sobre servicios, precios y horarios es la provista en tus instrucciones. No inventes servicios ni confirmes citas en horarios ocupados aunque se hayan mencionado antes en el historial.`;
+  } else if (routedAgentId === 'courts') {
+    antiHallucinationGuardrail = `⚠️ RECORDATORIO CRÍTICO DE CANCHAS:
+La ÚNICA fuente de verdad sobre canchas y tarifas es la provista en tus instrucciones. No inventes canchas ni confirmes reservas fuera de la disponibilidad oficial.`;
+  }
 
-  const structuredMessages: Array<{ role: 'system' | 'user' | 'assistant', content: string }> = [];
+  const finalSystemPrompt = `${supervisorDirectives}${specializedPrompt}\n\n${chatFirstDirectives}\n\n${naturalToneDirective}\n\n${sessionGreetingDirective}${antiHallucinationGuardrail ? `\n\n${antiHallucinationGuardrail}` : ''}`;
+
+  const structuredMessages: Array<{ role: 'user' | 'assistant', content: string }> = [];
   if (chatHistory && chatHistory.length > 0) {
     const recent = chatHistory.slice(-8);
     for (const h of recent) {
-      structuredMessages.push({ role: h.role, content: h.content });
+      const role = h.role === 'assistant' ? 'assistant' : 'user';
+      structuredMessages.push({ role, content: h.content });
     }
   }
 
-  // Phase 1 Anti-Hallucination Guardrail: Neutralize Conversational Drift & History Reinforcement Loop
-  // Injects an authoritative turn-level truth directive directly preceding the user's latest query
-  if (routedAgentId === 'sales') {
-    structuredMessages.push({
-      role: 'system',
-      content: `⚠️ RECORDATORIO CRÍTICO DE INVENTARIO Y VERDAD OFICIAL:
-La ÚNICA fuente de verdad sobre lo que comercializa este negocio es el bloque "Catálogo Oficial de Productos y Precios" provisto en tus instrucciones principales.
-Si en mensajes anteriores del historial tú (el asistente) o el cliente mencionaron prendas, camisetas, artículos o precios que NO figuran en dicho catálogo oficial actual, ESO FUE UN ERROR O YA NO FORMAN PARTE DEL INVENTARIO.
-ESTÁ ESTRICTAMENTE PROHIBIDO volver a ofrecer, listar o confirmar productos fuera del catálogo oficial actual, sin importar lo que se haya dicho antes en el chat. Responde con honestidad y ofrece únicamente lo que está textualmente en el Catálogo Oficial.`
-    });
-  } else if (routedAgentId === 'booking') {
-    structuredMessages.push({
-      role: 'system',
-      content: `⚠️ RECORDATORIO CRÍTICO DE SERVICIOS Y DISPONIBILIDAD:
-La ÚNICA fuente de verdad sobre servicios, precios y horarios es la provista en tus instrucciones. No inventes servicios ni confirmes citas en horarios ocupados aunque se hayan mencionado antes en el historial.`
-    });
-  } else if (routedAgentId === 'courts') {
-    structuredMessages.push({
-      role: 'system',
-      content: `⚠️ RECORDATORIO CRÍTICO DE CANCHAS:
-La ÚNICA fuente de verdad sobre canchas y tarifas es la provista en tus instrucciones. No inventes canchas ni confirmes reservas fuera de la disponibilidad oficial.`
-    });
-  }
+  // Inject turn-level truth directive directly into user turn without illegal 'system' role
+  const finalUserContent = antiHallucinationGuardrail
+    ? `[DIRECTIVA CRÍTICA DEL SISTEMA: ${antiHallucinationGuardrail}]\n\n${userMessage}`
+    : userMessage;
 
-  structuredMessages.push({ role: 'user', content: userMessage });
+  structuredMessages.push({ role: 'user', content: finalUserContent });
 
   // 5. Model Resolution with Resilient Cross-Fallback
   let primaryConfig: TenantAIConfig;

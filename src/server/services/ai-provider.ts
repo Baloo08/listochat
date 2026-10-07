@@ -170,15 +170,27 @@ export async function callAI(
   const provider = config.provider || 'gemini';
   const apiKey = config.apiKey || (provider === 'gemini' ? DEFAULT_GEMINI_KEY : '');
   
-  // Sanitize model name for LocalAI so it never calls non-existent files
+  // Sanitize model name so provider never calls incompatible models
   let chosenModel = config.model;
-  if (provider === 'betico_ai' || provider === 'ollama') {
-    if (!chosenModel || chosenModel.includes('gpt') || chosenModel.includes('gemini') || chosenModel.includes('claude')) {
-      chosenModel = 'betico-ai';
+  if (provider === 'gemini') {
+    if (!chosenModel || chosenModel.includes('betico') || chosenModel.includes('gpt') || chosenModel.includes('claude') || chosenModel.includes('deepseek')) {
+      chosenModel = 'gemini-2.5-flash';
+    }
+  } else if (provider === 'openai') {
+    if (!chosenModel || chosenModel.includes('betico') || chosenModel.includes('gemini') || chosenModel.includes('claude') || chosenModel.includes('deepseek')) {
+      chosenModel = 'gpt-4o-mini';
+    }
+  } else if (provider === 'anthropic') {
+    if (!chosenModel || chosenModel.includes('betico') || chosenModel.includes('gemini') || chosenModel.includes('gpt')) {
+      chosenModel = 'claude-3-5-haiku-20241022';
     }
   } else if (provider === 'deepseek') {
     if (!chosenModel || !chosenModel.includes('deepseek')) {
       chosenModel = 'deepseek-chat';
+    }
+  } else if (provider === 'betico_ai' || provider === 'ollama') {
+    if (!chosenModel || chosenModel.includes('gpt') || chosenModel.includes('gemini') || chosenModel.includes('claude')) {
+      chosenModel = 'betico-ai';
     }
   } else if (provider === 'localai') {
     if (!chosenModel || chosenModel.includes('llama') || chosenModel.includes('qwen') || chosenModel.includes('gemini') || chosenModel.includes('claude')) {
@@ -307,15 +319,30 @@ async function executeProvider(config: TenantAIConfig, input: AIPromptInput) {
       callParams.prompt = input;
       promptLengthEstimate = input.length;
     } else {
-      if (input.system) {
-        callParams.system = input.system;
-        promptLengthEstimate += input.system.length;
-      }
+      let combinedSystem = input.system || '';
+      const cleanMessages: Array<{ role: 'user' | 'assistant', content: string }> = [];
+
       if (input.messages && input.messages.length > 0) {
-        callParams.messages = input.messages;
-        promptLengthEstimate += input.messages.reduce((acc, m) => acc + (m.content || '').length, 0);
-      } else if (input.system) {
-        callParams.prompt = input.system;
+        for (const m of input.messages) {
+          if ((m.role as string) === 'system') {
+            // Google Gemini (@ai-sdk/google) throws UnsupportedFunctionalityError if any system message is inside messages.
+            // Merge system content safely into callParams.system.
+            combinedSystem = combinedSystem ? `${combinedSystem}\n\n${m.content}` : m.content;
+          } else {
+            cleanMessages.push({ role: m.role as 'user' | 'assistant', content: m.content });
+          }
+        }
+      }
+
+      if (combinedSystem) {
+        callParams.system = combinedSystem;
+        promptLengthEstimate += combinedSystem.length;
+      }
+      if (cleanMessages.length > 0) {
+        callParams.messages = cleanMessages;
+        promptLengthEstimate += cleanMessages.reduce((acc, m) => acc + (m.content || '').length, 0);
+      } else if (combinedSystem) {
+        callParams.prompt = combinedSystem;
       }
     }
 

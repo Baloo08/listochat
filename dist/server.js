@@ -10,7 +10,7 @@ var __export = (target, all) => {
 
 // src/server/config/env.ts
 import dotenv from "dotenv";
-var isProduction, env2;
+var isProduction, env;
 var init_env = __esm({
   "src/server/config/env.ts"() {
     "use strict";
@@ -24,7 +24,7 @@ var init_env = __esm({
         console.warn(`[Security Warning] Variables de entorno cr\xEDticas no definidas en producci\xF3n: ${missingCriticalVars.join(", ")}. Usando configuraci\xF3n predeterminada.`);
       }
     }
-    env2 = {
+    env = {
       PORT: process.env.PORT ? parseInt(process.env.PORT, 10) : 3e3,
       JWT_SECRET: process.env.JWT_SECRET || "betico_jwt_secret_64_chars_super_safe_key_cr_2026",
       DATABASE_URL: process.env.DATABASE_URL || "postgres://saas:BeticoDB2026@betico_postgres:5432/whatsapp_saas?sslmode=disable",
@@ -63,7 +63,7 @@ var init_pool = __esm({
     pg.types.setTypeParser(1082, (val) => val);
     pg.types.setTypeParser(1083, (val) => val ? val.slice(0, 5) : val);
     pool = new Pool({
-      connectionString: env2.DATABASE_URL,
+      connectionString: env.DATABASE_URL,
       max: 25,
       idleTimeoutMillis: 3e4,
       connectionTimeoutMillis: 5e3
@@ -608,6 +608,7 @@ var EVOLUTION_API_URL, EVOLUTION_API_KEY;
 var init_evolution = __esm({
   "src/server/services/evolution.ts"() {
     "use strict";
+    init_env();
     EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || "http://betico_evolution:8080";
     EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || "429683C4C977415CAAFCCE10F7D57E11";
   }
@@ -705,7 +706,7 @@ var init_superadmin_notify_service = __esm({
 // src/server/services/crypto.service.ts
 import crypto2 from "crypto";
 function getMasterKey() {
-  const secret = process.env.APP_ENCRYPTION_KEY || process.env.ENCRYPTION_KEY || env2.ENCRYPTION_KEY || "betico_master_encryption_key_default_32bytes";
+  const secret = process.env.APP_ENCRYPTION_KEY || process.env.ENCRYPTION_KEY || env.ENCRYPTION_KEY || "betico_master_encryption_key_default_32bytes";
   return crypto2.scryptSync(secret, "betico_envelope_salt_2026", 32);
 }
 function getTenantDataKey(tenantId) {
@@ -763,7 +764,7 @@ var init_crypto_service = __esm({
           return decryptWithKey(dek, cipherText);
         } catch (err) {
           try {
-            const legacyKey = crypto2.scryptSync(process.env.ENCRYPTION_KEY || env2.ENCRYPTION_KEY || "legacy_key", "salt", 32);
+            const legacyKey = crypto2.scryptSync(process.env.ENCRYPTION_KEY || env.ENCRYPTION_KEY || "legacy_key", "salt", 32);
             return decryptWithKey(legacyKey, cipherText);
           } catch (fallbackErr) {
             console.error(`[CryptoService] Error descifrando datos para tenant ${tenantId}`);
@@ -1015,7 +1016,7 @@ var init_encryption = __esm({
     ALGORITHM2 = "aes-256-gcm";
     IV_LENGTH2 = 16;
     getEncryptionKey = () => {
-      const key = process.env.ENCRYPTION_KEY || env2.ENCRYPTION_KEY || "e8a1b2c3d4e5f60718293a4b5c6d7e8f";
+      const key = process.env.ENCRYPTION_KEY || env.ENCRYPTION_KEY || "e8a1b2c3d4e5f60718293a4b5c6d7e8f";
       return crypto3.scryptSync(key, "salt", 32);
     };
   }
@@ -1146,13 +1147,25 @@ async function callAI(config, input, fallbackConfig) {
   const provider = config.provider || "gemini";
   const apiKey = config.apiKey || (provider === "gemini" ? DEFAULT_GEMINI_KEY : "");
   let chosenModel = config.model;
-  if (provider === "betico_ai" || provider === "ollama") {
-    if (!chosenModel || chosenModel.includes("gpt") || chosenModel.includes("gemini") || chosenModel.includes("claude")) {
-      chosenModel = "betico-ai";
+  if (provider === "gemini") {
+    if (!chosenModel || chosenModel.includes("betico") || chosenModel.includes("gpt") || chosenModel.includes("claude") || chosenModel.includes("deepseek")) {
+      chosenModel = "gemini-2.5-flash";
+    }
+  } else if (provider === "openai") {
+    if (!chosenModel || chosenModel.includes("betico") || chosenModel.includes("gemini") || chosenModel.includes("claude") || chosenModel.includes("deepseek")) {
+      chosenModel = "gpt-4o-mini";
+    }
+  } else if (provider === "anthropic") {
+    if (!chosenModel || chosenModel.includes("betico") || chosenModel.includes("gemini") || chosenModel.includes("gpt")) {
+      chosenModel = "claude-3-5-haiku-20241022";
     }
   } else if (provider === "deepseek") {
     if (!chosenModel || !chosenModel.includes("deepseek")) {
       chosenModel = "deepseek-chat";
+    }
+  } else if (provider === "betico_ai" || provider === "ollama") {
+    if (!chosenModel || chosenModel.includes("gpt") || chosenModel.includes("gemini") || chosenModel.includes("claude")) {
+      chosenModel = "betico-ai";
     }
   } else if (provider === "localai") {
     if (!chosenModel || chosenModel.includes("llama") || chosenModel.includes("qwen") || chosenModel.includes("gemini") || chosenModel.includes("claude")) {
@@ -1258,15 +1271,28 @@ async function executeProvider(config, input) {
       callParams.prompt = input;
       promptLengthEstimate = input.length;
     } else {
-      if (input.system) {
-        callParams.system = input.system;
-        promptLengthEstimate += input.system.length;
-      }
+      let combinedSystem = input.system || "";
+      const cleanMessages = [];
       if (input.messages && input.messages.length > 0) {
-        callParams.messages = input.messages;
-        promptLengthEstimate += input.messages.reduce((acc, m) => acc + (m.content || "").length, 0);
-      } else if (input.system) {
-        callParams.prompt = input.system;
+        for (const m of input.messages) {
+          if (m.role === "system") {
+            combinedSystem = combinedSystem ? `${combinedSystem}
+
+${m.content}` : m.content;
+          } else {
+            cleanMessages.push({ role: m.role, content: m.content });
+          }
+        }
+      }
+      if (combinedSystem) {
+        callParams.system = combinedSystem;
+        promptLengthEstimate += combinedSystem.length;
+      }
+      if (cleanMessages.length > 0) {
+        callParams.messages = cleanMessages;
+        promptLengthEstimate += cleanMessages.reduce((acc, m) => acc + (m.content || "").length, 0);
+      } else if (combinedSystem) {
+        callParams.prompt = combinedSystem;
       }
     }
     const { text, usage } = await generateText(callParams);
@@ -1292,7 +1318,7 @@ var init_ai_provider = __esm({
     init_pool();
     init_encryption();
     init_env();
-    DEFAULT_GEMINI_KEY = env2.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || "AQ.Ab8RN6IHcdDKDITkdIOjt8SznSc6lS_1grotOA6SQ6fjZnd2SQ";
+    DEFAULT_GEMINI_KEY = env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || "AQ.Ab8RN6IHcdDKDITkdIOjt8SznSc6lS_1grotOA6SQ6fjZnd2SQ";
   }
 });
 
@@ -2297,7 +2323,7 @@ async function saveTenantAlmendroConfig(tenantId, data) {
     ...currentToggles,
     ...data.moduleToggles || {}
   };
-  const env3 = data.environment || "SANDBOX";
+  const env2 = data.environment || "SANDBOX";
   const docType = data.defaultDocType === "01" ? "01" : "04";
   const branch = data.branchCode || "001";
   const pos = data.posCode || "00001";
@@ -2330,7 +2356,7 @@ async function saveTenantAlmendroConfig(tenantId, data) {
     tenantId,
     isEnabled,
     billingMode,
-    env3,
+    env2,
     keyToEncrypt,
     docType,
     JSON.stringify(mergedToggles),
@@ -2559,7 +2585,7 @@ function formatEconomicActivityCode(rawCode) {
 function sanitizeVoucherPdfUrl(url, numericKey) {
   if (!url && !numericKey) return void 0;
   if (url && !url.includes("fe.almendro.cr")) return url;
-  if (numericKey) return `${env2.APP_URL}/api/almendro/public/voucher-pdf/${numericKey}`;
+  if (numericKey) return `${env.APP_URL}/api/almendro/public/voucher-pdf/${numericKey}`;
   return url;
 }
 var ALMENDRO_PROD_URL, ALMENDRO_SANDBOX_URL, AlmendroService, almendro_service_default;
@@ -2817,7 +2843,7 @@ var init_almendro_service = __esm({
             const numericKey = responseBody.data?.numeric_key || responseBody.numeric_key || responseBody.key || `506${Date.now()}`;
             const consecutive = responseBody.data?.consecutive || responseBody.consecutive || responseBody.consecutive_number || "";
             const voucherKey = responseBody.data?.voucher_key || responseBody.voucher_key || numericKey;
-            const pdfUrl = `${env2.APP_URL}/api/almendro/public/voucher-pdf/${numericKey}`;
+            const pdfUrl = `${env.APP_URL}/api/almendro/public/voucher-pdf/${numericKey}`;
             const xmlSigned = responseBody.xml_signed_url || `${baseUrl}/vouchers/${voucherKey}/xml`;
             await saveElectronicVoucher(tenantId, {
               orderId: params.orderId,
@@ -3237,7 +3263,7 @@ Responde como Betico Sales AI:`;
           INSERT INTO users (tenant_id, name, email, password_hash, role, active)
           VALUES ($1, $2, $3, $4, 'admin', true)
         `, [tenantId, cName, email, passwordHash]);
-        const appLoginUrl = (env2.APP_URL || "https://betico.tech").replace(/\/$/, "") + "/login";
+        const appLoginUrl = (env.APP_URL || "https://betico.tech").replace(/\/$/, "") + "/login";
         const welcomeCreds = `\u{1F389} \xA1Tu cuenta para *${bName}* ha sido creada exitosamente!
 
 \u{1F517} *Enlace de Acceso:* ${appLoginUrl}
@@ -5978,7 +6004,7 @@ var TilopaySubscriptionService = class {
     const baseUrl = this.getBaseUrl(platformCfg.environment);
     const orderNumber = `SUB-${tenant.slug.substring(0, 8)}-${Date.now()}`;
     const cleanPhone = (tenant.whatsappNumber || "88888888").replace(/\D/g, "") || "88888888";
-    const appUrl = (env2.APP_URL || "https://betico.tech").replace(/\/$/, "");
+    const appUrl = (env.APP_URL || "https://betico.tech").replace(/\/$/, "");
     const charge = await createBillingCharge({
       tenantId,
       billingCardId: card.id,
@@ -8434,42 +8460,40 @@ HUMANIZACI\xD3N Y NATURALIDAD CONVERSACIONAL TICA (CERO ROB\xD3TICO):
 ${orchConfig.prompt}
 
 ` : "";
+  let antiHallucinationGuardrail = "";
+  if (routedAgentId === "sales") {
+    antiHallucinationGuardrail = `\u26A0\uFE0F RECORDATORIO CR\xCDTICO DE INVENTARIO Y VERDAD OFICIAL:
+La \xDANICA fuente de verdad sobre lo que comercializa este negocio es el bloque "Cat\xE1logo Oficial de Productos y Precios" provisto en tus instrucciones principales.
+Si en mensajes anteriores del historial t\xFA (el asistente) o el cliente mencionaron prendas, camisetas, art\xEDculos o precios que NO figuran en dicho cat\xE1logo oficial actual, ESO FUE UN ERROR O YA NO FORMAN PARTE DEL INVENTARIO.
+EST\xC1 ESTRICTAMENTE PROHIBIDO volver a ofrecer, listar o confirmar productos fuera del cat\xE1logo oficial actual, sin importar lo que se haya dicho antes en el chat. Responde con honestidad y ofrece \xFAnicamente lo que est\xE1 textualmente en el Cat\xE1logo Oficial.`;
+  } else if (routedAgentId === "booking") {
+    antiHallucinationGuardrail = `\u26A0\uFE0F RECORDATORIO CR\xCDTICO DE SERVICIOS Y DISPONIBILIDAD:
+La \xDANICA fuente de verdad sobre servicios, precios y horarios es la provista en tus instrucciones. No inventes servicios ni confirmes citas en horarios ocupados aunque se hayan mencionado antes en el historial.`;
+  } else if (routedAgentId === "courts") {
+    antiHallucinationGuardrail = `\u26A0\uFE0F RECORDATORIO CR\xCDTICO DE CANCHAS:
+La \xDANICA fuente de verdad sobre canchas y tarifas es la provista en tus instrucciones. No inventes canchas ni confirmes reservas fuera de la disponibilidad oficial.`;
+  }
   const finalSystemPrompt = `${supervisorDirectives}${specializedPrompt}
 
 ${chatFirstDirectives}
 
 ${naturalToneDirective}
 
-${sessionGreetingDirective}`;
+${sessionGreetingDirective}${antiHallucinationGuardrail ? `
+
+${antiHallucinationGuardrail}` : ""}`;
   const structuredMessages = [];
   if (chatHistory && chatHistory.length > 0) {
     const recent = chatHistory.slice(-8);
     for (const h of recent) {
-      structuredMessages.push({ role: h.role, content: h.content });
+      const role = h.role === "assistant" ? "assistant" : "user";
+      structuredMessages.push({ role, content: h.content });
     }
   }
-  if (routedAgentId === "sales") {
-    structuredMessages.push({
-      role: "system",
-      content: `\u26A0\uFE0F RECORDATORIO CR\xCDTICO DE INVENTARIO Y VERDAD OFICIAL:
-La \xDANICA fuente de verdad sobre lo que comercializa este negocio es el bloque "Cat\xE1logo Oficial de Productos y Precios" provisto en tus instrucciones principales.
-Si en mensajes anteriores del historial t\xFA (el asistente) o el cliente mencionaron prendas, camisetas, art\xEDculos o precios que NO figuran en dicho cat\xE1logo oficial actual, ESO FUE UN ERROR O YA NO FORMAN PARTE DEL INVENTARIO.
-EST\xC1 ESTRICTAMENTE PROHIBIDO volver a ofrecer, listar o confirmar productos fuera del cat\xE1logo oficial actual, sin importar lo que se haya dicho antes en el chat. Responde con honestidad y ofrece \xFAnicamente lo que est\xE1 textualmente en el Cat\xE1logo Oficial.`
-    });
-  } else if (routedAgentId === "booking") {
-    structuredMessages.push({
-      role: "system",
-      content: `\u26A0\uFE0F RECORDATORIO CR\xCDTICO DE SERVICIOS Y DISPONIBILIDAD:
-La \xDANICA fuente de verdad sobre servicios, precios y horarios es la provista en tus instrucciones. No inventes servicios ni confirmes citas en horarios ocupados aunque se hayan mencionado antes en el historial.`
-    });
-  } else if (routedAgentId === "courts") {
-    structuredMessages.push({
-      role: "system",
-      content: `\u26A0\uFE0F RECORDATORIO CR\xCDTICO DE CANCHAS:
-La \xDANICA fuente de verdad sobre canchas y tarifas es la provista en tus instrucciones. No inventes canchas ni confirmes reservas fuera de la disponibilidad oficial.`
-    });
-  }
-  structuredMessages.push({ role: "user", content: userMessage });
+  const finalUserContent = antiHallucinationGuardrail ? `[DIRECTIVA CR\xCDTICA DEL SISTEMA: ${antiHallucinationGuardrail}]
+
+${userMessage}` : userMessage;
+  structuredMessages.push({ role: "user", content: finalUserContent });
   let primaryConfig;
   let fallbackConfig;
   const temperature = currentSubagent?.temperature ?? 0.3;
@@ -10370,7 +10394,7 @@ var EvolutionApiService = class {
           payment_link_expires_at = $2
       WHERE id = $3 AND tenant_id = $4
     `, [paymentLinkToken, expiresAt, newOrder.id, tenantId]);
-    const baseUrl = env2.APP_URL || "https://betico.tech";
+    const baseUrl = env.APP_URL || "https://betico.tech";
     const paymentLink = `${baseUrl.replace(/\/$/, "")}/pay/${paymentLinkToken}`;
     return {
       order: newOrder,
@@ -10440,7 +10464,7 @@ init_env();
 init_users_repo();
 import jwt from "jsonwebtoken";
 function generateToken(userId, tenantId, role) {
-  return jwt.sign({ userId, tenantId, role }, env2.JWT_SECRET, { expiresIn: "7d" });
+  return jwt.sign({ userId, tenantId, role }, env.JWT_SECRET, { expiresIn: "7d" });
 }
 async function authenticateToken(req, res, next) {
   const authHeader = req.headers["authorization"];
@@ -10450,7 +10474,7 @@ async function authenticateToken(req, res, next) {
     return;
   }
   try {
-    const decoded = jwt.verify(token, env2.JWT_SECRET);
+    const decoded = jwt.verify(token, env.JWT_SECRET);
     if (decoded.userId && decoded.role !== "superadmin") {
       const user = await getUserById(decoded.userId);
       if (!user || user.active === false) {
@@ -11648,7 +11672,7 @@ var TilopayTenantService = class {
     return "https://app.tilopay.com/api/v1";
   }
   static getCleanAppUrl() {
-    let url = (env2.APP_URL || "https://betico.tech").trim().replace(/\/$/, "");
+    let url = (env.APP_URL || "https://betico.tech").trim().replace(/\/$/, "");
     if (url.includes("easypanel.host") || !url.startsWith("https://")) {
       url = "https://betico.tech";
     }
@@ -11702,7 +11726,7 @@ var TilopayTenantService = class {
    * Multi-tenant isolated via composite cache key: `tilopay_jwt:${tenantId}:${env}`.
    */
   static async getSdkToken(tenantId) {
-    if (!env2.TILOPAY_MODULE_ENABLED) {
+    if (!env.TILOPAY_MODULE_ENABLED) {
       throw new Error("El m\xF3dulo de Tilopay se encuentra temporalmente inactivo.");
     }
     const config = await getTenantPaymentConfigRaw(tenantId);
@@ -11940,7 +11964,7 @@ var TilopayTenantService = class {
    * Defends against spoofed or unverified webhook payloads (ISO/IEC 25010 / OWASP ASVS).
    */
   static async verifyTransactionStatus(tenantId, orderNumber) {
-    if (!env2.TILOPAY_MODULE_ENABLED) {
+    if (!env.TILOPAY_MODULE_ENABLED) {
       return {
         verified: false,
         isApproved: false,
@@ -12734,21 +12758,43 @@ router7.post("/prompt", async (req, res) => {
   try {
     const { provider, apiKey, model } = req.body;
     if (provider) {
+      let sanitizedModel = model;
+      if (provider === "gemini") {
+        if (!sanitizedModel || sanitizedModel.includes("betico") || sanitizedModel.includes("gpt") || sanitizedModel.includes("claude") || sanitizedModel.includes("deepseek")) {
+          sanitizedModel = "gemini-2.5-flash";
+        }
+      } else if (provider === "openai") {
+        if (!sanitizedModel || sanitizedModel.includes("betico") || sanitizedModel.includes("gemini") || sanitizedModel.includes("claude") || sanitizedModel.includes("deepseek")) {
+          sanitizedModel = "gpt-4o-mini";
+        }
+      } else if (provider === "anthropic") {
+        if (!sanitizedModel || sanitizedModel.includes("betico") || sanitizedModel.includes("gemini") || sanitizedModel.includes("gpt")) {
+          sanitizedModel = "claude-3-5-haiku-20241022";
+        }
+      } else if (provider === "deepseek") {
+        if (!sanitizedModel || !sanitizedModel.includes("deepseek")) {
+          sanitizedModel = "deepseek-chat";
+        }
+      } else if (provider === "betico_ai" || provider === "ollama") {
+        if (!sanitizedModel || sanitizedModel.includes("gpt") || sanitizedModel.includes("gemini") || sanitizedModel.includes("claude")) {
+          sanitizedModel = "betico-ai";
+        }
+      }
       if (provider === "betico_ai" || provider === "ollama" || provider === "localai" || !apiKey && !req.body.isKeepingExistingKey) {
         await query(
           `UPDATE tenants SET ai_provider = $1, ai_model = $2, ai_api_key_encrypted = NULL WHERE id = $3`,
-          ["betico_ai", model || "betico-ai", req.tenantId]
+          ["betico_ai", sanitizedModel || "betico-ai", req.tenantId]
         );
       } else if (apiKey && apiKey.trim()) {
         const encrypted = encrypt(apiKey.trim());
         await query(
           `UPDATE tenants SET ai_provider = $1, ai_model = $2, ai_api_key_encrypted = $3 WHERE id = $4`,
-          [provider, model, encrypted, req.tenantId]
+          [provider, sanitizedModel, encrypted, req.tenantId]
         );
-      } else if (model) {
+      } else if (sanitizedModel) {
         await query(
           `UPDATE tenants SET ai_provider = $1, ai_model = $2 WHERE id = $3`,
-          [provider, model, req.tenantId]
+          [provider, sanitizedModel, req.tenantId]
         );
       }
     }
@@ -12878,8 +12924,8 @@ router8.post("/connect", async (req, res) => {
       pairingCode = connectData?.pairingCode || null;
     }
     try {
-      const appUrl = env2.APP_URL || `http://betico_app:80`;
-      const webhookToken = env2.EVOLUTION_API_KEY ? `?token=${encodeURIComponent(env2.EVOLUTION_API_KEY)}` : "";
+      const appUrl = env.APP_URL || `http://betico_app:80`;
+      const webhookToken = env.EVOLUTION_API_KEY ? `?token=${encodeURIComponent(env.EVOLUTION_API_KEY)}` : "";
       await setWebhook(instanceName, `${appUrl}/api/webhook/evolution${webhookToken}`);
     } catch (e) {
     }
@@ -13789,7 +13835,7 @@ var publicUploadLimiter = rateLimit2({
   standardHeaders: true,
   legacyHeaders: false
 });
-var uploadDir = env2.UPLOAD_DIR || path.join(process.cwd(), "uploads");
+var uploadDir = env.UPLOAD_DIR || path.join(process.cwd(), "uploads");
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
@@ -14357,7 +14403,7 @@ init_pool();
 
 // src/server/services/audio-transcriber.service.ts
 init_env();
-var DEFAULT_GEMINI_KEY2 = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || env2.GEMINI_API_KEY || "AQ.Ab8RN6IHcdDKDITkdIOjt8SznSc6lS_1grotOA6SQ6fjZnd2SQ";
+var DEFAULT_GEMINI_KEY2 = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || env.GEMINI_API_KEY || "AQ.Ab8RN6IHcdDKDITkdIOjt8SznSc6lS_1grotOA6SQ6fjZnd2SQ";
 async function transcribeAudioWithGemini(base64Audio, mimetype = "audio/ogg", apiKey) {
   try {
     const cleanBase64 = base64Audio.replace(/^data:audio\/[a-z0-9]+;base64,/, "").trim();
@@ -14463,7 +14509,7 @@ router17.post("/", async (req, res) => {
   const authHeader = req.headers["authorization"] || "";
   const bearerToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : authHeader.trim();
   const incomingApiKey = req.headers["apikey"] || req.headers["x-api-key"] || bearerToken || req.query["apikey"] || req.query["token"];
-  const expectedKey = env2.EVOLUTION_API_KEY;
+  const expectedKey = env.EVOLUTION_API_KEY;
   if (expectedKey && incomingApiKey !== expectedKey) {
     console.warn(`[Security Alert] Rechazado webhook de WhatsApp con apikey no autorizada o ausente desde IP ${req.ip}`);
     res.status(401).json({ error: "Unauthorized webhook" });
@@ -14843,7 +14889,7 @@ async function resolveDriverFromRequest(req) {
   if (authHeader && authHeader.startsWith("Bearer ")) {
     const rawToken = authHeader.substring(7);
     try {
-      const decoded = jwt2.verify(rawToken, env2.JWT_SECRET);
+      const decoded = jwt2.verify(rawToken, env.JWT_SECRET);
       if (decoded?.driverId) {
         const driver = await getDriverById(decoded.driverId, decoded.tenantId);
         if (driver && driver.active !== false) {
@@ -14940,7 +14986,7 @@ router19.post("/portal/login", driverPortalLoginLimiter, async (req, res) => {
     const storeSettings = await getStoreSettings(driver.tenantId);
     const token = jwt2.sign(
       { driverId: driver.id, tenantId: driver.tenantId, role: "driver" },
-      env2.JWT_SECRET,
+      env.JWT_SECRET,
       { expiresIn: "30d" }
     );
     res.json({
@@ -15939,7 +15985,7 @@ router21.post("/tenants/create", async (req, res) => {
     `, [tenant.id, contactName || name, email.toLowerCase().trim(), passwordHash]);
     if (cleanPhone && cleanPhone.length >= 8) {
       const trialMsg = trialEnabled ? `\u23F3 Cuentas con *15 d\xEDas de prueba gratis* hasta el *${trialEnd.toLocaleDateString("es-CR")}*.` : "";
-      const appLoginUrl = (env2.APP_URL || "https://betico.tech").replace(/\/$/, "") + "/login";
+      const appLoginUrl = (env.APP_URL || "https://betico.tech").replace(/\/$/, "") + "/login";
       const waText = `\u{1F389} \xA1Hola *${contactName || name}*! Te damos la bienvenida a *Betico.tech*.
 
 Tu plataforma de ventas y WhatsApp con IA est\xE1 lista:
@@ -16791,7 +16837,7 @@ async function resolveSpecialistFromRequest(req) {
   if (authHeader && authHeader.startsWith("Bearer ")) {
     const rawToken = authHeader.substring(7);
     try {
-      const decoded = jwt3.verify(rawToken, env2.JWT_SECRET);
+      const decoded = jwt3.verify(rawToken, env.JWT_SECRET);
       if (decoded?.specialistId) {
         const res = await query("SELECT * FROM specialists WHERE id = $1 AND active = TRUE", [decoded.specialistId]);
         if (res.rows[0]) {
@@ -16893,7 +16939,7 @@ router24.post("/portal/login", specialistPortalLoginLimiter, async (req, res) =>
     const tenant = targetTenant || await getTenantById(specialist.tenantId);
     const token = jwt3.sign(
       { specialistId: specialist.id, tenantId: specialist.tenantId, role: "specialist" },
-      env2.JWT_SECRET,
+      env.JWT_SECRET,
       { expiresIn: "30d" }
     );
     res.json({
@@ -18369,7 +18415,7 @@ router30.get("/platform-config", async (req, res) => {
     const hasEnvConfig = Boolean(
       process.env.TILOPAY_PLATFORM_KEY && process.env.TILOPAY_PLATFORM_USER && process.env.TILOPAY_PLATFORM_PASSWORD
     );
-    const appUrl = (env2.APP_URL || "https://betico.tech").replace(/\/$/, "");
+    const appUrl = (env.APP_URL || "https://betico.tech").replace(/\/$/, "");
     const webhookUrl = `${appUrl}/api/webhooks/tilopay`;
     if (config && (config.apiKeyMasked || config.apiUser)) {
       res.json({
@@ -18787,7 +18833,7 @@ router32.post("/exchange-return-token", async (req, res) => {
     }
     let decoded;
     try {
-      decoded = jwtLib.verify(session_token.trim(), env2.JWT_SECRET);
+      decoded = jwtLib.verify(session_token.trim(), env.JWT_SECRET);
     } catch (err) {
       res.status(401).json({ error: "El enlace de retorno ha expirado o es inv\xE1lido" });
       return;
@@ -18957,7 +19003,7 @@ router32.post("/create-card-session", async (req, res) => {
     }
     const jwt5 = loginData.access_token;
     const cleanPhone = (tenant.whatsappNumber || "88888888").replace(/\D/g, "") || "88888888";
-    const appUrl = (env2.APP_URL || "https://betico.tech").replace(/\/$/, "");
+    const appUrl = (env.APP_URL || "https://betico.tech").replace(/\/$/, "");
     const orderNumber = `SUB-CARD-${tenant.id}-${Date.now()}`;
     const sessionToken = jwtLib.sign(
       {
@@ -18966,7 +19012,7 @@ router32.post("/create-card-session", async (req, res) => {
         action: "subscription_return",
         orderNumber
       },
-      env2.JWT_SECRET,
+      env.JWT_SECRET,
       { expiresIn: "30m" }
     );
     const sessionPayload = {
@@ -20223,7 +20269,7 @@ async function startServer() {
       return next();
     }
     try {
-      const decoded = jwt4.verify(String(token), env2.JWT_SECRET);
+      const decoded = jwt4.verify(String(token), env.JWT_SECRET);
       socket.data.user = decoded;
       next();
     } catch (err) {
@@ -20249,7 +20295,7 @@ async function startServer() {
     req.io = io2;
     next();
   });
-  const uploadPath = env2.UPLOAD_DIR || path2.join(process.cwd(), "uploads");
+  const uploadPath = env.UPLOAD_DIR || path2.join(process.cwd(), "uploads");
   if (!fs2.existsSync(uploadPath)) {
     fs2.mkdirSync(uploadPath, { recursive: true });
   }
@@ -20357,7 +20403,7 @@ async function startServer() {
   app.use("/api/almendro", almendro_routes_default);
   app.use("/api/superadmin/almendro", superadmin_almendro_routes_default);
   app.use("/", seo_routes_default);
-  if (env2.NODE_ENV === "production") {
+  if (env.NODE_ENV === "production") {
     app.use("/assets", express.static(path2.join(__dirname, "assets"), { maxAge: "1y", immutable: true }));
     app.use(express.static(__dirname));
     app.get("*", async (req, res) => {
@@ -20425,8 +20471,8 @@ async function startServer() {
   } catch (err) {
     console.error("Failed to run database migrations:", err);
   }
-  server.listen(env2.PORT, "0.0.0.0", () => {
-    console.log(`Betico Server listening on http://0.0.0.0:${env2.PORT}`);
+  server.listen(env.PORT, "0.0.0.0", () => {
+    console.log(`Betico Server listening on http://0.0.0.0:${env.PORT}`);
   });
 }
 startServer().catch(console.error);

@@ -69,24 +69,47 @@ router.post('/prompt', async (req, res) => {
 
     // Handle BYOK vs Betico AI platform engine
     if (provider) {
+      let sanitizedModel = model;
+      if (provider === 'gemini') {
+        if (!sanitizedModel || sanitizedModel.includes('betico') || sanitizedModel.includes('gpt') || sanitizedModel.includes('claude') || sanitizedModel.includes('deepseek')) {
+          sanitizedModel = 'gemini-2.5-flash';
+        }
+      } else if (provider === 'openai') {
+        if (!sanitizedModel || sanitizedModel.includes('betico') || sanitizedModel.includes('gemini') || sanitizedModel.includes('claude') || sanitizedModel.includes('deepseek')) {
+          sanitizedModel = 'gpt-4o-mini';
+        }
+      } else if (provider === 'anthropic') {
+        if (!sanitizedModel || sanitizedModel.includes('betico') || sanitizedModel.includes('gemini') || sanitizedModel.includes('gpt')) {
+          sanitizedModel = 'claude-3-5-haiku-20241022';
+        }
+      } else if (provider === 'deepseek') {
+        if (!sanitizedModel || !sanitizedModel.includes('deepseek')) {
+          sanitizedModel = 'deepseek-chat';
+        }
+      } else if (provider === 'betico_ai' || provider === 'ollama') {
+        if (!sanitizedModel || sanitizedModel.includes('gpt') || sanitizedModel.includes('gemini') || sanitizedModel.includes('claude')) {
+          sanitizedModel = 'betico-ai';
+        }
+      }
+
       if (provider === 'betico_ai' || provider === 'ollama' || provider === 'localai' || (!apiKey && !req.body.isKeepingExistingKey)) {
         // Switch back to Betico AI platform engine: clear custom API key
         await query(
           `UPDATE tenants SET ai_provider = $1, ai_model = $2, ai_api_key_encrypted = NULL WHERE id = $3`,
-          ['betico_ai', model || 'betico-ai', req.tenantId]
+          ['betico_ai', sanitizedModel || 'betico-ai', req.tenantId]
         );
       } else if (apiKey && apiKey.trim()) {
         // Save encrypted custom API key
         const encrypted = encrypt(apiKey.trim());
         await query(
           `UPDATE tenants SET ai_provider = $1, ai_model = $2, ai_api_key_encrypted = $3 WHERE id = $4`,
-          [provider, model, encrypted, req.tenantId]
+          [provider, sanitizedModel, encrypted, req.tenantId]
         );
-      } else if (model) {
+      } else if (sanitizedModel) {
         // Just update model name
         await query(
           `UPDATE tenants SET ai_provider = $1, ai_model = $2 WHERE id = $3`,
-          [provider, model, req.tenantId]
+          [provider, sanitizedModel, req.tenantId]
         );
       }
     }

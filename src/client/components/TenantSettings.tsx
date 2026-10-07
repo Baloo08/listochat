@@ -30,9 +30,6 @@ export default function TenantSettings() {
     anthropic: ['claude-3-7-sonnet', 'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022']
   };
 
-  const [isCustomModel, setIsCustomModel] = useState(false);
-  const [customModelName, setCustomModelName] = useState('');
-
   const fetchQuotaAndConfig = async () => {
     setLoadingQuota(true);
     try {
@@ -42,11 +39,15 @@ export default function TenantSettings() {
         api.get('/api/agent/ai-consumption-metrics').catch(() => null)
       ]);
 
+      let activeProvider = provider;
       if (quotaData && quotaData.success) {
         setQuotaInfo(quotaData);
         if (quotaData.isUsingOwnKey) {
           setMode('byok');
-          if (quotaData.provider) setProvider(quotaData.provider);
+          if (quotaData.provider) {
+            setProvider(quotaData.provider);
+            activeProvider = quotaData.provider;
+          }
         } else {
           setMode('betico_ai');
         }
@@ -57,13 +58,11 @@ export default function TenantSettings() {
       }
 
       if (agentData) {
-        if (agentData.model) {
+        const prov = quotaData?.provider || agentData.provider || activeProvider;
+        if (agentData.model && models[prov]?.includes(agentData.model)) {
           setModel(agentData.model);
-          const known = Object.values(models).flat();
-          if (!known.includes(agentData.model)) {
-            setIsCustomModel(true);
-            setCustomModelName(agentData.model);
-          }
+        } else {
+          setModel(models[prov]?.[0] || 'gemini-2.5-flash');
         }
         if (agentData.temperature !== undefined) setTemperature(agentData.temperature);
         if (agentData.voiceRepliesEnabled !== undefined) setVoiceRepliesEnabled(Boolean(agentData.voiceRepliesEnabled));
@@ -96,7 +95,8 @@ export default function TenantSettings() {
           voiceSpeed
         });
       } else {
-        const finalModel = isCustomModel ? (customModelName.trim() || model) : model;
+        const validModels = models[provider] || [];
+        const finalModel = validModels.includes(model) ? model : (validModels[0] || 'gemini-2.5-flash');
         await api.post('/api/agent/prompt', {
           model: finalModel,
           temperature,
@@ -342,7 +342,12 @@ export default function TenantSettings() {
 
           {/* BYOK Card */}
           <div
-            onClick={() => setMode('byok')}
+            onClick={() => {
+              setMode('byok');
+              if (!models[provider]?.includes(model)) {
+                setModel(models[provider]?.[0] || 'gemini-2.5-flash');
+              }
+            }}
             style={{
               padding: '16px',
               borderRadius: '10px',
