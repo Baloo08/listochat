@@ -9,6 +9,7 @@ import { query } from '../db/pool.js';
 import { logAuditEvent } from '../db/audit.repo.js';
 import { AlmendroService } from '../services/almendro.service.js';
 import { normalizeCostaRicaPhone } from '../../shared/formatters.js';
+import { processOrderLoyalty } from '../services/loyalty.service.js';
 
 const router = Router();
 router.use(authenticateToken);
@@ -116,6 +117,11 @@ router.put('/:id/proof-status', async (req, res) => {
           console.error(`[OrdersRoute] Error disparando factura para orden ${order.id}:`, err);
         });
       }
+
+      // 3. Process loyalty rewards (points / stamps)
+      processOrderLoyalty(req.tenantId!, order).catch(err => {
+        console.error(`[OrdersRoute] Error procesando lealtad para orden ${order.id}:`, err);
+      });
     } else {
       const newPaymentStatus = proofStatus === 'received' ? 'proof_sent' : 'pending';
       await query(`
@@ -231,6 +237,13 @@ Hola *${order.customerName}*, te informamos que tu orden *#ORD-${order.orderNumb
       }
     }
 
+    // Process loyalty if delivered
+    if (status === 'entregado' || status === 'delivered') {
+      processOrderLoyalty(req.tenantId!, order).catch(err => {
+        console.error(`[OrdersRoute] Error procesando lealtad para orden entregada ${order.id}:`, err);
+      });
+    }
+
     // Emit real-time WebSocket event
     if ((req as any).io) {
       (req as any).io.to(`tenant_${order.tenantId || req.tenantId!}`).emit('order:updated', updated);
@@ -265,6 +278,13 @@ router.post('/:id/confirm-payment', async (req, res) => {
     if (order?.billingInfo?.requiresInvoice) {
       AlmendroService.emitOrderInvoice(req.tenantId!, order.id).catch(err => {
         console.error(`[OrdersRoute] Error disparando factura electrónica en confirm-payment para orden ${order.id}:`, err);
+      });
+    }
+
+    // Process loyalty rewards (points / stamps)
+    if (order) {
+      processOrderLoyalty(req.tenantId!, order).catch(err => {
+        console.error(`[OrdersRoute] Error procesando lealtad en confirm-payment para orden ${order.id}:`, err);
       });
     }
 

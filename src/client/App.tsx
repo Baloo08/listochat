@@ -37,6 +37,8 @@ import WebsitePublicView from '../storefront/WebsitePublicView';
 import TenantSubscriptionView from './components/TenantSubscriptionView';
 import SubscriptionReturnView from './components/SubscriptionReturnView';
 import ElectronicBillingView from './components/ElectronicBillingView';
+import LoyaltyManager from './components/LoyaltyManager';
+import LoyaltyWalletCustomerApp from './components/LoyaltyWalletCustomerApp';
 import { io } from 'socket.io-client';
 import { playOrderNotificationSound, playBookingNotificationSound } from './utils/sound';
 
@@ -74,7 +76,11 @@ import {
   Globe,
   Clock,
   Trophy,
-  CalendarCheck
+  CalendarCheck,
+  Gift,
+  Tag,
+  Award,
+  QrCode
 } from 'lucide-react';
 
 
@@ -196,6 +202,13 @@ export default function App() {
     return <SubscriptionReturnView />;
   }
 
+  if (pathname.startsWith('/fidelidad') || pathname.startsWith('/fidelizacion') || pathname.startsWith('/club')) {
+    const cleanPath = pathname.split('?')[0].split('#')[0];
+    const match = cleanPath.match(/^\/(?:fidelidad|fidelizacion|club)(?:\/([a-zA-Z0-9_-]+))?/i);
+    const slug = (match && match[1]) ? match[1].toLowerCase().trim() : undefined;
+    return <LoyaltyWalletCustomerApp tenantSlug={slug} />;
+  }
+
   return <MainApp pathname={pathname} />;
 }
 
@@ -277,11 +290,13 @@ function MainApp({ pathname }: { pathname: string }) {
     bookingsEnabled: boolean;
     courtsEnabled?: boolean;
     branchesEnabled?: boolean;
+    loyaltyEnabled?: boolean;
   }>({
     storeEnabled: true,
     bookingsEnabled: true,
     courtsEnabled: false,
-    branchesEnabled: false
+    branchesEnabled: false,
+    loyaltyEnabled: false
   });
 
   const toggleSidebar = () => {
@@ -334,7 +349,8 @@ function MainApp({ pathname }: { pathname: string }) {
                 storeEnabled: data.storeModules.storeEnabled !== false,
                 bookingsEnabled: data.storeModules.bookingsEnabled !== false,
                 courtsEnabled: data.storeModules.courtsEnabled === true,
-                branchesEnabled: data.storeModules.branchesEnabled === true
+                branchesEnabled: data.storeModules.branchesEnabled === true,
+                loyaltyEnabled: data.storeModules.loyaltyEnabled === true
               });
             }
           }
@@ -568,7 +584,17 @@ function MainApp({ pathname }: { pathname: string }) {
       ]
     }] : []),
 
-    // 7. CONFIGURACIÓN
+    // 7. FIDELIZACIÓN (Condicional por loyaltyEnabled)
+    ...(storeModules.loyaltyEnabled ? [{
+      title: 'FIDELIZACIÓN',
+      items: [
+        { id: 'fidelidad_ajustes', label: 'Ajustes de Tarjeta', icon: <Gift size={18} /> },
+        { id: 'fidelidad_clientes', label: 'Clientes Registrados', icon: <Users size={18} /> },
+        { id: 'fidelidad_promociones', label: 'Promociones Activas', icon: <Tag size={18} /> }
+      ]
+    }] : []),
+
+    // 8. CONFIGURACIÓN
     {
       title: 'CONFIGURACIÓN',
       items: [
@@ -633,6 +659,13 @@ function MainApp({ pathname }: { pathname: string }) {
         case 'tienda': return <StoreSettings />;
         case 'sitio': return <WebsiteBuilder />;
         case 'sucursales': return <BranchesManager />;
+        case 'fidelidad':
+        case 'fidelidad_ajustes':
+          return <LoyaltyManager initialTab="ajustes" />;
+        case 'fidelidad_clientes':
+          return <LoyaltyManager initialTab="clientes" />;
+        case 'fidelidad_promociones':
+          return <LoyaltyManager initialTab="promociones" />;
         case 'agente': return <AgentPromptStudio />;
         case 'whatsapp': return <EvolutionManager />;
         case 'notificaciones': return <NotificationsCenter />;

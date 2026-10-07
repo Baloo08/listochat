@@ -988,6 +988,116 @@ export async function runMigrations() {
       created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
     );
     CREATE INDEX IF NOT EXISTS idx_ai_token_logs_tenant_month ON tenant_ai_token_logs(tenant_id, created_at);
+
+    -- ==========================================================
+    -- MÓDULO DE FIDELIZACIÓN (PUNTOS & SELLOS) MULTITIENDA
+    -- ==========================================================
+    
+    -- 1. Clientes de Fidelización (Billetera Centralizada)
+    CREATE TABLE IF NOT EXISTS loyalty_customers (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      identification VARCHAR(50) UNIQUE NOT NULL,
+      full_name VARCHAR(255) NOT NULL,
+      phone VARCHAR(50),
+      password_hash VARCHAR(255) NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_loyalty_customers_id ON loyalty_customers(identification);
+    CREATE INDEX IF NOT EXISTS idx_loyalty_customers_phone ON loyalty_customers(phone);
+
+    -- 2. Configuración del Programa de Fidelidad por Tenant
+    CREATE TABLE IF NOT EXISTS loyalty_programs (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID UNIQUE REFERENCES tenants(id) ON DELETE CASCADE,
+      is_active BOOLEAN DEFAULT false,
+      program_type VARCHAR(20) DEFAULT 'points',
+      currency VARCHAR(10) DEFAULT 'CRC',
+      points_spend_ratio NUMERIC(10, 2) DEFAULT 1000.00,
+      points_redeem_ratio NUMERIC(10, 2) DEFAULT 10.00,
+      points_expiry_months INTEGER,
+      stamps_target INTEGER DEFAULT 10,
+      stamps_prize TEXT DEFAULT 'Premio sorpresa',
+      min_spend_per_stamp NUMERIC(10, 2) DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_loyalty_programs_tenant ON loyalty_programs(tenant_id);
+
+    -- 3. Tarjetas de Clientes por Comercio
+    CREATE TABLE IF NOT EXISTS loyalty_cards (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+      customer_id UUID REFERENCES loyalty_customers(id) ON DELETE SET NULL,
+      identification VARCHAR(50) NOT NULL,
+      customer_name VARCHAR(255) NOT NULL,
+      customer_phone VARCHAR(50),
+      points_balance NUMERIC(10, 2) DEFAULT 0,
+      current_stamps INTEGER DEFAULT 0,
+      total_stamps_redeemed INTEGER DEFAULT 0,
+      last_activity_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+      expires_at TIMESTAMPTZ,
+      status VARCHAR(20) DEFAULT 'active',
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(tenant_id, identification)
+    );
+    CREATE INDEX IF NOT EXISTS idx_loyalty_cards_tenant_id ON loyalty_cards(tenant_id, identification);
+    CREATE INDEX IF NOT EXISTS idx_loyalty_cards_tenant_phone ON loyalty_cards(tenant_id, customer_phone);
+    CREATE INDEX IF NOT EXISTS idx_loyalty_cards_identification ON loyalty_cards(identification);
+
+    -- 4. Vouchers y Recompensas con QR
+    CREATE TABLE IF NOT EXISTS loyalty_rewards_vouchers (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+      card_id UUID REFERENCES loyalty_cards(id) ON DELETE CASCADE,
+      voucher_code VARCHAR(50) UNIQUE NOT NULL,
+      qr_data TEXT NOT NULL,
+      reward_description TEXT NOT NULL,
+      reward_type VARCHAR(30) DEFAULT 'stamps_complete',
+      discount_amount NUMERIC(10, 2) DEFAULT 0,
+      status VARCHAR(20) DEFAULT 'active',
+      expires_at TIMESTAMPTZ NOT NULL,
+      redeemed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_loyalty_vouchers_tenant ON loyalty_rewards_vouchers(tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_loyalty_vouchers_code ON loyalty_rewards_vouchers(voucher_code);
+    CREATE INDEX IF NOT EXISTS idx_loyalty_vouchers_card ON loyalty_rewards_vouchers(card_id);
+
+    -- 5. Promociones Especiales de Fidelidad
+    CREATE TABLE IF NOT EXISTS loyalty_promotions (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+      title VARCHAR(255) NOT NULL,
+      description TEXT,
+      promo_type VARCHAR(50) DEFAULT 'double_points',
+      multiplier NUMERIC(4, 2) DEFAULT 2.0,
+      min_spend NUMERIC(10, 2) DEFAULT 0,
+      start_date DATE NOT NULL,
+      end_date DATE NOT NULL,
+      active BOOLEAN DEFAULT true,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_loyalty_promotions_tenant ON loyalty_promotions(tenant_id);
+
+    -- 6. Libro Mayor de Transacciones de Fidelidad (Auditoría Inmutable)
+    CREATE TABLE IF NOT EXISTS loyalty_transactions (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+      card_id UUID REFERENCES loyalty_cards(id) ON DELETE CASCADE,
+      type VARCHAR(30) NOT NULL,
+      points_delta NUMERIC(10, 2) DEFAULT 0,
+      stamps_delta INTEGER DEFAULT 0,
+      balance_after NUMERIC(10, 2) DEFAULT 0,
+      stamps_after INTEGER DEFAULT 0,
+      order_id UUID REFERENCES orders(id) ON DELETE SET NULL,
+      notes TEXT,
+      created_by VARCHAR(100),
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_loyalty_tx_card ON loyalty_transactions(card_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_loyalty_tx_tenant ON loyalty_transactions(tenant_id);
   `).catch((err) => {
     console.warn('[Migrations] Columns addition warning:', err?.message || err);
   });

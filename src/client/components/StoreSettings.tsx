@@ -41,7 +41,8 @@ export default function StoreSettings() {
   const [storeModules, setStoreModules] = useState<StoreModulesConfig>({
     storeEnabled: true,
     bookingsEnabled: true,
-    courtsEnabled: false
+    courtsEnabled: false,
+    loyaltyEnabled: false
   });
   const [storeName, setStoreName] = useState('');
   const [storeSlug, setStoreSlug] = useState('');
@@ -250,7 +251,8 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
             setStoreModules({
               storeEnabled: data.storeModules.storeEnabled !== false,
               bookingsEnabled: data.storeModules.bookingsEnabled !== false,
-              courtsEnabled: data.storeModules.courtsEnabled === true
+              courtsEnabled: data.storeModules.courtsEnabled === true,
+              loyaltyEnabled: data.storeModules.loyaltyEnabled === true
             });
           }
           if (data.storeSchedule) {
@@ -888,6 +890,19 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
                   type="checkbox"
                   checked={Boolean(storeModules.courtsEnabled)}
                   onChange={(e) => setStoreModules({ ...storeModules, courtsEnabled: e.target.checked })}
+                  style={{ width: '20px', height: '20px', cursor: 'pointer' }}
+                />
+              </label>
+
+              <label style={{ padding: '16px', borderRadius: '10px', border: `2px solid ${storeModules.loyaltyEnabled ? '#10b981' : '#e2e8f0'}`, backgroundColor: storeModules.loyaltyEnabled ? 'rgba(16, 185, 129, 0.05)' : '#f8fafc', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div>
+                  <div style={{ fontWeight: 'bold', fontSize: '0.95rem', color: '#1e293b' }}>Módulo de Fidelización & Club de Clientes</div>
+                  <div style={{ fontSize: '0.8rem', color: '#64748b' }}>Tarjetas de puntos, sellos digitales y monedero de clientes.</div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={Boolean(storeModules.loyaltyEnabled)}
+                  onChange={(e) => setStoreModules({ ...storeModules, loyaltyEnabled: e.target.checked })}
                   style={{ width: '20px', height: '20px', cursor: 'pointer' }}
                 />
               </label>

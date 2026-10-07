@@ -3518,7 +3518,7 @@ init_env();
 import express from "express";
 import http from "http";
 import { Server as SocketIOServer } from "socket.io";
-import jwt4 from "jsonwebtoken";
+import jwt5 from "jsonwebtoken";
 import cors from "cors";
 import helmet from "helmet";
 import compression from "compression";
@@ -4501,6 +4501,116 @@ async function runMigrations() {
       created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
     );
     CREATE INDEX IF NOT EXISTS idx_ai_token_logs_tenant_month ON tenant_ai_token_logs(tenant_id, created_at);
+
+    -- ==========================================================
+    -- M\xD3DULO DE FIDELIZACI\xD3N (PUNTOS & SELLOS) MULTITIENDA
+    -- ==========================================================
+    
+    -- 1. Clientes de Fidelizaci\xF3n (Billetera Centralizada)
+    CREATE TABLE IF NOT EXISTS loyalty_customers (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      identification VARCHAR(50) UNIQUE NOT NULL,
+      full_name VARCHAR(255) NOT NULL,
+      phone VARCHAR(50),
+      password_hash VARCHAR(255) NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_loyalty_customers_id ON loyalty_customers(identification);
+    CREATE INDEX IF NOT EXISTS idx_loyalty_customers_phone ON loyalty_customers(phone);
+
+    -- 2. Configuraci\xF3n del Programa de Fidelidad por Tenant
+    CREATE TABLE IF NOT EXISTS loyalty_programs (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID UNIQUE REFERENCES tenants(id) ON DELETE CASCADE,
+      is_active BOOLEAN DEFAULT false,
+      program_type VARCHAR(20) DEFAULT 'points',
+      currency VARCHAR(10) DEFAULT 'CRC',
+      points_spend_ratio NUMERIC(10, 2) DEFAULT 1000.00,
+      points_redeem_ratio NUMERIC(10, 2) DEFAULT 10.00,
+      points_expiry_months INTEGER,
+      stamps_target INTEGER DEFAULT 10,
+      stamps_prize TEXT DEFAULT 'Premio sorpresa',
+      min_spend_per_stamp NUMERIC(10, 2) DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_loyalty_programs_tenant ON loyalty_programs(tenant_id);
+
+    -- 3. Tarjetas de Clientes por Comercio
+    CREATE TABLE IF NOT EXISTS loyalty_cards (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+      customer_id UUID REFERENCES loyalty_customers(id) ON DELETE SET NULL,
+      identification VARCHAR(50) NOT NULL,
+      customer_name VARCHAR(255) NOT NULL,
+      customer_phone VARCHAR(50),
+      points_balance NUMERIC(10, 2) DEFAULT 0,
+      current_stamps INTEGER DEFAULT 0,
+      total_stamps_redeemed INTEGER DEFAULT 0,
+      last_activity_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+      expires_at TIMESTAMPTZ,
+      status VARCHAR(20) DEFAULT 'active',
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(tenant_id, identification)
+    );
+    CREATE INDEX IF NOT EXISTS idx_loyalty_cards_tenant_id ON loyalty_cards(tenant_id, identification);
+    CREATE INDEX IF NOT EXISTS idx_loyalty_cards_tenant_phone ON loyalty_cards(tenant_id, customer_phone);
+    CREATE INDEX IF NOT EXISTS idx_loyalty_cards_identification ON loyalty_cards(identification);
+
+    -- 4. Vouchers y Recompensas con QR
+    CREATE TABLE IF NOT EXISTS loyalty_rewards_vouchers (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+      card_id UUID REFERENCES loyalty_cards(id) ON DELETE CASCADE,
+      voucher_code VARCHAR(50) UNIQUE NOT NULL,
+      qr_data TEXT NOT NULL,
+      reward_description TEXT NOT NULL,
+      reward_type VARCHAR(30) DEFAULT 'stamps_complete',
+      discount_amount NUMERIC(10, 2) DEFAULT 0,
+      status VARCHAR(20) DEFAULT 'active',
+      expires_at TIMESTAMPTZ NOT NULL,
+      redeemed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_loyalty_vouchers_tenant ON loyalty_rewards_vouchers(tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_loyalty_vouchers_code ON loyalty_rewards_vouchers(voucher_code);
+    CREATE INDEX IF NOT EXISTS idx_loyalty_vouchers_card ON loyalty_rewards_vouchers(card_id);
+
+    -- 5. Promociones Especiales de Fidelidad
+    CREATE TABLE IF NOT EXISTS loyalty_promotions (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+      title VARCHAR(255) NOT NULL,
+      description TEXT,
+      promo_type VARCHAR(50) DEFAULT 'double_points',
+      multiplier NUMERIC(4, 2) DEFAULT 2.0,
+      min_spend NUMERIC(10, 2) DEFAULT 0,
+      start_date DATE NOT NULL,
+      end_date DATE NOT NULL,
+      active BOOLEAN DEFAULT true,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_loyalty_promotions_tenant ON loyalty_promotions(tenant_id);
+
+    -- 6. Libro Mayor de Transacciones de Fidelidad (Auditor\xEDa Inmutable)
+    CREATE TABLE IF NOT EXISTS loyalty_transactions (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+      card_id UUID REFERENCES loyalty_cards(id) ON DELETE CASCADE,
+      type VARCHAR(30) NOT NULL,
+      points_delta NUMERIC(10, 2) DEFAULT 0,
+      stamps_delta INTEGER DEFAULT 0,
+      balance_after NUMERIC(10, 2) DEFAULT 0,
+      stamps_after INTEGER DEFAULT 0,
+      order_id UUID REFERENCES orders(id) ON DELETE SET NULL,
+      notes TEXT,
+      created_by VARCHAR(100),
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_loyalty_tx_card ON loyalty_transactions(card_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_loyalty_tx_tenant ON loyalty_transactions(tenant_id);
   `).catch((err) => {
     console.warn("[Migrations] Columns addition warning:", err?.message || err);
   });
@@ -5933,12 +6043,12 @@ var TilopaySubscriptionService = class {
     if (/^4/.test(cleanCardNumber)) brand = "VISA";
     else if (/^5[1-5]/.test(cleanCardNumber)) brand = "MASTERCARD";
     else if (/^3[47]/.test(cleanCardNumber)) brand = "AMEX";
-    const jwt5 = await this.getPlatformJwt(platformCfg);
+    const jwt6 = await this.getPlatformJwt(platformCfg);
     const baseUrl = this.getBaseUrl(platformCfg.environment);
     const tokenizeRes = await fetch(`${baseUrl}/tokenize`, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${jwt5}`,
+        "Authorization": `Bearer ${jwt6}`,
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
@@ -6000,7 +6110,7 @@ var TilopaySubscriptionService = class {
     if (!platformCfg) {
       throw new Error("Credenciales de Tilopay de la plataforma no configuradas.");
     }
-    const jwt5 = await this.getPlatformJwt(platformCfg);
+    const jwt6 = await this.getPlatformJwt(platformCfg);
     const baseUrl = this.getBaseUrl(platformCfg.environment);
     const orderNumber = `SUB-${tenant.slug.substring(0, 8)}-${Date.now()}`;
     const cleanPhone = (tenant.whatsappNumber || "88888888").replace(/\D/g, "") || "88888888";
@@ -6038,7 +6148,7 @@ var TilopaySubscriptionService = class {
       chargeRes = await fetch(`${baseUrl}/charge`, {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${jwt5}`,
+          "Authorization": `Bearer ${jwt6}`,
           "Content-Type": "application/json"
         },
         body: JSON.stringify(chargePayload)
@@ -6160,7 +6270,7 @@ Hola *${tenant.name}*, tu mensualidad de *${priceStr}* ha sido cobrada exitosame
           error: "Configuraci\xF3n de Tilopay de la plataforma no disponible para verificar suscripci\xF3n."
         };
       }
-      const jwt5 = await this.getPlatformJwt(platformCfg);
+      const jwt6 = await this.getPlatformJwt(platformCfg);
       const baseUrl = this.getBaseUrl(platformCfg.environment);
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 1e4);
@@ -6168,7 +6278,7 @@ Hola *${tenant.name}*, tu mensualidad de *${priceStr}* ha sido cobrada exitosame
         const res = await fetch(`${baseUrl}/consult`, {
           method: "POST",
           headers: {
-            "Authorization": `Bearer ${jwt5}`,
+            "Authorization": `Bearer ${jwt6}`,
             "Content-Type": "application/json"
           },
           body: JSON.stringify({
@@ -7963,6 +8073,668 @@ async function saveWebsiteSettings(tenantId, data) {
 
 // src/server/services/agent-orchestrator.ts
 init_pool();
+
+// src/server/db/loyalty.repo.ts
+init_pool();
+init_users_repo();
+function mapProgramRow(row) {
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    isActive: row.is_active === true,
+    programType: row.program_type || "points",
+    currency: row.currency || "CRC",
+    pointsSpendRatio: Number(row.points_spend_ratio) || 1e3,
+    pointsRedeemRatio: Number(row.points_redeem_ratio) || 10,
+    pointsExpiryMonths: row.points_expiry_months !== null && row.points_expiry_months !== void 0 ? Number(row.points_expiry_months) : null,
+    stampsTarget: Number(row.stamps_target) || 10,
+    stampsPrize: row.stamps_prize || "Premio sorpresa",
+    minSpendPerStamp: Number(row.min_spend_per_stamp) || 0,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+function mapCardRow(row) {
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    customerId: row.customer_id || void 0,
+    identification: row.identification,
+    customerName: row.customer_name,
+    customerPhone: row.customer_phone || void 0,
+    pointsBalance: Number(row.points_balance) || 0,
+    currentStamps: Number(row.current_stamps) || 0,
+    totalStampsRedeemed: Number(row.total_stamps_redeemed) || 0,
+    lastActivityAt: row.last_activity_at,
+    expiresAt: row.expires_at || null,
+    status: row.status || "active",
+    tenantName: row.tenant_name || void 0,
+    tenantSlug: row.tenant_slug || void 0,
+    tenantLogoUrl: row.tenant_logo_url || void 0,
+    currency: row.currency || "CRC",
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+function mapVoucherRow(row) {
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    cardId: row.card_id,
+    voucherCode: row.voucher_code,
+    qrData: row.qr_data,
+    rewardDescription: row.reward_description,
+    rewardType: row.reward_type || "stamps_complete",
+    discountAmount: row.discount_amount ? Number(row.discount_amount) : 0,
+    status: row.status || "active",
+    expiresAt: row.expires_at,
+    redeemedAt: row.redeemed_at || null,
+    tenantName: row.tenant_name || void 0,
+    tenantSlug: row.tenant_slug || void 0,
+    createdAt: row.created_at
+  };
+}
+function cleanIdentification(id) {
+  if (!id) return "";
+  return id.replace(/[^a-zA-Z0-9]/g, "").trim().toUpperCase();
+}
+async function getLoyaltyProgram(tenantId) {
+  const res = await query("SELECT * FROM loyalty_programs WHERE tenant_id = $1", [tenantId]);
+  if (res.rows.length === 0) return null;
+  return mapProgramRow(res.rows[0]);
+}
+async function upsertLoyaltyProgram(tenantId, data) {
+  const current = await getLoyaltyProgram(tenantId);
+  if (current) {
+    const res = await query(`
+      UPDATE loyalty_programs SET
+        is_active = COALESCE($1, is_active),
+        program_type = COALESCE($2, program_type),
+        currency = COALESCE($3, currency),
+        points_spend_ratio = COALESCE($4, points_spend_ratio),
+        points_redeem_ratio = COALESCE($5, points_redeem_ratio),
+        points_expiry_months = $6,
+        stamps_target = COALESCE($7, stamps_target),
+        stamps_prize = COALESCE($8, stamps_prize),
+        min_spend_per_stamp = COALESCE($9, min_spend_per_stamp),
+        updated_at = CURRENT_TIMESTAMP
+      WHERE tenant_id = $10
+      RETURNING *
+    `, [
+      data.isActive !== void 0 ? data.isActive : null,
+      data.programType || null,
+      data.currency || null,
+      data.pointsSpendRatio !== void 0 ? data.pointsSpendRatio : null,
+      data.pointsRedeemRatio !== void 0 ? data.pointsRedeemRatio : null,
+      data.pointsExpiryMonths !== void 0 ? data.pointsExpiryMonths : null,
+      data.stampsTarget !== void 0 ? data.stampsTarget : null,
+      data.stampsPrize || null,
+      data.minSpendPerStamp !== void 0 ? data.minSpendPerStamp : null,
+      tenantId
+    ]);
+    return mapProgramRow(res.rows[0]);
+  } else {
+    const res = await query(`
+      INSERT INTO loyalty_programs (
+        tenant_id, is_active, program_type, currency, points_spend_ratio,
+        points_redeem_ratio, points_expiry_months, stamps_target, stamps_prize, min_spend_per_stamp
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      RETURNING *
+    `, [
+      tenantId,
+      data.isActive !== void 0 ? data.isActive : true,
+      data.programType || "points",
+      data.currency || "CRC",
+      data.pointsSpendRatio || 1e3,
+      data.pointsRedeemRatio || 10,
+      data.pointsExpiryMonths || null,
+      data.stampsTarget || 10,
+      data.stampsPrize || "Premio de lealtad",
+      data.minSpendPerStamp || 0
+    ]);
+    return mapProgramRow(res.rows[0]);
+  }
+}
+async function createLoyaltyCustomer(data) {
+  const cleanId = cleanIdentification(data.identification);
+  if (!cleanId) throw new Error("C\xE9dula requerida");
+  if (!data.password || data.password.length < 6) throw new Error("La contrase\xF1a debe tener al menos 6 caracteres");
+  const hashed = hashPassword(data.password);
+  const res = await query(`
+    INSERT INTO loyalty_customers (identification, full_name, phone, password_hash)
+    VALUES ($1, $2, $3, $4)
+    RETURNING id, identification, full_name, phone, created_at, updated_at
+  `, [cleanId, data.fullName.trim(), data.phone ? data.phone.trim() : null, hashed]);
+  const customer = {
+    id: res.rows[0].id,
+    identification: res.rows[0].identification,
+    fullName: res.rows[0].full_name,
+    phone: res.rows[0].phone || void 0,
+    createdAt: res.rows[0].created_at,
+    updatedAt: res.rows[0].updated_at
+  };
+  await query(`
+    UPDATE loyalty_cards SET customer_id = $1 WHERE UPPER(REPLACE(REPLACE(identification, '-', ''), ' ', '')) = $2
+  `, [customer.id, cleanId]).catch(() => {
+  });
+  return customer;
+}
+async function getLoyaltyCustomerByIdentification(identification) {
+  const cleanId = cleanIdentification(identification);
+  if (!cleanId) return null;
+  const res = await query("SELECT * FROM loyalty_customers WHERE UPPER(REPLACE(REPLACE(identification, '-', ''), ' ', '')) = $1", [cleanId]);
+  if (res.rows.length === 0) return null;
+  return res.rows[0];
+}
+async function verifyLoyaltyCustomerLogin(identification, password) {
+  const userRow = await getLoyaltyCustomerByIdentification(identification);
+  if (!userRow) return null;
+  const valid = verifyPassword(password, userRow.password_hash);
+  if (!valid) return null;
+  return {
+    id: userRow.id,
+    identification: userRow.identification,
+    fullName: userRow.full_name,
+    phone: userRow.phone || void 0,
+    createdAt: userRow.created_at,
+    updatedAt: userRow.updated_at
+  };
+}
+async function getCustomerWalletCards(identification) {
+  const cleanId = cleanIdentification(identification);
+  if (!cleanId) return [];
+  const res = await query(`
+    SELECT c.*, t.name as tenant_name, t.slug as tenant_slug,
+           COALESCE(s.store_logo_url, s.store_theme->>'logoUrl') as tenant_logo_url,
+           p.currency as currency, p.stamps_target, p.stamps_prize, p.program_type
+    FROM loyalty_cards c
+    JOIN tenants t ON t.id = c.tenant_id
+    LEFT JOIN store_settings s ON s.tenant_id = c.tenant_id
+    LEFT JOIN loyalty_programs p ON p.tenant_id = c.tenant_id
+    WHERE UPPER(REPLACE(REPLACE(c.identification, '-', ''), ' ', '')) = $1
+      AND c.status = 'active'
+    ORDER BY c.last_activity_at DESC
+  `, [cleanId]);
+  return res.rows.map((row) => ({
+    ...mapCardRow(row),
+    stampsTarget: row.stamps_target ? Number(row.stamps_target) : 10,
+    stampsPrize: row.stamps_prize || "Premio de lealtad",
+    programType: row.program_type || "both"
+  }));
+}
+async function getCustomerVouchers(identification) {
+  const cleanId = cleanIdentification(identification);
+  if (!cleanId) return [];
+  const res = await query(`
+    SELECT v.*, t.name as tenant_name, t.slug as tenant_slug
+    FROM loyalty_rewards_vouchers v
+    JOIN loyalty_cards c ON c.id = v.card_id
+    JOIN tenants t ON t.id = v.tenant_id
+    WHERE UPPER(REPLACE(REPLACE(c.identification, '-', ''), ' ', '')) = $1
+    ORDER BY v.created_at DESC
+  `, [cleanId]);
+  return res.rows.map(mapVoucherRow);
+}
+async function getLoyaltyCardById(tenantId, cardId) {
+  const res = await query("SELECT * FROM loyalty_cards WHERE id = $1 AND tenant_id = $2", [cardId, tenantId]);
+  if (res.rows.length === 0) return null;
+  return mapCardRow(res.rows[0]);
+}
+async function getLoyaltyCardByIdentification(tenantId, identification) {
+  const cleanId = cleanIdentification(identification);
+  if (!cleanId) return null;
+  const res = await query(`
+    SELECT * FROM loyalty_cards 
+    WHERE tenant_id = $1 AND UPPER(REPLACE(REPLACE(identification, '-', ''), ' ', '')) = $2
+    LIMIT 1
+  `, [tenantId, cleanId]);
+  if (res.rows.length === 0) return null;
+  return mapCardRow(res.rows[0]);
+}
+async function getLoyaltyCardByPhone(tenantId, phone) {
+  const cleanPh = phone.replace(/\D/g, "");
+  if (!cleanPh) return null;
+  const res = await query(`
+    SELECT * FROM loyalty_cards 
+    WHERE tenant_id = $1 AND (
+      customer_phone = $2 OR 
+      customer_phone LIKE '%' || $2 OR
+      $2 LIKE '%' || customer_phone
+    )
+    ORDER BY last_activity_at DESC
+    LIMIT 1
+  `, [tenantId, cleanPh]);
+  if (res.rows.length === 0) return null;
+  return mapCardRow(res.rows[0]);
+}
+async function findOrCreateLoyaltyCard(tenantId, data) {
+  const cleanId = cleanIdentification(data.identification);
+  if (!cleanId) throw new Error("C\xE9dula requerida para crear o buscar tarjeta de fidelidad");
+  const existing = await getLoyaltyCardByIdentification(tenantId, cleanId);
+  if (existing) {
+    if (data.customerPhone && !existing.customerPhone) {
+      await query("UPDATE loyalty_cards SET customer_phone = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2", [
+        data.customerPhone.replace(/\D/g, ""),
+        existing.id
+      ]);
+      existing.customerPhone = data.customerPhone.replace(/\D/g, "");
+    }
+    return existing;
+  }
+  const customer = await getLoyaltyCustomerByIdentification(cleanId);
+  const res = await query(`
+    INSERT INTO loyalty_cards (
+      tenant_id, customer_id, identification, customer_name, customer_phone,
+      points_balance, current_stamps, total_stamps_redeemed, status
+    ) VALUES ($1, $2, $3, $4, $5, 0, 0, 0, 'active')
+    ON CONFLICT (tenant_id, identification) DO UPDATE SET
+      customer_name = EXCLUDED.customer_name,
+      customer_phone = COALESCE(EXCLUDED.customer_phone, loyalty_cards.customer_phone),
+      updated_at = CURRENT_TIMESTAMP
+    RETURNING *
+  `, [
+    tenantId,
+    customer?.id || null,
+    cleanId,
+    data.customerName.trim(),
+    data.customerPhone ? data.customerPhone.replace(/\D/g, "") : null
+  ]);
+  return mapCardRow(res.rows[0]);
+}
+async function listLoyaltyCards(tenantId, filters) {
+  const params = [tenantId];
+  let where = "WHERE tenant_id = $1";
+  if (filters?.search) {
+    params.push(`%${filters.search.trim().toLowerCase()}%`);
+    where += ` AND (LOWER(customer_name) LIKE $${params.length} OR identification LIKE $${params.length} OR customer_phone LIKE $${params.length})`;
+  }
+  if (filters?.status) {
+    params.push(filters.status);
+    where += ` AND status = $${params.length}`;
+  }
+  const countRes = await query(`SELECT COUNT(*) as total FROM loyalty_cards ${where}`, params);
+  const total = parseInt(countRes.rows[0].total, 10);
+  const limit = filters?.limit || 50;
+  const offset = filters?.offset || 0;
+  params.push(limit, offset);
+  const listRes = await query(`
+    SELECT * FROM loyalty_cards 
+    ${where}
+    ORDER BY last_activity_at DESC
+    LIMIT $${params.length - 1} OFFSET $${params.length}
+  `, params);
+  return {
+    cards: listRes.rows.map(mapCardRow),
+    total
+  };
+}
+async function addPoints(tenantId, cardId, points, meta) {
+  if (points <= 0) throw new Error("Los puntos a sumar deben ser mayores a cero");
+  const card = await getLoyaltyCardById(tenantId, cardId);
+  if (!card) throw new Error("Tarjeta no encontrada");
+  const newBalance = Number(card.pointsBalance) + points;
+  const res = await query(`
+    UPDATE loyalty_cards SET
+      points_balance = $1,
+      last_activity_at = CURRENT_TIMESTAMP,
+      updated_at = CURRENT_TIMESTAMP
+    WHERE id = $2 AND tenant_id = $3
+    RETURNING *
+  `, [newBalance, cardId, tenantId]);
+  await query(`
+    INSERT INTO loyalty_transactions (
+      tenant_id, card_id, type, points_delta, stamps_delta,
+      balance_after, stamps_after, order_id, notes, created_by
+    ) VALUES ($1, $2, 'earn_points', $3, 0, $4, $5, $6, $7, $8)
+  `, [
+    tenantId,
+    cardId,
+    points,
+    newBalance,
+    card.currentStamps,
+    meta?.orderId || null,
+    meta?.notes || "Puntos acumulados",
+    meta?.createdBy || "system"
+  ]);
+  return mapCardRow(res.rows[0]);
+}
+async function redeemPoints(tenantId, cardId, points, meta) {
+  if (points <= 0) throw new Error("Los puntos a canjear deben ser mayores a cero");
+  const card = await getLoyaltyCardById(tenantId, cardId);
+  if (!card) throw new Error("Tarjeta no encontrada");
+  if (card.pointsBalance < points) throw new Error(`Saldo insuficiente. Puntos disponibles: ${card.pointsBalance}`);
+  const newBalance = Number(card.pointsBalance) - points;
+  const res = await query(`
+    UPDATE loyalty_cards SET
+      points_balance = $1,
+      last_activity_at = CURRENT_TIMESTAMP,
+      updated_at = CURRENT_TIMESTAMP
+    WHERE id = $2 AND tenant_id = $3
+    RETURNING *
+  `, [newBalance, cardId, tenantId]);
+  await query(`
+    INSERT INTO loyalty_transactions (
+      tenant_id, card_id, type, points_delta, stamps_delta,
+      balance_after, stamps_after, order_id, notes, created_by
+    ) VALUES ($1, $2, 'redeem_points', $3, 0, $4, $5, $6, $7, $8)
+  `, [
+    tenantId,
+    cardId,
+    -points,
+    newBalance,
+    card.currentStamps,
+    meta?.orderId || null,
+    meta?.notes || "Canje de puntos",
+    meta?.createdBy || "system"
+  ]);
+  return mapCardRow(res.rows[0]);
+}
+async function addStamps(tenantId, cardId, stampsCount = 1, meta) {
+  if (stampsCount <= 0) throw new Error("La cantidad de sellos debe ser mayor a cero");
+  const card = await getLoyaltyCardById(tenantId, cardId);
+  if (!card) throw new Error("Tarjeta no encontrada");
+  const program = await getLoyaltyProgram(tenantId);
+  const target = program?.stampsTarget || 10;
+  const prize = program?.stampsPrize || "Premio de fidelidad";
+  let newStamps = card.currentStamps + stampsCount;
+  let totalRedeemed = card.totalStampsRedeemed;
+  let createdVoucher = void 0;
+  if (newStamps >= target) {
+    totalRedeemed += 1;
+    newStamps = newStamps - target;
+    const code = `PRM-${Math.random().toString(36).substring(2, 6).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+    const baseUrl = process.env.APP_URL || "https://betico.tech";
+    const qrData = `${baseUrl}/fidelidad/canje/${code}`;
+    const expiresAt = /* @__PURE__ */ new Date();
+    expiresAt.setDate(expiresAt.getDate() + 45);
+    const vRes = await query(`
+      INSERT INTO loyalty_rewards_vouchers (
+        tenant_id, card_id, voucher_code, qr_data, reward_description,
+        reward_type, discount_amount, status, expires_at
+      ) VALUES ($1, $2, $3, $4, $5, 'stamps_complete', 0, 'active', $6)
+      RETURNING *
+    `, [tenantId, cardId, code, qrData, prize, expiresAt.toISOString()]);
+    createdVoucher = mapVoucherRow(vRes.rows[0]);
+  }
+  const res = await query(`
+    UPDATE loyalty_cards SET
+      current_stamps = $1,
+      total_stamps_redeemed = $2,
+      last_activity_at = CURRENT_TIMESTAMP,
+      updated_at = CURRENT_TIMESTAMP
+    WHERE id = $3 AND tenant_id = $4
+    RETURNING *
+  `, [newStamps, totalRedeemed, cardId, tenantId]);
+  await query(`
+    INSERT INTO loyalty_transactions (
+      tenant_id, card_id, type, points_delta, stamps_delta,
+      balance_after, stamps_after, order_id, notes, created_by
+    ) VALUES ($1, $2, 'earn_stamp', 0, $3, $4, $5, $6, $7, $8)
+  `, [
+    tenantId,
+    cardId,
+    stampsCount,
+    card.pointsBalance,
+    newStamps,
+    meta?.orderId || null,
+    createdVoucher ? `Sello otorgado (\xA1Meta alcanzada! Cup\xF3n ${createdVoucher.voucherCode} emitido)` : meta?.notes || "Sello acumulado",
+    meta?.createdBy || "system"
+  ]);
+  return {
+    card: mapCardRow(res.rows[0]),
+    voucher: createdVoucher
+  };
+}
+async function redeemVoucher(tenantId, voucherIdOrCode) {
+  const isCode = voucherIdOrCode.startsWith("PRM-");
+  const where = isCode ? "voucher_code = $1" : "id = $1";
+  const check = await query(`SELECT * FROM loyalty_rewards_vouchers WHERE ${where} AND tenant_id = $2`, [voucherIdOrCode, tenantId]);
+  if (check.rows.length === 0) throw new Error("Cup\xF3n o recompensa no encontrada");
+  const v = check.rows[0];
+  if (v.status === "redeemed") throw new Error("Este cup\xF3n ya fue canjeado con anterioridad");
+  if (new Date(v.expires_at) < /* @__PURE__ */ new Date()) throw new Error("Este cup\xF3n ha expirado");
+  const res = await query(`
+    UPDATE loyalty_rewards_vouchers SET
+      status = 'redeemed',
+      redeemed_at = CURRENT_TIMESTAMP
+    WHERE id = $1 AND tenant_id = $2
+    RETURNING *
+  `, [v.id, tenantId]);
+  return mapVoucherRow(res.rows[0]);
+}
+async function listTenantVouchers(tenantId, status) {
+  const params = [tenantId];
+  let where = "WHERE v.tenant_id = $1";
+  if (status) {
+    params.push(status);
+    where += ` AND v.status = $2`;
+  }
+  const res = await query(`
+    SELECT v.*, c.customer_name, c.identification as customer_id_num
+    FROM loyalty_rewards_vouchers v
+    JOIN loyalty_cards c ON c.id = v.card_id
+    ${where}
+    ORDER BY v.created_at DESC
+  `, params);
+  return res.rows.map((row) => ({
+    ...mapVoucherRow(row),
+    customerName: row.customer_name,
+    customerIdentification: row.customer_id_num
+  }));
+}
+async function getCardTransactions(tenantId, cardId) {
+  const res = await query(`
+    SELECT * FROM loyalty_transactions
+    WHERE card_id = $1 AND tenant_id = $2
+    ORDER BY created_at DESC
+    LIMIT 100
+  `, [cardId, tenantId]);
+  return res.rows.map((row) => ({
+    id: row.id,
+    tenantId: row.tenant_id,
+    cardId: row.card_id,
+    type: row.type,
+    pointsDelta: Number(row.points_delta) || 0,
+    stampsDelta: Number(row.stamps_delta) || 0,
+    balanceAfter: Number(row.balance_after) || 0,
+    stampsAfter: Number(row.stamps_after) || 0,
+    orderId: row.order_id || void 0,
+    notes: row.notes || void 0,
+    createdBy: row.created_by || void 0,
+    createdAt: row.created_at
+  }));
+}
+async function listPromotions(tenantId) {
+  const res = await query(`
+    SELECT * FROM loyalty_promotions 
+    WHERE tenant_id = $1 
+    ORDER BY created_at DESC
+  `, [tenantId]);
+  return res.rows.map((row) => ({
+    id: row.id,
+    tenantId: row.tenant_id,
+    title: row.title,
+    description: row.description || void 0,
+    promoType: row.promo_type || "double_points",
+    multiplier: Number(row.multiplier) || 2,
+    minSpend: Number(row.min_spend) || 0,
+    startDate: row.start_date,
+    endDate: row.end_date,
+    active: row.active === true,
+    createdAt: row.created_at
+  }));
+}
+async function createPromotion(tenantId, data) {
+  const res = await query(`
+    INSERT INTO loyalty_promotions (
+      tenant_id, title, description, promo_type, multiplier, min_spend, start_date, end_date, active
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    RETURNING *
+  `, [
+    tenantId,
+    data.title || "Promoci\xF3n especial",
+    data.description || null,
+    data.promoType || "double_points",
+    data.multiplier || 2,
+    data.minSpend || 0,
+    data.startDate || (/* @__PURE__ */ new Date()).toISOString().split("T")[0],
+    data.endDate || new Date(Date.now() + 30 * 864e5).toISOString().split("T")[0],
+    data.active !== false
+  ]);
+  const row = res.rows[0];
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    title: row.title,
+    description: row.description || void 0,
+    promoType: row.promo_type,
+    multiplier: Number(row.multiplier),
+    minSpend: Number(row.min_spend),
+    startDate: row.start_date,
+    endDate: row.end_date,
+    active: row.active === true,
+    createdAt: row.created_at
+  };
+}
+async function deletePromotion(tenantId, promoId) {
+  const res = await query("DELETE FROM loyalty_promotions WHERE id = $1 AND tenant_id = $2", [promoId, tenantId]);
+  return (res.rowCount || 0) > 0;
+}
+
+// src/server/services/loyalty.service.ts
+init_pool();
+async function processOrderLoyalty(tenantId, orderData) {
+  try {
+    const store = await getStoreSettings(tenantId);
+    if (store?.storeModules?.loyaltyEnabled === false) return null;
+    const program = await getLoyaltyProgram(tenantId);
+    if (!program || !program.isActive) return null;
+    const identification = orderData.identification || orderData.billingInfo?.identification || orderData.billingInfo?.receiverIdNumber || orderData.billingInfo?.cedula;
+    let card = null;
+    if (identification) {
+      card = await findOrCreateLoyaltyCard(tenantId, {
+        identification,
+        customerName: orderData.customerName,
+        customerPhone: orderData.customerPhone
+      });
+    } else if (orderData.customerPhone) {
+      card = await getLoyaltyCardByPhone(tenantId, orderData.customerPhone);
+    }
+    if (!card) return null;
+    if (orderData.id) {
+      const existingTx = await query(
+        "SELECT id FROM loyalty_transactions WHERE tenant_id = $1 AND order_id = $2 AND type IN ('earn_points', 'earn_stamps') LIMIT 1",
+        [tenantId, String(orderData.id)]
+      );
+      if (existingTx.rows.length > 0) {
+        return null;
+      }
+    }
+    const promotions = await listPromotions(tenantId);
+    const today = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+    const activePromos = promotions.filter((p) => p.active && p.startDate <= today && p.endDate >= today);
+    let pointsEarned = 0;
+    let stampsEarned = 0;
+    let voucherCreated = void 0;
+    if (program.programType === "points" || program.programType === "both") {
+      const spendRatio = program.pointsSpendRatio || 1e3;
+      let calculatedPoints = Math.floor(Number(orderData.total || 0) / spendRatio);
+      const doublePointsPromo = activePromos.find((p) => p.promoType === "double_points" && Number(orderData.total) >= Number(p.minSpend));
+      if (doublePointsPromo) {
+        calculatedPoints = Math.round(calculatedPoints * Number(doublePointsPromo.multiplier));
+      }
+      if (calculatedPoints > 0) {
+        pointsEarned = calculatedPoints;
+        card = await addPoints(tenantId, card.id, pointsEarned, {
+          orderId: orderData.id,
+          notes: `Puntos por orden #${orderData.id || ""} (Total: \u20A1${Number(orderData.total).toLocaleString("es-CR")})`
+        });
+      }
+    }
+    if (program.programType === "stamps" || program.programType === "both") {
+      const minSpend = program.minSpendPerStamp || 0;
+      if (Number(orderData.total || 0) >= minSpend) {
+        let stampCount = 1;
+        const bonusStampPromo = activePromos.find((p) => p.promoType === "bonus_stamps" && Number(orderData.total) >= Number(p.minSpend));
+        if (bonusStampPromo) {
+          stampCount += 1;
+        }
+        stampsEarned = stampCount;
+        const stampRes = await addStamps(tenantId, card.id, stampsEarned, {
+          orderId: orderData.id,
+          notes: `Sello otorgado por orden #${orderData.id || ""}`
+        });
+        card = stampRes.card;
+        voucherCreated = stampRes.voucher;
+      }
+    }
+    return {
+      card,
+      pointsEarned,
+      stampsEarned,
+      voucherCreated
+    };
+  } catch (error) {
+    console.error("[LoyaltyService] Error processing order loyalty:", error);
+    return null;
+  }
+}
+async function getLoyaltySummaryForBot(tenantId, identifier) {
+  const program = await getLoyaltyProgram(tenantId);
+  if (!program || !program.isActive) {
+    return {
+      program: null,
+      card: null,
+      formattedText: "En este momento nuestro programa de lealtad no se encuentra activo."
+    };
+  }
+  let card = await getLoyaltyCardByIdentification(tenantId, identifier);
+  if (!card) {
+    card = await getLoyaltyCardByPhone(tenantId, identifier);
+  }
+  if (!card) {
+    return {
+      program,
+      card: null,
+      formattedText: `No encontramos una tarjeta registrada con la identificaci\xF3n o tel\xE9fono provisto (*${identifier}*). \xBFDeseas que te registremos en nuestro Club de Fidelidad? Solo ind\xEDcanos tu n\xFAmero de c\xE9dula y nombre completo.`
+    };
+  }
+  const currSymbol = program.currency === "USD" ? "$" : "\u20A1";
+  let lines = [];
+  lines.push(`\u{1F31F} *Club de Lealtad - Resumen de tu Tarjeta*`);
+  lines.push(`Titular: *${card.customerName}* (C\xE9dula: ${card.identification})`);
+  if (program.programType === "points" || program.programType === "both") {
+    const moneyEquivalent = Math.round(Number(card.pointsBalance) * Number(program.pointsRedeemRatio));
+    lines.push(`
+\u{1F4B0} *Puntos acumulados:* ${card.pointsBalance.toLocaleString()} puntos`);
+    lines.push(`Equivalente a saldo disponible: *${currSymbol}${moneyEquivalent.toLocaleString("es-CR")}* para canjear en tus compras.`);
+    if (program.pointsExpiryMonths) {
+      lines.push(`\u23F1\uFE0F *Vigencia:* Los puntos tienen una caducidad de ${program.pointsExpiryMonths} meses.`);
+    } else {
+      lines.push(`\u23F1\uFE0F *Vigencia:* \xA1Tus puntos no vencen!`);
+    }
+  }
+  if (program.programType === "stamps" || program.programType === "both") {
+    const remaining = Math.max(0, Number(program.stampsTarget) - Number(card.currentStamps));
+    lines.push(`
+\u{1F3F7}\uFE0F *Tarjeta de Sellos:* ${card.currentStamps} de ${program.stampsTarget} sellos completados.`);
+    if (remaining === 0) {
+      lines.push(`\u{1F389} *\xA1Felicidades!* Has completado tu tarjeta. Revisa tu premio: *${program.stampsPrize}*.`);
+    } else {
+      lines.push(`\xA1Te faltan solo *${remaining} sello(s)* para ganar tu premio: *${program.stampsPrize}*! \u{1F381}`);
+    }
+  }
+  const baseUrl = process.env.APP_URL || "https://betico.tech";
+  lines.push(`
+\u{1F4F1} Puedes ver tu tarjeta digital y c\xF3digo QR en: ${baseUrl}/fidelidad`);
+  return {
+    program,
+    card,
+    formattedText: lines.join("\n")
+  };
+}
+
+// src/server/services/agent-orchestrator.ts
 function formatMediaUrl(url, baseUrl) {
   if (!url) return "";
   if (url.startsWith("http://") || url.startsWith("https://")) return url;
@@ -8420,6 +9192,43 @@ REGLAS DE CONSERJE FRONT-DESK:
       break;
     }
   }
+  let loyaltyPromptSection = "";
+  if (store?.storeModules?.loyaltyEnabled) {
+    sourcesUsed.push("loyalty");
+    try {
+      const loyaltyProgram = await getLoyaltyProgram(tenantId);
+      if (loyaltyProgram && loyaltyProgram.isActive) {
+        const combinedText = `${userMessage} ${(chatHistory || []).slice(-2).map((h) => h.content).join(" ")}`;
+        const isLoyaltyQuery = /puntos?|sellos?|fidelidad|fidelizacion|fidelización|lealtad|premio|beneficios|club|tarjeta/i.test(combinedText);
+        const cedulaMatch = combinedText.match(/\b([1-9]-?\d{4}-?\d{4}|[1-9]\d{8}|\d{10,12})\b/);
+        const identifier = cedulaMatch ? cedulaMatch[1].replace(/-/g, "") : cleanPhone;
+        let customerSummaryText = "";
+        if (isLoyaltyQuery || cedulaMatch) {
+          const summary = await getLoyaltySummaryForBot(tenantId, identifier);
+          customerSummaryText = summary.formattedText;
+        }
+        loyaltyPromptSection = `
+\u{1F31F} PROGRAMA DE FIDELIZACI\xD3N Y CLUB DE CLIENTES (*${tenant?.name || "Comercio"}*):
+- Estado: Activo
+- Modalidad: ${loyaltyProgram.programType === "points" ? "Acumulaci\xF3n de Puntos" : loyaltyProgram.programType === "stamps" ? "Tarjeta de Sellos" : "Puntos y Sellos"}
+${loyaltyProgram.programType !== "stamps" ? `- Acumulaci\xF3n de puntos: 1 punto por cada \u20A1${Number(loyaltyProgram.pointsSpendRatio).toLocaleString("es-CR")} consumidos.` : ""}
+${loyaltyProgram.programType !== "stamps" ? `- Valor de canje: Cada punto equivale a \u20A1${Number(loyaltyProgram.pointsRedeemRatio).toLocaleString("es-CR")} de descuento en compras.` : ""}
+${loyaltyProgram.programType !== "points" ? `- Tarjeta de sellos: Meta de ${loyaltyProgram.stampsTarget} sellos. Premio al completar: *${loyaltyProgram.stampsPrize}* (Consumo m\xEDnimo por sello: \u20A1${Number(loyaltyProgram.minSpendPerStamp).toLocaleString("es-CR")}).` : ""}
+- Monedero Web de Clientes: https://betico.tech/fidelidad (Los clientes pueden consultar todas sus tarjetas, sellos y c\xF3digos QR).
+${customerSummaryText ? `
+DATOS DEL CLIENTE EN ESTA CONSULTA:
+${customerSummaryText}
+` : ""}
+REGLAS DE FIDELIZACI\xD3N:
+1. Si el cliente pregunta por sus puntos, sellos o premios, br\xEDndale la informaci\xF3n detallada con entusiasmo y cortes\xEDa.
+2. Si el cliente no ha proporcionado su c\xE9dula y desea consultar sus puntos o afiliarse, p\xEDdele amablemente su n\xFAmero de c\xE9dula f\xEDsica o jur\xEDdica (identificador oficial).
+3. Informa que las compras acumulan puntos/sellos autom\xE1ticamente asociando su c\xE9dula.
+`.trim();
+      }
+    } catch (err) {
+      console.error("[Orchestrator] Loyalty prompt build error:", err);
+    }
+  }
   let isSessionActive = options?.isWithin2Hours ?? false;
   let lastMinutes = options?.lastInteractionMinutesAgo ?? null;
   if (options?.isWithin2Hours === void 0 && chatHistory && chatHistory.length > 0) {
@@ -8479,7 +9288,9 @@ ${chatFirstDirectives}
 
 ${naturalToneDirective}
 
-${sessionGreetingDirective}${antiHallucinationGuardrail ? `
+${sessionGreetingDirective}${loyaltyPromptSection ? `
+
+${loyaltyPromptSection}` : ""}${antiHallucinationGuardrail ? `
 
 ${antiHallucinationGuardrail}` : ""}`;
   const structuredMessages = [];
@@ -13469,6 +14280,9 @@ router12.put("/:id/proof-status", async (req, res) => {
           console.error(`[OrdersRoute] Error disparando factura para orden ${order.id}:`, err);
         });
       }
+      processOrderLoyalty(req.tenantId, order).catch((err) => {
+        console.error(`[OrdersRoute] Error procesando lealtad para orden ${order.id}:`, err);
+      });
     } else {
       const newPaymentStatus = proofStatus === "received" ? "proof_sent" : "pending";
       await query(`
@@ -13572,6 +14386,11 @@ Te informamos que tu pedido *#ORD-${order.orderNumber}* ha cambiado a estado:
         console.error("Error sending WhatsApp order update notification:", err);
       }
     }
+    if (status === "entregado" || status === "delivered") {
+      processOrderLoyalty(req.tenantId, order).catch((err) => {
+        console.error(`[OrdersRoute] Error procesando lealtad para orden entregada ${order.id}:`, err);
+      });
+    }
     if (req.io) {
       req.io.to(`tenant_${order.tenantId || req.tenantId}`).emit("order:updated", updated);
     }
@@ -13603,6 +14422,11 @@ Estamos procesando tu orden de inmediato. \xA1Gracias!`;
     if (order?.billingInfo?.requiresInvoice) {
       AlmendroService.emitOrderInvoice(req.tenantId, order.id).catch((err) => {
         console.error(`[OrdersRoute] Error disparando factura electr\xF3nica en confirm-payment para orden ${order.id}:`, err);
+      });
+    }
+    if (order) {
+      processOrderLoyalty(req.tenantId, order).catch((err) => {
+        console.error(`[OrdersRoute] Error procesando lealtad en confirm-payment para orden ${order.id}:`, err);
       });
     }
     await logAuditEvent(
@@ -19001,7 +19825,7 @@ router32.post("/create-card-session", async (req, res) => {
     if (!loginRes.ok || !loginData.access_token) {
       throw new Error(loginData.message || "No fue posible autenticar con la pasarela bancaria.");
     }
-    const jwt5 = loginData.access_token;
+    const jwt6 = loginData.access_token;
     const cleanPhone = (tenant.whatsappNumber || "88888888").replace(/\D/g, "") || "88888888";
     const appUrl = (env.APP_URL || "https://betico.tech").replace(/\/$/, "");
     const orderNumber = `SUB-CARD-${tenant.id}-${Date.now()}`;
@@ -19036,7 +19860,7 @@ router32.post("/create-card-session", async (req, res) => {
     const sessionRes = await fetch(`${baseUrl}/processPayment`, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${jwt5}`,
+        "Authorization": `Bearer ${jwt6}`,
         "Content-Type": "application/json"
       },
       body: JSON.stringify(sessionPayload)
@@ -19858,13 +20682,387 @@ router35.post("/emit-subscription-invoice/:chargeId", async (req, res) => {
 });
 var superadmin_almendro_routes_default = router35;
 
-// src/server/routes/seo.routes.ts
-init_pool();
+// src/server/routes/loyalty.routes.ts
 import { Router as Router36 } from "express";
 var router36 = Router36();
+router36.use(authenticateToken);
+router36.use(tenantContext);
+router36.get("/program", async (req, res) => {
+  try {
+    const program = await getLoyaltyProgram(req.tenantId);
+    res.json(program || {
+      tenantId: req.tenantId,
+      isActive: false,
+      programType: "points",
+      currency: "CRC",
+      pointsSpendRatio: 1e3,
+      pointsRedeemRatio: 10,
+      stampsTarget: 10,
+      stampsPrize: "Premio de lealtad",
+      minSpendPerStamp: 0
+    });
+  } catch (error) {
+    console.error("[LoyaltyRoutes] Error fetching program:", error);
+    res.status(500).json({ error: "Error al obtener programa de fidelidad" });
+  }
+});
+router36.put("/program", async (req, res) => {
+  try {
+    const updated = await upsertLoyaltyProgram(req.tenantId, req.body);
+    res.json(updated);
+  } catch (error) {
+    console.error("[LoyaltyRoutes] Error saving program:", error);
+    res.status(500).json({ error: "Error al guardar programa de fidelidad" });
+  }
+});
+router36.get("/cards", async (req, res) => {
+  try {
+    const { search, status, limit, offset } = req.query;
+    const result = await listLoyaltyCards(req.tenantId, {
+      search: search ? String(search) : void 0,
+      status: status ? String(status) : void 0,
+      limit: limit ? parseInt(String(limit), 10) : 50,
+      offset: offset ? parseInt(String(offset), 10) : 0
+    });
+    res.json(result);
+  } catch (error) {
+    console.error("[LoyaltyRoutes] Error listing cards:", error);
+    res.status(500).json({ error: "Error al listar tarjetas de fidelidad" });
+  }
+});
+router36.post("/cards", async (req, res) => {
+  try {
+    const { identification, customerName, customerPhone } = req.body;
+    if (!identification || !customerName) {
+      res.status(400).json({ error: "C\xE9dula y nombre son requeridos" });
+      return;
+    }
+    const card = await findOrCreateLoyaltyCard(req.tenantId, {
+      identification,
+      customerName,
+      customerPhone
+    });
+    res.json(card);
+  } catch (error) {
+    console.error("[LoyaltyRoutes] Error creating card:", error);
+    res.status(400).json({ error: error.message || "Error al crear tarjeta" });
+  }
+});
+router36.post("/cards/:id/stamp", async (req, res) => {
+  try {
+    const { stampsCount = 1, notes } = req.body;
+    const result = await addStamps(req.tenantId, req.params.id, Number(stampsCount) || 1, {
+      notes: notes || "Sello asignado en caja",
+      createdBy: req.user?.userId || "admin"
+    });
+    res.json(result);
+  } catch (error) {
+    console.error("[LoyaltyRoutes] Error stamping card:", error);
+    res.status(400).json({ error: error.message || "Error al otorgar sello" });
+  }
+});
+router36.post("/cards/:id/points", async (req, res) => {
+  try {
+    const { points, action = "add", notes } = req.body;
+    const numPoints = Number(points);
+    if (!numPoints || numPoints <= 0) {
+      res.status(400).json({ error: "Cantidad de puntos inv\xE1lida" });
+      return;
+    }
+    let card;
+    if (action === "redeem") {
+      card = await redeemPoints(req.tenantId, req.params.id, numPoints, {
+        notes: notes || "Canje de puntos en caja",
+        createdBy: req.user?.userId || "admin"
+      });
+    } else {
+      card = await addPoints(req.tenantId, req.params.id, numPoints, {
+        notes: notes || "Puntos asignados en caja",
+        createdBy: req.user?.userId || "admin"
+      });
+    }
+    res.json(card);
+  } catch (error) {
+    console.error("[LoyaltyRoutes] Error adjusting points:", error);
+    res.status(400).json({ error: error.message || "Error al actualizar puntos" });
+  }
+});
+router36.get("/cards/:id/transactions", async (req, res) => {
+  try {
+    const txs = await getCardTransactions(req.tenantId, req.params.id);
+    res.json(txs);
+  } catch (error) {
+    console.error("[LoyaltyRoutes] Error fetching card transactions:", error);
+    res.status(500).json({ error: "Error al obtener transacciones" });
+  }
+});
+router36.get("/promotions", async (req, res) => {
+  try {
+    const promos = await listPromotions(req.tenantId);
+    res.json(promos);
+  } catch (error) {
+    console.error("[LoyaltyRoutes] Error listing promotions:", error);
+    res.status(500).json({ error: "Error al listar promociones" });
+  }
+});
+router36.post("/promotions", async (req, res) => {
+  try {
+    const promo = await createPromotion(req.tenantId, req.body);
+    res.json(promo);
+  } catch (error) {
+    console.error("[LoyaltyRoutes] Error creating promotion:", error);
+    res.status(400).json({ error: error.message || "Error al crear promoci\xF3n" });
+  }
+});
+router36.delete("/promotions/:id", async (req, res) => {
+  try {
+    const success = await deletePromotion(req.tenantId, req.params.id);
+    res.json({ success });
+  } catch (error) {
+    console.error("[LoyaltyRoutes] Error deleting promotion:", error);
+    res.status(500).json({ error: "Error al eliminar promoci\xF3n" });
+  }
+});
+router36.get("/vouchers", async (req, res) => {
+  try {
+    const { status } = req.query;
+    const vouchers = await listTenantVouchers(req.tenantId, status ? String(status) : void 0);
+    res.json(vouchers);
+  } catch (error) {
+    console.error("[LoyaltyRoutes] Error listing vouchers:", error);
+    res.status(500).json({ error: "Error al listar vouchers" });
+  }
+});
+router36.post("/vouchers/:codeOrId/redeem", async (req, res) => {
+  try {
+    const voucher = await redeemVoucher(req.tenantId, req.params.codeOrId);
+    res.json({ success: true, voucher });
+  } catch (error) {
+    console.error("[LoyaltyRoutes] Error redeeming voucher:", error);
+    res.status(400).json({ error: error.message || "Error al canjear voucher" });
+  }
+});
+var loyalty_routes_default = router36;
+
+// src/server/routes/loyalty-customer.routes.ts
+init_env();
+import { Router as Router37 } from "express";
+import jwt4 from "jsonwebtoken";
+init_pool();
+var router37 = Router37();
+function signCustomerToken(customer) {
+  return jwt4.sign(
+    {
+      customerId: customer.id,
+      identification: customer.identification,
+      fullName: customer.fullName,
+      role: "loyalty_customer"
+    },
+    env.JWT_SECRET,
+    { expiresIn: "30d" }
+  );
+}
+function authenticateLoyaltyCustomer(req, res, next) {
+  const authHeader = req.headers["authorization"];
+  const token = authHeader && authHeader.split(" ")[1];
+  if (!token) {
+    res.status(401).json({ error: "No autorizado. Inicia sesi\xF3n en tu billetera de fidelidad." });
+    return;
+  }
+  try {
+    const decoded = jwt4.verify(token, env.JWT_SECRET);
+    if (decoded.role !== "loyalty_customer" || !decoded.identification) {
+      res.status(403).json({ error: "Token no v\xE1lido para cliente de fidelidad." });
+      return;
+    }
+    req.loyaltyCustomer = decoded;
+    next();
+  } catch (err) {
+    res.status(401).json({ error: "Sesi\xF3n expirada o inv\xE1lida. Inicia sesi\xF3n nuevamente." });
+  }
+}
+router37.post("/register", async (req, res) => {
+  try {
+    const { identification, fullName, phone, password } = req.body;
+    if (!identification || !fullName || !password) {
+      res.status(400).json({ error: "C\xE9dula, nombre completo y contrase\xF1a son requeridos" });
+      return;
+    }
+    const existing = await getLoyaltyCustomerByIdentification(identification);
+    if (existing) {
+      res.status(400).json({ error: "Ya existe una cuenta registrada con esta c\xE9dula. Inicia sesi\xF3n." });
+      return;
+    }
+    const customer = await createLoyaltyCustomer({
+      identification,
+      fullName,
+      phone,
+      password
+    });
+    const token = signCustomerToken(customer);
+    res.status(201).json({
+      success: true,
+      token,
+      customer
+    });
+  } catch (error) {
+    console.error("[LoyaltyCustomerRoutes] Register error:", error);
+    res.status(400).json({ error: error.message || "Error al crear cuenta" });
+  }
+});
+router37.post("/login", async (req, res) => {
+  try {
+    const { identification, password } = req.body;
+    if (!identification || !password) {
+      res.status(400).json({ error: "C\xE9dula y contrase\xF1a requeridas" });
+      return;
+    }
+    const customer = await verifyLoyaltyCustomerLogin(identification, password);
+    if (!customer) {
+      res.status(401).json({ error: "C\xE9dula o contrase\xF1a incorrecta" });
+      return;
+    }
+    const token = signCustomerToken(customer);
+    res.json({
+      success: true,
+      token,
+      customer
+    });
+  } catch (error) {
+    console.error("[LoyaltyCustomerRoutes] Login error:", error);
+    res.status(500).json({ error: error.message || "Error al iniciar sesi\xF3n" });
+  }
+});
+router37.get("/me", authenticateLoyaltyCustomer, async (req, res) => {
+  try {
+    const identification = req.loyaltyCustomer.identification;
+    const userRow = await getLoyaltyCustomerByIdentification(identification);
+    if (!userRow) {
+      res.status(404).json({ error: "Cliente no encontrado" });
+      return;
+    }
+    res.json({
+      id: userRow.id,
+      identification: userRow.identification,
+      fullName: userRow.full_name,
+      phone: userRow.phone,
+      createdAt: userRow.created_at
+    });
+  } catch (error) {
+    console.error("[LoyaltyCustomerRoutes] /me error:", error);
+    res.status(500).json({ error: "Error al obtener perfil" });
+  }
+});
+router37.get("/me/wallet", authenticateLoyaltyCustomer, async (req, res) => {
+  try {
+    const identification = req.loyaltyCustomer.identification;
+    const cards = await getCustomerWalletCards(identification);
+    res.json({ cards });
+  } catch (error) {
+    console.error("[LoyaltyCustomerRoutes] /wallet error:", error);
+    res.status(500).json({ error: "Error al obtener tarjetas de la billetera" });
+  }
+});
+router37.get("/me/vouchers", authenticateLoyaltyCustomer, async (req, res) => {
+  try {
+    const identification = req.loyaltyCustomer.identification;
+    const vouchers = await getCustomerVouchers(identification);
+    res.json({ vouchers });
+  } catch (error) {
+    console.error("[LoyaltyCustomerRoutes] /vouchers error:", error);
+    res.status(500).json({ error: "Error al obtener recompensas" });
+  }
+});
+router37.get("/public/:slug/program", async (req, res) => {
+  try {
+    const tenant = await getTenantBySlug(req.params.slug);
+    if (!tenant) {
+      res.status(404).json({ error: "Comercio no encontrado" });
+      return;
+    }
+    const program = await getLoyaltyProgram(tenant.id);
+    res.json({
+      tenantName: tenant.name,
+      tenantSlug: tenant.slug,
+      program: program && program.isActive ? program : null
+    });
+  } catch (error) {
+    console.error("[LoyaltyCustomerRoutes] public program error:", error);
+    res.status(500).json({ error: "Error al consultar programa" });
+  }
+});
+router37.get("/public/:slug/lookup", async (req, res) => {
+  try {
+    const { identification, phone } = req.query;
+    if (!identification && !phone) {
+      res.status(400).json({ error: "Debes proporcionar una c\xE9dula o tel\xE9fono" });
+      return;
+    }
+    const tenant = await getTenantBySlug(req.params.slug);
+    if (!tenant) {
+      res.status(404).json({ error: "Comercio no encontrado" });
+      return;
+    }
+    let card = null;
+    if (identification) {
+      card = await getLoyaltyCardByIdentification(tenant.id, String(identification));
+    }
+    if (!card && phone) {
+      card = await getLoyaltyCardByPhone(tenant.id, String(phone));
+    }
+    const program = await getLoyaltyProgram(tenant.id);
+    res.json({
+      found: !!card,
+      card,
+      program
+    });
+  } catch (error) {
+    console.error("[LoyaltyCustomerRoutes] lookup error:", error);
+    res.status(500).json({ error: "Error al consultar tarjeta" });
+  }
+});
+router37.get("/public/voucher/:code", async (req, res) => {
+  try {
+    const code = req.params.code;
+    const result = await query(`
+      SELECT v.*, t.name as tenant_name, t.slug as tenant_slug,
+             c.customer_name, c.identification as customer_id_num
+      FROM loyalty_rewards_vouchers v
+      JOIN tenants t ON t.id = v.tenant_id
+      JOIN loyalty_cards c ON c.id = v.card_id
+      WHERE v.voucher_code = $1
+    `, [code]);
+    if (result.rows.length === 0) {
+      res.status(404).json({ error: "Cup\xF3n no encontrado" });
+      return;
+    }
+    const v = result.rows[0];
+    const isExpired = new Date(v.expires_at) < /* @__PURE__ */ new Date();
+    res.json({
+      voucherCode: v.voucher_code,
+      tenantName: v.tenant_name,
+      tenantSlug: v.tenant_slug,
+      customerName: v.customer_name,
+      customerIdentification: v.customer_id_num,
+      rewardDescription: v.reward_description,
+      status: isExpired && v.status === "active" ? "expired" : v.status,
+      expiresAt: v.expires_at,
+      redeemedAt: v.redeemed_at
+    });
+  } catch (error) {
+    console.error("[LoyaltyCustomerRoutes] voucher check error:", error);
+    res.status(500).json({ error: "Error al consultar voucher" });
+  }
+});
+var loyalty_customer_routes_default = router37;
+
+// src/server/routes/seo.routes.ts
+init_pool();
+import { Router as Router38 } from "express";
+var router38 = Router38();
 var sitemapCache = null;
 var SITEMAP_TTL_MS = 60 * 60 * 1e3;
-router36.get("/robots.txt", (req, res) => {
+router38.get("/robots.txt", (req, res) => {
   const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
   const host = req.headers["x-forwarded-host"] || req.get("host") || "betico.tech";
   const baseUrl = `${protocol}://${host}`;
@@ -19893,7 +21091,7 @@ Sitemap: ${baseUrl}/sitemap.xml
   res.setHeader("Cache-Control", "public, max-age=86400");
   res.send(content);
 });
-router36.get("/sitemap.xml", async (req, res) => {
+router38.get("/sitemap.xml", async (req, res) => {
   const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
   const host = req.headers["x-forwarded-host"] || req.get("host") || "betico.tech";
   const baseUrl = `${protocol}://${host}`;
@@ -19967,7 +21165,7 @@ router36.get("/sitemap.xml", async (req, res) => {
     res.status(500).send("Error generating sitemap");
   }
 });
-var seo_routes_default = router36;
+var seo_routes_default = router38;
 
 // src/server/services/seo.service.ts
 var seoCache = /* @__PURE__ */ new Map();
@@ -20269,7 +21467,7 @@ async function startServer() {
       return next();
     }
     try {
-      const decoded = jwt4.verify(String(token), env.JWT_SECRET);
+      const decoded = jwt5.verify(String(token), env.JWT_SECRET);
       socket.data.user = decoded;
       next();
     } catch (err) {
@@ -20402,6 +21600,8 @@ async function startServer() {
   app.use("/api/records", records_routes_default);
   app.use("/api/almendro", almendro_routes_default);
   app.use("/api/superadmin/almendro", superadmin_almendro_routes_default);
+  app.use("/api/loyalty", loyalty_routes_default);
+  app.use("/api/loyalty-customer", publicLimiter, loyalty_customer_routes_default);
   app.use("/", seo_routes_default);
   if (env.NODE_ENV === "production") {
     app.use("/assets", express.static(path2.join(__dirname, "assets"), { maxAge: "1y", immutable: true }));

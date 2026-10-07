@@ -28,6 +28,7 @@ export function useApi() {
                            path.startsWith('/repartidor') || 
                            path.startsWith('/checkout') ||
                            path.startsWith('/order-success') ||
+                           path.startsWith('/fidelidad') ||
                            path.startsWith('/site') ||
                            path.startsWith('/login') ||
                            path === '/';

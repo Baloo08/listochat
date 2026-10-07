@@ -310,6 +310,8 @@ export interface StoreModulesConfig {
   storeEnabled: boolean;
   bookingsEnabled: boolean;
   courtsEnabled?: boolean;
+  branchesEnabled?: boolean;
+  loyaltyEnabled?: boolean;
 }
 
 export interface StoreSettings {
@@ -848,4 +850,102 @@ export interface ElectronicVoucher {
   metadata?: Record<string, any>;
   createdAt: string;
   updatedAt?: string;
+}
+
+// ==========================================
+// MÓDULO DE FIDELIZACIÓN (PUNTOS & SELLOS)
+// ==========================================
+
+export type LoyaltyProgramType = 'points' | 'stamps' | 'both';
+
+export interface LoyaltyProgram {
+  id: string;
+  tenantId: string;
+  isActive: boolean;
+  programType: LoyaltyProgramType;
+  currency: 'CRC' | 'USD';
+  pointsSpendRatio: number;      // Gasto requerido para acumular 1 punto (ej. ₡1.000)
+  pointsRedeemRatio: number;     // Valor monetario de cada punto al canjear (ej. ₡10)
+  pointsExpiryMonths?: number | null; // Meses de vigencia (null = no caduca)
+  stampsTarget: number;          // Total de sellos para completar tarjeta (ej. 10)
+  stampsPrize: string;           // Descripción del premio (ej. "1 Café Americano gratis")
+  minSpendPerStamp: number;      // Compra mínima para otorgar un sello (ej. ₡3.000)
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface LoyaltyCustomer {
+  id: string;
+  identification: string;        // Cédula única nacional o DIMEX/Pasaporte
+  fullName: string;
+  phone?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface LoyaltyCard {
+  id: string;
+  tenantId: string;
+  customerId?: string;
+  identification: string;        // Cédula del cliente (identificador maestro)
+  customerName: string;
+  customerPhone?: string;
+  pointsBalance: number;
+  currentStamps: number;
+  totalStampsRedeemed: number;
+  lastActivityAt?: string;
+  expiresAt?: string | null;
+  status: 'active' | 'suspended';
+  tenantName?: string;
+  tenantSlug?: string;
+  tenantLogoUrl?: string;
+  currency?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface LoyaltyRewardVoucher {
+  id: string;
+  tenantId: string;
+  cardId: string;
+  voucherCode: string;
+  qrData: string;
+  rewardDescription: string;
+  rewardType: 'stamps_complete' | 'points_redeem' | 'promo';
+  discountAmount?: number;
+  status: 'active' | 'redeemed' | 'expired';
+  expiresAt: string;
+  redeemedAt?: string | null;
+  tenantName?: string;
+  tenantSlug?: string;
+  createdAt: string;
+}
+
+export interface LoyaltyPromotion {
+  id: string;
+  tenantId: string;
+  title: string;
+  description?: string;
+  promoType: 'double_points' | 'bonus_stamps' | 'discount_percent';
+  multiplier: number;
+  minSpend: number;
+  startDate: string;
+  endDate: string;
+  active: boolean;
+  createdAt?: string;
+}
+
+export interface LoyaltyTransaction {
+  id: string;
+  tenantId: string;
+  cardId: string;
+  type: 'earn_points' | 'redeem_points' | 'earn_stamp' | 'redeem_prize' | 'expire' | 'manual_adjust';
+  pointsDelta: number;
+  stampsDelta: number;
+  balanceAfter: number;
+  stampsAfter: number;
+  orderId?: string;
+  notes?: string;
+  createdBy?: string;
+  createdAt: string;
 }

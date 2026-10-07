@@ -15,6 +15,8 @@ import { query } from '../db/pool.js';
 import { getTenantModelName } from './tenant-model.service.js';
 import { AgentProcessResult } from './agent.js';
 import { OrchestratorConfig } from '../../shared/types.js';
+import { getLoyaltySummaryForBot } from './loyalty.service.js';
+import { getLoyaltyProgram } from '../db/loyalty.repo.js';
 
 export type SubagentId = 'sales' | 'booking' | 'courts' | 'handoff' | 'general';
 
@@ -507,6 +509,44 @@ REGLAS DE CONSERJE FRONT-DESK:
     }
   }
 
+  // Loyalty & Rewards Context Assembly (if loyalty module enabled)
+  let loyaltyPromptSection = '';
+  if (store?.storeModules?.loyaltyEnabled) {
+    sourcesUsed.push('loyalty');
+    try {
+      const loyaltyProgram = await getLoyaltyProgram(tenantId);
+      if (loyaltyProgram && loyaltyProgram.isActive) {
+        const combinedText = `${userMessage} ${(chatHistory || []).slice(-2).map(h => h.content).join(' ')}`;
+        const isLoyaltyQuery = /puntos?|sellos?|fidelidad|fidelizacion|fidelización|lealtad|premio|beneficios|club|tarjeta/i.test(combinedText);
+        const cedulaMatch = combinedText.match(/\b([1-9]-?\d{4}-?\d{4}|[1-9]\d{8}|\d{10,12})\b/);
+        const identifier = cedulaMatch ? cedulaMatch[1].replace(/-/g, '') : cleanPhone;
+
+        let customerSummaryText = '';
+        if (isLoyaltyQuery || cedulaMatch) {
+          const summary = await getLoyaltySummaryForBot(tenantId, identifier);
+          customerSummaryText = summary.formattedText;
+        }
+
+        loyaltyPromptSection = `
+🌟 PROGRAMA DE FIDELIZACIÓN Y CLUB DE CLIENTES (*${tenant?.name || 'Comercio'}*):
+- Estado: Activo
+- Modalidad: ${loyaltyProgram.programType === 'points' ? 'Acumulación de Puntos' : loyaltyProgram.programType === 'stamps' ? 'Tarjeta de Sellos' : 'Puntos y Sellos'}
+${loyaltyProgram.programType !== 'stamps' ? `- Acumulación de puntos: 1 punto por cada ₡${Number(loyaltyProgram.pointsSpendRatio).toLocaleString('es-CR')} consumidos.` : ''}
+${loyaltyProgram.programType !== 'stamps' ? `- Valor de canje: Cada punto equivale a ₡${Number(loyaltyProgram.pointsRedeemRatio).toLocaleString('es-CR')} de descuento en compras.` : ''}
+${loyaltyProgram.programType !== 'points' ? `- Tarjeta de sellos: Meta de ${loyaltyProgram.stampsTarget} sellos. Premio al completar: *${loyaltyProgram.stampsPrize}* (Consumo mínimo por sello: ₡${Number(loyaltyProgram.minSpendPerStamp).toLocaleString('es-CR')}).` : ''}
+- Monedero Web de Clientes: https://betico.tech/fidelidad (Los clientes pueden consultar todas sus tarjetas, sellos y códigos QR).
+${customerSummaryText ? `\nDATOS DEL CLIENTE EN ESTA CONSULTA:\n${customerSummaryText}\n` : ''}
+REGLAS DE FIDELIZACIÓN:
+1. Si el cliente pregunta por sus puntos, sellos o premios, bríndale la información detallada con entusiasmo y cortesía.
+2. Si el cliente no ha proporcionado su cédula y desea consultar sus puntos o afiliarse, pídele amablemente su número de cédula física o jurídica (identificador oficial).
+3. Informa que las compras acumulan puntos/sellos automáticamente asociando su cédula.
+`.trim();
+      }
+    } catch (err) {
+      console.error('[Orchestrator] Loyalty prompt build error:', err);
+    }
+  }
+
   // 4. Construct AI Messages Array with Supervisor Directives & 2-Hour Session Memory
   let isSessionActive = options?.isWithin2Hours ?? false;
   let lastMinutes = options?.lastInteractionMinutesAgo ?? null;
@@ -572,7 +612,7 @@ La ÚNICA fuente de verdad sobre servicios, precios y horarios es la provista en
 La ÚNICA fuente de verdad sobre canchas y tarifas es la provista en tus instrucciones. No inventes canchas ni confirmes reservas fuera de la disponibilidad oficial.`;
   }
 
-  const finalSystemPrompt = `${supervisorDirectives}${specializedPrompt}\n\n${chatFirstDirectives}\n\n${naturalToneDirective}\n\n${sessionGreetingDirective}${antiHallucinationGuardrail ? `\n\n${antiHallucinationGuardrail}` : ''}`;
+  const finalSystemPrompt = `${supervisorDirectives}${specializedPrompt}\n\n${chatFirstDirectives}\n\n${naturalToneDirective}\n\n${sessionGreetingDirective}${loyaltyPromptSection ? `\n\n${loyaltyPromptSection}` : ''}${antiHallucinationGuardrail ? `\n\n${antiHallucinationGuardrail}` : ''}`;
 
   const structuredMessages: Array<{ role: 'user' | 'assistant', content: string }> = [];
   if (chatHistory && chatHistory.length > 0) {

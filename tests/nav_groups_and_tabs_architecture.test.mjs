@@ -87,7 +87,17 @@ function buildTenantNavGroups({
       ]
     }] : []),
 
-    // 7. CONFIGURACIÓN
+    // 7. FIDELIZACIÓN (Condicional por loyaltyEnabled)
+    ...(storeModules.loyaltyEnabled ? [{
+      title: 'FIDELIZACIÓN',
+      items: [
+        { id: 'fidelidad_ajustes', label: 'Ajustes de Tarjeta' },
+        { id: 'fidelidad_clientes', label: 'Clientes Registrados' },
+        { id: 'fidelidad_promociones', label: 'Promociones Activas' }
+      ]
+    }] : []),
+
+    // 8. CONFIGURACIÓN
     {
       title: 'CONFIGURACIÓN',
       items: [
@@ -265,5 +275,23 @@ test('Navigation Structure & Grouping Architecture Tests', async (t) => {
     for (const reqId of requiredIds) {
       assert.ok(activeIds.includes(reqId), `Required ID ${reqId} must exist in navigation`);
     }
+  });
+
+  await t.test('7. Loyalty Module Navigation Activation', () => {
+    const groups = buildTenantNavGroups({
+      storeMode: 'retail',
+      storeModules: { storeEnabled: true, bookingsEnabled: true, courtsEnabled: false, branchesEnabled: false, loyaltyEnabled: true },
+      tenantPlan: 'starter'
+    });
+
+    const loyaltyGroup = groups.find(g => g.title === 'FIDELIZACIÓN');
+    assert.ok(loyaltyGroup, 'FIDELIZACIÓN section must exist when loyaltyEnabled is true');
+    assert.equal(loyaltyGroup.items.length, 3);
+    assert.equal(loyaltyGroup.items[0].id, 'fidelidad_ajustes');
+    assert.equal(loyaltyGroup.items[0].label, 'Ajustes de Tarjeta');
+    assert.equal(loyaltyGroup.items[1].id, 'fidelidad_clientes');
+    assert.equal(loyaltyGroup.items[1].label, 'Clientes Registrados');
+    assert.equal(loyaltyGroup.items[2].id, 'fidelidad_promociones');
+    assert.equal(loyaltyGroup.items[2].label, 'Promociones Activas');
   });
 });
