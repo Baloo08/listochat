@@ -7,6 +7,7 @@ import { sendMessage } from '../services/evolution.js';
 import { query } from '../db/pool.js';
 import { getTenantPaymentConfig } from '../db/tenant-payment.repo.js';
 import { TilopayTenantService } from '../services/tilopay-tenant.service.js';
+import { validateCoupon, redeemCoupon } from '../services/coupon.service.js';
 
 const router = Router();
 
@@ -255,6 +256,27 @@ router.get('/:slug/products/:productSlug', async (req, res) => {
   }
 });
 
+// 3.5. Validate Discount Coupon (Promo or Loyalty Voucher)
+router.post('/:slug/coupon/validate', async (req, res) => {
+  try {
+    const tenant = await getTenantBySlug(req.params.slug);
+    if (!tenant) {
+      res.status(404).json({ error: 'Tienda no encontrada' });
+      return;
+    }
+    const { code, subtotal } = req.body;
+    const result = await validateCoupon(tenant.id, code, Number(subtotal || 0));
+    if (!result.valid) {
+      res.status(400).json(result);
+      return;
+    }
+    res.json(result);
+  } catch (error: any) {
+    console.error('Storefront coupon validation error:', error);
+    res.status(500).json({ error: error.message || 'Error al validar cupón' });
+  }
+});
+
 // 4. Create Order / Checkout
 router.post('/:slug/checkout', async (req, res) => {
   try {
@@ -366,7 +388,18 @@ router.post('/:slug/checkout', async (req, res) => {
 
     const isDelivery = consumptionMode === 'delivery' || deliveryMethod === 'delivery';
     const deliveryFee = (isDelivery && store?.deliveryEnabled) ? Number(store.deliveryFee || 0) : 0;
-    const total = subtotal + deliveryFee;
+
+    let appliedDiscount = 0;
+    let validCouponCode: string | null = null;
+    if (req.body.couponCode) {
+      const couponCheck = await validateCoupon(tenant.id, req.body.couponCode, subtotal);
+      if (couponCheck.valid && couponCheck.discountAmount) {
+        appliedDiscount = couponCheck.discountAmount;
+        validCouponCode = couponCheck.code || req.body.couponCode;
+      }
+    }
+
+    const total = Math.max(0, subtotal - appliedDiscount + deliveryFee);
 
     const order = await createOrder(
       tenant.id,
@@ -381,6 +414,9 @@ router.post('/:slug/checkout', async (req, res) => {
         source: 'store',
         subtotal,
         deliveryFee,
+        discount: appliedDiscount,
+        discountAmount: appliedDiscount,
+        couponCode: validCouponCode || undefined,
         total,
         paymentMethod,
         paymentStatus: (paymentProofUrl || paymentReference) ? 'proof_sent' : 'pending',
@@ -394,6 +430,12 @@ router.post('/:slug/checkout', async (req, res) => {
       },
       formattedItems
     );
+
+    if (validCouponCode) {
+      await redeemCoupon(tenant.id, validCouponCode, order.id).catch(err => {
+        console.warn('[Storefront] Error redimiendo cupón post-orden:', err?.message || err);
+      });
+    }
 
     // Associate branch if provided (validando aislamiento multi-tenant)
     if (req.body.branchId) {

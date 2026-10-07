@@ -447,8 +447,39 @@ export interface Order {
   estimatedDelivery?: Date;
   chatMessageId?: string;
   billingInfo?: CustomerBillingInfo;
+  couponCode?: string;
+  discountAmount?: number;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface DiscountCoupon {
+  id: string;
+  tenantId: string;
+  code: string;
+  description?: string;
+  discountType: 'percentage' | 'fixed';
+  discountValue: number;
+  minOrderAmount: number;
+  maxDiscountAmount?: number;
+  usageLimit?: number;
+  usedCount: number;
+  validFrom?: string | Date;
+  validUntil?: string | Date;
+  active: boolean;
+  createdAt?: string | Date;
+  updatedAt?: string | Date;
+}
+
+export interface CouponValidationResult {
+  valid: boolean;
+  error?: string;
+  code?: string;
+  couponType?: 'promo' | 'loyalty_voucher';
+  discountType?: 'percentage' | 'fixed';
+  discountValue?: number;
+  discountAmount?: number;
+  description?: string;
 }
 
 export interface TenantPaymentConfig {

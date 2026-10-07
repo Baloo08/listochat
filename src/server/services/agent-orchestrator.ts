@@ -39,6 +39,34 @@ export function formatMediaUrl(url: string, baseUrl?: string): string {
   return `${cleanBase}/${cleanPath}`;
 }
 
+export function normalizeSearchString(text: string): string {
+  return (text || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+export function extractProductImageUrls(images: any): string[] {
+  if (!images) return [];
+  let parsed = images;
+  if (typeof images === 'string') {
+    try {
+      parsed = JSON.parse(images);
+    } catch {
+      return images.startsWith('http') || images.startsWith('/') ? [images] : [];
+    }
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed
+    .map((img: any) => {
+      if (typeof img === 'string') return img;
+      if (img && typeof img === 'object' && typeof img.url === 'string') return img.url;
+      return null;
+    })
+    .filter((url): url is string => Boolean(url && url.length > 2 && url !== '['));
+}
+
 export function safeParseJSON(rawStr: string): any {
   if (!rawStr || typeof rawStr !== 'string') return null;
   let cleaned = rawStr.trim();
@@ -217,34 +245,41 @@ export async function processWithOrchestrator(
       const activeProducts = products.filter(p => p.active !== false);
       salesActiveProducts = activeProducts;
 
-      // Match products relevant to query with stop-word filtering
+      // Match products relevant to query with accent-insensitive and stop-word filtering
       const SPANISH_STOP_WORDS = new Set([
         'para', 'este', 'esta', 'estos', 'estas', 'como', 'todo', 'toda', 'todos', 'todas',
         'puede', 'tiene', 'tienen', 'desde', 'hasta', 'sobre', 'entre', 'hacer', 'bien',
-        'solo', 'otro', 'otra', 'otros', 'otras', 'aquí', 'aqui', 'también', 'tambien',
-        'porque', 'cuando', 'donde', 'pero', 'algo', 'nada', 'están', 'estan', 'hola',
-        'buenas', 'buenos', 'tardes', 'noches', 'días', 'dias', 'favor', 'gracias',
-        'nuestro', 'nuestra', 'nuestros', 'nuestras', 'usted', 'ustedes'
+        'solo', 'otro', 'otra', 'otros', 'otras', 'aqui', 'tambien',
+        'porque', 'cuando', 'donde', 'pero', 'algo', 'nada', 'estan', 'hola',
+        'buenas', 'buenos', 'tardes', 'noches', 'dias', 'favor', 'gracias',
+        'nuestro', 'nuestra', 'nuestros', 'nuestras', 'usted', 'ustedes',
+        'foto', 'fotos', 'imagen', 'imagenes', 'fotografia', 'fotografias',
+        'precio', 'costo', 'venden', 'comprar'
       ]);
 
-      const lowerMsgOnly = userMessage.toLowerCase();
-      const lowerContext = `${(chatHistory || []).slice(-2).map(h => h.content).join(' ')} ${userMessage}`.toLowerCase();
+      const normUserMsg = normalizeSearchString(userMessage);
+      const normContext = normalizeSearchString(`${(chatHistory || []).slice(-3).map(h => h.content).join(' ')} ${userMessage}`);
 
       let matchedProducts = activeProducts.filter(p => {
-        const pName = p.name.toLowerCase();
-        const pCat = (p.category || '').toLowerCase();
-        // 1. Direct name match
-        if (lowerContext.includes(pName)) return true;
-        // 2. Significant name tokens (>3 chars, not stop words)
-        const nameTokens = pName.split(/[\s\-_,./]+/).filter(w => w.length > 3 && !SPANISH_STOP_WORDS.has(w));
-        if (nameTokens.length > 0 && nameTokens.some(t => lowerContext.includes(t))) return true;
+        const normName = normalizeSearchString(p.name);
+        const normCat = normalizeSearchString(p.category || '');
+
+        // 1. Direct name match in normalized context
+        if (normContext.includes(normName)) return true;
+        if (normName.includes(normUserMsg) && normUserMsg.length >= 3) return true;
+
+        // 2. Significant name tokens (>=3 chars, not stop words)
+        const nameTokens = normName.split(/[\s\-_,./]+/).filter(w => w.length >= 3 && !SPANISH_STOP_WORDS.has(w));
+        if (nameTokens.length > 0 && nameTokens.some(t => normContext.includes(t))) return true;
+
         // 3. Category match
-        if (pCat && pCat.length > 3 && !SPANISH_STOP_WORDS.has(pCat) && lowerContext.includes(pCat)) return true;
-        // 4. Description keywords (>5 chars, not stop words) evaluated against current message
-        const pDesc = (p.description || '').toLowerCase();
-        if (pDesc) {
-          const descTokens = pDesc.split(/[\s\-_,./]+/).filter(w => w.length > 5 && !SPANISH_STOP_WORDS.has(w));
-          if (descTokens.some(w => lowerMsgOnly.includes(w))) return true;
+        if (normCat && normCat.length >= 3 && !SPANISH_STOP_WORDS.has(normCat) && normContext.includes(normCat)) return true;
+
+        // 4. Description keywords (>=4 chars, not stop words) evaluated against current message
+        const normDesc = normalizeSearchString(p.description || '');
+        if (normDesc) {
+          const descTokens = normDesc.split(/[\s\-_,./]+/).filter(w => w.length >= 4 && !SPANISH_STOP_WORDS.has(w));
+          if (descTokens.some(w => normUserMsg.includes(w))) return true;
         }
         return false;
       });
@@ -253,7 +288,7 @@ export async function processWithOrchestrator(
       if (activeProducts.length === 0) {
         catalogAlert = '⚠️ CATÁLOGO VACÍO: Actualmente no hay productos registrados en el inventario. Informa amablemente que el catálogo está en actualización y ofrece comunicar con un asesor humano.\n';
       } else if (matchedProducts.length === 0) {
-        catalogAlert = `⚠️ AVISO DE INVENTARIO: El cliente está consultando o buscando un artículo que NO coincide con ningún producto registrado en el inventario oficial. TIENES TERMINANTEMENTE PROHIBIDO inventar que disponen de ese artículo o inventar precios o existencias. Debes aclararle con amabilidad y calidez (*"Disculpa ${senderName}, en este momento no disponemos de ese artículo en nuestro catálogo"*) y ofrecerle las opciones reales que sí comercializan (listadas abajo como sugerencias del comercio).\n`;
+        catalogAlert = `⚠️ AVISO DE INVENTARIO: El cliente está consultando o buscando un artículo que NO coincide con ningún producto registrado en el inventario oficial. TIENES TERMINANTEMENTE PROHIBIDO inventar que disponen de ese artículo o inventar precios o existencias. Debes aclararle con amabilidad y calidez (*"Disculpa ${customerFirstName}, en este momento no disponemos de ese artículo en nuestro catálogo"*) y ofrecerle las opciones reales que sí comercializan (listadas abajo como sugerencias del comercio).\n`;
         matchedProducts = activeProducts.slice(0, 6);
       }
       salesMatchedProducts = matchedProducts;
@@ -273,13 +308,10 @@ export async function processWithOrchestrator(
           const optStr = p.customVariables.map((cv: any) => `${cv.name}: [${(cv.options || []).map((o: any) => o.name).join(', ')}]`).join(' | ');
           line += `\n  Opciones/Extras: ${optStr}`;
         }
-        if (p.images && p.images.length > 0) {
-          const firstImg = p.images[0];
-          const rawUrl = typeof firstImg === 'string' ? firstImg : firstImg?.url;
-          if (rawUrl) {
-            const pUrl = formatMediaUrl(rawUrl, baseUrl);
-            line += `\n  Foto oficial: ${pUrl}`;
-          }
+        const imgUrls = extractProductImageUrls(p.images);
+        if (imgUrls.length > 0) {
+          const pUrl = formatMediaUrl(imgUrls[0], baseUrl);
+          line += `\n  Foto oficial: ${pUrl}`;
         }
         return line;
       }).join('\n\n');
@@ -326,19 +358,24 @@ REGLAS DE ORO DE VENTA Y CIERRE DE PEDIDOS (CALIDEZ TICA Y CERO ALUCINACIÓN):
    - Tan pronto el cliente haya definido los productos/cantidades e indique su método de pago (ej: "por sinpe", "en efectivo", "transferencia") o confirme la compra (ej: "sí", "listo", "de acuerdo", "hágamelo", "confirmo"):
      a) Confírmale el pedido de inmediato con alegría y calidez (*"¡Listo ${customerFirstName}! He registrado tu pedido con éxito..."*), resumiendo los artículos, el gran total a pagar y las instrucciones de pago o entrega.
      b) ES ESTRICTAMENTE OBLIGATORIO que emitas al final del mensaje la directiva de orden para que el sistema cree el registro en la base de datos:
-     <<<COMMAND_ORDER: {"items":[{"productName":"Nombre Exacto","variantName":"opcional","quantity":1}], "deliveryMethod":"delivery"|"pickup", "deliveryAddress":"dirección si aplica", "paymentMethod":"sinpe"|"transfer"|"cash", "customerName":"${customerFirstName}"}>>>
+     <<<COMMAND_ORDER: {"items":[{"productName":"Nombre Exacto","variantName":"opcional","quantity":1}], "deliveryMethod":"delivery"|"pickup", "deliveryAddress":"dirección si aplica", "paymentMethod":"sinpe"|"transfer"|"cash", "customerName":"${customerFirstName}", "couponCode":"opcional si aplica"}>>>
    - NUNCA digas que el pedido está confirmado sin emitir la directiva <<<COMMAND_ORDER: ...>>>.
 6. Si el producto tiene variantes (sabores, colores, tallas) registradas en el catálogo, consúltale cuál prefiere.
 7. Venta consultiva y cruzada: Si el cliente pide recomendaciones, sugiérele los destacados o un acompañamiento del catálogo real.
-8. ENVÍO NATIVO DE FOTOGRAFÍAS Y MULTIMEDIA (CERO CORCHETES / CERO URLs EN EL TEXTO):
-   - Si el cliente solicita fotos, imágenes o ver cómo es un producto y este cuenta con "Foto oficial: <URL>" en el catálogo:
+8. ENVÍO NATIVO DE FOTOGRAFÍAS, CATÁLOGOS Y DOCUMENTOS (CERO CORCHETES / CERO URLs EN EL TEXTO):
+   - Si el cliente solicita fotos, imágenes, ver cómo es un producto o pide un archivo/documento/menú y este cuenta con "Foto oficial: <URL>" en el catálogo oficial:
      a) Descríbele el artículo con calidez y su precio en tu respuesta de texto.
      b) ES ESTRICTAMENTE OBLIGATORIO emitir al final del mensaje la directiva:
         <<<COMMAND_SEND_MEDIA: {"mediaUrl":"<URL exacto de Foto oficial>","caption":"<Nombre del producto> - ₡<precio>"}>>>
-     c) PROHIBICIÓN TERMINANTE: NUNCA escribas la URL en el texto de tu respuesta y NUNCA generes textos de plantilla entre corchetes como "[Inserta aquí las URLs de las imágenes]" ni "[Foto]". El sistema se encarga de enviar la fotografía nativa al WhatsApp del cliente con la descripción adjunta.
+     c) PROHIBICIÓN TERMINANTE: NUNCA escribas la URL en el texto de tu respuesta y NUNCA generes textos de plantilla entre corchetes como "[Inserta aquí las URLs de las imágenes]" ni "[Foto]". El sistema se encarga de enviar la fotografía o archivo nativo al WhatsApp del cliente con la descripción adjunta.
    - Si el producto consultado NO cuenta con "Foto oficial" en el catálogo:
      a) Sé honesto y transparente con calidez tica (*"Con mucho gusto te describo [Producto]... En este momento no dispongo de una fotografía oficial cargada en el sistema, pero con mucho gusto te detallo sus características..."*).
      b) ESTÁ PROHIBIDO decir que le envías fotos o inventar imágenes o placeholders si no hay foto oficial en el catálogo.
+9. MANEJO DE CUPONES DE DESCUENTO Y PREMIOS DE FIDELIDAD:
+   - Si el cliente menciona que tiene un cupón de descuento, código promocional o código de premio de Betico Club (ej: "tengo un cupón: VERANO10", "mi código es PRM-XXXX-XXXX"), o consulta si dispone de descuentos:
+     a) Salúdalo y toma nota de su código alfanumérico.
+     b) Aplica el descuento al desglose de precios informándolo con amabilidad y alegría costarricense (*"¡Excelente ${customerFirstName}! Con mucho gusto aplicamos tu cupón a tu pedido..."*).
+     c) Al emitir la directiva de confirmación <<<COMMAND_ORDER: ...>>>, incluye el atributo 'couponCode':'<CÓDIGO>'.
 `.trim();
       break;
     }
@@ -874,23 +911,69 @@ La ÚNICA fuente de verdad sobre puntos, sellos y premios es la provista en tus 
     }
   }
 
-  // Auto-Recovery Guardrail: If client explicitly requested photos/images, but the LLM omitted the tag,
-  // find the product in matchedProducts that has a photo and auto-attach the media!
-  if (!isMediaDetected && allowedActions.includes('media') && /foto|imagen|fotos|imagenes|imágenes/i.test(userMessage)) {
-    const prodWithImg = (salesMatchedProducts || []).find((p: any) => {
-      const firstImg = p.images?.[0];
-      const rawUrl = typeof firstImg === 'string' ? firstImg : firstImg?.url;
-      return Boolean(rawUrl);
+  // Auto-Recovery Guardrail: If client requested photos/images/files, but the LLM omitted the tag,
+  // find the matching product in the catalog that has photos or documents and GUARANTEE the media delivery!
+  const isMediaInquiry = /foto|imagen|fotos|imagenes|imágenes|fotografia|fotografía|archivo|pdf|menu|menú|catalogo|catálogo/i.test(userMessage) ||
+    /muestrame|muéstrame|mandame|mándame|pasa|pasame|pásame|ver el |ver la |tienen fotos/i.test(userMessage);
+
+  if (!isMediaDetected && allowedActions.includes('media') && isMediaInquiry) {
+    const normMsg = normalizeSearchString(userMessage);
+    const normHistory = normalizeSearchString(`${(chatHistory || []).slice(-2).map(h => h.content).join(' ')} ${rawReply}`);
+
+    // Candidate pool: salesMatchedProducts first, fallback to all active tenant products
+    const candidatePool = (salesMatchedProducts && salesMatchedProducts.length > 0)
+      ? salesMatchedProducts
+      : (salesActiveProducts || []);
+
+    // 1. Try to find product specifically mentioned in user message, recent history or bot reply
+    let prodWithImg = candidatePool.find((p: any) => {
+      const pNorm = normalizeSearchString(p.name);
+      const isMentioned = normHistory.includes(pNorm) || normMsg.includes(pNorm);
+      const imgs = extractProductImageUrls(p.images);
+      return isMentioned && imgs.length > 0;
     });
+
+    // 2. Try tokens from product name
+    if (!prodWithImg) {
+      prodWithImg = candidatePool.find((p: any) => {
+        const pNorm = normalizeSearchString(p.name);
+        const tokens = pNorm.split(/[\s\-_,./]+/).filter(w => w.length >= 3);
+        const hasTokenInMsg = tokens.some(t => normMsg.includes(t) || normHistory.includes(t));
+        const imgs = extractProductImageUrls(p.images);
+        return hasTokenInMsg && imgs.length > 0;
+      });
+    }
+
+    // 3. Fallback to any candidate in matched products with an image
+    if (!prodWithImg) {
+      prodWithImg = candidatePool.find((p: any) => {
+        const imgs = extractProductImageUrls(p.images);
+        return imgs.length > 0;
+      });
+    }
+
+    // 4. Fallback to any active tenant product with an image if candidatePool had none
+    if (!prodWithImg && salesActiveProducts && salesActiveProducts.length > 0) {
+      prodWithImg = salesActiveProducts.find((p: any) => {
+        const imgs = extractProductImageUrls(p.images);
+        return imgs.length > 0;
+      });
+    }
+
     if (prodWithImg) {
-      const firstImg = prodWithImg.images[0];
-      const rawUrl = typeof firstImg === 'string' ? firstImg : firstImg?.url;
-      isMediaDetected = true;
-      mediaData = {
-        mediaUrl: formatMediaUrl(rawUrl, baseUrl),
-        caption: `${prodWithImg.name} - ₡${Number(prodWithImg.price || 0).toLocaleString('es-CR')}`
-      };
-      console.log(`[Orchestrator] 🎯 AUTO-RECOVERY: Media command automatically attached for product "${prodWithImg.name}"`);
+      const imgUrls = extractProductImageUrls(prodWithImg.images);
+      if (imgUrls.length > 0) {
+        const primaryUrl = imgUrls[0];
+        const isDoc = /\.pdf($|\?)/i.test(primaryUrl);
+        isMediaDetected = true;
+        mediaData = {
+          mediaUrl: formatMediaUrl(primaryUrl, baseUrl),
+          caption: `${prodWithImg.name} - ₡${Number(prodWithImg.price || 0).toLocaleString('es-CR')}`,
+          mediaType: isDoc ? 'document' : 'image',
+          fileName: isDoc ? `${prodWithImg.slug || 'producto'}.pdf` : undefined
+        };
+        console.log(`[Orchestrator] 🎯 AUTO-RECOVERY: Media command successfully attached for product "${prodWithImg.name}" (${mediaData.mediaUrl})`);
+      }
     }
   }
 

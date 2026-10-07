@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Gift, Award, QrCode, LogOut, Check, Copy, ExternalLink, 
+  Gift, Award, Ticket, Tag, LogOut, Check, Copy, ExternalLink, 
   RefreshCw, AlertCircle, Sparkles, User, Lock, Phone, 
-  CreditCard, ChevronRight, ShieldCheck, CheckCircle2, Store
+  CreditCard, ChevronRight, ShieldCheck, CheckCircle2, Store, ShoppingBag
 } from 'lucide-react';
-import { QRCodeSVG } from 'qrcode.react';
 import { LoyaltyCard, LoyaltyRewardVoucher } from '../../shared/types';
 
 interface LoyaltyWalletCustomerAppProps {
@@ -173,9 +172,23 @@ export default function LoyaltyWalletCustomerApp({ tenantSlug }: LoyaltyWalletCu
   };
 
   const handleCopyCode = (code: string) => {
-    navigator.clipboard.writeText(code);
-    setCopiedCode(code);
-    setTimeout(() => setCopiedCode(null), 3000);
+    try {
+      if (navigator?.clipboard?.writeText) {
+        navigator.clipboard.writeText(code);
+      } else {
+        const textArea = document.createElement('textarea');
+        textArea.value = code;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+      }
+      setCopiedCode(code);
+      setTimeout(() => setCopiedCode(null), 3000);
+    } catch (e) {
+      setCopiedCode(code);
+      setTimeout(() => setCopiedCode(null), 3000);
+    }
   };
 
   return (
@@ -500,7 +513,7 @@ export default function LoyaltyWalletCustomerApp({ tenantSlug }: LoyaltyWalletCu
           /* ------------------------------------------------------------- */
           <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
             
-            {/* User Greeting & Stats Bar */}
+            {/* User Greeting y Stats Bar */}
             <div style={{
               backgroundColor: '#1e293b',
               color: '#ffffff',
@@ -567,8 +580,8 @@ export default function LoyaltyWalletCustomerApp({ tenantSlug }: LoyaltyWalletCu
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
                 }}
               >
-                <Award size={18} />
-                <span>Mis Premios & QR ({safeVouchers.length})</span>
+                <Ticket size={18} />
+                <span>Mis Cupones y Premios ({safeVouchers.length})</span>
               </button>
             </div>
 
@@ -773,7 +786,7 @@ export default function LoyaltyWalletCustomerApp({ tenantSlug }: LoyaltyWalletCu
             )}
 
             {/* ------------------------------------------------------------- */}
-            {/* TAB: MIS PREMIOS & CODIGOS QR */}
+            {/* TAB: MIS CUPONES Y PREMIOS (SIN QR) */}
             {/* ------------------------------------------------------------- */}
             {!loadingData && activeTab === 'vouchers' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -782,25 +795,29 @@ export default function LoyaltyWalletCustomerApp({ tenantSlug }: LoyaltyWalletCu
                     backgroundColor: '#ffffff', borderRadius: '16px', padding: '36px 20px',
                     textAlign: 'center', border: '1px solid #e2e8f0', color: '#64748b'
                   }}>
-                    <Award size={42} color="#94a3b8" style={{ margin: '0 auto 12px' }} />
+                    <Ticket size={42} color="#94a3b8" style={{ margin: '0 auto 12px' }} />
                     <h3 style={{ margin: '0 0 6px', fontSize: '1.1rem', color: '#1e293b' }}>
                       Aún no tienes premios para canjear
                     </h3>
                     <p style={{ margin: 0, fontSize: '0.84rem' }}>
-                      Completa los sellos de tus comercios favoritos para desbloquear códigos QR y premios exclusivos en caja.
+                      Completa los sellos de tus comercios favoritos para desbloquear cupones de descuento y premios exclusivos en caja, tienda o WhatsApp.
                     </p>
                   </div>
                 ) : (
                   safeVouchers.map((v: any) => {
                     const isRedeemed = v.status === 'redeemed';
+                    const targetTenantSlug = v.tenantSlug || tenantSlug || '';
+                    const storeUrl = targetTenantSlug ? `/tienda/${targetTenantSlug}?cupon=${v.voucherCode}` : null;
+                    const isCopied = copiedCode === v.voucherCode;
+
                     return (
                       <div
                         key={v.id}
                         style={{
                           backgroundColor: '#ffffff',
-                          borderRadius: '18px',
+                          borderRadius: '16px',
                           border: isRedeemed ? '1px solid #e2e8f0' : '2px solid #10b981',
-                          boxShadow: '0 6px 20px rgba(0,0,0,0.05)',
+                          boxShadow: isRedeemed ? '0 2px 8px rgba(0,0,0,0.03)' : '0 8px 24px rgba(16, 185, 129, 0.12)',
                           overflow: 'hidden',
                           display: 'flex',
                           flexDirection: 'column',
@@ -809,89 +826,132 @@ export default function LoyaltyWalletCustomerApp({ tenantSlug }: LoyaltyWalletCu
                       >
                         {/* Header */}
                         <div style={{
-                          padding: '14px 20px',
+                          padding: '12px 18px',
                           backgroundColor: isRedeemed ? '#f8fafc' : '#ecfdf5',
                           borderBottom: '1px solid #e2e8f0',
                           display: 'flex',
                           justifyContent: 'space-between',
                           alignItems: 'center'
                         }}>
-                          <strong style={{ fontSize: '1.02rem', color: isRedeemed ? '#64748b' : '#065f46' }}>
-                            {v.tenantName || 'Premio de Lealtad'}
-                          </strong>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <Ticket size={18} color={isRedeemed ? '#64748b' : '#059669'} />
+                            <strong style={{ fontSize: '0.95rem', color: isRedeemed ? '#64748b' : '#065f46' }}>
+                              {v.tenantName || 'Premio de Fidelidad'}
+                            </strong>
+                          </div>
 
                           <span style={{
-                            padding: '3px 10px', borderRadius: '12px', fontSize: '0.74rem', fontWeight: '800',
+                            padding: '4px 10px',
+                            borderRadius: '12px',
+                            fontSize: '0.72rem',
+                            fontWeight: '800',
                             backgroundColor: isRedeemed ? '#e2e8f0' : '#10b981',
                             color: isRedeemed ? '#64748b' : '#ffffff'
                           }}>
-                            {isRedeemed ? 'CANJEADO' : '¡LISTO PARA CANJE!'}
+                            {isRedeemed ? 'CANJEADO' : 'LISTO PARA USAR'}
                           </span>
                         </div>
 
-                        {/* QR Code and Info */}
+                        {/* Main Voucher Info */}
                         <div style={{
-                          padding: '24px 20px',
+                          padding: '20px 18px',
                           display: 'flex',
                           flexDirection: 'column',
-                          alignItems: 'center',
-                          gap: '16px',
-                          textAlign: 'center'
+                          gap: '14px'
                         }}>
-                          {/* QR Code Container */}
-                          <div style={{
-                            padding: '12px',
-                            backgroundColor: '#ffffff',
-                            borderRadius: '14px',
-                            border: '1px solid #e2e8f0',
-                            boxShadow: '0 4px 12px rgba(0,0,0,0.06)'
-                          }}>
-                            <QRCodeSVG
-                              value={v.qrData || v.voucherCode}
-                              size={170}
-                              level="M"
-                            />
-                          </div>
-
                           <div>
-                            <div style={{ fontSize: '1.15rem', fontWeight: '800', color: '#0f172a' }}>
+                            <div style={{ fontSize: '1.2rem', fontWeight: '800', color: '#0f172a' }}>
                               {v.rewardDescription}
                             </div>
-                            <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '4px' }}>
-                              Presenta este código en caja al momento de tu compra
+                            <div style={{ fontSize: '0.82rem', color: '#64748b', marginTop: '4px' }}>
+                              {isRedeemed 
+                                ? 'Este cupón ya fue canjeado en una compra previa.' 
+                                : 'Código alfanumérico para aplicar en tienda online, dictar por WhatsApp o canjear en caja física.'}
                             </div>
                           </div>
 
-                          {/* Code Display with Copy Button */}
+                          {/* Voucher Alphanumeric Box */}
                           <div style={{
-                            display: 'inline-flex',
+                            backgroundColor: isRedeemed ? '#f1f5f9' : '#f0fdf4',
+                            borderRadius: '12px',
+                            border: isRedeemed ? '1.5px dashed #cbd5e1' : '2px dashed #34d399',
+                            padding: '14px',
+                            display: 'flex',
+                            flexDirection: 'column',
                             alignItems: 'center',
-                            gap: '8px',
-                            backgroundColor: '#f1f5f9',
-                            padding: '8px 16px',
-                            borderRadius: '10px',
-                            border: '1px solid #cbd5e1'
+                            gap: '10px'
                           }}>
-                            <span style={{ fontFamily: 'monospace', fontWeight: '800', fontSize: '1.05rem', letterSpacing: '1px' }}>
-                              {v.voucherCode}
+                            <span style={{ fontSize: '0.72rem', fontWeight: '700', color: isRedeemed ? '#64748b' : '#047857', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                              Código de Descuento
                             </span>
-                            <button
-                              type="button"
-                              onClick={() => handleCopyCode(v.voucherCode)}
-                              title="Copiar código"
+
+                            <div style={{
+                              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                              fontSize: '1.4rem',
+                              fontWeight: '900',
+                              letterSpacing: '2px',
+                              color: isRedeemed ? '#64748b' : '#065f46',
+                              userSelect: 'all'
+                            }}>
+                              {v.voucherCode}
+                            </div>
+
+                            {!isRedeemed && (
+                              <button
+                                type="button"
+                                onClick={() => handleCopyCode(v.voucherCode)}
+                                style={{
+                                  width: '100%',
+                                  minHeight: '44px',
+                                  padding: '10px 16px',
+                                  borderRadius: '8px',
+                                  border: 'none',
+                                  backgroundColor: isCopied ? '#16a34a' : '#059669',
+                                  color: '#ffffff',
+                                  fontWeight: '700',
+                                  fontSize: '0.88rem',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '8px',
+                                  transition: 'all 0.15s ease'
+                                }}
+                              >
+                                {isCopied ? <Check size={18} strokeWidth={3} /> : <Copy size={18} />}
+                                <span>{isCopied ? '¡Código Copiado al Portapapeles!' : 'Copiar Código'}</span>
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Direct Action: Usar en Tienda Online */}
+                          {!isRedeemed && storeUrl && (
+                            <a
+                              href={storeUrl}
                               style={{
-                                border: 'none', background: 'none', cursor: 'pointer',
-                                color: copiedCode === v.voucherCode ? '#16a34a' : '#64748b',
-                                display: 'flex', alignItems: 'center'
+                                minHeight: '44px',
+                                padding: '10px 16px',
+                                borderRadius: '8px',
+                                border: '1.5px solid #2563eb',
+                                backgroundColor: '#eff6ff',
+                                color: '#1d4ed8',
+                                fontWeight: '700',
+                                fontSize: '0.88rem',
+                                textDecoration: 'none',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '8px'
                               }}
                             >
-                              {copiedCode === v.voucherCode ? <Check size={18} /> : <Copy size={18} />}
-                            </button>
-                          </div>
+                              <ShoppingBag size={18} />
+                              <span>Aplicar Directo en Tienda Online</span>
+                            </a>
+                          )}
 
                           {/* Expiration Note */}
                           {v.expiresAt && (
-                            <div style={{ fontSize: '0.74rem', color: '#64748b' }}>
+                            <div style={{ fontSize: '0.74rem', color: '#64748b', textAlign: 'center' }}>
                               Válido hasta: {new Date(v.expiresAt).toLocaleDateString('es-CR', { year: 'numeric', month: 'long', day: 'numeric' })}
                             </div>
                           )}

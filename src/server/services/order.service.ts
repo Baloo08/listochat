@@ -3,6 +3,7 @@ import { getProductsByTenant, updateProduct } from '../db/products.repo.js';
 import { getStoreSettings } from '../db/store-settings.repo.js';
 import { sendMessage } from './evolution.js';
 import { query, getClient } from '../db/pool.js';
+import { validateCoupon, redeemCoupon } from './coupon.service.js';
 
 export async function createOrderFromWhatsApp(tenantId: string, orderData: any): Promise<any> {
   const allProducts = await getProductsByTenant(tenantId, true);
@@ -93,7 +94,22 @@ export async function createOrderFromWhatsApp(tenantId: string, orderData: any):
     const store = await getStoreSettings(tenantId);
     const isDelivery = deliveryMethod === 'delivery';
     const deliveryFee = isDelivery ? Number(store?.deliveryFee || 0) : 0;
-    const finalTotal = subtotal + deliveryFee;
+
+    let appliedDiscount = 0;
+    let validCouponCode: string | null = null;
+    if (orderData.couponCode) {
+      try {
+        const couponCheck = await validateCoupon(tenantId, orderData.couponCode, subtotal);
+        if (couponCheck.valid && couponCheck.discountAmount) {
+          appliedDiscount = couponCheck.discountAmount;
+          validCouponCode = couponCheck.code || orderData.couponCode;
+        }
+      } catch (cErr) {
+        console.warn('[OrderService] Error validando cupón en WhatsApp order:', cErr);
+      }
+    }
+
+    const finalTotal = Math.max(0, subtotal - appliedDiscount + deliveryFee);
 
     const order = await createOrder(
       tenantId,
@@ -105,6 +121,9 @@ export async function createOrderFromWhatsApp(tenantId: string, orderData: any):
         source: 'whatsapp',
         subtotal,
         deliveryFee,
+        discount: appliedDiscount,
+        discountAmount: appliedDiscount,
+        couponCode: validCouponCode || undefined,
         total: finalTotal,
         currency: store?.currency || 'CRC',
         status: 'pedido_recibido',
@@ -118,6 +137,11 @@ export async function createOrderFromWhatsApp(tenantId: string, orderData: any):
     );
 
     await client.query('COMMIT');
+
+    if (validCouponCode) {
+      await redeemCoupon(tenantId, validCouponCode, order.id).catch(() => {});
+    }
+
     return order;
   } catch (error) {
     await client.query('ROLLBACK');

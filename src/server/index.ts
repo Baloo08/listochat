@@ -61,6 +61,7 @@ import almendroRoutes from './routes/almendro.routes.js';
 import superadminAlmendroRoutes from './routes/superadmin-almendro.routes.js';
 import loyaltyRoutes from './routes/loyalty.routes.js';
 import loyaltyCustomerRoutes from './routes/loyalty-customer.routes.js';
+import couponRoutes from './routes/coupon.routes.js';
 import seoRoutes from './routes/seo.routes.js';
 import { injectSeoMetadata } from './services/seo.service.js';
 
@@ -242,6 +243,7 @@ async function startServer() {
   app.use('/api/superadmin/almendro', superadminAlmendroRoutes);
   app.use('/api/loyalty', loyaltyRoutes);
   app.use('/api/loyalty-customer', publicLimiter, loyaltyCustomerRoutes);
+  app.use('/api/coupons', couponRoutes);
   app.use('/', seoRoutes);
 
   // Serve static assets in production, setup vite dev server in dev

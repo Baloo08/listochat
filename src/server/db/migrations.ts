@@ -1098,6 +1098,33 @@ export async function runMigrations() {
     );
     CREATE INDEX IF NOT EXISTS idx_loyalty_tx_card ON loyalty_transactions(card_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_loyalty_tx_tenant ON loyalty_transactions(tenant_id);
+
+    -- ==========================================================
+    -- MÓDULO DE CUPONES DE DESCUENTO MULTITIENDA Y BOT
+    -- ==========================================================
+    CREATE TABLE IF NOT EXISTS discount_coupons (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+      code VARCHAR(50) NOT NULL,
+      description TEXT,
+      discount_type VARCHAR(20) NOT NULL DEFAULT 'percentage',
+      discount_value NUMERIC(10, 2) NOT NULL,
+      min_order_amount NUMERIC(10, 2) DEFAULT 0,
+      max_discount_amount NUMERIC(10, 2),
+      usage_limit INT,
+      used_count INT DEFAULT 0,
+      valid_from TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+      valid_until TIMESTAMPTZ,
+      active BOOLEAN DEFAULT true,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(tenant_id, code)
+    );
+    CREATE INDEX IF NOT EXISTS idx_discount_coupons_tenant_code ON discount_coupons(tenant_id, code);
+
+    -- Columnas de cupón en pedidos
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS coupon_code VARCHAR(50);
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(10, 2) DEFAULT 0;
   `).catch((err) => {
     console.warn('[Migrations] Columns addition warning:', err?.message || err);
   });

@@ -2,10 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { 
   Gift, Users, Tag, Award, Plus, Check, AlertCircle, RefreshCw, 
   Trash2, Search, ArrowRight, ShieldCheck, Clock, DollarSign,
-  QrCode, ExternalLink, Sparkles, Filter, CheckCircle2, XCircle
+  Ticket, Percent, ExternalLink, Sparkles, Filter, CheckCircle2, XCircle
 } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
-import { LoyaltyProgram, LoyaltyCard, LoyaltyPromotion, LoyaltyRewardVoucher, LoyaltyTransaction } from '../../shared/types';
+import { LoyaltyProgram, LoyaltyCard, LoyaltyPromotion, LoyaltyRewardVoucher, LoyaltyTransaction, DiscountCoupon } from '../../shared/types';
 
 interface LoyaltyManagerProps {
   initialTab?: 'ajustes' | 'clientes' | 'promociones';
@@ -32,7 +32,7 @@ export default function LoyaltyManager({ initialTab = 'ajustes' }: LoyaltyManage
     minSpendPerStamp: 3000
   });
 
-  // Cards & Search State
+  // Cards y Search State
   const [cards, setCards] = useState<LoyaltyCard[]>([]);
   const [cardsTotal, setCardsTotal] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
@@ -57,7 +57,7 @@ export default function LoyaltyManager({ initialTab = 'ajustes' }: LoyaltyManage
   const [newCustPhone, setNewCustPhone] = useState('');
   const [creatingCard, setCreatingCard] = useState(false);
 
-  // Promotions & Vouchers State
+  // Promotions y Vouchers State
   const [promotions, setPromotions] = useState<LoyaltyPromotion[]>([]);
   const [vouchers, setVouchers] = useState<LoyaltyRewardVoucher[]>([]);
   const [showNewPromoModal, setShowNewPromoModal] = useState(false);
@@ -72,7 +72,22 @@ export default function LoyaltyManager({ initialTab = 'ajustes' }: LoyaltyManage
   });
   const [creatingPromo, setCreatingPromo] = useState(false);
 
-  // Voucher Quick Redeem
+  // Discount Coupons State
+  const [coupons, setCoupons] = useState<DiscountCoupon[]>([]);
+  const [showNewCouponModal, setShowNewCouponModal] = useState(false);
+  const [newCoupon, setNewCoupon] = useState({
+    code: '',
+    description: '',
+    discountType: 'percentage' as 'percentage' | 'fixed',
+    discountValue: 10,
+    minOrderAmount: 0,
+    maxDiscountAmount: 0,
+    usageLimit: 0,
+    validUntil: ''
+  });
+  const [creatingCoupon, setCreatingCoupon] = useState(false);
+
+  // Voucher / Coupon Quick Redeem
   const [voucherCodeInput, setVoucherCodeInput] = useState('');
   const [redeemingVoucher, setRedeemingVoucher] = useState(false);
   const [voucherRedeemResult, setVoucherRedeemResult] = useState<{ success: boolean; message: string } | null>(null);
@@ -104,13 +119,15 @@ export default function LoyaltyManager({ initialTab = 'ajustes' }: LoyaltyManage
         setCardsTotal(cardsRes.total || 0);
       }
 
-      // 3. Promotions & Vouchers
-      const [promosRes, vouchersRes] = await Promise.all([
+      // 3. Promotions, Vouchers y Cupones
+      const [promosRes, vouchersRes, couponsRes] = await Promise.all([
         fetchWithAuth('/api/loyalty/promotions').catch(() => []),
-        fetchWithAuth('/api/loyalty/vouchers').catch(() => [])
+        fetchWithAuth('/api/loyalty/vouchers').catch(() => []),
+        fetchWithAuth('/api/coupons').catch(() => [])
       ]);
       setPromotions(promosRes || []);
       setVouchers(vouchersRes || []);
+      setCoupons(Array.isArray(couponsRes) ? couponsRes : (couponsRes?.coupons || []));
     } catch (err: any) {
       console.error('Error cargando módulo de fidelización:', err);
       setError(err.message || 'Error al cargar datos de fidelización');
@@ -294,19 +311,85 @@ export default function LoyaltyManager({ initialTab = 'ajustes' }: LoyaltyManage
     }
   };
 
+  const handleCreateCoupon = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCreatingCoupon(true);
+    try {
+      const payload = {
+        code: newCoupon.code.trim().toUpperCase(),
+        description: newCoupon.description.trim() || undefined,
+        discountType: newCoupon.discountType,
+        discountValue: Number(newCoupon.discountValue),
+        minOrderAmount: Number(newCoupon.minOrderAmount) > 0 ? Number(newCoupon.minOrderAmount) : undefined,
+        maxDiscountAmount: Number(newCoupon.maxDiscountAmount) > 0 ? Number(newCoupon.maxDiscountAmount) : undefined,
+        usageLimit: Number(newCoupon.usageLimit) > 0 ? Number(newCoupon.usageLimit) : undefined,
+        validUntil: newCoupon.validUntil ? new Date(newCoupon.validUntil).toISOString() : undefined
+      };
+      const created = await fetchWithAuth('/api/coupons', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      setCoupons(prev => [created, ...prev]);
+      setShowNewCouponModal(false);
+      setNewCoupon({
+        code: '',
+        description: '',
+        discountType: 'percentage',
+        discountValue: 10,
+        minOrderAmount: 0,
+        maxDiscountAmount: 0,
+        usageLimit: 0,
+        validUntil: ''
+      });
+    } catch (err: any) {
+      alert(err.message || 'Error al crear cupón');
+    } finally {
+      setCreatingCoupon(false);
+    }
+  };
+
+  const handleToggleCoupon = async (id: string) => {
+    try {
+      const updated = await fetchWithAuth(`/api/coupons/${id}/toggle`, { method: 'PATCH' });
+      setCoupons(prev => prev.map(c => c.id === id ? updated : c));
+    } catch (err: any) {
+      alert(err.message || 'Error al actualizar cupón');
+    }
+  };
+
+  const handleDeleteCoupon = async (id: string) => {
+    if (!confirm('¿Seguro que deseas eliminar este cupón de descuento?')) return;
+    try {
+      await fetchWithAuth(`/api/coupons/${id}`, { method: 'DELETE' });
+      setCoupons(prev => prev.filter(c => c.id !== id));
+    } catch (err: any) {
+      alert(err.message || 'Error al eliminar cupón');
+    }
+  };
+
   const handleRedeemVoucher = async (codeOrId: string) => {
+    const cleanCode = codeOrId.trim().toUpperCase();
+    if (!cleanCode) return;
     setRedeemingVoucher(true);
     setVoucherRedeemResult(null);
     try {
-      const res = await fetchWithAuth(`/api/loyalty/vouchers/${encodeURIComponent(codeOrId)}/redeem`, {
-        method: 'POST'
+      const res = await fetchWithAuth('/api/coupons/redeem', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: cleanCode, cashierNotes: 'Canje manual desde panel de fidelización' })
       });
-      setVouchers(prev => prev.map(v => v.id === res.voucher.id ? res.voucher : v));
+      if (res.voucher) {
+        setVouchers(prev => prev.map(v => v.id === res.voucher.id ? res.voucher : v));
+      }
       setVoucherRedeemResult({
         success: true,
-        message: `¡Premio canjeado con éxito! Código: ${res.voucher.voucherCode} (${res.voucher.rewardDescription})`
+        message: res.message || `¡Código ${cleanCode} canjeado con éxito!`
       });
       setVoucherCodeInput('');
+      fetchWithAuth('/api/coupons').then(cList => {
+        if (Array.isArray(cList)) setCoupons(cList);
+      }).catch(() => {});
     } catch (err: any) {
       setVoucherRedeemResult({
         success: false,
@@ -339,7 +422,7 @@ export default function LoyaltyManager({ initialTab = 'ajustes' }: LoyaltyManage
               <Gift size={24} />
             </div>
             <div>
-              <h1 style={{ margin: 0, fontSize: '1.45rem', fontWeight: '800', color: 'var(--text-main, #1e293b)' }}>Fidelización & Club de Clientes</h1>
+              <h1 style={{ margin: 0, fontSize: '1.45rem', fontWeight: '800', color: 'var(--text-main, #1e293b)' }}>Fidelización y Club de Clientes</h1>
               <p style={{ margin: 0, fontSize: '0.84rem', color: 'var(--text-muted, #64748b)' }}>
                 Tarjetas digitales de acumulación de puntos, sellos de recompensa y monedero de clientes
               </p>
@@ -359,7 +442,7 @@ export default function LoyaltyManager({ initialTab = 'ajustes' }: LoyaltyManage
             color: '#334155', textDecoration: 'none', fontSize: '0.85rem', fontWeight: '600' 
           }}
         >
-          <QrCode size={16} color="var(--primary)" />
+          <Ticket size={16} color="var(--primary)" />
           <span>App Monedero: <strong>betico.tech/fidelidad</strong></span>
           <ExternalLink size={14} />
         </a>
@@ -438,7 +521,7 @@ export default function LoyaltyManager({ initialTab = 'ajustes' }: LoyaltyManage
           }}
         >
           <Tag size={18} />
-          <span>Promociones Activas & Canjes</span>
+          <span>Cupones, Promociones y Canjes</span>
         </button>
       </div>
 
@@ -505,7 +588,7 @@ export default function LoyaltyManager({ initialTab = 'ajustes' }: LoyaltyManage
                   <strong style={{ fontSize: '0.95rem' }}>Tarjeta por Sellos</strong>
                 </div>
                 <p style={{ margin: 0, fontSize: '0.82rem', color: '#64748b' }}>
-                  Tarjeta de perforación digital (ej. 10 sellos). Al completar la meta genera un código QR de premio.
+                  Tarjeta de perforación digital (ej. 10 sellos). Al completar la meta genera un cupón de premio para la tienda, WhatsApp o caja.
                 </p>
               </div>
 
@@ -665,7 +748,7 @@ export default function LoyaltyManager({ initialTab = 'ajustes' }: LoyaltyManage
                     placeholder="Ej. 1 Café americano con repostería gratis / 50% de descuento en el próximo servicio"
                   />
                   <span style={{ fontSize: '0.78rem', color: '#64748b' }}>
-                    Este premio se imprimirá en el cupón con código QR generado automáticamente.
+                    Este premio se reflejará en el cupón con código alfanumérico generado automáticamente.
                   </span>
                 </div>
 
@@ -704,7 +787,7 @@ export default function LoyaltyManager({ initialTab = 'ajustes' }: LoyaltyManage
       {activeTab === 'clientes' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           
-          {/* Action Bar & Search */}
+          {/* Action Bar y Search */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
             <div style={{ position: 'relative', width: '320px', maxWidth: '100%' }}>
               <input
@@ -831,27 +914,35 @@ export default function LoyaltyManager({ initialTab = 'ajustes' }: LoyaltyManage
       )}
 
       {/* ========================================================================= */}
-      {/* TAB 3: PROMOCIONES ACTIVAS & CANJES */}
+      {/* TAB 3: CUPONES, PROMOCIONES Y CANJES */}
       {/* ========================================================================= */}
       {activeTab === 'promociones' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           
-          {/* Quick Voucher Scanner / Code Redeem Box */}
+          {/* Quick Voucher / Coupon Scanner and Redeem Box */}
           <div style={{ backgroundColor: '#f8fafc', padding: '20px', borderRadius: '12px', border: '2px dashed #93c5fd', display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <QrCode size={22} color="var(--primary)" />
-              <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: '700', color: '#1e293b' }}>Canje Rápido de Premios y Códigos QR</h3>
+              <Ticket size={22} color="var(--primary)" />
+              <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: '700', color: '#1e293b' }}>Canje Rápido de Cupones y Premios en Caja</h3>
             </div>
             <p style={{ margin: 0, fontSize: '0.84rem', color: '#64748b' }}>
-              Ingresa el código alfanumérico que presenta el cliente (ej. VOUCH-XXXX-XXXX) generado al completar su tarjeta de sellos:
+              Ingresa el código alfanumérico que presenta el cliente: cupón promocional (ej. VERANO10) o premio de fidelidad (ej. VOUCH-...):
             </p>
 
             <div style={{ display: 'flex', gap: '10px', maxWidth: '480px' }}>
               <input
                 type="text"
-                placeholder="Código del cupón (VOUCH-...)"
+                placeholder="Código de cupón o premio (ej. VERANO10, VOUCH-...)"
                 value={voucherCodeInput}
                 onChange={(e) => setVoucherCodeInput(e.target.value.toUpperCase())}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (voucherCodeInput.trim() && !redeemingVoucher) {
+                      handleRedeemVoucher(voucherCodeInput.trim());
+                    }
+                  }
+                }}
                 style={{ flex: 1, padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', textTransform: 'uppercase', fontWeight: '700' }}
               />
               <button
@@ -883,6 +974,121 @@ export default function LoyaltyManager({ initialTab = 'ajustes' }: LoyaltyManage
                 {voucherRedeemResult.message}
               </div>
             )}
+          </div>
+
+          {/* Section: Cupones de Descuento Promocionales */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '700', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Tag size={18} color="var(--primary)" />
+                  <span>Cupones de Descuento Promocionales</span>
+                </h3>
+                <p style={{ margin: 0, fontSize: '0.82rem', color: '#64748b' }}>
+                  Códigos que aplican descuento en el checkout de la tienda online, en el bot de WhatsApp y en caja física.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowNewCouponModal(true)}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  backgroundColor: '#16a34a',
+                  color: '#ffffff',
+                  fontWeight: '700',
+                  fontSize: '0.85rem',
+                  cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', gap: '6px'
+                }}
+              >
+                <Plus size={16} />
+                <span>+ Nuevo Cupón de Descuento</span>
+              </button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '14px' }}>
+              {coupons.length === 0 ? (
+                <div style={{ gridColumn: '1 / -1', padding: '30px', textAlign: 'center', backgroundColor: '#ffffff', borderRadius: '10px', border: '1px solid #e2e8f0', color: '#94a3b8' }}>
+                  No hay cupones de descuento creados aún. Presiona "+ Nuevo Cupón de Descuento" para crear el primero.
+                </div>
+              ) : (
+                coupons.map((c) => (
+                  <div key={c.id} style={{ backgroundColor: '#ffffff', borderRadius: '12px', border: c.active ? '1px solid #bbf7d0' : '1px solid #e2e8f0', padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ 
+                          fontFamily: 'monospace',
+                          fontSize: '1rem',
+                          fontWeight: '800',
+                          backgroundColor: '#f1f5f9',
+                          padding: '3px 8px',
+                          borderRadius: '6px',
+                          color: '#0f172a',
+                          letterSpacing: '1px'
+                        }}>
+                          {c.code}
+                        </span>
+                        <span style={{ 
+                          padding: '2px 8px', borderRadius: '12px', fontSize: '0.72rem', fontWeight: '700',
+                          backgroundColor: c.active ? '#dcfce7' : '#f1f5f9',
+                          color: c.active ? '#166534' : '#64748b'
+                        }}>
+                          {c.active ? 'Activo' : 'Pausado'}
+                        </span>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleCoupon(c.id)}
+                          title={c.active ? 'Pausar cupón' : 'Activar cupón'}
+                          style={{
+                            border: '1px solid #cbd5e1', backgroundColor: '#ffffff', borderRadius: '6px',
+                            padding: '4px 8px', fontSize: '0.72rem', fontWeight: '600', cursor: 'pointer',
+                            color: c.active ? '#d97706' : '#16a34a'
+                          }}
+                        >
+                          {c.active ? 'Pausar' : 'Activar'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteCoupon(c.id)}
+                          title="Eliminar cupón"
+                          style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#ef4444', padding: '4px' }}
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div style={{ fontSize: '1.05rem', fontWeight: '800', color: '#16a34a' }}>
+                        {c.discountType === 'percentage' ? `${c.discountValue}% de Descuento` : `₡${Number(c.discountValue).toLocaleString('es-CR')} Descuento Fijo`}
+                      </div>
+                      {c.description && (
+                        <p style={{ margin: '4px 0 0', fontSize: '0.82rem', color: '#64748b' }}>
+                          {c.description}
+                        </p>
+                      )}
+                    </div>
+
+                    <div style={{ fontSize: '0.76rem', color: '#64748b', marginTop: 'auto', paddingTop: '8px', borderTop: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>Usos: <strong>{c.usedCount || 0} {c.usageLimit ? `/ ${c.usageLimit}` : 'veces'}</strong></span>
+                        {c.minOrderAmount ? <span>Mínimo: ₡{Number(c.minOrderAmount).toLocaleString('es-CR')}</span> : null}
+                      </div>
+                      {c.validUntil && (
+                        <div>
+                          Vence: {new Date(c.validUntil).toLocaleDateString('es-CR', { year: 'numeric', month: 'short', day: 'numeric' })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
 
           {/* Active Promotions Section */}
@@ -1372,6 +1578,153 @@ export default function LoyaltyManager({ initialTab = 'ajustes' }: LoyaltyManage
                   style={{ padding: '8px 20px', borderRadius: '8px', border: 'none', backgroundColor: 'var(--primary, #2563eb)', color: '#ffffff', fontWeight: '700', cursor: 'pointer' }}
                 >
                   {creatingPromo ? 'Creando...' : 'Crear Promoción'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: NUEVO CUPÓN DE DESCUENTO */}
+      {/* ========================================================================= */}
+      {showNewCouponModal && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px' }}>
+          <div style={{ backgroundColor: '#ffffff', borderRadius: '14px', padding: '24px', width: '480px', maxWidth: '100%', maxHeight: '90vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Tag size={22} color="#16a34a" />
+                <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '800', color: '#1e293b' }}>Crear Cupón de Descuento</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowNewCouponModal(false)}
+                style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#64748b' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <p style={{ margin: 0, fontSize: '0.82rem', color: '#64748b' }}>
+              Este cupón podrá ser utilizado por clientes en la tienda online, dictado al bot en WhatsApp o canjeado en caja física.
+            </p>
+
+            <form onSubmit={handleCreateCoupon} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: '700', marginBottom: '4px' }}>
+                  Código del Cupón *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ej: BIENVENIDO10, VERANO20"
+                  value={newCoupon.code}
+                  onChange={(e) => setNewCoupon({ ...newCoupon, code: e.target.value.toUpperCase() })}
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontWeight: '800', fontFamily: 'monospace', letterSpacing: '1px' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: '700', marginBottom: '4px' }}>
+                  Descripción (Opcional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ej: 10% de descuento en tu primera compra"
+                  value={newCoupon.description}
+                  onChange={(e) => setNewCoupon({ ...newCoupon, description: e.target.value })}
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: '700', marginBottom: '4px' }}>
+                    Tipo de Descuento *
+                  </label>
+                  <select
+                    value={newCoupon.discountType}
+                    onChange={(e) => setNewCoupon({ ...newCoupon, discountType: e.target.value as any })}
+                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', backgroundColor: '#ffffff' }}
+                  >
+                    <option value="percentage">Porcentaje (%)</option>
+                    <option value="fixed">Monto Fijo ({currSymbol})</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: '700', marginBottom: '4px' }}>
+                    Valor del Descuento *
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    step={newCoupon.discountType === 'percentage' ? '1' : '100'}
+                    placeholder={newCoupon.discountType === 'percentage' ? 'Ej: 15' : 'Ej: 2000'}
+                    value={newCoupon.discountValue}
+                    onChange={(e) => setNewCoupon({ ...newCoupon, discountValue: Number(e.target.value) })}
+                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: '600', marginBottom: '4px' }}>
+                    Compra Mínima ({currSymbol})
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="Opcional (ej: 5000)"
+                    value={newCoupon.minOrderAmount || ''}
+                    onChange={(e) => setNewCoupon({ ...newCoupon, minOrderAmount: Number(e.target.value) })}
+                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: '600', marginBottom: '4px' }}>
+                    Límite de Usos Totales
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="Ilimitado si es 0"
+                    value={newCoupon.usageLimit || ''}
+                    onChange={(e) => setNewCoupon({ ...newCoupon, usageLimit: Number(e.target.value) })}
+                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: '600', marginBottom: '4px' }}>
+                  Fecha de Vencimiento (Opcional)
+                </label>
+                <input
+                  type="date"
+                  value={newCoupon.validUntil}
+                  onChange={(e) => setNewCoupon({ ...newCoupon, validUntil: e.target.value })}
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowNewCouponModal(false)}
+                  style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', backgroundColor: '#f8fafc', cursor: 'pointer' }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={creatingCoupon}
+                  style={{ padding: '8px 20px', borderRadius: '8px', border: 'none', backgroundColor: '#16a34a', color: '#ffffff', fontWeight: '700', cursor: 'pointer' }}
+                >
+                  {creatingCoupon ? 'Guardando...' : 'Crear Cupón'}
                 </button>
               </div>
             </form>

@@ -150,6 +150,19 @@ export default function StorefrontView({ slug }: StorefrontProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderCompleted, setOrderCompleted] = useState<any | null>(null);
 
+  // Discount Coupon State
+  const [couponInput, setCouponInput] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState<{
+    code: string;
+    description?: string;
+    discountType: 'percentage' | 'fixed';
+    discountValue: number;
+    discountAmount: number;
+  } | null>(null);
+  const [couponLoading, setCouponLoading] = useState(false);
+  const [couponError, setCouponError] = useState<string | null>(null);
+  const [couponSuccess, setCouponSuccess] = useState<string | null>(null);
+
   // Multi-Branch Franchise States
   const [branches, setBranches] = useState<any[]>([]);
   const [selectedBranch, setSelectedBranch] = useState<any | null>(null);
@@ -162,6 +175,20 @@ export default function StorefrontView({ slug }: StorefrontProps) {
   const [taxIdNumber, setTaxIdNumber] = useState('');
   const [taxLegalName, setTaxLegalName] = useState('');
   const [taxEmail, setTaxEmail] = useState('');
+
+  // Detect coupon from URL query (?cupon=XYZ or ?coupon=XYZ)
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const codeParam = params.get('cupon') || params.get('coupon');
+      if (codeParam && codeParam.trim()) {
+        const clean = codeParam.trim().toUpperCase();
+        setCouponInput(clean);
+      }
+    } catch (e) {
+      // ignore
+    }
+  }, []);
 
   useEffect(() => {
     const fetchStoreData = async () => {
@@ -439,7 +466,68 @@ export default function StorefrontView({ slug }: StorefrontProps) {
     deliveryFee = correosRateInfo.rate;
   }
 
-  const cartTotal = cartSubtotal + deliveryFee;
+  // Validate and apply discount coupon
+  const handleApplyCoupon = async (codeToApply?: string) => {
+    const code = (codeToApply || couponInput).trim().toUpperCase();
+    if (!code) {
+      setCouponError('Por favor ingresa un código de cupón');
+      return;
+    }
+    if (cartSubtotal <= 0) {
+      setCouponError('Agrega productos al carrito antes de aplicar el cupón');
+      return;
+    }
+    setCouponLoading(true);
+    setCouponError(null);
+    setCouponSuccess(null);
+    try {
+      const res = await fetch(`/api/storefront/${slug}/coupon/validate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, subtotal: cartSubtotal })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.valid) {
+        setCouponError(data.message || data.error || 'Cupón no válido o expirado');
+        setAppliedCoupon(null);
+      } else {
+        setAppliedCoupon({
+          code: data.code || code,
+          description: data.description,
+          discountType: data.discountType,
+          discountValue: Number(data.discountValue || 0),
+          discountAmount: Number(data.discountAmount || 0)
+        });
+        setCouponSuccess(`¡Cupón ${data.code || code} aplicado con éxito!`);
+      }
+    } catch (err: any) {
+      setCouponError(err.message || 'Error al validar cupón');
+    } finally {
+      setCouponLoading(false);
+    }
+  };
+
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null);
+    setCouponError(null);
+    setCouponSuccess(null);
+  };
+
+  // Auto-apply from URL once cart has items
+  useEffect(() => {
+    if (couponInput && !appliedCoupon && !couponLoading && cartSubtotal > 0) {
+      handleApplyCoupon(couponInput);
+    }
+  }, [cartSubtotal > 0]);
+
+  // Compute actual discount amount
+  const discountAmount = appliedCoupon ? (
+    appliedCoupon.discountType === 'percentage'
+      ? Math.round(cartSubtotal * (appliedCoupon.discountValue / 100))
+      : Math.min(cartSubtotal, appliedCoupon.discountAmount || appliedCoupon.discountValue)
+  ) : 0;
+
+  const cartTotal = Math.max(0, cartSubtotal - discountAmount + deliveryFee);
   const totalItemsCount = cart.reduce((acc, item) => acc + item.quantity, 0);
 
   const handleCheckout = async (e: React.FormEvent) => {
@@ -497,6 +585,7 @@ export default function StorefrontView({ slug }: StorefrontProps) {
         paymentProofUrl: paymentProofUrl || undefined,
         branchId: selectedBranch?.id || undefined,
         notes: orderNotes || undefined,
+        couponCode: appliedCoupon?.code || undefined,
         billingInfo: requiresInvoice ? {
           requiresInvoice: true,
           idType: taxIdType,
@@ -1644,10 +1733,105 @@ export default function StorefrontView({ slug }: StorefrontProps) {
             {/* Cart Footer */}
             {cart.length > 0 && (
               <div style={{ padding: '20px', borderTop: isDark ? '1px solid #334155' : '1px solid #e2e8f0', backgroundColor: isDark ? '#1e293b' : '#f8fafc' }}>
+                {/* Cupon de Descuento Box */}
+                <div style={{ marginBottom: '16px', padding: '12px', borderRadius: '10px', backgroundColor: isDark ? '#0f172a' : '#ffffff', border: isDark ? '1px solid #334155' : '1px solid #e2e8f0' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', fontWeight: '700', color: titleColor, marginBottom: '8px' }}>
+                    <Tag size={15} color={primaryColor} /> ¿Tienes un cupón de descuento?
+                  </label>
+                  
+                  {appliedCoupon ? (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderRadius: '8px', backgroundColor: '#ecfdf5', border: '1px solid #a7f3d0' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                        <span style={{ fontSize: '0.82rem', fontWeight: '800', color: '#065f46', letterSpacing: '0.5px' }}>
+                          ✓ {appliedCoupon.code}
+                        </span>
+                        <span style={{ fontSize: '0.72rem', color: '#047857' }}>
+                          {appliedCoupon.description || (appliedCoupon.discountType === 'percentage' ? `${appliedCoupon.discountValue}% de descuento` : `₡${appliedCoupon.discountValue.toLocaleString('es-CR')} de descuento`)}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleRemoveCoupon}
+                        style={{ border: 'none', background: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '0.78rem', fontWeight: '700', padding: '4px 8px' }}
+                      >
+                        Quitar
+                      </button>
+                    </div>
+                  ) : (
+                    <div>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <input
+                          type="text"
+                          placeholder="Ej: BIENVENIDO10"
+                          value={couponInput}
+                          onChange={(e) => {
+                            setCouponInput(e.target.value.toUpperCase());
+                            setCouponError(null);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleApplyCoupon();
+                            }
+                          }}
+                          style={{
+                            flex: 1,
+                            padding: '8px 10px',
+                            borderRadius: '6px',
+                            border: isDark ? '1px solid #475569' : '1px solid #cbd5e1',
+                            backgroundColor: isDark ? '#1e293b' : '#ffffff',
+                            color: isDark ? '#ffffff' : '#0f172a',
+                            fontSize: '0.82rem',
+                            fontWeight: '700',
+                            textTransform: 'uppercase',
+                            boxSizing: 'border-box'
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleApplyCoupon()}
+                          disabled={couponLoading || !couponInput.trim()}
+                          style={{
+                            padding: '8px 14px',
+                            borderRadius: '6px',
+                            border: 'none',
+                            backgroundColor: primaryColor,
+                            color: '#ffffff',
+                            fontWeight: '700',
+                            fontSize: '0.82rem',
+                            cursor: couponLoading || !couponInput.trim() ? 'not-allowed' : 'pointer',
+                            opacity: couponLoading || !couponInput.trim() ? 0.6 : 1
+                          }}
+                        >
+                          {couponLoading ? '...' : 'Aplicar'}
+                        </button>
+                      </div>
+
+                      {couponError && (
+                        <div style={{ fontSize: '0.75rem', color: '#dc2626', marginTop: '6px', fontWeight: '600' }}>
+                          {couponError}
+                        </div>
+                      )}
+                      {couponSuccess && (
+                        <div style={{ fontSize: '0.75rem', color: '#16a34a', marginTop: '6px', fontWeight: '600' }}>
+                          {couponSuccess}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontSize: '0.85rem', color: bodyTextColor }}>
                   <span>Subtotal:</span>
                   <span>₡{cartSubtotal.toLocaleString('es-CR')}</span>
                 </div>
+
+                {appliedCoupon && discountAmount > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontSize: '0.85rem', color: '#16a34a', fontWeight: '700' }}>
+                    <span>Descuento ({appliedCoupon.code}):</span>
+                    <span>-₡{discountAmount.toLocaleString('es-CR')}</span>
+                  </div>
+                )}
 
                 {deliveryFee > 0 && (
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontSize: '0.85rem', color: bodyTextColor }}>

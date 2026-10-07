@@ -486,20 +486,30 @@ async function markAsRead(instanceName, remoteJid, messageId) {
     return { success: false, error };
   }
 }
-async function sendMedia(instanceName, number, mediaUrl, caption) {
+async function sendMedia(instanceName, number, mediaUrl, caption, mediaType, fileName) {
   try {
     const cleanNumber = (number || "").replace(/@.+$/, "").replace(/\D/g, "");
+    const cleanUrl = (mediaUrl || "").trim();
+    const isDoc = mediaType === "document" || /\.pdf($|\?)/i.test(cleanUrl) || /\.doc(x)?($|\?)/i.test(cleanUrl) || /\.xls(x)?($|\?)/i.test(cleanUrl);
+    const isVideo = mediaType === "video" || /\.mp4($|\?)/i.test(cleanUrl) || /\.mov($|\?)/i.test(cleanUrl);
+    const isAudio = mediaType === "audio" || /\.mp3($|\?)/i.test(cleanUrl) || /\.ogg($|\?)/i.test(cleanUrl) || /\.wav($|\?)/i.test(cleanUrl);
+    const resolvedMediaType = isDoc ? "document" : isVideo ? "video" : isAudio ? "audio" : "image";
+    const resolvedFileName = fileName || (isDoc ? cleanUrl.split("/").pop()?.split("?")[0] || "documento.pdf" : void 0);
+    const payload = {
+      number: cleanNumber,
+      mediatype: resolvedMediaType,
+      media: cleanUrl,
+      caption: caption || "",
+      delay: 1200
+    };
+    if (resolvedFileName) {
+      payload.fileName = resolvedFileName;
+    }
     const response = await fetchWithTimeout(`${EVOLUTION_API_URL}/message/sendMedia/${instanceName}`, {
       method: "POST",
       headers: getHeaders(),
-      body: JSON.stringify({
-        number: cleanNumber,
-        mediatype: "image",
-        media: mediaUrl,
-        caption: caption || "",
-        delay: 1200
-      })
-    }, 2e4);
+      body: JSON.stringify(payload)
+    }, 25e3);
     const data = await response.json();
     return { success: response.ok, data };
   } catch (error) {
@@ -1907,7 +1917,7 @@ async function getOrdersByTenant(tenantId, filters) {
   const result = await query(`
     SELECT o.id, o.tenant_id as "tenantId", o.order_number as "orderNumber", o.customer_name as "customerName",
            o.customer_phone as "customerPhone", o.customer_email as "customerEmail", o.customer_address as "customerAddress",
-           o.whatsapp_jid as "whatsappJid", o.source, o.subtotal, o.delivery_fee as "deliveryFee", o.discount, o.total,
+           o.whatsapp_jid as "whatsappJid", o.source, o.subtotal, o.delivery_fee as "deliveryFee", o.discount, o.discount_amount as "discountAmount", o.coupon_code as "couponCode", o.total,
            o.currency, o.status, o.payment_method as "paymentMethod", o.payment_status as "paymentStatus",
            o.payment_reference as "paymentReference", o.payment_proof_url as "paymentProofUrl", o.payment_proof_status as "paymentProofStatus", o.notes, o.delivery_method as "deliveryMethod",
            o.consumption_mode as "consumptionMode", o.table_number as "tableNumber", o.customer_location as "customerLocation",
@@ -1947,7 +1957,7 @@ async function getOrderById(id, tenantId) {
   const result = await query(`
     SELECT id, tenant_id as "tenantId", order_number as "orderNumber", customer_name as "customerName",
            customer_phone as "customerPhone", customer_email as "customerEmail", customer_address as "customerAddress",
-           whatsapp_jid as "whatsappJid", source, subtotal, delivery_fee as "deliveryFee", discount, total,
+           whatsapp_jid as "whatsappJid", source, subtotal, delivery_fee as "deliveryFee", discount, discount_amount as "discountAmount", coupon_code as "couponCode", total,
            currency, status, payment_method as "paymentMethod", payment_status as "paymentStatus",
            payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl", payment_proof_status as "paymentProofStatus", notes, delivery_method as "deliveryMethod",
            consumption_mode as "consumptionMode", table_number as "tableNumber", customer_location as "customerLocation",
@@ -1973,11 +1983,12 @@ async function createOrder(tenantId, data, items, dbClient) {
   const insertSql = `
     INSERT INTO orders (
       tenant_id, customer_name, customer_phone, customer_email, customer_address, whatsapp_jid,
-      source, subtotal, delivery_fee, discount, total, currency, status, payment_method, 
+      source, subtotal, delivery_fee, discount, discount_amount, coupon_code, total, currency, status, payment_method, 
       payment_status, payment_reference, payment_proof_url, payment_proof_status, notes, delivery_method, consumption_mode, table_number, customer_location, stock_deducted, billing_info
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
     RETURNING id
   `;
+  const discountVal = Number(data.discount || data.discountAmount || 0);
   const params = [
     tenantId,
     data.customerName,
@@ -1988,7 +1999,9 @@ async function createOrder(tenantId, data, items, dbClient) {
     data.source || "store",
     data.subtotal,
     data.deliveryFee || 0,
-    data.discount || 0,
+    discountVal,
+    discountVal,
+    data.couponCode || null,
     data.total,
     data.currency || "CRC",
     data.status || "pedido_recibido",
@@ -4611,6 +4624,33 @@ async function runMigrations() {
     );
     CREATE INDEX IF NOT EXISTS idx_loyalty_tx_card ON loyalty_transactions(card_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_loyalty_tx_tenant ON loyalty_transactions(tenant_id);
+
+    -- ==========================================================
+    -- M\xD3DULO DE CUPONES DE DESCUENTO MULTITIENDA Y BOT
+    -- ==========================================================
+    CREATE TABLE IF NOT EXISTS discount_coupons (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+      code VARCHAR(50) NOT NULL,
+      description TEXT,
+      discount_type VARCHAR(20) NOT NULL DEFAULT 'percentage',
+      discount_value NUMERIC(10, 2) NOT NULL,
+      min_order_amount NUMERIC(10, 2) DEFAULT 0,
+      max_discount_amount NUMERIC(10, 2),
+      usage_limit INT,
+      used_count INT DEFAULT 0,
+      valid_from TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+      valid_until TIMESTAMPTZ,
+      active BOOLEAN DEFAULT true,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(tenant_id, code)
+    );
+    CREATE INDEX IF NOT EXISTS idx_discount_coupons_tenant_code ON discount_coupons(tenant_id, code);
+
+    -- Columnas de cup\xF3n en pedidos
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS coupon_code VARCHAR(50);
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(10, 2) DEFAULT 0;
   `).catch((err) => {
     console.warn("[Migrations] Columns addition warning:", err?.message || err);
   });
@@ -6685,11 +6725,11 @@ init_pool();
 var defaultSystemPrompt = `You are an AI assistant. Help customers politely and concisely.`;
 var defaultOrchestratorConfig = {
   enabled: true,
-  prompt: "Eres el Director de Operaciones y Supervisor Ag\xE9ntico del negocio en WhatsApp. Tu objetivo es asegurar una atenci\xF3n c\xE1lida costarricense (*pura vida*, con gusto), \xE1gil y precisa delegando cada mensaje al subagente experto seg\xFAn la siguiente jerarqu\xEDa:\n1. Urgencias, quejas o petici\xF3n de persona \u27A1\uFE0F Escalado Humano.\n2. Compra de productos, men\xFA o delivery \u27A1\uFE0F Ventas & Men\xFA.\n3. Servicios, doctores, citas o disponibilidad \u27A1\uFE0F Citas & Agenda.\n4. Partidos, horarios o canchas deportivas \u27A1\uFE0F Canchas Deportivas.\n5. Saludos, ubicaci\xF3n, parqueo, facturaci\xF3n o dudas generales \u27A1\uFE0F Identidad & FAQ.\nEn consultas mixtas, atiende primero la reserva/cita y luego invita a conocer la oferta de tienda.",
+  prompt: "Eres el Director de Operaciones y Supervisor Ag\xE9ntico del negocio en WhatsApp. Tu objetivo es asegurar una atenci\xF3n c\xE1lida costarricense (*pura vida*, con gusto), \xE1gil y precisa delegando cada mensaje al subagente experto seg\xFAn la siguiente jerarqu\xEDa:\n1. Urgencias, quejas o petici\xF3n de persona \u27A1\uFE0F Escalado Humano.\n2. Compra de productos, men\xFA o delivery \u27A1\uFE0F Ventas y Men\xFA.\n3. Servicios, doctores, citas o disponibilidad \u27A1\uFE0F Citas y Agenda.\n4. Partidos, horarios o canchas deportivas \u27A1\uFE0F Canchas Deportivas.\n5. Saludos, ubicaci\xF3n, parqueo, facturaci\xF3n o dudas generales \u27A1\uFE0F Identidad y FAQ.\nEn consultas mixtas, atiende primero la reserva/cita y luego invita a conocer la oferta de tienda.",
   subagents: {
     sales: {
       id: "sales",
-      name: "Ventas & Men\xFA",
+      name: "Ventas y Men\xFA",
       enabled: true,
       prompt: "Eres el Asesor Especialista en Ventas y Cat\xE1logo. Asesora con calidez tica (*pura vida*, con gusto). L\xCDMITE ESTRICTO: Solo ofrece los productos reales que figuran en el cat\xE1logo; est\xE1 prohibido inventar art\xEDculos que no existan. Si el cliente busca algo no disponible, ind\xEDcaselo con amabilidad y sugiere opciones reales. Aplica venta consultiva recomendando opciones destacadas. Si el cliente selecciona un \xEDtem principal, sugiere complementos o bebidas (venta cruzada). Lleva el carrito sumado con subtotales y total en \u20A1CRC. Pregunta si es para Env\xEDo a Domicilio o Retiro en Local y el m\xE9todo de pago. Solicita confirmaci\xF3n expl\xEDcita de todos los datos antes de emitir la comanda.",
       sources: ["products", "payments", "delivery"],
@@ -6697,7 +6737,7 @@ var defaultOrchestratorConfig = {
     },
     booking: {
       id: "booking",
-      name: "Citas & Agenda",
+      name: "Citas y Agenda",
       enabled: true,
       prompt: "Eres el Asesor Especialista en Citas y Agenda. Atiende cordialmente y ofrece los servicios con sus precios y duraci\xF3n fija. Verifica que la fecha y hora NO coincidan con los HORARIOS YA OCUPADOS. Si el horario solicitado est\xE1 ocupado, ofrece proactivamente las 2 o 3 opciones libres m\xE1s cercanas del mismo d\xEDa o d\xEDa siguiente. Si el cliente pide varios servicios, suma sus duraciones. Confirma el nombre completo, servicio, fecha y hora antes de agendar.",
       sources: ["services", "specialists", "busySlots", "customerRecord"],
@@ -6721,7 +6761,7 @@ var defaultOrchestratorConfig = {
     },
     general: {
       id: "general",
-      name: "Identidad & FAQ",
+      name: "Identidad y FAQ",
       enabled: true,
       prompt: "Eres el Conserje y Anfitri\xF3n Principal del negocio en WhatsApp. Responde con calidez tica (*pura vida*) y precisi\xF3n sobre ubicaci\xF3n exacta, enlaces de Waze/Maps, horarios, formas de pago (SINPE M\xF3vil, transferencia, efectivo, tarjeta), factura electr\xF3nica, parqueo, pol\xEDticas pet friendly y comodidades. Concluye cada respuesta con un puente proactivo hacia el cat\xE1logo de productos o la agenda de citas. Si te preguntan algo no registrado oficialmente en las pol\xEDticas del negocio, no inventes datos: ofrece transferir con un asesor humano.",
       sources: ["businessInfo", "schedules", "payments"],
@@ -8843,6 +8883,26 @@ function formatMediaUrl(url, baseUrl) {
   const cleanPath = url.replace(/^\/+/, "");
   return `${cleanBase}/${cleanPath}`;
 }
+function normalizeSearchString(text) {
+  return (text || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+}
+function extractProductImageUrls(images) {
+  if (!images) return [];
+  let parsed = images;
+  if (typeof images === "string") {
+    try {
+      parsed = JSON.parse(images);
+    } catch {
+      return images.startsWith("http") || images.startsWith("/") ? [images] : [];
+    }
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed.map((img) => {
+    if (typeof img === "string") return img;
+    if (img && typeof img === "object" && typeof img.url === "string") return img.url;
+    return null;
+  }).filter((url) => Boolean(url && url.length > 2 && url !== "["));
+}
 function safeParseJSON(rawStr) {
   if (!rawStr || typeof rawStr !== "string") return null;
   let cleaned = rawStr.trim();
@@ -8992,9 +9052,7 @@ async function processWithOrchestrator(tenantId, userMessage, senderPhone, sende
         "otra",
         "otros",
         "otras",
-        "aqu\xED",
         "aqui",
-        "tambi\xE9n",
         "tambien",
         "porque",
         "cuando",
@@ -9002,14 +9060,12 @@ async function processWithOrchestrator(tenantId, userMessage, senderPhone, sende
         "pero",
         "algo",
         "nada",
-        "est\xE1n",
         "estan",
         "hola",
         "buenas",
         "buenos",
         "tardes",
         "noches",
-        "d\xEDas",
         "dias",
         "favor",
         "gracias",
@@ -9018,21 +9074,32 @@ async function processWithOrchestrator(tenantId, userMessage, senderPhone, sende
         "nuestros",
         "nuestras",
         "usted",
-        "ustedes"
+        "ustedes",
+        "foto",
+        "fotos",
+        "imagen",
+        "imagenes",
+        "fotografia",
+        "fotografias",
+        "precio",
+        "costo",
+        "venden",
+        "comprar"
       ]);
-      const lowerMsgOnly = userMessage.toLowerCase();
-      const lowerContext = `${(chatHistory || []).slice(-2).map((h) => h.content).join(" ")} ${userMessage}`.toLowerCase();
+      const normUserMsg = normalizeSearchString(userMessage);
+      const normContext = normalizeSearchString(`${(chatHistory || []).slice(-3).map((h) => h.content).join(" ")} ${userMessage}`);
       let matchedProducts = activeProducts.filter((p) => {
-        const pName = p.name.toLowerCase();
-        const pCat = (p.category || "").toLowerCase();
-        if (lowerContext.includes(pName)) return true;
-        const nameTokens = pName.split(/[\s\-_,./]+/).filter((w) => w.length > 3 && !SPANISH_STOP_WORDS.has(w));
-        if (nameTokens.length > 0 && nameTokens.some((t) => lowerContext.includes(t))) return true;
-        if (pCat && pCat.length > 3 && !SPANISH_STOP_WORDS.has(pCat) && lowerContext.includes(pCat)) return true;
-        const pDesc = (p.description || "").toLowerCase();
-        if (pDesc) {
-          const descTokens = pDesc.split(/[\s\-_,./]+/).filter((w) => w.length > 5 && !SPANISH_STOP_WORDS.has(w));
-          if (descTokens.some((w) => lowerMsgOnly.includes(w))) return true;
+        const normName = normalizeSearchString(p.name);
+        const normCat = normalizeSearchString(p.category || "");
+        if (normContext.includes(normName)) return true;
+        if (normName.includes(normUserMsg) && normUserMsg.length >= 3) return true;
+        const nameTokens = normName.split(/[\s\-_,./]+/).filter((w) => w.length >= 3 && !SPANISH_STOP_WORDS.has(w));
+        if (nameTokens.length > 0 && nameTokens.some((t) => normContext.includes(t))) return true;
+        if (normCat && normCat.length >= 3 && !SPANISH_STOP_WORDS.has(normCat) && normContext.includes(normCat)) return true;
+        const normDesc = normalizeSearchString(p.description || "");
+        if (normDesc) {
+          const descTokens = normDesc.split(/[\s\-_,./]+/).filter((w) => w.length >= 4 && !SPANISH_STOP_WORDS.has(w));
+          if (descTokens.some((w) => normUserMsg.includes(w))) return true;
         }
         return false;
       });
@@ -9040,7 +9107,7 @@ async function processWithOrchestrator(tenantId, userMessage, senderPhone, sende
       if (activeProducts.length === 0) {
         catalogAlert = "\u26A0\uFE0F CAT\xC1LOGO VAC\xCDO: Actualmente no hay productos registrados en el inventario. Informa amablemente que el cat\xE1logo est\xE1 en actualizaci\xF3n y ofrece comunicar con un asesor humano.\n";
       } else if (matchedProducts.length === 0) {
-        catalogAlert = `\u26A0\uFE0F AVISO DE INVENTARIO: El cliente est\xE1 consultando o buscando un art\xEDculo que NO coincide con ning\xFAn producto registrado en el inventario oficial. TIENES TERMINANTEMENTE PROHIBIDO inventar que disponen de ese art\xEDculo o inventar precios o existencias. Debes aclararle con amabilidad y calidez (*"Disculpa ${senderName}, en este momento no disponemos de ese art\xEDculo en nuestro cat\xE1logo"*) y ofrecerle las opciones reales que s\xED comercializan (listadas abajo como sugerencias del comercio).
+        catalogAlert = `\u26A0\uFE0F AVISO DE INVENTARIO: El cliente est\xE1 consultando o buscando un art\xEDculo que NO coincide con ning\xFAn producto registrado en el inventario oficial. TIENES TERMINANTEMENTE PROHIBIDO inventar que disponen de ese art\xEDculo o inventar precios o existencias. Debes aclararle con amabilidad y calidez (*"Disculpa ${customerFirstName}, en este momento no disponemos de ese art\xEDculo en nuestro cat\xE1logo"*) y ofrecerle las opciones reales que s\xED comercializan (listadas abajo como sugerencias del comercio).
 `;
         matchedProducts = activeProducts.slice(0, 6);
       }
@@ -9063,14 +9130,11 @@ async function processWithOrchestrator(tenantId, userMessage, senderPhone, sende
           line += `
   Opciones/Extras: ${optStr}`;
         }
-        if (p.images && p.images.length > 0) {
-          const firstImg = p.images[0];
-          const rawUrl = typeof firstImg === "string" ? firstImg : firstImg?.url;
-          if (rawUrl) {
-            const pUrl = formatMediaUrl(rawUrl, baseUrl);
-            line += `
+        const imgUrls = extractProductImageUrls(p.images);
+        if (imgUrls.length > 0) {
+          const pUrl = formatMediaUrl(imgUrls[0], baseUrl);
+          line += `
   Foto oficial: ${pUrl}`;
-          }
         }
         return line;
       }).join("\n\n");
@@ -9115,19 +9179,24 @@ REGLAS DE ORO DE VENTA Y CIERRE DE PEDIDOS (CALIDEZ TICA Y CERO ALUCINACI\xD3N):
    - Tan pronto el cliente haya definido los productos/cantidades e indique su m\xE9todo de pago (ej: "por sinpe", "en efectivo", "transferencia") o confirme la compra (ej: "s\xED", "listo", "de acuerdo", "h\xE1gamelo", "confirmo"):
      a) Conf\xEDrmale el pedido de inmediato con alegr\xEDa y calidez (*"\xA1Listo ${customerFirstName}! He registrado tu pedido con \xE9xito..."*), resumiendo los art\xEDculos, el gran total a pagar y las instrucciones de pago o entrega.
      b) ES ESTRICTAMENTE OBLIGATORIO que emitas al final del mensaje la directiva de orden para que el sistema cree el registro en la base de datos:
-     <<<COMMAND_ORDER: {"items":[{"productName":"Nombre Exacto","variantName":"opcional","quantity":1}], "deliveryMethod":"delivery"|"pickup", "deliveryAddress":"direcci\xF3n si aplica", "paymentMethod":"sinpe"|"transfer"|"cash", "customerName":"${customerFirstName}"}>>>
+     <<<COMMAND_ORDER: {"items":[{"productName":"Nombre Exacto","variantName":"opcional","quantity":1}], "deliveryMethod":"delivery"|"pickup", "deliveryAddress":"direcci\xF3n si aplica", "paymentMethod":"sinpe"|"transfer"|"cash", "customerName":"${customerFirstName}", "couponCode":"opcional si aplica"}>>>
    - NUNCA digas que el pedido est\xE1 confirmado sin emitir la directiva <<<COMMAND_ORDER: ...>>>.
 6. Si el producto tiene variantes (sabores, colores, tallas) registradas en el cat\xE1logo, cons\xFAltale cu\xE1l prefiere.
 7. Venta consultiva y cruzada: Si el cliente pide recomendaciones, sugi\xE9rele los destacados o un acompa\xF1amiento del cat\xE1logo real.
-8. ENV\xCDO NATIVO DE FOTOGRAF\xCDAS Y MULTIMEDIA (CERO CORCHETES / CERO URLs EN EL TEXTO):
-   - Si el cliente solicita fotos, im\xE1genes o ver c\xF3mo es un producto y este cuenta con "Foto oficial: <URL>" en el cat\xE1logo:
+8. ENV\xCDO NATIVO DE FOTOGRAF\xCDAS, CAT\xC1LOGOS Y DOCUMENTOS (CERO CORCHETES / CERO URLs EN EL TEXTO):
+   - Si el cliente solicita fotos, im\xE1genes, ver c\xF3mo es un producto o pide un archivo/documento/men\xFA y este cuenta con "Foto oficial: <URL>" en el cat\xE1logo oficial:
      a) Descr\xEDbele el art\xEDculo con calidez y su precio en tu respuesta de texto.
      b) ES ESTRICTAMENTE OBLIGATORIO emitir al final del mensaje la directiva:
         <<<COMMAND_SEND_MEDIA: {"mediaUrl":"<URL exacto de Foto oficial>","caption":"<Nombre del producto> - \u20A1<precio>"}>>>
-     c) PROHIBICI\xD3N TERMINANTE: NUNCA escribas la URL en el texto de tu respuesta y NUNCA generes textos de plantilla entre corchetes como "[Inserta aqu\xED las URLs de las im\xE1genes]" ni "[Foto]". El sistema se encarga de enviar la fotograf\xEDa nativa al WhatsApp del cliente con la descripci\xF3n adjunta.
+     c) PROHIBICI\xD3N TERMINANTE: NUNCA escribas la URL en el texto de tu respuesta y NUNCA generes textos de plantilla entre corchetes como "[Inserta aqu\xED las URLs de las im\xE1genes]" ni "[Foto]". El sistema se encarga de enviar la fotograf\xEDa o archivo nativo al WhatsApp del cliente con la descripci\xF3n adjunta.
    - Si el producto consultado NO cuenta con "Foto oficial" en el cat\xE1logo:
      a) S\xE9 honesto y transparente con calidez tica (*"Con mucho gusto te describo [Producto]... En este momento no dispongo de una fotograf\xEDa oficial cargada en el sistema, pero con mucho gusto te detallo sus caracter\xEDsticas..."*).
      b) EST\xC1 PROHIBIDO decir que le env\xEDas fotos o inventar im\xE1genes o placeholders si no hay foto oficial en el cat\xE1logo.
+9. MANEJO DE CUPONES DE DESCUENTO Y PREMIOS DE FIDELIDAD:
+   - Si el cliente menciona que tiene un cup\xF3n de descuento, c\xF3digo promocional o c\xF3digo de premio de Betico Club (ej: "tengo un cup\xF3n: VERANO10", "mi c\xF3digo es PRM-XXXX-XXXX"), o consulta si dispone de descuentos:
+     a) Sal\xFAdalo y toma nota de su c\xF3digo alfanum\xE9rico.
+     b) Aplica el descuento al desglose de precios inform\xE1ndolo con amabilidad y alegr\xEDa costarricense (*"\xA1Excelente ${customerFirstName}! Con mucho gusto aplicamos tu cup\xF3n a tu pedido..."*).
+     c) Al emitir la directiva de confirmaci\xF3n <<<COMMAND_ORDER: ...>>>, incluye el atributo 'couponCode':'<C\xD3DIGO>'.
 `.trim();
       break;
     }
@@ -9614,21 +9683,52 @@ ${userMessage}` : userMessage;
       };
     }
   }
-  if (!isMediaDetected && allowedActions.includes("media") && /foto|imagen|fotos|imagenes|imágenes/i.test(userMessage)) {
-    const prodWithImg = (salesMatchedProducts || []).find((p) => {
-      const firstImg = p.images?.[0];
-      const rawUrl = typeof firstImg === "string" ? firstImg : firstImg?.url;
-      return Boolean(rawUrl);
+  const isMediaInquiry = /foto|imagen|fotos|imagenes|imágenes|fotografia|fotografía|archivo|pdf|menu|menú|catalogo|catálogo/i.test(userMessage) || /muestrame|muéstrame|mandame|mándame|pasa|pasame|pásame|ver el |ver la |tienen fotos/i.test(userMessage);
+  if (!isMediaDetected && allowedActions.includes("media") && isMediaInquiry) {
+    const normMsg = normalizeSearchString(userMessage);
+    const normHistory = normalizeSearchString(`${(chatHistory || []).slice(-2).map((h) => h.content).join(" ")} ${rawReply}`);
+    const candidatePool = salesMatchedProducts && salesMatchedProducts.length > 0 ? salesMatchedProducts : salesActiveProducts || [];
+    let prodWithImg = candidatePool.find((p) => {
+      const pNorm = normalizeSearchString(p.name);
+      const isMentioned = normHistory.includes(pNorm) || normMsg.includes(pNorm);
+      const imgs = extractProductImageUrls(p.images);
+      return isMentioned && imgs.length > 0;
     });
+    if (!prodWithImg) {
+      prodWithImg = candidatePool.find((p) => {
+        const pNorm = normalizeSearchString(p.name);
+        const tokens = pNorm.split(/[\s\-_,./]+/).filter((w) => w.length >= 3);
+        const hasTokenInMsg = tokens.some((t) => normMsg.includes(t) || normHistory.includes(t));
+        const imgs = extractProductImageUrls(p.images);
+        return hasTokenInMsg && imgs.length > 0;
+      });
+    }
+    if (!prodWithImg) {
+      prodWithImg = candidatePool.find((p) => {
+        const imgs = extractProductImageUrls(p.images);
+        return imgs.length > 0;
+      });
+    }
+    if (!prodWithImg && salesActiveProducts && salesActiveProducts.length > 0) {
+      prodWithImg = salesActiveProducts.find((p) => {
+        const imgs = extractProductImageUrls(p.images);
+        return imgs.length > 0;
+      });
+    }
     if (prodWithImg) {
-      const firstImg = prodWithImg.images[0];
-      const rawUrl = typeof firstImg === "string" ? firstImg : firstImg?.url;
-      isMediaDetected = true;
-      mediaData = {
-        mediaUrl: formatMediaUrl(rawUrl, baseUrl),
-        caption: `${prodWithImg.name} - \u20A1${Number(prodWithImg.price || 0).toLocaleString("es-CR")}`
-      };
-      console.log(`[Orchestrator] \u{1F3AF} AUTO-RECOVERY: Media command automatically attached for product "${prodWithImg.name}"`);
+      const imgUrls = extractProductImageUrls(prodWithImg.images);
+      if (imgUrls.length > 0) {
+        const primaryUrl = imgUrls[0];
+        const isDoc = /\.pdf($|\?)/i.test(primaryUrl);
+        isMediaDetected = true;
+        mediaData = {
+          mediaUrl: formatMediaUrl(primaryUrl, baseUrl),
+          caption: `${prodWithImg.name} - \u20A1${Number(prodWithImg.price || 0).toLocaleString("es-CR")}`,
+          mediaType: isDoc ? "document" : "image",
+          fileName: isDoc ? `${prodWithImg.slug || "producto"}.pdf` : void 0
+        };
+        console.log(`[Orchestrator] \u{1F3AF} AUTO-RECOVERY: Media command successfully attached for product "${prodWithImg.name}" (${mediaData.mediaUrl})`);
+      }
     }
   }
   const handoffMatch = rawReply.match(/<<<COMMAND_HANDOFF:\s*({.*?})>>>/s);
@@ -10761,6 +10861,242 @@ async function rescheduleBookingFromWhatsApp(tenantId, phone, rescheduleData) {
 // src/server/services/order.service.ts
 init_orders_repo();
 init_pool();
+
+// src/server/services/coupon.service.ts
+init_pool();
+function normalizeCouponCode(code) {
+  return (code || "").trim().toUpperCase();
+}
+async function validateCoupon(tenantId, rawCode, orderSubtotal = 0) {
+  const code = normalizeCouponCode(rawCode);
+  if (!code) {
+    return { valid: false, error: "Por favor ingresa un c\xF3digo de cup\xF3n" };
+  }
+  const promoRes = await query(`
+    SELECT id, tenant_id, code, description, discount_type, discount_value,
+           min_order_amount, max_discount_amount, usage_limit, used_count,
+           valid_from, valid_until, active
+    FROM discount_coupons
+    WHERE tenant_id = $1 AND code = $2
+  `, [tenantId, code]);
+  if (promoRes.rows.length > 0) {
+    const coupon = promoRes.rows[0];
+    if (!coupon.active) {
+      return { valid: false, error: `El cup\xF3n ${code} est\xE1 inactivo o pausado` };
+    }
+    const now = /* @__PURE__ */ new Date();
+    if (coupon.valid_from && new Date(coupon.valid_from) > now) {
+      return { valid: false, error: `El cup\xF3n ${code} a\xFAn no est\xE1 vigente` };
+    }
+    if (coupon.valid_until && new Date(coupon.valid_until) < now) {
+      return { valid: false, error: `El cup\xF3n ${code} ha expirado` };
+    }
+    if (coupon.usage_limit && Number(coupon.used_count) >= Number(coupon.usage_limit)) {
+      return { valid: false, error: `El cup\xF3n ${code} ha alcanzado el l\xEDmite de usos permitidos` };
+    }
+    const minAmount = Number(coupon.min_order_amount || 0);
+    if (orderSubtotal > 0 && orderSubtotal < minAmount) {
+      return {
+        valid: false,
+        error: `Este cup\xF3n requiere una compra m\xEDnima de \u20A1${minAmount.toLocaleString("es-CR")}`
+      };
+    }
+    const dType = coupon.discount_type === "fixed" ? "fixed" : "percentage";
+    const dVal = Number(coupon.discount_value || 0);
+    let calculatedDiscount = 0;
+    if (dType === "percentage") {
+      calculatedDiscount = Math.round(orderSubtotal * dVal / 100);
+      if (coupon.max_discount_amount && Number(coupon.max_discount_amount) > 0) {
+        calculatedDiscount = Math.min(calculatedDiscount, Number(coupon.max_discount_amount));
+      }
+    } else {
+      calculatedDiscount = orderSubtotal > 0 ? Math.min(dVal, orderSubtotal) : dVal;
+    }
+    return {
+      valid: true,
+      code: coupon.code,
+      couponType: "promo",
+      discountType: dType,
+      discountValue: dVal,
+      discountAmount: calculatedDiscount,
+      description: coupon.description || (dType === "percentage" ? `${dVal}% de descuento` : `\u20A1${dVal.toLocaleString("es-CR")} de descuento`)
+    };
+  }
+  const voucherRes = await query(`
+    SELECT v.id, v.tenant_id, v.voucher_code, v.reward_description, v.reward_type,
+           v.discount_amount, v.status, v.expires_at, v.redeemed_at,
+           c.customer_name, c.identification
+    FROM loyalty_rewards_vouchers v
+    LEFT JOIN loyalty_cards c ON v.card_id = c.id
+    WHERE v.tenant_id = $1 AND v.voucher_code = $2
+  `, [tenantId, code]);
+  if (voucherRes.rows.length > 0) {
+    const voucher = voucherRes.rows[0];
+    if (voucher.status === "redeemed") {
+      return {
+        valid: false,
+        error: `El cup\xF3n de premio ${code} ya fue canjeado previamente (${voucher.customer_name || "Cliente"})`
+      };
+    }
+    if (voucher.status === "expired" || voucher.expires_at && new Date(voucher.expires_at) < /* @__PURE__ */ new Date()) {
+      return { valid: false, error: `El cup\xF3n de premio ${code} ha expirado` };
+    }
+    if (voucher.status !== "active") {
+      return { valid: false, error: `El cup\xF3n de premio ${code} no est\xE1 disponible` };
+    }
+    const rawDiscount = Number(voucher.discount_amount || 0);
+    const calculatedDiscount = orderSubtotal > 0 && rawDiscount > 0 ? Math.min(rawDiscount, orderSubtotal) : rawDiscount;
+    return {
+      valid: true,
+      code: voucher.voucher_code,
+      couponType: "loyalty_voucher",
+      discountType: "fixed",
+      discountValue: rawDiscount,
+      discountAmount: calculatedDiscount,
+      description: `${voucher.reward_description} (${voucher.customer_name || "Cliente"})`
+    };
+  }
+  return {
+    valid: false,
+    error: `El c\xF3digo "${code}" no existe o no corresponde a este comercio`
+  };
+}
+async function redeemCoupon(tenantId, rawCode, orderId, cashierNotes) {
+  const code = normalizeCouponCode(rawCode);
+  if (!code) {
+    return { success: false, message: "C\xF3digo de cup\xF3n requerido" };
+  }
+  const promoRes = await query(`
+    SELECT id, code, discount_type, discount_value, usage_limit, used_count, active, valid_until
+    FROM discount_coupons
+    WHERE tenant_id = $1 AND code = $2
+  `, [tenantId, code]);
+  if (promoRes.rows.length > 0) {
+    const coupon = promoRes.rows[0];
+    if (!coupon.active) {
+      return { success: false, message: `El cup\xF3n ${code} est\xE1 inactivo` };
+    }
+    if (coupon.valid_until && new Date(coupon.valid_until) < /* @__PURE__ */ new Date()) {
+      return { success: false, message: `El cup\xF3n ${code} ha expirado` };
+    }
+    if (coupon.usage_limit && Number(coupon.used_count) >= Number(coupon.usage_limit)) {
+      return { success: false, message: `El cup\xF3n ${code} ha alcanzado su l\xEDmite de usos` };
+    }
+    await query(`
+      UPDATE discount_coupons
+      SET used_count = used_count + 1, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+    `, [coupon.id]);
+    return {
+      success: true,
+      message: `\xA1Cup\xF3n promocional ${code} aplicado y registrado con \xE9xito!`,
+      couponType: "promo",
+      discountAmount: Number(coupon.discount_value || 0)
+    };
+  }
+  const voucherRes = await query(`
+    SELECT v.id, v.voucher_code, v.reward_description, v.discount_amount, v.status,
+           c.customer_name, c.identification
+    FROM loyalty_rewards_vouchers v
+    LEFT JOIN loyalty_cards c ON v.card_id = c.id
+    WHERE v.tenant_id = $1 AND v.voucher_code = $2
+  `, [tenantId, code]);
+  if (voucherRes.rows.length > 0) {
+    const voucher = voucherRes.rows[0];
+    if (voucher.status === "redeemed") {
+      return { success: false, message: `Este premio ya fue canjeado anteriormente por ${voucher.customer_name || "el cliente"}` };
+    }
+    if (voucher.status !== "active") {
+      return { success: false, message: `El premio ${code} no est\xE1 en estado activo` };
+    }
+    await query(`
+      UPDATE loyalty_rewards_vouchers
+      SET status = 'redeemed', redeemed_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+    `, [voucher.id]);
+    return {
+      success: true,
+      message: `\xA1Premio "${voucher.reward_description}" canjeado exitosamente para ${voucher.customer_name}!`,
+      couponType: "loyalty_voucher",
+      discountAmount: Number(voucher.discount_amount || 0)
+    };
+  }
+  return { success: false, message: `El c\xF3digo "${code}" no fue encontrado en este comercio` };
+}
+async function getCouponsByTenant(tenantId) {
+  const res = await query(`
+    SELECT id, tenant_id as "tenantId", code, description,
+           discount_type as "discountType", discount_value as "discountValue",
+           min_order_amount as "minOrderAmount", max_discount_amount as "maxDiscountAmount",
+           usage_limit as "usageLimit", used_count as "usedCount",
+           valid_from as "validFrom", valid_until as "validUntil",
+           active, created_at as "createdAt", updated_at as "updatedAt"
+    FROM discount_coupons
+    WHERE tenant_id = $1
+    ORDER BY created_at DESC
+  `, [tenantId]);
+  return res.rows;
+}
+async function createCoupon(tenantId, data) {
+  const code = normalizeCouponCode(data.code || "");
+  if (!code) {
+    throw new Error("El c\xF3digo del cup\xF3n es obligatorio");
+  }
+  const discountType = data.discountType === "fixed" ? "fixed" : "percentage";
+  const discountValue = Number(data.discountValue || 0);
+  if (discountValue <= 0) {
+    throw new Error("El valor del descuento debe ser mayor a 0");
+  }
+  const res = await query(`
+    INSERT INTO discount_coupons (
+      tenant_id, code, description, discount_type, discount_value,
+      min_order_amount, max_discount_amount, usage_limit,
+      valid_from, valid_until, active
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    RETURNING id, tenant_id as "tenantId", code, description,
+              discount_type as "discountType", discount_value as "discountValue",
+              min_order_amount as "minOrderAmount", max_discount_amount as "maxDiscountAmount",
+              usage_limit as "usageLimit", used_count as "usedCount",
+              valid_from as "validFrom", valid_until as "validUntil",
+              active, created_at as "createdAt", updated_at as "updatedAt"
+  `, [
+    tenantId,
+    code,
+    data.description || null,
+    discountType,
+    discountValue,
+    Number(data.minOrderAmount || 0),
+    data.maxDiscountAmount ? Number(data.maxDiscountAmount) : null,
+    data.usageLimit ? Number(data.usageLimit) : null,
+    data.validFrom ? new Date(data.validFrom) : /* @__PURE__ */ new Date(),
+    data.validUntil ? new Date(data.validUntil) : null,
+    data.active !== false
+  ]);
+  return res.rows[0];
+}
+async function deleteCoupon(tenantId, couponId) {
+  const res = await query(`
+    DELETE FROM discount_coupons
+    WHERE id = $1 AND tenant_id = $2
+  `, [couponId, tenantId]);
+  return (res.rowCount || 0) > 0;
+}
+async function toggleCouponActive(tenantId, couponId, active) {
+  const res = await query(`
+    UPDATE discount_coupons
+    SET active = $3, updated_at = CURRENT_TIMESTAMP
+    WHERE id = $1 AND tenant_id = $2
+    RETURNING id, tenant_id as "tenantId", code, description,
+              discount_type as "discountType", discount_value as "discountValue",
+              min_order_amount as "minOrderAmount", max_discount_amount as "maxDiscountAmount",
+              usage_limit as "usageLimit", used_count as "usedCount",
+              valid_from as "validFrom", valid_until as "validUntil",
+              active, created_at as "createdAt", updated_at as "updatedAt"
+  `, [couponId, tenantId, active]);
+  return res.rows[0] || null;
+}
+
+// src/server/services/order.service.ts
 async function createOrderFromWhatsApp(tenantId, orderData) {
   const allProducts = await getProductsByTenant(tenantId, true);
   const items = [];
@@ -10835,7 +11171,20 @@ async function createOrderFromWhatsApp(tenantId, orderData) {
     const store = await getStoreSettings(tenantId);
     const isDelivery = deliveryMethod === "delivery";
     const deliveryFee = isDelivery ? Number(store?.deliveryFee || 0) : 0;
-    const finalTotal = subtotal + deliveryFee;
+    let appliedDiscount = 0;
+    let validCouponCode = null;
+    if (orderData.couponCode) {
+      try {
+        const couponCheck = await validateCoupon(tenantId, orderData.couponCode, subtotal);
+        if (couponCheck.valid && couponCheck.discountAmount) {
+          appliedDiscount = couponCheck.discountAmount;
+          validCouponCode = couponCheck.code || orderData.couponCode;
+        }
+      } catch (cErr) {
+        console.warn("[OrderService] Error validando cup\xF3n en WhatsApp order:", cErr);
+      }
+    }
+    const finalTotal = Math.max(0, subtotal - appliedDiscount + deliveryFee);
     const order = await createOrder(
       tenantId,
       {
@@ -10846,6 +11195,9 @@ async function createOrderFromWhatsApp(tenantId, orderData) {
         source: "whatsapp",
         subtotal,
         deliveryFee,
+        discount: appliedDiscount,
+        discountAmount: appliedDiscount,
+        couponCode: validCouponCode || void 0,
         total: finalTotal,
         currency: store?.currency || "CRC",
         status: "pedido_recibido",
@@ -10858,6 +11210,10 @@ async function createOrderFromWhatsApp(tenantId, orderData) {
       client
     );
     await client.query("COMMIT");
+    if (validCouponCode) {
+      await redeemCoupon(tenantId, validCouponCode, order.id).catch(() => {
+      });
+    }
     return order;
   } catch (error) {
     await client.query("ROLLBACK");
@@ -11304,7 +11660,14 @@ async function processSingleMessage(msg) {
     let sentAsAudio = false;
     if (aiResult.isMediaDetected && aiResult.mediaData?.mediaUrl) {
       const captionText = (finalReplyText || aiResult.mediaData.caption || "").slice(0, 1e3);
-      sendRes = await sendMedia(msg.instanceName, msg.cleanPhone, aiResult.mediaData.mediaUrl, captionText);
+      sendRes = await sendMedia(
+        msg.instanceName,
+        msg.cleanPhone,
+        aiResult.mediaData.mediaUrl,
+        captionText,
+        aiResult.mediaData.mediaType,
+        aiResult.mediaData.fileName
+      );
       if (!sendRes?.success && finalReplyText) {
         console.warn(`[Queue] sendMedia failed for ${msg.pushName} (+${msg.cleanPhone}), falling back to text:`, sendRes?.error);
         sendRes = await sendMessage(msg.instanceName, msg.cleanPhone, finalReplyText);
@@ -15286,6 +15649,25 @@ router16.get("/:slug/products/:productSlug", async (req, res) => {
     res.status(500).json({ error: "Error al obtener producto" });
   }
 });
+router16.post("/:slug/coupon/validate", async (req, res) => {
+  try {
+    const tenant = await getTenantBySlug(req.params.slug);
+    if (!tenant) {
+      res.status(404).json({ error: "Tienda no encontrada" });
+      return;
+    }
+    const { code, subtotal } = req.body;
+    const result = await validateCoupon(tenant.id, code, Number(subtotal || 0));
+    if (!result.valid) {
+      res.status(400).json(result);
+      return;
+    }
+    res.json(result);
+  } catch (error) {
+    console.error("Storefront coupon validation error:", error);
+    res.status(500).json({ error: error.message || "Error al validar cup\xF3n" });
+  }
+});
 router16.post("/:slug/checkout", async (req, res) => {
   try {
     const tenant = await getTenantBySlug(req.params.slug);
@@ -15377,7 +15759,16 @@ router16.post("/:slug/checkout", async (req, res) => {
     }
     const isDelivery = consumptionMode === "delivery" || deliveryMethod === "delivery";
     const deliveryFee = isDelivery && store?.deliveryEnabled ? Number(store.deliveryFee || 0) : 0;
-    const total = subtotal + deliveryFee;
+    let appliedDiscount = 0;
+    let validCouponCode = null;
+    if (req.body.couponCode) {
+      const couponCheck = await validateCoupon(tenant.id, req.body.couponCode, subtotal);
+      if (couponCheck.valid && couponCheck.discountAmount) {
+        appliedDiscount = couponCheck.discountAmount;
+        validCouponCode = couponCheck.code || req.body.couponCode;
+      }
+    }
+    const total = Math.max(0, subtotal - appliedDiscount + deliveryFee);
     const order = await createOrder(
       tenant.id,
       {
@@ -15391,6 +15782,9 @@ router16.post("/:slug/checkout", async (req, res) => {
         source: "store",
         subtotal,
         deliveryFee,
+        discount: appliedDiscount,
+        discountAmount: appliedDiscount,
+        couponCode: validCouponCode || void 0,
         total,
         paymentMethod,
         paymentStatus: paymentProofUrl || paymentReference ? "proof_sent" : "pending",
@@ -15404,6 +15798,11 @@ router16.post("/:slug/checkout", async (req, res) => {
       },
       formattedItems
     );
+    if (validCouponCode) {
+      await redeemCoupon(tenant.id, validCouponCode, order.id).catch((err) => {
+        console.warn("[Storefront] Error redimiendo cup\xF3n post-orden:", err?.message || err);
+      });
+    }
     if (req.body.branchId) {
       const branchCheck = await query(
         `SELECT id FROM branches WHERE id = $1 AND tenant_id = $2`,
@@ -21359,13 +21758,80 @@ router37.get("/public/voucher/:code", async (req, res) => {
 });
 var loyalty_customer_routes_default = router37;
 
-// src/server/routes/seo.routes.ts
-init_pool();
+// src/server/routes/coupon.routes.ts
 import { Router as Router38 } from "express";
 var router38 = Router38();
+router38.use(authenticateToken);
+router38.use(tenantContext);
+router38.get("/", async (req, res) => {
+  try {
+    const coupons = await getCouponsByTenant(req.tenantId);
+    res.json(coupons);
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Error al listar cupones" });
+  }
+});
+router38.post("/", async (req, res) => {
+  try {
+    const coupon = await createCoupon(req.tenantId, req.body);
+    res.status(201).json(coupon);
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Error al crear cup\xF3n" });
+  }
+});
+router38.delete("/:id", async (req, res) => {
+  try {
+    const deleted = await deleteCoupon(req.tenantId, req.params.id);
+    if (!deleted) {
+      return res.status(404).json({ error: "Cup\xF3n no encontrado" });
+    }
+    res.json({ success: true, message: "Cup\xF3n eliminado correctamente" });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Error al eliminar cup\xF3n" });
+  }
+});
+router38.patch("/:id/toggle", async (req, res) => {
+  try {
+    const { active } = req.body;
+    const updated = await toggleCouponActive(req.tenantId, req.params.id, Boolean(active));
+    if (!updated) {
+      return res.status(404).json({ error: "Cup\xF3n no encontrado" });
+    }
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Error al actualizar cup\xF3n" });
+  }
+});
+router38.post("/validate", async (req, res) => {
+  try {
+    const { code, subtotal } = req.body;
+    const result = await validateCoupon(req.tenantId, code, Number(subtotal || 0));
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Error al validar cup\xF3n" });
+  }
+});
+router38.post("/redeem", async (req, res) => {
+  try {
+    const { code, orderId, notes } = req.body;
+    const result = await redeemCoupon(req.tenantId, code, orderId, notes);
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Error al canjear cup\xF3n" });
+  }
+});
+var coupon_routes_default = router38;
+
+// src/server/routes/seo.routes.ts
+init_pool();
+import { Router as Router39 } from "express";
+var router39 = Router39();
 var sitemapCache = null;
 var SITEMAP_TTL_MS = 60 * 60 * 1e3;
-router38.get("/robots.txt", (req, res) => {
+router39.get("/robots.txt", (req, res) => {
   const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
   const host = req.headers["x-forwarded-host"] || req.get("host") || "betico.tech";
   const baseUrl = `${protocol}://${host}`;
@@ -21394,7 +21860,7 @@ Sitemap: ${baseUrl}/sitemap.xml
   res.setHeader("Cache-Control", "public, max-age=86400");
   res.send(content);
 });
-router38.get("/sitemap.xml", async (req, res) => {
+router39.get("/sitemap.xml", async (req, res) => {
   const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
   const host = req.headers["x-forwarded-host"] || req.get("host") || "betico.tech";
   const baseUrl = `${protocol}://${host}`;
@@ -21468,7 +21934,7 @@ router38.get("/sitemap.xml", async (req, res) => {
     res.status(500).send("Error generating sitemap");
   }
 });
-var seo_routes_default = router38;
+var seo_routes_default = router39;
 
 // src/server/services/seo.service.ts
 var seoCache = /* @__PURE__ */ new Map();
@@ -21905,6 +22371,7 @@ async function startServer() {
   app.use("/api/superadmin/almendro", superadmin_almendro_routes_default);
   app.use("/api/loyalty", loyalty_routes_default);
   app.use("/api/loyalty-customer", publicLimiter, loyalty_customer_routes_default);
+  app.use("/api/coupons", coupon_routes_default);
   app.use("/", seo_routes_default);
   if (env.NODE_ENV === "production") {
     app.use("/assets", express.static(path2.join(__dirname, "assets"), { maxAge: "1y", immutable: true }));

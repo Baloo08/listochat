@@ -345,7 +345,14 @@ async function processSingleMessage(msg: any) {
 
     if (aiResult.isMediaDetected && aiResult.mediaData?.mediaUrl) {
       const captionText = (finalReplyText || aiResult.mediaData.caption || '').slice(0, 1000);
-      sendRes = await sendMedia(msg.instanceName, msg.cleanPhone, aiResult.mediaData.mediaUrl, captionText);
+      sendRes = await sendMedia(
+        msg.instanceName,
+        msg.cleanPhone,
+        aiResult.mediaData.mediaUrl,
+        captionText,
+        aiResult.mediaData.mediaType,
+        aiResult.mediaData.fileName
+      );
       // Fallback: If sending media failed (e.g. invalid external image URL or WhatsApp timeout), ensure client receives reply via text!
       if (!sendRes?.success && finalReplyText) {
         console.warn(`[Queue] sendMedia failed for ${msg.pushName} (+${msg.cleanPhone}), falling back to text:`, sendRes?.error);

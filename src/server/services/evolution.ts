@@ -185,20 +185,41 @@ export async function markAsRead(instanceName: string, remoteJid: string, messag
   }
 }
 
-export async function sendMedia(instanceName: string, number: string, mediaUrl: string, caption?: string): Promise<EvolutionResponse> {
+export async function sendMedia(
+  instanceName: string,
+  number: string,
+  mediaUrl: string,
+  caption?: string,
+  mediaType?: 'image' | 'document' | 'video' | 'audio',
+  fileName?: string
+): Promise<EvolutionResponse> {
   try {
     const cleanNumber = (number || '').replace(/@.+$/, '').replace(/\D/g, '');
+    const cleanUrl = (mediaUrl || '').trim();
+    const isDoc = mediaType === 'document' || /\.pdf($|\?)/i.test(cleanUrl) || /\.doc(x)?($|\?)/i.test(cleanUrl) || /\.xls(x)?($|\?)/i.test(cleanUrl);
+    const isVideo = mediaType === 'video' || /\.mp4($|\?)/i.test(cleanUrl) || /\.mov($|\?)/i.test(cleanUrl);
+    const isAudio = mediaType === 'audio' || /\.mp3($|\?)/i.test(cleanUrl) || /\.ogg($|\?)/i.test(cleanUrl) || /\.wav($|\?)/i.test(cleanUrl);
+
+    const resolvedMediaType = isDoc ? 'document' : (isVideo ? 'video' : (isAudio ? 'audio' : 'image'));
+    const resolvedFileName = fileName || (isDoc ? (cleanUrl.split('/').pop()?.split('?')[0] || 'documento.pdf') : undefined);
+
+    const payload: any = {
+      number: cleanNumber,
+      mediatype: resolvedMediaType,
+      media: cleanUrl,
+      caption: caption || '',
+      delay: 1200
+    };
+
+    if (resolvedFileName) {
+      payload.fileName = resolvedFileName;
+    }
+
     const response = await fetchWithTimeout(`${EVOLUTION_API_URL}/message/sendMedia/${instanceName}`, {
       method: 'POST',
       headers: getHeaders(),
-      body: JSON.stringify({
-        number: cleanNumber,
-        mediatype: 'image',
-        media: mediaUrl,
-        caption: caption || '',
-        delay: 1200
-      })
-    }, 20000);
+      body: JSON.stringify(payload)
+    }, 25000);
     const data = await response.json();
     return { success: response.ok, data };
   } catch (error) {
