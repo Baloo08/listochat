@@ -125,13 +125,13 @@ router.post('/prompt', async (req, res) => {
 
 router.post('/simulate', async (req, res) => {
   try {
-    const { message } = req.body;
+    const { message, history } = req.body;
     const result = await processWhatsAppMessageWithAI(
       req.tenantId,
       message || 'Hola, ¿qué servicios tienen?',
       '50688888888',
       'Cliente Prueba',
-      []
+      Array.isArray(history) ? history : []
     );
     res.json(result);
   } catch (error) {

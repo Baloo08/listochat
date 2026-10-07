@@ -12808,13 +12808,13 @@ router7.post("/prompt", async (req, res) => {
 });
 router7.post("/simulate", async (req, res) => {
   try {
-    const { message } = req.body;
+    const { message, history } = req.body;
     const result = await processWhatsAppMessageWithAI(
       req.tenantId,
       message || "Hola, \xBFqu\xE9 servicios tienen?",
       "50688888888",
       "Cliente Prueba",
-      []
+      Array.isArray(history) ? history : []
     );
     res.json(result);
   } catch (error) {
