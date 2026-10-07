@@ -322,6 +322,23 @@ async function processSingleMessage(msg: any) {
       }
     }
 
+    // 3.5 Log Loyalty Commands
+    if (aiResult.isLoyaltyRegisterDetected) {
+      await logAICommand(msg.tenantId, msg.remoteJid, 'loyalty_register', aiResult.loyaltyRegisterData, 'success');
+      if (io && aiResult.loyaltyResult?.card) {
+        io.to(`tenant_${msg.tenantId}`).emit('loyaltyCard:created', aiResult.loyaltyResult.card);
+      }
+    } else if (aiResult.isLoyaltyRedeemStampsDetected) {
+      await logAICommand(msg.tenantId, msg.remoteJid, 'loyalty_redeem_stamps', aiResult.loyaltyRedeemStampsData, 'success');
+      if (io && aiResult.loyaltyResult?.voucher) {
+        io.to(`tenant_${msg.tenantId}`).emit('loyaltyVoucher:created', aiResult.loyaltyResult.voucher);
+      }
+    } else if (aiResult.isLoyaltyRedeemPointsDetected) {
+      await logAICommand(msg.tenantId, msg.remoteJid, 'loyalty_redeem_points', aiResult.loyaltyRedeemPointsData, 'success');
+    } else if (aiResult.isLoyaltyCheckDetected) {
+      await logAICommand(msg.tenantId, msg.remoteJid, 'loyalty_check', aiResult.loyaltyCheckData, 'success');
+    }
+
     // 4. Send reply guaranteed to match database state
     let sendRes;
     let sentAsAudio = false;

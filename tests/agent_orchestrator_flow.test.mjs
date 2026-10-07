@@ -44,6 +44,14 @@ export const defaultOrchestratorConfig = {
       prompt: 'Eres el Conserje y Anfitrión Principal del negocio en WhatsApp. Responde con calidez tica (*pura vida*) y precisión sobre ubicación exacta, enlaces de Waze/Maps, horarios, formas de pago (SINPE Móvil, transferencia, efectivo, tarjeta), factura electrónica, parqueo, políticas pet friendly y comodidades. Concluye cada respuesta con un puente proactivo hacia el catálogo de productos o la agenda de citas. Si te preguntan algo no registrado oficialmente en las políticas del negocio, no inventes datos: ofrece transferir con un asesor humano.',
       sources: ['businessInfo', 'schedules', 'payments'],
       actions: []
+    },
+    loyalty: {
+      id: 'loyalty',
+      name: 'Club de Fidelización',
+      enabled: true,
+      prompt: 'Eres el Asesor Especialista en Fidelización y Club de Clientes. Atiende consultas de puntos acumulados, tarjetas de sellos, premios y canjes con entusiasmo y calidez tica.',
+      sources: ['loyalty'],
+      actions: ['loyaltyCheck', 'loyaltyRegister', 'loyaltyRedeem']
     }
   }
 };
@@ -94,18 +102,24 @@ export function routeIntent(userMessage, chatHistory, orchestratorConfig, storeM
   const courtsAllowed = storeModules ? storeModules.courtsEnabled === true : true;
   const salesAllowed = storeModules ? storeModules.storeEnabled !== false : true;
   const bookingsAllowed = storeModules ? storeModules.bookingsEnabled !== false : true;
+  const loyaltyAllowed = storeModules ? storeModules.loyaltyEnabled !== false : true;
 
   // 2. High-Precision Turn-First Evaluation (Current Message Intent)
   // This prevents historical context bleed (e.g. user previously asked about price, now wants to book an appointment)
   const currentMsgCourts = /cancha|canchas|partido|futbol|fútbol|padel|pádel|mejenga|gramilla|reservar cancha|alquiler cancha|crt-|#res-/i.test(lowerMsg);
   const currentMsgBooking = /servicio|servicios|cita|citas|agenda|agendar|turno|atencion|atención|doctor|especialista|cancelar cita|reagendar|disponibilidad de horario|horario de cita/i.test(lowerMsg);
   const currentMsgSales = /precio|costo|cuanto|venden|catalogo|catálogo|menu|menú|producto|productos|comprar|pedir|orden|pedido|foto|imagen|plato|comida|pizza|hamburguesa|variante|talla|sabor|llevar|delivery|envio|envío|agregar al carrito|camisa|camiseta|ropa|zapato|sinpe|transferencia|efectivo|tarjeta|pago|pagar|comprobante|recoger|retiro|domicilio|cuenta|total/i.test(lowerMsg);
+  const currentMsgLoyalty = /puntos?|sellos?|tarjeta de sellos?|lealtad|fidelidad|fidelizacion|fidelización|premio|premios|canjear|canje|recompensas?|club de clientes|mi saldo|mis puntos|cu[aá]ntos sellos|mi c[eé]dula|afiliarme|afiliar/i.test(lowerMsg);
+  const isOrderAction = /comprar|pedir|orden|pedido|delivery|llevar|agregar al carrito/i.test(lowerMsg);
 
-  if (currentMsgCourts && courtsAllowed && !currentMsgBooking && !currentMsgSales) {
+  if (currentMsgCourts && courtsAllowed && !currentMsgBooking && !currentMsgSales && !currentMsgLoyalty) {
     return subagents.courts?.enabled !== false ? 'courts' : 'general';
   }
-  if (currentMsgBooking && bookingsAllowed && !currentMsgSales && !currentMsgCourts) {
+  if (currentMsgBooking && bookingsAllowed && !currentMsgSales && !currentMsgCourts && !currentMsgLoyalty) {
     return subagents.booking?.enabled !== false ? 'booking' : 'general';
+  }
+  if (currentMsgLoyalty && loyaltyAllowed && !isOrderAction && !currentMsgBooking && !currentMsgCourts) {
+    return subagents.loyalty?.enabled !== false ? 'loyalty' : 'general';
   }
   if (currentMsgSales && salesAllowed && !currentMsgBooking && !currentMsgCourts) {
     return subagents.sales?.enabled !== false ? 'sales' : 'general';
@@ -118,25 +132,39 @@ export function routeIntent(userMessage, chatHistory, orchestratorConfig, storeM
   // Checkout Funnel Persistence: If user is answering a payment/confirmation prompt from sales, stay in sales!
   const isCheckoutFollowUp = /^(por\s+)?(sinpe|transferencia|efectivo|tarjeta|contra entrega)|^(sí|si|ok|listo|confirmo|confirmar|de acuerdo|dale|correcto|por fa|porfa|por favor)$|^(\d+[\s\w,.-]*)$|direccion|dirección|envio|envío|recoger|retiro/i.test(lowerMsg);
   const hadSalesContext = /precio|costo|total|pedido|orden|₡|crc|sinpe|producto|productos|botella|tienda|catálogo|comprar/i.test(recentHistory);
-  if (isCheckoutFollowUp && hadSalesContext && salesAllowed && !currentMsgBooking && !currentMsgCourts) {
+  if (isCheckoutFollowUp && hadSalesContext && salesAllowed && !currentMsgBooking && !currentMsgCourts && !currentMsgLoyalty) {
     return subagents.sales?.enabled !== false ? 'sales' : 'general';
+  }
+
+  // Loyalty Follow-Up Persistence: If user is providing cédula after a loyalty prompt, stay in loyalty!
+  const hadLoyaltyContext = /puntos?|sellos?|fidelidad|fidelizacion|fidelización|lealtad|premio|canjear|club/i.test(recentHistory);
+  const isCedulaReply = /^(?:mi c[eé]dula es\s*)?(?:[1-9]-?\d{4}-?\d{4}|[1-9]\d{8}|\d{9,12})$/i.test(lowerMsg);
+  if (hadLoyaltyContext && isCedulaReply && loyaltyAllowed) {
+    return subagents.loyalty?.enabled !== false ? 'loyalty' : 'general';
   }
 
   const isCourts = /cancha|canchas|partido|futbol|fútbol|padel|pádel|mejenga|gramilla|reservar cancha|alquiler cancha|crt-|#res-/i.test(context);
   const isBooking = /servicio|servicios|cita|citas|agenda|agendar|turno|atencion|atención|doctor|especialista|cancelar cita|reagendar|disponibilidad de horario|horario de cita/i.test(context);
   const isSales = /precio|costo|cuanto|venden|catalogo|catálogo|menu|menú|producto|productos|comprar|pedir|orden|pedido|foto|imagen|plato|comida|pizza|hamburguesa|variante|talla|sabor|llevar|delivery|envio|envío|agregar al carrito|camisa|camiseta|ropa|zapato|sinpe|transferencia|efectivo|tarjeta|pago|pagar|comprobante|recoger|retiro|domicilio|cuenta|total|confirmo/i.test(context);
+  const isLoyalty = /puntos?|sellos?|tarjeta de sellos?|lealtad|fidelidad|fidelizacion|fidelización|premio|premios|canjear|canje|recompensas?|club de clientes|mi saldo|mis puntos|cu[aá]ntos sellos|mi c[eé]dula|afiliarme|afiliar/i.test(context);
 
   if (isCourts && courtsAllowed) {
     return subagents.courts?.enabled !== false ? 'courts' : 'general';
   }
-  if (isBooking && bookingsAllowed && !isSales) {
+  if (isBooking && bookingsAllowed && !isSales && !isLoyalty) {
     return subagents.booking?.enabled !== false ? 'booking' : 'general';
+  }
+  if (isLoyalty && loyaltyAllowed && !isOrderAction && !isBooking && !isCourts) {
+    return subagents.loyalty?.enabled !== false ? 'loyalty' : 'general';
   }
   if (isSales && salesAllowed && !isBooking) {
     return subagents.sales?.enabled !== false ? 'sales' : 'general';
   }
   if (isBooking && bookingsAllowed) {
     return subagents.booking?.enabled !== false ? 'booking' : 'general';
+  }
+  if (isLoyalty && loyaltyAllowed) {
+    return subagents.loyalty?.enabled !== false ? 'loyalty' : 'general';
   }
   if (isSales && salesAllowed) {
     return subagents.sales?.enabled !== false ? 'sales' : 'general';
@@ -759,6 +787,65 @@ EXCEPCIÓN DE IDENTIDAD OBLIGATORIA: Si el cliente pregunta explícitamente qui�
     assert.equal(isMediaDetected, true, 'Auto-recovery should set isMediaDetected to true');
     assert.equal(mediaData.mediaUrl, 'https://betico.tech/uploads/products/bottle.jpg');
     assert.ok(mediaData.caption.includes('Botella de aluminio'), 'Caption should include product name');
+  });
+
+  await t.test('27. Loyalty Intent Routing & Cédula Persistence', () => {
+    // 1. Direct loyalty query
+    const res1 = routeIntent('Hola, ¿cuántos puntos tengo acumulados?', [], defaultOrchestratorConfig, { loyaltyEnabled: true });
+    assert.equal(res1, 'loyalty', 'Should route points balance query to loyalty');
+
+    const res2 = routeIntent('Quiero saber cuántos sellos llevo en mi tarjeta', [], defaultOrchestratorConfig, { loyaltyEnabled: true });
+    assert.equal(res2, 'loyalty', 'Should route stamps count query to loyalty');
+
+    const res3 = routeIntent('¿Cómo hago para canjear mi premio?', [], defaultOrchestratorConfig, { loyaltyEnabled: true });
+    assert.equal(res3, 'loyalty', 'Should route prize redemption query to loyalty');
+
+    // 2. Cédula follow-up persistence
+    const history = [
+      { role: 'user', content: '¿Tengo sellos en mi tarjeta?' },
+      { role: 'assistant', content: '¡Con gusto! Para consultar tu saldo de sellos y puntos, indícame tu número de cédula.' }
+    ];
+    const res4 = routeIntent('112340567', history, defaultOrchestratorConfig, { loyaltyEnabled: true });
+    assert.equal(res4, 'loyalty', 'Should route cédula response to loyalty subagent');
+
+    const res5 = routeIntent('mi cédula es 1-1234-0567', history, defaultOrchestratorConfig, { loyaltyEnabled: true });
+    assert.equal(res5, 'loyalty', 'Should route formatted cédula response to loyalty subagent');
+
+    // 3. Fallback when loyalty is disabled
+    const res6 = routeIntent('¿Cuántos puntos tengo?', [], defaultOrchestratorConfig, { loyaltyEnabled: false });
+    assert.equal(res6, 'general', 'Should route to general when loyaltyEnabled is false');
+  });
+
+  await t.test('28. Loyalty Command Parsing & Extraction', () => {
+    // Test COMMAND_LOYALTY_CHECK
+    const checkRaw = '¡Hola Carlos! Consultando tu tarjeta... <<<COMMAND_LOYALTY_CHECK: {"identification": "112340567"}>>>';
+    const checkMatch = checkRaw.match(/<<<COMMAND_LOYALTY_CHECK:\s*({.*?})>>>/s);
+    assert.ok(checkMatch, 'Should match COMMAND_LOYALTY_CHECK');
+    const parsedCheck = safeParseJSON(checkMatch[1]);
+    assert.equal(parsedCheck.identification, '112340567');
+
+    // Test COMMAND_LOYALTY_REGISTER
+    const regRaw = '¡Listo! Te voy a registrar en nuestro club. <<<COMMAND_LOYALTY_REGISTER: {"identification": "112340567", "customerName": "Carlos"}>>>';
+    const regMatch = regRaw.match(/<<<COMMAND_LOYALTY_REGISTER:\s*({.*?})>>>/s);
+    assert.ok(regMatch, 'Should match COMMAND_LOYALTY_REGISTER');
+    const parsedReg = safeParseJSON(regMatch[1]);
+    assert.equal(parsedReg.identification, '112340567');
+    assert.equal(parsedReg.customerName, 'Carlos');
+
+    // Test COMMAND_LOYALTY_REDEEM_STAMPS
+    const redeemStampsRaw = '¡Felicidades por completar tus sellos! <<<COMMAND_LOYALTY_REDEEM_STAMPS: {"identification": "112340567"}>>>';
+    const redeemStampsMatch = redeemStampsRaw.match(/<<<COMMAND_LOYALTY_REDEEM_STAMPS:\s*({.*?})>>>/s);
+    assert.ok(redeemStampsMatch, 'Should match COMMAND_LOYALTY_REDEEM_STAMPS');
+    const parsedRedeemStamps = safeParseJSON(redeemStampsMatch[1]);
+    assert.equal(parsedRedeemStamps.identification, '112340567');
+
+    // Test COMMAND_LOYALTY_REDEEM_POINTS
+    const redeemPointsRaw = 'Aplicando tus puntos de descuento... <<<COMMAND_LOYALTY_REDEEM_POINTS: {"identification": "112340567", "points": 1000}>>>';
+    const redeemPointsMatch = redeemPointsRaw.match(/<<<COMMAND_LOYALTY_REDEEM_POINTS:\s*({.*?})>>>/s);
+    assert.ok(redeemPointsMatch, 'Should match COMMAND_LOYALTY_REDEEM_POINTS');
+    const parsedRedeemPoints = safeParseJSON(redeemPointsMatch[1]);
+    assert.equal(parsedRedeemPoints.identification, '112340567');
+    assert.equal(parsedRedeemPoints.points, 1000);
   });
 
 });

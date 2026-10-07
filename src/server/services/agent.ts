@@ -31,6 +31,15 @@ export interface AgentProcessResult {
   rescheduleBookingData?: any;
   isRescheduleCourtDetected?: boolean;
   rescheduleCourtData?: any;
+  isLoyaltyCheckDetected?: boolean;
+  loyaltyCheckData?: any;
+  isLoyaltyRegisterDetected?: boolean;
+  loyaltyRegisterData?: any;
+  isLoyaltyRedeemStampsDetected?: boolean;
+  loyaltyRedeemStampsData?: any;
+  isLoyaltyRedeemPointsDetected?: boolean;
+  loyaltyRedeemPointsData?: any;
+  loyaltyResult?: any;
   tokensUsed?: number;
 }
 

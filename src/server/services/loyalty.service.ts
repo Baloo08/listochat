@@ -5,6 +5,7 @@ import {
   findOrCreateLoyaltyCard,
   addPoints,
   addStamps,
+  redeemPoints,
   listPromotions
 } from '../db/loyalty.repo.js';
 import { getStoreSettings } from '../db/store-settings.repo.js';
@@ -196,3 +197,117 @@ export async function getLoyaltySummaryForBot(
     formattedText: lines.join('\n')
   };
 }
+
+export async function registerLoyaltyForBot(
+  tenantId: string,
+  identification: string,
+  customerName: string,
+  phone?: string
+): Promise<{ success: boolean; card?: LoyaltyCard; message: string }> {
+  try {
+    const program = await getLoyaltyProgram(tenantId);
+    if (!program || !program.isActive) {
+      return { success: false, message: 'El programa de fidelidad no se encuentra activo en este momento.' };
+    }
+    const cleanId = identification.replace(/[-.\s]/g, '');
+    if (!cleanId) {
+      return { success: false, message: 'Se requiere un número de cédula válido para registrar la tarjeta.' };
+    }
+
+    const card = await findOrCreateLoyaltyCard(tenantId, {
+      identification: cleanId,
+      customerName: customerName || 'Cliente',
+      customerPhone: phone
+    });
+
+    const baseUrl = process.env.APP_URL || 'https://betico.tech';
+    return {
+      success: true,
+      card,
+      message: `🎉 *¡Bienvenido al Club de Fidelidad, ${customerName || 'estimado cliente'}!*\nTu tarjeta ha sido activada con la cédula *${cleanId}*.\nA partir de ahora, cada compra que realices sumará puntos y sellos automáticamente.\n📱 Puedes revisar tu tarjeta y saldo cuando desees en: ${baseUrl}/fidelidad`
+    };
+  } catch (err: any) {
+    return { success: false, message: `No se pudo registrar la tarjeta: ${err.message}` };
+  }
+}
+
+export async function redeemStampsForBot(
+  tenantId: string,
+  identifier: string
+): Promise<{ success: boolean; voucher?: LoyaltyRewardVoucher; message: string }> {
+  try {
+    const program = await getLoyaltyProgram(tenantId);
+    if (!program || !program.isActive) {
+      return { success: false, message: 'El programa de fidelidad no se encuentra activo en este momento.' };
+    }
+
+    let card = await getLoyaltyCardByIdentification(tenantId, identifier);
+    if (!card) card = await getLoyaltyCardByPhone(tenantId, identifier);
+    if (!card) {
+      return { success: false, message: `No encontramos una tarjeta registrada con la identificación o teléfono provisto (*${identifier}*).` };
+    }
+
+    const target = program.stampsTarget || 10;
+    if (card.currentStamps < target) {
+      const remaining = target - card.currentStamps;
+      return {
+        success: false,
+        message: `Aún no completas la meta de sellos. Tienes *${card.currentStamps} de ${target} sellos*. Te faltan solo *${remaining} sello(s)* para ganar tu premio: *${program.stampsPrize}*! 🎁`
+      };
+    }
+
+    // Al tener >= target sellos, addStamps con 0 evalúa newStamps >= target, descuenta target y emite el voucher
+    const stampRes = await addStamps(tenantId, card.id, 0);
+    const voucher = stampRes.voucher;
+    const baseUrl = process.env.APP_URL || 'https://betico.tech';
+    const code = voucher?.voucherCode || 'PREMIO';
+
+    return {
+      success: true,
+      voucher,
+      message: `🎉 *¡FELICIDADES! Has canjeado tu tarjeta de sellos.*\n🎁 Premio: *${program.stampsPrize}*\n🏷️ Código de cupón: *${code}*\n📱 Muestra este código o tu QR en ${baseUrl}/fidelidad para hacer válido tu premio en tu próxima visita o pedido.`
+    };
+  } catch (err: any) {
+    return { success: false, message: `Error al canjear sellos: ${err.message}` };
+  }
+}
+
+export async function redeemPointsForBot(
+  tenantId: string,
+  identifier: string,
+  pointsToRedeem: number
+): Promise<{ success: boolean; discountAmount?: number; message: string }> {
+  try {
+    const program = await getLoyaltyProgram(tenantId);
+    if (!program || !program.isActive) {
+      return { success: false, message: 'El programa de fidelidad no se encuentra activo en este momento.' };
+    }
+
+    let card = await getLoyaltyCardByIdentification(tenantId, identifier);
+    if (!card) card = await getLoyaltyCardByPhone(tenantId, identifier);
+    if (!card) {
+      return { success: false, message: `No encontramos una tarjeta registrada con la identificación *${identifier}*.` };
+    }
+
+    if (card.pointsBalance < pointsToRedeem) {
+      return {
+        success: false,
+        message: `Saldo insuficiente. Tienes *${card.pointsBalance.toLocaleString()} puntos* disponibles e intentaste canjear *${pointsToRedeem.toLocaleString()} puntos*.`
+      };
+    }
+
+    const discountAmount = Math.round(pointsToRedeem * Number(program.pointsRedeemRatio));
+    await redeemPoints(tenantId, card.id, pointsToRedeem, {
+      notes: `Canje por WhatsApp de ${pointsToRedeem} puntos (₡${discountAmount.toLocaleString('es-CR')})`
+    });
+
+    return {
+      success: true,
+      discountAmount,
+      message: `✅ *Canje exitoso:* Has utilizado *${pointsToRedeem.toLocaleString()} puntos*, equivalentes a un descuento de *₡${discountAmount.toLocaleString('es-CR')}*. Tu nuevo saldo de puntos es de *${(card.pointsBalance - pointsToRedeem).toLocaleString()} puntos*.`
+    };
+  } catch (err: any) {
+    return { success: false, message: `Error al canjear puntos: ${err.message}` };
+  }
+}
+

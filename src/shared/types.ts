@@ -157,6 +157,7 @@ export interface OrchestratorConfig {
     courts: SubagentConfig;
     handoff: SubagentConfig;
     general: SubagentConfig;
+    loyalty?: SubagentConfig;
   };
   nodePositions?: Record<string, NodePosition>;
 }

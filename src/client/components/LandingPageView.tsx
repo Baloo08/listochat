@@ -236,8 +236,8 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
       a: 'Reemplaza las tarjetas de cartón que los clientes siempre pierden. Puedes crear tarjetas por sellos digitales (ej. "el 8° corte o café es gratis") o monederos de puntos por compras. Tus clientes consultan sus sellos y puntos en su billetera digital en betico.tech/fidelidad ingresando su número de cédula, o preguntándole al bot de WhatsApp.'
     },
     {
-      q: '¿Por qué Betico IA no requiere pagar tarifas extras en dólares?',
-      a: 'A diferencia de otras soluciones que usan APIs extranjeras y te cobran por cada mensaje o token consumido, Betico opera su propia infraestructura de IA soberana. Esto nos permite ofrecer respuestas ilimitadas sin que tu factura aumente según el volumen de mensajes.'
+      q: '¿Cómo funciona la conexión con mi modelo de IA favorito (Gemini, OpenAI o Claude)?',
+      a: 'Conectas tu clave de API de Google Gemini, OpenAI o Anthropic Claude en segundos desde tu panel. Betico aplica una arquitectura de prompts altamente eficiente que optimiza al máximo cada token consumido, logrando respuestas comerciales rápidas, precisas y con una gran utilidad sin desperdiciar presupuesto.'
     },
     {
       q: '¿Necesito cambiar mi número de WhatsApp actual?',
@@ -320,7 +320,7 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
                 Pagos Tarjeta
               </a>
               <a onClick={() => scrollToSection('sitio-web')} style={{ color: '#475569', textDecoration: 'none', cursor: 'pointer' }}>Sitio Web</a>
-              <a onClick={() => scrollToSection('motor-ia')} style={{ color: '#475569', textDecoration: 'none', cursor: 'pointer' }}>Motor IA</a>
+              <a onClick={() => scrollToSection('motor-ia')} style={{ color: '#475569', textDecoration: 'none', cursor: 'pointer' }}>Tu Modelo IA</a>
               <a onClick={() => scrollToSection('tienda-citas')} style={{ color: '#475569', textDecoration: 'none', cursor: 'pointer' }}>Tienda y Citas</a>
               <a onClick={() => scrollToSection('calculadora-roi')} style={{ color: '#475569', textDecoration: 'none', cursor: 'pointer' }}>Calculadora ROI</a>
               <a onClick={() => scrollToSection('precios')} style={{ color: '#475569', textDecoration: 'none', cursor: 'pointer' }}>Precios</a>
@@ -442,7 +442,7 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
             <a onClick={() => scrollToSection('comparativa')} style={{ color: '#0f172a', padding: '8px 0', borderBottom: '1px solid #f1f5f9' }}>⚖️ Comparativa Estratégica</a>
             <a onClick={() => scrollToSection('pagos-tarjeta')} style={{ color: '#b51c12', padding: '8px 0', borderBottom: '1px solid #f1f5f9', fontWeight: 'bold' }}>💳 Pagos Tarjeta (Tilopay 3D Secure)</a>
             <a onClick={() => scrollToSection('sitio-web')} style={{ color: '#0f172a', padding: '8px 0', borderBottom: '1px solid #f1f5f9' }}>🌐 Creador de Sitios Web</a>
-            <a onClick={() => scrollToSection('motor-ia')} style={{ color: '#0f172a', padding: '8px 0', borderBottom: '1px solid #f1f5f9' }}>🤖 Motor de IA Propio</a>
+            <a onClick={() => scrollToSection('motor-ia')} style={{ color: '#0f172a', padding: '8px 0', borderBottom: '1px solid #f1f5f9' }}>🤖 Tu Modelo IA Favorito</a>
             <a onClick={() => scrollToSection('tienda-citas')} style={{ color: '#0f172a', padding: '8px 0', borderBottom: '1px solid #f1f5f9' }}>🛍️ Tienda y Agenda de Citas</a>
             <a onClick={() => scrollToSection('calculadora-roi')} style={{ color: '#0f172a', padding: '8px 0', borderBottom: '1px solid #f1f5f9' }}>💰 Calculadora de Ahorro</a>
             <a onClick={() => scrollToSection('precios')} style={{ color: '#0f172a', padding: '8px 0', borderBottom: '1px solid #f1f5f9' }}>🏷️ Planes y Precios</a>
@@ -494,7 +494,7 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
                 <span style={{ position: 'absolute', width: '100%', height: '100%', borderRadius: '50%', backgroundColor: '#f04337', opacity: 0.75, animation: 'ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite' }} />
                 <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#b51c12' }} />
               </span>
-              <span>⚡ Nuevo: Pagos con Tarjeta + Verificación de SINPE Móvil + Motor IA Propio + Club de Fidelidad</span>
+              <span>⚡ Nuevo: Pagos con Tarjeta + Verificación de SINPE Móvil + Tu Modelo IA Favorito + Club de Fidelidad</span>
             </div>
 
             {/* Hero Headline */}
@@ -528,7 +528,7 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
               margin: '0 auto 36px auto',
               fontWeight: 400
             }}>
-              Crea tu <strong>Página Web Oficial</strong> en minutos, vende en tu <strong>Tienda Digital</strong> con cobros por <strong>Tarjeta (Visa, Mastercard, AMEX)</strong> y <strong>SINPE Móvil</strong>, llena tu <strong>Agenda de Citas o Canchas Deportivas</strong>, fideliza clientes con <strong>Sellos y Puntos Digitales</strong> y automatiza la atención 24/7 por WhatsApp con <strong>Betico IA</strong>.
+              Crea tu <strong>Página Web Oficial</strong> en minutos, vende en tu <strong>Tienda Digital</strong> con cobros por <strong>Tarjeta (Visa, Mastercard, AMEX)</strong> y <strong>SINPE Móvil</strong>, llena tu <strong>Agenda de Citas o Canchas Deportivas</strong>, fideliza clientes con <strong>Sellos y Puntos Digitales</strong> y automatiza la atención 24/7 por WhatsApp potenciada por <strong>tu modelo de IA favorito</strong>.
             </p>
 
             {/* CTA Buttons */}
@@ -647,7 +647,7 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
                 <div style={{ alignSelf: 'flex-start', maxWidth: isMobile ? '94%' : '80%', backgroundColor: '#ffffff', color: '#0f172a', padding: '16px', borderRadius: '16px 16px 16px 4px', fontSize: '0.88rem', border: '1px solid #e2e8f0', boxShadow: '0 2px 6px rgba(0,0,0,0.04)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#0b3c3d', fontWeight: '800', fontSize: '0.82rem', marginBottom: '8px' }}>
                     <Bot size={16} color="#b51c12" />
-                    <span>Betico IA (Motor Propio sin costos de token)</span>
+                    <span>Betico IA • Potenciado con tu modelo de IA favorito</span>
                   </div>
                   <p style={{ margin: '0 0 8px 0' }}>¡Hola! Con gusto te tomo la orden 🍔</p>
                   <div style={{ backgroundColor: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '8px', fontSize: '0.82rem', display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -740,7 +740,7 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Zap size={18} color="#b51c12" />
-              <span>Motor IA propio sin cobro por tokens</span>
+              <span>Máximo ahorro de tokens con tu IA favorita</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <CheckCircle2 size={18} color="#0b3c3d" />
@@ -953,8 +953,8 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
                     <li style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
                       <CheckCircle2 size={18} color="#0b3c3d" style={{ flexShrink: 0, marginTop: '2px' }} />
                       <div>
-                        <strong style={{ color: '#0f172a' }}>Motor Betico IA Propio:</strong>
-                        <span style={{ color: '#475569' }}> Cero costos de tokens en dólares ni servidores cloud que administrar. Respuestas ilimitadas 24/7 en WhatsApp.</span>
+                        <strong style={{ color: '#0f172a' }}>Potencia tu Modelo de IA Favorito:</strong>
+                        <span style={{ color: '#475569' }}> Conecta tu clave de API de Gemini, OpenAI o Claude en segundos. Prompts optimizados para sacarle la máxima utilidad a tus tokens con el menor costo operativo.</span>
                       </div>
                     </li>
                     <li style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
@@ -1246,7 +1246,7 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
                 </div>
               </div>
 
-              {/* Pilar 2: Motor de IA Propio */}
+              {/* Pilar 2: Potencia tu Modelo de IA Favorito */}
               <div id="motor-ia" style={{ backgroundColor: '#ffffff', borderRadius: '20px', padding: isMobile ? '24px' : '32px', border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.03)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
                 <div>
                   <div style={{ width: '48px', height: '48px', borderRadius: '12px', backgroundColor: '#fff1f0', color: '#b51c12', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '20px' }}>
@@ -1257,29 +1257,29 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
                     Pilar 2
                   </div>
                   <h3 style={{ fontSize: '1.45rem', fontWeight: '800', color: '#0f172a', margin: '0 0 12px 0' }}>
-                    Motor de IA Betico Propio
+                    Potencia tu Modelo de IA Favorito
                   </h3>
                   <p style={{ color: '#64748b', fontSize: '0.92rem', lineHeight: 1.6, marginBottom: '20px' }}>
-                    <strong>Cero Tarifas Ocultas en Dólares:</strong> Sin pagos extra de $20+/mes ni requerimiento de tarjetas internacionales. Contesta mensajes y notas de voz 24/7 en WhatsApp, genera descripciones para tu catálogo y atiende clientes sin límites de tokens ni cobros extras.
+                    <strong>Máximo Rendimiento de Tokens:</strong> Conecta tu clave de API de <strong>Google Gemini, OpenAI o Claude</strong>. Betico estructura la información con ingeniería de prompts optimizada para consumir la menor cantidad de tokens posible, dándote una utilidad comercial extraordinaria al menor costo operativo.
                   </p>
                   <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 24px 0', display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.85rem', color: '#334155' }}>
                     <li style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
                       <CheckCircle2 size={16} color="#b51c12" style={{ flexShrink: 0, marginTop: '2px' }} />
-                      <span>Tus datos están seguros y no se usan para entrenar modelos de grandes empresas.</span>
+                      <span>Conexión directa con Google Gemini, OpenAI (ChatGPT) y Anthropic Claude.</span>
                     </li>
                     <li style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
                       <CheckCircle2 size={16} color="#b51c12" style={{ flexShrink: 0, marginTop: '2px' }} />
-                      <span>Generación automática de títulos y descripciones atractivas para tu catálogo.</span>
+                      <span>Prompts ultracompactos que maximizan la utilidad de cada token y evitan gastos innecesarios.</span>
                     </li>
                     <li style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
                       <CheckCircle2 size={16} color="#b51c12" style={{ flexShrink: 0, marginTop: '2px' }} />
-                      <span>Historial y métricas de asistencias brindadas sin cobros por tokens.</span>
+                      <span>Entiende notas de voz de WhatsApp y modismos costarricenses de forma natural.</span>
                     </li>
                   </ul>
                 </div>
                 <div style={{ paddingTop: '16px', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem' }}>
-                  <span style={{ color: '#64748b' }}>Entrenado con modismos ticos</span>
-                  <span style={{ color: '#b51c12', fontWeight: '700' }}>IA Nativa Betico</span>
+                  <span style={{ color: '#64748b' }}>Gemini • OpenAI • Claude</span>
+                  <span style={{ color: '#b51c12', fontWeight: '700' }}>Tokens Optimizados</span>
                 </div>
               </div>
 
@@ -1755,7 +1755,7 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
 
                   <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 32px 0', display: 'flex', flexDirection: 'column', gap: '11px', fontSize: '0.88rem', color: '#334155' }}>
                     <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><CheckCircle2 size={18} color="#0b3c3d" /> <span><strong>1 Número de WhatsApp</strong> Conectado</span></li>
-                    <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><CheckCircle2 size={18} color="#0b3c3d" /> <span><strong>Motor Betico IA Propio</strong> (Respuestas ilimitadas, sin cobro por tokens)</span></li>
+                    <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><CheckCircle2 size={18} color="#0b3c3d" /> <span><strong>Potencia tu IA Favorita</strong> (Gemini, OpenAI, Claude con prompts optimizados para máximo ahorro de tokens)</span></li>
                     <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><CheckCircle2 size={18} color="#0b3c3d" /> <span><strong>Comprensión de Notas de Voz</strong> de WhatsApp</span></li>
                     <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><CheckCircle2 size={18} color="#0b3c3d" /> <span><strong>Creador de Sitios Web Oficial</strong> (<span style={{ color: '#0b3c3d', fontFamily: 'monospace' }}>betico.tech/sitio/tu-marca</span>)</span></li>
                     <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><CheckCircle2 size={18} color="#0b3c3d" /> <span><strong>Tienda Online y Menú</strong> con pedidos a WhatsApp</span></li>
@@ -2032,7 +2032,7 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
                 <img src="/logo.png" alt="Betico" style={{ height: '48px', width: 'auto', objectFit: 'contain' }} />
               </div>
               <p style={{ fontSize: '0.85rem', color: '#64748b', lineHeight: 1.6, maxWidth: '300px', margin: '0 0 16px 0' }}>
-                La plataforma SaaS costarricense que une tu sitio web oficial, tienda digital, agenda de citas, canchas, fidelización y motor de IA en WhatsApp.
+                La plataforma SaaS costarricense que une tu sitio web oficial, tienda digital, agenda de citas, canchas, fidelización e inteligencia artificial en WhatsApp.
               </p>
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', backgroundColor: '#eff7f7', color: '#0b3c3d', padding: '4px 10px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '700', border: '1px solid #b0dcdc' }}>
                 <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#0b3c3d' }} />
@@ -2047,7 +2047,7 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
               </h4>
               <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.82rem' }}>
                 <li><a onClick={() => scrollToSection('sitio-web')} style={{ color: '#64748b', textDecoration: 'none', cursor: 'pointer' }}>Sitio Web Oficial</a></li>
-                <li><a onClick={() => scrollToSection('motor-ia')} style={{ color: '#64748b', textDecoration: 'none', cursor: 'pointer' }}>Motor Betico IA</a></li>
+                <li><a onClick={() => scrollToSection('motor-ia')} style={{ color: '#64748b', textDecoration: 'none', cursor: 'pointer' }}>Tu Modelo IA Favorito</a></li>
                 <li><a onClick={() => scrollToSection('tienda-citas')} style={{ color: '#64748b', textDecoration: 'none', cursor: 'pointer' }}>Tienda Digital y Pagos</a></li>
                 <li><a onClick={() => scrollToSection('tienda-citas')} style={{ color: '#64748b', textDecoration: 'none', cursor: 'pointer' }}>Agenda de Citas y Reservas</a></li>
                 <li><a onClick={() => scrollToSection('club-fidelidad')} style={{ color: '#64748b', textDecoration: 'none', cursor: 'pointer' }}>Club de Fidelidad y Sellos</a></li>

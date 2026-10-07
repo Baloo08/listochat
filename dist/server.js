@@ -6727,6 +6727,14 @@ var defaultOrchestratorConfig = {
       sources: ["businessInfo", "schedules", "payments"],
       actions: [],
       links: []
+    },
+    loyalty: {
+      id: "loyalty",
+      name: "Club de Fidelizaci\xF3n",
+      enabled: true,
+      prompt: "Eres el Asesor Especialista en Fidelizaci\xF3n y Club de Clientes. Atiende consultas de puntos acumulados, tarjetas de sellos, premios y canjes con entusiasmo y calidez tica. Identifica al cliente mediante su n\xFAmero de c\xE9dula f\xEDsica o jur\xEDdica (identificador oficial) o tel\xE9fono. Si el cliente no ha dado su c\xE9dula, p\xEDdela amablemente para consultar su saldo exacto o registrarlo. Si califica para un premio o canje, mot\xEDvalo a redimirlo o a visitar betico.tech/fidelidad.",
+      sources: ["loyalty"],
+      actions: ["loyaltyCheck", "loyaltyRegister", "loyaltyRedeem"]
     }
   }
 };
@@ -8733,6 +8741,99 @@ async function getLoyaltySummaryForBot(tenantId, identifier) {
     formattedText: lines.join("\n")
   };
 }
+async function registerLoyaltyForBot(tenantId, identification, customerName, phone) {
+  try {
+    const program = await getLoyaltyProgram(tenantId);
+    if (!program || !program.isActive) {
+      return { success: false, message: "El programa de fidelidad no se encuentra activo en este momento." };
+    }
+    const cleanId = identification.replace(/[-.\s]/g, "");
+    if (!cleanId) {
+      return { success: false, message: "Se requiere un n\xFAmero de c\xE9dula v\xE1lido para registrar la tarjeta." };
+    }
+    const card = await findOrCreateLoyaltyCard(tenantId, {
+      identification: cleanId,
+      customerName: customerName || "Cliente",
+      customerPhone: phone
+    });
+    const baseUrl = process.env.APP_URL || "https://betico.tech";
+    return {
+      success: true,
+      card,
+      message: `\u{1F389} *\xA1Bienvenido al Club de Fidelidad, ${customerName || "estimado cliente"}!*
+Tu tarjeta ha sido activada con la c\xE9dula *${cleanId}*.
+A partir de ahora, cada compra que realices sumar\xE1 puntos y sellos autom\xE1ticamente.
+\u{1F4F1} Puedes revisar tu tarjeta y saldo cuando desees en: ${baseUrl}/fidelidad`
+    };
+  } catch (err) {
+    return { success: false, message: `No se pudo registrar la tarjeta: ${err.message}` };
+  }
+}
+async function redeemStampsForBot(tenantId, identifier) {
+  try {
+    const program = await getLoyaltyProgram(tenantId);
+    if (!program || !program.isActive) {
+      return { success: false, message: "El programa de fidelidad no se encuentra activo en este momento." };
+    }
+    let card = await getLoyaltyCardByIdentification(tenantId, identifier);
+    if (!card) card = await getLoyaltyCardByPhone(tenantId, identifier);
+    if (!card) {
+      return { success: false, message: `No encontramos una tarjeta registrada con la identificaci\xF3n o tel\xE9fono provisto (*${identifier}*).` };
+    }
+    const target = program.stampsTarget || 10;
+    if (card.currentStamps < target) {
+      const remaining = target - card.currentStamps;
+      return {
+        success: false,
+        message: `A\xFAn no completas la meta de sellos. Tienes *${card.currentStamps} de ${target} sellos*. Te faltan solo *${remaining} sello(s)* para ganar tu premio: *${program.stampsPrize}*! \u{1F381}`
+      };
+    }
+    const stampRes = await addStamps(tenantId, card.id, 0);
+    const voucher = stampRes.voucher;
+    const baseUrl = process.env.APP_URL || "https://betico.tech";
+    const code = voucher?.voucherCode || "PREMIO";
+    return {
+      success: true,
+      voucher,
+      message: `\u{1F389} *\xA1FELICIDADES! Has canjeado tu tarjeta de sellos.*
+\u{1F381} Premio: *${program.stampsPrize}*
+\u{1F3F7}\uFE0F C\xF3digo de cup\xF3n: *${code}*
+\u{1F4F1} Muestra este c\xF3digo o tu QR en ${baseUrl}/fidelidad para hacer v\xE1lido tu premio en tu pr\xF3xima visita o pedido.`
+    };
+  } catch (err) {
+    return { success: false, message: `Error al canjear sellos: ${err.message}` };
+  }
+}
+async function redeemPointsForBot(tenantId, identifier, pointsToRedeem) {
+  try {
+    const program = await getLoyaltyProgram(tenantId);
+    if (!program || !program.isActive) {
+      return { success: false, message: "El programa de fidelidad no se encuentra activo en este momento." };
+    }
+    let card = await getLoyaltyCardByIdentification(tenantId, identifier);
+    if (!card) card = await getLoyaltyCardByPhone(tenantId, identifier);
+    if (!card) {
+      return { success: false, message: `No encontramos una tarjeta registrada con la identificaci\xF3n *${identifier}*.` };
+    }
+    if (card.pointsBalance < pointsToRedeem) {
+      return {
+        success: false,
+        message: `Saldo insuficiente. Tienes *${card.pointsBalance.toLocaleString()} puntos* disponibles e intentaste canjear *${pointsToRedeem.toLocaleString()} puntos*.`
+      };
+    }
+    const discountAmount = Math.round(pointsToRedeem * Number(program.pointsRedeemRatio));
+    await redeemPoints(tenantId, card.id, pointsToRedeem, {
+      notes: `Canje por WhatsApp de ${pointsToRedeem} puntos (\u20A1${discountAmount.toLocaleString("es-CR")})`
+    });
+    return {
+      success: true,
+      discountAmount,
+      message: `\u2705 *Canje exitoso:* Has utilizado *${pointsToRedeem.toLocaleString()} puntos*, equivalentes a un descuento de *\u20A1${discountAmount.toLocaleString("es-CR")}*. Tu nuevo saldo de puntos es de *${(card.pointsBalance - pointsToRedeem).toLocaleString()} puntos*.`
+    };
+  } catch (err) {
+    return { success: false, message: `Error al canjear puntos: ${err.message}` };
+  }
+}
 
 // src/server/services/agent-orchestrator.ts
 function formatMediaUrl(url, baseUrl) {
@@ -8767,14 +8868,20 @@ function routeIntent(userMessage, chatHistory, orchestratorConfig, storeModules)
   const courtsAllowed = storeModules ? storeModules.courtsEnabled === true : true;
   const salesAllowed = storeModules ? storeModules.storeEnabled !== false : true;
   const bookingsAllowed = storeModules ? storeModules.bookingsEnabled !== false : true;
+  const loyaltyAllowed = storeModules ? storeModules.loyaltyEnabled !== false : true;
   const currentMsgCourts = /cancha|canchas|partido|futbol|fútbol|padel|pádel|mejenga|gramilla|reservar cancha|alquiler cancha|crt-|#res-/i.test(lowerMsg);
   const currentMsgBooking = /servicio|servicios|cita|citas|agenda|agendar|turno|atencion|atención|doctor|especialista|cancelar cita|reagendar|disponibilidad de horario|horario de cita/i.test(lowerMsg);
   const currentMsgSales = /precio|costo|cuanto|venden|catalogo|catálogo|menu|menú|producto|productos|comprar|pedir|orden|pedido|foto|imagen|plato|comida|pizza|hamburguesa|variante|talla|sabor|llevar|delivery|envio|envío|agregar al carrito|camisa|camiseta|ropa|zapato|sinpe|transferencia|efectivo|tarjeta|pago|pagar|comprobante|recoger|retiro|domicilio|cuenta|total/i.test(lowerMsg);
-  if (currentMsgCourts && courtsAllowed && !currentMsgBooking && !currentMsgSales) {
+  const currentMsgLoyalty = /puntos?|sellos?|tarjeta de sellos?|lealtad|fidelidad|fidelizacion|fidelización|premio|premios|canjear|canje|recompensas?|club de clientes|mi saldo|mis puntos|cu[aá]ntos sellos|mi c[eé]dula|afiliarme|afiliar/i.test(lowerMsg);
+  const isOrderAction = /comprar|pedir|orden|pedido|delivery|llevar|agregar al carrito/i.test(lowerMsg);
+  if (currentMsgCourts && courtsAllowed && !currentMsgBooking && !currentMsgSales && !currentMsgLoyalty) {
     return subagents.courts?.enabled !== false ? "courts" : "general";
   }
-  if (currentMsgBooking && bookingsAllowed && !currentMsgSales && !currentMsgCourts) {
+  if (currentMsgBooking && bookingsAllowed && !currentMsgSales && !currentMsgCourts && !currentMsgLoyalty) {
     return subagents.booking?.enabled !== false ? "booking" : "general";
+  }
+  if (currentMsgLoyalty && loyaltyAllowed && !isOrderAction && !currentMsgBooking && !currentMsgCourts) {
+    return subagents.loyalty?.enabled !== false ? "loyalty" : "general";
   }
   if (currentMsgSales && salesAllowed && !currentMsgBooking && !currentMsgCourts) {
     return subagents.sales?.enabled !== false ? "sales" : "general";
@@ -8783,23 +8890,35 @@ function routeIntent(userMessage, chatHistory, orchestratorConfig, storeModules)
   const context = `${recentHistory} ${lowerMsg}`;
   const isCheckoutFollowUp = /^(por\s+)?(sinpe|transferencia|efectivo|tarjeta|contra entrega)|^(sí|si|ok|listo|confirmo|confirmar|de acuerdo|dale|correcto|por fa|porfa|por favor)$|^(\d+[\s\w,.-]*)$|direccion|dirección|envio|envío|recoger|retiro/i.test(lowerMsg);
   const hadSalesContext = /precio|costo|total|pedido|orden|₡|crc|sinpe|producto|productos|botella|tienda|catálogo|comprar/i.test(recentHistory);
-  if (isCheckoutFollowUp && hadSalesContext && salesAllowed && !currentMsgBooking && !currentMsgCourts) {
+  if (isCheckoutFollowUp && hadSalesContext && salesAllowed && !currentMsgBooking && !currentMsgCourts && !currentMsgLoyalty) {
     return subagents.sales?.enabled !== false ? "sales" : "general";
+  }
+  const hadLoyaltyContext = /puntos?|sellos?|fidelidad|fidelizacion|fidelización|lealtad|premio|canjear|club/i.test(recentHistory);
+  const isCedulaReply = /^(?:mi c[eé]dula es\s*)?(?:[1-9]-?\d{4}-?\d{4}|[1-9]\d{8}|\d{9,12})$/i.test(lowerMsg);
+  if (hadLoyaltyContext && isCedulaReply && loyaltyAllowed) {
+    return subagents.loyalty?.enabled !== false ? "loyalty" : "general";
   }
   const isCourts = /cancha|canchas|partido|futbol|fútbol|padel|pádel|mejenga|gramilla|reservar cancha|alquiler cancha|crt-|#res-/i.test(context);
   const isBooking = /servicio|servicios|cita|citas|agenda|agendar|turno|atencion|atención|doctor|especialista|cancelar cita|reagendar|disponibilidad de horario|horario de cita/i.test(context);
   const isSales = /precio|costo|cuanto|venden|catalogo|catálogo|menu|menú|producto|productos|comprar|pedir|orden|pedido|foto|imagen|plato|comida|pizza|hamburguesa|variante|talla|sabor|llevar|delivery|envio|envío|agregar al carrito|camisa|camiseta|ropa|zapato|sinpe|transferencia|efectivo|tarjeta|pago|pagar|comprobante|recoger|retiro|domicilio|cuenta|total|confirmo/i.test(context);
+  const isLoyalty = /puntos?|sellos?|tarjeta de sellos?|lealtad|fidelidad|fidelizacion|fidelización|premio|premios|canjear|canje|recompensas?|club de clientes|mi saldo|mis puntos|cu[aá]ntos sellos|mi c[eé]dula|afiliarme|afiliar/i.test(context);
   if (isCourts && courtsAllowed) {
     return subagents.courts?.enabled !== false ? "courts" : "general";
   }
-  if (isBooking && bookingsAllowed && !isSales) {
+  if (isBooking && bookingsAllowed && !isSales && !isLoyalty) {
     return subagents.booking?.enabled !== false ? "booking" : "general";
+  }
+  if (isLoyalty && loyaltyAllowed && !isOrderAction && !isBooking && !isCourts) {
+    return subagents.loyalty?.enabled !== false ? "loyalty" : "general";
   }
   if (isSales && salesAllowed && !isBooking) {
     return subagents.sales?.enabled !== false ? "sales" : "general";
   }
   if (isBooking && bookingsAllowed) {
     return subagents.booking?.enabled !== false ? "booking" : "general";
+  }
+  if (isLoyalty && loyaltyAllowed) {
+    return subagents.loyalty?.enabled !== false ? "loyalty" : "general";
   }
   if (isSales && salesAllowed) {
     return subagents.sales?.enabled !== false ? "sales" : "general";
@@ -9191,6 +9310,68 @@ REGLAS DE CONSERJE FRONT-DESK:
 `.trim();
       break;
     }
+    case "loyalty": {
+      sourcesUsed.push("loyalty");
+      const loyaltyProgram = await getLoyaltyProgram(tenantId);
+      let programText = "";
+      if (!loyaltyProgram || !loyaltyProgram.isActive) {
+        programText = "\u26A0\uFE0F El programa de fidelizaci\xF3n no est\xE1 activo actualmente. Explica con amabilidad al cliente que el club de fidelidad se encuentra en actualizaci\xF3n.";
+      } else {
+        const typeStr = loyaltyProgram.programType === "points" ? "Acumulaci\xF3n de Puntos" : loyaltyProgram.programType === "stamps" ? "Tarjeta de Sellos" : "Puntos y Sellos";
+        programText = `
+\u{1F31F} PROGRAMA OFICIAL DE FIDELIZACI\xD3N (${tenant?.name || "Nuestro Negocio"}):
+- Modalidad: ${typeStr}
+${loyaltyProgram.programType !== "stamps" ? `- Acumulaci\xF3n de puntos: 1 punto por cada \u20A1${Number(loyaltyProgram.pointsSpendRatio).toLocaleString("es-CR")} consumidos.` : ""}
+${loyaltyProgram.programType !== "stamps" ? `- Valor de canje: Cada punto equivale a \u20A1${Number(loyaltyProgram.pointsRedeemRatio).toLocaleString("es-CR")} de descuento en compras.` : ""}
+${loyaltyProgram.programType !== "points" ? `- Tarjeta de sellos: Meta de ${loyaltyProgram.stampsTarget} sellos. Premio al completar: *${loyaltyProgram.stampsPrize}* (Consumo m\xEDnimo por sello: \u20A1${Number(loyaltyProgram.minSpendPerStamp).toLocaleString("es-CR")}).` : ""}
+- Billetera Digital Oficial: https://betico.tech/fidelidad
+`.trim();
+      }
+      const combinedLoyaltyText = `${userMessage} ${(chatHistory || []).slice(-2).map((h) => h.content).join(" ")}`;
+      const cedMatch = combinedLoyaltyText.match(/\b([1-9]-?\d{4}-?\d{4}|[1-9]\d{8}|\d{9,12})\b/);
+      const loyalIdentifier = cedMatch ? cedMatch[1].replace(/-/g, "") : cleanPhone;
+      let custSummaryText = "";
+      try {
+        const summary = await getLoyaltySummaryForBot(tenantId, loyalIdentifier);
+        custSummaryText = summary.formattedText;
+      } catch (err) {
+      }
+      specializedPrompt = `
+ROL: Eres el Asesor Especialista de Fidelizaci\xF3n y Club de Clientes de *${tenant?.name || "nuestro negocio"}*.
+${currentSubagent?.prompt || "Atiende consultas de puntos acumulados, sellos y premios con entusiasmo y calidez tica."}
+
+INFORMACI\xD3N DEL PROGRAMA DE FIDELIZACI\xD3N:
+${programText}
+${custSummaryText ? `
+ESTADO ACTUAL DEL CLIENTE:
+${custSummaryText}
+` : ""}
+
+ACCIONES DISPONIBLES Y COMANDOS ESTRUCTURADOS (DEBES INCLUIR EL COMANDO EXACTO SI APLICA):
+1. CONSULTA DE SALDO O SELLOS:
+   Si el cliente consulta su saldo, sellos o premios y ya conoces su c\xE9dula o tel\xE9fono:
+   <<<COMMAND_LOYALTY_CHECK: {"identification": "${loyalIdentifier}"}>>>
+
+2. REGISTRO / AFILIACI\xD3N:
+   Si el cliente proporciona su c\xE9dula para afiliarse o registrar su tarjeta:
+   <<<COMMAND_LOYALTY_REGISTER: {"identification": "${cedMatch ? cedMatch[1].replace(/-/g, "") : loyalIdentifier}", "customerName": "${customerFirstName}"}>>>
+
+3. CANJE DE META DE SELLOS:
+   Si el cliente tiene suficientes sellos acumulados y solicita canjear o reclamar su premio:
+   <<<COMMAND_LOYALTY_REDEEM_STAMPS: {"identification": "${loyalIdentifier}"}>>>
+
+4. CANJE DE PUNTOS:
+   Si el cliente solicita canjear una cantidad espec\xEDfica de sus puntos por descuento:
+   <<<COMMAND_LOYALTY_REDEEM_POINTS: {"identification": "${loyalIdentifier}", "points": 1000}>>>
+
+REGLAS DE ATENCI\xD3N DE FIDELIZACI\xD3N:
+- S\xE9 siempre entusiasta y felicita al cliente por sus compras y sellos acumulados.
+- El identificador principal y oficial en Costa Rica es la c\xE9dula (f\xEDsica, jur\xEDdica o DIMEX). Si el cliente no la ha indicado y desea consultar o registrarse, p\xEDdela con cortes\xEDa.
+- Si completa su meta de sellos, an\xEDmalo a canjear su premio.
+- Menciona que puede consultar sus tarjetas y c\xF3digos QR en https://betico.tech/fidelidad cuando lo desee.
+`.trim();
+      break;
+    }
   }
   let loyaltyPromptSection = "";
   if (store?.storeModules?.loyaltyEnabled) {
@@ -9281,6 +9462,9 @@ La \xDANICA fuente de verdad sobre servicios, precios y horarios es la provista 
   } else if (routedAgentId === "courts") {
     antiHallucinationGuardrail = `\u26A0\uFE0F RECORDATORIO CR\xCDTICO DE CANCHAS:
 La \xDANICA fuente de verdad sobre canchas y tarifas es la provista en tus instrucciones. No inventes canchas ni confirmes reservas fuera de la disponibilidad oficial.`;
+  } else if (routedAgentId === "loyalty") {
+    antiHallucinationGuardrail = `\u26A0\uFE0F RECORDATORIO CR\xCDTICO DE FIDELIZACI\xD3N:
+La \xDANICA fuente de verdad sobre puntos, sellos y premios es la provista en tus instrucciones. No inventes premios ni modifiques los saldos del cliente sin confirmaci\xF3n.`;
   }
   const finalSystemPrompt = `${supervisorDirectives}${specializedPrompt}
 
@@ -9469,7 +9653,99 @@ ${userMessage}` : userMessage;
       cancelBookingData = parsed;
     }
   }
+  let isLoyaltyCheckDetected = false;
+  let loyaltyCheckData;
+  const loyaltyCheckMatch = rawReply.match(/<<<COMMAND_LOYALTY_CHECK:\s*({.*?})>>>/s);
+  if (loyaltyCheckMatch && loyaltyCheckMatch[1]) {
+    const parsed = safeParseJSON(loyaltyCheckMatch[1]);
+    if (parsed) {
+      isLoyaltyCheckDetected = true;
+      loyaltyCheckData = parsed;
+    }
+  }
+  let isLoyaltyRegisterDetected = false;
+  let loyaltyRegisterData;
+  const loyaltyRegMatch = rawReply.match(/<<<COMMAND_LOYALTY_REGISTER:\s*({.*?})>>>/s);
+  if (loyaltyRegMatch && loyaltyRegMatch[1]) {
+    const parsed = safeParseJSON(loyaltyRegMatch[1]);
+    if (parsed && (parsed.identification || parsed.phone)) {
+      isLoyaltyRegisterDetected = true;
+      loyaltyRegisterData = parsed;
+    }
+  }
+  let isLoyaltyRedeemStampsDetected = false;
+  let loyaltyRedeemStampsData;
+  const loyaltyRedeemStampsMatch = rawReply.match(/<<<COMMAND_LOYALTY_REDEEM_STAMPS:\s*({.*?})>>>/s);
+  if (loyaltyRedeemStampsMatch && loyaltyRedeemStampsMatch[1]) {
+    const parsed = safeParseJSON(loyaltyRedeemStampsMatch[1]);
+    if (parsed && (parsed.identification || parsed.phone)) {
+      isLoyaltyRedeemStampsDetected = true;
+      loyaltyRedeemStampsData = parsed;
+    }
+  }
+  let isLoyaltyRedeemPointsDetected = false;
+  let loyaltyRedeemPointsData;
+  const loyaltyRedeemPointsMatch = rawReply.match(/<<<COMMAND_LOYALTY_REDEEM_POINTS:\s*({.*?})>>>/s);
+  if (loyaltyRedeemPointsMatch && loyaltyRedeemPointsMatch[1]) {
+    const parsed = safeParseJSON(loyaltyRedeemPointsMatch[1]);
+    if (parsed && (parsed.identification || parsed.phone)) {
+      isLoyaltyRedeemPointsDetected = true;
+      loyaltyRedeemPointsData = parsed;
+    }
+  }
   let cleanReply = rawReply.replace(/<<<COMMAND_.*?>>>/gs, "").trim().replace(/\n{3,}/g, "\n\n").replace(/\*\*(.*?)\*\*/g, "*$1*");
+  let loyaltyResult = null;
+  if (isLoyaltyRegisterDetected && loyaltyRegisterData) {
+    try {
+      const regId = loyaltyRegisterData.identification || cleanPhone;
+      const regName = loyaltyRegisterData.customerName || senderName || "Cliente";
+      loyaltyResult = await registerLoyaltyForBot(tenantId, regId, regName, cleanPhone);
+      if (loyaltyResult?.message) {
+        cleanReply += `
+
+${loyaltyResult.message}`;
+      }
+    } catch (e) {
+      console.error("[Orchestrator] Loyalty register error:", e);
+    }
+  } else if (isLoyaltyRedeemStampsDetected && loyaltyRedeemStampsData) {
+    try {
+      const redeemId = loyaltyRedeemStampsData.identification || cleanPhone;
+      loyaltyResult = await redeemStampsForBot(tenantId, redeemId);
+      if (loyaltyResult?.message) {
+        cleanReply += `
+
+${loyaltyResult.message}`;
+      }
+    } catch (e) {
+      console.error("[Orchestrator] Loyalty redeem stamps error:", e);
+    }
+  } else if (isLoyaltyRedeemPointsDetected && loyaltyRedeemPointsData) {
+    try {
+      const redeemId = loyaltyRedeemPointsData.identification || cleanPhone;
+      const pts = Number(loyaltyRedeemPointsData.points) || 0;
+      loyaltyResult = await redeemPointsForBot(tenantId, redeemId, pts);
+      if (loyaltyResult?.message) {
+        cleanReply += `
+
+${loyaltyResult.message}`;
+      }
+    } catch (e) {
+      console.error("[Orchestrator] Loyalty redeem points error:", e);
+    }
+  } else if (isLoyaltyCheckDetected && loyaltyCheckData) {
+    try {
+      const checkId = loyaltyCheckData.identification || cleanPhone;
+      const summary = await getLoyaltySummaryForBot(tenantId, checkId);
+      if (summary?.formattedText && !cleanReply.includes("Sellos acumulados") && !cleanReply.includes("Puntos acumulados")) {
+        cleanReply += `
+
+${summary.formattedText}`;
+      }
+    } catch (e) {
+      console.error("[Orchestrator] Loyalty check error:", e);
+    }
+  }
   const placeholderRegex = /\[\s*(?:inserta|insert|pega|agregar|pon|tu\s+número|tu\s+dirección|tu\s+enlace|tu\s+cuenta|aquí\s+las?\s+urls?|enlace\s+a\s+la\s+tienda|urls?\s+de\s+las?\s+imágenes)[^\]]*\]/gi;
   if (placeholderRegex.test(cleanReply)) {
     console.warn(`[Orchestrator] \u{1F6A8} TEMPLATE PLACEHOLDER DETECTED & SANITIZED for tenant ${tenantId}:`, cleanReply.match(placeholderRegex));
@@ -9479,7 +9755,7 @@ ${userMessage}` : userMessage;
     cleanReply = cleanReply.replace(/¡?claro que sí!?\s*aquí tienes (?:algunas )?(?:imágenes|fotos)[^.\n]*[.:]?/gi, "En este momento no dispongo de una fotograf\xEDa oficial cargada en el sistema, pero con gusto te describo sus caracter\xEDsticas.").replace(/aquí (?:te comparto|tienes|están) las? (?:fotos?|imágenes)[^.\n]*[.:]?/gi, "En este momento no dispongo de una fotograf\xEDa oficial cargada en el sistema.").trim();
   }
   const hasRawCommandTag = /<<<COMMAND_\w+/i.test(rawReply);
-  const anyCommandParsed = isBookingDetected || isCourtBookingDetected || isOrderDetected || isHandoffRequested || isMediaDetected || isCancelBookingDetected || isRescheduleBookingDetected || isRescheduleCourtDetected;
+  const anyCommandParsed = isBookingDetected || isCourtBookingDetected || isOrderDetected || isHandoffRequested || isMediaDetected || isCancelBookingDetected || isRescheduleBookingDetected || isRescheduleCourtDetected || isLoyaltyCheckDetected || isLoyaltyRegisterDetected || isLoyaltyRedeemStampsDetected || isLoyaltyRedeemPointsDetected;
   if (hasRawCommandTag && !anyCommandParsed) {
     console.error(`[Orchestrator] \u26A0\uFE0F ORPHANED COMMAND DETECTED for tenant ${tenantId}. Raw command failed parsing:`, rawReply.slice(0, 300));
     cleanReply = `Disculpa ${senderName}, tuve un inconveniente t\xE9cnico al registrar tu solicitud en el sistema. \xBFPodr\xEDas confirmarme nuevamente los detalles para procesarla correctamente? \u{1F64F}`;
@@ -9520,7 +9796,7 @@ Nuestros productos disponibles actualmente son:
       sourcesUsed,
       isSessionActive,
       tokensUsed: aiResult.tokensUsed,
-      commandDetected: isOrderDetected ? "order" : isBookingDetected ? "booking" : isCourtBookingDetected ? "court" : isHandoffRequested ? "handoff" : null,
+      commandDetected: isOrderDetected ? "order" : isBookingDetected ? "booking" : isCourtBookingDetected ? "court" : isHandoffRequested ? "handoff" : isLoyaltyCheckDetected ? "loyalty_check" : isLoyaltyRegisterDetected ? "loyalty_register" : isLoyaltyRedeemStampsDetected ? "loyalty_redeem_stamps" : isLoyaltyRedeemPointsDetected ? "loyalty_redeem_points" : null,
       responseLength: cleanReply.length,
       timestamp: (/* @__PURE__ */ new Date()).toISOString()
     }));
@@ -9544,6 +9820,15 @@ Nuestros productos disponibles actualmente son:
     rescheduleBookingData,
     isRescheduleCourtDetected,
     rescheduleCourtData,
+    isLoyaltyCheckDetected,
+    loyaltyCheckData,
+    isLoyaltyRegisterDetected,
+    loyaltyRegisterData,
+    isLoyaltyRedeemStampsDetected,
+    loyaltyRedeemStampsData,
+    isLoyaltyRedeemPointsDetected,
+    loyaltyRedeemPointsData,
+    loyaltyResult,
     tokensUsed: aiResult.tokensUsed,
     routedAgentId,
     routedAgentName,
@@ -10999,6 +11284,21 @@ async function processSingleMessage(msg) {
           });
         }
       }
+    }
+    if (aiResult.isLoyaltyRegisterDetected) {
+      await logAICommand(msg.tenantId, msg.remoteJid, "loyalty_register", aiResult.loyaltyRegisterData, "success");
+      if (io && aiResult.loyaltyResult?.card) {
+        io.to(`tenant_${msg.tenantId}`).emit("loyaltyCard:created", aiResult.loyaltyResult.card);
+      }
+    } else if (aiResult.isLoyaltyRedeemStampsDetected) {
+      await logAICommand(msg.tenantId, msg.remoteJid, "loyalty_redeem_stamps", aiResult.loyaltyRedeemStampsData, "success");
+      if (io && aiResult.loyaltyResult?.voucher) {
+        io.to(`tenant_${msg.tenantId}`).emit("loyaltyVoucher:created", aiResult.loyaltyResult.voucher);
+      }
+    } else if (aiResult.isLoyaltyRedeemPointsDetected) {
+      await logAICommand(msg.tenantId, msg.remoteJid, "loyalty_redeem_points", aiResult.loyaltyRedeemPointsData, "success");
+    } else if (aiResult.isLoyaltyCheckDetected) {
+      await logAICommand(msg.tenantId, msg.remoteJid, "loyalty_check", aiResult.loyaltyCheckData, "success");
     }
     let sendRes;
     let sentAsAudio = false;

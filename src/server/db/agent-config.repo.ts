@@ -47,6 +47,14 @@ export const defaultOrchestratorConfig: OrchestratorConfig = {
       sources: ['businessInfo', 'schedules', 'payments'],
       actions: [],
       links: []
+    },
+    loyalty: {
+      id: 'loyalty',
+      name: 'Club de Fidelización',
+      enabled: true,
+      prompt: 'Eres el Asesor Especialista en Fidelización y Club de Clientes. Atiende consultas de puntos acumulados, tarjetas de sellos, premios y canjes con entusiasmo y calidez tica. Identifica al cliente mediante su número de cédula física o jurídica (identificador oficial) o teléfono. Si el cliente no ha dado su cédula, pídela amablemente para consultar su saldo exacto o registrarlo. Si califica para un premio o canje, motívalo a redimirlo o a visitar betico.tech/fidelidad.',
+      sources: ['loyalty'],
+      actions: ['loyaltyCheck', 'loyaltyRegister', 'loyaltyRedeem']
     }
   }
 };

@@ -186,6 +186,10 @@ export default function AgentPromptStudio() {
           else if (data.isCourtBookingDetected) cmd = 'COMMAND_COURT_BOOKING';
           else if (data.isHandoffRequested) cmd = 'COMMAND_HANDOFF';
           else if (data.isMediaDetected) cmd = 'COMMAND_SEND_MEDIA';
+          else if (data.isLoyaltyCheckDetected) cmd = 'COMMAND_LOYALTY_CHECK';
+          else if (data.isLoyaltyRegisterDetected) cmd = 'COMMAND_LOYALTY_REGISTER';
+          else if (data.isLoyaltyRedeemStampsDetected) cmd = 'COMMAND_LOYALTY_REDEEM_STAMPS';
+          else if (data.isLoyaltyRedeemPointsDetected) cmd = 'COMMAND_LOYALTY_REDEEM_POINTS';
 
           setSimMetadata({
             agentName: data.routedAgentName,
