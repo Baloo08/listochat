@@ -41,7 +41,16 @@ import {
   Share2,
   QrCode,
   Sliders,
-  DollarSign
+  DollarSign,
+  Award,
+  Gift,
+  Scissors,
+  Coffee,
+  Trophy,
+  AlertTriangle,
+  XCircle,
+  Server,
+  FileCode
 } from 'lucide-react';
 
 interface LandingPageProps {
@@ -55,6 +64,9 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
   const [dailyMessages, setDailyMessages] = useState<number>(120);
   const [avgTicket, setAvgTicket] = useState<number>(8500);
 
+  // Industry Vertical Tab State
+  const [activeVertical, setActiveVertical] = useState<'restaurantes' | 'servicios' | 'canchas' | 'retail' | 'fidelidad'>('restaurantes');
+
   // FAQ Accordion State
   const [openFaq, setOpenFaq] = useState<number | null>(null);
 
@@ -67,7 +79,7 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
   const [isMobile, setIsMobile] = useState<boolean>(false);
 
   useEffect(() => {
-    document.title = 'Betico | Software de Citas, Tienda SINPE Móvil y Chatbot WhatsApp en Costa Rica';
+    document.title = 'Betico | Presencia Digital Estratégica, Tienda, Citas y WhatsApp en Costa Rica';
     const checkMobile = () => setIsMobile(window.innerWidth < 1024);
     checkMobile();
     window.addEventListener('resize', checkMobile);
@@ -93,10 +105,135 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
   // ~8% extra sales converted due to <2s response
   const ventasRecuperadas = Math.round(dailyMessages * 30 * 0.08 * avgTicket);
 
+  // Industry Verticals Data
+  const verticalData = {
+    restaurantes: {
+      badge: 'Modo Restaurante y Comidas',
+      title: 'Restaurantes, Pizzerías, Cafeterías y Sodas',
+      subtitle: 'Digitaliza tus pedidos desde la mesa, para llevar o a domicilio sin pagar comisiones abusivas.',
+      features: [
+        {
+          title: 'Pantalla de Cocina (KDS) en Tiempo Real',
+          desc: 'Los pedidos de WhatsApp y de tu tienda web aparecen al instante en una pantalla táctil en cocina organizados por orden de llegada y estado (Recibido, En Cocina, Listo).'
+        },
+        {
+          title: 'Menú QR para Comer en Mesa o Llevar',
+          desc: 'Tus comensales escanean el código QR en su mesa, seleccionan sus platillos con acompañamientos y pagan al instante por SINPE Móvil o tarjeta bancaria.'
+        },
+        {
+          title: 'Flota Propia de Delivery con GPS',
+          desc: 'Asigna pedidos a tus repartidores en su propio portal móvil, con cálculo automático del costo de entrega por kilómetro usando Google Maps.'
+        }
+      ],
+      impact: 'Atiende hasta un 40% más de comandas en horas pico y ahorra hasta ₡350.000 al mes en comisiones de plataformas de entrega.',
+      ctaText: 'Probar Betico para Restaurantes'
+    },
+    servicios: {
+      badge: 'Agenda y Servicios 24/7',
+      title: 'Salones de Belleza, Barberías, Spas y Clínicas',
+      subtitle: 'Llena tu agenda en automático mientras atiendes a tus clientes, sin secretarias saturadas.',
+      features: [
+        {
+          title: 'Asistente de Citas 24/7 en WhatsApp',
+          desc: 'Tu bot de IA atiende a cualquier hora, consulta la disponibilidad en tiempo real según el servicio solicitado y confirma la cita en segundos.'
+        },
+        {
+          title: 'Portal Privado para Especialistas',
+          desc: 'Cada barbero, estilista o terapeuta accede desde su propio celular con su usuario para revisar únicamente su agenda y clientes del día.'
+        },
+        {
+          title: 'Recordatorios Automáticos 24h y 2h Antes',
+          desc: 'Betico envía recordatorios directos por WhatsApp con botón de confirmación o reprogramación, reduciendo las sillas vacías al mínimo.'
+        }
+      ],
+      impact: 'Reduce las citas olvidadas a 0% y asegura tus ingresos cobrando señas o anticipos por SINPE Móvil o tarjeta al agendar.',
+      ctaText: 'Probar Betico para Citas y Salones'
+    },
+    canchas: {
+      badge: 'Canchas y Complejos Deportivos',
+      title: 'Complejos de Pádel, Fútbol 5, Tenis y Deportes',
+      subtitle: 'Administra tus canchas por horas, automatiza el cobro de señas y llena los horarios nocturnos.',
+      features: [
+        {
+          title: 'Reservas por Bloque Horario en Vivo',
+          desc: 'Tus clientes eligen cancha, fecha y hora disponible desde una grilla interactiva en tu sitio web o directamente conversando con tu bot de WhatsApp.'
+        },
+        {
+          title: 'Tarifas Diferenciadas de Día y Noche',
+          desc: 'Configura precios automáticos según el horario (tarifa regular diurna o tarifa nocturna con iluminación de canchas incluida).'
+        },
+        {
+          title: 'Cobro de Seña Inmediata con SINPE o Tarjeta',
+          desc: 'El espacio solo queda reservado cuando el cliente transfiere por SINPE Móvil o paga con tarjeta, protegiendo tu cancha contra cancelaciones.'
+        }
+      ],
+      impact: 'Elimina las reservas duplicadas por llamadas telefónicas y maximiza la ocupación de tus canchas en horarios estelares.',
+      ctaText: 'Probar Betico para Canchas Deportivas'
+    },
+    retail: {
+      badge: 'Tienda Digital y Retail',
+      title: 'Tiendas de Ropa, Boutiques, Calzado y Accesorios',
+      subtitle: 'Convierte tus redes sociales en ventas reales con un catálogo que cobra y despacha solo.',
+      features: [
+        {
+          title: 'Catálogo con Variantes Completas',
+          desc: 'Muestra tus productos con opciones de talla, color y modelo, con fotos automáticas enviadas al WhatsApp cuando un cliente consulta.'
+        },
+        {
+          title: 'Integración con Correos de Costa Rica',
+          desc: 'Cálculo automatizado de costos de envío para el Gran Área Metropolitana (GAM) y Resto del País, más opción de mensajería express.'
+        },
+        {
+          title: 'Control de Stock en Tiempo Real',
+          desc: 'Cada compra descuenta el inventario al instante en la tienda web y en WhatsApp, evitando ventas de productos sin existencia.'
+        }
+      ],
+      impact: 'Aumenta tus ventas por WhatsApp hasta un 35% ofreciendo cobro directo con tarjeta y verificación automática de SINPE.',
+      ctaText: 'Probar Betico para Tiendas y Boutiques'
+    },
+    fidelidad: {
+      badge: 'Retención y Fidelización Universal',
+      title: 'Club de Clientes, Tarjetas de Sellos y Puntos',
+      subtitle: 'Multiplica la recompra de tu negocio con una billetera digital moderna accesible por cédula.',
+      features: [
+        {
+          title: 'Tarjetas de Sellos Digitales en el Móvil',
+          desc: 'Dile adiós a las tarjetas de cartón que se pierden o se dañan. Premia a tus clientes al acumular sellos (ej. 8 cafés o 10 cortes y el siguiente es gratis).'
+        },
+        {
+          title: 'Acumulación de Puntos por Compras',
+          desc: 'Define un porcentaje de cashback en puntos por cada colón comprado, canjeable como dinero en futuras compras o cupones de descuento.'
+        },
+        {
+          title: 'Billetera Digital Universal por Cédula',
+          desc: 'Tus clientes entran a betico.tech/fidelidad con su cédula para ver todas sus tarjetas y cupones de tus comercios, o consultan su saldo con el bot.'
+        }
+      ],
+      impact: 'Los negocios con programa de lealtad activo reportan hasta un 45% más de frecuencia de compra y mayor ticket promedio.',
+      ctaText: 'Activar Club de Fidelización'
+    }
+  };
+
   const faqs = [
+    {
+      q: '¿Por qué elegir Betico en lugar de contratar hosting, diseñador y bots por separado?',
+      a: 'Si intentas armar tu infraestructura digital por separado necesitas pagar hosting web mensual ($15 - $30/mes), pagar un diseñador web ($300 - $800), pagar un servidor cloud para mantener el bot activo ($20 - $50/mes), pagar consumos de tokens de IA en dólares y lidiar con programadores para integrar pasarelas de pago y calendarios. Betico te da toda tu presencia digital estratégica unificada en 15 minutos por una sola tarifa plana en colones.'
+    },
     {
       q: '¿Cómo funciona el nuevo Creador de Sitios Web de Betico?',
       a: 'Cada negocio tiene su propio creador visual en el panel donde puede personalizar la portada, colores corporativos, tipografía, logo blanco/oscuro y activar las secciones que necesite. Al guardar, se genera instantáneamente tu enlace web oficial (ej. betico.tech/sitio/tu-negocio) con tu tienda y botón de reservas incluidos.'
+    },
+    {
+      q: '¿Cómo ayuda Betico a restaurantes, sodas y cafeterías?',
+      a: 'Incluye Modo Restaurante con menú digital para comer en el local con número de mesa o para llevar, Pantalla de Cocina (KDS) en tiempo real para no usar comandas de papel, y portal para tus propios repartidores con cálculo de envío por kilómetro mediante Google Maps.'
+    },
+    {
+      q: '¿Puedo administrar canchas de fútbol 5, pádel o tenis?',
+      a: 'Sí. Betico cuenta con un módulo específico para complejos deportivos donde tus clientes reservan canchas por horas en vivo, con tarifas diferenciadas de día y de noche (con iluminación), confirmación inmediata y cobro de señas por SINPE o tarjeta.'
+    },
+    {
+      q: '¿Cómo funciona el nuevo Club de Fidelización y las tarjetas de sellos?',
+      a: 'Reemplaza las tarjetas de cartón que los clientes siempre pierden. Puedes crear tarjetas por sellos digitales (ej. "el 8° corte o café es gratis") o monederos de puntos por compras. Tus clientes consultan sus sellos y puntos en su billetera digital en betico.tech/fidelidad ingresando su número de cédula, o preguntándole al bot de WhatsApp.'
     },
     {
       q: '¿Por qué Betico IA no requiere pagar tarifas extras en dólares?',
@@ -113,10 +250,6 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
     {
       q: '¿Cómo funciona el cobro con Tarjetas de Crédito y Débito en Betico?',
       a: 'Tus clientes pueden pagar con Visa, Mastercard y AMEX de manera fácil y rápida al comprar en tu tienda web, agendar una cita o reservar una cancha. La verificación es inmediata y el dinero de tus ventas se liquida directamente en tu cuenta bancaria nacional.'
-    },
-    {
-      q: '¿Es seguro para mi negocio aceptar pagos con tarjeta y SINPE en línea?',
-      a: 'Totalmente seguro. Las transacciones cuentan con verificación directa con el banco del cliente mediante confirmación en su app bancaria o código SMS, garantizando compras legítimas y protegiendo tu negocio en cada venta.'
     },
     {
       q: '¿El asistente entiende notas de voz y modismos costarricenses?',
@@ -138,7 +271,7 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
     }}>
 
       {/* ==============================================================
-          1. HEADER & NAVIGATION BAR
+          1. HEADER Y BARRA DE NAVEGACIÓN
       ============================================================== */}
       <header style={{
         position: 'fixed',
@@ -178,15 +311,17 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
 
           {/* Desktop Navigation Links */}
           {!isMobile && (
-            <nav style={{ display: 'flex', alignItems: 'center', gap: '22px', fontSize: '0.88rem', fontWeight: '600', color: '#475569' }}>
-              <a onClick={() => scrollToSection('superpoderes')} style={{ color: '#475569', textDecoration: 'none', cursor: 'pointer', transition: 'color 0.2s' }}>4 Superpoderes</a>
+            <nav style={{ display: 'flex', alignItems: 'center', gap: '18px', fontSize: '0.86rem', fontWeight: '600', color: '#475569' }}>
+              <a onClick={() => scrollToSection('superpoderes')} style={{ color: '#475569', textDecoration: 'none', cursor: 'pointer', transition: 'color 0.2s' }}>5 Superpoderes</a>
+              <a onClick={() => scrollToSection('giros-negocio')} style={{ color: '#0b3c3d', textDecoration: 'none', cursor: 'pointer', fontWeight: '700' }}>Giros de Negocio</a>
+              <a onClick={() => scrollToSection('comparativa')} style={{ color: '#475569', textDecoration: 'none', cursor: 'pointer' }}>Comparativa</a>
               <a onClick={() => scrollToSection('pagos-tarjeta')} style={{ color: '#b51c12', textDecoration: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: '700' }}>
                 <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#e0352b' }} />
                 Pagos Tarjeta
               </a>
               <a onClick={() => scrollToSection('sitio-web')} style={{ color: '#475569', textDecoration: 'none', cursor: 'pointer' }}>Sitio Web</a>
               <a onClick={() => scrollToSection('motor-ia')} style={{ color: '#475569', textDecoration: 'none', cursor: 'pointer' }}>Motor IA</a>
-              <a onClick={() => scrollToSection('tienda-citas')} style={{ color: '#475569', textDecoration: 'none', cursor: 'pointer' }}>Tienda & Citas</a>
+              <a onClick={() => scrollToSection('tienda-citas')} style={{ color: '#475569', textDecoration: 'none', cursor: 'pointer' }}>Tienda y Citas</a>
               <a onClick={() => scrollToSection('calculadora-roi')} style={{ color: '#475569', textDecoration: 'none', cursor: 'pointer' }}>Calculadora ROI</a>
               <a onClick={() => scrollToSection('precios')} style={{ color: '#475569', textDecoration: 'none', cursor: 'pointer' }}>Precios</a>
             </nav>
@@ -209,24 +344,27 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
                   display: 'flex',
                   alignItems: 'center',
                   gap: '6px',
-                  boxShadow: '0 4px 12px rgba(11, 60, 61, 0.25)'
+                  boxShadow: '0 4px 14px rgba(11, 60, 61, 0.22)',
+                  transition: 'all 0.2s'
                 }}
               >
-                <ArrowRight size={16} />
                 <span>Ir al Panel</span>
+                <ArrowRight size={16} />
               </button>
             ) : (
               <>
                 <button
                   onClick={onLoginClick}
                   style={{
-                    background: 'transparent',
-                    color: '#334155',
-                    border: 'none',
-                    padding: '8px 14px',
+                    backgroundColor: 'transparent',
+                    color: '#0f172a',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '12px',
+                    padding: '10px 16px',
                     fontSize: '0.88rem',
-                    fontWeight: '700',
+                    fontWeight: '600',
                     cursor: 'pointer',
+                    transition: 'all 0.2s',
                     display: isMobile ? 'none' : 'inline-block'
                   }}
                 >
@@ -299,20 +437,22 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
             fontSize: '0.92rem',
             fontWeight: '600'
           }}>
-            <a onClick={() => scrollToSection('superpoderes')} style={{ color: '#0f172a', padding: '8px 0', borderBottom: '1px solid #f1f5f9' }}>⚡ 4 Superpoderes de Betico</a>
+            <a onClick={() => scrollToSection('superpoderes')} style={{ color: '#0f172a', padding: '8px 0', borderBottom: '1px solid #f1f5f9' }}>⚡ 5 Superpoderes de Betico</a>
+            <a onClick={() => scrollToSection('giros-negocio')} style={{ color: '#0b3c3d', padding: '8px 0', borderBottom: '1px solid #f1f5f9', fontWeight: 'bold' }}>🎯 Giros de Negocio</a>
+            <a onClick={() => scrollToSection('comparativa')} style={{ color: '#0f172a', padding: '8px 0', borderBottom: '1px solid #f1f5f9' }}>⚖️ Comparativa Estratégica</a>
             <a onClick={() => scrollToSection('pagos-tarjeta')} style={{ color: '#b51c12', padding: '8px 0', borderBottom: '1px solid #f1f5f9', fontWeight: 'bold' }}>💳 Pagos Tarjeta (Tilopay 3D Secure)</a>
             <a onClick={() => scrollToSection('sitio-web')} style={{ color: '#0f172a', padding: '8px 0', borderBottom: '1px solid #f1f5f9' }}>🌐 Creador de Sitios Web</a>
             <a onClick={() => scrollToSection('motor-ia')} style={{ color: '#0f172a', padding: '8px 0', borderBottom: '1px solid #f1f5f9' }}>🤖 Motor de IA Propio</a>
-            <a onClick={() => scrollToSection('tienda-citas')} style={{ color: '#0f172a', padding: '8px 0', borderBottom: '1px solid #f1f5f9' }}>🛍️ Tienda & Agenda de Citas</a>
+            <a onClick={() => scrollToSection('tienda-citas')} style={{ color: '#0f172a', padding: '8px 0', borderBottom: '1px solid #f1f5f9' }}>🛍️ Tienda y Agenda de Citas</a>
             <a onClick={() => scrollToSection('calculadora-roi')} style={{ color: '#0f172a', padding: '8px 0', borderBottom: '1px solid #f1f5f9' }}>💰 Calculadora de Ahorro</a>
-            <a onClick={() => scrollToSection('precios')} style={{ color: '#0f172a', padding: '8px 0', borderBottom: '1px solid #f1f5f9' }}>🏷️ Planes & Precios</a>
+            <a onClick={() => scrollToSection('precios')} style={{ color: '#0f172a', padding: '8px 0', borderBottom: '1px solid #f1f5f9' }}>🏷️ Planes y Precios</a>
             <a onClick={onLoginClick} style={{ color: '#0b3c3d', padding: '8px 0', fontWeight: 'bold' }}>🔑 Iniciar Sesión</a>
           </div>
         )}
       </header>
 
       {/* ==============================================================
-          2. MAIN CONTENT WRAPPER
+          2. CONTENIDO PRINCIPAL
       ============================================================== */}
       <main style={{ paddingTop: '80px' }}>
 
@@ -354,7 +494,7 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
                 <span style={{ position: 'absolute', width: '100%', height: '100%', borderRadius: '50%', backgroundColor: '#f04337', opacity: 0.75, animation: 'ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite' }} />
                 <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#b51c12' }} />
               </span>
-              <span>⚡ Nuevo: Pagos con Tarjeta + Verificación de SINPE Móvil + Motor IA Propio</span>
+              <span>⚡ Nuevo: Pagos con Tarjeta + Verificación de SINPE Móvil + Motor IA Propio + Club de Fidelidad</span>
             </div>
 
             {/* Hero Headline */}
@@ -369,13 +509,13 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
               marginLeft: 'auto',
               marginRight: 'auto'
             }}>
-              Tu Sitio Web Oficial, Tienda, Citas e IA en{' '}
+              La Presencia Digital Estratégica que{' '}
               <span style={{
                 background: 'linear-gradient(135deg, #0b3c3d 0%, #134b4c 45%, #b51c12 100%)',
                 WebkitBackgroundClip: 'text',
                 WebkitTextFillColor: 'transparent'
               }}>
-                un Solo Lugar
+                Todo Emprendimiento Necesita
               </span>
             </h1>
 
@@ -384,11 +524,11 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
               fontSize: 'clamp(1rem, 2.3vw, 1.25rem)',
               color: '#475569',
               lineHeight: 1.65,
-              maxWidth: '820px',
+              maxWidth: '860px',
               margin: '0 auto 36px auto',
               fontWeight: 400
             }}>
-              Crea tu <strong>Página Web Oficial</strong> en minutos, vende en tu <strong>Tienda Digital</strong> con cobros por <strong>Tarjeta (Visa, Mastercard, AMEX)</strong> y <strong>SINPE Móvil</strong>, llena tu <strong>Agenda de Citas</strong> y automatiza la atención 24/7 por WhatsApp con <strong>Betico IA</strong>.
+              Crea tu <strong>Página Web Oficial</strong> en minutos, vende en tu <strong>Tienda Digital</strong> con cobros por <strong>Tarjeta (Visa, Mastercard, AMEX)</strong> y <strong>SINPE Móvil</strong>, llena tu <strong>Agenda de Citas o Canchas Deportivas</strong>, fideliza clientes con <strong>Sellos y Puntos Digitales</strong> y automatiza la atención 24/7 por WhatsApp con <strong>Betico IA</strong>.
             </p>
 
             {/* CTA Buttons */}
@@ -480,7 +620,7 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
                   <span style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#f59e0b' }} />
                   <span style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#10b981' }} />
                   <span style={{ marginLeft: '8px', fontWeight: '600', color: '#f8fafc' }}>
-                    Demostración en Tiempo Real • WhatsApp & Pagos Verificados
+                    Demostración en Tiempo Real • WhatsApp y Pagos Verificados
                   </span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -521,7 +661,7 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
                     </div>
                   </div>
                   <p style={{ margin: 0, fontSize: '0.82rem', color: '#475569' }}>
-                    ¿Deseas pagar por <strong>SINPE Móvil</strong> o <strong>Tarjeta de Crédito/Débito</strong>?
+                    ¿Deseas pagar por <strong>SINPE Móvil</strong> o <strong>Tarjeta de Crédito o Débito</strong>?
                   </p>
                 </div>
 
@@ -554,7 +694,7 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
                     </div>
                     <div style={{ fontSize: '0.8rem' }}>
                       <div style={{ fontWeight: '800', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <span>Tarjeta de Débito / Crédito</span>
+                        <span>Tarjeta de Débito o Crédito</span>
                         <ShieldCheck size={14} color="#b51c12" />
                       </div>
                       <div style={{ color: '#64748b', marginTop: '2px', fontFamily: 'monospace', fontSize: '0.74rem' }}>
@@ -610,7 +750,447 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
         </section>
 
         {/* ------------------------------------------------------------
-            3. LOS 4 PILARES FUNDAMENTALES (SUPERPODERES)
+            NUEVA SECCIÓN: COMPARATIVA ESTRATÉGICA
+        ------------------------------------------------------------ */}
+        <section id="comparativa" style={{
+          padding: isMobile ? '60px 16px' : '90px 24px',
+          backgroundColor: '#FAF8F5',
+          borderBottom: '1px solid #e2e8f0'
+        }}>
+          <div style={{ maxWidth: '1280px', margin: '0 auto' }}>
+            
+            <div style={{ textAlign: 'center', maxWidth: '820px', margin: '0 auto 48px auto' }}>
+              <span style={{
+                fontSize: '0.78rem',
+                fontWeight: '800',
+                textTransform: 'uppercase',
+                letterSpacing: '0.08em',
+                color: '#b51c12',
+                backgroundColor: '#fff1f0',
+                padding: '4px 14px',
+                borderRadius: '9999px',
+                border: '1px solid #ffc7c4',
+                display: 'inline-block',
+                marginBottom: '12px'
+              }}>
+                Presencia Digital Estratégica
+              </span>
+              <h2 style={{
+                fontSize: 'clamp(1.9rem, 4vw, 2.9rem)',
+                fontWeight: '900',
+                color: '#0f172a',
+                letterSpacing: '-0.5px',
+                margin: '0 0 16px 0',
+                lineHeight: 1.2
+              }}>
+                La Integración que Todo Emprendimiento Necesita para Operar en Digital
+              </h2>
+              <p style={{ color: '#64748b', fontSize: '1.05rem', lineHeight: 1.6, margin: 0 }}>
+                Si intentas armar esta solución por tu cuenta necesitarías múltiples servicios en dólares, desarrolladores y semanas de ajustes técnicos. Compara el camino tradicional frente a la solución integrada de Betico:
+              </p>
+            </div>
+
+            {/* Comparison Cards Grid */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+              gap: '28px',
+              alignItems: 'stretch'
+            }}>
+              
+              {/* Card 1: Camino Tradicional */}
+              <div style={{
+                backgroundColor: '#ffffff',
+                borderRadius: '24px',
+                padding: isMobile ? '24px' : '36px',
+                border: '1px solid #fecaca',
+                boxShadow: '0 4px 16px rgba(239, 68, 68, 0.05)',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between'
+              }}>
+                <div>
+                  <div style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '4px 12px',
+                    borderRadius: '9999px',
+                    backgroundColor: '#fef2f2',
+                    color: '#dc2626',
+                    fontSize: '0.76rem',
+                    fontWeight: '800',
+                    border: '1px solid #fee2e2',
+                    marginBottom: '16px'
+                  }}>
+                    <XCircle size={14} />
+                    <span>El Camino Tradicional (Fraccionado y Costoso)</span>
+                  </div>
+
+                  <h3 style={{ fontSize: '1.4rem', fontWeight: '800', color: '#991b1b', margin: '0 0 8px 0' }}>
+                    5 o Más Servicios Separados
+                  </h3>
+                  <p style={{ color: '#64748b', fontSize: '0.88rem', lineHeight: 1.55, marginBottom: '22px' }}>
+                    Contratar herramientas aisladas genera cobros sorpresa en dólares, problemas de sincronización y dependencia técnica constante.
+                  </p>
+
+                  <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '14px', fontSize: '0.85rem' }}>
+                    <li style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                      <XCircle size={18} color="#dc2626" style={{ flexShrink: 0, marginTop: '2px' }} />
+                      <div>
+                        <strong style={{ color: '#0f172a' }}>Hosting Web y Dominio:</strong>
+                        <span style={{ color: '#64748b' }}> Pago mensual recurrente de $15 a $30 USD solo por mantener una página web encendida.</span>
+                      </div>
+                    </li>
+                    <li style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                      <XCircle size={18} color="#dc2626" style={{ flexShrink: 0, marginTop: '2px' }} />
+                      <div>
+                        <strong style={{ color: '#0f172a' }}>Diseñador o Creador Web:</strong>
+                        <span style={{ color: '#64748b' }}> Inversión inicial de $300 a $800 USD, más cobros por cada cambio de fotos o precios.</span>
+                      </div>
+                    </li>
+                    <li style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                      <XCircle size={18} color="#dc2626" style={{ flexShrink: 0, marginTop: '2px' }} />
+                      <div>
+                        <strong style={{ color: '#0f172a' }}>Servidor Cloud (VPS) para el Bot:</strong>
+                        <span style={{ color: '#64748b' }}> Alquilar un servidor en la nube ($20 a $50 USD/mes) y configurarlo para que el bot no se apague.</span>
+                      </div>
+                    </li>
+                    <li style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                      <XCircle size={18} color="#dc2626" style={{ flexShrink: 0, marginTop: '2px' }} />
+                      <div>
+                        <strong style={{ color: '#0f172a' }}>Construir y Programar el Bot de IA:</strong>
+                        <span style={{ color: '#64748b' }}> Desarrollar los flujos, conectar APIs complejas y pagar consumo de tokens en dólares cada mes.</span>
+                      </div>
+                    </li>
+                    <li style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                      <XCircle size={18} color="#dc2626" style={{ flexShrink: 0, marginTop: '2px' }} />
+                      <div>
+                        <strong style={{ color: '#0f172a' }}>Ajustar Todo para que Funcione:</strong>
+                        <span style={{ color: '#64748b' }}> Semanas de dolores de cabeza intentando que el bot sepa el stock de la tienda y la agenda de citas.</span>
+                      </div>
+                    </li>
+                  </ul>
+                </div>
+
+                <div style={{
+                  marginTop: '26px',
+                  padding: '16px',
+                  borderRadius: '14px',
+                  backgroundColor: '#fff5f5',
+                  border: '1px solid #fed7d7',
+                  fontSize: '0.82rem',
+                  color: '#991b1b',
+                  fontWeight: '600',
+                  textAlign: 'center'
+                }}>
+                  Costo estimado: Más de $150 USD/mes + $500 USD de desarrollo inicial y semanas de configuración.
+                </div>
+              </div>
+
+              {/* Card 2: La Solución Integrada Betico */}
+              <div style={{
+                backgroundColor: '#ffffff',
+                borderRadius: '24px',
+                padding: isMobile ? '24px' : '36px',
+                border: '2px solid #0b3c3d',
+                boxShadow: '0 12px 36px rgba(11, 60, 61, 0.1)',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+                position: 'relative'
+              }}>
+                <div style={{
+                  position: 'absolute',
+                  top: '-13px',
+                  right: '28px',
+                  backgroundColor: '#0b3c3d',
+                  color: '#ffffff',
+                  fontSize: '0.72rem',
+                  fontWeight: '800',
+                  padding: '4px 14px',
+                  borderRadius: '9999px',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.06em',
+                  boxShadow: '0 2px 8px rgba(11, 60, 61, 0.25)'
+                }}>
+                  Solución Estratégica Todo en Uno
+                </div>
+
+                <div>
+                  <div style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '4px 12px',
+                    borderRadius: '9999px',
+                    backgroundColor: '#eff7f7',
+                    color: '#0b3c3d',
+                    fontSize: '0.76rem',
+                    fontWeight: '800',
+                    border: '1px solid #b0dcdc',
+                    marginBottom: '16px'
+                  }}>
+                    <CheckCircle2 size={14} color="#0b3c3d" />
+                    <span>Con Betico (Unificado, Simple y en Colones)</span>
+                  </div>
+
+                  <h3 style={{ fontSize: '1.4rem', fontWeight: '800', color: '#0b3c3d', margin: '0 0 8px 0' }}>
+                    Toda tu Infraestructura en una Sola Plataforma
+                  </h3>
+                  <p style={{ color: '#64748b', fontSize: '0.88rem', lineHeight: 1.55, marginBottom: '22px' }}>
+                    Obtén toda tu presencia digital lista para operar en 15 minutos, sin programadores, sin hosting externo y con tarifa fija en colones.
+                  </p>
+
+                  <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '14px', fontSize: '0.85rem' }}>
+                    <li style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                      <CheckCircle2 size={18} color="#0b3c3d" style={{ flexShrink: 0, marginTop: '2px' }} />
+                      <div>
+                        <strong style={{ color: '#0f172a' }}>Sitio Web Oficial en Minutos:</strong>
+                        <span style={{ color: '#475569' }}> Tu dirección propia (betico.tech/sitio/tu-marca) con hosting de alta velocidad y certificado SSL incluido.</span>
+                      </div>
+                    </li>
+                    <li style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                      <CheckCircle2 size={18} color="#0b3c3d" style={{ flexShrink: 0, marginTop: '2px' }} />
+                      <div>
+                        <strong style={{ color: '#0f172a' }}>Motor Betico IA Propio:</strong>
+                        <span style={{ color: '#475569' }}> Cero costos de tokens en dólares ni servidores cloud que administrar. Respuestas ilimitadas 24/7 en WhatsApp.</span>
+                      </div>
+                    </li>
+                    <li style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                      <CheckCircle2 size={18} color="#0b3c3d" style={{ flexShrink: 0, marginTop: '2px' }} />
+                      <div>
+                        <strong style={{ color: '#0f172a' }}>Tienda, Citas y Canchas Conectadas:</strong>
+                        <span style={{ color: '#475569' }}> Todo integrado por defecto: si un cliente compra o agenda, el inventario y el calendario se sincronizan en 0s.</span>
+                      </div>
+                    </li>
+                    <li style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                      <CheckCircle2 size={18} color="#0b3c3d" style={{ flexShrink: 0, marginTop: '2px' }} />
+                      <div>
+                        <strong style={{ color: '#0f172a' }}>Pasarelas de Pago Nativas:</strong>
+                        <span style={{ color: '#475569' }}> Acepta tarjetas Visa, Mastercard y AMEX con verificación directa y depósito en tu cuenta bancaria nacional.</span>
+                      </div>
+                    </li>
+                    <li style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                      <CheckCircle2 size={18} color="#0b3c3d" style={{ flexShrink: 0, marginTop: '2px' }} />
+                      <div>
+                        <strong style={{ color: '#0f172a' }}>Club de Fidelidad y Sellos Digitales:</strong>
+                        <span style={{ color: '#475569' }}> Monedero digital por cédula (betico.tech/fidelidad) para que tus clientes acumulen sellos y puntos recurrentes.</span>
+                      </div>
+                    </li>
+                  </ul>
+                </div>
+
+                <div style={{
+                  marginTop: '26px',
+                  padding: '16px',
+                  borderRadius: '14px',
+                  backgroundColor: '#eff7f7',
+                  border: '1px solid #b0dcdc',
+                  fontSize: '0.85rem',
+                  color: '#0b3c3d',
+                  fontWeight: '700',
+                  textAlign: 'center',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px'
+                }}>
+                  <Zap size={16} />
+                  <span>Tarifa plana en colones: ₡55.000/mes • Sin comisiones • Listo en 15 minutos 🇨🇷</span>
+                </div>
+              </div>
+
+            </div>
+
+          </div>
+        </section>
+
+        {/* ------------------------------------------------------------
+            NUEVA SECCIÓN: SELECTOR POR GIRO DE NEGOCIO
+        ------------------------------------------------------------ */}
+        <section id="giros-negocio" style={{
+          padding: isMobile ? '60px 16px' : '90px 24px',
+          backgroundColor: '#ffffff',
+          borderBottom: '1px solid #e2e8f0'
+        }}>
+          <div style={{ maxWidth: '1280px', margin: '0 auto' }}>
+            
+            <div style={{ textAlign: 'center', maxWidth: '800px', margin: '0 auto 40px auto' }}>
+              <span style={{
+                fontSize: '0.78rem',
+                fontWeight: '800',
+                textTransform: 'uppercase',
+                letterSpacing: '0.08em',
+                color: '#0b3c3d',
+                backgroundColor: '#eff7f7',
+                padding: '4px 14px',
+                borderRadius: '9999px',
+                border: '1px solid #b0dcdc',
+                display: 'inline-block',
+                marginBottom: '12px'
+              }}>
+                Especializado por Industria
+              </span>
+              <h2 style={{
+                fontSize: 'clamp(1.9rem, 4vw, 2.9rem)',
+                fontWeight: '900',
+                color: '#0f172a',
+                letterSpacing: '-0.5px',
+                margin: '0 0 16px 0',
+                lineHeight: 1.2
+              }}>
+                Diseñado a la Medida de tu Giro de Negocio
+              </h2>
+              <p style={{ color: '#64748b', fontSize: '1.05rem', lineHeight: 1.6, margin: 0 }}>
+                Cada negocio tiene dinámicas operativas diferentes. Elige tu giro de negocio y conoce cómo Betico se adapta a tu día a día:
+              </p>
+            </div>
+
+            {/* Industry Selector Tabs */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: isMobile ? 'flex-start' : 'center',
+              gap: '10px',
+              overflowX: 'auto',
+              paddingBottom: '16px',
+              marginBottom: '32px',
+              scrollbarWidth: 'none'
+            }}>
+              {[
+                { id: 'restaurantes', label: 'Restaurantes y Cafeterías', icon: Utensils },
+                { id: 'servicios', label: 'Salones y Barberías', icon: Scissors },
+                { id: 'canchas', label: 'Canchas Deportivas y Pádel', icon: Trophy },
+                { id: 'retail', label: 'Tiendas y Boutiques', icon: ShoppingBag },
+                { id: 'fidelidad', label: 'Club de Fidelización', icon: Award }
+              ].map((tab) => {
+                const IconComponent = tab.icon;
+                const isActive = activeVertical === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveVertical(tab.id as any)}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '12px 20px',
+                      borderRadius: '14px',
+                      border: isActive ? '2px solid #0b3c3d' : '1px solid #e2e8f0',
+                      backgroundColor: isActive ? '#0b3c3d' : '#ffffff',
+                      color: isActive ? '#ffffff' : '#475569',
+                      fontSize: '0.88rem',
+                      fontWeight: '700',
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                      boxShadow: isActive ? '0 4px 14px rgba(11, 60, 61, 0.2)' : 'none',
+                      transition: 'all 0.2s',
+                      flexShrink: 0
+                    }}
+                  >
+                    <IconComponent size={18} color={isActive ? '#ffffff' : '#0b3c3d'} />
+                    <span>{tab.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Active Industry Showcase Card */}
+            {(() => {
+              const current = verticalData[activeVertical];
+              return (
+                <div style={{
+                  backgroundColor: '#FAF8F5',
+                  borderRadius: '24px',
+                  padding: isMobile ? '24px' : '40px',
+                  border: '1px solid #e2e8f0',
+                  boxShadow: '0 8px 28px rgba(0,0,0,0.03)'
+                }}>
+                  <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', gap: '16px', marginBottom: '28px', paddingBottom: '20px', borderBottom: '1px solid #e2e8f0' }}>
+                    <div>
+                      <span style={{ fontSize: '0.78rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#b51c12', display: 'block', marginBottom: '4px' }}>
+                        {current.badge}
+                      </span>
+                      <h3 style={{ fontSize: 'clamp(1.4rem, 2.5vw, 1.85rem)', fontWeight: '900', color: '#0f172a', margin: '0 0 6px 0' }}>
+                        {current.title}
+                      </h3>
+                      <p style={{ color: '#64748b', fontSize: '0.95rem', margin: 0 }}>
+                        {current.subtitle}
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        setSelectedPlanForRegister('pro');
+                        setShowRegisterModal(true);
+                      }}
+                      style={{
+                        padding: '12px 24px',
+                        backgroundColor: '#0b3c3d',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '12px',
+                        fontSize: '0.9rem',
+                        fontWeight: '700',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        whiteSpace: 'nowrap',
+                        boxShadow: '0 4px 12px rgba(11, 60, 61, 0.2)'
+                      }}
+                    >
+                      <Zap size={16} />
+                      <span>{current.ctaText}</span>
+                    </button>
+                  </div>
+
+                  {/* 3 Key Features */}
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '20px', marginBottom: '24px' }}>
+                    {current.features.map((feat, idx) => (
+                      <div key={idx} style={{ backgroundColor: '#ffffff', padding: '22px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                          <CheckCircle2 size={18} color="#0b3c3d" />
+                          <h4 style={{ fontSize: '1rem', fontWeight: '800', color: '#0f172a', margin: 0 }}>
+                            {feat.title}
+                          </h4>
+                        </div>
+                        <p style={{ color: '#64748b', fontSize: '0.86rem', lineHeight: 1.6, margin: 0 }}>
+                          {feat.desc}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Impact Bar */}
+                  <div style={{
+                    backgroundColor: '#ffffff',
+                    padding: '16px 20px',
+                    borderRadius: '14px',
+                    border: '1px solid #b0dcdc',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    color: '#0b3c3d',
+                    fontSize: '0.88rem'
+                  }}>
+                    <Sparkles size={20} color="#b51c12" style={{ flexShrink: 0 }} />
+                    <div>
+                      <strong style={{ color: '#0f172a' }}>Impacto Comprobado: </strong>
+                      <span>{current.impact}</span>
+                    </div>
+                  </div>
+
+                </div>
+              );
+            })()}
+
+          </div>
+        </section>
+
+        {/* ------------------------------------------------------------
+            3. LOS 5 PILARES FUNDAMENTALES (SUPERPODERES)
         ------------------------------------------------------------ */}
         <section id="superpoderes" style={{ padding: isMobile ? '60px 16px' : '100px 24px', backgroundColor: '#FAF8F5' }}>
           <div style={{ maxWidth: '1280px', margin: '0 auto' }}>
@@ -620,7 +1200,7 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
                 Plataforma Todo en Uno
               </span>
               <h2 style={{ fontSize: 'clamp(1.9rem, 4vw, 3rem)', fontWeight: '900', color: '#0f172a', letterSpacing: '-0.5px', margin: '0 0 16px 0' }}>
-                Los 4 Pilares Fundamentales de Betico
+                Los 5 Pilares Fundamentales de Betico
               </h2>
               <p style={{ color: '#64748b', fontSize: '1.05rem', lineHeight: 1.6, margin: 0 }}>
                 Todo lo que tu negocio necesita para operar, vender y fidelizar clientes sin pagar múltiples herramientas separadas.
@@ -703,7 +1283,7 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
                 </div>
               </div>
 
-              {/* Pilar 3: Tienda Digital & Pasarela Multicanal */}
+              {/* Pilar 3: Tienda Digital y Pasarela Multicanal */}
               <div id="tienda-citas" style={{ backgroundColor: '#ffffff', borderRadius: '20px', padding: isMobile ? '24px' : '32px', border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.03)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
                 <div>
                   <div style={{ width: '48px', height: '48px', borderRadius: '12px', backgroundColor: '#eff7f7', color: '#0b3c3d', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '20px' }}>
@@ -714,7 +1294,7 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
                     Pilar 3
                   </div>
                   <h3 style={{ fontSize: '1.45rem', fontWeight: '800', color: '#0f172a', margin: '0 0 12px 0' }}>
-                    Tienda Digital & Pasarela Multicanal
+                    Tienda Digital y Pasarela Multicanal
                   </h3>
                   <p style={{ color: '#64748b', fontSize: '0.92rem', lineHeight: 1.6, marginBottom: '20px' }}>
                     Catálogo interactivo con carrito de compras, cobro en línea con <strong>Tarjetas de Crédito y Débito</strong> (Visa, Mastercard, AMEX), verificación de <strong>SINPE Móvil</strong> (automático o manual) y gestión de envíos express por GPS.
@@ -740,7 +1320,7 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
                 </div>
               </div>
 
-              {/* Pilar 4: Agenda de Citas 24/7 */}
+              {/* Pilar 4: Agenda de Citas y Reservas 24/7 */}
               <div style={{ backgroundColor: '#ffffff', borderRadius: '20px', padding: isMobile ? '24px' : '32px', border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.03)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
                 <div>
                   <div style={{ width: '48px', height: '48px', borderRadius: '12px', backgroundColor: '#f1f5f9', color: '#334155', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '20px' }}>
@@ -751,7 +1331,7 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
                     Pilar 4
                   </div>
                   <h3 style={{ fontSize: '1.45rem', fontWeight: '800', color: '#0f172a', margin: '0 0 12px 0' }}>
-                    Agenda de Citas & Reservas 24/7
+                    Agenda de Citas y Reservas 24/7
                   </h3>
                   <p style={{ color: '#64748b', fontSize: '0.92rem', lineHeight: 1.6, marginBottom: '20px' }}>
                     Permite a tus clientes agendar citas por WhatsApp o desde tu portal web de reservas, con opción de cobro en línea con tarjeta o SINPE. Asignación automática por especialista o colaborador, control de horarios y recordatorios automáticos para eliminar inasistencias.
@@ -777,6 +1357,53 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
                 </div>
               </div>
 
+              {/* Pilar 5 (NUEVO): Club de Fidelización y Sellos Digitales */}
+              <div id="club-fidelidad" style={{
+                backgroundColor: '#ffffff',
+                borderRadius: '20px',
+                padding: isMobile ? '24px' : '32px',
+                border: '1px solid #e2e8f0',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+                gridColumn: isMobile ? 'auto' : 'span 2'
+              }}>
+                <div>
+                  <div style={{ width: '48px', height: '48px', borderRadius: '12px', backgroundColor: '#fff1f0', color: '#b51c12', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '20px' }}>
+                    <Award size={26} />
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.78rem', fontWeight: '800', textTransform: 'uppercase', color: '#b51c12', marginBottom: '8px' }}>
+                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#b51c12' }} />
+                    Pilar 5
+                  </div>
+                  <h3 style={{ fontSize: '1.45rem', fontWeight: '800', color: '#0f172a', margin: '0 0 12px 0' }}>
+                    Club de Fidelización y Tarjetas de Sellos Digitales
+                  </h3>
+                  <p style={{ color: '#64748b', fontSize: '0.92rem', lineHeight: 1.6, marginBottom: '20px' }}>
+                    Sustituye para siempre las tarjetas de cartón de sellos que tus clientes pierden en la billetera. Crea programas de sellos digitales (ej. décimo café o corte gratis), monederos de puntos por cada compra y cupones de descuento interactivos con código QR.
+                  </p>
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '16px', marginBottom: '24px' }}>
+                    <div style={{ backgroundColor: '#FAF8F5', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                      <strong style={{ display: 'block', fontSize: '0.88rem', color: '#0f172a', marginBottom: '4px' }}>Tarjetas de Sellos Móviles</strong>
+                      <span style={{ fontSize: '0.8rem', color: '#64748b' }}>Gamifica la fidelidad: tus clientes acumulan sellos por cada consumo y desbloquean premios automáticos.</span>
+                    </div>
+                    <div style={{ backgroundColor: '#FAF8F5', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                      <strong style={{ display: 'block', fontSize: '0.88rem', color: '#0f172a', marginBottom: '4px' }}>Monedero de Puntos en Colones</strong>
+                      <span style={{ fontSize: '0.8rem', color: '#64748b' }}>Retorna un porcentaje de cashback en puntos que tus clientes pueden usar como dinero en sus próximas compras.</span>
+                    </div>
+                    <div style={{ backgroundColor: '#FAF8F5', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                      <strong style={{ display: 'block', fontSize: '0.88rem', color: '#0f172a', marginBottom: '4px' }}>Billetera Digital en betico.tech/fidelidad</strong>
+                      <span style={{ fontSize: '0.8rem', color: '#64748b' }}>El cliente ingresa con su número de cédula y consulta al instante todas sus tarjetas, puntos y cupones QR.</span>
+                    </div>
+                  </div>
+                </div>
+                <div style={{ paddingTop: '16px', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem' }}>
+                  <span style={{ color: '#64748b' }}>Consulta directa por WhatsApp o Billetera Web</span>
+                  <span style={{ color: '#b51c12', fontWeight: '700' }}>+45% Recompra Garantizada</span>
+                </div>
+              </div>
+
             </div>
 
           </div>
@@ -789,7 +1416,7 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
           <div style={{ maxWidth: '1280px', margin: '0 auto' }}>
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.1fr 0.9fr', gap: isMobile ? '40px' : '60px', alignItems: 'center' }}>
               
-              {/* Text & Features */}
+              {/* Text y Features */}
               <div>
                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 14px', borderRadius: '9999px', backgroundColor: '#fff1f0', color: '#b51c12', fontSize: '0.78rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.08em', border: '1px solid #ffc7c4', marginBottom: '16px' }}>
                   <ShieldCheck size={16} />
@@ -1131,12 +1758,14 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
                     <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><CheckCircle2 size={18} color="#0b3c3d" /> <span><strong>Motor Betico IA Propio</strong> (Respuestas ilimitadas, sin cobro por tokens)</span></li>
                     <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><CheckCircle2 size={18} color="#0b3c3d" /> <span><strong>Comprensión de Notas de Voz</strong> de WhatsApp</span></li>
                     <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><CheckCircle2 size={18} color="#0b3c3d" /> <span><strong>Creador de Sitios Web Oficial</strong> (<span style={{ color: '#0b3c3d', fontFamily: 'monospace' }}>betico.tech/sitio/tu-marca</span>)</span></li>
-                    <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><CheckCircle2 size={18} color="#0b3c3d" /> <span><strong>Tienda Online & Menú</strong> con pedidos a WhatsApp</span></li>
+                    <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><CheckCircle2 size={18} color="#0b3c3d" /> <span><strong>Tienda Online y Menú</strong> con pedidos a WhatsApp</span></li>
                     <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><CheckCircle2 size={18} color="#0b3c3d" /> <span><strong>Pagos con Tarjeta Débito y Crédito</strong> (Visa, Mastercard, AMEX)</span></li>
-                    <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><CheckCircle2 size={18} color="#0b3c3d" /> <span><strong>Agenda de Citas & Reservas 24/7</strong> con cobro en línea opcional</span></li>
+                    <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><CheckCircle2 size={18} color="#0b3c3d" /> <span><strong>Agenda de Citas y Reservas 24/7</strong> con cobro en línea opcional</span></li>
+                    <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><CheckCircle2 size={18} color="#b51c12" /> <span><strong>Club de Fidelización y Sellos</strong> (Billetera web en betico.tech/fidelidad)</span></li>
                     <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><CheckCircle2 size={18} color="#b51c12" /> <span><strong>Verificación de SINPE Móvil</strong> (Automática y Manual)</span></li>
-                    <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><CheckCircle2 size={18} color="#0b3c3d" /> <span>Portal de Repartidores & Asignación por GPS (1 Local)</span></li>
-                    <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><CheckCircle2 size={18} color="#0b3c3d" /> <span>Pantalla de Cocina (KDS) & Difusión Masiva CRM</span></li>
+                    <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><CheckCircle2 size={18} color="#0b3c3d" /> <span>Modo Restaurante con Pantalla de Cocina (KDS) y Delivery por GPS</span></li>
+                    <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><CheckCircle2 size={18} color="#0b3c3d" /> <span>Módulo de Canchas Deportivas con Tarifas de Día y Noche</span></li>
+                    <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><CheckCircle2 size={18} color="#0b3c3d" /> <span>Portal para Especialistas, Colaboradores y Repartidores</span></li>
                   </ul>
                 </div>
 
@@ -1315,7 +1944,7 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
         </section>
 
         {/* ------------------------------------------------------------
-            8. PRE-FOOTER CALL TO ACTION
+            8. PRE-FOOTER LLAMADA A LA ACCIÓN
         ------------------------------------------------------------ */}
         <section style={{
           padding: isMobile ? '60px 20px' : '80px 24px',
@@ -1397,13 +2026,13 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
           
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.5fr 1fr 1fr 1.2fr', gap: isMobile ? '32px' : '40px', paddingBottom: '48px', borderBottom: '1px solid #e2e8f0' }}>
             
-            {/* Logo & Bio (Máximo Protagonismo) */}
+            {/* Logo y Resumen (Máximo Protagonismo) */}
             <div>
               <div style={{ marginBottom: '18px' }}>
                 <img src="/logo.png" alt="Betico" style={{ height: '48px', width: 'auto', objectFit: 'contain' }} />
               </div>
               <p style={{ fontSize: '0.85rem', color: '#64748b', lineHeight: 1.6, maxWidth: '300px', margin: '0 0 16px 0' }}>
-                La plataforma SaaS costarricense que une tu sitio web oficial, tienda digital, agenda de citas y motor de IA en WhatsApp.
+                La plataforma SaaS costarricense que une tu sitio web oficial, tienda digital, agenda de citas, canchas, fidelización y motor de IA en WhatsApp.
               </p>
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', backgroundColor: '#eff7f7', color: '#0b3c3d', padding: '4px 10px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '700', border: '1px solid #b0dcdc' }}>
                 <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#0b3c3d' }} />
@@ -1411,24 +2040,25 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
               </div>
             </div>
 
-            {/* 4 Superpoderes */}
+            {/* 5 Superpoderes */}
             <div>
               <h4 style={{ fontSize: '0.78rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#0f172a', marginBottom: '14px' }}>
-                4 Superpoderes
+                5 Superpoderes
               </h4>
               <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.82rem' }}>
                 <li><a onClick={() => scrollToSection('sitio-web')} style={{ color: '#64748b', textDecoration: 'none', cursor: 'pointer' }}>Sitio Web Oficial</a></li>
                 <li><a onClick={() => scrollToSection('motor-ia')} style={{ color: '#64748b', textDecoration: 'none', cursor: 'pointer' }}>Motor Betico IA</a></li>
-                <li><a onClick={() => scrollToSection('tienda-citas')} style={{ color: '#64748b', textDecoration: 'none', cursor: 'pointer' }}>Tienda Digital & Pagos</a></li>
-                <li><a onClick={() => scrollToSection('tienda-citas')} style={{ color: '#64748b', textDecoration: 'none', cursor: 'pointer' }}>Agenda de Citas 24/7</a></li>
-                <li><a onClick={() => scrollToSection('pagos-tarjeta')} style={{ color: '#64748b', textDecoration: 'none', cursor: 'pointer' }}>Tarjetas & SINPE Móvil</a></li>
+                <li><a onClick={() => scrollToSection('tienda-citas')} style={{ color: '#64748b', textDecoration: 'none', cursor: 'pointer' }}>Tienda Digital y Pagos</a></li>
+                <li><a onClick={() => scrollToSection('tienda-citas')} style={{ color: '#64748b', textDecoration: 'none', cursor: 'pointer' }}>Agenda de Citas y Reservas</a></li>
+                <li><a onClick={() => scrollToSection('club-fidelidad')} style={{ color: '#64748b', textDecoration: 'none', cursor: 'pointer' }}>Club de Fidelidad y Sellos</a></li>
+                <li><a onClick={() => scrollToSection('pagos-tarjeta')} style={{ color: '#64748b', textDecoration: 'none', cursor: 'pointer' }}>Tarjetas y SINPE Móvil</a></li>
               </ul>
             </div>
 
-            {/* Legal & Soporte */}
+            {/* Legal y Soporte */}
             <div>
               <h4 style={{ fontSize: '0.78rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#0f172a', marginBottom: '14px' }}>
-                Legal & Soporte
+                Legal y Soporte
               </h4>
               <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.82rem' }}>
                 <li><a href="/legal/privacidad" style={{ color: '#64748b', textDecoration: 'none' }}>Política de Privacidad</a></li>
@@ -1441,7 +2071,7 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
             {/* Ubicación y Contacto */}
             <div>
               <h4 style={{ fontSize: '0.78rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#0f172a', marginBottom: '14px' }}>
-                Atención & Contacto
+                Atención y Contacto
               </h4>
               <p style={{ fontSize: '0.82rem', color: '#64748b', lineHeight: 1.6, margin: '0 0 10px 0' }}>
                 San José, Costa Rica 🇨🇷<br />
