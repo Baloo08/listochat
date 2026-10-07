@@ -39,6 +39,9 @@ export default function LoyaltyWalletCustomerApp({ tenantSlug }: LoyaltyWalletCu
   const [activeTab, setActiveTab] = useState<'cards' | 'vouchers'>('cards');
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
+  const safeCards = Array.isArray(cards) ? cards : [];
+  const safeVouchers = Array.isArray(vouchers) ? vouchers : [];
+
   // Merchant Branding (if visiting /fidelidad/:slug)
   const [merchantProgram, setMerchantProgram] = useState<any | null>(null);
 
@@ -84,11 +87,13 @@ export default function LoyaltyWalletCustomerApp({ tenantSlug }: LoyaltyWalletCu
 
       if (cardsRes.ok) {
         const cardsData = await cardsRes.json();
-        setCards(cardsData || []);
+        const list = Array.isArray(cardsData) ? cardsData : (Array.isArray(cardsData?.cards) ? cardsData.cards : []);
+        setCards(list);
       }
       if (vouchersRes.ok) {
         const vouchersData = await vouchersRes.json();
-        setVouchers(vouchersData || []);
+        const list = Array.isArray(vouchersData) ? vouchersData : (Array.isArray(vouchersData?.vouchers) ? vouchersData.vouchers : []);
+        setVouchers(list);
       }
     } catch (err) {
       console.error('Error cargando monedero:', err);
@@ -521,14 +526,14 @@ export default function LoyaltyWalletCustomerApp({ tenantSlug }: LoyaltyWalletCu
                   backgroundColor: 'rgba(255,255,255,0.1)',
                   padding: '8px 14px', borderRadius: '10px', textAlign: 'center'
                 }}>
-                  <div style={{ fontSize: '1.15rem', fontWeight: '800', color: '#60a5fa' }}>{cards.length}</div>
+                  <div style={{ fontSize: '1.15rem', fontWeight: '800', color: '#60a5fa' }}>{safeCards.length}</div>
                   <div style={{ fontSize: '0.68rem', color: '#cbd5e1' }}>Tarjetas</div>
                 </div>
                 <div style={{
                   backgroundColor: 'rgba(255,255,255,0.1)',
                   padding: '8px 14px', borderRadius: '10px', textAlign: 'center'
                 }}>
-                  <div style={{ fontSize: '1.15rem', fontWeight: '800', color: '#34d399' }}>{vouchers.length}</div>
+                  <div style={{ fontSize: '1.15rem', fontWeight: '800', color: '#34d399' }}>{safeVouchers.length}</div>
                   <div style={{ fontSize: '0.68rem', color: '#cbd5e1' }}>Premios</div>
                 </div>
               </div>
@@ -548,7 +553,7 @@ export default function LoyaltyWalletCustomerApp({ tenantSlug }: LoyaltyWalletCu
                 }}
               >
                 <CreditCard size={18} />
-                <span>Mis Tarjetas ({cards.length})</span>
+                <span>Mis Tarjetas ({safeCards.length})</span>
               </button>
 
               <button
@@ -563,7 +568,7 @@ export default function LoyaltyWalletCustomerApp({ tenantSlug }: LoyaltyWalletCu
                 }}
               >
                 <Award size={18} />
-                <span>Mis Premios & QR ({vouchers.length})</span>
+                <span>Mis Premios & QR ({safeVouchers.length})</span>
               </button>
             </div>
 
@@ -579,7 +584,7 @@ export default function LoyaltyWalletCustomerApp({ tenantSlug }: LoyaltyWalletCu
             {/* ------------------------------------------------------------- */}
             {!loadingData && activeTab === 'cards' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                {cards.length === 0 ? (
+                {safeCards.length === 0 ? (
                   <div style={{
                     backgroundColor: '#ffffff', borderRadius: '16px', padding: '36px 20px',
                     textAlign: 'center', border: '1px solid #e2e8f0', color: '#64748b'
@@ -593,7 +598,7 @@ export default function LoyaltyWalletCustomerApp({ tenantSlug }: LoyaltyWalletCu
                     </p>
                   </div>
                 ) : (
-                  cards.map((card: any) => {
+                  safeCards.map((card: any) => {
                     const curr = card.currency === 'USD' ? '$' : '₡';
                     const targetStamps = card.stampsTarget || 10;
                     const curStamps = Number(card.currentStamps || 0);
@@ -772,7 +777,7 @@ export default function LoyaltyWalletCustomerApp({ tenantSlug }: LoyaltyWalletCu
             {/* ------------------------------------------------------------- */}
             {!loadingData && activeTab === 'vouchers' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                {vouchers.length === 0 ? (
+                {safeVouchers.length === 0 ? (
                   <div style={{
                     backgroundColor: '#ffffff', borderRadius: '16px', padding: '36px 20px',
                     textAlign: 'center', border: '1px solid #e2e8f0', color: '#64748b'
@@ -786,7 +791,7 @@ export default function LoyaltyWalletCustomerApp({ tenantSlug }: LoyaltyWalletCu
                     </p>
                   </div>
                 ) : (
-                  vouchers.map((v: any) => {
+                  safeVouchers.map((v: any) => {
                     const isRedeemed = v.status === 'redeemed';
                     return (
                       <div

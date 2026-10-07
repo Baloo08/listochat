@@ -20957,7 +20957,7 @@ router37.get("/me/wallet", authenticateLoyaltyCustomer, async (req, res) => {
   try {
     const identification = req.loyaltyCustomer.identification;
     const cards = await getCustomerWalletCards(identification);
-    res.json({ cards });
+    res.json(cards);
   } catch (error) {
     console.error("[LoyaltyCustomerRoutes] /wallet error:", error);
     res.status(500).json({ error: "Error al obtener tarjetas de la billetera" });
@@ -20967,7 +20967,7 @@ router37.get("/me/vouchers", authenticateLoyaltyCustomer, async (req, res) => {
   try {
     const identification = req.loyaltyCustomer.identification;
     const vouchers = await getCustomerVouchers(identification);
-    res.json({ vouchers });
+    res.json(vouchers);
   } catch (error) {
     console.error("[LoyaltyCustomerRoutes] /vouchers error:", error);
     res.status(500).json({ error: "Error al obtener recompensas" });
