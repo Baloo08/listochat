@@ -12,7 +12,7 @@ export default function AgentPromptStudio() {
 
   const defaultOrchestrator: OrchestratorConfig = {
     enabled: true,
-    prompt: 'Eres el Director de Operaciones y Supervisor Agéntico del negocio en WhatsApp. Tu objetivo es asegurar una atención cálida costarricense (*pura vida*, con gusto), ágil y precisa delegando cada mensaje al subagente experto según la siguiente jerarquía:\n1. Urgencias, quejas o petición de persona ➡️ Escalado Humano.\n2. Compra de productos, menú o delivery ➡️ Ventas & Menú.\n3. Servicios, doctores, citas o disponibilidad ➡️ Citas & Agenda.\n4. Partidos, horarios o canchas deportivas ➡️ Canchas Deportivas.\n5. Saludos, ubicación, parqueo, facturación o dudas generales ➡️ Identidad & FAQ.\nEn consultas mixtas, atiende primero la reserva/cita y luego invita a conocer la oferta de tienda.',
+    prompt: 'Eres el Director de Operaciones y Supervisor Agéntico del negocio en WhatsApp. Tu objetivo es asegurar una atención cálida costarricense (*pura vida*, con gusto), ágil y precisa delegando cada mensaje al subagente experto según la siguiente jerarquía:\n1. Urgencias, quejas o petición de persona ➡️ Escalado Humano.\n2. Compra de productos, menú o delivery ➡️ Ventas & Menú.\n3. Servicios, doctores, citas o disponibilidad ➡️ Citas & Agenda.\n4. Partidos, horarios o canchas deportivas ➡️ Canchas Deportivas.\n5. Puntos, sellos, recompensas o club de fidelidad ➡️ Club de Fidelización.\n6. Saludos, ubicación, parqueo, facturación o dudas generales ➡️ Identidad & FAQ.\nEn consultas mixtas, atiende primero la reserva/cita y luego invita a conocer la oferta de tienda.',
     subagents: {
       sales: {
         id: 'sales',
@@ -37,6 +37,14 @@ export default function AgentPromptStudio() {
         prompt: 'Eres el Especialista en Reservas de Canchas Deportivas. Brinda información sobre canchas disponibles, superficies y precios por hora, diferenciando tarifa regular de tarifa con iluminación nocturna. Pregunta si requiere cancha completa o busca retador/partido abierto. Para reagendar, solicita el código CRT-XXXXXX y valida disponibilidad.',
         sources: ['courts', 'schedules'],
         actions: ['courtBooking', 'courtReschedule']
+      },
+      loyalty: {
+        id: 'loyalty',
+        name: 'Club de Fidelización',
+        enabled: true,
+        prompt: 'Eres el Asesor Especialista en Fidelización y Club de Clientes. Atiende consultas de puntos acumulados, tarjetas de sellos, premios y canjes con entusiasmo y calidez tica. Identifica al cliente mediante su número de cédula física o jurídica (identificador oficial) o teléfono. Si el cliente no ha dado su cédula, pídela amablemente para consultar su saldo exacto o registrarlo. Si califica para un premio o canje, motívalo a redimirlo o a visitar betico.tech/fidelidad.',
+        sources: ['loyalty'],
+        actions: ['loyaltyCheck', 'loyaltyRegister', 'loyaltyRedeem']
       },
       handoff: {
         id: 'handoff',
@@ -68,20 +76,34 @@ export default function AgentPromptStudio() {
     humanHandoffEnabled: initialData ? (initialData.humanHandoffEnabled !== false) : true,
     handoffNotifyPhone: initialData?.handoffNotifyPhone || '',
     handoffKeywords: Array.isArray(initialData?.handoffKeywords) ? initialData.handoffKeywords : ['humano', 'asesor', 'persona', 'agente', 'hablar con alguien', 'queja', 'reclamo', 'urgente'],
-    orchestratorConfig: initialData?.orchestratorConfig || defaultOrchestrator
+    orchestratorConfig: {
+      ...defaultOrchestrator,
+      ...(initialData?.orchestratorConfig || {}),
+      subagents: {
+        ...defaultOrchestrator.subagents,
+        ...(initialData?.orchestratorConfig?.subagents || {})
+      }
+    }
   });
 
   const [dataSourcesSummary, setDataSourcesSummary] = useState<DataSourcesSummary>({
     productsCount: 0,
     servicesCount: 0,
     courtsCount: 0,
-    specialistsCount: 0
+    specialistsCount: 0,
+    loyaltyCardsCount: 0
   });
 
-  const [storeModules, setStoreModules] = useState<{ storeEnabled?: boolean; bookingsEnabled?: boolean; courtsEnabled?: boolean }>({
+  const [storeModules, setStoreModules] = useState<{
+    storeEnabled?: boolean;
+    bookingsEnabled?: boolean;
+    courtsEnabled?: boolean;
+    loyaltyEnabled?: boolean;
+  }>({
     storeEnabled: true,
     bookingsEnabled: true,
-    courtsEnabled: false
+    courtsEnabled: false,
+    loyaltyEnabled: true
   });
 
   const [simInput, setSimInput] = useState('');
@@ -121,7 +143,14 @@ export default function AgentPromptStudio() {
             humanHandoffEnabled: data.humanHandoffEnabled !== false,
             handoffNotifyPhone: data.handoffNotifyPhone || '',
             handoffKeywords: Array.isArray(data.handoffKeywords) ? data.handoffKeywords : ['humano', 'asesor', 'persona', 'agente', 'hablar con alguien', 'queja', 'reclamo', 'urgente'],
-            orchestratorConfig: data.orchestratorConfig || defaultOrchestrator
+            orchestratorConfig: {
+              ...defaultOrchestrator,
+              ...(data.orchestratorConfig || {}),
+              subagents: {
+                ...defaultOrchestrator.subagents,
+                ...(data.orchestratorConfig?.subagents || {})
+              }
+            }
           };
           setConfig(newConf);
           if (data.dataSourcesSummary) {

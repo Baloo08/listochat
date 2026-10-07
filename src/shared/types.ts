@@ -167,6 +167,7 @@ export interface DataSourcesSummary {
   servicesCount: number;
   courtsCount: number;
   specialistsCount: number;
+  loyaltyCardsCount?: number;
 }
 
 export interface AgentPromptConfig {

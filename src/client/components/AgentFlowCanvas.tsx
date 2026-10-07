@@ -3,7 +3,7 @@ import {
   Bot, ShoppingBag, Calendar, Trophy, UserCheck, HelpCircle, 
   Database, Zap, MessageSquare, Sparkles, X, Check, Sliders,
   ZoomIn, ZoomOut, RotateCcw, Maximize2, Minimize2, Move,
-  ArrowDown, Network, Globe, Plus, Trash2
+  ArrowDown, Network, Globe, Plus, Trash2, Award
 } from 'lucide-react';
 import { OrchestratorConfig, SubagentConfig, DataSourcesSummary, NodePosition } from '../../shared/types';
 
@@ -17,18 +17,20 @@ interface AgentFlowCanvasProps {
     storeEnabled?: boolean;
     bookingsEnabled?: boolean;
     courtsEnabled?: boolean;
+    loyaltyEnabled?: boolean;
   };
 }
 
 // Default Hierarchical Top-to-Bottom Node Layout
 const DEFAULT_NODE_POSITIONS: Record<string, NodePosition> = {
-  whatsapp: { x: 670, y: 30 },
-  orchestrator: { x: 640, y: 165 },
+  whatsapp: { x: 845, y: 30 },
+  orchestrator: { x: 815, y: 165 },
   sales: { x: 30, y: 350 },
   booking: { x: 350, y: 350 },
   courts: { x: 670, y: 350 },
-  handoff: { x: 990, y: 350 },
-  general: { x: 1310, y: 350 }
+  loyalty: { x: 990, y: 350 },
+  handoff: { x: 1310, y: 350 },
+  general: { x: 1630, y: 350 }
 };
 
 const NODE_DIMENSIONS: Record<string, { w: number; h: number }> = {
@@ -37,6 +39,7 @@ const NODE_DIMENSIONS: Record<string, { w: number; h: number }> = {
   sales: { w: 290, h: 370 },
   booking: { w: 290, h: 370 },
   courts: { w: 290, h: 370 },
+  loyalty: { w: 290, h: 370 },
   handoff: { w: 290, h: 370 },
   general: { w: 290, h: 370 }
 };
@@ -51,6 +54,7 @@ export default function AgentFlowCanvas({
   const isSalesVisible = storeModules ? storeModules.storeEnabled !== false : true;
   const isBookingVisible = storeModules ? storeModules.bookingsEnabled !== false : true;
   const isCourtsVisible = storeModules ? storeModules.courtsEnabled === true : true;
+  const isLoyaltyVisible = storeModules ? storeModules.loyaltyEnabled === true : true;
 
   const [selectedSubagentKey, setSelectedSubagentKey] = useState<string | null>(null);
   const [isOrchestratorModalOpen, setIsOrchestratorModalOpen] = useState<boolean>(false);
@@ -62,10 +66,43 @@ export default function AgentFlowCanvas({
 
   // Draggable Node State
   const [nodePositions, setNodePositions] = useState<Record<string, NodePosition>>(() => {
-    return {
-      ...DEFAULT_NODE_POSITIONS,
-      ...(orchestratorConfig?.nodePositions || {})
+    if (orchestratorConfig?.nodePositions && Object.keys(orchestratorConfig.nodePositions).length > 0) {
+      const initial = {
+        ...DEFAULT_NODE_POSITIONS,
+        ...orchestratorConfig.nodePositions
+      };
+      if (!orchestratorConfig.nodePositions.loyalty) {
+        const handoffX = initial.handoff?.x ?? 990;
+        const generalX = initial.general?.x ?? 1310;
+        initial.loyalty = { x: Math.max(handoffX, generalX) + 320, y: 350 };
+      }
+      return initial;
+    }
+
+    const visibleSubagents = [
+      isSalesVisible ? 'sales' : null,
+      isBookingVisible ? 'booking' : null,
+      isCourtsVisible ? 'courts' : null,
+      isLoyaltyVisible ? 'loyalty' : null,
+      'handoff',
+      'general'
+    ].filter(Boolean) as string[];
+
+    const subagentSpacing = 320;
+    const totalW = visibleSubagents.length * 290 + (visibleSubagents.length - 1) * 30;
+    const centerX = 980;
+    const startX = Math.max(30, centerX - totalW / 2);
+
+    const initial: Record<string, NodePosition> = {
+      whatsapp: { x: centerX - 130, y: 30 },
+      orchestrator: { x: centerX - 160, y: 165 }
     };
+
+    visibleSubagents.forEach((key, idx) => {
+      initial[key] = { x: startX + idx * subagentSpacing, y: 350 };
+    });
+
+    return initial;
   });
 
   const [draggingNode, setDraggingNode] = useState<{
@@ -80,20 +117,59 @@ export default function AgentFlowCanvas({
 
   // Sync external nodePositions changes if any
   useEffect(() => {
-    if (orchestratorConfig?.nodePositions) {
-      setNodePositions(prev => ({
-        ...prev,
-        ...orchestratorConfig.nodePositions
-      }));
+    if (orchestratorConfig?.nodePositions && Object.keys(orchestratorConfig.nodePositions).length > 0) {
+      setNodePositions(prev => {
+        const next = {
+          ...prev,
+          ...orchestratorConfig.nodePositions
+        };
+        if (!orchestratorConfig.nodePositions.loyalty && !next.loyalty) {
+          const handoffX = next.handoff?.x ?? 990;
+          const generalX = next.general?.x ?? 1310;
+          next.loyalty = { x: Math.max(handoffX, generalX) + 320, y: 350 };
+        }
+        return next;
+      });
     }
   }, [orchestratorConfig?.nodePositions]);
 
-  const subagents = orchestratorConfig?.subagents || {
-    sales: { id: 'sales', name: 'Ventas & Menú', enabled: true, prompt: '', sources: ['products', 'payments', 'delivery'], actions: ['order', 'media'] },
-    booking: { id: 'booking', name: 'Citas & Agenda', enabled: true, prompt: '', sources: ['services', 'specialists', 'busySlots', 'customerRecord'], actions: ['booking', 'reschedule', 'cancel'] },
-    courts: { id: 'courts', name: 'Canchas Deportivas', enabled: true, prompt: '', sources: ['courts', 'schedules'], actions: ['courtBooking', 'courtReschedule'] },
-    handoff: { id: 'handoff', name: 'Escalado Humano', enabled: true, prompt: '', sources: ['keywords'], actions: ['handoff'] },
-    general: { id: 'general', name: 'Identidad & FAQ', enabled: true, prompt: '', sources: ['businessInfo', 'schedules', 'payments'], actions: [] }
+  // Auto-adapt layout if no custom positions are saved and visibility flags change
+  useEffect(() => {
+    if (!orchestratorConfig?.nodePositions || Object.keys(orchestratorConfig.nodePositions).length === 0) {
+      const visibleSubagents = [
+        isSalesVisible ? 'sales' : null,
+        isBookingVisible ? 'booking' : null,
+        isCourtsVisible ? 'courts' : null,
+        isLoyaltyVisible ? 'loyalty' : null,
+        'handoff',
+        'general'
+      ].filter(Boolean) as string[];
+
+      const subagentSpacing = 320;
+      const totalW = visibleSubagents.length * 290 + (visibleSubagents.length - 1) * 30;
+      const centerX = 980;
+      const startX = Math.max(30, centerX - totalW / 2);
+
+      const dynamicPositions: Record<string, NodePosition> = {
+        whatsapp: { x: centerX - 130, y: 30 },
+        orchestrator: { x: centerX - 160, y: 165 }
+      };
+
+      visibleSubagents.forEach((key, idx) => {
+        dynamicPositions[key] = { x: startX + idx * subagentSpacing, y: 350 };
+      });
+
+      setNodePositions(dynamicPositions);
+    }
+  }, [isSalesVisible, isBookingVisible, isCourtsVisible, isLoyaltyVisible]);
+
+  const subagents = {
+    sales: orchestratorConfig?.subagents?.sales || { id: 'sales', name: 'Ventas & Menú', enabled: true, prompt: '', sources: ['products', 'payments', 'delivery'], actions: ['order', 'media'] },
+    booking: orchestratorConfig?.subagents?.booking || { id: 'booking', name: 'Citas & Agenda', enabled: true, prompt: '', sources: ['services', 'specialists', 'busySlots', 'customerRecord'], actions: ['booking', 'reschedule', 'cancel'] },
+    courts: orchestratorConfig?.subagents?.courts || { id: 'courts', name: 'Canchas Deportivas', enabled: true, prompt: '', sources: ['courts', 'schedules'], actions: ['courtBooking', 'courtReschedule'] },
+    loyalty: orchestratorConfig?.subagents?.loyalty || { id: 'loyalty', name: 'Club de Fidelización', enabled: true, prompt: 'Eres el Asesor Especialista en Fidelización y Club de Clientes. Atiende consultas de puntos acumulados, tarjetas de sellos, premios y canjes con entusiasmo y calidez tica. Identifica al cliente mediante su número de cédula física o jurídica (identificador oficial) o teléfono. Si el cliente no ha dado su cédula, pídela amablemente para consultar su saldo exacto o registrarlo. Si califica para un premio o canje, motívalo a redimirlo o a visitar betico.tech/fidelidad.', sources: ['loyalty'], actions: ['loyaltyCheck', 'loyaltyRegister', 'loyaltyRedeem'] },
+    handoff: orchestratorConfig?.subagents?.handoff || { id: 'handoff', name: 'Escalado Humano', enabled: true, prompt: '', sources: ['keywords'], actions: ['handoff'] },
+    general: orchestratorConfig?.subagents?.general || { id: 'general', name: 'Identidad & FAQ', enabled: true, prompt: '', sources: ['businessInfo', 'schedules', 'payments'], actions: [] }
   };
 
   const handleToggleSubagent = (key: string, e: React.MouseEvent) => {
@@ -149,13 +225,14 @@ export default function AgentFlowCanvas({
       isSalesVisible ? 'sales' : null,
       isBookingVisible ? 'booking' : null,
       isCourtsVisible ? 'courts' : null,
+      isLoyaltyVisible ? 'loyalty' : null,
       'handoff',
       'general'
     ].filter(Boolean) as string[];
 
     const subagentSpacing = 320;
     const totalW = visibleSubagents.length * 290 + (visibleSubagents.length - 1) * 30;
-    const centerX = 800;
+    const centerX = 980;
     const startX = Math.max(30, centerX - totalW / 2);
 
     const dynamicPositions: Record<string, NodePosition> = {
@@ -460,7 +537,7 @@ export default function AgentFlowCanvas({
             transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
             transformOrigin: 'top left',
             transition: (isPanning || draggingNode) ? 'none' : 'transform 0.15s ease-out',
-            width: '1650px',
+            width: '2020px',
             height: '840px',
             position: 'relative'
           }}
@@ -472,7 +549,7 @@ export default function AgentFlowCanvas({
               position: 'absolute',
               top: 0,
               left: 0,
-              width: '1650px',
+              width: '2020px',
               height: '840px',
               pointerEvents: 'none',
               zIndex: 0
@@ -498,6 +575,10 @@ export default function AgentFlowCanvas({
               <linearGradient id="grad-courts" x1="0%" y1="0%" x2="0%" y2="100%">
                 <stop offset="0%" stopColor="#6366f1" />
                 <stop offset="100%" stopColor="#facc15" />
+              </linearGradient>
+              <linearGradient id="grad-loyalty" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stopColor="#6366f1" />
+                <stop offset="100%" stopColor="#f59e0b" />
               </linearGradient>
               <linearGradient id="grad-handoff" x1="0%" y1="0%" x2="0%" y2="100%">
                 <stop offset="0%" stopColor="#6366f1" />
@@ -548,6 +629,17 @@ export default function AgentFlowCanvas({
                 stroke={activeSimulatedAgentId === 'courts' ? '#facc15' : (subagents.courts?.enabled ? 'url(#grad-courts)' : '#334155')}
                 strokeWidth={activeSimulatedAgentId === 'courts' ? '4' : '2.5'}
                 strokeDasharray={subagents.courts?.enabled ? (activeSimulatedAgentId === 'courts' ? "6 3" : "none") : "4 4"}
+              />
+            )}
+
+            {/* Level 2 -> Level 3: Orquestador -> Loyalty Subagent */}
+            {isLoyaltyVisible && (
+              <path
+                d={getTopToBottomCurve('orchestrator', 'loyalty')}
+                fill="none"
+                stroke={activeSimulatedAgentId === 'loyalty' ? '#f59e0b' : (subagents.loyalty?.enabled ? 'url(#grad-loyalty)' : '#334155')}
+                strokeWidth={activeSimulatedAgentId === 'loyalty' ? '4' : '2.5'}
+                strokeDasharray={subagents.loyalty?.enabled ? (activeSimulatedAgentId === 'loyalty' ? "6 3" : "none") : "4 4"}
               />
             )}
 
@@ -716,7 +808,7 @@ export default function AgentFlowCanvas({
               }}
             >
               <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <Sparkles size={11} color="#38bdf8" /> 5 Subagentes vinculados
+                <Sparkles size={11} color="#38bdf8" /> {[isSalesVisible, isBookingVisible, isCourtsVisible, isLoyaltyVisible, true, true].filter(Boolean).length} Subagentes vinculados
               </span>
               <span style={{ color: '#818cf8', fontWeight: '600' }}>
                 Directrices Supervisor &gt;
@@ -802,7 +894,28 @@ export default function AgentFlowCanvas({
             ]
           )}
 
-          {/* 4. AGENTE ESCALADO HUMANO */}
+          {/* 4. AGENTE CLUB DE FIDELIZACIÓN */}
+          {isLoyaltyVisible && renderSubagentHierarchicalNode(
+            'loyalty',
+            subagents.loyalty,
+            <Award size={18} color="#f59e0b" />,
+            '#d97706',
+            '#f59e0b',
+            activeSimulatedAgentId === 'loyalty',
+            'Puntos, tarjetas de sellos, canje de premios y registro en el club.',
+            [
+              { icon: <Database size={12} color="#f59e0b" />, label: 'Programa de Fidelidad', detail: 'Puntos & Sellos' },
+              { icon: <Database size={12} color="#f59e0b" />, label: 'Tarjetas Registradas', detail: `${dataSourcesSummary?.loyaltyCardsCount ?? 0} tarjetas` },
+              { icon: <Database size={12} color="#f59e0b" />, label: 'Portal Web Clientes', detail: '/fidelidad' }
+            ],
+            [
+              { name: 'COMMAND_LOYALTY_CHECK', label: 'Consultar saldo y sellos' },
+              { name: 'COMMAND_LOYALTY_REGISTER', label: 'Registrar nueva tarjeta' },
+              { name: 'COMMAND_LOYALTY_REDEEM', label: 'Canjear premio o cupón' }
+            ]
+          )}
+
+          {/* 5. AGENTE ESCALADO HUMANO */}
           {renderSubagentHierarchicalNode(
             'handoff',
             subagents.handoff,
@@ -1062,7 +1175,7 @@ export default function AgentFlowCanvas({
                   Fuentes de Datos RAG Conectadas
                 </label>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                  {['products', 'services', 'courts', 'specialists', 'busySlots', 'payments', 'schedule'].map(src => {
+                  {['products', 'services', 'courts', 'specialists', 'busySlots', 'payments', 'schedule', 'loyalty'].map(src => {
                     const isChecked = (currentModalAgent.sources || []).includes(src);
                     return (
                       <button
@@ -1099,7 +1212,7 @@ export default function AgentFlowCanvas({
                   Acciones Automatizadas Permitidas (Tools)
                 </label>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                  {['order', 'booking', 'courtBooking', 'courtReschedule', 'reschedule', 'cancel', 'media', 'handoff'].map(act => {
+                  {['order', 'booking', 'courtBooking', 'courtReschedule', 'reschedule', 'cancel', 'media', 'loyaltyCheck', 'loyaltyRegister', 'loyaltyRedeem', 'handoff'].map(act => {
                     const isChecked = (currentModalAgent.actions || []).includes(act);
                     return (
                       <button
@@ -1487,7 +1600,8 @@ export default function AgentFlowCanvas({
       delivery: 'Delivery',
       keywords: 'Palabras Clave',
       businessInfo: 'Datos Negocio',
-      customerRecord: 'Expediente'
+      customerRecord: 'Expediente',
+      loyalty: 'Club de Fidelidad'
     };
     return map[src] || src;
   }
@@ -1501,6 +1615,9 @@ export default function AgentFlowCanvas({
       courtBooking: 'Reservar Cancha',
       courtReschedule: 'Reagendar Cancha',
       media: 'Enviar Fotos',
+      loyaltyCheck: 'Consultar Puntos/Sellos',
+      loyaltyRegister: 'Registrar Tarjeta',
+      loyaltyRedeem: 'Canjear Premio',
       handoff: 'Escalar a Humano'
     };
     return map[act] || act;

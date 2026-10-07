@@ -13834,20 +13834,23 @@ router7.get("/prompt", async (req, res) => {
       productsCount: 0,
       servicesCount: 0,
       courtsCount: 0,
-      specialistsCount: 0
+      specialistsCount: 0,
+      loyaltyCardsCount: 0
     };
     try {
-      const [products, services, courts, specialists] = await Promise.all([
+      const [products, services, courts, specialists, loyaltyRes] = await Promise.all([
         getProductsByTenant(req.tenantId, true).catch(() => []),
         getServicesByTenant(req.tenantId).catch(() => []),
         getCourtsByTenant(req.tenantId).catch(() => []),
-        getSpecialistsByTenant(req.tenantId).catch(() => [])
+        getSpecialistsByTenant(req.tenantId).catch(() => []),
+        listLoyaltyCards(req.tenantId).catch(() => ({ cards: [], total: 0 }))
       ]);
       dataSourcesSummary = {
         productsCount: (products || []).filter((p) => p.active !== false).length,
         servicesCount: (services || []).filter((s) => s.active !== false).length,
         courtsCount: (courts || []).filter((c) => c.active !== false).length,
-        specialistsCount: (specialists || []).filter((s) => s.active !== false).length
+        specialistsCount: (specialists || []).filter((s) => s.active !== false).length,
+        loyaltyCardsCount: loyaltyRes?.total || 0
       };
     } catch (e) {
       console.warn("[AgentRoute] Error fetching data source summary:", e);
@@ -13858,7 +13861,7 @@ router7.get("/prompt", async (req, res) => {
       model: tenant?.aiModel || config?.model || "betico-ai",
       isUsingOwnKey: !!tenant?.aiApiKeyEncrypted,
       dataSourcesSummary,
-      storeModules: store?.storeModules || { storeEnabled: true, bookingsEnabled: true, courtsEnabled: false }
+      storeModules: store?.storeModules || { storeEnabled: true, bookingsEnabled: true, courtsEnabled: false, loyaltyEnabled: true }
     });
   } catch (error) {
     console.error(error);
