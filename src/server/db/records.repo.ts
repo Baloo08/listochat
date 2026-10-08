@@ -27,7 +27,14 @@ function mapRecordRow(row: any): CustomerRecord {
     totalAppointments: row.total_appointments ? Number(row.total_appointments) : undefined,
     lastAppointmentDate: row.last_appointment_date || undefined,
     latestVitalSigns: row.latest_vital_signs ? (typeof row.latest_vital_signs === 'string' ? JSON.parse(row.latest_vital_signs) : row.latest_vital_signs) : undefined,
-    recentEntriesCount: row.recent_entries_count ? Number(row.recent_entries_count) : undefined
+    recentEntriesCount: row.recent_entries_count ? Number(row.recent_entries_count) : undefined,
+    loyaltyCard: row.loyalty_card_id ? {
+      id: row.loyalty_card_id,
+      pointsBalance: Number(row.loyalty_points || 0),
+      currentStamps: Number(row.loyalty_stamps || 0),
+      totalStampsRedeemed: Number(row.loyalty_total_stamps || 0),
+      status: row.loyalty_status || 'active'
+    } : undefined
   };
 }
 
@@ -87,8 +94,20 @@ export async function getRecordsByTenant(
       (SELECT COUNT(*) FROM appointments a WHERE a.tenant_id = r.tenant_id AND (a.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))) as total_appointments,
       (SELECT MAX(a.date) FROM appointments a WHERE a.tenant_id = r.tenant_id AND (a.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))) as last_appointment_date,
       (SELECT re.vital_signs FROM record_entries re WHERE re.record_id = r.id AND re.vital_signs IS NOT NULL ORDER BY re.created_at DESC LIMIT 1) as latest_vital_signs,
-      (SELECT COUNT(*) FROM record_entries re WHERE re.record_id = r.id) as recent_entries_count
+      (SELECT COUNT(*) FROM record_entries re WHERE re.record_id = r.id) as recent_entries_count,
+      lc.loyalty_card_id, lc.loyalty_points, lc.loyalty_stamps, lc.loyalty_total_stamps, lc.loyalty_status
     FROM customer_records r
+    LEFT JOIN LATERAL (
+      SELECT lc.id as loyalty_card_id, lc.points_balance as loyalty_points, lc.current_stamps as loyalty_stamps, lc.total_stamps_redeemed as loyalty_total_stamps, lc.status as loyalty_status
+      FROM loyalty_cards lc
+      WHERE lc.tenant_id = r.tenant_id
+        AND (
+          (r.identification IS NOT NULL AND r.identification != '' AND UPPER(REPLACE(REPLACE(lc.identification, '-', ''), ' ', '')) = UPPER(REPLACE(REPLACE(r.identification, '-', ''), ' ', '')))
+          OR (r.metadata->>'loyaltyCardId' IS NOT NULL AND lc.id::text = r.metadata->>'loyaltyCardId')
+        )
+      ORDER BY lc.updated_at DESC
+      LIMIT 1
+    ) lc ON TRUE
     ${whereClause}
     ORDER BY r.updated_at DESC
     LIMIT $${dataParams.length - 1} OFFSET $${dataParams.length}
@@ -107,8 +126,20 @@ export async function getRecordById(id: string, tenantId: string): Promise<Custo
       (SELECT COUNT(*) FROM appointments a WHERE a.tenant_id = r.tenant_id AND (a.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))) as total_appointments,
       (SELECT MAX(a.date) FROM appointments a WHERE a.tenant_id = r.tenant_id AND (a.record_id = r.id OR (r.phone IS NOT NULL AND r.phone != '' AND REPLACE(a.whatsapp, '-', '') LIKE '%' || RIGHT(REPLACE(r.phone, '-', ''), 8)))) as last_appointment_date,
       (SELECT re.vital_signs FROM record_entries re WHERE re.record_id = r.id AND re.vital_signs IS NOT NULL ORDER BY re.created_at DESC LIMIT 1) as latest_vital_signs,
-      (SELECT COUNT(*) FROM record_entries re WHERE re.record_id = r.id) as recent_entries_count
+      (SELECT COUNT(*) FROM record_entries re WHERE re.record_id = r.id) as recent_entries_count,
+      lc.loyalty_card_id, lc.loyalty_points, lc.loyalty_stamps, lc.loyalty_total_stamps, lc.loyalty_status
     FROM customer_records r
+    LEFT JOIN LATERAL (
+      SELECT lc.id as loyalty_card_id, lc.points_balance as loyalty_points, lc.current_stamps as loyalty_stamps, lc.total_stamps_redeemed as loyalty_total_stamps, lc.status as loyalty_status
+      FROM loyalty_cards lc
+      WHERE lc.tenant_id = r.tenant_id
+        AND (
+          (r.identification IS NOT NULL AND r.identification != '' AND UPPER(REPLACE(REPLACE(lc.identification, '-', ''), ' ', '')) = UPPER(REPLACE(REPLACE(r.identification, '-', ''), ' ', '')))
+          OR (r.metadata->>'loyaltyCardId' IS NOT NULL AND lc.id::text = r.metadata->>'loyaltyCardId')
+        )
+      ORDER BY lc.updated_at DESC
+      LIMIT 1
+    ) lc ON TRUE
     WHERE r.id = $1 AND r.tenant_id = $2
   `;
   const res = await query(sql, [id, tenantId]);
@@ -120,7 +151,20 @@ export async function getRecordByPhone(phone: string, tenantId: string): Promise
   if (cleanPhone.length < 8) return null;
 
   const sql = `
-    SELECT r.* FROM customer_records r
+    SELECT r.*,
+      lc.loyalty_card_id, lc.loyalty_points, lc.loyalty_stamps, lc.loyalty_total_stamps, lc.loyalty_status
+    FROM customer_records r
+    LEFT JOIN LATERAL (
+      SELECT lc.id as loyalty_card_id, lc.points_balance as loyalty_points, lc.current_stamps as loyalty_stamps, lc.total_stamps_redeemed as loyalty_total_stamps, lc.status as loyalty_status
+      FROM loyalty_cards lc
+      WHERE lc.tenant_id = r.tenant_id
+        AND (
+          (r.identification IS NOT NULL AND r.identification != '' AND UPPER(REPLACE(REPLACE(lc.identification, '-', ''), ' ', '')) = UPPER(REPLACE(REPLACE(r.identification, '-', ''), ' ', '')))
+          OR (r.metadata->>'loyaltyCardId' IS NOT NULL AND lc.id::text = r.metadata->>'loyaltyCardId')
+        )
+      ORDER BY lc.updated_at DESC
+      LIMIT 1
+    ) lc ON TRUE
     WHERE r.tenant_id = $1 AND REPLACE(r.phone, '-', '') LIKE '%' || $2
     ORDER BY r.updated_at DESC LIMIT 1
   `;
@@ -133,7 +177,20 @@ export async function getRecordByIdentification(identification: string, tenantId
   if (!cleanId) return null;
 
   const sql = `
-    SELECT r.* FROM customer_records r
+    SELECT r.*,
+      lc.loyalty_card_id, lc.loyalty_points, lc.loyalty_stamps, lc.loyalty_total_stamps, lc.loyalty_status
+    FROM customer_records r
+    LEFT JOIN LATERAL (
+      SELECT lc.id as loyalty_card_id, lc.points_balance as loyalty_points, lc.current_stamps as loyalty_stamps, lc.total_stamps_redeemed as loyalty_total_stamps, lc.status as loyalty_status
+      FROM loyalty_cards lc
+      WHERE lc.tenant_id = r.tenant_id
+        AND (
+          (r.identification IS NOT NULL AND r.identification != '' AND UPPER(REPLACE(REPLACE(lc.identification, '-', ''), ' ', '')) = UPPER(REPLACE(REPLACE(r.identification, '-', ''), ' ', '')))
+          OR (r.metadata->>'loyaltyCardId' IS NOT NULL AND lc.id::text = r.metadata->>'loyaltyCardId')
+        )
+      ORDER BY lc.updated_at DESC
+      LIMIT 1
+    ) lc ON TRUE
     WHERE r.tenant_id = $1 AND r.identification ILIKE $2
     ORDER BY r.updated_at DESC LIMIT 1
   `;
@@ -173,11 +230,11 @@ export async function createRecord(tenantId: string, data: Partial<CustomerRecor
     })
   ]);
 
-  const newRecord = mapRecordRow(res.rows[0]);
+  const rawRecord = res.rows[0];
 
   // If new record has phone, auto-link existing appointments for this tenant
-  if (newRecord.phone) {
-    const clean = newRecord.phone.replace(/\D/g, '');
+  if (rawRecord.phone) {
+    const clean = rawRecord.phone.replace(/\D/g, '');
     if (clean.length >= 8) {
       await query(
         `UPDATE appointments 
@@ -185,12 +242,42 @@ export async function createRecord(tenantId: string, data: Partial<CustomerRecor
          WHERE tenant_id = $2 
            AND record_id IS NULL 
            AND REPLACE(whatsapp, '-', '') LIKE '%' || $3`,
-        [newRecord.id, tenantId, clean.slice(-8)]
+        [rawRecord.id, tenantId, clean.slice(-8)]
       ).catch(() => {});
     }
   }
 
-  return newRecord;
+  // Auto-link/provision loyalty card if enabled
+  if (data.enableLoyaltyCard && rawRecord.identification) {
+    try {
+      const { findOrCreateLoyaltyCard, upsertLoyaltyProgram, addPoints, addStamps } = await import('./loyalty.repo.js');
+      await upsertLoyaltyProgram(tenantId, { isActive: true }).catch(() => {});
+      const card = await findOrCreateLoyaltyCard(tenantId, {
+        identification: rawRecord.identification,
+        customerName: rawRecord.full_name,
+        customerPhone: rawRecord.phone || undefined
+      });
+
+      if (data.initialLoyaltyPoints && data.initialLoyaltyPoints > 0) {
+        await addPoints(tenantId, card.id, data.initialLoyaltyPoints, { notes: 'Puntos iniciales al crear expediente' }).catch(() => {});
+      }
+      if (data.initialLoyaltyStamps && data.initialLoyaltyStamps > 0) {
+        await addStamps(tenantId, card.id, data.initialLoyaltyStamps, { notes: 'Sellos iniciales al crear expediente' }).catch(() => {});
+      }
+
+      await query(
+        `UPDATE customer_records 
+         SET metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{loyaltyCardId}', to_jsonb($1::text))
+         WHERE id = $2 AND tenant_id = $3`,
+        [card.id, rawRecord.id, tenantId]
+      ).catch(() => {});
+    } catch (loyaltyErr) {
+      console.warn('[records.repo] Error auto-linking loyalty card in createRecord:', loyaltyErr);
+    }
+  }
+
+  const complete = await getRecordById(rawRecord.id, tenantId);
+  return complete || mapRecordRow(rawRecord);
 }
 
 export async function updateRecord(id: string, tenantId: string, data: Partial<CustomerRecord>): Promise<CustomerRecord | null> {
@@ -246,7 +333,121 @@ export async function updateRecord(id: string, tenantId: string, data: Partial<C
   `;
 
   const res = await query(sql, params);
-  return res.rows[0] ? mapRecordRow(res.rows[0]) : null;
+  if (!res.rows[0]) return null;
+
+  const rawUpdated = res.rows[0];
+
+  // Auto-link/provision loyalty card if requested
+  if (data.enableLoyaltyCard) {
+    const idNum = rawUpdated.identification;
+    if (idNum) {
+      try {
+        const { findOrCreateLoyaltyCard, upsertLoyaltyProgram, addPoints, addStamps } = await import('./loyalty.repo.js');
+        await upsertLoyaltyProgram(tenantId, { isActive: true }).catch(() => {});
+        const card = await findOrCreateLoyaltyCard(tenantId, {
+          identification: idNum,
+          customerName: rawUpdated.full_name,
+          customerPhone: rawUpdated.phone || undefined
+        });
+
+        if (data.initialLoyaltyPoints && data.initialLoyaltyPoints > 0) {
+          await addPoints(tenantId, card.id, data.initialLoyaltyPoints, { notes: 'Puntos iniciales expediente' }).catch(() => {});
+        }
+        if (data.initialLoyaltyStamps && data.initialLoyaltyStamps > 0) {
+          await addStamps(tenantId, card.id, data.initialLoyaltyStamps, { notes: 'Sellos iniciales expediente' }).catch(() => {});
+        }
+
+        await query(
+          `UPDATE customer_records 
+           SET metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{loyaltyCardId}', to_jsonb($1::text))
+           WHERE id = $2 AND tenant_id = $3`,
+          [card.id, id, tenantId]
+        ).catch(() => {});
+      } catch (loyaltyErr) {
+        console.warn('[records.repo] Error auto-linking loyalty card in updateRecord:', loyaltyErr);
+      }
+    }
+  }
+
+  const complete = await getRecordById(id, tenantId);
+  return complete || mapRecordRow(rawUpdated);
+}
+
+export async function linkRecordLoyaltyCard(
+  tenantId: string,
+  recordId: string,
+  options?: { identification?: string; points?: number; stamps?: number }
+): Promise<CustomerRecord | null> {
+  const record = await getRecordById(recordId, tenantId);
+  if (!record) return null;
+
+  const identification = options?.identification?.trim() || record.identification;
+  if (!identification) {
+    throw new Error('Se requiere el número de cédula o identificación para vincular al club de fidelización.');
+  }
+
+  if (options?.identification && options.identification.trim() !== record.identification) {
+    await updateRecord(recordId, tenantId, { identification: options.identification.trim() });
+  }
+
+  const { findOrCreateLoyaltyCard, upsertLoyaltyProgram, addPoints, addStamps } = await import('./loyalty.repo.js');
+  await upsertLoyaltyProgram(tenantId, { isActive: true }).catch(() => {});
+
+  const card = await findOrCreateLoyaltyCard(tenantId, {
+    identification,
+    customerName: record.fullName,
+    customerPhone: record.phone || undefined
+  });
+
+  if (options?.points && options.points > 0) {
+    await addPoints(tenantId, card.id, options.points, { notes: 'Puntos asignados desde expediente' }).catch(() => {});
+  }
+  if (options?.stamps && options.stamps > 0) {
+    await addStamps(tenantId, card.id, options.stamps, { notes: 'Sellos asignados desde expediente' }).catch(() => {});
+  }
+
+  await query(
+    `UPDATE customer_records 
+     SET metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{loyaltyCardId}', to_jsonb($1::text))
+     WHERE id = $2 AND tenant_id = $3`,
+    [card.id, recordId, tenantId]
+  ).catch(() => {});
+
+  return getRecordById(recordId, tenantId);
+}
+
+export async function adjustRecordLoyalty(
+  tenantId: string,
+  recordId: string,
+  adjustment: { type: 'points' | 'stamps'; amount: number; reason?: string }
+): Promise<{ success: boolean; loyaltyCard: any; record: CustomerRecord }> {
+  const record = await getRecordById(recordId, tenantId);
+  if (!record) throw new Error('Expediente no encontrado');
+  if (!record.identification) throw new Error('El expediente debe contar con número de cédula para gestionar fidelización');
+
+  const { findOrCreateLoyaltyCard, addPoints, addStamps } = await import('./loyalty.repo.js');
+  const card = await findOrCreateLoyaltyCard(tenantId, {
+    identification: record.identification,
+    customerName: record.fullName,
+    customerPhone: record.phone || undefined
+  });
+
+  if (adjustment.type === 'points') {
+    if (adjustment.amount > 0) {
+      await addPoints(tenantId, card.id, adjustment.amount, { notes: adjustment.reason || 'Ajuste de puntos desde expediente' });
+    }
+  } else if (adjustment.type === 'stamps') {
+    if (adjustment.amount > 0) {
+      await addStamps(tenantId, card.id, adjustment.amount, { notes: adjustment.reason || 'Sello registrado desde expediente' });
+    }
+  }
+
+  const updatedRecord = await getRecordById(recordId, tenantId);
+  return {
+    success: true,
+    loyaltyCard: updatedRecord?.loyaltyCard,
+    record: updatedRecord!
+  };
 }
 
 export async function deleteRecord(id: string, tenantId: string): Promise<boolean> {

@@ -800,6 +800,16 @@ export interface CustomerRecord {
   lastAppointmentDate?: string;
   latestVitalSigns?: VitalSigns;
   recentEntriesCount?: number;
+  loyaltyCard?: {
+    id: string;
+    pointsBalance: number;
+    currentStamps: number;
+    totalStampsRedeemed?: number;
+    status: 'active' | 'suspended';
+  };
+  enableLoyaltyCard?: boolean;
+  initialLoyaltyPoints?: number;
+  initialLoyaltyStamps?: number;
 }
 
 export interface RecordEntry {

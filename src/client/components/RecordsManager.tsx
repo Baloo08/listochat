@@ -3,7 +3,8 @@ import {
   FileText, User, Phone, Mail, MapPin, Calendar, Plus, Search, Filter,
   CheckCircle, AlertCircle, Edit, Trash2, Heart, Activity, Pill, ShieldAlert,
   Clock, MessageCircle, ExternalLink, X, Save, AlertTriangle, Eye, ChevronRight,
-  Stethoscope, Thermometer, Scale, ArrowUpRight, Receipt, Check, Copy
+  Stethoscope, Thermometer, Scale, ArrowUpRight, Receipt, Check, Copy,
+  Star, Award, Sparkles
 } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
 import { CustomerRecord, RecordEntry, VitalSigns, ClientRecordType } from '../../shared/types';
@@ -47,6 +48,9 @@ export default function RecordsManager({ initialRecordId }: { initialRecordId?: 
     emergencyContactName: '',
     emergencyContactPhone: '',
     notes: '',
+    enableLoyaltyCard: false,
+    initialLoyaltyPoints: '',
+    initialLoyaltyStamps: '',
     billingInfo: {
       requiresInvoice: false,
       idType: '01',
@@ -56,6 +60,20 @@ export default function RecordsManager({ initialRecordId }: { initialRecordId?: 
     }
   });
   const [savingRecord, setSavingRecord] = useState(false);
+
+  // Loyalty Card Quick Adjust & Linking State
+  const [showLoyaltyAdjustModal, setShowLoyaltyAdjustModal] = useState(false);
+  const [loyaltyAdjustData, setLoyaltyAdjustData] = useState<{
+    type: 'points' | 'stamps';
+    amount: string;
+    reason: string;
+  }>({
+    type: 'points',
+    amount: '',
+    reason: ''
+  });
+  const [adjustingLoyalty, setAdjustingLoyalty] = useState(false);
+  const [linkingLoyalty, setLinkingLoyalty] = useState(false);
 
   // Facturación Electrónica Modal State (Almendro / Hacienda)
   const [showFacturarModal, setShowFacturarModal] = useState(false);
@@ -176,6 +194,9 @@ export default function RecordsManager({ initialRecordId }: { initialRecordId?: 
       emergencyContactName: '',
       emergencyContactPhone: '',
       notes: '',
+      enableLoyaltyCard: false,
+      initialLoyaltyPoints: '',
+      initialLoyaltyStamps: '',
       billingInfo: {
         requiresInvoice: false,
         idType: '01',
@@ -206,6 +227,9 @@ export default function RecordsManager({ initialRecordId }: { initialRecordId?: 
       emergencyContactName: rec.emergencyContactName || '',
       emergencyContactPhone: rec.emergencyContactPhone || '',
       notes: rec.notes || '',
+      enableLoyaltyCard: !!rec.loyaltyCard,
+      initialLoyaltyPoints: '',
+      initialLoyaltyStamps: '',
       billingInfo: rec.billingInfo || {
         requiresInvoice: false,
         idType: '01',
@@ -221,16 +245,27 @@ export default function RecordsManager({ initialRecordId }: { initialRecordId?: 
   const handleSubmitRecord = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.fullName.trim()) {
-      alert('Por favor ingresa el nombre completo del cliente/paciente.');
+      alert('Por favor ingresa el nombre completo del cliente o paciente.');
+      return;
+    }
+
+    if (formData.enableLoyaltyCard && !formData.identification.trim()) {
+      alert('Para vincular o habilitar la tarjeta de fidelización se requiere ingresar la cédula o DIMEX del cliente.');
       return;
     }
 
     setSavingRecord(true);
     try {
+      const payload: any = {
+        ...formData,
+        initialLoyaltyPoints: formData.initialLoyaltyPoints ? Number(formData.initialLoyaltyPoints) : undefined,
+        initialLoyaltyStamps: formData.initialLoyaltyStamps ? Number(formData.initialLoyaltyStamps) : undefined
+      };
+
       if (editingRecord) {
-        await api.put(`/api/records/${editingRecord.id}`, formData);
+        await api.put(`/api/records/${editingRecord.id}`, payload);
       } else {
-        await api.post('/api/records', formData);
+        await api.post('/api/records', payload);
       }
       setShowCreateModal(false);
       await fetchRecords();
@@ -241,6 +276,61 @@ export default function RecordsManager({ initialRecordId }: { initialRecordId?: 
       alert('Error guardando expediente: ' + (err.message || err));
     } finally {
       setSavingRecord(false);
+    }
+  };
+
+  // Vincular 1-clic a Betico Club desde el Expediente
+  const handleLinkLoyaltyCard = async (rec: CustomerRecord) => {
+    let idNum = rec.identification?.trim();
+    if (!idNum) {
+      const promptId = prompt('Para vincular al cliente a Betico Club ingresa su número de cédula o DIMEX:');
+      if (!promptId || !promptId.trim()) return;
+      idNum = promptId.trim();
+    }
+
+    setLinkingLoyalty(true);
+    try {
+      const res = await api.post(`/api/records/${rec.id}/loyalty/link`, { identification: idNum });
+      if (res && res.success) {
+        alert('¡Tarjeta de Fidelización Betico Club vinculada con éxito!');
+        await fetchRecords();
+        if (selectedRecordId) {
+          await fetchRecordDetails(selectedRecordId);
+        }
+      }
+    } catch (err: any) {
+      alert('Error al vincular tarjeta: ' + (err.message || err));
+    } finally {
+      setLinkingLoyalty(false);
+    }
+  };
+
+  // Ajustar Puntos o Sellos desde el Expediente
+  const handleAdjustLoyalty = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedRecordId) return;
+    if (!loyaltyAdjustData.amount || Number(loyaltyAdjustData.amount) <= 0) {
+      alert('Ingresa una cantidad mayor a 0');
+      return;
+    }
+
+    setAdjustingLoyalty(true);
+    try {
+      const res = await api.post(`/api/records/${selectedRecordId}/loyalty/adjust`, {
+        type: loyaltyAdjustData.type,
+        amount: Number(loyaltyAdjustData.amount),
+        reason: loyaltyAdjustData.reason || 'Ajuste desde expediente'
+      });
+      if (res && res.success) {
+        setShowLoyaltyAdjustModal(false);
+        setLoyaltyAdjustData({ type: 'points', amount: '', reason: '' });
+        await fetchRecords();
+        await fetchRecordDetails(selectedRecordId);
+      }
+    } catch (err: any) {
+      alert('Error ajustando fidelización: ' + (err.message || err));
+    } finally {
+      setAdjustingLoyalty(false);
     }
   };
 
@@ -659,7 +749,33 @@ export default function RecordsManager({ initialRecordId }: { initialRecordId?: 
                   </div>
                 )}
 
-                {/* Footer KPI & Actions */}
+                {/* Betico Club Loyalty Badge */}
+                {rec.loyaltyCard ? (
+                  <div style={{
+                    padding: '5px 10px',
+                    backgroundColor: '#fef3c7',
+                    border: '1px solid #fde68a',
+                    borderRadius: '6px',
+                    fontSize: '0.74rem',
+                    color: '#92400e',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    fontWeight: 'bold'
+                  }}>
+                    <Star size={13} color="#d97706" />
+                    <span>Betico Club: <strong>{rec.loyaltyCard.pointsBalance}</strong> pts | <strong>{rec.loyaltyCard.currentStamps}</strong> sellos</span>
+                  </div>
+                ) : (
+                  rec.identification && (
+                    <div style={{ padding: '4px 8px', backgroundColor: '#f8fafc', border: '1px dashed #e2e8f0', borderRadius: '6px', fontSize: '0.72rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <Star size={12} color="#94a3b8" />
+                      <span>Sin tarjeta Betico Club vinculada</span>
+                    </div>
+                  )
+                )}
+
+                {/* Footer KPI y Acciones */}
                 <div style={{
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                   borderTop: '1px solid var(--border)', paddingTop: '10px', marginTop: '4px'
@@ -714,7 +830,7 @@ export default function RecordsManager({ initialRecordId }: { initialRecordId?: 
                   {recordDetail.record.clientType === 'paciente' ? <Heart size={24} /> : <User size={24} />}
                 </div>
                 <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                     <span style={{ fontSize: '0.7rem', fontWeight: 'bold', padding: '2px 8px', borderRadius: '4px', backgroundColor: recordDetail.record.clientType === 'paciente' ? '#dcfce7' : '#e2e8f0', color: recordDetail.record.clientType === 'paciente' ? '#166534' : '#475569' }}>
                       {recordDetail.record.clientType === 'paciente' ? 'Paciente' : 'Cliente General'}
                     </span>
@@ -722,6 +838,45 @@ export default function RecordsManager({ initialRecordId }: { initialRecordId?: 
                       <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
                         ID: <strong>{recordDetail.record.identification}</strong>
                       </span>
+                    )}
+                    {recordDetail.record.loyaltyCard ? (
+                      <span style={{
+                        fontSize: '0.72rem',
+                        fontWeight: 'bold',
+                        padding: '2px 8px',
+                        borderRadius: '4px',
+                        backgroundColor: '#fef3c7',
+                        color: '#92400e',
+                        border: '1px solid #fde68a',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}>
+                        <Star size={12} color="#d97706" />
+                        Club: {recordDetail.record.loyaltyCard.pointsBalance} pts | {recordDetail.record.loyaltyCard.currentStamps} sellos
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleLinkLoyaltyCard(recordDetail.record)}
+                        disabled={linkingLoyalty}
+                        style={{
+                          fontSize: '0.72rem',
+                          fontWeight: 'bold',
+                          padding: '2px 8px',
+                          borderRadius: '4px',
+                          backgroundColor: '#fef3c7',
+                          color: '#b45309',
+                          border: '1px solid #fde68a',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '3px'
+                        }}
+                        title="Vincular a tarjeta de fidelización Betico Club"
+                      >
+                        <Sparkles size={11} color="#d97706" /> {linkingLoyalty ? 'Vinculando...' : '+ Vincular a Betico Club'}
+                      </button>
                     )}
                   </div>
                   <h3 style={{ margin: '2px 0 0 0', fontSize: '1.25rem', color: '#0f172a' }}>
@@ -731,6 +886,16 @@ export default function RecordsManager({ initialRecordId }: { initialRecordId?: 
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {recordDetail.record.loyaltyCard && (
+                  <button
+                    type="button"
+                    onClick={() => setShowLoyaltyAdjustModal(true)}
+                    style={{ padding: '7px 12px', backgroundColor: '#fef3c7', color: '#92400e', border: '1px solid #fde68a', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}
+                    title="Añadir puntos o sellos de fidelización para este cliente"
+                  >
+                    <Star size={14} color="#d97706" /> + Puntos / Sellos
+                  </button>
+                )}
                 <button
                   onClick={() => handleOpenFacturarModal(recordDetail.record)}
                   style={{ padding: '7px 12px', backgroundColor: '#059669', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}
@@ -789,7 +954,7 @@ export default function RecordsManager({ initialRecordId }: { initialRecordId?: 
                   fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer'
                 }}
               >
-                📝 Evoluciones & Notas ({recordDetail.entries.length})
+                📝 Evoluciones y Notas ({recordDetail.entries.length})
               </button>
               <button
                 onClick={() => setDetailTab('appointments')}
@@ -1342,6 +1507,55 @@ export default function RecordsManager({ initialRecordId }: { initialRecordId?: 
                 </div>
               </div>
 
+              {/* Tarjeta de Fidelización (Betico Club) */}
+              <div style={{ padding: '14px', backgroundColor: '#fffbeb', borderRadius: '10px', border: '1px solid #fde68a' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                  <div style={{ fontWeight: 'bold', fontSize: '0.85rem', color: '#92400e', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Star size={16} color="#d97706" /> Tarjeta de Fidelización (Betico Club)
+                  </div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', cursor: 'pointer', color: '#78350f', fontWeight: 'bold' }}>
+                    <input
+                      type="checkbox"
+                      checked={formData.enableLoyaltyCard || false}
+                      onChange={e => setFormData({ ...formData, enableLoyaltyCard: e.target.checked })}
+                      style={{ accentColor: '#d97706', width: '16px', height: '16px', cursor: 'pointer' }}
+                    />
+                    <span>Habilitar Tarjeta para este cliente</span>
+                  </label>
+                </div>
+
+                <p style={{ margin: '0 0 10px 0', fontSize: '0.76rem', color: '#b45309', lineHeight: 1.4 }}>
+                  Vincula automáticamente al cliente con el club de fidelización usando su cédula. Cuando ingrese a la app móvil o se registre en la API de Betico Club, sus puntos y sellos ya estarán disponibles sin necesidad de un doble registro.
+                </p>
+
+                {formData.enableLoyaltyCard && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', paddingTop: '8px', borderTop: '1px dashed #fcd34d' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', marginBottom: '3px', color: '#92400e' }}>Puntos Iniciales / Bienvenida</label>
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder="0"
+                        value={formData.initialLoyaltyPoints}
+                        onChange={e => setFormData({ ...formData, initialLoyaltyPoints: e.target.value })}
+                        style={{ width: '100%', padding: '7px', borderRadius: '6px', border: '1px solid #fcd34d', fontSize: '0.8rem', backgroundColor: '#ffffff', boxSizing: 'border-box' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '600', marginBottom: '3px', color: '#92400e' }}>Sellos Iniciales</label>
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder="0"
+                        value={formData.initialLoyaltyStamps}
+                        onChange={e => setFormData({ ...formData, initialLoyaltyStamps: e.target.value })}
+                        style={{ width: '100%', padding: '7px', borderRadius: '6px', border: '1px solid #fcd34d', fontSize: '0.8rem', backgroundColor: '#ffffff', boxSizing: 'border-box' }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div>
                 <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '4px' }}>Notas Generales</label>
                 <textarea
@@ -1804,6 +2018,124 @@ export default function RecordsManager({ initialRecordId }: { initialRecordId?: 
                 Cerrar
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Ajuste Rápido de Puntos y Sellos desde Expediente */}
+      {showLoyaltyAdjustModal && selectedRecordId && recordDetail && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 10000, display: 'flex',
+          justifyContent: 'center', alignItems: 'center', padding: '16px'
+        }}>
+          <div style={{
+            backgroundColor: '#ffffff', borderRadius: '14px', maxWidth: '440px',
+            width: '100%', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.2)', padding: '24px'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Star size={20} color="#d97706" />
+                <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#0f172a' }}>
+                  Acreditar Puntos o Sellos
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowLoyaltyAdjustModal(false)}
+                style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#64748b' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <p style={{ margin: '0 0 16px 0', fontSize: '0.82rem', color: '#64748b' }}>
+              Cliente: <strong>{recordDetail.record.fullName}</strong><br />
+              Saldo actual: <strong>{recordDetail.record.loyaltyCard?.pointsBalance || 0}</strong> pts | <strong>{recordDetail.record.loyaltyCard?.currentStamps || 0}</strong> sellos
+            </p>
+
+            <form onSubmit={handleAdjustLoyalty} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '6px' }}>Tipo de Recompensa</label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setLoyaltyAdjustData({ ...loyaltyAdjustData, type: 'points' })}
+                    style={{
+                      padding: '9px',
+                      borderRadius: '8px',
+                      border: loyaltyAdjustData.type === 'points' ? '2px solid #d97706' : '1px solid #cbd5e1',
+                      backgroundColor: loyaltyAdjustData.type === 'points' ? '#fef3c7' : '#ffffff',
+                      color: loyaltyAdjustData.type === 'points' ? '#92400e' : '#475569',
+                      fontWeight: 'bold',
+                      cursor: 'pointer',
+                      fontSize: '0.82rem'
+                    }}
+                  >
+                    ⭐ Puntos
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLoyaltyAdjustData({ ...loyaltyAdjustData, type: 'stamps' })}
+                    style={{
+                      padding: '9px',
+                      borderRadius: '8px',
+                      border: loyaltyAdjustData.type === 'stamps' ? '2px solid #d97706' : '1px solid #cbd5e1',
+                      backgroundColor: loyaltyAdjustData.type === 'stamps' ? '#fef3c7' : '#ffffff',
+                      color: loyaltyAdjustData.type === 'stamps' ? '#92400e' : '#475569',
+                      fontWeight: 'bold',
+                      cursor: 'pointer',
+                      fontSize: '0.82rem'
+                    }}
+                  >
+                    🏷️ Sellos
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '4px' }}>
+                  {loyaltyAdjustData.type === 'points' ? 'Cantidad de Puntos a Sumar *' : 'Cantidad de Sellos a Sumar *'}
+                </label>
+                <input
+                  type="number"
+                  required
+                  min="1"
+                  step="1"
+                  placeholder={loyaltyAdjustData.type === 'points' ? 'Ej: 50' : 'Ej: 1'}
+                  value={loyaltyAdjustData.amount}
+                  onChange={e => setLoyaltyAdjustData({ ...loyaltyAdjustData, amount: e.target.value })}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.9rem', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '4px' }}>Motivo o Concepto (Opcional)</label>
+                <input
+                  type="text"
+                  placeholder="Ej: Consulta realizada, servicio en tienda, etc."
+                  value={loyaltyAdjustData.reason}
+                  onChange={e => setLoyaltyAdjustData({ ...loyaltyAdjustData, reason: e.target.value })}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '6px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowLoyaltyAdjustModal(false)}
+                  style={{ padding: '9px 16px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={adjustingLoyalty}
+                  style={{ padding: '9px 20px', backgroundColor: '#d97706', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}
+                >
+                  {adjustingLoyalty ? 'Guardando...' : 'Acreditar'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

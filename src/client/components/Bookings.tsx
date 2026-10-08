@@ -2610,6 +2610,19 @@ export default function Bookings() {
                           ID/DIMEX: {selectedRecordData.identification}
                         </span>
                       )}
+                      {selectedRecordData.loyaltyCard && (
+                        <span style={{
+                          color: '#92400e',
+                          backgroundColor: '#fef3c7',
+                          border: '1px solid #fde68a',
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          fontWeight: 'bold',
+                          fontSize: '0.72rem'
+                        }}>
+                          ⭐ Betico Club: {selectedRecordData.loyaltyCard.pointsBalance} pts | {selectedRecordData.loyaltyCard.currentStamps} sellos
+                        </span>
+                      )}
                     </div>
                     {selectedRecordData.allergies && (
                       <div style={{ color: '#b91c1c', backgroundColor: '#fee2e2', padding: '3px 8px', borderRadius: '4px' }}>

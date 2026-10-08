@@ -11,7 +11,9 @@ import {
   addRecordEntry,
   getRecordEntries,
   deleteRecordEntry,
-  getAppointmentsForRecord
+  getAppointmentsForRecord,
+  linkRecordLoyaltyCard,
+  adjustRecordLoyalty
 } from '../db/records.repo.js';
 
 const router = Router();
@@ -166,6 +168,54 @@ router.delete('/:id/entries/:entryId', async (req: any, res) => {
   } catch (error) {
     console.error('Error deleting record entry:', error);
     res.status(500).json({ error: 'Error al eliminar nota' });
+  }
+});
+
+// 10. Vincular o crear tarjeta de fidelización (Betico Club) para este expediente
+router.post('/:id/loyalty/link', async (req: any, res) => {
+  try {
+    const { identification, points, stamps } = req.body || {};
+    const updated = await linkRecordLoyaltyCard(req.tenantId, req.params.id, {
+      identification,
+      points: points !== undefined && points !== null ? Number(points) : undefined,
+      stamps: stamps !== undefined && stamps !== null ? Number(stamps) : undefined
+    });
+
+    if (!updated) {
+      res.status(404).json({ error: 'Expediente no encontrado' });
+      return;
+    }
+
+    res.json({
+      success: true,
+      record: updated,
+      loyaltyCard: updated.loyaltyCard
+    });
+  } catch (error: any) {
+    console.error('Error linking loyalty card to customer record:', error);
+    res.status(400).json({ error: error.message || 'Error al vincular tarjeta de fidelización' });
+  }
+});
+
+// 11. Ajustar o acreditar puntos y sellos desde el expediente del cliente
+router.post('/:id/loyalty/adjust', async (req: any, res) => {
+  try {
+    const { type, amount, reason } = req.body || {};
+    if (!type || !['points', 'stamps'].includes(type) || !amount || Number(amount) <= 0) {
+      res.status(400).json({ error: 'Parámetros inválidos. Se requiere tipo (points o stamps) y monto mayor a 0' });
+      return;
+    }
+
+    const result = await adjustRecordLoyalty(req.tenantId, req.params.id, {
+      type,
+      amount: Number(amount),
+      reason
+    });
+
+    res.json(result);
+  } catch (error: any) {
+    console.error('Error adjusting loyalty from customer record:', error);
+    res.status(400).json({ error: error.message || 'Error al ajustar puntos o sellos de fidelización' });
   }
 });
 
