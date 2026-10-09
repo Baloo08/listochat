@@ -74,25 +74,12 @@ function HeroBentoShowcaseSvg() {
   return (
     <svg viewBox="0 0 940 440" width="100%" height="100%" style={{ display: 'block', maxHeight: '430px' }} aria-label="Ecosistema Betico: 3 Momentos de la Venta y Asistente IA">
       <defs>
-        <linearGradient id="bentoBg" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#FFFFFF" />
-          <stop offset="100%" stopColor="#F8FAFC" />
-        </linearGradient>
-        <linearGradient id="m1Grad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <linearGradient id="heroCardGrad" x1="0%" y1="0%" x2="100%" y2="100%">
           <stop offset="0%" stopColor="#0B3C3D" />
           <stop offset="100%" stopColor="#134B4C" />
         </linearGradient>
-        <linearGradient id="m2Grad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#FFFFFF" />
-          <stop offset="100%" stopColor="#F1F5F9" />
-        </linearGradient>
-        <linearGradient id="m3Grad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <linearGradient id="loyaltyCardGrad" x1="0%" y1="0%" x2="100%" y2="100%">
           <stop offset="0%" stopColor="#002526" />
-          <stop offset="100%" stopColor="#0B3C3D" />
-        </linearGradient>
-        <linearGradient id="aiConnectorGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#0B3C3D" />
-          <stop offset="50%" stopColor="#B51C12" />
           <stop offset="100%" stopColor="#0B3C3D" />
         </linearGradient>
         <filter id="bentoCardShadow" x="-5%" y="-5%" width="110%" height="115%">
@@ -107,57 +94,69 @@ function HeroBentoShowcaseSvg() {
         <rect x="15" y="15" width="285" height="280" rx="16" fill="#FFFFFF" stroke="#E2E8F0" strokeWidth="1.5" />
         
         {/* Header Pill */}
-        <rect x="27" y="27" width="130" height="20" rx="10" fill="#EFF7F7" stroke="#B0DCDC" />
-        <circle cx="37" cy="37" r="4" fill="#0B3C3D" />
-        <text x="47" y="41" fill="#0B3C3D" fontSize="8.5" fontWeight="800">1. CAPTACIÓN</text>
+        <rect x="27" y="27" width="130" height="22" rx="11" fill="#EFF7F7" stroke="#B0DCDC" strokeWidth="1" />
+        <circle cx="38" cy="38" r="5" stroke="#0B3C3D" strokeWidth="1.3" fill="none" />
+        <ellipse cx="38" cy="38" rx="2.5" ry="5" stroke="#0B3C3D" strokeWidth="1" fill="none" />
+        <line x1="33" y1="38" x2="43" y2="38" stroke="#0B3C3D" strokeWidth="1" />
+        <text x="49" y="42" fill="#0B3C3D" fontSize="8.5" fontWeight="800" letterSpacing="0.04em">01. CAPTACIÓN</text>
 
-        <text x="27" y="66" fill="#0F172A" fontSize="13" fontWeight="900">Sitio Web y Tu Marca</text>
-        <text x="27" y="80" fill="#64748B" fontSize="8.5">Presencia oficial lista para recibir clientes</text>
+        <text x="27" y="68" fill="#0F172A" fontSize="13" fontWeight="900">Sitio Web y Marca</text>
+        <rect x="27" y="77" width="120" height="5" rx="2.5" fill="#E2E8F0" />
 
         {/* Mockup de Navegador Web */}
         <rect x="27" y="94" width="261" height="152" rx="10" fill="#FAF8F5" stroke="#CBD5E1" strokeWidth="1" />
-        {/* Barra superior del navegador */}
-        <rect x="27" y="94" width="261" height="22" rx="10" fill="#E2E8F0" />
-        <rect x="27" y="106" width="261" height="10" fill="#E2E8F0" />
-        <circle cx="38" cy="105" r="3" fill="#EF4444" />
-        <circle cx="47" cy="105" r="3" fill="#F59E0B" />
-        <circle cx="56" cy="105" r="3" fill="#10B981" />
-        <rect x="68" y="98" width="145" height="14" rx="4" fill="#FFFFFF" />
-        <text x="74" y="108.5" fill="#0B3C3D" fontSize="7" fontWeight="700" fontFamily="monospace">🔒 betico.tech/sitio/tu-marca</text>
-
-        {/* Contenido Web Mockup */}
-        <rect x="37" y="124" width="55" height="14" rx="3" fill="#0B3C3D" />
-        <text x="43" y="134" fill="#FFFFFF" fontSize="6.5" fontWeight="800">TU LOGO</text>
+        <rect x="27" y="94" width="261" height="24" rx="10" fill="#F1F5F9" />
+        <rect x="27" y="108" width="261" height="10" fill="#F1F5F9" />
+        <circle cx="38" cy="106" r="3" fill="#EF4444" />
+        <circle cx="47" cy="106" r="3" fill="#F59E0B" />
+        <circle cx="56" cy="106" r="3" fill="#10B981" />
         
-        {/* Swatches de Colores de Marca */}
-        <circle cx="218" cy="131" r="5" fill="#0B3C3D" stroke="#FFFFFF" strokeWidth="1" />
-        <circle cx="232" cy="131" r="5" fill="#B51C12" stroke="#FFFFFF" strokeWidth="1" />
-        <circle cx="246" cy="131" r="5" fill="#34D399" stroke="#FFFFFF" strokeWidth="1" />
-        <circle cx="260" cy="131" r="5" fill="#F59E0B" stroke="#FFFFFF" strokeWidth="1" />
+        {/* URL Pill con icono lineal de candado */}
+        <rect x="68" y="99" width="145" height="14" rx="4" fill="#FFFFFF" stroke="#E2E8F0" strokeWidth="0.8" />
+        <rect x="75" y="104" width="6" height="5" rx="1" stroke="#0B3C3D" strokeWidth="1" fill="none" />
+        <path d="M76.5 104 V102.5 A1.5 1.5 0 0 1 79.5 102.5 V104" stroke="#0B3C3D" strokeWidth="1" fill="none" />
+        <text x="86" y="109.5" fill="#0B3C3D" fontSize="7" fontWeight="700" fontFamily="monospace">betico.tech/tu-marca</text>
 
-        {/* Hero Mockup */}
-        <rect x="37" y="145" width="241" height="42" rx="6" fill="url(#m1Grad)" />
-        <text x="47" y="161" fill="#FFFFFF" fontSize="8" fontWeight="800">Tu Línea Gráfica y Catálogo</text>
-        <text x="47" y="173" fill="#B0DCDC" fontSize="7">100% adaptable para celular o PC</text>
-        <rect x="210" y="153" width="60" height="16" rx="4" fill="#B51C12" />
-        <text x="218" y="164" fill="#FFFFFF" fontSize="6.5" fontWeight="800">Reservar 📅</text>
+        {/* Navbar mockup */}
+        <rect x="37" y="125" width="48" height="12" rx="3" fill="#0B3C3D" />
+        <text x="43" y="134" fill="#FFFFFF" fontSize="6.5" fontWeight="800">TU LOGO</text>
+        <rect x="186" y="129" width="20" height="4" rx="2" fill="#CBD5E1" />
+        <rect x="212" y="129" width="20" height="4" rx="2" fill="#CBD5E1" />
+        <rect x="238" y="126" width="38" height="10" rx="3" fill="#B51C12" />
+        <text x="244" y="133.5" fill="#FFFFFF" fontSize="6" fontWeight="800">ACCEDER</text>
 
-        {/* 2 Mini Cards de Servicio */}
-        <rect x="37" y="194" width="116" height="42" rx="5" fill="#FFFFFF" stroke="#E2E8F0" />
-        <rect x="43" y="200" width="24" height="24" rx="4" fill="#EFF7F7" />
-        <text x="50" y="216" fill="#0B3C3D" fontSize="11">🛍️</text>
-        <text x="73" y="210" fill="#0F172A" fontSize="7" fontWeight="800">Tienda Web</text>
-        <text x="73" y="222" fill="#0B3C3D" fontSize="7" fontWeight="700">Enlace en bio</text>
+        {/* Hero Banner Mockup con wireframe bars */}
+        <rect x="37" y="144" width="241" height="42" rx="6" fill="url(#heroCardGrad)" />
+        <rect x="47" y="154" width="95" height="7" rx="3.5" fill="#FFFFFF" opacity="0.95" />
+        <rect x="47" y="165" width="65" height="5" rx="2.5" fill="#B0DCDC" opacity="0.8" />
+        
+        {/* CTA Button con icono lineal calendario */}
+        <rect x="206" y="153" width="64" height="18" rx="4" fill="#B51C12" />
+        <rect x="212" y="157" width="8" height="8" rx="1.5" stroke="#FFFFFF" strokeWidth="1" fill="none" />
+        <line x1="212" y1="160" x2="220" y2="160" stroke="#FFFFFF" strokeWidth="0.8" />
+        <text x="224" y="165" fill="#FFFFFF" fontSize="6.5" fontWeight="800">RESERVAR</text>
 
-        <rect x="162" y="194" width="116" height="42" rx="5" fill="#FFFFFF" stroke="#E2E8F0" />
-        <rect x="168" y="200" width="24" height="24" rx="4" fill="#FFF1F0" />
-        <text x="175" y="216" fill="#B51C12" fontSize="11">📍</text>
-        <text x="198" y="210" fill="#0F172A" fontSize="7" fontWeight="800">Google Maps</text>
-        <text x="198" y="222" fill="#B51C12" fontSize="7" fontWeight="700">Tráfico directo</text>
+        {/* 2 Mini Cards de Módulos (Catálogo y Tráfico) */}
+        <rect x="37" y="193" width="116" height="43" rx="5" fill="#FFFFFF" stroke="#E2E8F0" />
+        <rect x="43" y="199" width="24" height="24" rx="4" fill="#EFF7F7" />
+        <rect x="48" y="206" width="14" height="12" rx="2.5" stroke="#0B3C3D" strokeWidth="1.2" fill="none" />
+        <path d="M52 206 V203 A3 3 0 0 1 58 203 V206" stroke="#0B3C3D" strokeWidth="1" fill="none" />
+        <text x="73" y="208" fill="#0F172A" fontSize="7.5" fontWeight="800">Catálogo Web</text>
+        <rect x="73" y="214" width="60" height="4" rx="2" fill="#CBD5E1" />
+        <rect x="73" y="221" width="38" height="4" rx="2" fill="#E2E8F0" />
 
-        {/* Tag Inferior */}
+        <rect x="162" y="193" width="116" height="43" rx="5" fill="#FFFFFF" stroke="#E2E8F0" />
+        <rect x="168" y="199" width="24" height="24" rx="4" fill="#FFF1F0" />
+        <path d="M180 203 A4 4 0 0 0 172 203 C172 207 176 213 176 213 C176 213 180 207 180 203 Z" stroke="#B51C12" strokeWidth="1.2" fill="none" />
+        <circle cx="176" cy="203" r="1.5" fill="#B51C12" />
+        <text x="198" y="208" fill="#0F172A" fontSize="7.5" fontWeight="800">Tráfico Directo</text>
+        <rect x="198" y="214" width="60" height="4" rx="2" fill="#CBD5E1" />
+        <rect x="198" y="221" width="38" height="4" rx="2" fill="#E2E8F0" />
+
+        {/* Footer Pill */}
         <rect x="27" y="258" width="261" height="24" rx="6" fill="#EFF7F7" />
-        <text x="157" y="273.5" fill="#0B3C3D" fontSize="8" fontWeight="800" textAnchor="middle">✓ Enlace oficial listo para Instagram y TikTok</text>
+        <circle cx="39" cy="270" r="3" fill="#0B3C3D" />
+        <text x="47" y="273.5" fill="#0B3C3D" fontSize="8" fontWeight="800">Portal oficial con marca y catálogo activo</text>
       </g>
 
       {/* ==============================================================
@@ -167,48 +166,68 @@ function HeroBentoShowcaseSvg() {
         <rect x="315" y="15" width="310" height="280" rx="16" fill="#FFFFFF" stroke="#B0DCDC" strokeWidth="1.8" />
         
         {/* Header Pill */}
-        <rect x="329" y="27" width="115" height="20" rx="10" fill="#EFF7F7" stroke="#0B3C3D" />
-        <circle cx="339" cy="37" r="4" fill="#0B3C3D" />
-        <text x="349" y="41" fill="#0B3C3D" fontSize="8.5" fontWeight="800">2. LA VENTA</text>
+        <rect x="329" y="27" width="110" height="22" rx="11" fill="#EFF7F7" stroke="#0B3C3D" strokeWidth="1" />
+        <rect x="337" y="33" width="12" height="9" rx="2" stroke="#0B3C3D" strokeWidth="1.2" fill="none" />
+        <line x1="337" y1="36.5" x2="349" y2="36.5" stroke="#0B3C3D" strokeWidth="1" />
+        <text x="354" y="42" fill="#0B3C3D" fontSize="8.5" fontWeight="800" letterSpacing="0.04em">02. LA VENTA</text>
 
-        <text x="329" y="66" fill="#0F172A" fontSize="13" fontWeight="900">Tienda, Citas y Pagos Nativos</text>
-        <text x="329" y="80" fill="#64748B" fontSize="8.5">Control del proceso con WhatsApp en vivo</text>
+        <text x="329" y="68" fill="#0F172A" fontSize="13" fontWeight="900">Tienda, Citas y Pagos</text>
+        <rect x="329" y="77" width="140" height="5" rx="2.5" fill="#E2E8F0" />
 
         {/* Card de Pedido / Servicio */}
         <rect x="329" y="94" width="282" height="66" rx="10" fill="#FAF8F5" stroke="#E2E8F0" />
+        {/* Receipt linear icon box */}
         <rect x="339" y="104" width="46" height="46" rx="8" fill="#FFFFFF" stroke="#CBD5E1" />
-        <text x="351" y="133" fontSize="22">🍔</text>
+        <rect x="350" y="112" width="24" height="30" rx="3" stroke="#0B3C3D" strokeWidth="1.3" fill="#EFF7F7" />
+        <line x1="355" y1="119" x2="369" y2="119" stroke="#0B3C3D" strokeWidth="1.2" strokeLinecap="round" />
+        <line x1="355" y1="125" x2="365" y2="125" stroke="#0B3C3D" strokeWidth="1.2" strokeLinecap="round" />
+        <line x1="355" y1="131" x2="363" y2="131" stroke="#0B3C3D" strokeWidth="1.2" strokeLinecap="round" />
         
-        <text x="394" y="118" fill="#0F172A" fontSize="9.5" fontWeight="800">Orden Especial o Servicio</text>
-        <text x="394" y="131" fill="#64748B" fontSize="8">Con complementos y extras</text>
-        <rect x="394" y="137" width="70" height="16" rx="4" fill="#EFF7F7" />
-        <text x="400" y="148" fill="#0B3C3D" fontSize="7.5" fontWeight="800">⏰ Cita: 3:00 PM</text>
+        {/* Ticket Details */}
+        <text x="394" y="118" fill="#0F172A" fontSize="9.5" fontWeight="800">Orden o Reserva de Servicio</text>
+        <rect x="394" y="125" width="90" height="4" rx="2" fill="#94A3B8" />
+        <rect x="394" y="136" width="68" height="15" rx="3.5" fill="#EFF7F7" />
+        <text x="400" y="146.5" fill="#0B3C3D" fontSize="7.5" fontWeight="800">CITA 15:00</text>
 
-        <text x="599" y="128" fill="#0B3C3D" fontSize="13" fontWeight="900" textAnchor="end">₡5.500</text>
+        <text x="599" y="125" fill="#0B3C3D" fontSize="14" fontWeight="900" textAnchor="end">₡5.500</text>
+        <rect x="545" y="133" width="54" height="13" rx="3" fill="#ECFDF5" />
+        <text x="572" y="142" fill="#059669" fontSize="6.8" fontWeight="800" textAnchor="middle">CONFIRMADO</text>
 
-        {/* 2 Métodos de Pago Nativos */}
+        {/* 2 Métodos de Pago */}
+        {/* SINPE Móvil */}
         <rect x="329" y="168" width="136" height="52" rx="8" fill="#FFFFFF" stroke="#0B3C3D" strokeWidth="1.2" />
-        <rect x="337" y="176" width="20" height="20" rx="4" fill="#EFF7F7" />
-        <text x="341" y="190" fill="#0B3C3D" fontSize="11">📲</text>
-        <text x="363" y="186" fill="#0F172A" fontSize="7.8" fontWeight="800">SINPE Móvil</text>
-        <text x="363" y="197" fill="#0B3C3D" fontSize="7" fontWeight="700">Verificado Inmediato</text>
-        <text x="363" y="209" fill="#10B981" fontSize="7" fontWeight="800">✓ Confirmado</text>
+        <rect x="337" y="176" width="22" height="22" rx="5" fill="#EFF7F7" />
+        <rect x="342" y="180" width="12" height="15" rx="2.5" stroke="#0B3C3D" strokeWidth="1.2" fill="none" />
+        <line x1="346" y1="182" x2="350" y2="182" stroke="#0B3C3D" strokeWidth="1" />
+        <circle cx="348" cy="191.5" r="1" fill="#0B3C3D" />
+        <text x="365" y="186" fill="#0F172A" fontSize="8" fontWeight="800">SINPE MÓVIL</text>
+        <rect x="365" y="192" width="65" height="4" rx="2" fill="#94A3B8" />
+        <polyline points="365,207 368,210 373,204" fill="none" stroke="#059669" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+        <text x="377" y="209" fill="#059669" fontSize="7" fontWeight="800">INMEDIATO</text>
 
+        {/* Tarjetas Bancarias */}
         <rect x="475" y="168" width="136" height="52" rx="8" fill="#FFFFFF" stroke="#B51C12" strokeWidth="1.2" />
-        <rect x="483" y="176" width="20" height="20" rx="4" fill="#FFF1F0" />
-        <text x="487" y="190" fill="#B51C12" fontSize="11">💳</text>
-        <text x="509" y="186" fill="#0F172A" fontSize="7.8" fontWeight="800">Tarjetas Crédito/Débito</text>
-        <text x="509" y="197" fill="#64748B" fontSize="7">Visa • Mastercard • AMEX</text>
-        <text x="509" y="209" fill="#B51C12" fontSize="7" fontWeight="800">🔒 3D Secure Bancario</text>
+        <rect x="483" y="176" width="22" height="22" rx="5" fill="#FFF1F0" />
+        <rect x="487" y="181" width="14" height="11" rx="2" stroke="#B51C12" strokeWidth="1.2" fill="none" />
+        <line x1="487" y1="185" x2="501" y2="185" stroke="#B51C12" strokeWidth="1" />
+        <rect x="490" y="188" width="3" height="2.5" rx="0.5" fill="#B51C12" />
+        <text x="511" y="186" fill="#0F172A" fontSize="8" fontWeight="800">TARJETAS</text>
+        <rect x="511" y="192" width="65" height="4" rx="2" fill="#94A3B8" />
+        <rect x="511" y="204" width="6" height="5" rx="1" stroke="#B51C12" strokeWidth="0.8" fill="none" />
+        <path d="M512.5 204 V202.5 A1.5 1.5 0 0 1 515.5 202.5 V204" stroke="#B51C12" strokeWidth="0.8" fill="none" />
+        <text x="520" y="209" fill="#B51C12" fontSize="7" fontWeight="800">3D SECURE</text>
 
-        {/* Estado en WhatsApp */}
+        {/* Live Status Bar */}
         <rect x="329" y="228" width="282" height="26" rx="6" fill="#0B3C3D" />
-        <circle cx="343" cy="241" r="4" fill="#34D399" />
-        <text x="353" y="244.5" fill="#FFFFFF" fontSize="7.8" fontWeight="700">WhatsApp en Tiempo Real • Pedido en preparación</text>
+        <path d="M341 238 A4 4 0 0 1 349 234 H353 A4 4 0 0 1 357 238 V241 A4 4 0 0 1 353 245 H346 L342 248 Z" stroke="#34D399" strokeWidth="1.2" fill="none" />
+        <circle cx="363" cy="241" r="3" fill="#34D399" />
+        <text x="372" y="244.5" fill="#FFFFFF" fontSize="7.8" fontWeight="800">WHATSAPP EN VIVO</text>
+        <text x="600" y="244.5" fill="#A7F3D0" fontSize="7" fontWeight="700" textAnchor="end">NOTIFICACIÓN 0s</text>
 
-        {/* Tag Inferior */}
+        {/* Footer Pill */}
         <rect x="329" y="258" width="282" height="24" rx="6" fill="#EFF7F7" />
-        <text x="470" y="273.5" fill="#0B3C3D" fontSize="8" fontWeight="800" textAnchor="middle">✓ Cobro directo a tu cuenta bancaria nacional</text>
+        <circle cx="341" cy="270" r="3" fill="#0B3C3D" />
+        <text x="349" y="273.5" fill="#0B3C3D" fontSize="8" fontWeight="800">Cobro verificado y sincronizado a tu cuenta</text>
       </g>
 
       {/* ==============================================================
@@ -218,33 +237,35 @@ function HeroBentoShowcaseSvg() {
         <rect x="640" y="15" width="285" height="280" rx="16" fill="#FFFFFF" stroke="#FFC7C4" strokeWidth="1.5" />
         
         {/* Header Pill */}
-        <rect x="652" y="27" width="130" height="20" rx="10" fill="#FFF1F0" stroke="#B51C12" />
-        <circle cx="662" cy="37" r="4" fill="#B51C12" />
-        <text x="672" y="41" fill="#B51C12" fontSize="8.5" fontWeight="800">3. FIDELIZACIÓN</text>
+        <rect x="652" y="27" width="130" height="22" rx="11" fill="#FFF1F0" stroke="#B51C12" strokeWidth="1" />
+        <circle cx="663" cy="38" r="5" stroke="#B51C12" strokeWidth="1.2" fill="none" />
+        <path d="M663 35 L664.2 37.4 L667 37.8 L665 39.4 L665.6 42 L663 40.5 L660.4 42 L661 39.4 L659 37.8 L661.8 37.4 Z" fill="#B51C12" />
+        <text x="674" y="42" fill="#B51C12" fontSize="8.5" fontWeight="800" letterSpacing="0.04em">03. FIDELIZACIÓN</text>
 
-        <text x="652" y="66" fill="#0F172A" fontSize="13" fontWeight="900">Tarjetas de Sellos y Puntos</text>
-        <text x="652" y="80" fill="#64748B" fontSize="8.5">Retención sin cartones que se pierdan</text>
+        <text x="652" y="68" fill="#0F172A" fontSize="13" fontWeight="900">Sellos y Puntos</text>
+        <rect x="652" y="77" width="120" height="5" rx="2.5" fill="#E2E8F0" />
 
         {/* Tarjeta de Fidelidad Digital */}
-        <rect x="652" y="94" width="261" height="152" rx="10" fill="url(#m3Grad)" />
+        <rect x="652" y="94" width="261" height="152" rx="10" fill="url(#loyaltyCardGrad)" />
         
-        <rect x="662" y="104" width="105" height="15" rx="3" fill="rgba(255,255,255,0.15)" />
-        <text x="668" y="115" fill="#B0DCDC" fontSize="7" fontWeight="800">CLUB DE CLIENTES</text>
-        <text x="898" y="116" fill="#34D399" fontSize="7.5" fontWeight="800" textAnchor="end">Billetera Móvil</text>
+        {/* Header de la tarjeta */}
+        <rect x="662" y="104" width="75" height="14" rx="3" fill="rgba(255,255,255,0.15)" />
+        <text x="668" y="114" fill="#B0DCDC" fontSize="7" fontWeight="800">CLUB DIGITAL</text>
+        <text x="898" y="114" fill="#34D399" fontSize="7" fontWeight="800" textAnchor="end">Billetera Móvil</text>
 
-        <text x="662" y="134" fill="#FFFFFF" fontSize="9.5" fontWeight="900">Tarjeta de Sellos Digitales</text>
-        <text x="662" y="145" fill="#CBD5E1" fontSize="7.5">Completa 8 visitas y gana tu premio</text>
+        <text x="662" y="133" fill="#FFFFFF" fontSize="9.5" fontWeight="900">Tarjeta de Sellos</text>
+        <rect x="662" y="139" width="95" height="4" rx="2" fill="rgba(255,255,255,0.25)" />
 
-        {/* 8 Casillas de Sellos (4x2) */}
+        {/* 8 Casillas de Sellos (4x2) con iconos lineales limpios */}
         {[
-          { x: 662, y: 153, done: true },
-          { x: 700, y: 153, done: true },
-          { x: 738, y: 153, done: true },
-          { x: 776, y: 153, done: true },
-          { x: 662, y: 184, done: true },
-          { x: 700, y: 184, done: true },
-          { x: 738, y: 184, done: true },
-          { x: 776, y: 184, done: false, prize: true }
+          { x: 662, y: 151, done: true },
+          { x: 700, y: 151, done: true },
+          { x: 738, y: 151, done: true },
+          { x: 776, y: 151, done: true },
+          { x: 662, y: 181, done: true },
+          { x: 700, y: 181, done: true },
+          { x: 738, y: 181, done: true },
+          { x: 776, y: 181, done: false, prize: true }
         ].map((s, idx) => (
           <g key={idx}>
             <rect
@@ -253,35 +274,53 @@ function HeroBentoShowcaseSvg() {
               width="32"
               height="26"
               rx="5"
-              fill={s.prize ? '#B51C12' : (s.done ? '#34D399' : 'rgba(255,255,255,0.12)')}
-              stroke={s.prize ? '#FFC7C4' : (s.done ? '#A7F3D0' : 'rgba(255,255,255,0.25)')}
-              strokeWidth="1"
+              fill={s.prize ? '#B51C12' : (s.done ? '#064E3B' : 'rgba(255,255,255,0.12)')}
+              stroke={s.prize ? '#FFC7C4' : (s.done ? '#34D399' : 'rgba(255,255,255,0.25)')}
+              strokeWidth="1.2"
             />
-            <text
-              x={s.x + 16}
-              y={s.y + 17}
-              fill="#FFFFFF"
-              fontSize="10"
-              fontWeight="900"
-              textAnchor="middle"
-            >
-              {s.prize ? '🎁' : (s.done ? '✓' : String(idx + 1))}
-            </text>
+            {s.prize ? (
+              <g transform={`translate(${s.x + 8}, ${s.y + 5})`}>
+                <path d="M3 3 H13 V7 A5 5 0 0 1 3 7 Z" stroke="#FFFFFF" strokeWidth="1.2" fill="none" />
+                <path d="M1 4 H3 V6 H1 Z" stroke="#FFFFFF" strokeWidth="0.8" fill="none" />
+                <path d="M13 4 H15 V6 H13 Z" stroke="#FFFFFF" strokeWidth="0.8" fill="none" />
+                <line x1="8" y1="10" x2="8" y2="13" stroke="#FFFFFF" strokeWidth="1.2" />
+                <line x1="5" y1="13" x2="11" y2="13" stroke="#FFFFFF" strokeWidth="1.2" />
+              </g>
+            ) : s.done ? (
+              <polyline
+                points={`${s.x + 10},${s.y + 13} ${s.x + 14},${s.y + 17} ${s.x + 22},${s.y + 9}`}
+                fill="none"
+                stroke="#34D399"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            ) : (
+              <text x={s.x + 16} y={s.y + 16} fill="rgba(255,255,255,0.5)" fontSize="8.5" fontWeight="700" textAnchor="middle">
+                {String(idx + 1)}
+              </text>
+            )}
           </g>
         ))}
 
         {/* Badge Monedero de Puntos en la tarjeta */}
-        <rect x="817" y="153" width="86" height="57" rx="6" fill="rgba(255,255,255,0.1)" stroke="rgba(255,255,255,0.2)" />
-        <text x="860" y="169" fill="#B0DCDC" fontSize="7" fontWeight="700" textAnchor="middle">PUNTOS</text>
-        <text x="860" y="186" fill="#FFFFFF" fontSize="12" fontWeight="900" textAnchor="middle">₡4.250</text>
-        <text x="860" y="199" fill="#34D399" fontSize="6.5" fontWeight="700" textAnchor="middle">Canjeable en caja</text>
+        <rect x="817" y="151" width="86" height="56" rx="6" fill="rgba(255,255,255,0.1)" stroke="rgba(255,255,255,0.2)" />
+        <text x="860" y="166" fill="#B0DCDC" fontSize="7" fontWeight="700" textAnchor="middle">PUNTOS</text>
+        <text x="860" y="183" fill="#FFFFFF" fontSize="12" fontWeight="900" textAnchor="middle">₡4.250</text>
+        <rect x="830" y="191" width="60" height="10" rx="2.5" fill="rgba(52,211,153,0.2)" />
+        <text x="860" y="198" fill="#34D399" fontSize="6.5" fontWeight="800" textAnchor="middle">CANJEABLE</text>
 
-        <rect x="662" y="217" width="241" height="20" rx="4" fill="rgba(255,255,255,0.08)" />
-        <text x="782" y="230.5" fill="#FFFFFF" fontSize="7" fontWeight="700" textAnchor="middle">🆔 Acceso por cédula en betico.tech/fidelidad</text>
+        <rect x="662" y="215" width="241" height="20" rx="4" fill="rgba(255,255,255,0.08)" />
+        <rect x="670" y="219" width="14" height="10" rx="2" stroke="#B0DCDC" strokeWidth="1" fill="none" />
+        <circle cx="674" cy="223" r="1.5" fill="#B0DCDC" />
+        <line x1="677" y1="223" x2="681" y2="223" stroke="#B0DCDC" strokeWidth="1" />
+        <line x1="677" y1="226" x2="681" y2="226" stroke="#B0DCDC" strokeWidth="1" />
+        <text x="690" y="228" fill="#FFFFFF" fontSize="7" fontWeight="700">Acceso por cédula en betico.tech/fidelidad</text>
 
-        {/* Tag Inferior */}
+        {/* Footer Pill */}
         <rect x="652" y="258" width="261" height="24" rx="6" fill="#FFF1F0" />
-        <text x="782" y="273.5" fill="#B51C12" fontSize="8" fontWeight="800" textAnchor="middle">✓ Habilitado automático desde citas y compras</text>
+        <circle cx="664" cy="270" r="3" fill="#B51C12" />
+        <text x="672" y="273.5" fill="#B51C12" fontSize="8" fontWeight="800">Acumulación automática en citas y compras</text>
       </g>
 
       {/* ==============================================================
@@ -293,45 +332,75 @@ function HeroBentoShowcaseSvg() {
         {/* Glow de acento central */}
         <circle cx="470" cy="367" r="70" fill="rgba(52, 211, 153, 0.08)" />
 
-        {/* Icono del Cerebro IA */}
-        <rect x="35" y="328" width="58" height="58" rx="14" fill="#0B3C3D" stroke="#34D399" strokeWidth="1.5" />
-        <text x="64" y="365" fontSize="28" textAnchor="middle">🤖</text>
+        {/* Icono lineal del Procesador / Microchip IA */}
+        <rect x="35" y="328" width="56" height="56" rx="12" fill="#0B3C3D" stroke="#34D399" strokeWidth="1.5" />
+        <rect x="45" y="338" width="36" height="36" rx="6" fill="#002526" stroke="#34D399" strokeWidth="1.2" />
+        <circle cx="63" cy="356" r="4" fill="#34D399" />
+        <line x1="63" y1="340" x2="63" y2="352" stroke="#34D399" strokeWidth="1.2" />
+        <line x1="63" y1="360" x2="63" y2="372" stroke="#34D399" strokeWidth="1.2" />
+        <line x1="47" y1="356" x2="59" y2="356" stroke="#34D399" strokeWidth="1.2" />
+        <line x1="67" y1="356" x2="79" y2="356" stroke="#34D399" strokeWidth="1.2" />
+        <line x1="41" y1="334" x2="41" y2="328" stroke="#34D399" strokeWidth="1.2" />
+        <line x1="53" y1="334" x2="53" y2="328" stroke="#34D399" strokeWidth="1.2" />
+        <line x1="73" y1="334" x2="73" y2="328" stroke="#34D399" strokeWidth="1.2" />
+        <line x1="85" y1="334" x2="85" y2="328" stroke="#34D399" strokeWidth="1.2" />
 
-        {/* Textos del Cerebro IA */}
+        {/* Textos y Badges del Orquestador IA */}
         <text x="108" y="347" fill="#34D399" fontSize="9.5" fontWeight="900" letterSpacing="0.06em">
-          NÚCLEO DE AUTOMATIZACIÓN 24/7 • POTENCIADO CON TU IA FAVORITA
+          NÚCLEO DE AUTOMATIZACIÓN 24/7 • ORQUESTADOR IA
         </text>
         <text x="108" y="369" fill="#FFFFFF" fontSize="13.5" fontWeight="900">
           Vende, Agenda y Atiende de Forma Automática en WhatsApp
         </text>
-        <text x="108" y="388" fill="#94A3B8" fontSize="8.8">
-          Tu asistente responde en 1.5s, consulta el catálogo y confirma pagos por SINPE o tarjeta. Solo te refiere lo que requiere tu atención.
-        </text>
 
-        {/* Conexiones visuales hacia los 3 momentos */}
+        {/* 3 Micro Pilares con iconos lineales y skeletons */}
+        <g transform="translate(108, 380)">
+          {/* Pilar 1: Vende */}
+          <rect x="0" y="0" width="180" height="28" rx="6" fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.1)" />
+          <path d="M10 9 H14 L16 19 H26 L28 12 H15" stroke="#34D399" strokeWidth="1.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+          <circle cx="18" cy="22" r="1.5" fill="#34D399" />
+          <circle cx="24" cy="22" r="1.5" fill="#34D399" />
+          <text x="34" y="14" fill="#FFFFFF" fontSize="8" fontWeight="800">1. VENDE</text>
+          <rect x="34" y="17" width="130" height="3" rx="1.5" fill="#94A3B8" />
+
+          {/* Pilar 2: Agenda */}
+          <rect x="190" y="0" width="180" height="28" rx="6" fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.1)" />
+          <rect x="199" y="8" width="12" height="12" rx="2" stroke="#34D399" strokeWidth="1.2" fill="none" />
+          <line x1="199" y1="12" x2="211" y2="12" stroke="#34D399" strokeWidth="1" />
+          <line x1="202" y1="6" x2="202" y2="9" stroke="#34D399" strokeWidth="1" />
+          <line x1="208" y1="6" x2="208" y2="9" stroke="#34D399" strokeWidth="1" />
+          <text x="218" y="14" fill="#FFFFFF" fontSize="8" fontWeight="800">2. AGENDA</text>
+          <rect x="218" y="17" width="130" height="3" rx="1.5" fill="#94A3B8" />
+
+          {/* Pilar 3: Filtro Humano */}
+          <rect x="380" y="0" width="200" height="28" rx="6" fill="rgba(255,255,255,0.05)" stroke="rgba(181,28,18,0.4)" />
+          <path d="M394 8 L389 10 V14 C389 18 394 21 394 21 C394 21 399 18 399 14 V10 Z" stroke="#FFC7C4" strokeWidth="1.2" fill="none" />
+          <text x="406" y="14" fill="#FFC7C4" fontSize="8" fontWeight="800">3. FILTRO HUMANO</text>
+          <rect x="406" y="17" width="150" height="3" rx="1.5" fill="#94A3B8" />
+        </g>
+
+        {/* Conexiones hacia los 3 momentos */}
         <line x1="160" y1="300" x2="160" y2="310" stroke="#34D399" strokeWidth="2" strokeDasharray="3 3" />
         <circle cx="160" cy="305" r="3" fill="#34D399" />
-
         <line x1="470" y1="300" x2="470" y2="310" stroke="#34D399" strokeWidth="2" strokeDasharray="3 3" />
         <circle cx="470" cy="305" r="3" fill="#34D399" />
-
         <line x1="780" y1="300" x2="780" y2="310" stroke="#34D399" strokeWidth="2" strokeDasharray="3 3" />
         <circle cx="780" cy="305" r="3" fill="#34D399" />
 
         {/* Badges de Proveedores de IA */}
-        <rect x="740" y="332" width="165" height="70" rx="10" fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.12)" />
-        <text x="822" y="349" fill="#B0DCDC" fontSize="8" fontWeight="800" textAnchor="middle">COMPATIBLE CON</text>
+        <rect x="730" y="328" width="180" height="74" rx="10" fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.12)" />
+        <text x="820" y="344" fill="#B0DCDC" fontSize="8" fontWeight="800" textAnchor="middle">COMPATIBLE CON</text>
         
-        <rect x="750" y="357" width="44" height="18" rx="4" fill="#0B3C3D" />
-        <text x="772" y="369.5" fill="#34D399" fontSize="7" fontWeight="800" textAnchor="middle">Gemini</text>
+        <rect x="740" y="351" width="48" height="18" rx="4" fill="#0B3C3D" stroke="#34D399" strokeWidth="0.8" />
+        <text x="764" y="363.5" fill="#34D399" fontSize="7" fontWeight="800" textAnchor="middle">Gemini</text>
 
-        <rect x="800" y="357" width="46" height="18" rx="4" fill="#0B3C3D" />
-        <text x="823" y="369.5" fill="#FFFFFF" fontSize="7" fontWeight="800" textAnchor="middle">OpenAI</text>
+        <rect x="796" y="351" width="48" height="18" rx="4" fill="#0B3C3D" stroke="rgba(255,255,255,0.3)" strokeWidth="0.8" />
+        <text x="820" y="363.5" fill="#FFFFFF" fontSize="7" fontWeight="800" textAnchor="middle">OpenAI</text>
 
-        <rect x="852" y="357" width="44" height="18" rx="4" fill="#0B3C3D" />
-        <text x="874" y="369.5" fill="#FFC7C4" fontSize="7" fontWeight="800" textAnchor="middle">Claude</text>
+        <rect x="852" y="351" width="48" height="18" rx="4" fill="#0B3C3D" stroke="#FFC7C4" strokeWidth="0.8" />
+        <text x="876" y="363.5" fill="#FFC7C4" fontSize="7" fontWeight="800" textAnchor="middle">Claude</text>
 
-        <text x="822" y="392" fill="#34D399" fontSize="7.5" fontWeight="700" textAnchor="middle">⚡ Conexión BYOK Segura</text>
+        <text x="820" y="388" fill="#34D399" fontSize="7.5" fontWeight="700" textAnchor="middle">Conexión BYOK Segura</text>
       </g>
     </svg>
   );
@@ -342,15 +411,15 @@ function CaptacionWebsiteSvg() {
     <svg viewBox="0 0 520 290" width="100%" height="100%" style={{ maxHeight: '270px', display: 'block' }} aria-label="Sitio Web Oficial Personalizable">
       <defs>
         <linearGradient id="capGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#0b3c3d" />
-          <stop offset="100%" stopColor="#134b4c" />
+          <stop offset="0%" stopColor="#0B3C3D" />
+          <stop offset="100%" stopColor="#134B4C" />
         </linearGradient>
-        <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#b51c12" />
-          <stop offset="100%" stopColor="#e0352b" />
+        <linearGradient id="capAccentGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor="#B51C12" />
+          <stop offset="100%" stopColor="#E0352B" />
         </linearGradient>
         <filter id="capShadow" x="-5%" y="-5%" width="110%" height="120%">
-          <feDropShadow dx="0" dy="6" stdDeviation="8" floodColor="#0b3c3d" floodOpacity="0.08" />
+          <feDropShadow dx="0" dy="6" stdDeviation="8" floodColor="#0B3C3D" floodOpacity="0.08" />
         </filter>
       </defs>
       <rect x="15" y="12" width="490" height="266" rx="14" fill="#FFFFFF" stroke="#E2E8F0" strokeWidth="1.5" filter="url(#capShadow)" />
@@ -363,49 +432,85 @@ function CaptacionWebsiteSvg() {
       <circle cx="48" cy="28" r="4.5" fill="#F59E0B" />
       <circle cx="62" cy="28" r="4.5" fill="#10B981" />
       
-      {/* Dirección URL */}
-      <rect x="80" y="20" width="260" height="18" rx="5" fill="#FFFFFF" stroke="#CBD5E1" strokeWidth="1" />
-      <text x="92" y="33" fill="#0B3C3D" fontSize="9.5" fontWeight="700" fontFamily="monospace">🔒 betico.tech/sitio/tu-marca</text>
+      {/* Dirección URL con candado lineal */}
+      <rect x="80" y="20" width="240" height="18" rx="5" fill="#FFFFFF" stroke="#CBD5E1" strokeWidth="1" />
+      <rect x="88" y="25" width="6" height="5" rx="1" stroke="#0B3C3D" strokeWidth="1" fill="none" />
+      <path d="M89.5 25 V23.5 A1.5 1.5 0 0 1 92.5 23.5 V25" stroke="#0B3C3D" strokeWidth="1" fill="none" />
+      <text x="100" y="32.5" fill="#0B3C3D" fontSize="9" fontWeight="700" fontFamily="monospace">betico.tech/tu-marca</text>
       
-      {/* Píldoras de Redes Sociales / Prospección */}
-      <rect x="350" y="20" width="145" height="18" rx="5" fill="#EFF7F7" stroke="#B0DCDC" strokeWidth="1" />
-      <text x="358" y="32.5" fill="#0B3C3D" fontSize="8.5" fontWeight="800">Tráfico: IG • TikTok • Maps</text>
+      {/* Píldoras de Redes / Tráfico con icono lineal */}
+      <rect x="330" y="20" width="165" height="18" rx="5" fill="#EFF7F7" stroke="#B0DCDC" strokeWidth="1" />
+      <circle cx="340" cy="29" r="3.5" stroke="#0B3C3D" strokeWidth="1" fill="none" />
+      <polyline points="340,27 340,29 342,30" stroke="#0B3C3D" strokeWidth="0.8" fill="none" />
+      <text x="348" y="32.5" fill="#0B3C3D" fontSize="8" fontWeight="800">ENLACE EN BIO Y REDES</text>
 
       {/* Cabecera del Sitio Web */}
-      <rect x="28" y="56" width="464" height="36" rx="8" fill="#FFFFFF" />
-      <rect x="38" y="64" width="85" height="20" rx="5" fill="#0B3C3D" />
-      <text x="46" y="78" fill="#FFFFFF" fontSize="9" fontWeight="800">TU LOGO</text>
+      <rect x="28" y="56" width="464" height="34" rx="8" fill="#FFFFFF" />
+      <rect x="38" y="63" width="75" height="20" rx="5" fill="#0B3C3D" />
+      <text x="46" y="77" fill="#FFFFFF" fontSize="8.5" fontWeight="800">TU MARCA</text>
       
-      {/* Botones de Cabecera */}
-      <rect x="295" y="66" width="75" height="16" rx="4" fill="#EFF7F7" />
-      <text x="306" y="77.5" fill="#0B3C3D" fontSize="8.5" fontWeight="700">Tienda Web</text>
-      <rect x="378" y="66" width="104" height="16" rx="4" fill="#0B3C3D" />
-      <text x="387" y="77.5" fill="#FFFFFF" fontSize="8.5" fontWeight="700">Reservar Cita 📅</text>
+      {/* Botones y Navegación de Cabecera */}
+      <rect x="285" y="65" width="85" height="16" rx="4" fill="#EFF7F7" />
+      <text x="295" y="76.5" fill="#0B3C3D" fontSize="8" fontWeight="700">TIENDA WEB</text>
+      <rect x="378" y="65" width="104" height="16" rx="4" fill="#0B3C3D" />
+      <rect x="386" y="69" width="8" height="8" rx="1.5" stroke="#FFFFFF" strokeWidth="1" fill="none" />
+      <line x1="386" y1="72" x2="394" y2="72" stroke="#FFFFFF" strokeWidth="0.8" />
+      <text x="398" y="76.5" fill="#FFFFFF" fontSize="8" fontWeight="700">RESERVAR CITA</text>
 
       {/* Portada Banner con tu Identidad */}
-      <rect x="28" y="100" width="464" height="102" rx="10" fill="url(#capGrad)" />
-      <circle cx="435" cy="125" r="42" fill="rgba(255,255,255,0.06)" />
-      <circle cx="400" cy="170" r="28" fill="rgba(181,28,18,0.3)" />
+      <rect x="28" y="98" width="464" height="104" rx="10" fill="url(#capGrad)" />
       
-      <rect x="42" y="114" width="145" height="15" rx="3.5" fill="rgba(255,255,255,0.18)" />
-      <text x="48" y="125" fill="#B0DCDC" fontSize="8" fontWeight="800">SITIO OFICIAL PERSONALIZABLE</text>
-      <text x="42" y="152" fill="#FFFFFF" fontSize="14" fontWeight="900">Tu Marca y Línea Gráfica</text>
-      <text x="42" y="168" fill="#E2E8F0" fontSize="9.5">Colores propios, logotipo claro u oscuro y catálogo directo</text>
-      <rect x="42" y="178" width="115" height="16" rx="4" fill="url(#accentGrad)" />
-      <text x="50" y="189.5" fill="#FFFFFF" fontSize="8.5" fontWeight="800">Explorar Servicios</text>
+      {/* Abstract UI decorative circles */}
+      <circle cx="435" cy="125" r="42" fill="rgba(255,255,255,0.06)" />
+      <circle cx="400" cy="170" r="28" fill="rgba(181,28,18,0.25)" />
+      
+      {/* Banner Content: Clean UI skeleton wireframes */}
+      <rect x="42" y="112" width="135" height="14" rx="3.5" fill="rgba(255,255,255,0.18)" />
+      <text x="48" y="122.5" fill="#B0DCDC" fontSize="7.5" fontWeight="800" letterSpacing="0.04em">PORTAL WEB OFICIAL</text>
+      
+      <rect x="42" y="134" width="180" height="10" rx="4" fill="#FFFFFF" opacity="0.95" />
+      <rect x="42" y="150" width="130" height="6" rx="3" fill="#B0DCDC" opacity="0.8" />
+      <rect x="42" y="160" width="95" height="5" rx="2.5" fill="#E2E8F0" opacity="0.6" />
 
-      {/* 3 Badges de Valor */}
+      {/* Primary CTA */}
+      <rect x="42" y="174" width="105" height="18" rx="4" fill="url(#capAccentGrad)" />
+      <text x="50" y="186.5" fill="#FFFFFF" fontSize="8" fontWeight="800">VER CATÁLOGO</text>
+
+      {/* Wireframe Mini Cards on the right */}
+      <rect x="345" y="110" width="132" height="78" rx="8" fill="rgba(255,255,255,0.1)" stroke="rgba(255,255,255,0.2)" />
+      <rect x="355" y="120" width="30" height="30" rx="6" fill="rgba(255,255,255,0.15)" />
+      <rect x="393" y="122" width="70" height="6" rx="3" fill="#FFFFFF" />
+      <rect x="393" y="132" width="50" height="5" rx="2.5" fill="#B0DCDC" />
+      <rect x="393" y="142" width="40" height="8" rx="2" fill="#34D399" />
+      <rect x="355" y="160" width="112" height="18" rx="4" fill="#0B3C3D" />
+      <text x="411" y="172" fill="#FFFFFF" fontSize="7.5" fontWeight="800" textAnchor="middle">PEDIR AHORA</text>
+
+      {/* 3 Badges de Valor con Iconos Lineales */}
+      {/* Badge 1: Línea Gráfica */}
       <rect x="28" y="210" width="148" height="54" rx="7" fill="#F8FAFC" stroke="#E2E8F0" />
-      <text x="38" y="234" fill="#0B3C3D" fontSize="10" fontWeight="800">🎨 Identidad Visual</text>
-      <text x="38" y="250" fill="#64748B" fontSize="8.5">Logotipo y paleta de marca</text>
+      <circle cx="43" cy="227" r="7" stroke="#0B3C3D" strokeWidth="1.2" fill="none" />
+      <circle cx="41" cy="225" r="1.2" fill="#0B3C3D" />
+      <circle cx="45" cy="225" r="1.2" fill="#0B3C3D" />
+      <circle cx="43" cy="229" r="1.2" fill="#0B3C3D" />
+      <text x="56" y="230" fill="#0B3C3D" fontSize="9" fontWeight="800">Línea Gráfica</text>
+      <rect x="38" y="240" width="125" height="4" rx="2" fill="#CBD5E1" />
+      <rect x="38" y="248" width="85" height="4" rx="2" fill="#E2E8F0" />
 
+      {/* Badge 2: Adaptable Móvil */}
       <rect x="186" y="210" width="148" height="54" rx="7" fill="#F8FAFC" stroke="#E2E8F0" />
-      <text x="196" y="234" fill="#0B3C3D" fontSize="10" fontWeight="800">📱 Link en Biografía</text>
-      <text x="196" y="250" fill="#64748B" fontSize="8.5">Captación de redes sociales</text>
+      <rect x="196" y="219" width="12" height="17" rx="2.5" stroke="#0B3C3D" strokeWidth="1.2" fill="none" />
+      <line x1="200" y1="221" x2="204" y2="221" stroke="#0B3C3D" strokeWidth="0.8" />
+      <circle cx="202" cy="233" r="1" fill="#0B3C3D" />
+      <text x="214" y="230" fill="#0B3C3D" fontSize="9" fontWeight="800">Multi-Dispositivo</text>
+      <rect x="196" y="240" width="125" height="4" rx="2" fill="#CBD5E1" />
+      <rect x="196" y="248" width="85" height="4" rx="2" fill="#E2E8F0" />
 
+      {/* Badge 3: Dominio y SSL */}
       <rect x="344" y="210" width="148" height="54" rx="7" fill="#F8FAFC" stroke="#E2E8F0" />
-      <text x="354" y="234" fill="#0B3C3D" fontSize="10" fontWeight="800">⚡ Cero Costo Hosting</text>
-      <text x="354" y="250" fill="#64748B" fontSize="8.5">Certificado SSL incluido</text>
+      <path d="M358 221 L353 223 V227 C353 231 358 234 358 234 C358 234 363 231 363 227 V223 Z" stroke="#0B3C3D" strokeWidth="1.2" fill="none" />
+      <text x="370" y="230" fill="#0B3C3D" fontSize="9" fontWeight="800">Dominio y SSL</text>
+      <rect x="354" y="240" width="125" height="4" rx="2" fill="#CBD5E1" />
+      <rect x="354" y="248" width="85" height="4" rx="2" fill="#E2E8F0" />
     </svg>
   );
 }
@@ -428,41 +533,74 @@ function VentaProcesoPasoSvg() {
       {/* Franja Superior */}
       <rect x="15" y="12" width="490" height="34" rx="14" fill="#0B3C3D" />
       <rect x="15" y="32" width="490" height="14" fill="#0B3C3D" />
-      <text x="30" y="31" fill="#FFFFFF" fontSize="10.5" fontWeight="800">🛍️ CONTROL TOTAL DEL PROCESO DE VENTA</text>
-      <text x="382" y="31" fill="#34D399" fontSize="9.5" fontWeight="700">Tiempo Real ⚡</text>
+      <rect x="28" y="21" width="14" height="12" rx="2" stroke="#FFFFFF" strokeWidth="1.2" fill="none" />
+      <path d="M32 21 V18 A3 3 0 0 1 38 18 V21" stroke="#FFFFFF" strokeWidth="1" fill="none" />
+      <text x="48" y="30.5" fill="#FFFFFF" fontSize="10" fontWeight="800" letterSpacing="0.04em">CONTROL TOTAL DEL PROCESO DE VENTA</text>
+      <circle cx="426" cy="27" r="3" fill="#34D399" />
+      <text x="434" y="30.5" fill="#34D399" fontSize="8.5" fontWeight="700">TIEMPO REAL</text>
 
-      {/* Bloque 1: Tienda y Reservas con Complementos */}
+      {/* Bloque 1: Catálogo y Citas */}
       <rect x="28" y="56" width="224" height="98" rx="9" fill="#FFFFFF" stroke="#E2E8F0" strokeWidth="1" />
-      <rect x="38" y="65" width="100" height="16" rx="3.5" fill="#EFF7F7" />
-      <text x="44" y="76.5" fill="#0B3C3D" fontSize="8.5" fontWeight="800">1. Catálogo y Citas</text>
-      <text x="38" y="98" fill="#0F172A" fontSize="11" fontWeight="800">Tienda y Reservas</text>
-      <text x="38" y="113" fill="#64748B" fontSize="8.5">Control de stock y complementos</text>
-      <rect x="38" y="126" width="105" height="18" rx="4" fill="#EFF7F7" />
-      <text x="44" y="138.5" fill="#0B3C3D" fontSize="8" fontWeight="700">✓ Agenda de especialistas</text>
+      <rect x="38" y="65" width="105" height="16" rx="3.5" fill="#EFF7F7" />
+      <text x="44" y="76.5" fill="#0B3C3D" fontSize="8" fontWeight="800">1. CATÁLOGO Y CITAS</text>
+      
+      {/* Item wireframe */}
+      <rect x="38" y="89" width="204" height="36" rx="6" fill="#FAF8F5" stroke="#E2E8F0" />
+      <rect x="44" y="94" width="26" height="26" rx="4" fill="#EFF7F7" />
+      <path d="M49 101 L57 101 L64 108 L58 114 L51 107 Z" stroke="#0B3C3D" strokeWidth="1" fill="none" />
+      <circle cx="53" cy="104" r="1" fill="#0B3C3D" />
+      <rect x="76" y="98" width="80" height="6" rx="3" fill="#0F172A" />
+      <rect x="76" y="108" width="55" height="4" rx="2" fill="#94A3B8" />
+      <text x="236" y="109" fill="#0B3C3D" fontSize="11" fontWeight="900" textAnchor="end">₡5.500</text>
+      
+      <rect x="38" y="131" width="75" height="14" rx="3" fill="#ECFDF5" />
+      <text x="44" y="141" fill="#059669" fontSize="7" fontWeight="800">EN STOCK ACTIVO</text>
 
       {/* Bloque 2: Múltiples Formas de Pago */}
       <rect x="268" y="56" width="224" height="98" rx="9" fill="#FFFFFF" stroke="#E2E8F0" strokeWidth="1" />
       <rect x="278" y="65" width="118" height="16" rx="3.5" fill="#FFF1F0" />
-      <text x="284" y="76.5" fill="#B51C12" fontSize="8.5" fontWeight="800">2. Formas de Pago</text>
-      <text x="278" y="98" fill="#0F172A" fontSize="11" fontWeight="800">Tarjetas y SINPE Móvil</text>
-      <text x="278" y="113" fill="#64748B" fontSize="8.5">Visa • Mastercard • AMEX</text>
-      <rect x="278" y="126" width="110" height="18" rx="4" fill="#FFF1F0" />
-      <text x="284" y="138.5" fill="#B51C12" fontSize="8" fontWeight="700">🔒 3D Secure Bancario</text>
+      <text x="284" y="76.5" fill="#B51C12" fontSize="8" fontWeight="800">2. FORMAS DE PAGO</text>
+      
+      {/* 2 payment methods badges */}
+      <rect x="278" y="89" width="98" height="36" rx="6" fill="#FFFFFF" stroke="#0B3C3D" strokeWidth="1" />
+      <rect x="284" y="95" width="10" height="14" rx="2" stroke="#0B3C3D" strokeWidth="1" fill="none" />
+      <line x1="287" y1="97" x2="291" y2="97" stroke="#0B3C3D" strokeWidth="0.8" />
+      <circle cx="289" cy="105" r="0.8" fill="#0B3C3D" />
+      <text x="298" y="104" fill="#0B3C3D" fontSize="7.5" fontWeight="800">SINPE</text>
+      <text x="298" y="115" fill="#059669" fontSize="6.5" fontWeight="700">Verificado</text>
+
+      <rect x="384" y="89" width="98" height="36" rx="6" fill="#FFFFFF" stroke="#B51C12" strokeWidth="1" />
+      <rect x="390" y="96" width="13" height="10" rx="1.5" stroke="#B51C12" strokeWidth="1" fill="none" />
+      <line x1="390" y1="99.5" x2="403" y2="99.5" stroke="#B51C12" strokeWidth="0.8" />
+      <text x="407" y="104" fill="#B51C12" fontSize="7.5" fontWeight="800">TARJETA</text>
+      <text x="407" y="115" fill="#B51C12" fontSize="6.5" fontWeight="700">3D Secure</text>
+
+      <rect x="278" y="131" width="110" height="14" rx="3" fill="#EFF7F7" />
+      <text x="284" y="141" fill="#0B3C3D" fontSize="7" fontWeight="800">BANCOS NACIONALES</text>
 
       {/* Bloque 3: WhatsApp en Tiempo Real */}
       <rect x="28" y="162" width="464" height="102" rx="9" fill="#FFFFFF" stroke="#0B3C3D" strokeWidth="1.2" />
-      <rect x="38" y="172" width="175" height="18" rx="4" fill="#0B3C3D" />
-      <text x="46" y="184.5" fill="#FFFFFF" fontSize="9" fontWeight="800">3. Contacto WhatsApp en Vivo</text>
+      <rect x="38" y="172" width="170" height="18" rx="4" fill="#0B3C3D" />
+      <path d="M46 179 A3 3 0 0 1 52 176 H56 A3 3 0 0 1 60 179 V182 A3 3 0 0 1 56 186 H51 L48 188 Z" stroke="#FFFFFF" strokeWidth="1" fill="none" />
+      <text x="64" y="184.5" fill="#FFFFFF" fontSize="8" fontWeight="800">3. WHATSAPP EN VIVO</text>
 
-      {/* Burbuja Simulación Pedido */}
-      <rect x="38" y="196" width="270" height="36" rx="6" fill="#EFF7F7" stroke="#B0DCDC" />
-      <text x="48" y="210" fill="#0B3C3D" fontSize="8.5" fontWeight="700">📲 Pedido #ORD-84 Confirmado (₡12.500)</text>
-      <text x="48" y="222" fill="#475569" fontSize="8">Orden pagada y en preparación con notificación</text>
+      {/* Ticket Notification Simulation */}
+      <rect x="38" y="196" width="270" height="58" rx="6" fill="#EFF7F7" stroke="#B0DCDC" />
+      <polyline points="48,211 52,215 58,207" stroke="#059669" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+      <text x="64" y="213" fill="#0B3C3D" fontSize="8.5" fontWeight="800">ORDEN #ORD-84 CONFIRMADA</text>
+      <text x="250" y="213" fill="#0B3C3D" fontSize="8.5" fontWeight="900">₡12.500</text>
+      <rect x="48" y="222" width="245" height="4" rx="2" fill="#CBD5E1" />
+      <rect x="48" y="230" width="160" height="4" rx="2" fill="#E2E8F0" />
+      <rect x="48" y="238" width="85" height="10" rx="2.5" fill="#0B3C3D" />
+      <text x="90" y="246" fill="#FFFFFF" fontSize="6.5" fontWeight="800" textAnchor="middle">EN PREPARACIÓN</text>
 
+      {/* Metric badge on the right */}
       <rect x="320" y="196" width="162" height="58" rx="6" fill="#F8FAFC" stroke="#E2E8F0" />
-      <text x="330" y="214" fill="#0F172A" fontSize="9.5" fontWeight="800">Control de Principio a Fin</text>
-      <text x="330" y="228" fill="#64748B" fontSize="8.2">Notificaciones automáticas</text>
-      <text x="330" y="242" fill="#0B3C3D" fontSize="8.2" fontWeight="700">Atención personal en vivo</text>
+      <text x="330" y="214" fill="#0F172A" fontSize="9" fontWeight="800">Trazabilidad Total</text>
+      <rect x="330" y="222" width="135" height="4" rx="2" fill="#CBD5E1" />
+      <rect x="330" y="230" width="95" height="4" rx="2" fill="#E2E8F0" />
+      <rect x="330" y="238" width="90" height="12" rx="3" fill="#EFF7F7" />
+      <text x="336" y="247" fill="#0B3C3D" fontSize="6.8" fontWeight="800">NOTIFICACIÓN 0s</text>
     </svg>
   );
 }
@@ -485,26 +623,29 @@ function FidelizacionSvg() {
       {/* Header */}
       <rect x="15" y="12" width="490" height="34" rx="14" fill="#0B3C3D" />
       <rect x="15" y="32" width="490" height="14" fill="#0B3C3D" />
-      <text x="30" y="31" fill="#FFFFFF" fontSize="10.5" fontWeight="800">🏆 CLUB DE FIDELIZACIÓN • betico.tech/fidelidad</text>
-      <text x="382" y="31" fill="#B0DCDC" fontSize="9" fontWeight="700">Acceso por Cédula 🆔</text>
+      <path d="M28 20 H38 V24 A4 4 0 0 1 28 24 Z" stroke="#FFFFFF" strokeWidth="1.2" fill="none" />
+      <line x1="33" y1="26" x2="33" y2="29" stroke="#FFFFFF" strokeWidth="1" />
+      <line x1="30" y1="29" x2="36" y2="29" stroke="#FFFFFF" strokeWidth="1" />
+      <text x="46" y="30.5" fill="#FFFFFF" fontSize="10" fontWeight="800" letterSpacing="0.04em">SISTEMA DE FIDELIZACIÓN DIGITAL</text>
+      <text x="430" y="30.5" fill="#B0DCDC" fontSize="8.5" fontWeight="700">betico.tech/fidelidad</text>
 
       {/* Tarjeta de Sellos (Izquierda) */}
       <rect x="28" y="56" width="240" height="208" rx="10" fill="url(#fidGrad)" />
-      <rect x="38" y="66" width="115" height="16" rx="3.5" fill="rgba(255,255,255,0.16)" />
-      <text x="44" y="77.5" fill="#B0DCDC" fontSize="8" fontWeight="800">TARJETA DE SELLOS</text>
-      <text x="38" y="99" fill="#FFFFFF" fontSize="12" fontWeight="900">Cafetería o Servicios</text>
-      <text x="38" y="112" fill="#E2E8F0" fontSize="8.5">Completa 8 sellos y el 9° es gratis</text>
+      <rect x="38" y="66" width="110" height="16" rx="3.5" fill="rgba(255,255,255,0.16)" />
+      <text x="44" y="77.5" fill="#B0DCDC" fontSize="7.5" fontWeight="800">TARJETA DE SELLOS</text>
+      <text x="38" y="98" fill="#FFFFFF" fontSize="11" fontWeight="900">Programa de Visitas</text>
+      <rect x="38" y="104" width="115" height="4" rx="2" fill="rgba(255,255,255,0.25)" />
 
-      {/* 8 Casillas de Sellos (4x2) */}
+      {/* 8 Casillas de Sellos (4x2) con iconos lineales limpios */}
       {[
-        { x: 38, y: 122, done: true },
-        { x: 92, y: 122, done: true },
-        { x: 146, y: 122, done: true },
-        { x: 200, y: 122, done: true },
-        { x: 38, y: 168, done: true },
-        { x: 92, y: 168, done: true },
-        { x: 146, y: 168, done: true },
-        { x: 200, y: 168, done: false, prize: true }
+        { x: 38, y: 118, done: true },
+        { x: 92, y: 118, done: true },
+        { x: 146, y: 118, done: true },
+        { x: 200, y: 118, done: true },
+        { x: 38, y: 164, done: true },
+        { x: 92, y: 164, done: true },
+        { x: 146, y: 164, done: true },
+        { x: 200, y: 164, done: false, prize: true }
       ].map((s, i) => (
         <g key={i}>
           <rect
@@ -513,40 +654,61 @@ function FidelizacionSvg() {
             width="40"
             height="38"
             rx="7"
-            fill={s.prize ? '#B51C12' : (s.done ? '#34D399' : 'rgba(255,255,255,0.15)')}
-            stroke={s.prize ? '#FFC7C4' : (s.done ? '#A7F3D0' : 'rgba(255,255,255,0.3)')}
+            fill={s.prize ? '#B51C12' : (s.done ? '#064E3B' : 'rgba(255,255,255,0.15)')}
+            stroke={s.prize ? '#FFC7C4' : (s.done ? '#34D399' : 'rgba(255,255,255,0.3)')}
             strokeWidth="1.5"
           />
-          <text
-            x={s.x + 20}
-            y={s.y + 24}
-            fill="#FFFFFF"
-            fontSize="13"
-            textAnchor="middle"
-            fontWeight="bold"
-          >
-            {s.prize ? '🎁' : (s.done ? '✓' : String(i + 1))}
-          </text>
+          {s.prize ? (
+            <g transform={`translate(${s.x + 11}, ${s.y + 10})`}>
+              <path d="M3 3 H15 V8 A6 6 0 0 1 3 8 Z" stroke="#FFFFFF" strokeWidth="1.3" fill="none" />
+              <path d="M1 5 H3 V7 H1 Z" stroke="#FFFFFF" strokeWidth="0.8" fill="none" />
+              <path d="M15 5 H17 V7 H15 Z" stroke="#FFFFFF" strokeWidth="0.8" fill="none" />
+              <line x1="9" y1="11" x2="9" y2="15" stroke="#FFFFFF" strokeWidth="1.2" />
+              <line x1="5" y1="15" x2="13" y2="15" stroke="#FFFFFF" strokeWidth="1.2" />
+            </g>
+          ) : s.done ? (
+            <polyline
+              points={`${s.x + 12},${s.y + 19} ${s.x + 18},${s.y + 25} ${s.x + 28},${s.y + 14}`}
+              fill="none"
+              stroke="#34D399"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          ) : (
+            <text x={s.x + 20} y={s.y + 23} fill="rgba(255,255,255,0.4)" fontSize="11" textAnchor="middle" fontWeight="bold">
+              {String(i + 1)}
+            </text>
+          )}
         </g>
       ))}
 
-      <text x="38" y="222" fill="#34D399" fontSize="9" fontWeight="800">¡7 de 8 sellos completados!</text>
-      <text x="38" y="235" fill="#B0DCDC" fontSize="8">Un consumo más para tu premio directo</text>
+      <text x="38" y="222" fill="#34D399" fontSize="8.5" fontWeight="800">7 / 8 SELLOS COMPLETADOS</text>
+      <rect x="38" y="230" width="180" height="4" rx="2" fill="rgba(255,255,255,0.2)" />
+      <rect x="38" y="230" width="157" height="4" rx="2" fill="#34D399" />
 
       {/* Monedero de Puntos (Derecha Arriba) */}
       <rect x="278" y="56" width="214" height="96" rx="9" fill="#FAF8F5" stroke="#E2E8F0" />
-      <text x="290" y="74" fill="#B51C12" fontSize="9" fontWeight="800">MONEDERO DE PUNTOS</text>
-      <text x="290" y="100" fill="#0B3C3D" fontSize="18" fontWeight="900">₡4.250</text>
-      <text x="290" y="114" fill="#64748B" fontSize="8.5">Puntos acumulados para compras</text>
-      <rect x="290" y="122" width="125" height="18" rx="4" fill="#0B3C3D" />
-      <text x="298" y="134" fill="#FFFFFF" fontSize="8" fontWeight="700">Canjear en Caja o Tienda</text>
+      <circle cx="292" cy="74" r="5" stroke="#B51C12" strokeWidth="1.2" fill="none" />
+      <text x="290" y="77" fill="#B51C12" fontSize="6.5" fontWeight="900">P</text>
+      <text x="302" y="77" fill="#B51C12" fontSize="8.5" fontWeight="800">MONEDERO DE PUNTOS</text>
+      <text x="290" y="104" fill="#0B3C3D" fontSize="20" fontWeight="900">₡4.250</text>
+      <rect x="290" y="114" width="95" height="4" rx="2" fill="#94A3B8" />
+      <rect x="290" y="124" width="135" height="18" rx="4" fill="#0B3C3D" />
+      <text x="357" y="136" fill="#FFFFFF" fontSize="7.5" fontWeight="800" textAnchor="middle">CANJEAR EN CAJA O TIENDA</text>
 
-      {/* Vínculo sin Doble Registro (Derecha Abajo) */}
+      {/* Vínculo sin Registro (Derecha Abajo) */}
       <rect x="278" y="160" width="214" height="104" rx="9" fill="#EFF7F7" stroke="#B0DCDC" />
-      <text x="290" y="180" fill="#0B3C3D" fontSize="10" fontWeight="800">Vínculo Automático</text>
-      <text x="290" y="196" fill="#475569" fontSize="8.5">Habilitado desde citas y pedidos</text>
-      <rect x="290" y="216" width="150" height="22" rx="4" fill="#FFFFFF" stroke="#B0DCDC" />
-      <text x="298" y="230.5" fill="#0B3C3D" fontSize="8.2" fontWeight="800">🔒 Fidelidad duradera y real</text>
+      <rect x="290" y="172" width="16" height="12" rx="2" stroke="#0B3C3D" strokeWidth="1.2" fill="none" />
+      <circle cx="295" cy="177" r="1.5" fill="#0B3C3D" />
+      <line x1="299" y1="176" x2="303" y2="176" stroke="#0B3C3D" strokeWidth="1" />
+      <line x1="299" y1="179" x2="303" y2="179" stroke="#0B3C3D" strokeWidth="1" />
+      <text x="312" y="182" fill="#0B3C3D" fontSize="9" fontWeight="800">Identificación por Cédula</text>
+      <rect x="290" y="194" width="165" height="4" rx="2" fill="#CBD5E1" />
+      <rect x="290" y="202" width="115" height="4" rx="2" fill="#CBD5E1" />
+      <rect x="290" y="218" width="165" height="22" rx="4" fill="#FFFFFF" stroke="#B0DCDC" />
+      <circle cx="302" cy="229" r="2.5" fill="#059669" />
+      <text x="312" y="232.5" fill="#0B3C3D" fontSize="7.5" fontWeight="800">SIN DESCARGA DE APPS</text>
     </svg>
   );
 }
@@ -564,41 +726,61 @@ function CerebroIaOrchestratorSvg() {
       <rect x="15" y="12" width="490" height="266" rx="14" fill="url(#aiBgGrad)" stroke="#134B4C" strokeWidth="2" />
 
       {/* Encabezado */}
-      <text x="32" y="36" fill="#34D399" fontSize="10.5" fontWeight="800">🤖 MOTOR DE IA 24/7 • POTENCIA CON TU MODELO FAVORITO</text>
-      <text x="382" y="36" fill="#B0DCDC" fontSize="9" fontWeight="700">BYOK Integrado</text>
+      <rect x="30" y="23" width="14" height="14" rx="3" stroke="#34D399" strokeWidth="1.2" fill="none" />
+      <rect x="33" y="26" width="8" height="8" rx="1" fill="#34D399" />
+      <text x="50" y="34.5" fill="#34D399" fontSize="9.5" fontWeight="800" letterSpacing="0.04em">MOTOR DE IA 24/7 • ORQUESTADOR MULTI-MODELO</text>
+      <text x="440" y="34.5" fill="#B0DCDC" fontSize="8" fontWeight="700">BYOK</text>
 
-      {/* Hub Central de IA */}
-      <rect x="175" y="52" width="170" height="60" rx="10" fill="#0B3C3D" stroke="#34D399" strokeWidth="1.5" />
-      <text x="260" y="73" fill="#FFFFFF" fontSize="10.5" fontWeight="900" textAnchor="middle">TU IA FAVORITA</text>
-      <text x="260" y="87" fill="#A7F3D0" fontSize="8" fontWeight="700" textAnchor="middle">Gemini • OpenAI • Claude</text>
-      <text x="260" y="100" fill="#B0DCDC" fontSize="7.8" textAnchor="middle">Prompts compactos • Ahorro de tokens</text>
+      {/* Hub Central de IA con microchip lineal */}
+      <rect x="165" y="48" width="190" height="54" rx="10" fill="#0B3C3D" stroke="#34D399" strokeWidth="1.5" />
+      <circle cx="185" cy="75" r="4" fill="#34D399" />
+      <line x1="185" y1="62" x2="185" y2="71" stroke="#34D399" strokeWidth="1.2" />
+      <line x1="185" y1="79" x2="185" y2="88" stroke="#34D399" strokeWidth="1.2" />
+      <text x="268" y="68" fill="#FFFFFF" fontSize="10" fontWeight="900" textAnchor="middle">TU IA FAVORITA</text>
+      <text x="268" y="82" fill="#A7F3D0" fontSize="7.8" fontWeight="700" textAnchor="middle">Gemini • OpenAI • Claude</text>
+      <rect x="205" y="88" width="126" height="4" rx="2" fill="rgba(52,211,153,0.3)" />
 
       {/* 3 Ramas de Ejecución */}
       {/* 1. Vende */}
-      <rect x="28" y="124" width="144" height="72" rx="9" fill="rgba(255,255,255,0.06)" stroke="#34D399" strokeWidth="1" />
-      <text x="38" y="144" fill="#34D399" fontSize="10" fontWeight="900">1. Vende 🛒</text>
-      <text x="38" y="160" fill="#E2E8F0" fontSize="8">Revisa stock en 0s,</text>
-      <text x="38" y="173" fill="#E2E8F0" fontSize="8">asesora catálogo y</text>
-      <text x="38" y="186" fill="#E2E8F0" fontSize="8">genera links de pago.</text>
+      <rect x="28" y="118" width="144" height="78" rx="9" fill="rgba(255,255,255,0.06)" stroke="#34D399" strokeWidth="1" />
+      <path d="M38 132 H42 L44 140 H52 L54 135 H43" stroke="#34D399" strokeWidth="1.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="45" cy="143" r="1.2" fill="#34D399" />
+      <circle cx="51" cy="143" r="1.2" fill="#34D399" />
+      <text x="60" y="137" fill="#34D399" fontSize="9.5" fontWeight="900">1. VENDE</text>
+      <rect x="38" y="148" width="124" height="4" rx="2" fill="#E2E8F0" opacity="0.8" />
+      <rect x="38" y="156" width="95" height="4" rx="2" fill="#E2E8F0" opacity="0.6" />
+      <rect x="38" y="164" width="70" height="4" rx="2" fill="#E2E8F0" opacity="0.4" />
+      <rect x="38" y="174" width="60" height="12" rx="3" fill="rgba(52,211,153,0.15)" />
+      <text x="68" y="183" fill="#34D399" fontSize="6.8" fontWeight="800" textAnchor="middle">&lt; 1.5s RESPUESTA</text>
 
       {/* 2. Agenda */}
-      <rect x="188" y="124" width="144" height="72" rx="9" fill="rgba(255,255,255,0.06)" stroke="#34D399" strokeWidth="1" />
-      <text x="198" y="144" fill="#34D399" fontSize="10" fontWeight="900">2. Agenda 📅</text>
-      <text x="198" y="160" fill="#E2E8F0" fontSize="8">Consulta agenda en vivo,</text>
-      <text x="198" y="173" fill="#E2E8F0" fontSize="8">asigna especialistas y</text>
-      <text x="198" y="186" fill="#E2E8F0" fontSize="8">confirma reservas.</text>
+      <rect x="188" y="118" width="144" height="78" rx="9" fill="rgba(255,255,255,0.06)" stroke="#34D399" strokeWidth="1" />
+      <rect x="198" y="128" width="12" height="12" rx="2" stroke="#34D399" strokeWidth="1.2" fill="none" />
+      <line x1="198" y1="132" x2="210" y2="132" stroke="#34D399" strokeWidth="0.8" />
+      <text x="218" y="137" fill="#34D399" fontSize="9.5" fontWeight="900">2. AGENDA</text>
+      <rect x="198" y="148" width="124" height="4" rx="2" fill="#E2E8F0" opacity="0.8" />
+      <rect x="198" y="156" width="95" height="4" rx="2" fill="#E2E8F0" opacity="0.6" />
+      <rect x="198" y="164" width="70" height="4" rx="2" fill="#E2E8F0" opacity="0.4" />
+      <rect x="198" y="174" width="72" height="12" rx="3" fill="rgba(52,211,153,0.15)" />
+      <text x="234" y="183" fill="#34D399" fontSize="6.8" fontWeight="800" textAnchor="middle">CALENDARIO EN VIVO</text>
 
       {/* 3. Atiende */}
-      <rect x="348" y="124" width="144" height="72" rx="9" fill="rgba(255,255,255,0.06)" stroke="#34D399" strokeWidth="1" />
-      <text x="358" y="144" fill="#34D399" fontSize="10" fontWeight="900">3. Atiende 💬</text>
-      <text x="358" y="160" fill="#E2E8F0" fontSize="8">Transcribe audios de voz,</text>
-      <text x="358" y="173" fill="#E2E8F0" fontSize="8">comprende modismos y</text>
-      <text x="358" y="186" fill="#E2E8F0" fontSize="8">atiende a toda hora.</text>
+      <rect x="348" y="118" width="144" height="78" rx="9" fill="rgba(255,255,255,0.06)" stroke="#34D399" strokeWidth="1" />
+      <path d="M358 132 A3 3 0 0 1 364 129 H368 A3 3 0 0 1 372 132 V135 A3 3 0 0 1 368 139 H364 L360 142 Z" stroke="#34D399" strokeWidth="1.2" fill="none" />
+      <text x="378" y="137" fill="#34D399" fontSize="9.5" fontWeight="900">3. ATIENDE</text>
+      <rect x="358" y="148" width="124" height="4" rx="2" fill="#E2E8F0" opacity="0.8" />
+      <rect x="358" y="156" width="95" height="4" rx="2" fill="#E2E8F0" opacity="0.6" />
+      <rect x="358" y="164" width="70" height="4" rx="2" fill="#E2E8F0" opacity="0.4" />
+      <rect x="358" y="174" width="60" height="12" rx="3" fill="rgba(52,211,153,0.15)" />
+      <text x="388" y="183" fill="#34D399" fontSize="6.8" fontWeight="800" textAnchor="middle">AUDIO A TEXTO</text>
 
       {/* Barra de Filtro Humano / Handoff */}
-      <rect x="28" y="208" width="464" height="52" rx="9" fill="#B51C12" stroke="#FFC7C4" strokeWidth="1" />
-      <text x="42" y="228" fill="#FFFFFF" fontSize="10" fontWeight="900">🛡️ DERIVACIÓN HUMANA INTELIGENTE (HANDOFF)</text>
-      <text x="42" y="244" fill="#FFC7C4" fontSize="8.2">Solo te refiere los mensajes que requieren tu atención personal para que nunca pierdas tiempo.</text>
+      <rect x="28" y="210" width="464" height="50" rx="9" fill="#B51C12" stroke="#FFC7C4" strokeWidth="1" />
+      <path d="M42 225 L37 228 V233 C37 238 42 242 42 242 C42 242 47 238 47 233 V228 Z" stroke="#FFFFFF" strokeWidth="1.3" fill="none" />
+      <text x="56" y="231" fill="#FFFFFF" fontSize="9.5" fontWeight="900" letterSpacing="0.04em">FILTRO HUMANO INTELIGENTE (HANDOFF)</text>
+      <text x="56" y="247" fill="#FFC7C4" fontSize="8" fontWeight="700">Derivación en tiempo real solo cuando el caso requiere tu intervención directa</text>
+      <rect x="424" y="222" width="56" height="16" rx="3.5" fill="rgba(0,0,0,0.25)" />
+      <text x="452" y="233" fill="#FFFFFF" fontSize="7" fontWeight="800" textAnchor="middle">0% SPAM</text>
     </svg>
   );
 }
