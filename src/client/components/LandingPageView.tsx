@@ -56,8 +56,7 @@ import {
   Cpu,
   HeartHandshake,
   BadgePercent,
-  Search,
-  Compass
+  Search
 } from 'lucide-react';
 
 interface LandingPageProps {
@@ -919,25 +918,25 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
       ctaText: 'Probar Betico para Citas y Salones'
     },
     canchas: {
-      badge: 'Canchas y Complejos Deportivos',
-      title: 'Complejos de Pádel, Fútbol 5, Tenis y Deportes',
-      subtitle: 'Administra tus canchas por horas, automatiza el cobro de señas y llena los horarios nocturnos.',
+      badge: 'Canchas',
+      title: 'Alquiler y Administración de Canchas',
+      subtitle: 'Administra tus canchas por horas, automatiza el cobro de señas y llena tus horarios disponibles.',
       features: [
         {
-          title: 'Reservas por Bloque Horario en Vivo',
-          desc: 'Tus clientes eligen cancha, fecha y hora disponible desde una grilla interactiva en tu sitio web o directamente conversando con tu bot de WhatsApp.'
+          title: 'Reserva en tiempo real',
+          desc: 'Tus clientes reservan su espacio al instante por sitio web o WhatsApp con disponibilidad de horarios en vivo.'
         },
         {
-          title: 'Tarifas Diferenciadas de Día y Noche',
-          desc: 'Configura precios automáticos según el horario (tarifa regular diurna o tarifa nocturna con iluminación de canchas incluida).'
+          title: 'Control de reservas y pagos',
+          desc: 'Gestión unificada de turnos con confirmación de señas y cobros directos por SINPE Móvil o tarjeta bancaria.'
         },
         {
-          title: 'Cobro de Seña Inmediata con SINPE o Tarjeta',
-          desc: 'El espacio solo queda reservado cuando el cliente transfiere por SINPE Móvil o paga con tarjeta, protegiendo tu cancha contra cancelaciones.'
+          title: 'Fácil configuración',
+          desc: 'Configura horarios, duración de turnos, tarifas diurnas o nocturnas y reglas de reserva en minutos.'
         }
       ],
-      impact: 'Elimina las reservas duplicadas por llamadas telefónicas y maximiza la ocupación de tus canchas en horarios estelares.',
-      ctaText: 'Probar Betico para Canchas Deportivas'
+      impact: 'Elimina las reservas duplicadas por llamadas telefónicas y maximiza la ocupación de tus canchas.',
+      ctaText: 'Probar Betico para Canchas'
     },
     retail: {
       badge: 'Tienda Digital y Retail',
@@ -1450,41 +1449,6 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
               </div>
             </div>
 
-          </div>
-        </section>
-
-        {/* ------------------------------------------------------------
-            TRUST STRIP
-        ------------------------------------------------------------ */}
-        <section style={{ padding: '24px 20px', backgroundColor: '#ffffff', borderTop: '1px solid #e2e8f0', borderBottom: '1px solid #e2e8f0' }}>
-          <div style={{
-            maxWidth: '1280px',
-            margin: '0 auto',
-            display: 'flex',
-            flexWrap: 'wrap',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: isMobile ? '16px' : '40px',
-            color: '#64748b',
-            fontSize: '0.82rem',
-            fontWeight: '600'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Compass size={18} color="#0b3c3d" />
-              <span>1. Prospección: Sitio Web con tu Marca</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <ShoppingBag size={18} color="#0b3c3d" />
-              <span>2. Venta: Tienda, Reservas y Pagos Nativos</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Award size={18} color="#b51c12" />
-              <span>3. Fidelización: Sellos y Puntos Digitales</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Bot size={18} color="#0b3c3d" />
-              <span>Potenciado con tu Modelo de IA Favorito</span>
-            </div>
           </div>
         </section>
 
@@ -2308,7 +2272,7 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
               {[
                 { id: 'restaurantes', label: 'Restaurantes y Cafeterías', icon: Utensils },
                 { id: 'servicios', label: 'Salones y Barberías', icon: Scissors },
-                { id: 'canchas', label: 'Canchas Deportivas y Pádel', icon: Trophy },
+                { id: 'canchas', label: 'Canchas', icon: Trophy },
                 { id: 'retail', label: 'Tiendas y Boutiques', icon: ShoppingBag },
                 { id: 'fidelidad', label: 'Club de Fidelización', icon: Award }
               ].map((tab) => {
