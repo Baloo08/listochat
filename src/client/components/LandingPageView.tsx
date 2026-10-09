@@ -50,13 +50,297 @@ import {
   AlertTriangle,
   XCircle,
   Server,
-  FileCode
+  FileCode,
+  Target,
+  Repeat,
+  Cpu,
+  HeartHandshake,
+  BadgePercent,
+  Search,
+  Compass
 } from 'lucide-react';
 
 interface LandingPageProps {
   onLoginClick: () => void;
   isLoggedIn?: boolean;
   onGoToDashboard?: () => void;
+}
+
+// ============================================================================
+// RECURSOS GRÁFICOS 100% SVG NATIVOS (RESPONSIVOS, LIGEROS Y CON IDENTIDAD BETICO)
+// ============================================================================
+
+function CaptacionWebsiteSvg() {
+  return (
+    <svg viewBox="0 0 520 290" width="100%" height="100%" style={{ maxHeight: '270px', display: 'block' }} aria-label="Sitio Web Oficial Personalizable">
+      <defs>
+        <linearGradient id="capGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#0b3c3d" />
+          <stop offset="100%" stopColor="#134b4c" />
+        </linearGradient>
+        <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor="#b51c12" />
+          <stop offset="100%" stopColor="#e0352b" />
+        </linearGradient>
+        <filter id="capShadow" x="-5%" y="-5%" width="110%" height="120%">
+          <feDropShadow dx="0" dy="6" stdDeviation="8" floodColor="#0b3c3d" floodOpacity="0.08" />
+        </filter>
+      </defs>
+      <rect x="15" y="12" width="490" height="266" rx="14" fill="#FFFFFF" stroke="#E2E8F0" strokeWidth="1.5" filter="url(#capShadow)" />
+      
+      {/* Barra de Navegador */}
+      <rect x="15" y="12" width="490" height="34" rx="14" fill="#F8FAFC" />
+      <rect x="15" y="34" width="490" height="12" fill="#F8FAFC" />
+      <line x1="15" y1="46" x2="505" y2="46" stroke="#E2E8F0" strokeWidth="1" />
+      <circle cx="34" cy="28" r="4.5" fill="#EF4444" />
+      <circle cx="48" cy="28" r="4.5" fill="#F59E0B" />
+      <circle cx="62" cy="28" r="4.5" fill="#10B981" />
+      
+      {/* Dirección URL */}
+      <rect x="80" y="20" width="260" height="18" rx="5" fill="#FFFFFF" stroke="#CBD5E1" strokeWidth="1" />
+      <text x="92" y="33" fill="#0B3C3D" fontSize="9.5" fontWeight="700" fontFamily="monospace">🔒 betico.tech/sitio/tu-marca</text>
+      
+      {/* Píldoras de Redes Sociales / Prospección */}
+      <rect x="350" y="20" width="145" height="18" rx="5" fill="#EFF7F7" stroke="#B0DCDC" strokeWidth="1" />
+      <text x="358" y="32.5" fill="#0B3C3D" fontSize="8.5" fontWeight="800">Tráfico: IG • TikTok • Maps</text>
+
+      {/* Cabecera del Sitio Web */}
+      <rect x="28" y="56" width="464" height="36" rx="8" fill="#FFFFFF" />
+      <rect x="38" y="64" width="85" height="20" rx="5" fill="#0B3C3D" />
+      <text x="46" y="78" fill="#FFFFFF" fontSize="9" fontWeight="800">TU LOGO</text>
+      
+      {/* Botones de Cabecera */}
+      <rect x="295" y="66" width="75" height="16" rx="4" fill="#EFF7F7" />
+      <text x="306" y="77.5" fill="#0B3C3D" fontSize="8.5" fontWeight="700">Tienda Web</text>
+      <rect x="378" y="66" width="104" height="16" rx="4" fill="#0B3C3D" />
+      <text x="387" y="77.5" fill="#FFFFFF" fontSize="8.5" fontWeight="700">Reservar Cita 📅</text>
+
+      {/* Portada Banner con tu Identidad */}
+      <rect x="28" y="100" width="464" height="102" rx="10" fill="url(#capGrad)" />
+      <circle cx="435" cy="125" r="42" fill="rgba(255,255,255,0.06)" />
+      <circle cx="400" cy="170" r="28" fill="rgba(181,28,18,0.3)" />
+      
+      <rect x="42" y="114" width="135" height="15" rx="3.5" fill="rgba(255,255,255,0.18)" />
+      <text x="48" y="125" fill="#B0DCDC" fontSize="8" fontWeight="800">SITIO OFICIAL PERSONALIZABLE</text>
+      <text x="42" y="152" fill="#FFFFFF" fontSize="14" fontWeight="900">Tu Marca y Línea Gráfica</text>
+      <text x="42" y="168" fill="#E2E8F0" fontSize="9.5">Colores propios, logotipo claro u oscuro y catálogo directo</text>
+      <rect x="42" y="178" width="115" height="16" rx="4" fill="url(#accentGrad)" />
+      <text x="50" y="189.5" fill="#FFFFFF" fontSize="8.5" fontWeight="800">Explorar Servicios</text>
+
+      {/* 3 Badges de Valor */}
+      <rect x="28" y="210" width="148" height="54" rx="7" fill="#F8FAFC" stroke="#E2E8F0" />
+      <text x="38" y="228" fill="#0B3C3D" fontSize="9.5" fontWeight="800">🎨 Línea de Marca</text>
+      <text x="38" y="244" fill="#64748B" fontSize="8">Logotipo y paleta visual</text>
+      <text x="38" y="255" fill="#0B3C3D" fontSize="8" fontWeight="700">100% personalizable</text>
+
+      <rect x="186" y="210" width="148" height="54" rx="7" fill="#F8FAFC" stroke="#E2E8F0" />
+      <text x="196" y="228" fill="#0B3C3D" fontSize="9.5" fontWeight="800">📱 Celular y Redes</text>
+      <text x="196" y="244" fill="#64748B" fontSize="8">Listo para link en bio</text>
+      <text x="196" y="255" fill="#0B3C3D" fontSize="8" fontWeight="700">Captación de prospectos</text>
+
+      <rect x="344" y="210" width="148" height="54" rx="7" fill="#F8FAFC" stroke="#E2E8F0" />
+      <text x="354" y="228" fill="#0B3C3D" fontSize="9.5" fontWeight="800">⚡ Cero Costo Hosting</text>
+      <text x="354" y="244" fill="#64748B" fontSize="8">Certificado SSL seguro</text>
+      <text x="354" y="255" fill="#0B3C3D" fontSize="8" fontWeight="700">Velocidad garantizada</text>
+    </svg>
+  );
+}
+
+function VentaProcesoPasoSvg() {
+  return (
+    <svg viewBox="0 0 520 290" width="100%" height="100%" style={{ maxHeight: '270px', display: 'block' }} aria-label="Proceso de Venta, Pagos y Reservas">
+      <defs>
+        <linearGradient id="vtaGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#FFFFFF" />
+          <stop offset="100%" stopColor="#F8FAFC" />
+        </linearGradient>
+        <filter id="vtaShadow" x="-5%" y="-5%" width="110%" height="120%">
+          <feDropShadow dx="0" dy="6" stdDeviation="8" floodColor="#000000" floodOpacity="0.06" />
+        </filter>
+      </defs>
+      
+      <rect x="15" y="12" width="490" height="266" rx="14" fill="url(#vtaGrad)" stroke="#B0DCDC" strokeWidth="1.5" filter="url(#vtaShadow)" />
+
+      {/* Franja Superior */}
+      <rect x="15" y="12" width="490" height="34" rx="14" fill="#0B3C3D" />
+      <rect x="15" y="32" width="490" height="14" fill="#0B3C3D" />
+      <text x="30" y="31" fill="#FFFFFF" fontSize="10.5" fontWeight="800">🛍️ CONTROL TOTAL DEL PROCESO DE VENTA</text>
+      <text x="382" y="31" fill="#34D399" fontSize="9.5" fontWeight="700">Tiempo Real ⚡</text>
+
+      {/* Bloque 1: Tienda y Reservas con Complementos */}
+      <rect x="28" y="56" width="224" height="98" rx="9" fill="#FFFFFF" stroke="#E2E8F0" strokeWidth="1" />
+      <rect x="38" y="65" width="100" height="16" rx="3.5" fill="#EFF7F7" />
+      <text x="44" y="76.5" fill="#0B3C3D" fontSize="8.5" fontWeight="800">1. Catálogo o Citas</text>
+      <text x="38" y="98" fill="#0F172A" fontSize="10.5" fontWeight="800">Tienda y Reservas</text>
+      <text x="38" y="112" fill="#64748B" fontSize="8.5">Control de stock, variantes y</text>
+      <text x="38" y="124" fill="#64748B" fontSize="8.5">múltiples complementos y extras.</text>
+      <rect x="38" y="132" width="95" height="14" rx="3" fill="#F1F5F9" />
+      <text x="44" y="142" fill="#0B3C3D" fontSize="7.5" fontWeight="700">✓ Agenda y especialistas</text>
+
+      {/* Bloque 2: Múltiples Formas de Pago */}
+      <rect x="268" y="56" width="224" height="98" rx="9" fill="#FFFFFF" stroke="#E2E8F0" strokeWidth="1" />
+      <rect x="278" y="65" width="118" height="16" rx="3.5" fill="#FFF1F0" />
+      <text x="284" y="76.5" fill="#B51C12" fontSize="8.5" fontWeight="800">2. Formas de Pago</text>
+      <text x="278" y="98" fill="#0F172A" fontSize="10.5" fontWeight="800">Tarjetas y SINPE Móvil</text>
+      <text x="278" y="112" fill="#64748B" fontSize="8.5">Visa • Mastercard • AMEX</text>
+      <text x="278" y="124" fill="#64748B" fontSize="8.5">Depósito directo a cuenta nacional.</text>
+      <rect x="278" y="132" width="105" height="14" rx="3" fill="#FFF1F0" />
+      <text x="284" y="142" fill="#B51C12" fontSize="7.5" fontWeight="700">🔒 3D Secure Bancario</text>
+
+      {/* Bloque 3: WhatsApp en Tiempo Real */}
+      <rect x="28" y="162" width="464" height="102" rx="9" fill="#FFFFFF" stroke="#0B3C3D" strokeWidth="1.2" />
+      <rect x="38" y="172" width="175" height="18" rx="4" fill="#0B3C3D" />
+      <text x="46" y="184.5" fill="#FFFFFF" fontSize="9" fontWeight="800">3. Contacto WhatsApp en Vivo</text>
+
+      {/* Burbuja Simulación Pedido */}
+      <rect x="38" y="196" width="270" height="36" rx="6" fill="#EFF7F7" stroke="#B0DCDC" />
+      <text x="48" y="210" fill="#0B3C3D" fontSize="8.5" fontWeight="700">📲 Pedido #ORD-84 Confirmado (₡12.500)</text>
+      <text x="48" y="222" fill="#475569" fontSize="8">Orden pagada y en preparación. ¡Acompañamiento total!</text>
+
+      <rect x="320" y="196" width="162" height="58" rx="6" fill="#F8FAFC" stroke="#E2E8F0" />
+      <text x="330" y="212" fill="#0F172A" fontSize="9" fontWeight="800">Control de Principio a Fin</text>
+      <text x="330" y="226" fill="#64748B" fontSize="8">Notificaciones automáticas.</text>
+      <text x="330" y="239" fill="#0B3C3D" fontSize="8" fontWeight="700">Atención personal en vivo.</text>
+    </svg>
+  );
+}
+
+function FidelizacionSvg() {
+  return (
+    <svg viewBox="0 0 520 290" width="100%" height="100%" style={{ maxHeight: '270px', display: 'block' }} aria-label="Tarjetas de Fidelización, Sellos y Puntos">
+      <defs>
+        <linearGradient id="fidGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#0B3C3D" />
+          <stop offset="100%" stopColor="#134B4C" />
+        </linearGradient>
+        <filter id="fidShadow" x="-5%" y="-5%" width="110%" height="120%">
+          <feDropShadow dx="0" dy="6" stdDeviation="8" floodColor="#B51C12" floodOpacity="0.08" />
+        </filter>
+      </defs>
+      
+      <rect x="15" y="12" width="490" height="266" rx="14" fill="#FFFFFF" stroke="#E2E8F0" strokeWidth="1.5" filter="url(#fidShadow)" />
+
+      {/* Header */}
+      <rect x="15" y="12" width="490" height="34" rx="14" fill="#0B3C3D" />
+      <rect x="15" y="32" width="490" height="14" fill="#0B3C3D" />
+      <text x="30" y="31" fill="#FFFFFF" fontSize="10.5" fontWeight="800">🏆 CLUB DE FIDELIZACIÓN • betico.tech/fidelidad</text>
+      <text x="382" y="31" fill="#B0DCDC" fontSize="9" fontWeight="700">Acceso por Cédula 🆔</text>
+
+      {/* Tarjeta de Sellos (Izquierda) */}
+      <rect x="28" y="56" width="240" height="208" rx="10" fill="url(#fidGrad)" />
+      <rect x="38" y="66" width="115" height="16" rx="3.5" fill="rgba(255,255,255,0.16)" />
+      <text x="44" y="77.5" fill="#B0DCDC" fontSize="8" fontWeight="800">TARJETA DE SELLOS</text>
+      <text x="38" y="99" fill="#FFFFFF" fontSize="12" fontWeight="900">Cafetería o Servicios</text>
+      <text x="38" y="112" fill="#E2E8F0" fontSize="8.5">Completa 8 sellos y el 9° es gratis</text>
+
+      {/* 8 Casillas de Sellos (4x2) */}
+      {[
+        { x: 38, y: 122, done: true },
+        { x: 92, y: 122, done: true },
+        { x: 146, y: 122, done: true },
+        { x: 200, y: 122, done: true },
+        { x: 38, y: 168, done: true },
+        { x: 92, y: 168, done: true },
+        { x: 146, y: 168, done: true },
+        { x: 200, y: 168, done: false, prize: true }
+      ].map((s, i) => (
+        <g key={i}>
+          <rect
+            x={s.x}
+            y={s.y}
+            width="40"
+            height="38"
+            rx="7"
+            fill={s.prize ? '#B51C12' : (s.done ? '#34D399' : 'rgba(255,255,255,0.15)')}
+            stroke={s.prize ? '#FFC7C4' : (s.done ? '#A7F3D0' : 'rgba(255,255,255,0.3)')}
+            strokeWidth="1.5"
+          />
+          <text
+            x={s.x + 20}
+            y={s.y + 24}
+            fill="#FFFFFF"
+            fontSize="13"
+            textAnchor="middle"
+            fontWeight="bold"
+          >
+            {s.prize ? '🎁' : (s.done ? '✓' : String(i + 1))}
+          </text>
+        </g>
+      ))}
+
+      <text x="38" y="222" fill="#34D399" fontSize="9" fontWeight="800">¡7 de 8 sellos completados!</text>
+      <text x="38" y="235" fill="#B0DCDC" fontSize="8">Un consumo más para tu premio directo</text>
+
+      {/* Monedero de Puntos (Derecha Arriba) */}
+      <rect x="278" y="56" width="214" height="96" rx="9" fill="#FAF8F5" stroke="#E2E8F0" />
+      <text x="290" y="74" fill="#B51C12" fontSize="9" fontWeight="800">MONEDERO DE PUNTOS</text>
+      <text x="290" y="100" fill="#0B3C3D" fontSize="18" fontWeight="900">₡4.250</text>
+      <text x="290" y="114" fill="#64748B" fontSize="8.5">Puntos acumulados para compras</text>
+      <rect x="290" y="122" width="125" height="18" rx="4" fill="#0B3C3D" />
+      <text x="298" y="134" fill="#FFFFFF" fontSize="8" fontWeight="700">Canjear en Caja o Tienda</text>
+
+      {/* Vínculo sin Doble Registro (Derecha Abajo) */}
+      <rect x="278" y="160" width="214" height="104" rx="9" fill="#EFF7F7" stroke="#B0DCDC" />
+      <text x="290" y="179" fill="#0B3C3D" fontSize="9.5" fontWeight="800">Vínculo Automático</text>
+      <text x="290" y="195" fill="#475569" fontSize="8.2">Sin doble registro para el cliente.</text>
+      <text x="290" y="208" fill="#475569" fontSize="8.2">Se habilita desde compras y citas</text>
+      <text x="290" y="221" fill="#475569" fontSize="8.2">para ver su saldo al instante.</text>
+      <rect x="290" y="232" width="135" height="16" rx="3.5" fill="#FFFFFF" stroke="#B0DCDC" />
+      <text x="296" y="243.5" fill="#0B3C3D" fontSize="7.8" fontWeight="800">🔒 Fidelidad duradera y real</text>
+    </svg>
+  );
+}
+
+function CerebroIaOrchestratorSvg() {
+  return (
+    <svg viewBox="0 0 520 290" width="100%" height="100%" style={{ maxHeight: '270px', display: 'block' }} aria-label="Asistente de Inteligencia Artificial para Ventas y Citas">
+      <defs>
+        <linearGradient id="aiBgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#002526" />
+          <stop offset="100%" stopColor="#0B3C3D" />
+        </linearGradient>
+      </defs>
+
+      <rect x="15" y="12" width="490" height="266" rx="14" fill="url(#aiBgGrad)" stroke="#134B4C" strokeWidth="2" />
+
+      {/* Encabezado */}
+      <text x="32" y="36" fill="#34D399" fontSize="10.5" fontWeight="800">🤖 MOTOR DE IA 24/7 • POTENCIA CON TU MODELO FAVORITO</text>
+      <text x="382" y="36" fill="#B0DCDC" fontSize="9" fontWeight="700">BYOK Integrado</text>
+
+      {/* Hub Central de IA */}
+      <rect x="175" y="52" width="170" height="60" rx="10" fill="#0B3C3D" stroke="#34D399" strokeWidth="1.5" />
+      <text x="260" y="73" fill="#FFFFFF" fontSize="10.5" fontWeight="900" textAnchor="middle">TU IA FAVORITA</text>
+      <text x="260" y="87" fill="#A7F3D0" fontSize="8" fontWeight="700" textAnchor="middle">Gemini • OpenAI • Claude</text>
+      <text x="260" y="100" fill="#B0DCDC" fontSize="7.8" textAnchor="middle">Prompts compactos • Ahorro de tokens</text>
+
+      {/* 3 Ramas de Ejecución */}
+      {/* 1. Vende */}
+      <rect x="28" y="124" width="144" height="72" rx="9" fill="rgba(255,255,255,0.06)" stroke="#34D399" strokeWidth="1" />
+      <text x="38" y="144" fill="#34D399" fontSize="10" fontWeight="900">1. Vende 🛒</text>
+      <text x="38" y="160" fill="#E2E8F0" fontSize="8">Revisa stock en 0s,</text>
+      <text x="38" y="173" fill="#E2E8F0" fontSize="8">asesora catálogo y</text>
+      <text x="38" y="186" fill="#E2E8F0" fontSize="8">genera links de pago.</text>
+
+      {/* 2. Agenda */}
+      <rect x="188" y="124" width="144" height="72" rx="9" fill="rgba(255,255,255,0.06)" stroke="#34D399" strokeWidth="1" />
+      <text x="198" y="144" fill="#34D399" fontSize="10" fontWeight="900">2. Agenda 📅</text>
+      <text x="198" y="160" fill="#E2E8F0" fontSize="8">Consulta agenda en vivo,</text>
+      <text x="198" y="173" fill="#E2E8F0" fontSize="8">asigna especialistas y</text>
+      <text x="198" y="186" fill="#E2E8F0" fontSize="8">confirma reservas.</text>
+
+      {/* 3. Atiende */}
+      <rect x="348" y="124" width="144" height="72" rx="9" fill="rgba(255,255,255,0.06)" stroke="#34D399" strokeWidth="1" />
+      <text x="358" y="144" fill="#34D399" fontSize="10" fontWeight="900">3. Atiende 💬</text>
+      <text x="358" y="160" fill="#E2E8F0" fontSize="8">Transcribe audios de voz,</text>
+      <text x="358" y="173" fill="#E2E8F0" fontSize="8">comprende modismos y</text>
+      <text x="358" y="186" fill="#E2E8F0" fontSize="8">atiende a toda hora.</text>
+
+      {/* Barra de Filtro Humano / Handoff */}
+      <rect x="28" y="208" width="464" height="52" rx="9" fill="#B51C12" stroke="#FFC7C4" strokeWidth="1" />
+      <text x="42" y="228" fill="#FFFFFF" fontSize="10" fontWeight="900">🛡️ DERIVACIÓN HUMANA INTELIGENTE (HANDOFF)</text>
+      <text x="42" y="244" fill="#FFC7C4" fontSize="8.2">Solo te refiere los mensajes que requieren tu atención personal para que nunca pierdas tiempo.</text>
+    </svg>
+  );
 }
 
 export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashboard }: LandingPageProps) {
@@ -79,11 +363,54 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
   const [isMobile, setIsMobile] = useState<boolean>(false);
 
   useEffect(() => {
-    document.title = 'Betico | Presencia Digital Estratégica, Tienda, Citas y WhatsApp en Costa Rica';
+    document.title = 'Betico | Software de Ventas, Captación, Fidelización e IA para WhatsApp en Costa Rica';
+    
+    // Meta description para motores de búsqueda (SEO)
+    let metaDescription = document.querySelector('meta[name="description"]');
+    if (!metaDescription) {
+      metaDescription = document.createElement('meta');
+      metaDescription.setAttribute('name', 'description');
+      document.head.appendChild(metaDescription);
+    }
+    metaDescription.setAttribute('content', 'Betico cubre los 3 momentos clave de tu venta: prospección con sitio web personalizable, venta con tienda virtual, reservas, pagos con SINPE Móvil y tarjetas, y fidelización con tarjetas de sellos y puntos. Potenciado por tu IA favorita en WhatsApp.');
+
+    // Datos estructurados Schema.org (JSON-LD) para indexación enriquecida
+    const schemaId = 'betico-seo-jsonld';
+    let schemaScript = document.getElementById(schemaId) as HTMLScriptElement | null;
+    if (!schemaScript) {
+      schemaScript = document.createElement('script');
+      schemaScript.id = schemaId;
+      schemaScript.type = 'application/ld+json';
+      document.head.appendChild(schemaScript);
+    }
+    schemaScript.textContent = JSON.stringify({
+      '@context': 'https://schema.org',
+      '@type': 'SoftwareApplication',
+      'name': 'Betico',
+      'applicationCategory': 'BusinessApplication',
+      'operatingSystem': 'Web, WhatsApp, iOS, Android',
+      'description': 'Plataforma comercial para emprendimientos en Costa Rica: sitio web oficial, tienda virtual con pagos SINPE y tarjeta, reservas con complementos, club de fidelización con sellos y puntos, y asistente de IA 24/7 en WhatsApp.',
+      'offers': {
+        '@type': 'Offer',
+        'price': '55000',
+        'priceCurrency': 'CRC',
+        'availability': 'https://schema.org/InStock'
+      },
+      'aggregateRating': {
+        '@type': 'AggregateRating',
+        'ratingValue': '4.9',
+        'reviewCount': '140'
+      }
+    });
+
     const checkMobile = () => setIsMobile(window.innerWidth < 1024);
     checkMobile();
     window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
+    return () => {
+      window.removeEventListener('resize', checkMobile);
+      const s = document.getElementById(schemaId);
+      if (s) s.remove();
+    };
   }, []);
 
   const scrollToSection = (id: string) => {
@@ -312,16 +639,14 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
           {/* Desktop Navigation Links */}
           {!isMobile && (
             <nav style={{ display: 'flex', alignItems: 'center', gap: '18px', fontSize: '0.86rem', fontWeight: '600', color: '#475569' }}>
-              <a onClick={() => scrollToSection('superpoderes')} style={{ color: '#475569', textDecoration: 'none', cursor: 'pointer', transition: 'color 0.2s' }}>5 Superpoderes</a>
-              <a onClick={() => scrollToSection('giros-negocio')} style={{ color: '#0b3c3d', textDecoration: 'none', cursor: 'pointer', fontWeight: '700' }}>Giros de Negocio</a>
+              <a onClick={() => scrollToSection('tres-momentos')} style={{ color: '#0b3c3d', textDecoration: 'none', cursor: 'pointer', fontWeight: '800' }}>3 Momentos de Venta</a>
+              <a onClick={() => scrollToSection('cerebro-ia')} style={{ color: '#b51c12', textDecoration: 'none', cursor: 'pointer', fontWeight: '800' }}>Asistente IA</a>
+              <a onClick={() => scrollToSection('giros-negocio')} style={{ color: '#475569', textDecoration: 'none', cursor: 'pointer' }}>Giros de Negocio</a>
               <a onClick={() => scrollToSection('comparativa')} style={{ color: '#475569', textDecoration: 'none', cursor: 'pointer' }}>Comparativa</a>
-              <a onClick={() => scrollToSection('pagos-tarjeta')} style={{ color: '#b51c12', textDecoration: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: '700' }}>
-                <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#e0352b' }} />
-                Pagos Tarjeta
+              <a onClick={() => scrollToSection('pagos-tarjeta')} style={{ color: '#475569', textDecoration: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#b51c12' }} />
+                Pagos Tarjeta y SINPE
               </a>
-              <a onClick={() => scrollToSection('sitio-web')} style={{ color: '#475569', textDecoration: 'none', cursor: 'pointer' }}>Sitio Web</a>
-              <a onClick={() => scrollToSection('motor-ia')} style={{ color: '#475569', textDecoration: 'none', cursor: 'pointer' }}>Tu Modelo IA</a>
-              <a onClick={() => scrollToSection('tienda-citas')} style={{ color: '#475569', textDecoration: 'none', cursor: 'pointer' }}>Tienda y Citas</a>
               <a onClick={() => scrollToSection('calculadora-roi')} style={{ color: '#475569', textDecoration: 'none', cursor: 'pointer' }}>Calculadora ROI</a>
               <a onClick={() => scrollToSection('precios')} style={{ color: '#475569', textDecoration: 'none', cursor: 'pointer' }}>Precios</a>
             </nav>
@@ -437,13 +762,11 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
             fontSize: '0.92rem',
             fontWeight: '600'
           }}>
-            <a onClick={() => scrollToSection('superpoderes')} style={{ color: '#0f172a', padding: '8px 0', borderBottom: '1px solid #f1f5f9' }}>⚡ 5 Superpoderes de Betico</a>
-            <a onClick={() => scrollToSection('giros-negocio')} style={{ color: '#0b3c3d', padding: '8px 0', borderBottom: '1px solid #f1f5f9', fontWeight: 'bold' }}>🎯 Giros de Negocio</a>
+            <a onClick={() => scrollToSection('tres-momentos')} style={{ color: '#0b3c3d', padding: '8px 0', borderBottom: '1px solid #f1f5f9', fontWeight: '800' }}>⭐ Los 3 Momentos de Venta</a>
+            <a onClick={() => scrollToSection('cerebro-ia')} style={{ color: '#b51c12', padding: '8px 0', borderBottom: '1px solid #f1f5f9', fontWeight: '800' }}>🤖 Tu Asistente IA Favorito</a>
+            <a onClick={() => scrollToSection('giros-negocio')} style={{ color: '#0f172a', padding: '8px 0', borderBottom: '1px solid #f1f5f9' }}>🎯 Giros de Negocio</a>
             <a onClick={() => scrollToSection('comparativa')} style={{ color: '#0f172a', padding: '8px 0', borderBottom: '1px solid #f1f5f9' }}>⚖️ Comparativa Estratégica</a>
-            <a onClick={() => scrollToSection('pagos-tarjeta')} style={{ color: '#b51c12', padding: '8px 0', borderBottom: '1px solid #f1f5f9', fontWeight: 'bold' }}>💳 Pagos Tarjeta (Tilopay 3D Secure)</a>
-            <a onClick={() => scrollToSection('sitio-web')} style={{ color: '#0f172a', padding: '8px 0', borderBottom: '1px solid #f1f5f9' }}>🌐 Creador de Sitios Web</a>
-            <a onClick={() => scrollToSection('motor-ia')} style={{ color: '#0f172a', padding: '8px 0', borderBottom: '1px solid #f1f5f9' }}>🤖 Tu Modelo IA Favorito</a>
-            <a onClick={() => scrollToSection('tienda-citas')} style={{ color: '#0f172a', padding: '8px 0', borderBottom: '1px solid #f1f5f9' }}>🛍️ Tienda y Agenda de Citas</a>
+            <a onClick={() => scrollToSection('pagos-tarjeta')} style={{ color: '#0f172a', padding: '8px 0', borderBottom: '1px solid #f1f5f9' }}>💳 Pagos Tarjeta y SINPE</a>
             <a onClick={() => scrollToSection('calculadora-roi')} style={{ color: '#0f172a', padding: '8px 0', borderBottom: '1px solid #f1f5f9' }}>💰 Calculadora de Ahorro</a>
             <a onClick={() => scrollToSection('precios')} style={{ color: '#0f172a', padding: '8px 0', borderBottom: '1px solid #f1f5f9' }}>🏷️ Planes y Precios</a>
             <a onClick={onLoginClick} style={{ color: '#0b3c3d', padding: '8px 0', fontWeight: 'bold' }}>🔑 Iniciar Sesión</a>
@@ -494,7 +817,7 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
                 <span style={{ position: 'absolute', width: '100%', height: '100%', borderRadius: '50%', backgroundColor: '#f04337', opacity: 0.75, animation: 'ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite' }} />
                 <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#b51c12' }} />
               </span>
-              <span>⚡ Nuevo: Pagos con Tarjeta + Verificación de SINPE Móvil + Tu Modelo IA Favorito + Club de Fidelidad</span>
+              <span>⚡ Los 3 Momentos Clave de la Venta + Tu IA Favorita en WhatsApp</span>
             </div>
 
             {/* Hero Headline */}
@@ -505,17 +828,17 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
               lineHeight: 1.15,
               letterSpacing: '-1.5px',
               margin: '0 0 20px 0',
-              maxWidth: '1000px',
+              maxWidth: '1040px',
               marginLeft: 'auto',
               marginRight: 'auto'
             }}>
-              La Presencia Digital Estratégica que{' '}
+              La Herramienta que Cubre los 3 Momentos de tu Venta:{' '}
               <span style={{
                 background: 'linear-gradient(135deg, #0b3c3d 0%, #134b4c 45%, #b51c12 100%)',
                 WebkitBackgroundClip: 'text',
                 WebkitTextFillColor: 'transparent'
               }}>
-                Todo Emprendimiento Necesita
+                Prospección, Venta y Fidelización
               </span>
             </h1>
 
@@ -524,11 +847,11 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
               fontSize: 'clamp(1rem, 2.3vw, 1.25rem)',
               color: '#475569',
               lineHeight: 1.65,
-              maxWidth: '860px',
+              maxWidth: '920px',
               margin: '0 auto 36px auto',
               fontWeight: 400
             }}>
-              Crea tu <strong>Página Web Oficial</strong> en minutos, vende en tu <strong>Tienda Digital</strong> con cobros por <strong>Tarjeta (Visa, Mastercard, AMEX)</strong> y <strong>SINPE Móvil</strong>, llena tu <strong>Agenda de Citas o Canchas Deportivas</strong>, fideliza clientes con <strong>Sellos y Puntos Digitales</strong> y automatiza la atención 24/7 por WhatsApp potenciada por <strong>tu modelo de IA favorito</strong>.
+              Betico es la herramienta que te cubre en 3 momentos importantísimos de la venta: <strong>prospección y captación</strong> con un sitio web personalizable con tu línea y marca; <strong>la venta</strong> con tienda virtual con diferentes formas de pago, reservas con complementos y WhatsApp en tiempo real; y <strong>fidelización</strong> con tarjetas por puntos o sellos para premiar a clientes frecuentes. Además, potencíalo con <strong>tu IA favorita</strong> para vender, agendar y atender automáticamente, refiriendo solo lo necesario.
             </p>
 
             {/* CTA Buttons */}
@@ -731,21 +1054,529 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
             fontWeight: '600'
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <ShieldCheck size={18} color="#0b3c3d" />
-              <span>Pagos con Tarjeta y SINPE Verificados</span>
+              <Compass size={18} color="#0b3c3d" />
+              <span>1. Prospección: Sitio Web con tu Marca</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Building2 size={18} color="#0b3c3d" />
-              <span>Depósito Directo a tu Cuenta Bancaria</span>
+              <ShoppingBag size={18} color="#0b3c3d" />
+              <span>2. Venta: Tienda, Reservas y Pagos Nativos</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Zap size={18} color="#b51c12" />
-              <span>Máximo ahorro de tokens con tu IA favorita</span>
+              <Award size={18} color="#b51c12" />
+              <span>3. Fidelización: Sellos y Puntos Digitales</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <CheckCircle2 size={18} color="#0b3c3d" />
-              <span>Cobra en Tienda, Citas y Canchas</span>
+              <Bot size={18} color="#0b3c3d" />
+              <span>Potenciado con tu Modelo de IA Favorito</span>
             </div>
+          </div>
+        </section>
+
+        {/* ============================================================
+            SECCIÓN ESTRELLA: LOS 3 MOMENTOS CLAVE DE LA VENTA
+        ============================================================ */}
+        <section id="tres-momentos" style={{
+          padding: isMobile ? '60px 16px' : '96px 24px',
+          backgroundColor: '#FAF8F5',
+          borderBottom: '1px solid #e2e8f0',
+          position: 'relative'
+        }}>
+          {/* Anclas de compatibilidad con enlaces anteriores */}
+          <span id="superpoderes" style={{ position: 'absolute', top: 0, left: 0 }} />
+          <span id="sitio-web" style={{ position: 'absolute', top: 0, left: 0 }} />
+          <span id="tienda-citas" style={{ position: 'absolute', top: 0, left: 0 }} />
+          <span id="club-fidelidad" style={{ position: 'absolute', top: 0, left: 0 }} />
+
+          <div style={{ maxWidth: '1280px', margin: '0 auto' }}>
+            
+            {/* Encabezado Principal de los 3 Momentos */}
+            <div style={{ textAlign: 'center', maxWidth: '880px', margin: '0 auto 44px auto' }}>
+              <span style={{
+                fontSize: '0.78rem',
+                fontWeight: '800',
+                textTransform: 'uppercase',
+                letterSpacing: '0.08em',
+                color: '#0b3c3d',
+                backgroundColor: '#eff7f7',
+                padding: '5px 16px',
+                borderRadius: '9999px',
+                border: '1px solid #b0dcdc',
+                display: 'inline-block',
+                marginBottom: '14px'
+              }}>
+                Ciclo Comercial Completo
+              </span>
+              <h2 style={{
+                fontSize: 'clamp(2rem, 4.2vw, 3.1rem)',
+                fontWeight: '900',
+                color: '#0f172a',
+                letterSpacing: '-0.5px',
+                margin: '0 0 16px 0',
+                lineHeight: 1.18
+              }}>
+                Betico te Cubre en los 3 Momentos Cruciales de tu Venta
+              </h2>
+              <p style={{ color: '#64748b', fontSize: '1.05rem', lineHeight: 1.6, margin: 0 }}>
+                Sin herramientas dispersas en dólares ni dolores de cabeza técnicos. Una solución integrada que te acompaña desde el primer clic de un prospecto hasta convertirlo en un cliente frecuente.
+              </p>
+            </div>
+
+            {/* Barra de Proceso Visual / Píldoras de Navegación Rápida */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
+              gap: '14px',
+              marginBottom: '36px'
+            }}>
+              <div style={{
+                backgroundColor: '#ffffff',
+                border: '2px solid #0b3c3d',
+                borderRadius: '16px',
+                padding: '16px 20px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                boxShadow: '0 4px 14px rgba(11, 60, 61, 0.08)'
+              }}>
+                <div style={{
+                  width: '36px', height: '36px', borderRadius: '10px',
+                  backgroundColor: '#0b3c3d', color: '#ffffff',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontWeight: '900', fontSize: '0.95rem'
+                }}>1</div>
+                <div>
+                  <span style={{ fontSize: '0.74rem', textTransform: 'uppercase', fontWeight: '800', color: '#0b3c3d', letterSpacing: '0.06em' }}>Primer Momento</span>
+                  <strong style={{ display: 'block', fontSize: '0.95rem', color: '#0f172a' }}>Prospección y Captación</strong>
+                </div>
+              </div>
+
+              <div style={{
+                backgroundColor: '#ffffff',
+                border: '2px solid #0b3c3d',
+                borderRadius: '16px',
+                padding: '16px 20px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                boxShadow: '0 4px 14px rgba(11, 60, 61, 0.08)'
+              }}>
+                <div style={{
+                  width: '36px', height: '36px', borderRadius: '10px',
+                  backgroundColor: '#0b3c3d', color: '#ffffff',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontWeight: '900', fontSize: '0.95rem'
+                }}>2</div>
+                <div>
+                  <span style={{ fontSize: '0.74rem', textTransform: 'uppercase', fontWeight: '800', color: '#0b3c3d', letterSpacing: '0.06em' }}>Segundo Momento</span>
+                  <strong style={{ display: 'block', fontSize: '0.95rem', color: '#0f172a' }}>La Venta y el Cierre</strong>
+                </div>
+              </div>
+
+              <div style={{
+                backgroundColor: '#ffffff',
+                border: '2px solid #b51c12',
+                borderRadius: '16px',
+                padding: '16px 20px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                boxShadow: '0 4px 14px rgba(181, 28, 18, 0.08)'
+              }}>
+                <div style={{
+                  width: '36px', height: '36px', borderRadius: '10px',
+                  backgroundColor: '#b51c12', color: '#ffffff',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontWeight: '900', fontSize: '0.95rem'
+                }}>3</div>
+                <div>
+                  <span style={{ fontSize: '0.74rem', textTransform: 'uppercase', fontWeight: '800', color: '#b51c12', letterSpacing: '0.06em' }}>Tercer Momento</span>
+                  <strong style={{ display: 'block', fontSize: '0.95rem', color: '#0f172a' }}>Fidelización y Retención</strong>
+                </div>
+              </div>
+            </div>
+
+            {/* LAS 3 TARJETAS MAESTRAS DE LOS MOMENTOS */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+              
+              {/* MOMENTO 1: PROSPECCIÓN Y CAPTACIÓN */}
+              <article style={{
+                backgroundColor: '#ffffff',
+                borderRadius: '24px',
+                border: '1px solid #e2e8f0',
+                boxShadow: '0 10px 30px rgba(0,0,0,0.03)',
+                padding: isMobile ? '24px' : '38px',
+                display: 'grid',
+                gridTemplateColumns: isMobile ? '1fr' : '1.1fr 0.9fr',
+                gap: isMobile ? '28px' : '44px',
+                alignItems: 'center'
+              }}>
+                <div>
+                  <div style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '4px 14px',
+                    borderRadius: '9999px',
+                    backgroundColor: '#eff7f7',
+                    color: '#0b3c3d',
+                    fontSize: '0.76rem',
+                    fontWeight: '800',
+                    border: '1px solid #b0dcdc',
+                    marginBottom: '14px'
+                  }}>
+                    <Target size={14} />
+                    <span>Momento 1 • Prospección y Captación</span>
+                  </div>
+
+                  <h3 style={{ fontSize: 'clamp(1.5rem, 2.8vw, 2.1rem)', fontWeight: '900', color: '#0f172a', margin: '0 0 12px 0', lineHeight: 1.25 }}>
+                    Sitio Web Personalizable con tu Línea y Marca
+                  </h3>
+
+                  <p style={{ color: '#64748b', fontSize: '0.96rem', lineHeight: 1.6, marginBottom: '22px' }}>
+                    Para que no dependas exclusivamente de perfiles de redes sociales ni pagues costosos diseñadores web, Betico te entrega tu sitio web oficial listo para recibir visitantes y convertirlos en prospectos.
+                  </p>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '26px' }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                      <CheckCircle2 size={18} color="#0b3c3d" style={{ flexShrink: 0, marginTop: '2px' }} />
+                      <div style={{ fontSize: '0.88rem', color: '#334155' }}>
+                        <strong style={{ color: '#0f172a' }}>Tu Línea y Marca Propia:</strong> Sube tu logo para fondos claros u oscuros, elige colores corporativos y activa modo dividido o portada cover.
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                      <CheckCircle2 size={18} color="#0b3c3d" style={{ flexShrink: 0, marginTop: '2px' }} />
+                      <div style={{ fontSize: '0.88rem', color: '#334155' }}>
+                        <strong style={{ color: '#0f172a' }}>Enlace Web Oficial:</strong> Tu dirección lista (<span style={{ fontFamily: 'monospace', color: '#0b3c3d', fontWeight: '700' }}>betico.tech/sitio/tu-marca</span>) para colocar en tu biografía de Instagram, TikTok o perfil de Google.
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                      <CheckCircle2 size={18} color="#0b3c3d" style={{ flexShrink: 0, marginTop: '2px' }} />
+                      <div style={{ fontSize: '0.88rem', color: '#334155' }}>
+                        <strong style={{ color: '#0f172a' }}>Cero Gastos de Hosting:</strong> Carga ultrarrápida, certificado de seguridad SSL y 100% responsivo para cualquier celular o computadora.
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '0.78rem', padding: '4px 10px', borderRadius: '6px', backgroundColor: '#f1f5f9', color: '#475569', fontWeight: '700' }}>Logo Adaptable</span>
+                    <span style={{ fontSize: '0.78rem', padding: '4px 10px', borderRadius: '6px', backgroundColor: '#f1f5f9', color: '#475569', fontWeight: '700' }}>Paleta de Colores</span>
+                    <span style={{ fontSize: '0.78rem', padding: '4px 10px', borderRadius: '6px', backgroundColor: '#eff7f7', color: '#0b3c3d', fontWeight: '700' }}>✓ SSL y Hosting Incluido</span>
+                  </div>
+                </div>
+
+                {/* Gráfico SVG Puro */}
+                <div style={{ display: 'flex', justifyContent: 'center' }}>
+                  <CaptacionWebsiteSvg />
+                </div>
+              </article>
+
+              {/* MOMENTO 2: LA VENTA Y EL CIERRE */}
+              <article style={{
+                backgroundColor: '#ffffff',
+                borderRadius: '24px',
+                border: '1px solid #e2e8f0',
+                boxShadow: '0 10px 30px rgba(0,0,0,0.03)',
+                padding: isMobile ? '24px' : '38px',
+                display: 'grid',
+                gridTemplateColumns: isMobile ? '1fr' : '1.1fr 0.9fr',
+                gap: isMobile ? '28px' : '44px',
+                alignItems: 'center'
+              }}>
+                <div>
+                  <div style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '4px 14px',
+                    borderRadius: '9999px',
+                    backgroundColor: '#eff7f7',
+                    color: '#0b3c3d',
+                    fontSize: '0.76rem',
+                    fontWeight: '800',
+                    border: '1px solid #b0dcdc',
+                    marginBottom: '14px'
+                  }}>
+                    <ShoppingBag size={14} />
+                    <span>Momento 2 • La Venta y el Cierre</span>
+                  </div>
+
+                  <h3 style={{ fontSize: 'clamp(1.5rem, 2.8vw, 2.1rem)', fontWeight: '900', color: '#0f172a', margin: '0 0 12px 0', lineHeight: 1.25 }}>
+                    Tienda Virtual, Reservas con Complementos y WhatsApp en Vivo
+                  </h3>
+
+                  <p style={{ color: '#64748b', fontSize: '0.96rem', lineHeight: 1.6, marginBottom: '22px' }}>
+                    Toma el control total de tu proceso de venta. Ya sea que vendas productos físicos, alimentos, citas de servicios o alquiler de canchas, ofreces múltiples métodos de pago y contacto directo durante todo el pedido.
+                  </p>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '26px' }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                      <CheckCircle2 size={18} color="#0b3c3d" style={{ flexShrink: 0, marginTop: '2px' }} />
+                      <div style={{ fontSize: '0.88rem', color: '#334155' }}>
+                        <strong style={{ color: '#0f172a' }}>Tienda Digital Completa:</strong> Carrito de compras, cupones de descuento, cálculo de entregas por GPS y control de existencias en tiempo real.
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                      <CheckCircle2 size={18} color="#0b3c3d" style={{ flexShrink: 0, marginTop: '2px' }} />
+                      <div style={{ fontSize: '0.88rem', color: '#334155' }}>
+                        <strong style={{ color: '#0f172a' }}>Reservas con Múltiples Complementos:</strong> Agenda servicios con selección de especialista, duración, extras y cobro de señas para garantizar la cita.
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                      <CheckCircle2 size={18} color="#0b3c3d" style={{ flexShrink: 0, marginTop: '2px' }} />
+                      <div style={{ fontSize: '0.88rem', color: '#334155' }}>
+                        <strong style={{ color: '#0f172a' }}>Múltiples Formas de Pago Nativas:</strong> Acepta tarjetas <strong>Visa, Mastercard y AMEX</strong> (3D Secure) y <strong>SINPE Móvil</strong> con confirmación automática o manual.
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                      <CheckCircle2 size={18} color="#0b3c3d" style={{ flexShrink: 0, marginTop: '2px' }} />
+                      <div style={{ fontSize: '0.88rem', color: '#334155' }}>
+                        <strong style={{ color: '#0f172a' }}>WhatsApp en Tiempo Real:</strong> Acompaña a tus clientes con notificaciones de confirmación, estatus de preparación y atención en vivo en cada paso.
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '0.78rem', padding: '4px 10px', borderRadius: '6px', backgroundColor: '#eff7f7', color: '#0b3c3d', fontWeight: '700' }}>Visa • MC • AMEX</span>
+                    <span style={{ fontSize: '0.78rem', padding: '4px 10px', borderRadius: '6px', backgroundColor: '#eff7f7', color: '#0b3c3d', fontWeight: '700' }}>SINPE Móvil Inmediato</span>
+                    <span style={{ fontSize: '0.78rem', padding: '4px 10px', borderRadius: '6px', backgroundColor: '#f1f5f9', color: '#475569', fontWeight: '700' }}>WhatsApp Multicanal</span>
+                  </div>
+                </div>
+
+                {/* Gráfico SVG Puro */}
+                <div style={{ display: 'flex', justifyContent: 'center' }}>
+                  <VentaProcesoPasoSvg />
+                </div>
+              </article>
+
+              {/* MOMENTO 3: FIDELIZACIÓN Y RETENCIÓN */}
+              <article style={{
+                backgroundColor: '#ffffff',
+                borderRadius: '24px',
+                border: '1px solid #e2e8f0',
+                boxShadow: '0 10px 30px rgba(0,0,0,0.03)',
+                padding: isMobile ? '24px' : '38px',
+                display: 'grid',
+                gridTemplateColumns: isMobile ? '1fr' : '1.1fr 0.9fr',
+                gap: isMobile ? '28px' : '44px',
+                alignItems: 'center'
+              }}>
+                <div>
+                  <div style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '4px 14px',
+                    borderRadius: '9999px',
+                    backgroundColor: '#fff1f0',
+                    color: '#b51c12',
+                    fontSize: '0.76rem',
+                    fontWeight: '800',
+                    border: '1px solid #ffc7c4',
+                    marginBottom: '14px'
+                  }}>
+                    <Award size={14} />
+                    <span>Momento 3 • Fidelización y Retención</span>
+                  </div>
+
+                  <h3 style={{ fontSize: 'clamp(1.5rem, 2.8vw, 2.1rem)', fontWeight: '900', color: '#0f172a', margin: '0 0 12px 0', lineHeight: 1.25 }}>
+                    Tarjetas de Fidelización por Puntos o Sellos Digitales
+                  </h3>
+
+                  <p style={{ color: '#64748b', fontSize: '0.96rem', lineHeight: 1.6, marginBottom: '22px' }}>
+                    Tener clientes nuevos es solo la mitad de la meta. Betico te ofrece un sistema de fidelización que te permite registrar a tus clientes más frecuentes y fomentar un vínculo genuino para que vuelvan siempre.
+                  </p>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '26px' }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                      <CheckCircle2 size={18} color="#b51c12" style={{ flexShrink: 0, marginTop: '2px' }} />
+                      <div style={{ fontSize: '0.88rem', color: '#334155' }}>
+                        <strong style={{ color: '#0f172a' }}>Tarjetas de Sellos Móviles:</strong> Sustituye las tarjetas de cartón. Gamifica el consumo recurrente (ej. completa 8 sellos y el 9° es gratis) directamente en el celular.
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                      <CheckCircle2 size={18} color="#b51c12" style={{ flexShrink: 0, marginTop: '2px' }} />
+                      <div style={{ fontSize: '0.88rem', color: '#334155' }}>
+                        <strong style={{ color: '#0f172a' }}>Monedero de Puntos y Cashback:</strong> Devuelve un porcentaje en colones por cada compra que tus clientes pueden canjear en caja o en la tienda.
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                      <CheckCircle2 size={18} color="#b51c12" style={{ flexShrink: 0, marginTop: '2px' }} />
+                      <div style={{ fontSize: '0.88rem', color: '#334155' }}>
+                        <strong style={{ color: '#0f172a' }}>Registro sin Doble Esfuerzo:</strong> Se habilitan automáticamente desde los expedientes de citas y compras para que el cliente acceda con su cédula en <span style={{ fontFamily: 'monospace', color: '#b51c12', fontWeight: '700' }}>betico.tech/fidelidad</span> sin descargar apps.
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '0.78rem', padding: '4px 10px', borderRadius: '6px', backgroundColor: '#fff1f0', color: '#b51c12', fontWeight: '700' }}>Sellos Digitales</span>
+                    <span style={{ fontSize: '0.78rem', padding: '4px 10px', borderRadius: '6px', backgroundColor: '#fff1f0', color: '#b51c12', fontWeight: '700' }}>Puntos en Colones</span>
+                    <span style={{ fontSize: '0.78rem', padding: '4px 10px', borderRadius: '6px', backgroundColor: '#f1f5f9', color: '#475569', fontWeight: '700' }}>Sin Cartones que se Pierdan</span>
+                  </div>
+                </div>
+
+                {/* Gráfico SVG Puro */}
+                <div style={{ display: 'flex', justifyContent: 'center' }}>
+                  <FidelizacionSvg />
+                </div>
+              </article>
+
+            </div>
+
+          </div>
+        </section>
+
+        {/* ============================================================
+            SECCIÓN TRANSVERSAL: POTENCIA CON TU IA FAVORITA
+        ============================================================ */}
+        <section id="cerebro-ia" style={{
+          padding: isMobile ? '60px 16px' : '96px 24px',
+          backgroundColor: '#002526',
+          color: '#ffffff',
+          borderBottom: '1px solid #134b4c',
+          position: 'relative'
+        }}>
+          {/* Ancla de compatibilidad */}
+          <span id="motor-ia" style={{ position: 'absolute', top: 0, left: 0 }} />
+
+          <div style={{ maxWidth: '1280px', margin: '0 auto' }}>
+            
+            <div style={{ textAlign: 'center', maxWidth: '860px', margin: '0 auto 44px auto' }}>
+              <span style={{
+                fontSize: '0.78rem',
+                fontWeight: '800',
+                textTransform: 'uppercase',
+                letterSpacing: '0.08em',
+                color: '#34d399',
+                backgroundColor: 'rgba(52, 211, 153, 0.1)',
+                padding: '5px 16px',
+                borderRadius: '9999px',
+                border: '1px solid rgba(52, 211, 153, 0.3)',
+                display: 'inline-block',
+                marginBottom: '14px'
+              }}>
+                Inteligencia Artificial Operativa 24/7
+              </span>
+              <h2 style={{
+                fontSize: 'clamp(2rem, 4.2vw, 3.1rem)',
+                fontWeight: '900',
+                color: '#ffffff',
+                letterSpacing: '-0.5px',
+                margin: '0 0 16px 0',
+                lineHeight: 1.18
+              }}>
+                Potencia tu Herramienta con tu IA Favorita
+              </h2>
+              <p style={{ color: '#cbd5e1', fontSize: '1.05rem', lineHeight: 1.6, margin: 0 }}>
+                Conecta tu modelo preferido para que <strong style={{ color: '#34d399' }}>venda, agende y atienda a tus clientes de forma automática</strong>, y <strong style={{ color: '#ffc7c4' }}>solo te refiera los mensajes que sean necesarios de tu atención</strong>.
+              </p>
+            </div>
+
+            {/* Layout Gráfico SVG + 4 Pilares de Automatización */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+              gap: isMobile ? '32px' : '48px',
+              alignItems: 'center'
+            }}>
+              {/* Columna SVG */}
+              <div>
+                <CerebroIaOrchestratorSvg />
+              </div>
+
+              {/* Columna de 4 Beneficios de Automatización */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                
+                <div style={{
+                  backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  borderRadius: '16px',
+                  padding: '18px 22px',
+                  display: 'flex',
+                  gap: '14px',
+                  alignItems: 'flex-start'
+                }}>
+                  <div style={{ width: '40px', height: '40px', borderRadius: '10px', backgroundColor: 'rgba(52, 211, 153, 0.15)', color: '#34d399', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <ShoppingBag size={20} />
+                  </div>
+                  <div>
+                    <h4 style={{ margin: '0 0 4px 0', fontSize: '1.02rem', fontWeight: '800', color: '#ffffff' }}>
+                      1. Vende en Automático
+                    </h4>
+                    <p style={{ margin: 0, fontSize: '0.86rem', color: '#94a3b8', lineHeight: 1.5 }}>
+                      Consulta tu stock en 0 segundos, recomienda productos con variantes y envía el enlace de pago directo por WhatsApp.
+                    </p>
+                  </div>
+                </div>
+
+                <div style={{
+                  backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  borderRadius: '16px',
+                  padding: '18px 22px',
+                  display: 'flex',
+                  gap: '14px',
+                  alignItems: 'flex-start'
+                }}>
+                  <div style={{ width: '40px', height: '40px', borderRadius: '10px', backgroundColor: 'rgba(52, 211, 153, 0.15)', color: '#34d399', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <Calendar size={20} />
+                  </div>
+                  <div>
+                    <h4 style={{ margin: '0 0 4px 0', fontSize: '1.02rem', fontWeight: '800', color: '#ffffff' }}>
+                      2. Agenda Citas y Canchas en Vivo
+                    </h4>
+                    <p style={{ margin: 0, fontSize: '0.86rem', color: '#94a3b8', lineHeight: 1.5 }}>
+                      Verifica horarios en tiempo real, asigna al especialista o cancha correspondiente y registra la reserva sin cruce de agendas.
+                    </p>
+                  </div>
+                </div>
+
+                <div style={{
+                  backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  borderRadius: '16px',
+                  padding: '18px 22px',
+                  display: 'flex',
+                  gap: '14px',
+                  alignItems: 'flex-start'
+                }}>
+                  <div style={{ width: '40px', height: '40px', borderRadius: '10px', backgroundColor: 'rgba(52, 211, 153, 0.15)', color: '#34d399', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <MessageSquare size={20} />
+                  </div>
+                  <div>
+                    <h4 style={{ margin: '0 0 4px 0', fontSize: '1.02rem', fontWeight: '800', color: '#ffffff' }}>
+                      3. Atiende 24/7 y Entiende Notas de Voz
+                    </h4>
+                    <p style={{ margin: 0, fontSize: '0.86rem', color: '#94a3b8', lineHeight: 1.5 }}>
+                      Transcribe audios de voz al instante, comprende expresiones costarricenses y resuelve dudas frecuentes a cualquier hora de la noche.
+                    </p>
+                  </div>
+                </div>
+
+                <div style={{
+                  backgroundColor: 'rgba(181, 28, 18, 0.18)',
+                  border: '1px solid rgba(255, 199, 196, 0.3)',
+                  borderRadius: '16px',
+                  padding: '18px 22px',
+                  display: 'flex',
+                  gap: '14px',
+                  alignItems: 'flex-start'
+                }}>
+                  <div style={{ width: '40px', height: '40px', borderRadius: '10px', backgroundColor: '#b51c12', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <ShieldCheck size={20} />
+                  </div>
+                  <div>
+                    <h4 style={{ margin: '0 0 4px 0', fontSize: '1.02rem', fontWeight: '800', color: '#ffffff' }}>
+                      4. Derivación Humana Inteligente (Handoff)
+                    </h4>
+                    <p style={{ margin: 0, fontSize: '0.86rem', color: '#ffc7c4', lineHeight: 1.5 }}>
+                      Si el cliente pide un asesor o requiere atención especializada, la IA transfiere el chat a tu WhatsApp para que intervengas con un toque.
+                    </p>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
           </div>
         </section>
 
@@ -1189,225 +2020,7 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
           </div>
         </section>
 
-        {/* ------------------------------------------------------------
-            3. LOS 5 PILARES FUNDAMENTALES (SUPERPODERES)
-        ------------------------------------------------------------ */}
-        <section id="superpoderes" style={{ padding: isMobile ? '60px 16px' : '100px 24px', backgroundColor: '#FAF8F5' }}>
-          <div style={{ maxWidth: '1280px', margin: '0 auto' }}>
-            
-            <div style={{ textAlign: 'center', maxWidth: '750px', margin: '0 auto 60px auto' }}>
-              <span style={{ fontSize: '0.78rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#b51c12', backgroundColor: '#fff1f0', padding: '4px 14px', borderRadius: '9999px', border: '1px solid #ffc7c4', display: 'inline-block', marginBottom: '12px' }}>
-                Plataforma Todo en Uno
-              </span>
-              <h2 style={{ fontSize: 'clamp(1.9rem, 4vw, 3rem)', fontWeight: '900', color: '#0f172a', letterSpacing: '-0.5px', margin: '0 0 16px 0' }}>
-                Los 5 Pilares Fundamentales de Betico
-              </h2>
-              <p style={{ color: '#64748b', fontSize: '1.05rem', lineHeight: 1.6, margin: 0 }}>
-                Todo lo que tu negocio necesita para operar, vender y fidelizar clientes sin pagar múltiples herramientas separadas.
-              </p>
-            </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', gap: '30px' }}>
-              
-              {/* Pilar 1: Creador de Sitios Web */}
-              <div id="sitio-web" style={{ backgroundColor: '#ffffff', borderRadius: '20px', padding: isMobile ? '24px' : '32px', border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.03)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                <div>
-                  <div style={{ width: '48px', height: '48px', borderRadius: '12px', backgroundColor: '#eff7f7', color: '#0b3c3d', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '20px' }}>
-                    <Globe size={26} />
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.78rem', fontWeight: '800', textTransform: 'uppercase', color: '#0b3c3d', marginBottom: '8px' }}>
-                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#0b3c3d' }} />
-                    Pilar 1
-                  </div>
-                  <h3 style={{ fontSize: '1.45rem', fontWeight: '800', color: '#0f172a', margin: '0 0 12px 0' }}>
-                    Creador de Sitios Web Oficiales
-                  </h3>
-                  <p style={{ color: '#64748b', fontSize: '0.92rem', lineHeight: 1.6, marginBottom: '20px' }}>
-                    Diseña la página web oficial de tu negocio (<span style={{ fontFamily: 'monospace', color: '#0b3c3d', fontWeight: '600' }}>betico.tech/sitio/tu-marca</span>) en minutos. Elige estilo dividido o con imagen cover, sube tu logo para fondos claros y oscuros, define colores y activa los botones directos a tienda y reservas.
-                  </p>
-                  <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 24px 0', display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.85rem', color: '#334155' }}>
-                    <li style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-                      <CheckCircle2 size={16} color="#0b3c3d" style={{ flexShrink: 0, marginTop: '2px' }} />
-                      <span>Enlace web oficial listo para poner en tu biografía de Instagram o TikTok.</span>
-                    </li>
-                    <li style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-                      <CheckCircle2 size={16} color="#0b3c3d" style={{ flexShrink: 0, marginTop: '2px' }} />
-                      <span>Logo adaptable automático para fondos claros y footer oscuro.</span>
-                    </li>
-                    <li style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-                      <CheckCircle2 size={16} color="#0b3c3d" style={{ flexShrink: 0, marginTop: '2px' }} />
-                      <span>Control de visibilidad de secciones (Sobre Nosotros, Servicios, Reseñas).</span>
-                    </li>
-                  </ul>
-                </div>
-                <div style={{ paddingTop: '16px', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem' }}>
-                  <span style={{ color: '#64748b' }}>Hosting y Certificado SSL Incluido</span>
-                  <span style={{ color: '#0b3c3d', fontWeight: '700' }}>100% Responsivo</span>
-                </div>
-              </div>
-
-              {/* Pilar 2: Potencia tu Modelo de IA Favorito */}
-              <div id="motor-ia" style={{ backgroundColor: '#ffffff', borderRadius: '20px', padding: isMobile ? '24px' : '32px', border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.03)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                <div>
-                  <div style={{ width: '48px', height: '48px', borderRadius: '12px', backgroundColor: '#fff1f0', color: '#b51c12', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '20px' }}>
-                    <Bot size={26} />
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.78rem', fontWeight: '800', textTransform: 'uppercase', color: '#b51c12', marginBottom: '8px' }}>
-                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#b51c12' }} />
-                    Pilar 2
-                  </div>
-                  <h3 style={{ fontSize: '1.45rem', fontWeight: '800', color: '#0f172a', margin: '0 0 12px 0' }}>
-                    Potencia tu Modelo de IA Favorito
-                  </h3>
-                  <p style={{ color: '#64748b', fontSize: '0.92rem', lineHeight: 1.6, marginBottom: '20px' }}>
-                    <strong>Máximo Rendimiento de Tokens:</strong> Conecta tu clave de API de <strong>Google Gemini, OpenAI o Claude</strong>. Betico estructura la información con ingeniería de prompts optimizada para consumir la menor cantidad de tokens posible, dándote una utilidad comercial extraordinaria al menor costo operativo.
-                  </p>
-                  <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 24px 0', display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.85rem', color: '#334155' }}>
-                    <li style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-                      <CheckCircle2 size={16} color="#b51c12" style={{ flexShrink: 0, marginTop: '2px' }} />
-                      <span>Conexión directa con Google Gemini, OpenAI (ChatGPT) y Anthropic Claude.</span>
-                    </li>
-                    <li style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-                      <CheckCircle2 size={16} color="#b51c12" style={{ flexShrink: 0, marginTop: '2px' }} />
-                      <span>Prompts ultracompactos que maximizan la utilidad de cada token y evitan gastos innecesarios.</span>
-                    </li>
-                    <li style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-                      <CheckCircle2 size={16} color="#b51c12" style={{ flexShrink: 0, marginTop: '2px' }} />
-                      <span>Entiende notas de voz de WhatsApp y modismos costarricenses de forma natural.</span>
-                    </li>
-                  </ul>
-                </div>
-                <div style={{ paddingTop: '16px', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem' }}>
-                  <span style={{ color: '#64748b' }}>Gemini • OpenAI • Claude</span>
-                  <span style={{ color: '#b51c12', fontWeight: '700' }}>Tokens Optimizados</span>
-                </div>
-              </div>
-
-              {/* Pilar 3: Tienda Digital y Pasarela Multicanal */}
-              <div id="tienda-citas" style={{ backgroundColor: '#ffffff', borderRadius: '20px', padding: isMobile ? '24px' : '32px', border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.03)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                <div>
-                  <div style={{ width: '48px', height: '48px', borderRadius: '12px', backgroundColor: '#eff7f7', color: '#0b3c3d', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '20px' }}>
-                    <ShoppingBag size={26} />
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.78rem', fontWeight: '800', textTransform: 'uppercase', color: '#0b3c3d', marginBottom: '8px' }}>
-                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#0b3c3d' }} />
-                    Pilar 3
-                  </div>
-                  <h3 style={{ fontSize: '1.45rem', fontWeight: '800', color: '#0f172a', margin: '0 0 12px 0' }}>
-                    Tienda Digital y Pasarela Multicanal
-                  </h3>
-                  <p style={{ color: '#64748b', fontSize: '0.92rem', lineHeight: 1.6, marginBottom: '20px' }}>
-                    Catálogo interactivo con carrito de compras, cobro en línea con <strong>Tarjetas de Crédito y Débito</strong> (Visa, Mastercard, AMEX), verificación de <strong>SINPE Móvil</strong> (automático o manual) y gestión de envíos express por GPS.
-                  </p>
-                  <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 24px 0', display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.85rem', color: '#334155' }}>
-                    <li style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-                      <CheckCircle2 size={16} color="#0b3c3d" style={{ flexShrink: 0, marginTop: '2px' }} />
-                      <span>Acepta pagos con Tarjetas de Crédito y Débito (Visa, Mastercard, AMEX).</span>
-                    </li>
-                    <li style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-                      <CheckCircle2 size={16} color="#0b3c3d" style={{ flexShrink: 0, marginTop: '2px' }} />
-                      <span>Verificación de SINPE Móvil: automática con confirmación bancaria o manual desde tu panel.</span>
-                    </li>
-                    <li style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-                      <CheckCircle2 size={16} color="#0b3c3d" style={{ flexShrink: 0, marginTop: '2px' }} />
-                      <span>Pantalla de Cocina (KDS), portal de repartidores y descuento de stock en tiempo real.</span>
-                    </li>
-                  </ul>
-                </div>
-                <div style={{ paddingTop: '16px', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem' }}>
-                  <span style={{ color: '#64748b' }}>Checkout Todo en Uno</span>
-                  <span style={{ color: '#0b3c3d', fontWeight: '700' }}>Visa • MC • AMEX • SINPE</span>
-                </div>
-              </div>
-
-              {/* Pilar 4: Agenda de Citas y Reservas 24/7 */}
-              <div style={{ backgroundColor: '#ffffff', borderRadius: '20px', padding: isMobile ? '24px' : '32px', border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.03)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                <div>
-                  <div style={{ width: '48px', height: '48px', borderRadius: '12px', backgroundColor: '#f1f5f9', color: '#334155', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '20px' }}>
-                    <Calendar size={26} />
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.78rem', fontWeight: '800', textTransform: 'uppercase', color: '#334155', marginBottom: '8px' }}>
-                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#334155' }} />
-                    Pilar 4
-                  </div>
-                  <h3 style={{ fontSize: '1.45rem', fontWeight: '800', color: '#0f172a', margin: '0 0 12px 0' }}>
-                    Agenda de Citas y Reservas 24/7
-                  </h3>
-                  <p style={{ color: '#64748b', fontSize: '0.92rem', lineHeight: 1.6, marginBottom: '20px' }}>
-                    Permite a tus clientes agendar citas por WhatsApp o desde tu portal web de reservas, con opción de cobro en línea con tarjeta o SINPE. Asignación automática por especialista o colaborador, control de horarios y recordatorios automáticos para eliminar inasistencias.
-                  </p>
-                  <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 24px 0', display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.85rem', color: '#334155' }}>
-                    <li style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-                      <CheckCircle2 size={16} color="#0b3c3d" style={{ flexShrink: 0, marginTop: '2px' }} />
-                      <span>Recordatorios automáticos por WhatsApp 24h y 2h antes de la cita.</span>
-                    </li>
-                    <li style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-                      <CheckCircle2 size={16} color="#0b3c3d" style={{ flexShrink: 0, marginTop: '2px' }} />
-                      <span>Portal exclusivo para especialistas con su propia agenda de trabajo.</span>
-                    </li>
-                    <li style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-                      <CheckCircle2 size={16} color="#0b3c3d" style={{ flexShrink: 0, marginTop: '2px' }} />
-                      <span>Cobro de anticipos o señas mediante SINPE Móvil o Tarjeta.</span>
-                    </li>
-                  </ul>
-                </div>
-                <div style={{ paddingTop: '16px', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem' }}>
-                  <span style={{ color: '#64748b' }}>Recordatorios WhatsApp</span>
-                  <span style={{ color: '#0f172a', fontWeight: '700' }}>0% Citas Olvidadas</span>
-                </div>
-              </div>
-
-              {/* Pilar 5 (NUEVO): Club de Fidelización y Sellos Digitales */}
-              <div id="club-fidelidad" style={{
-                backgroundColor: '#ffffff',
-                borderRadius: '20px',
-                padding: isMobile ? '24px' : '32px',
-                border: '1px solid #e2e8f0',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'space-between',
-                gridColumn: isMobile ? 'auto' : 'span 2'
-              }}>
-                <div>
-                  <div style={{ width: '48px', height: '48px', borderRadius: '12px', backgroundColor: '#fff1f0', color: '#b51c12', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '20px' }}>
-                    <Award size={26} />
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.78rem', fontWeight: '800', textTransform: 'uppercase', color: '#b51c12', marginBottom: '8px' }}>
-                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#b51c12' }} />
-                    Pilar 5
-                  </div>
-                  <h3 style={{ fontSize: '1.45rem', fontWeight: '800', color: '#0f172a', margin: '0 0 12px 0' }}>
-                    Club de Fidelización y Tarjetas de Sellos Digitales
-                  </h3>
-                  <p style={{ color: '#64748b', fontSize: '0.92rem', lineHeight: 1.6, marginBottom: '20px' }}>
-                    Sustituye para siempre las tarjetas de cartón de sellos que tus clientes pierden en la billetera. Crea programas de sellos digitales (ej. décimo café o corte gratis), monederos de puntos por cada compra y cupones de descuento interactivos con código QR.
-                  </p>
-                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '16px', marginBottom: '24px' }}>
-                    <div style={{ backgroundColor: '#FAF8F5', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                      <strong style={{ display: 'block', fontSize: '0.88rem', color: '#0f172a', marginBottom: '4px' }}>Tarjetas de Sellos Móviles</strong>
-                      <span style={{ fontSize: '0.8rem', color: '#64748b' }}>Gamifica la fidelidad: tus clientes acumulan sellos por cada consumo y desbloquean premios automáticos.</span>
-                    </div>
-                    <div style={{ backgroundColor: '#FAF8F5', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                      <strong style={{ display: 'block', fontSize: '0.88rem', color: '#0f172a', marginBottom: '4px' }}>Monedero de Puntos en Colones</strong>
-                      <span style={{ fontSize: '0.8rem', color: '#64748b' }}>Retorna un porcentaje de cashback en puntos que tus clientes pueden usar como dinero en sus próximas compras.</span>
-                    </div>
-                    <div style={{ backgroundColor: '#FAF8F5', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                      <strong style={{ display: 'block', fontSize: '0.88rem', color: '#0f172a', marginBottom: '4px' }}>Billetera Digital en betico.tech/fidelidad</strong>
-                      <span style={{ fontSize: '0.8rem', color: '#64748b' }}>El cliente ingresa con su número de cédula y consulta al instante todas sus tarjetas, puntos y cupones QR.</span>
-                    </div>
-                  </div>
-                </div>
-                <div style={{ paddingTop: '16px', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem' }}>
-                  <span style={{ color: '#64748b' }}>Consulta directa por WhatsApp o Billetera Web</span>
-                  <span style={{ color: '#b51c12', fontWeight: '700' }}>+45% Recompra Garantizada</span>
-                </div>
-              </div>
-
-            </div>
-
-          </div>
-        </section>
 
         {/* ------------------------------------------------------------
             4. PASARELA DE TARJETAS Y RESPALDO BANCARIO 3D SECURE
