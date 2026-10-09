@@ -94,8 +94,8 @@ export async function getSeoMetadata(pathname: string, baseUrl: string): Promise
     // 1. Root / Landing Page (Betico.tech)
     if (cleanPath === '/' || cleanPath === '' || cleanPath === '/index.html') {
       metadata = {
-        title: 'Betico | Software de Citas, Tienda SINPE Móvil y Chatbot WhatsApp en Costa Rica',
-        description: 'Automatiza tu negocio en Costa Rica con Betico: agendamiento de citas, catálogo con carrito SINPE Móvil, facturación electrónica y atención al cliente 24/7 con Inteligencia Artificial.',
+        title: 'Betico | Los 3 Momentos de la Venta: Prospección, Venta y Fidelización con IA',
+        description: 'Herramienta integral de ventas en Costa Rica: sitio web personalizable para prospección, tienda virtual con SINPE Móvil y tarjetas para el cierre, y tarjetas de fidelización por sellos o puntos, todo potenciado con tu IA favorita en WhatsApp.',
         image: `${baseUrl}/logo.png`,
         canonicalUrl: `${baseUrl}/`,
         type: 'website',
@@ -108,12 +108,11 @@ export async function getSeoMetadata(pathname: string, baseUrl: string): Promise
           'applicationCategory': 'BusinessApplication',
           'url': baseUrl,
           'image': `${baseUrl}/logo.png`,
-          'description': 'Plataforma integral para pymes y empresas en Costa Rica: agendamiento inteligente, tienda virtual con pagos SINPE Móvil y asistente virtual en WhatsApp.',
+          'description': 'Plataforma integral de ventas que cubre los 3 momentos clave: prospección (sitio web oficial), venta (tienda virtual, reservas y pagos nativos) y fidelización (tarjetas de puntos y sellos móviles), potenciada con inteligencia artificial en WhatsApp.',
           'offers': {
-            '@type': 'AggregateOffer',
-            'priceCurrency': 'USD',
-            'lowPrice': '29',
-            'highPrice': '99'
+            '@type': 'Offer',
+            'price': '55000',
+            'priceCurrency': 'CRC'
           }
         }
       };

@@ -10801,36 +10801,6 @@ async function getAllChatSessions(tenantId) {
   });
   return map;
 }
-async function setChatVoicePreference(tenantId, remoteJid, allowsVoice) {
-  await query(`
-    ALTER TABLE chat_sessions 
-    ADD COLUMN IF NOT EXISTS allows_voice_notes BOOLEAN DEFAULT false,
-    ADD COLUMN IF NOT EXISTS voice_preference_asked BOOLEAN DEFAULT false;
-  `).catch(() => {
-  });
-  await query(`
-    INSERT INTO chat_sessions (tenant_id, remote_jid, allows_voice_notes, voice_preference_asked, updated_at)
-    VALUES ($1, $2, $3, true, CURRENT_TIMESTAMP)
-    ON CONFLICT (tenant_id, remote_jid) DO UPDATE SET
-      allows_voice_notes = EXCLUDED.allows_voice_notes,
-      voice_preference_asked = true,
-      updated_at = CURRENT_TIMESTAMP
-  `, [tenantId, remoteJid, allowsVoice]);
-}
-async function setVoicePreferenceAsked(tenantId, remoteJid, asked = true) {
-  await query(`
-    ALTER TABLE chat_sessions 
-    ADD COLUMN IF NOT EXISTS voice_preference_asked BOOLEAN DEFAULT false;
-  `).catch(() => {
-  });
-  await query(`
-    INSERT INTO chat_sessions (tenant_id, remote_jid, voice_preference_asked, updated_at)
-    VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
-    ON CONFLICT (tenant_id, remote_jid) DO UPDATE SET
-      voice_preference_asked = EXCLUDED.voice_preference_asked,
-      updated_at = CURRENT_TIMESTAMP
-  `, [tenantId, remoteJid, asked]);
-}
 async function setChatHumanMode(tenantId, remoteJid, isHumanMode, hoursUntilExpire = 4) {
   const safeHours = Math.max(1, Math.min(168, Number(hoursUntilExpire) || 4));
   const intervalStr = `${safeHours} hours`;
@@ -11443,87 +11413,6 @@ async function createOrderFromWhatsApp(tenantId, orderData) {
 // src/server/services/message-queue.service.ts
 init_evolution();
 
-// src/server/services/kokoro-tts.service.ts
-var KOKORO_URL = process.env.KOKORO_URL || "http://beticoia_kokoro:80";
-var KOKORO_API_KEY = process.env.KOKORO_API_KEY || "0wluti7ql4met803knws0rbspo502cxz";
-function sanitizeTextForSpeech(rawText) {
-  if (!rawText) return "";
-  let text = rawText;
-  text = text.replace(/<<<[A-Z_]+:\s*\{.*?\}>>>/gs, "");
-  text = text.replace(/\*([^*]+)\*/g, "$1");
-  text = text.replace(/_([^_]+)_/g, "$1");
-  text = text.replace(/~([^~]+)~/g, "$1");
-  text = text.replace(/`([^`]+)`/g, "$1");
-  text = text.replace(/https?:\/\/\S+/gi, "en el enlace que te adjunto");
-  text = text.replace(/[👉📍📅⏰🚗✨👤📝💳✅❌🔴🟢⚡💬🛍️🛒]/g, " ");
-  text = text.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, "");
-  text = text.replace(/₡\s*([0-9]+(?:[\.,][0-9]+)?)/g, "$1 colones");
-  text = text.replace(/\$\s*([0-9]+(?:[\.,][0-9]+)?)/g, "$1 d\xF3lares");
-  text = text.replace(/\s+/g, " ").trim();
-  text = text.replace(/\s+([.,;:!?])/g, "$1");
-  if (text.length > 450) {
-    const truncated = text.substring(0, 450);
-    const lastPeriod = truncated.lastIndexOf(".");
-    if (lastPeriod > 200) {
-      text = truncated.substring(0, lastPeriod + 1);
-    } else {
-      text = truncated + "...";
-    }
-  }
-  return text;
-}
-async function generateSpeechWithKokoro(text, options = {}) {
-  const cleanText = sanitizeTextForSpeech(text);
-  if (!cleanText || cleanText.trim().length === 0) {
-    return { success: false, error: "Texto vac\xEDo para sintetizar voz" };
-  }
-  const voice = options.voice || "ef_dora";
-  const speed = Math.min(1.3, Math.max(0.7, options.speed ?? 1));
-  const format = options.format || "mp3";
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 45e3);
-    const response = await fetch(`${KOKORO_URL}/api/v1/audio/speech`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${KOKORO_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: "model",
-        input: cleanText,
-        voice,
-        response_format: format,
-        speed
-      }),
-      signal: controller.signal
-    });
-    clearTimeout(timeout);
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error(`[KokoroTTS] Error response from Kokoro (${response.status}):`, errText);
-      return { success: false, error: `Kokoro API error ${response.status}: ${errText}` };
-    }
-    const arrayBuffer = await response.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    const base64 = buffer.toString("base64");
-    const mimeType = format === "mp3" ? "audio/mpeg" : "audio/wav";
-    console.log(`[KokoroTTS] Generated ${buffer.length} bytes of speech for voice "${voice}"`);
-    return {
-      success: true,
-      buffer,
-      base64,
-      mimeType
-    };
-  } catch (error) {
-    console.error("[KokoroTTS] Synthesis request failed:", error.message || error);
-    return {
-      success: false,
-      error: error.message || "Error al conectar con el servidor Kokoro TTS"
-    };
-  }
-}
-
 // src/server/db/ai-command-logs.repo.ts
 init_pool();
 async function logAICommand(tenantId, remoteJid, commandType, payload, status, errorMessage) {
@@ -11630,57 +11519,6 @@ async function processSingleMessage(msg) {
       fullUserMessage += "\n" + additionalMessages.join("\n");
       console.log(`[Queue] Debounced ${additionalMessages.length} burst messages for ${msg.pushName}`);
     }
-    const lowerMsg = fullUserMessage.toLowerCase();
-    const wantsTextKeywords = [
-      "por texto",
-      "prefiero texto",
-      "escr\xEDbemelo",
-      "escribemelo",
-      "por escrito",
-      "no me mandes audio",
-      "no me mandes audios",
-      "no mandes audio",
-      "no mandes audios",
-      "no audios",
-      "no puedo escuchar",
-      "solo texto",
-      "en texto"
-    ];
-    const wantsAudioKeywords = [
-      "m\xE1ndame un audio",
-      "mandame un audio",
-      "nota de voz",
-      "por nota de voz",
-      "por audio",
-      "prefiero audio",
-      "prefiero audios",
-      "en audio",
-      "en nota de voz",
-      "m\xE1ndame audio",
-      "mandame audio",
-      "env\xEDame un audio",
-      "enviame un audio",
-      "me puedes mandar un audio",
-      "me puedes enviar un audio",
-      "responder por audio",
-      "mandame notas de voz",
-      "m\xE1ndame notas de voz",
-      "prefiero notas de voz",
-      "notas de voz"
-    ];
-    let allowsVoiceNotes = Boolean(session?.allowsVoiceNotes);
-    let voicePreferenceAsked = Boolean(session?.voicePreferenceAsked);
-    if (wantsTextKeywords.some((kw) => lowerMsg.includes(kw))) {
-      allowsVoiceNotes = false;
-      voicePreferenceAsked = true;
-      await setChatVoicePreference(msg.tenantId, msg.remoteJid, false);
-      console.log(`[Queue] Chat ${msg.remoteJid} opted OUT of voice notes.`);
-    } else if (wantsAudioKeywords.some((kw) => lowerMsg.includes(kw))) {
-      allowsVoiceNotes = true;
-      voicePreferenceAsked = true;
-      await setChatVoicePreference(msg.tenantId, msg.remoteJid, true);
-      console.log(`[Queue] Chat ${msg.remoteJid} opted IN to voice notes.`);
-    }
     const { messages: history, isWithin2Hours, lastInteractionMinutesAgo } = await getChatHistoryForContact(msg.tenantId, msg.remoteJid, 20);
     const aiResult = await processWhatsAppMessageWithAI(
       msg.tenantId,
@@ -11724,13 +11562,6 @@ async function processSingleMessage(msg) {
       return;
     }
     let finalReplyText = aiResult.replyText;
-    const voiceRepliesEnabled = agentConfig?.voiceRepliesEnabled === true;
-    if (msg.isVoiceNote && voiceRepliesEnabled && !voicePreferenceAsked && !allowsVoiceNotes) {
-      if (!finalReplyText.includes("notas de voz") && !finalReplyText.includes("mensaje de texto")) {
-        finalReplyText += "\n\n\u{1F399}\uFE0F _\xBFPrefieres que te responda por notas de voz o por mensaje de texto?_";
-      }
-      await setVoicePreferenceAsked(msg.tenantId, msg.remoteJid, true);
-    }
     if (aiResult.isBookingDetected && aiResult.bookingData) {
       try {
         const bResult = await createBookingFromCommand(msg.tenantId, { ...aiResult.bookingData, customerPhone: aiResult.bookingData.customerPhone || msg.cleanPhone, customerName: aiResult.bookingData.customerName || msg.pushName });
@@ -11873,7 +11704,6 @@ async function processSingleMessage(msg) {
       await logAICommand(msg.tenantId, msg.remoteJid, "loyalty_check", aiResult.loyaltyCheckData, "success");
     }
     let sendRes;
-    let sentAsAudio = false;
     if (aiResult.isMediaDetected && aiResult.mediaData?.mediaUrl) {
       const captionText = (finalReplyText || aiResult.mediaData.caption || "").slice(0, 1e3);
       sendRes = await sendMedia(
@@ -11886,30 +11716,6 @@ async function processSingleMessage(msg) {
       );
       if (!sendRes?.success && finalReplyText) {
         console.warn(`[Queue] sendMedia failed for ${msg.pushName} (+${msg.cleanPhone}), falling back to text:`, sendRes?.error);
-        sendRes = await sendMessage(msg.instanceName, msg.cleanPhone, finalReplyText);
-      }
-    } else if (voiceRepliesEnabled && allowsVoiceNotes) {
-      try {
-        const chosenVoice = agentConfig?.voiceId || "ef_dora";
-        const chosenSpeed = Number(agentConfig?.voiceSpeed) || 1;
-        console.log(`[Queue] Synthesizing voice note with Kokoro (voice: ${chosenVoice}, speed: ${chosenSpeed}) for ${msg.pushName}...`);
-        const kokoroRes = await generateSpeechWithKokoro(finalReplyText, {
-          voice: chosenVoice,
-          speed: chosenSpeed
-        });
-        if (kokoroRes.success && kokoroRes.base64) {
-          sendRes = await sendWhatsAppAudio(msg.instanceName, msg.cleanPhone, kokoroRes.base64);
-          sentAsAudio = sendRes.success;
-          if (sentAsAudio) {
-            console.log(`[Queue] \u2705 Voice note delivered to ${msg.pushName} (+${msg.cleanPhone})`);
-          }
-        } else {
-          console.warn("[Queue] Kokoro TTS failed, falling back to text:", kokoroRes.error);
-        }
-      } catch (voiceErr) {
-        console.error("[Queue] Voice synthesis error, falling back to text:", voiceErr?.message);
-      }
-      if (!sentAsAudio) {
         sendRes = await sendMessage(msg.instanceName, msg.cleanPhone, finalReplyText);
       }
     } else {
@@ -22244,8 +22050,8 @@ async function getSeoMetadata(pathname, baseUrl) {
     let metadata = null;
     if (cleanPath === "/" || cleanPath === "" || cleanPath === "/index.html") {
       metadata = {
-        title: "Betico | Software de Citas, Tienda SINPE M\xF3vil y Chatbot WhatsApp en Costa Rica",
-        description: "Automatiza tu negocio en Costa Rica con Betico: agendamiento de citas, cat\xE1logo con carrito SINPE M\xF3vil, facturaci\xF3n electr\xF3nica y atenci\xF3n al cliente 24/7 con Inteligencia Artificial.",
+        title: "Betico | Los 3 Momentos de la Venta: Prospecci\xF3n, Venta y Fidelizaci\xF3n con IA",
+        description: "Herramienta integral de ventas en Costa Rica: sitio web personalizable para prospecci\xF3n, tienda virtual con SINPE M\xF3vil y tarjetas para el cierre, y tarjetas de fidelizaci\xF3n por sellos o puntos, todo potenciado con tu IA favorita en WhatsApp.",
         image: `${baseUrl}/logo.png`,
         canonicalUrl: `${baseUrl}/`,
         type: "website",
@@ -22258,12 +22064,11 @@ async function getSeoMetadata(pathname, baseUrl) {
           "applicationCategory": "BusinessApplication",
           "url": baseUrl,
           "image": `${baseUrl}/logo.png`,
-          "description": "Plataforma integral para pymes y empresas en Costa Rica: agendamiento inteligente, tienda virtual con pagos SINPE M\xF3vil y asistente virtual en WhatsApp.",
+          "description": "Plataforma integral de ventas que cubre los 3 momentos clave: prospecci\xF3n (sitio web oficial), venta (tienda virtual, reservas y pagos nativos) y fidelizaci\xF3n (tarjetas de puntos y sellos m\xF3viles), potenciada con inteligencia artificial en WhatsApp.",
           "offers": {
-            "@type": "AggregateOffer",
-            "priceCurrency": "USD",
-            "lowPrice": "29",
-            "highPrice": "99"
+            "@type": "Offer",
+            "price": "55000",
+            "priceCurrency": "CRC"
           }
         }
       };

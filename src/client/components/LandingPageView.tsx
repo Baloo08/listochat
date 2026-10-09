@@ -70,6 +70,273 @@ interface LandingPageProps {
 // RECURSOS GRÁFICOS 100% SVG NATIVOS (RESPONSIVOS, LIGEROS Y CON IDENTIDAD BETICO)
 // ============================================================================
 
+function HeroBentoShowcaseSvg() {
+  return (
+    <svg viewBox="0 0 940 440" width="100%" height="100%" style={{ display: 'block', maxHeight: '430px' }} aria-label="Ecosistema Betico: 3 Momentos de la Venta y Asistente IA">
+      <defs>
+        <linearGradient id="bentoBg" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#FFFFFF" />
+          <stop offset="100%" stopColor="#F8FAFC" />
+        </linearGradient>
+        <linearGradient id="m1Grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#0B3C3D" />
+          <stop offset="100%" stopColor="#134B4C" />
+        </linearGradient>
+        <linearGradient id="m2Grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#FFFFFF" />
+          <stop offset="100%" stopColor="#F1F5F9" />
+        </linearGradient>
+        <linearGradient id="m3Grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#002526" />
+          <stop offset="100%" stopColor="#0B3C3D" />
+        </linearGradient>
+        <linearGradient id="aiConnectorGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor="#0B3C3D" />
+          <stop offset="50%" stopColor="#B51C12" />
+          <stop offset="100%" stopColor="#0B3C3D" />
+        </linearGradient>
+        <filter id="bentoCardShadow" x="-5%" y="-5%" width="110%" height="115%">
+          <feDropShadow dx="0" dy="4" stdDeviation="6" floodColor="#0F172A" floodOpacity="0.05" />
+        </filter>
+      </defs>
+
+      {/* ==============================================================
+          CUADRANTE 1: CAPTACIÓN Y PROSPECCIÓN (Izquierda)
+      ============================================================== */}
+      <g filter="url(#bentoCardShadow)">
+        <rect x="15" y="15" width="285" height="280" rx="16" fill="#FFFFFF" stroke="#E2E8F0" strokeWidth="1.5" />
+        
+        {/* Header Pill */}
+        <rect x="27" y="27" width="130" height="20" rx="10" fill="#EFF7F7" stroke="#B0DCDC" />
+        <circle cx="37" cy="37" r="4" fill="#0B3C3D" />
+        <text x="47" y="41" fill="#0B3C3D" fontSize="8.5" fontWeight="800">1. CAPTACIÓN</text>
+
+        <text x="27" y="66" fill="#0F172A" fontSize="13" fontWeight="900">Sitio Web y Tu Marca</text>
+        <text x="27" y="80" fill="#64748B" fontSize="8.5">Presencia oficial lista para recibir clientes</text>
+
+        {/* Mockup de Navegador Web */}
+        <rect x="27" y="94" width="261" height="152" rx="10" fill="#FAF8F5" stroke="#CBD5E1" strokeWidth="1" />
+        {/* Barra superior del navegador */}
+        <rect x="27" y="94" width="261" height="22" rx="10" fill="#E2E8F0" />
+        <rect x="27" y="106" width="261" height="10" fill="#E2E8F0" />
+        <circle cx="38" cy="105" r="3" fill="#EF4444" />
+        <circle cx="47" cy="105" r="3" fill="#F59E0B" />
+        <circle cx="56" cy="105" r="3" fill="#10B981" />
+        <rect x="68" y="98" width="145" height="14" rx="4" fill="#FFFFFF" />
+        <text x="74" y="108.5" fill="#0B3C3D" fontSize="7" fontWeight="700" fontFamily="monospace">🔒 betico.tech/sitio/tu-marca</text>
+
+        {/* Contenido Web Mockup */}
+        <rect x="37" y="124" width="55" height="14" rx="3" fill="#0B3C3D" />
+        <text x="43" y="134" fill="#FFFFFF" fontSize="6.5" fontWeight="800">TU LOGO</text>
+        
+        {/* Swatches de Colores de Marca */}
+        <circle cx="218" cy="131" r="5" fill="#0B3C3D" stroke="#FFFFFF" strokeWidth="1" />
+        <circle cx="232" cy="131" r="5" fill="#B51C12" stroke="#FFFFFF" strokeWidth="1" />
+        <circle cx="246" cy="131" r="5" fill="#34D399" stroke="#FFFFFF" strokeWidth="1" />
+        <circle cx="260" cy="131" r="5" fill="#F59E0B" stroke="#FFFFFF" strokeWidth="1" />
+
+        {/* Hero Mockup */}
+        <rect x="37" y="145" width="241" height="42" rx="6" fill="url(#m1Grad)" />
+        <text x="47" y="161" fill="#FFFFFF" fontSize="8" fontWeight="800">Tu Línea Gráfica y Catálogo</text>
+        <text x="47" y="173" fill="#B0DCDC" fontSize="7">100% adaptable para celular o PC</text>
+        <rect x="210" y="153" width="60" height="16" rx="4" fill="#B51C12" />
+        <text x="218" y="164" fill="#FFFFFF" fontSize="6.5" fontWeight="800">Reservar 📅</text>
+
+        {/* 2 Mini Cards de Servicio */}
+        <rect x="37" y="194" width="116" height="42" rx="5" fill="#FFFFFF" stroke="#E2E8F0" />
+        <rect x="43" y="200" width="24" height="24" rx="4" fill="#EFF7F7" />
+        <text x="50" y="216" fill="#0B3C3D" fontSize="11">🛍️</text>
+        <text x="73" y="210" fill="#0F172A" fontSize="7" fontWeight="800">Tienda Web</text>
+        <text x="73" y="222" fill="#0B3C3D" fontSize="7" fontWeight="700">Enlace en bio</text>
+
+        <rect x="162" y="194" width="116" height="42" rx="5" fill="#FFFFFF" stroke="#E2E8F0" />
+        <rect x="168" y="200" width="24" height="24" rx="4" fill="#FFF1F0" />
+        <text x="175" y="216" fill="#B51C12" fontSize="11">📍</text>
+        <text x="198" y="210" fill="#0F172A" fontSize="7" fontWeight="800">Google Maps</text>
+        <text x="198" y="222" fill="#B51C12" fontSize="7" fontWeight="700">Tráfico directo</text>
+
+        {/* Tag Inferior */}
+        <rect x="27" y="258" width="261" height="24" rx="6" fill="#EFF7F7" />
+        <text x="157" y="273.5" fill="#0B3C3D" fontSize="8" fontWeight="800" textAnchor="middle">✓ Enlace oficial listo para Instagram y TikTok</text>
+      </g>
+
+      {/* ==============================================================
+          CUADRANTE 2: LA VENTA Y EL CIERRE (Centro)
+      ============================================================== */}
+      <g filter="url(#bentoCardShadow)">
+        <rect x="315" y="15" width="310" height="280" rx="16" fill="#FFFFFF" stroke="#B0DCDC" strokeWidth="1.8" />
+        
+        {/* Header Pill */}
+        <rect x="329" y="27" width="115" height="20" rx="10" fill="#EFF7F7" stroke="#0B3C3D" />
+        <circle cx="339" cy="37" r="4" fill="#0B3C3D" />
+        <text x="349" y="41" fill="#0B3C3D" fontSize="8.5" fontWeight="800">2. LA VENTA</text>
+
+        <text x="329" y="66" fill="#0F172A" fontSize="13" fontWeight="900">Tienda, Citas y Pagos Nativos</text>
+        <text x="329" y="80" fill="#64748B" fontSize="8.5">Control del proceso con WhatsApp en vivo</text>
+
+        {/* Card de Pedido / Servicio */}
+        <rect x="329" y="94" width="282" height="66" rx="10" fill="#FAF8F5" stroke="#E2E8F0" />
+        <rect x="339" y="104" width="46" height="46" rx="8" fill="#FFFFFF" stroke="#CBD5E1" />
+        <text x="351" y="133" fontSize="22">🍔</text>
+        
+        <text x="394" y="118" fill="#0F172A" fontSize="9.5" fontWeight="800">Orden Especial o Servicio</text>
+        <text x="394" y="131" fill="#64748B" fontSize="8">Con complementos y extras</text>
+        <rect x="394" y="137" width="70" height="16" rx="4" fill="#EFF7F7" />
+        <text x="400" y="148" fill="#0B3C3D" fontSize="7.5" fontWeight="800">⏰ Cita: 3:00 PM</text>
+
+        <text x="599" y="128" fill="#0B3C3D" fontSize="13" fontWeight="900" textAnchor="end">₡5.500</text>
+
+        {/* 2 Métodos de Pago Nativos */}
+        <rect x="329" y="168" width="136" height="52" rx="8" fill="#FFFFFF" stroke="#0B3C3D" strokeWidth="1.2" />
+        <rect x="337" y="176" width="20" height="20" rx="4" fill="#EFF7F7" />
+        <text x="341" y="190" fill="#0B3C3D" fontSize="11">📲</text>
+        <text x="363" y="186" fill="#0F172A" fontSize="7.8" fontWeight="800">SINPE Móvil</text>
+        <text x="363" y="197" fill="#0B3C3D" fontSize="7" fontWeight="700">Verificado Inmediato</text>
+        <text x="363" y="209" fill="#10B981" fontSize="7" fontWeight="800">✓ Confirmado</text>
+
+        <rect x="475" y="168" width="136" height="52" rx="8" fill="#FFFFFF" stroke="#B51C12" strokeWidth="1.2" />
+        <rect x="483" y="176" width="20" height="20" rx="4" fill="#FFF1F0" />
+        <text x="487" y="190" fill="#B51C12" fontSize="11">💳</text>
+        <text x="509" y="186" fill="#0F172A" fontSize="7.8" fontWeight="800">Tarjetas Crédito/Débito</text>
+        <text x="509" y="197" fill="#64748B" fontSize="7">Visa • Mastercard • AMEX</text>
+        <text x="509" y="209" fill="#B51C12" fontSize="7" fontWeight="800">🔒 3D Secure Bancario</text>
+
+        {/* Estado en WhatsApp */}
+        <rect x="329" y="228" width="282" height="26" rx="6" fill="#0B3C3D" />
+        <circle cx="343" cy="241" r="4" fill="#34D399" />
+        <text x="353" y="244.5" fill="#FFFFFF" fontSize="7.8" fontWeight="700">WhatsApp en Tiempo Real • Pedido en preparación</text>
+
+        {/* Tag Inferior */}
+        <rect x="329" y="258" width="282" height="24" rx="6" fill="#EFF7F7" />
+        <text x="470" y="273.5" fill="#0B3C3D" fontSize="8" fontWeight="800" textAnchor="middle">✓ Cobro directo a tu cuenta bancaria nacional</text>
+      </g>
+
+      {/* ==============================================================
+          CUADRANTE 3: FIDELIZACIÓN Y RETENCIÓN (Derecha)
+      ============================================================== */}
+      <g filter="url(#bentoCardShadow)">
+        <rect x="640" y="15" width="285" height="280" rx="16" fill="#FFFFFF" stroke="#FFC7C4" strokeWidth="1.5" />
+        
+        {/* Header Pill */}
+        <rect x="652" y="27" width="130" height="20" rx="10" fill="#FFF1F0" stroke="#B51C12" />
+        <circle cx="662" cy="37" r="4" fill="#B51C12" />
+        <text x="672" y="41" fill="#B51C12" fontSize="8.5" fontWeight="800">3. FIDELIZACIÓN</text>
+
+        <text x="652" y="66" fill="#0F172A" fontSize="13" fontWeight="900">Tarjetas de Sellos y Puntos</text>
+        <text x="652" y="80" fill="#64748B" fontSize="8.5">Retención sin cartones que se pierdan</text>
+
+        {/* Tarjeta de Fidelidad Digital */}
+        <rect x="652" y="94" width="261" height="152" rx="10" fill="url(#m3Grad)" />
+        
+        <rect x="662" y="104" width="105" height="15" rx="3" fill="rgba(255,255,255,0.15)" />
+        <text x="668" y="115" fill="#B0DCDC" fontSize="7" fontWeight="800">CLUB DE CLIENTES</text>
+        <text x="898" y="116" fill="#34D399" fontSize="7.5" fontWeight="800" textAnchor="end">Billetera Móvil</text>
+
+        <text x="662" y="134" fill="#FFFFFF" fontSize="9.5" fontWeight="900">Tarjeta de Sellos Digitales</text>
+        <text x="662" y="145" fill="#CBD5E1" fontSize="7.5">Completa 8 visitas y gana tu premio</text>
+
+        {/* 8 Casillas de Sellos (4x2) */}
+        {[
+          { x: 662, y: 153, done: true },
+          { x: 700, y: 153, done: true },
+          { x: 738, y: 153, done: true },
+          { x: 776, y: 153, done: true },
+          { x: 662, y: 184, done: true },
+          { x: 700, y: 184, done: true },
+          { x: 738, y: 184, done: true },
+          { x: 776, y: 184, done: false, prize: true }
+        ].map((s, idx) => (
+          <g key={idx}>
+            <rect
+              x={s.x}
+              y={s.y}
+              width="32"
+              height="26"
+              rx="5"
+              fill={s.prize ? '#B51C12' : (s.done ? '#34D399' : 'rgba(255,255,255,0.12)')}
+              stroke={s.prize ? '#FFC7C4' : (s.done ? '#A7F3D0' : 'rgba(255,255,255,0.25)')}
+              strokeWidth="1"
+            />
+            <text
+              x={s.x + 16}
+              y={s.y + 17}
+              fill="#FFFFFF"
+              fontSize="10"
+              fontWeight="900"
+              textAnchor="middle"
+            >
+              {s.prize ? '🎁' : (s.done ? '✓' : String(idx + 1))}
+            </text>
+          </g>
+        ))}
+
+        {/* Badge Monedero de Puntos en la tarjeta */}
+        <rect x="817" y="153" width="86" height="57" rx="6" fill="rgba(255,255,255,0.1)" stroke="rgba(255,255,255,0.2)" />
+        <text x="860" y="169" fill="#B0DCDC" fontSize="7" fontWeight="700" textAnchor="middle">PUNTOS</text>
+        <text x="860" y="186" fill="#FFFFFF" fontSize="12" fontWeight="900" textAnchor="middle">₡4.250</text>
+        <text x="860" y="199" fill="#34D399" fontSize="6.5" fontWeight="700" textAnchor="middle">Canjeable en caja</text>
+
+        <rect x="662" y="217" width="241" height="20" rx="4" fill="rgba(255,255,255,0.08)" />
+        <text x="782" y="230.5" fill="#FFFFFF" fontSize="7" fontWeight="700" textAnchor="middle">🆔 Acceso por cédula en betico.tech/fidelidad</text>
+
+        {/* Tag Inferior */}
+        <rect x="652" y="258" width="261" height="24" rx="6" fill="#FFF1F0" />
+        <text x="782" y="273.5" fill="#B51C12" fontSize="8" fontWeight="800" textAnchor="middle">✓ Habilitado automático desde citas y compras</text>
+      </g>
+
+      {/* ==============================================================
+          NÚCLEO CENTRAL CONECTOR: CEREBRO IA TRANSVERSAL
+      ============================================================== */}
+      <g filter="url(#bentoCardShadow)">
+        <rect x="15" y="310" width="910" height="115" rx="16" fill="#002526" stroke="#134B4C" strokeWidth="2" />
+        
+        {/* Glow de acento central */}
+        <circle cx="470" cy="367" r="70" fill="rgba(52, 211, 153, 0.08)" />
+
+        {/* Icono del Cerebro IA */}
+        <rect x="35" y="328" width="58" height="58" rx="14" fill="#0B3C3D" stroke="#34D399" strokeWidth="1.5" />
+        <text x="64" y="365" fontSize="28" textAnchor="middle">🤖</text>
+
+        {/* Textos del Cerebro IA */}
+        <text x="108" y="347" fill="#34D399" fontSize="9.5" fontWeight="900" letterSpacing="0.06em">
+          NÚCLEO DE AUTOMATIZACIÓN 24/7 • POTENCIADO CON TU IA FAVORITA
+        </text>
+        <text x="108" y="369" fill="#FFFFFF" fontSize="13.5" fontWeight="900">
+          Vende, Agenda y Atiende de Forma Automática en WhatsApp
+        </text>
+        <text x="108" y="388" fill="#94A3B8" fontSize="8.8">
+          Tu asistente responde en 1.5s, consulta el catálogo y confirma pagos por SINPE o tarjeta. Solo te refiere lo que requiere tu atención.
+        </text>
+
+        {/* Conexiones visuales hacia los 3 momentos */}
+        <line x1="160" y1="300" x2="160" y2="310" stroke="#34D399" strokeWidth="2" strokeDasharray="3 3" />
+        <circle cx="160" cy="305" r="3" fill="#34D399" />
+
+        <line x1="470" y1="300" x2="470" y2="310" stroke="#34D399" strokeWidth="2" strokeDasharray="3 3" />
+        <circle cx="470" cy="305" r="3" fill="#34D399" />
+
+        <line x1="780" y1="300" x2="780" y2="310" stroke="#34D399" strokeWidth="2" strokeDasharray="3 3" />
+        <circle cx="780" cy="305" r="3" fill="#34D399" />
+
+        {/* Badges de Proveedores de IA */}
+        <rect x="740" y="332" width="165" height="70" rx="10" fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.12)" />
+        <text x="822" y="349" fill="#B0DCDC" fontSize="8" fontWeight="800" textAnchor="middle">COMPATIBLE CON</text>
+        
+        <rect x="750" y="357" width="44" height="18" rx="4" fill="#0B3C3D" />
+        <text x="772" y="369.5" fill="#34D399" fontSize="7" fontWeight="800" textAnchor="middle">Gemini</text>
+
+        <rect x="800" y="357" width="46" height="18" rx="4" fill="#0B3C3D" />
+        <text x="823" y="369.5" fill="#FFFFFF" fontSize="7" fontWeight="800" textAnchor="middle">OpenAI</text>
+
+        <rect x="852" y="357" width="44" height="18" rx="4" fill="#0B3C3D" />
+        <text x="874" y="369.5" fill="#FFC7C4" fontSize="7" fontWeight="800" textAnchor="middle">Claude</text>
+
+        <text x="822" y="392" fill="#34D399" fontSize="7.5" fontWeight="700" textAnchor="middle">⚡ Conexión BYOK Segura</text>
+      </g>
+    </svg>
+  );
+}
+
 function CaptacionWebsiteSvg() {
   return (
     <svg viewBox="0 0 520 290" width="100%" height="100%" style={{ maxHeight: '270px', display: 'block' }} aria-label="Sitio Web Oficial Personalizable">
@@ -120,7 +387,7 @@ function CaptacionWebsiteSvg() {
       <circle cx="435" cy="125" r="42" fill="rgba(255,255,255,0.06)" />
       <circle cx="400" cy="170" r="28" fill="rgba(181,28,18,0.3)" />
       
-      <rect x="42" y="114" width="135" height="15" rx="3.5" fill="rgba(255,255,255,0.18)" />
+      <rect x="42" y="114" width="145" height="15" rx="3.5" fill="rgba(255,255,255,0.18)" />
       <text x="48" y="125" fill="#B0DCDC" fontSize="8" fontWeight="800">SITIO OFICIAL PERSONALIZABLE</text>
       <text x="42" y="152" fill="#FFFFFF" fontSize="14" fontWeight="900">Tu Marca y Línea Gráfica</text>
       <text x="42" y="168" fill="#E2E8F0" fontSize="9.5">Colores propios, logotipo claro u oscuro y catálogo directo</text>
@@ -129,19 +396,16 @@ function CaptacionWebsiteSvg() {
 
       {/* 3 Badges de Valor */}
       <rect x="28" y="210" width="148" height="54" rx="7" fill="#F8FAFC" stroke="#E2E8F0" />
-      <text x="38" y="228" fill="#0B3C3D" fontSize="9.5" fontWeight="800">🎨 Línea de Marca</text>
-      <text x="38" y="244" fill="#64748B" fontSize="8">Logotipo y paleta visual</text>
-      <text x="38" y="255" fill="#0B3C3D" fontSize="8" fontWeight="700">100% personalizable</text>
+      <text x="38" y="234" fill="#0B3C3D" fontSize="10" fontWeight="800">🎨 Identidad Visual</text>
+      <text x="38" y="250" fill="#64748B" fontSize="8.5">Logotipo y paleta de marca</text>
 
       <rect x="186" y="210" width="148" height="54" rx="7" fill="#F8FAFC" stroke="#E2E8F0" />
-      <text x="196" y="228" fill="#0B3C3D" fontSize="9.5" fontWeight="800">📱 Celular y Redes</text>
-      <text x="196" y="244" fill="#64748B" fontSize="8">Listo para link en bio</text>
-      <text x="196" y="255" fill="#0B3C3D" fontSize="8" fontWeight="700">Captación de prospectos</text>
+      <text x="196" y="234" fill="#0B3C3D" fontSize="10" fontWeight="800">📱 Link en Biografía</text>
+      <text x="196" y="250" fill="#64748B" fontSize="8.5">Captación de redes sociales</text>
 
       <rect x="344" y="210" width="148" height="54" rx="7" fill="#F8FAFC" stroke="#E2E8F0" />
-      <text x="354" y="228" fill="#0B3C3D" fontSize="9.5" fontWeight="800">⚡ Cero Costo Hosting</text>
-      <text x="354" y="244" fill="#64748B" fontSize="8">Certificado SSL seguro</text>
-      <text x="354" y="255" fill="#0B3C3D" fontSize="8" fontWeight="700">Velocidad garantizada</text>
+      <text x="354" y="234" fill="#0B3C3D" fontSize="10" fontWeight="800">⚡ Cero Costo Hosting</text>
+      <text x="354" y="250" fill="#64748B" fontSize="8.5">Certificado SSL incluido</text>
     </svg>
   );
 }
@@ -170,22 +434,20 @@ function VentaProcesoPasoSvg() {
       {/* Bloque 1: Tienda y Reservas con Complementos */}
       <rect x="28" y="56" width="224" height="98" rx="9" fill="#FFFFFF" stroke="#E2E8F0" strokeWidth="1" />
       <rect x="38" y="65" width="100" height="16" rx="3.5" fill="#EFF7F7" />
-      <text x="44" y="76.5" fill="#0B3C3D" fontSize="8.5" fontWeight="800">1. Catálogo o Citas</text>
-      <text x="38" y="98" fill="#0F172A" fontSize="10.5" fontWeight="800">Tienda y Reservas</text>
-      <text x="38" y="112" fill="#64748B" fontSize="8.5">Control de stock, variantes y</text>
-      <text x="38" y="124" fill="#64748B" fontSize="8.5">múltiples complementos y extras.</text>
-      <rect x="38" y="132" width="95" height="14" rx="3" fill="#F1F5F9" />
-      <text x="44" y="142" fill="#0B3C3D" fontSize="7.5" fontWeight="700">✓ Agenda y especialistas</text>
+      <text x="44" y="76.5" fill="#0B3C3D" fontSize="8.5" fontWeight="800">1. Catálogo y Citas</text>
+      <text x="38" y="98" fill="#0F172A" fontSize="11" fontWeight="800">Tienda y Reservas</text>
+      <text x="38" y="113" fill="#64748B" fontSize="8.5">Control de stock y complementos</text>
+      <rect x="38" y="126" width="105" height="18" rx="4" fill="#EFF7F7" />
+      <text x="44" y="138.5" fill="#0B3C3D" fontSize="8" fontWeight="700">✓ Agenda de especialistas</text>
 
       {/* Bloque 2: Múltiples Formas de Pago */}
       <rect x="268" y="56" width="224" height="98" rx="9" fill="#FFFFFF" stroke="#E2E8F0" strokeWidth="1" />
       <rect x="278" y="65" width="118" height="16" rx="3.5" fill="#FFF1F0" />
       <text x="284" y="76.5" fill="#B51C12" fontSize="8.5" fontWeight="800">2. Formas de Pago</text>
-      <text x="278" y="98" fill="#0F172A" fontSize="10.5" fontWeight="800">Tarjetas y SINPE Móvil</text>
-      <text x="278" y="112" fill="#64748B" fontSize="8.5">Visa • Mastercard • AMEX</text>
-      <text x="278" y="124" fill="#64748B" fontSize="8.5">Depósito directo a cuenta nacional.</text>
-      <rect x="278" y="132" width="105" height="14" rx="3" fill="#FFF1F0" />
-      <text x="284" y="142" fill="#B51C12" fontSize="7.5" fontWeight="700">🔒 3D Secure Bancario</text>
+      <text x="278" y="98" fill="#0F172A" fontSize="11" fontWeight="800">Tarjetas y SINPE Móvil</text>
+      <text x="278" y="113" fill="#64748B" fontSize="8.5">Visa • Mastercard • AMEX</text>
+      <rect x="278" y="126" width="110" height="18" rx="4" fill="#FFF1F0" />
+      <text x="284" y="138.5" fill="#B51C12" fontSize="8" fontWeight="700">🔒 3D Secure Bancario</text>
 
       {/* Bloque 3: WhatsApp en Tiempo Real */}
       <rect x="28" y="162" width="464" height="102" rx="9" fill="#FFFFFF" stroke="#0B3C3D" strokeWidth="1.2" />
@@ -195,12 +457,12 @@ function VentaProcesoPasoSvg() {
       {/* Burbuja Simulación Pedido */}
       <rect x="38" y="196" width="270" height="36" rx="6" fill="#EFF7F7" stroke="#B0DCDC" />
       <text x="48" y="210" fill="#0B3C3D" fontSize="8.5" fontWeight="700">📲 Pedido #ORD-84 Confirmado (₡12.500)</text>
-      <text x="48" y="222" fill="#475569" fontSize="8">Orden pagada y en preparación. ¡Acompañamiento total!</text>
+      <text x="48" y="222" fill="#475569" fontSize="8">Orden pagada y en preparación con notificación</text>
 
       <rect x="320" y="196" width="162" height="58" rx="6" fill="#F8FAFC" stroke="#E2E8F0" />
-      <text x="330" y="212" fill="#0F172A" fontSize="9" fontWeight="800">Control de Principio a Fin</text>
-      <text x="330" y="226" fill="#64748B" fontSize="8">Notificaciones automáticas.</text>
-      <text x="330" y="239" fill="#0B3C3D" fontSize="8" fontWeight="700">Atención personal en vivo.</text>
+      <text x="330" y="214" fill="#0F172A" fontSize="9.5" fontWeight="800">Control de Principio a Fin</text>
+      <text x="330" y="228" fill="#64748B" fontSize="8.2">Notificaciones automáticas</text>
+      <text x="330" y="242" fill="#0B3C3D" fontSize="8.2" fontWeight="700">Atención personal en vivo</text>
     </svg>
   );
 }
@@ -281,12 +543,10 @@ function FidelizacionSvg() {
 
       {/* Vínculo sin Doble Registro (Derecha Abajo) */}
       <rect x="278" y="160" width="214" height="104" rx="9" fill="#EFF7F7" stroke="#B0DCDC" />
-      <text x="290" y="179" fill="#0B3C3D" fontSize="9.5" fontWeight="800">Vínculo Automático</text>
-      <text x="290" y="195" fill="#475569" fontSize="8.2">Sin doble registro para el cliente.</text>
-      <text x="290" y="208" fill="#475569" fontSize="8.2">Se habilita desde compras y citas</text>
-      <text x="290" y="221" fill="#475569" fontSize="8.2">para ver su saldo al instante.</text>
-      <rect x="290" y="232" width="135" height="16" rx="3.5" fill="#FFFFFF" stroke="#B0DCDC" />
-      <text x="296" y="243.5" fill="#0B3C3D" fontSize="7.8" fontWeight="800">🔒 Fidelidad duradera y real</text>
+      <text x="290" y="180" fill="#0B3C3D" fontSize="10" fontWeight="800">Vínculo Automático</text>
+      <text x="290" y="196" fill="#475569" fontSize="8.5">Habilitado desde citas y pedidos</text>
+      <rect x="290" y="216" width="150" height="22" rx="4" fill="#FFFFFF" stroke="#B0DCDC" />
+      <text x="298" y="230.5" fill="#0B3C3D" fontSize="8.2" fontWeight="800">🔒 Fidelidad duradera y real</text>
     </svg>
   );
 }
@@ -917,18 +1177,18 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
               </a>
             </div>
 
-            {/* HERO SHOWCASE: CLIENT FLOW IN COSTA RICA */}
+            {/* HERO SHOWCASE: BENTO SUITE VISUAL */}
             <div style={{
-              maxWidth: '920px',
+              maxWidth: '960px',
               margin: '0 auto',
               backgroundColor: '#ffffff',
               borderRadius: '24px',
               border: '1px solid #e2e8f0',
-              boxShadow: '0 25px 50px -12px rgba(15, 23, 42, 0.12)',
+              boxShadow: '0 25px 50px -12px rgba(15, 23, 42, 0.10)',
               overflow: 'hidden',
               textAlign: 'left'
             }}>
-              {/* Simulated Browser Bar */}
+              {/* Showcase Browser Bar */}
               <div style={{
                 backgroundColor: '#002526',
                 padding: '12px 20px',
@@ -942,95 +1202,69 @@ export default function LandingPageView({ onLoginClick, isLoggedIn, onGoToDashbo
                   <span style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#f04337' }} />
                   <span style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#f59e0b' }} />
                   <span style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#10b981' }} />
-                  <span style={{ marginLeft: '8px', fontWeight: '600', color: '#f8fafc' }}>
-                    Demostración en Tiempo Real • WhatsApp y Pagos Verificados
+                  <span style={{ marginLeft: '8px', fontWeight: '700', color: '#f8fafc' }}>
+                    Betico • Ecosistema Integral para los 3 Momentos de tu Venta
                   </span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#34d399' }} />
-                  <span style={{ color: '#6ee7b7', fontFamily: 'monospace', fontSize: '0.75rem' }}>Motor Activo: 0.8s</span>
+                  <span style={{ color: '#6ee7b7', fontFamily: 'monospace', fontSize: '0.75rem', fontWeight: '700' }}>
+                    Sincronización Total en Tiempo Real
+                  </span>
                 </div>
               </div>
 
-              {/* Chat Simulation Canvas */}
-              <div style={{ padding: isMobile ? '16px' : '26px', backgroundColor: '#FAF8F5', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                
-                {/* Voice Note From Client */}
-                <div style={{ alignSelf: 'flex-end', maxWidth: isMobile ? '92%' : '75%', backgroundColor: '#0b3c3d', color: 'white', padding: '12px 16px', borderRadius: '16px 16px 4px 16px', fontSize: '0.88rem', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px', borderBottom: '1px solid rgba(255,255,255,0.2)', paddingBottom: '4px', fontSize: '0.76rem', color: '#b0dcdc' }}>
-                    <Volume2 size={15} />
-                    <span>Nota de Voz del Cliente (0:07)</span>
+              {/* Bento Illustration Canvas */}
+              <div style={{ padding: isMobile ? '12px' : '20px', backgroundColor: '#FAF8F5' }}>
+                <HeroBentoShowcaseSvg />
+              </div>
+
+              {/* Bottom 4 Feature Summary Pills */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)',
+                borderTop: '1px solid #e2e8f0',
+                backgroundColor: '#ffffff'
+              }}>
+                <div style={{ padding: '14px 16px', borderRight: isMobile ? 'none' : '1px solid #e2e8f0', borderBottom: isMobile ? '1px solid #e2e8f0' : 'none', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div style={{ width: '32px', height: '32px', borderRadius: '8px', backgroundColor: '#eff7f7', color: '#0b3c3d', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <Globe size={18} />
                   </div>
-                  <div style={{ fontStyle: 'italic', fontWeight: '300' }}>
-                    “¡Buenas! Quiero pedir una Hamburguesa Especial con papas y reservar cita para las 3:00pm”
+                  <div>
+                    <div style={{ fontSize: '0.74rem', textTransform: 'uppercase', fontWeight: '800', color: '#0b3c3d' }}>Momento 1</div>
+                    <strong style={{ fontSize: '0.84rem', color: '#0f172a' }}>Sitio con tu Marca</strong>
                   </div>
                 </div>
 
-                {/* Betico Native AI Response */}
-                <div style={{ alignSelf: 'flex-start', maxWidth: isMobile ? '94%' : '80%', backgroundColor: '#ffffff', color: '#0f172a', padding: '16px', borderRadius: '16px 16px 16px 4px', fontSize: '0.88rem', border: '1px solid #e2e8f0', boxShadow: '0 2px 6px rgba(0,0,0,0.04)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#0b3c3d', fontWeight: '800', fontSize: '0.82rem', marginBottom: '8px' }}>
-                    <Bot size={16} color="#b51c12" />
-                    <span>Betico IA • Potenciado con tu modelo de IA favorito</span>
+                <div style={{ padding: '14px 16px', borderRight: isMobile ? 'none' : '1px solid #e2e8f0', borderBottom: isMobile ? '1px solid #e2e8f0' : 'none', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div style={{ width: '32px', height: '32px', borderRadius: '8px', backgroundColor: '#eff7f7', color: '#0b3c3d', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <ShoppingBag size={18} />
                   </div>
-                  <p style={{ margin: '0 0 8px 0' }}>¡Hola! Con gusto te tomo la orden 🍔</p>
-                  <div style={{ backgroundColor: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '8px', fontSize: '0.82rem', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>• 1x Hamburguesa Especial con papas</span>
-                      <strong style={{ color: '#0f172a' }}>₡5.500</strong>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#0b3c3d', fontWeight: '600' }}>
-                      <span>• Cita programada para hoy</span>
-                      <span>3:00 PM ⏰</span>
-                    </div>
+                  <div>
+                    <div style={{ fontSize: '0.74rem', textTransform: 'uppercase', fontWeight: '800', color: '#0b3c3d' }}>Momento 2</div>
+                    <strong style={{ fontSize: '0.84rem', color: '#0f172a' }}>Tienda, Citas y Pagos</strong>
                   </div>
-                  <p style={{ margin: 0, fontSize: '0.82rem', color: '#475569' }}>
-                    ¿Deseas pagar por <strong>SINPE Móvil</strong> o <strong>Tarjeta de Crédito o Débito</strong>?
-                  </p>
                 </div>
 
-                {/* Side-by-Side Dual Payment Validations */}
-                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px', paddingTop: '6px' }}>
-                  
-                  {/* SINPE Payment Validation */}
-                  <div style={{ backgroundColor: '#ffffff', padding: '14px', borderRadius: '12px', border: '2px solid rgba(11,60,61,0.25)', display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-                    <div style={{ width: '38px', height: '38px', borderRadius: '8px', backgroundColor: '#eff7f7', color: '#0b3c3d', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      <QrCode size={20} />
-                    </div>
-                    <div style={{ fontSize: '0.8rem' }}>
-                      <div style={{ fontWeight: '800', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <span>SINPE Móvil Verificado</span>
-                        <CheckCircle2 size={14} color="#0b3c3d" />
-                      </div>
-                      <div style={{ color: '#64748b', marginTop: '2px', fontFamily: 'monospace', fontSize: '0.74rem' }}>
-                        Monto confirmado: <strong style={{ color: '#0b3c3d' }}>₡5.500</strong> • Ref #893012
-                      </div>
-                      <span style={{ display: 'inline-block', marginTop: '4px', fontSize: '0.72rem', color: '#0b3c3d', backgroundColor: '#eff7f7', padding: '2px 6px', borderRadius: '4px', fontWeight: '600', border: '1px solid #b0dcdc' }}>
-                        ✓ Pedido confirmado y cita agendada
-                      </span>
-                    </div>
+                <div style={{ padding: '14px 16px', borderRight: isMobile ? 'none' : '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div style={{ width: '32px', height: '32px', borderRadius: '8px', backgroundColor: '#fff1f0', color: '#b51c12', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <Award size={18} />
                   </div>
-
-                  {/* Card Payment Validation */}
-                  <div style={{ backgroundColor: '#ffffff', padding: '14px', borderRadius: '12px', border: '2px solid rgba(240,67,55,0.25)', display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-                    <div style={{ width: '38px', height: '38px', borderRadius: '8px', backgroundColor: '#fff1f0', color: '#b51c12', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      <CreditCard size={20} />
-                    </div>
-                    <div style={{ fontSize: '0.8rem' }}>
-                      <div style={{ fontWeight: '800', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <span>Tarjeta de Débito o Crédito</span>
-                        <ShieldCheck size={14} color="#b51c12" />
-                      </div>
-                      <div style={{ color: '#64748b', marginTop: '2px', fontFamily: 'monospace', fontSize: '0.74rem' }}>
-                        Monto: <strong style={{ color: '#0f172a' }}>₡5.500</strong> • Aut: BAC-948210
-                      </div>
-                      <span style={{ display: 'inline-block', marginTop: '4px', fontSize: '0.72rem', color: '#b51c12', backgroundColor: '#fff1f0', padding: '2px 6px', borderRadius: '4px', fontWeight: '600', border: '1px solid #ffc7c4' }}>
-                        ✓ Pago verificado al instante
-                      </span>
-                    </div>
+                  <div>
+                    <div style={{ fontSize: '0.74rem', textTransform: 'uppercase', fontWeight: '800', color: '#b51c12' }}>Momento 3</div>
+                    <strong style={{ fontSize: '0.84rem', color: '#0f172a' }}>Sellos y Puntos Móviles</strong>
                   </div>
-
                 </div>
 
+                <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div style={{ width: '32px', height: '32px', borderRadius: '8px', backgroundColor: '#002526', color: '#34d399', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <Bot size={18} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '0.74rem', textTransform: 'uppercase', fontWeight: '800', color: '#002526' }}>Núcleo IA</div>
+                    <strong style={{ fontSize: '0.84rem', color: '#0f172a' }}>Vende y Atiende 24/7</strong>
+                  </div>
+                </div>
               </div>
             </div>
 

@@ -5,8 +5,7 @@ import { getChatMessagesByTenant, getChatHistoryForContact, getChatSession, setC
 import { getAgentConfig } from '../db/agent-config.repo.js';
 import { createBookingFromCommand, cancelBookingFromWhatsApp, rescheduleBookingFromWhatsApp } from './booking.service.js';
 import { createOrderFromWhatsApp } from './order.service.js';
-import { sendMessage, sendMedia, sendWhatsAppAudio } from './evolution.js';
-import { generateSpeechWithKokoro } from './kokoro-tts.service.js';
+import { sendMessage, sendMedia } from './evolution.js';
 import { getTenantById } from '../db/tenant.repo.js';
 import { createBooking as createCourtBooking, getCourtsByTenant, rescheduleCourtBooking } from '../db/courts.repo.js';
 import { logAICommand } from '../db/ai-command-logs.repo.js';
@@ -91,36 +90,6 @@ async function processSingleMessage(msg: any) {
       console.log(`[Queue] Debounced ${additionalMessages.length} burst messages for ${msg.pushName}`);
     }
 
-    // Voice preference detection
-    const lowerMsg = fullUserMessage.toLowerCase();
-    const wantsTextKeywords = [
-      'por texto', 'prefiero texto', 'escríbemelo', 'escribemelo', 'por escrito', 
-      'no me mandes audio', 'no me mandes audios', 'no mandes audio', 'no mandes audios',
-      'no audios', 'no puedo escuchar', 'solo texto', 'en texto'
-    ];
-    const wantsAudioKeywords = [
-      'mándame un audio', 'mandame un audio', 'nota de voz', 'por nota de voz', 
-      'por audio', 'prefiero audio', 'prefiero audios', 'en audio', 'en nota de voz', 
-      'mándame audio', 'mandame audio', 'envíame un audio', 'enviame un audio',
-      'me puedes mandar un audio', 'me puedes enviar un audio', 'responder por audio',
-      'mandame notas de voz', 'mándame notas de voz', 'prefiero notas de voz', 'notas de voz'
-    ];
-
-    let allowsVoiceNotes = Boolean(session?.allowsVoiceNotes);
-    let voicePreferenceAsked = Boolean(session?.voicePreferenceAsked);
-
-    if (wantsTextKeywords.some(kw => lowerMsg.includes(kw))) {
-      allowsVoiceNotes = false;
-      voicePreferenceAsked = true;
-      await setChatVoicePreference(msg.tenantId, msg.remoteJid, false);
-      console.log(`[Queue] Chat ${msg.remoteJid} opted OUT of voice notes.`);
-    } else if (wantsAudioKeywords.some(kw => lowerMsg.includes(kw))) {
-      allowsVoiceNotes = true;
-      voicePreferenceAsked = true;
-      await setChatVoicePreference(msg.tenantId, msg.remoteJid, true);
-      console.log(`[Queue] Chat ${msg.remoteJid} opted IN to voice notes.`);
-    }
-
     // Fetch contact-specific history with 2-hour session awareness (ISO 25010 Confiabilidad & Usabilidad)
     const { messages: history, isWithin2Hours, lastInteractionMinutesAgo } = await getChatHistoryForContact(msg.tenantId, msg.remoteJid, 20);
     
@@ -171,15 +140,6 @@ async function processSingleMessage(msg: any) {
     }
     
     let finalReplyText = aiResult.replyText;
-
-    // Check voice consent when customer sends an audio
-    const voiceRepliesEnabled = agentConfig?.voiceRepliesEnabled === true;
-    if (msg.isVoiceNote && voiceRepliesEnabled && !voicePreferenceAsked && !allowsVoiceNotes) {
-      if (!finalReplyText.includes('notas de voz') && !finalReplyText.includes('mensaje de texto')) {
-        finalReplyText += '\n\n🎙️ _¿Prefieres que te responda por notas de voz o por mensaje de texto?_';
-      }
-      await setVoicePreferenceAsked(msg.tenantId, msg.remoteJid, true);
-    }
 
     // 1. Handle booking command prior to dispatching WhatsApp message
     if (aiResult.isBookingDetected && aiResult.bookingData) {
@@ -341,7 +301,6 @@ async function processSingleMessage(msg: any) {
 
     // 4. Send reply guaranteed to match database state
     let sendRes;
-    let sentAsAudio = false;
 
     if (aiResult.isMediaDetected && aiResult.mediaData?.mediaUrl) {
       const captionText = (finalReplyText || aiResult.mediaData.caption || '').slice(0, 1000);
@@ -358,33 +317,8 @@ async function processSingleMessage(msg: any) {
         console.warn(`[Queue] sendMedia failed for ${msg.pushName} (+${msg.cleanPhone}), falling back to text:`, sendRes?.error);
         sendRes = await sendMessage(msg.instanceName, msg.cleanPhone, finalReplyText);
       }
-    } else if (voiceRepliesEnabled && allowsVoiceNotes) {
-      try {
-        const chosenVoice = agentConfig?.voiceId || 'ef_dora';
-        const chosenSpeed = Number(agentConfig?.voiceSpeed) || 1.0;
-        console.log(`[Queue] Synthesizing voice note with Kokoro (voice: ${chosenVoice}, speed: ${chosenSpeed}) for ${msg.pushName}...`);
-        const kokoroRes = await generateSpeechWithKokoro(finalReplyText, {
-          voice: chosenVoice,
-          speed: chosenSpeed
-        });
-
-        if (kokoroRes.success && kokoroRes.base64) {
-          sendRes = await sendWhatsAppAudio(msg.instanceName, msg.cleanPhone, kokoroRes.base64);
-          sentAsAudio = sendRes.success;
-          if (sentAsAudio) {
-            console.log(`[Queue] ✅ Voice note delivered to ${msg.pushName} (+${msg.cleanPhone})`);
-          }
-        } else {
-          console.warn('[Queue] Kokoro TTS failed, falling back to text:', kokoroRes.error);
-        }
-      } catch (voiceErr: any) {
-        console.error('[Queue] Voice synthesis error, falling back to text:', voiceErr?.message);
-      }
-
-      if (!sentAsAudio) {
-        sendRes = await sendMessage(msg.instanceName, msg.cleanPhone, finalReplyText);
-      }
     } else {
+      // Outbound replies dispatched directly as fast, structured WhatsApp text (~1.5s latency, zero TTS CPU overhead)
       sendRes = await sendMessage(msg.instanceName, msg.cleanPhone, finalReplyText);
     }
     
