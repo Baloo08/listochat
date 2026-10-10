@@ -451,10 +451,14 @@ router2.get("/tenant/:id", async (req, res) => {
     if (rawProvider.includes("ollama") || rawProvider.includes("local") || rawProvider.includes("betico")) {
       rawProvider = "gemini";
     }
+    let rawModel = agentConfig.ai_model || tenant.ai_model || "gemini-2.5-flash";
+    if (rawModel.includes("betico") || rawModel.includes("ollama") || rawModel.includes("local")) {
+      rawModel = "gemini-2.5-flash";
+    }
     const hasOwnKey = Boolean(agentConfig.ai_api_key || tenant.ai_api_key);
     const aiStatus = {
       provider: rawProvider,
-      model: agentConfig.ai_model || tenant.ai_model || "gemini-2.5-flash",
+      model: rawModel,
       isByok: hasOwnKey,
       isConnected: hasOwnKey || Boolean(process.env.GEMINI_API_KEY),
       tokensUsed: parseInt(aiUsage.tokensUsed || "0", 10),
