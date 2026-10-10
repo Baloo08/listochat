@@ -14,7 +14,7 @@ import dotenv from "dotenv";
 dotenv.config();
 var { Pool } = pg;
 var pool = new Pool({
-  connectionString: process.env.DATABASE_URL || "postgresql://postgres:postgres@localhost:5432/whatsapp_saas",
+  connectionString: process.env.DATABASE_URL || "postgres://saas:BeticoDB2026@betico_postgres:5432/whatsapp_saas?sslmode=disable",
   max: 15,
   idleTimeoutMillis: 3e4,
   connectionTimeoutMillis: 5e3
@@ -40,7 +40,7 @@ async function query(text, params) {
 // src/server/auth.ts
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
-var JWT_SECRET = process.env.JWT_SECRET || "betico-super-secret-jwt-key-2025";
+var JWT_SECRET = process.env.JWT_SECRET || "betico_jwt_secret_64_chars_super_safe_key_cr_2026";
 function hashPassword(password) {
   const salt = crypto.randomBytes(16).toString("hex");
   const hash = crypto.pbkdf2Sync(password, salt, 1e5, 64, "sha512").toString("hex");
@@ -218,8 +218,8 @@ import { Router as Router2 } from "express";
 var router2 = Router2();
 router2.use(requireSuperAdmin);
 var MAIN_APP_URL = process.env.MAIN_APP_URL || "https://betico.tech";
-var EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || "http://evolution:8080";
-var EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || "B6D711FCDE4D4FD5936544120E713976";
+var EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || "http://betico_evolution:8080";
+var EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || "429683C4C977415CAAFCCE10F7D57E11";
 router2.get("/search", async (req, res) => {
   try {
     const q = String(req.query.q || "").trim();

@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import { Request, Response, NextFunction } from 'express';
 import { query } from './db.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'betico-super-secret-jwt-key-2025';
+const JWT_SECRET = process.env.JWT_SECRET || 'betico_jwt_secret_64_chars_super_safe_key_cr_2026';
 
 export function hashPassword(password: string): string {
   const salt = crypto.randomBytes(16).toString('hex');

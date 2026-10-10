@@ -6,8 +6,8 @@ const router = Router();
 router.use(requireSuperAdmin);
 
 const MAIN_APP_URL = process.env.MAIN_APP_URL || 'https://betico.tech';
-const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://evolution:8080';
-const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || 'B6D711FCDE4D4FD5936544120E713976';
+const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://betico_evolution:8080';
+const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || '429683C4C977415CAAFCCE10F7D57E11';
 
 // 1. Instant multi-criteria tenant search
 router.get('/search', async (req, res) => {

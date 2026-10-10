@@ -6,7 +6,7 @@ dotenv.config();
 const { Pool } = pg;
 
 export const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/whatsapp_saas',
+  connectionString: process.env.DATABASE_URL || 'postgres://saas:BeticoDB2026@betico_postgres:5432/whatsapp_saas?sslmode=disable',
   max: 15,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000,
