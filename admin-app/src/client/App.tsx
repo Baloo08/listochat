@@ -8,7 +8,9 @@ import {
   LogOut,
   ExternalLink,
   Shield,
-  Loader2
+  Loader2,
+  MessageSquare,
+  Sliders
 } from 'lucide-react';
 import { useAdminAuth } from './useAdminAuth';
 import LoginView from './components/LoginView';
@@ -17,8 +19,10 @@ import TenantsManager from './components/TenantsManager';
 import SystemHealth from './components/SystemHealth';
 import BillingManager from './components/BillingManager';
 import AuditLogsView from './components/AuditLogsView';
+import MasterBotsAndLiveChats from './components/MasterBotsAndLiveChats';
+import PlatformSettingsView from './components/PlatformSettingsView';
 
-type Tab = 'monitoring' | 'tenants' | 'system' | 'billing' | 'audit';
+type Tab = 'monitoring' | 'tenants' | 'bots' | 'billing' | 'system' | 'platform' | 'audit';
 
 export default function App() {
   const { isAuthenticated, user, loading, login, logout } = useAdminAuth();
@@ -92,25 +96,25 @@ export default function App() {
           </div>
 
           {/* Navigation Tabs */}
-          <nav style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <nav style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
             <button
               onClick={() => setCurrentTab('monitoring')}
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: '8px',
-                padding: '8px 14px',
+                padding: '8px 12px',
                 borderRadius: '8px',
                 border: 'none',
                 backgroundColor: currentTab === 'monitoring' ? '#0f2426' : 'transparent',
                 color: currentTab === 'monitoring' ? '#34D399' : '#94a3b8',
                 fontWeight: currentTab === 'monitoring' ? 700 : 500,
-                fontSize: '0.85rem',
+                fontSize: '0.82rem',
                 cursor: 'pointer',
                 transition: 'all 0.2s'
               }}
             >
-              <Activity size={16} />
+              <Activity size={15} />
               Monitoreo 360°
             </button>
 
@@ -120,40 +124,40 @@ export default function App() {
                 display: 'flex',
                 alignItems: 'center',
                 gap: '8px',
-                padding: '8px 14px',
+                padding: '8px 12px',
                 borderRadius: '8px',
                 border: 'none',
                 backgroundColor: currentTab === 'tenants' ? '#0f2426' : 'transparent',
                 color: currentTab === 'tenants' ? '#34D399' : '#94a3b8',
                 fontWeight: currentTab === 'tenants' ? 700 : 500,
-                fontSize: '0.85rem',
+                fontSize: '0.82rem',
                 cursor: 'pointer',
                 transition: 'all 0.2s'
               }}
             >
-              <Building2 size={16} />
+              <Building2 size={15} />
               Negocios
             </button>
 
             <button
-              onClick={() => setCurrentTab('system')}
+              onClick={() => setCurrentTab('bots')}
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: '8px',
-                padding: '8px 14px',
+                padding: '8px 12px',
                 borderRadius: '8px',
                 border: 'none',
-                backgroundColor: currentTab === 'system' ? '#0f2426' : 'transparent',
-                color: currentTab === 'system' ? '#34D399' : '#94a3b8',
-                fontWeight: currentTab === 'system' ? 700 : 500,
-                fontSize: '0.85rem',
+                backgroundColor: currentTab === 'bots' ? '#0f2426' : 'transparent',
+                color: currentTab === 'bots' ? '#34D399' : '#94a3b8',
+                fontWeight: currentTab === 'bots' ? 700 : 500,
+                fontSize: '0.82rem',
                 cursor: 'pointer',
                 transition: 'all 0.2s'
               }}
             >
-              <Server size={16} />
-              Salud VPS
+              <MessageSquare size={15} />
+              Bots y Chats
             </button>
 
             <button
@@ -162,19 +166,61 @@ export default function App() {
                 display: 'flex',
                 alignItems: 'center',
                 gap: '8px',
-                padding: '8px 14px',
+                padding: '8px 12px',
                 borderRadius: '8px',
                 border: 'none',
                 backgroundColor: currentTab === 'billing' ? '#0f2426' : 'transparent',
                 color: currentTab === 'billing' ? '#34D399' : '#94a3b8',
                 fontWeight: currentTab === 'billing' ? 700 : 500,
-                fontSize: '0.85rem',
+                fontSize: '0.82rem',
                 cursor: 'pointer',
                 transition: 'all 0.2s'
               }}
             >
-              <DollarSign size={16} />
+              <DollarSign size={15} />
               Facturación
+            </button>
+
+            <button
+              onClick={() => setCurrentTab('system')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '8px 12px',
+                borderRadius: '8px',
+                border: 'none',
+                backgroundColor: currentTab === 'system' ? '#0f2426' : 'transparent',
+                color: currentTab === 'system' ? '#34D399' : '#94a3b8',
+                fontWeight: currentTab === 'system' ? 700 : 500,
+                fontSize: '0.82rem',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+            >
+              <Server size={15} />
+              Salud VPS
+            </button>
+
+            <button
+              onClick={() => setCurrentTab('platform')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '8px 12px',
+                borderRadius: '8px',
+                border: 'none',
+                backgroundColor: currentTab === 'platform' ? '#0f2426' : 'transparent',
+                color: currentTab === 'platform' ? '#34D399' : '#94a3b8',
+                fontWeight: currentTab === 'platform' ? 700 : 500,
+                fontSize: '0.82rem',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+            >
+              <Sliders size={15} />
+              Ajustes Plataforma
             </button>
 
             <button
@@ -183,18 +229,18 @@ export default function App() {
                 display: 'flex',
                 alignItems: 'center',
                 gap: '8px',
-                padding: '8px 14px',
+                padding: '8px 12px',
                 borderRadius: '8px',
                 border: 'none',
                 backgroundColor: currentTab === 'audit' ? '#0f2426' : 'transparent',
                 color: currentTab === 'audit' ? '#34D399' : '#94a3b8',
                 fontWeight: currentTab === 'audit' ? 700 : 500,
-                fontSize: '0.85rem',
+                fontSize: '0.82rem',
                 cursor: 'pointer',
                 transition: 'all 0.2s'
               }}
             >
-              <ShieldCheck size={16} />
+              <ShieldCheck size={15} />
               Auditoría
             </button>
           </nav>
@@ -271,8 +317,10 @@ export default function App() {
       <main>
         {currentTab === 'monitoring' && <MonitoringCenter />}
         {currentTab === 'tenants' && <TenantsManager />}
-        {currentTab === 'system' && <SystemHealth />}
+        {currentTab === 'bots' && <MasterBotsAndLiveChats />}
         {currentTab === 'billing' && <BillingManager />}
+        {currentTab === 'system' && <SystemHealth />}
+        {currentTab === 'platform' && <PlatformSettingsView />}
         {currentTab === 'audit' && <AuditLogsView />}
       </main>
     </div>

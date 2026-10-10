@@ -10,6 +10,8 @@ import systemRoutes from './routes/system.routes.js';
 import tenantsRoutes from './routes/tenants.routes.js';
 import billingRoutes from './routes/billing.routes.js';
 import auditRoutes from './routes/audit.routes.js';
+import platformRoutes from './routes/platform.routes.js';
+import botsChatsRoutes from './routes/bots-chats.routes.js';
 
 dotenv.config();
 
@@ -44,6 +46,8 @@ app.use('/api/system', systemRoutes);
 app.use('/api/tenants', tenantsRoutes);
 app.use('/api/billing', billingRoutes);
 app.use('/api/audit', auditRoutes);
+app.use('/api/platform', platformRoutes);
+app.use('/api/bots-chats', botsChatsRoutes);
 
 // Static assets (Vite frontend)
 app.use(express.static(__dirname));
