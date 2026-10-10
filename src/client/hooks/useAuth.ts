@@ -14,7 +14,21 @@ export interface User {
 }
 
 export function useAuth() {
-  const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
+  const [token, setToken] = useState<string | null>(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const urlToken = params.get('impersonateToken') || params.get('token');
+      if (urlToken) {
+        localStorage.setItem('token', urlToken);
+        const url = new URL(window.location.href);
+        url.searchParams.delete('impersonateToken');
+        url.searchParams.delete('token');
+        window.history.replaceState({}, document.title, url.pathname + (url.search || ''));
+        return urlToken;
+      }
+    } catch (_) {}
+    return localStorage.getItem('token');
+  });
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);

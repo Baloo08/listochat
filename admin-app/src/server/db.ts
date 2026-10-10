@@ -1,0 +1,32 @@
+import pg from 'pg';
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+const { Pool } = pg;
+
+export const pool = new Pool({
+  connectionString: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/whatsapp_saas',
+  max: 15,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 5000,
+});
+
+pool.on('error', (err) => {
+  console.error('[Admin DB] Error inesperado en el pool de PostgreSQL:', err);
+});
+
+export async function query(text: string, params?: any[]) {
+  const start = Date.now();
+  try {
+    const res = await pool.query(text, params);
+    const duration = Date.now() - start;
+    if (duration > 1000) {
+      console.warn(`[Admin DB] Consulta lenta (${duration}ms):`, text.substring(0, 100));
+    }
+    return res;
+  } catch (error) {
+    console.error(`[Admin DB] Error en consulta:`, text.substring(0, 100), error);
+    throw error;
+  }
+}
