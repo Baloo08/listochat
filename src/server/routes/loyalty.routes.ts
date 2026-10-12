@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import multer from 'multer';
 import { authenticateToken } from '../middleware/auth.js';
 import { tenantContext } from '../middleware/tenantContext.js';
 import {
@@ -16,6 +17,21 @@ import {
   listTenantVouchers,
   redeemVoucher
 } from '../db/loyalty.repo.js';
+import {
+  getWalletConfigByTenant,
+  saveWalletConfig,
+  updateWalletTestStatus,
+  getWalletDecryptedSecrets
+} from '../db/wallet-config.repo.js';
+import {
+  verifyGoogleWalletCredentials,
+  verifyAppleWalletCredentials
+} from '../services/wallet-pass.service.js';
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 }
+});
 
 const router = Router();
 router.use(authenticateToken);
@@ -202,6 +218,118 @@ router.post('/vouchers/:codeOrId/redeem', async (req, res) => {
   } catch (error: any) {
     console.error('[LoyaltyRoutes] Error redeeming voucher:', error);
     res.status(400).json({ error: error.message || 'Error al canjear voucher' });
+  }
+});
+
+// ==========================================
+// CONFIGURACIÓN DE BILLETERAS MÓVILES (GOOGLE WALLET Y APPLE WALLET)
+// ==========================================
+
+router.get('/wallet-config', async (req, res) => {
+  try {
+    const config = await getWalletConfigByTenant(req.tenantId!);
+    res.json({ success: true, config });
+  } catch (error: any) {
+    console.error('[LoyaltyRoutes] Error al consultar wallet-config:', error);
+    res.status(500).json({ error: 'Error al consultar configuración de billeteras digitales' });
+  }
+});
+
+router.post('/wallet-config', upload.single('appleP12File'), async (req, res) => {
+  try {
+    const tenantId = req.tenantId!;
+    const body = req.body || {};
+    const file = req.file;
+
+    // Si se solicita activar Google Wallet, asegurar que exista llave privada configurada
+    const currentConfig = await getWalletConfigByTenant(tenantId);
+    if (body.googleIsActive === true || body.googleIsActive === 'true') {
+      const hasKey = currentConfig.googleHasKey || Boolean(body.googlePrivateKey || body.googleServiceAccountJson);
+      if (!hasKey) {
+        res.status(400).json({
+          error: 'No puedes activar Google Wallet sin haber configurado y guardado primero tu llave privada RSA de la Cuenta de Servicio.'
+        });
+        return;
+      }
+    }
+
+    if (body.appleIsActive === true || body.appleIsActive === 'true') {
+      const hasCert = currentConfig.appleHasCertificate || Boolean(file?.buffer);
+      if (!hasCert) {
+        res.status(400).json({
+          error: 'No puedes activar Apple Wallet sin haber cargado primero tu certificado .p12 oficial.'
+        });
+        return;
+      }
+    }
+
+    const updated = await saveWalletConfig(tenantId, {
+      googleIssuerId: body.googleIssuerId,
+      googleClientEmail: body.googleClientEmail,
+      googlePrivateKey: body.googlePrivateKey,
+      googleServiceAccountJson: body.googleServiceAccountJson,
+      googleIsActive: body.googleIsActive !== undefined ? (body.googleIsActive === true || body.googleIsActive === 'true') : undefined,
+      applePassTypeId: body.applePassTypeId,
+      appleTeamId: body.appleTeamId,
+      appleP12Buffer: file?.buffer,
+      appleP12Filename: file?.originalname,
+      appleP12Password: body.appleP12Password,
+      appleIsActive: body.appleIsActive !== undefined ? (body.appleIsActive === true || body.appleIsActive === 'true') : undefined
+    });
+
+    res.json({ success: true, config: updated });
+  } catch (error: any) {
+    console.error('[LoyaltyRoutes] Error al guardar wallet-config:', error);
+    res.status(500).json({ error: error.message || 'Error al guardar credenciales de billeteras' });
+  }
+});
+
+router.post('/wallet-config/test-google', async (req, res) => {
+  try {
+    const tenantId = req.tenantId!;
+    let { issuerId, clientEmail, privateKey } = req.body || {};
+
+    if (!issuerId || !clientEmail || !privateKey) {
+      // Usar secretos guardados
+      const secrets = await getWalletDecryptedSecrets(tenantId);
+      if (secrets) {
+        issuerId = issuerId || secrets.googleIssuerId;
+        clientEmail = clientEmail || secrets.googleClientEmail;
+        privateKey = privateKey || secrets.googlePrivateKey;
+      }
+    }
+
+    const testResult = verifyGoogleWalletCredentials(issuerId, clientEmail, privateKey);
+    await updateWalletTestStatus(tenantId, 'google', testResult.success, testResult.message);
+    res.json(testResult);
+  } catch (error: any) {
+    console.error('[LoyaltyRoutes] Error en test-google:', error);
+    res.status(500).json({ success: false, message: error.message || 'Error al validar credenciales de Google Wallet' });
+  }
+});
+
+router.post('/wallet-config/test-apple', async (req, res) => {
+  try {
+    const tenantId = req.tenantId!;
+    let { passTypeId, teamId, password } = req.body || {};
+
+    let p12Buffer: Buffer | null = null;
+    if (!passTypeId || !teamId) {
+      const secrets = await getWalletDecryptedSecrets(tenantId);
+      if (secrets) {
+        passTypeId = passTypeId || secrets.applePassTypeId;
+        teamId = teamId || secrets.appleTeamId;
+        password = password || secrets.appleP12Password;
+        p12Buffer = secrets.appleP12Buffer;
+      }
+    }
+
+    const testResult = verifyAppleWalletCredentials(passTypeId, teamId, p12Buffer, password);
+    await updateWalletTestStatus(tenantId, 'apple', testResult.success, testResult.message);
+    res.json(testResult);
+  } catch (error: any) {
+    console.error('[LoyaltyRoutes] Error en test-apple:', error);
+    res.status(500).json({ success: false, message: error.message || 'Error al validar credenciales de Apple Wallet' });
   }
 });
 

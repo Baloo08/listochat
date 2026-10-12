@@ -6540,6 +6540,31 @@ async function runMigrations() {
     ALTER TABLE tenant_almendro_configs ADD COLUMN IF NOT EXISTS is_simplified_regime BOOLEAN DEFAULT false;
     ALTER TABLE loyalty_programs ADD COLUMN IF NOT EXISTS enable_google_wallet BOOLEAN DEFAULT true;
     ALTER TABLE loyalty_programs ADD COLUMN IF NOT EXISTS enable_apple_wallet BOOLEAN DEFAULT true;
+
+    CREATE TABLE IF NOT EXISTS tenant_wallet_configs (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      google_issuer_id VARCHAR(100) DEFAULT '',
+      google_client_email VARCHAR(255) DEFAULT '',
+      google_private_key_encrypted TEXT DEFAULT '',
+      google_is_active BOOLEAN DEFAULT false,
+      google_is_tested BOOLEAN DEFAULT false,
+      google_last_test_at TIMESTAMPTZ,
+      google_last_test_message TEXT,
+      apple_pass_type_id VARCHAR(150) DEFAULT '',
+      apple_team_id VARCHAR(50) DEFAULT '',
+      apple_p12_encrypted_blob BYTEA,
+      apple_p12_filename VARCHAR(255) DEFAULT '',
+      apple_p12_password_encrypted TEXT DEFAULT '',
+      apple_is_active BOOLEAN DEFAULT false,
+      apple_is_tested BOOLEAN DEFAULT false,
+      apple_last_test_at TIMESTAMPTZ,
+      apple_last_test_message TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(tenant_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_tenant_wallet_configs_tenant ON tenant_wallet_configs(tenant_id);
   `).catch((err) => {
     console.warn("[Migrations] Columns addition warning:", err?.message || err);
   });
@@ -22859,7 +22884,553 @@ var superadmin_almendro_routes_default = router35;
 
 // src/server/routes/loyalty.routes.ts
 import { Router as Router36 } from "express";
+import multer3 from "multer";
 init_loyalty_repo();
+
+// src/server/db/wallet-config.repo.ts
+init_pool();
+init_encryption();
+function parseGoogleServiceAccountJson(input) {
+  const trimmed = input.trim();
+  if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      return {
+        clientEmail: parsed.client_email || void 0,
+        privateKey: parsed.private_key || void 0
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+  return null;
+}
+async function getWalletConfigByTenant(tenantId) {
+  const res = await query(
+    `SELECT * FROM tenant_wallet_configs WHERE tenant_id = $1`,
+    [tenantId]
+  );
+  if (res.rows.length === 0) {
+    return {
+      tenantId,
+      googleIssuerId: "",
+      googleClientEmail: "",
+      googlePrivateKeyMasked: "",
+      googleHasKey: false,
+      googleIsActive: false,
+      googleIsTested: false,
+      googleLastTestAt: null,
+      googleLastTestMessage: null,
+      applePassTypeId: "",
+      appleTeamId: "",
+      appleP12Filename: "",
+      appleHasCertificate: false,
+      applePasswordMasked: "",
+      appleIsActive: false,
+      appleIsTested: false,
+      appleLastTestAt: null,
+      appleLastTestMessage: null
+    };
+  }
+  const row = res.rows[0];
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    googleIssuerId: row.google_issuer_id || "",
+    googleClientEmail: row.google_client_email || "",
+    googlePrivateKeyMasked: row.google_private_key_encrypted ? "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022" : "",
+    googleHasKey: Boolean(row.google_private_key_encrypted),
+    googleIsActive: Boolean(row.google_is_active),
+    googleIsTested: Boolean(row.google_is_tested),
+    googleLastTestAt: row.google_last_test_at ? row.google_last_test_at.toISOString() : null,
+    googleLastTestMessage: row.google_last_test_message || null,
+    applePassTypeId: row.apple_pass_type_id || "",
+    appleTeamId: row.apple_team_id || "",
+    appleP12Filename: row.apple_p12_filename || "",
+    appleHasCertificate: Boolean(row.apple_p12_encrypted_blob || row.apple_p12_filename),
+    applePasswordMasked: row.apple_p12_password_encrypted ? "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022" : "",
+    appleIsActive: Boolean(row.apple_is_active),
+    appleIsTested: Boolean(row.apple_is_tested),
+    appleLastTestAt: row.apple_last_test_at ? row.apple_last_test_at.toISOString() : null,
+    appleLastTestMessage: row.apple_last_test_message || null,
+    createdAt: row.created_at ? row.created_at.toISOString() : void 0,
+    updatedAt: row.updated_at ? row.updated_at.toISOString() : void 0
+  };
+}
+async function getWalletDecryptedSecrets(tenantId) {
+  const res = await query(
+    `SELECT * FROM tenant_wallet_configs WHERE tenant_id = $1`,
+    [tenantId]
+  );
+  if (res.rows.length === 0) return null;
+  const row = res.rows[0];
+  let googlePrivateKey = "";
+  if (row.google_private_key_encrypted) {
+    try {
+      googlePrivateKey = decrypt(row.google_private_key_encrypted);
+    } catch (e) {
+      console.error("[WalletConfigRepo] Error descifrando private key de Google:", e.message);
+    }
+  }
+  let appleP12Buffer = null;
+  if (row.apple_p12_encrypted_blob) {
+    try {
+      const rawEncrypted = row.apple_p12_encrypted_blob.toString("utf8");
+      const decryptedBase64 = decrypt(rawEncrypted);
+      appleP12Buffer = Buffer.from(decryptedBase64, "base64");
+    } catch (e) {
+      console.error("[WalletConfigRepo] Error descifrando certificado .p12 de Apple:", e.message);
+    }
+  }
+  let appleP12Password = "";
+  if (row.apple_p12_password_encrypted) {
+    try {
+      appleP12Password = decrypt(row.apple_p12_password_encrypted);
+    } catch (e) {
+      console.error("[WalletConfigRepo] Error descifrando password de Apple .p12:", e.message);
+    }
+  }
+  return {
+    tenantId,
+    googleIssuerId: row.google_issuer_id || "",
+    googleClientEmail: row.google_client_email || "",
+    googlePrivateKey,
+    googleIsActive: Boolean(row.google_is_active),
+    googleIsTested: Boolean(row.google_is_tested),
+    applePassTypeId: row.apple_pass_type_id || "",
+    appleTeamId: row.apple_team_id || "",
+    appleP12Buffer,
+    appleP12Password,
+    appleIsActive: Boolean(row.apple_is_active),
+    appleIsTested: Boolean(row.apple_is_tested)
+  };
+}
+async function saveWalletConfig(tenantId, data) {
+  const existingRes = await query(
+    `SELECT * FROM tenant_wallet_configs WHERE tenant_id = $1`,
+    [tenantId]
+  );
+  const existing = existingRes.rows[0] || {};
+  let googleIssuerId = data.googleIssuerId !== void 0 ? data.googleIssuerId.trim() : existing.google_issuer_id || "";
+  let googleClientEmail = data.googleClientEmail !== void 0 ? data.googleClientEmail.trim() : existing.google_client_email || "";
+  let googlePrivateKeyEncrypted = existing.google_private_key_encrypted || "";
+  const potentialJson = data.googleServiceAccountJson || data.googlePrivateKey || "";
+  const parsedJson = parseGoogleServiceAccountJson(potentialJson);
+  if (parsedJson) {
+    if (parsedJson.clientEmail) googleClientEmail = parsedJson.clientEmail;
+    if (parsedJson.privateKey) {
+      googlePrivateKeyEncrypted = encrypt(parsedJson.privateKey);
+    }
+  } else if (data.googlePrivateKey && data.googlePrivateKey.trim()) {
+    googlePrivateKeyEncrypted = encrypt(data.googlePrivateKey.trim());
+  }
+  const googleIsActive = data.googleIsActive !== void 0 ? Boolean(data.googleIsActive) : Boolean(existing.google_is_active);
+  const googleIsTested = data.googleIsTested !== void 0 ? Boolean(data.googleIsTested) : Boolean(existing.google_is_tested);
+  const applePassTypeId = data.applePassTypeId !== void 0 ? data.applePassTypeId.trim() : existing.apple_pass_type_id || "";
+  const appleTeamId = data.appleTeamId !== void 0 ? data.appleTeamId.trim() : existing.apple_team_id || "";
+  let appleP12EncryptedBlob = existing.apple_p12_encrypted_blob || null;
+  let appleP12Filename = existing.apple_p12_filename || "";
+  if (data.appleP12Buffer && Buffer.isBuffer(data.appleP12Buffer)) {
+    const base64P12 = data.appleP12Buffer.toString("base64");
+    const encryptedP12 = encrypt(base64P12);
+    appleP12EncryptedBlob = Buffer.from(encryptedP12, "utf8");
+    appleP12Filename = data.appleP12Filename || "pass_certificate.p12";
+  }
+  let appleP12PasswordEncrypted = existing.apple_p12_password_encrypted || "";
+  if (data.appleP12Password !== void 0 && data.appleP12Password.trim()) {
+    appleP12PasswordEncrypted = encrypt(data.appleP12Password.trim());
+  }
+  const appleIsActive = data.appleIsActive !== void 0 ? Boolean(data.appleIsActive) : Boolean(existing.apple_is_active);
+  const appleIsTested = data.appleIsTested !== void 0 ? Boolean(data.appleIsTested) : Boolean(existing.apple_is_tested);
+  await query(
+    `INSERT INTO tenant_wallet_configs (
+      tenant_id, google_issuer_id, google_client_email, google_private_key_encrypted,
+      google_is_active, google_is_tested, apple_pass_type_id, apple_team_id,
+      apple_p12_encrypted_blob, apple_p12_filename, apple_p12_password_encrypted,
+      apple_is_active, apple_is_tested, updated_at
+    ) VALUES (
+      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW()
+    )
+    ON CONFLICT (tenant_id) DO UPDATE SET
+      google_issuer_id = EXCLUDED.google_issuer_id,
+      google_client_email = EXCLUDED.google_client_email,
+      google_private_key_encrypted = EXCLUDED.google_private_key_encrypted,
+      google_is_active = EXCLUDED.google_is_active,
+      google_is_tested = EXCLUDED.google_is_tested,
+      apple_pass_type_id = EXCLUDED.apple_pass_type_id,
+      apple_team_id = EXCLUDED.apple_team_id,
+      apple_p12_encrypted_blob = COALESCE(EXCLUDED.apple_p12_encrypted_blob, tenant_wallet_configs.apple_p12_encrypted_blob),
+      apple_p12_filename = COALESCE(EXCLUDED.apple_p12_filename, tenant_wallet_configs.apple_p12_filename),
+      apple_p12_password_encrypted = EXCLUDED.apple_p12_password_encrypted,
+      apple_is_active = EXCLUDED.apple_is_active,
+      apple_is_tested = EXCLUDED.apple_is_tested,
+      updated_at = NOW()`,
+    [
+      tenantId,
+      googleIssuerId,
+      googleClientEmail,
+      googlePrivateKeyEncrypted,
+      googleIsActive,
+      googleIsTested,
+      applePassTypeId,
+      appleTeamId,
+      appleP12EncryptedBlob,
+      appleP12Filename,
+      appleP12PasswordEncrypted,
+      appleIsActive,
+      appleIsTested
+    ]
+  );
+  return getWalletConfigByTenant(tenantId);
+}
+async function updateWalletTestStatus(tenantId, walletType, isTested, message) {
+  if (walletType === "google") {
+    await query(
+      `UPDATE tenant_wallet_configs
+       SET google_is_tested = $1,
+           google_last_test_at = NOW(),
+           google_last_test_message = $2,
+           updated_at = NOW()
+       WHERE tenant_id = $3`,
+      [isTested, message, tenantId]
+    );
+  } else {
+    await query(
+      `UPDATE tenant_wallet_configs
+       SET apple_is_tested = $1,
+           apple_last_test_at = NOW(),
+           apple_last_test_message = $2,
+           updated_at = NOW()
+       WHERE tenant_id = $3`,
+      [isTested, message, tenantId]
+    );
+  }
+}
+
+// src/server/services/wallet-pass.service.ts
+init_env();
+import crypto7 from "crypto";
+import jwt4 from "jsonwebtoken";
+function calculateCrc32(buf) {
+  let table = new Uint32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let k = 0; k < 8; k++) {
+      c = c & 1 ? 3988292384 ^ c >>> 1 : c >>> 1;
+    }
+    table[i] = c;
+  }
+  let crc = 4294967295;
+  for (let i = 0; i < buf.length; i++) {
+    crc = crc >>> 8 ^ table[(crc ^ buf[i]) & 255];
+  }
+  return (crc ^ 4294967295) >>> 0;
+}
+function buildZipArchive(files) {
+  const localHeaders = [];
+  const centralHeaders = [];
+  let offset = 0;
+  for (const file of files) {
+    const nameBuf = Buffer.from(file.name, "utf8");
+    const dataBuf = Buffer.isBuffer(file.data) ? file.data : Buffer.from(file.data, "utf8");
+    const fileCrc = calculateCrc32(dataBuf);
+    const size = dataBuf.length;
+    const localHeader = Buffer.alloc(30 + nameBuf.length);
+    localHeader.writeUInt32LE(67324752, 0);
+    localHeader.writeUInt16LE(20, 4);
+    localHeader.writeUInt16LE(0, 6);
+    localHeader.writeUInt16LE(0, 8);
+    localHeader.writeUInt16LE(0, 10);
+    localHeader.writeUInt16LE(0, 12);
+    localHeader.writeUInt32LE(fileCrc, 14);
+    localHeader.writeUInt32LE(size, 18);
+    localHeader.writeUInt32LE(size, 22);
+    localHeader.writeUInt16LE(nameBuf.length, 26);
+    localHeader.writeUInt16LE(0, 28);
+    nameBuf.copy(localHeader, 30);
+    localHeaders.push(localHeader, dataBuf);
+    const centralHeader = Buffer.alloc(46 + nameBuf.length);
+    centralHeader.writeUInt32LE(33639248, 0);
+    centralHeader.writeUInt16LE(20, 4);
+    centralHeader.writeUInt16LE(20, 6);
+    centralHeader.writeUInt16LE(0, 8);
+    centralHeader.writeUInt16LE(0, 10);
+    centralHeader.writeUInt16LE(0, 12);
+    centralHeader.writeUInt16LE(0, 14);
+    centralHeader.writeUInt32LE(fileCrc, 16);
+    centralHeader.writeUInt32LE(size, 20);
+    centralHeader.writeUInt32LE(size, 24);
+    centralHeader.writeUInt16LE(nameBuf.length, 28);
+    centralHeader.writeUInt16LE(0, 30);
+    centralHeader.writeUInt16LE(0, 32);
+    centralHeader.writeUInt16LE(0, 34);
+    centralHeader.writeUInt16LE(0, 36);
+    centralHeader.writeUInt32LE(0, 38);
+    centralHeader.writeUInt32LE(offset, 42);
+    nameBuf.copy(centralHeader, 46);
+    centralHeaders.push(centralHeader);
+    offset += localHeader.length + dataBuf.length;
+  }
+  const centralDirOffset = offset;
+  let centralDirSize = 0;
+  for (const ch of centralHeaders) {
+    centralDirSize += ch.length;
+  }
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(101010256, 0);
+  eocd.writeUInt16LE(0, 4);
+  eocd.writeUInt16LE(0, 6);
+  eocd.writeUInt16LE(files.length, 8);
+  eocd.writeUInt16LE(files.length, 10);
+  eocd.writeUInt32LE(centralDirSize, 12);
+  eocd.writeUInt32LE(centralDirOffset, 16);
+  eocd.writeUInt16LE(0, 20);
+  return Buffer.concat([...localHeaders, ...centralHeaders, eocd]);
+}
+function verifyGoogleWalletCredentials(issuerId, clientEmail, privateKeyPem) {
+  const trimmedIssuer = (issuerId || "").trim();
+  const trimmedEmail = (clientEmail || "").trim();
+  const trimmedKey = (privateKeyPem || "").trim();
+  if (!trimmedIssuer) {
+    return { success: false, message: "El ID de Emisor (Issuer ID) de Google Wallet es obligatorio." };
+  }
+  if (!trimmedEmail) {
+    return { success: false, message: "El correo de la Cuenta de Servicio de Google Cloud es obligatorio." };
+  }
+  if (!trimmedKey) {
+    return { success: false, message: "La llave privada RSA de la Cuenta de Servicio es obligatoria." };
+  }
+  if (!trimmedKey.includes("-----BEGIN") || !trimmedKey.includes("PRIVATE KEY-----")) {
+    return {
+      success: false,
+      message: "Formato de llave privada inv\xE1lido. Debe ser una llave RSA en formato PEM (iniciando con -----BEGIN PRIVATE KEY----- o -----BEGIN RSA PRIVATE KEY-----)."
+    };
+  }
+  try {
+    const formattedKey = trimmedKey.replace(/\\n/g, "\n");
+    const testClaims = {
+      iss: trimmedEmail,
+      aud: "google",
+      typ: "savetowallet",
+      iat: Math.floor(Date.now() / 1e3)
+    };
+    const signedToken = jwt4.sign(testClaims, formattedKey, { algorithm: "RS256" });
+    if (!signedToken) {
+      return { success: false, message: "No se pudo generar la firma RS256 de prueba." };
+    }
+    return {
+      success: true,
+      message: "\xA1Credenciales de Google Wallet validadas exitosamente! La llave privada RSA y la cuenta de servicio funcionan correctamente con el est\xE1ndar RS256."
+    };
+  } catch (err) {
+    return {
+      success: false,
+      message: `Error al verificar la firma RSA de la llave privada: ${err.message || "Llave RSA inv\xE1lida o corrupta"}`
+    };
+  }
+}
+function verifyAppleWalletCredentials(passTypeId, teamId, p12Buffer, _p12Password) {
+  const trimmedPassType = (passTypeId || "").trim();
+  const trimmedTeam = (teamId || "").trim();
+  if (!trimmedPassType) {
+    return { success: false, message: "El Pass Type ID de Apple Wallet es obligatorio (ej. pass.cr.minegocio.club)." };
+  }
+  if (!trimmedPassType.startsWith("pass.")) {
+    return { success: false, message: 'El Pass Type ID debe comenzar con "pass." (ej. pass.cr.minegocio.club).' };
+  }
+  if (!trimmedTeam) {
+    return { success: false, message: "El Apple Team ID es obligatorio (c\xF3digo alfanum\xE9rico de 10 caracteres)." };
+  }
+  if (p12Buffer && p12Buffer.length === 0) {
+    return { success: false, message: "El archivo de certificado .p12 provisto est\xE1 vac\xEDo." };
+  }
+  return {
+    success: true,
+    message: "\xA1Credenciales de Apple Wallet validadas exitosamente!"
+  };
+}
+function generateApplePassJson(card, customer, customCredentials) {
+  const isPoints = card.programType === "points";
+  const stampsTarget = card.stampsTarget || 10;
+  const prize = card.stampsPrize || "Premio de lealtad";
+  const primaryValue = isPoints ? `${Number(card.pointsBalance || 0).toLocaleString()} pts` : `${Number(card.currentStamps || 0)} de ${stampsTarget} sellos`;
+  const primaryLabel = isPoints ? "Puntos Acumulados" : "Sellos Obtenidos";
+  return {
+    formatVersion: 1,
+    passTypeIdentifier: customCredentials?.applePassTypeId || process.env.APPLE_PASS_TYPE_ID || "pass.cr.betico.club",
+    serialNumber: `card_${card.id}`,
+    teamIdentifier: customCredentials?.appleTeamId || process.env.APPLE_TEAM_ID || "BETICO_CR",
+    organizationName: card.tenantName || "Betico Club",
+    description: `Tarjeta de Fidelidad - ${card.tenantName || "Betico Club"}`,
+    logoText: card.tenantName || "Betico Club",
+    foregroundColor: "rgb(255, 255, 255)",
+    backgroundColor: "rgb(30, 41, 59)",
+    labelColor: "rgb(148, 163, 184)",
+    storeCard: {
+      primaryFields: [
+        {
+          key: "balance",
+          label: primaryLabel,
+          value: primaryValue
+        }
+      ],
+      secondaryFields: [
+        {
+          key: "holderName",
+          label: "Titular",
+          value: customer.fullName || "Cliente"
+        },
+        {
+          key: "holderId",
+          label: "C\xE9dula",
+          value: customer.identification
+        }
+      ],
+      auxiliaryFields: [
+        {
+          key: "rewardPrize",
+          label: "Meta o Premio",
+          value: prize
+        }
+      ],
+      backFields: [
+        {
+          key: "terms",
+          label: "T\xE9rminos y Condiciones",
+          value: `Tarjeta de fidelidad emitida por ${card.tenantName || "el comercio"}. V\xE1lido para compras en la tienda y caja f\xEDsica dictando tu n\xFAmero de c\xE9dula.`
+        },
+        {
+          key: "customerService",
+          label: "Atenci\xF3n al Cliente",
+          value: "Presenta este pase digital o tu n\xFAmero de c\xE9dula oficial al realizar tus pagos."
+        },
+        {
+          key: "poweredBy",
+          label: "Plataforma",
+          value: "Betico Club y Billetera Digital de Fidelidad Multi-comercio."
+        }
+      ]
+    },
+    barcodes: [
+      {
+        format: "PKBarcodeFormatCode128",
+        message: customer.identification,
+        messageEncoding: "iso-8859-1",
+        altText: customer.identification
+      },
+      {
+        format: "PKBarcodeFormatQR",
+        message: `https://betico.app/fidelidad/${card.tenantSlug || ""}?id=${encodeURIComponent(customer.identification)}`,
+        messageEncoding: "iso-8859-1",
+        altText: "Escanear en Caja"
+      }
+    ]
+  };
+}
+function generateApplePassBundle(card, customer, customCredentials) {
+  const passJsonObj = generateApplePassJson(card, customer, customCredentials);
+  const passJsonBuffer = Buffer.from(JSON.stringify(passJsonObj, null, 2), "utf8");
+  const sha1 = crypto7.createHash("sha1").update(passJsonBuffer).digest("hex");
+  const manifest = {
+    "pass.json": sha1
+  };
+  const manifestBuffer = Buffer.from(JSON.stringify(manifest, null, 2), "utf8");
+  return buildZipArchive([
+    { name: "pass.json", data: passJsonBuffer },
+    { name: "manifest.json", data: manifestBuffer }
+  ]);
+}
+function generateGoogleWalletSaveUrl(card, customer, customCredentials) {
+  const issuerId = customCredentials?.googleIssuerId || process.env.GOOGLE_WALLET_ISSUER_ID || "3388000000022222222";
+  const clientEmail = customCredentials?.googleClientEmail || process.env.GOOGLE_WALLET_CLIENT_EMAIL || "betico-wallet@betico-saas.iam.gserviceaccount.com";
+  const privateKey = customCredentials?.googlePrivateKey || process.env.GOOGLE_WALLET_PRIVATE_KEY;
+  const classId = `${issuerId}.betico_club_${card.tenantId.replace(/-/g, "_")}`;
+  const objectId = `${issuerId}.card_${card.id.replace(/-/g, "_")}`;
+  const isPoints = card.programType === "points";
+  const stampsTarget = card.stampsTarget || 10;
+  const balanceStr = isPoints ? `${Number(card.pointsBalance || 0).toLocaleString()} pts` : `${Number(card.currentStamps || 0)}/${stampsTarget} sellos`;
+  const loyaltyClass = {
+    id: classId,
+    issuerName: card.tenantName || "Betico Club",
+    programName: `Club de Clientes ${card.tenantName || "Betico"}`,
+    reviewStatus: "UNDER_REVIEW"
+  };
+  const loyaltyObject = {
+    id: objectId,
+    classId,
+    state: "ACTIVE",
+    accountId: customer.identification,
+    accountName: customer.fullName || "Cliente Betico",
+    barcode: {
+      type: "CODE_128",
+      value: customer.identification,
+      alternateText: customer.identification
+    },
+    loyaltyPoints: {
+      label: isPoints ? "Puntos" : "Sellos",
+      balance: {
+        string: balanceStr
+      }
+    },
+    infoModuleData: {
+      labelValueRows: [
+        {
+          columns: [
+            {
+              label: "Premio o Meta",
+              value: card.stampsPrize || "Premio de Fidelidad"
+            },
+            {
+              label: "Comercio",
+              value: card.tenantName || "Betico"
+            }
+          ]
+        }
+      ]
+    }
+  };
+  const claims = {
+    iss: clientEmail,
+    aud: "google",
+    typ: "savetowallet",
+    origins: ["https://betico.app"],
+    payload: {
+      loyaltyClasses: [loyaltyClass],
+      loyaltyObjects: [loyaltyObject]
+    }
+  };
+  let token;
+  if (privateKey) {
+    try {
+      token = jwt4.sign(claims, privateKey.replace(/\\n/g, "\n"), { algorithm: "RS256" });
+    } catch (_) {
+      token = jwt4.sign(claims, env.JWT_SECRET);
+    }
+  } else {
+    token = jwt4.sign(claims, env.JWT_SECRET);
+  }
+  const saveUrl = `https://pay.google.com/gp/v/save/${token}`;
+  return {
+    url: saveUrl,
+    jwt: token,
+    loyaltyObject,
+    isConfigured: isGoogleWalletConfigured(customCredentials)
+  };
+}
+function isGoogleWalletConfigured(customCredentials) {
+  if (customCredentials?.googleIssuerId && customCredentials?.googleClientEmail && customCredentials?.googlePrivateKey) {
+    return true;
+  }
+  return Boolean(
+    process.env.GOOGLE_WALLET_ISSUER_ID && process.env.GOOGLE_WALLET_CLIENT_EMAIL && process.env.GOOGLE_WALLET_PRIVATE_KEY
+  );
+}
+
+// src/server/routes/loyalty.routes.ts
+var upload3 = multer3({
+  storage: multer3.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 }
+});
 var router36 = Router36();
 router36.use(authenticateToken);
 router36.use(tenantContext);
@@ -23018,6 +23589,100 @@ router36.post("/vouchers/:codeOrId/redeem", async (req, res) => {
     res.status(400).json({ error: error.message || "Error al canjear voucher" });
   }
 });
+router36.get("/wallet-config", async (req, res) => {
+  try {
+    const config = await getWalletConfigByTenant(req.tenantId);
+    res.json({ success: true, config });
+  } catch (error) {
+    console.error("[LoyaltyRoutes] Error al consultar wallet-config:", error);
+    res.status(500).json({ error: "Error al consultar configuraci\xF3n de billeteras digitales" });
+  }
+});
+router36.post("/wallet-config", upload3.single("appleP12File"), async (req, res) => {
+  try {
+    const tenantId = req.tenantId;
+    const body = req.body || {};
+    const file = req.file;
+    const currentConfig = await getWalletConfigByTenant(tenantId);
+    if (body.googleIsActive === true || body.googleIsActive === "true") {
+      const hasKey = currentConfig.googleHasKey || Boolean(body.googlePrivateKey || body.googleServiceAccountJson);
+      if (!hasKey) {
+        res.status(400).json({
+          error: "No puedes activar Google Wallet sin haber configurado y guardado primero tu llave privada RSA de la Cuenta de Servicio."
+        });
+        return;
+      }
+    }
+    if (body.appleIsActive === true || body.appleIsActive === "true") {
+      const hasCert = currentConfig.appleHasCertificate || Boolean(file?.buffer);
+      if (!hasCert) {
+        res.status(400).json({
+          error: "No puedes activar Apple Wallet sin haber cargado primero tu certificado .p12 oficial."
+        });
+        return;
+      }
+    }
+    const updated = await saveWalletConfig(tenantId, {
+      googleIssuerId: body.googleIssuerId,
+      googleClientEmail: body.googleClientEmail,
+      googlePrivateKey: body.googlePrivateKey,
+      googleServiceAccountJson: body.googleServiceAccountJson,
+      googleIsActive: body.googleIsActive !== void 0 ? body.googleIsActive === true || body.googleIsActive === "true" : void 0,
+      applePassTypeId: body.applePassTypeId,
+      appleTeamId: body.appleTeamId,
+      appleP12Buffer: file?.buffer,
+      appleP12Filename: file?.originalname,
+      appleP12Password: body.appleP12Password,
+      appleIsActive: body.appleIsActive !== void 0 ? body.appleIsActive === true || body.appleIsActive === "true" : void 0
+    });
+    res.json({ success: true, config: updated });
+  } catch (error) {
+    console.error("[LoyaltyRoutes] Error al guardar wallet-config:", error);
+    res.status(500).json({ error: error.message || "Error al guardar credenciales de billeteras" });
+  }
+});
+router36.post("/wallet-config/test-google", async (req, res) => {
+  try {
+    const tenantId = req.tenantId;
+    let { issuerId, clientEmail, privateKey } = req.body || {};
+    if (!issuerId || !clientEmail || !privateKey) {
+      const secrets = await getWalletDecryptedSecrets(tenantId);
+      if (secrets) {
+        issuerId = issuerId || secrets.googleIssuerId;
+        clientEmail = clientEmail || secrets.googleClientEmail;
+        privateKey = privateKey || secrets.googlePrivateKey;
+      }
+    }
+    const testResult = verifyGoogleWalletCredentials(issuerId, clientEmail, privateKey);
+    await updateWalletTestStatus(tenantId, "google", testResult.success, testResult.message);
+    res.json(testResult);
+  } catch (error) {
+    console.error("[LoyaltyRoutes] Error en test-google:", error);
+    res.status(500).json({ success: false, message: error.message || "Error al validar credenciales de Google Wallet" });
+  }
+});
+router36.post("/wallet-config/test-apple", async (req, res) => {
+  try {
+    const tenantId = req.tenantId;
+    let { passTypeId, teamId, password } = req.body || {};
+    let p12Buffer = null;
+    if (!passTypeId || !teamId) {
+      const secrets = await getWalletDecryptedSecrets(tenantId);
+      if (secrets) {
+        passTypeId = passTypeId || secrets.applePassTypeId;
+        teamId = teamId || secrets.appleTeamId;
+        password = password || secrets.appleP12Password;
+        p12Buffer = secrets.appleP12Buffer;
+      }
+    }
+    const testResult = verifyAppleWalletCredentials(passTypeId, teamId, p12Buffer, password);
+    await updateWalletTestStatus(tenantId, "apple", testResult.success, testResult.message);
+    res.json(testResult);
+  } catch (error) {
+    console.error("[LoyaltyRoutes] Error en test-apple:", error);
+    res.status(500).json({ success: false, message: error.message || "Error al validar credenciales de Apple Wallet" });
+  }
+});
 var loyalty_routes_default = router36;
 
 // src/server/routes/loyalty-customer.routes.ts
@@ -23027,261 +23692,6 @@ init_tenant_repo();
 init_pool();
 import { Router as Router37 } from "express";
 import jwt5 from "jsonwebtoken";
-
-// src/server/services/wallet-pass.service.ts
-init_env();
-import crypto7 from "crypto";
-import jwt4 from "jsonwebtoken";
-function calculateCrc32(buf) {
-  let table = new Uint32Array(256);
-  for (let i = 0; i < 256; i++) {
-    let c = i;
-    for (let k = 0; k < 8; k++) {
-      c = c & 1 ? 3988292384 ^ c >>> 1 : c >>> 1;
-    }
-    table[i] = c;
-  }
-  let crc = 4294967295;
-  for (let i = 0; i < buf.length; i++) {
-    crc = crc >>> 8 ^ table[(crc ^ buf[i]) & 255];
-  }
-  return (crc ^ 4294967295) >>> 0;
-}
-function buildZipArchive(files) {
-  const localHeaders = [];
-  const centralHeaders = [];
-  let offset = 0;
-  for (const file of files) {
-    const nameBuf = Buffer.from(file.name, "utf8");
-    const dataBuf = Buffer.isBuffer(file.data) ? file.data : Buffer.from(file.data, "utf8");
-    const fileCrc = calculateCrc32(dataBuf);
-    const size = dataBuf.length;
-    const localHeader = Buffer.alloc(30 + nameBuf.length);
-    localHeader.writeUInt32LE(67324752, 0);
-    localHeader.writeUInt16LE(20, 4);
-    localHeader.writeUInt16LE(0, 6);
-    localHeader.writeUInt16LE(0, 8);
-    localHeader.writeUInt16LE(0, 10);
-    localHeader.writeUInt16LE(0, 12);
-    localHeader.writeUInt32LE(fileCrc, 14);
-    localHeader.writeUInt32LE(size, 18);
-    localHeader.writeUInt32LE(size, 22);
-    localHeader.writeUInt16LE(nameBuf.length, 26);
-    localHeader.writeUInt16LE(0, 28);
-    nameBuf.copy(localHeader, 30);
-    localHeaders.push(localHeader, dataBuf);
-    const centralHeader = Buffer.alloc(46 + nameBuf.length);
-    centralHeader.writeUInt32LE(33639248, 0);
-    centralHeader.writeUInt16LE(20, 4);
-    centralHeader.writeUInt16LE(20, 6);
-    centralHeader.writeUInt16LE(0, 8);
-    centralHeader.writeUInt16LE(0, 10);
-    centralHeader.writeUInt16LE(0, 12);
-    centralHeader.writeUInt16LE(0, 14);
-    centralHeader.writeUInt32LE(fileCrc, 16);
-    centralHeader.writeUInt32LE(size, 20);
-    centralHeader.writeUInt32LE(size, 24);
-    centralHeader.writeUInt16LE(nameBuf.length, 28);
-    centralHeader.writeUInt16LE(0, 30);
-    centralHeader.writeUInt16LE(0, 32);
-    centralHeader.writeUInt16LE(0, 34);
-    centralHeader.writeUInt16LE(0, 36);
-    centralHeader.writeUInt32LE(0, 38);
-    centralHeader.writeUInt32LE(offset, 42);
-    nameBuf.copy(centralHeader, 46);
-    centralHeaders.push(centralHeader);
-    offset += localHeader.length + dataBuf.length;
-  }
-  const centralDirOffset = offset;
-  let centralDirSize = 0;
-  for (const ch of centralHeaders) {
-    centralDirSize += ch.length;
-  }
-  const eocd = Buffer.alloc(22);
-  eocd.writeUInt32LE(101010256, 0);
-  eocd.writeUInt16LE(0, 4);
-  eocd.writeUInt16LE(0, 6);
-  eocd.writeUInt16LE(files.length, 8);
-  eocd.writeUInt16LE(files.length, 10);
-  eocd.writeUInt32LE(centralDirSize, 12);
-  eocd.writeUInt32LE(centralDirOffset, 16);
-  eocd.writeUInt16LE(0, 20);
-  return Buffer.concat([...localHeaders, ...centralHeaders, eocd]);
-}
-function generateApplePassJson(card, customer) {
-  const isPoints = card.programType === "points";
-  const stampsTarget = card.stampsTarget || 10;
-  const prize = card.stampsPrize || "Premio de lealtad";
-  const primaryValue = isPoints ? `${Number(card.pointsBalance || 0).toLocaleString()} pts` : `${Number(card.currentStamps || 0)} de ${stampsTarget} sellos`;
-  const primaryLabel = isPoints ? "Puntos Acumulados" : "Sellos Obtenidos";
-  return {
-    formatVersion: 1,
-    passTypeIdentifier: process.env.APPLE_PASS_TYPE_ID || "pass.cr.betico.club",
-    serialNumber: `card_${card.id}`,
-    teamIdentifier: process.env.APPLE_TEAM_ID || "BETICO_CR",
-    organizationName: card.tenantName || "Betico Club",
-    description: `Tarjeta de Fidelidad - ${card.tenantName || "Betico Club"}`,
-    logoText: card.tenantName || "Betico Club",
-    foregroundColor: "rgb(255, 255, 255)",
-    backgroundColor: "rgb(30, 41, 59)",
-    labelColor: "rgb(148, 163, 184)",
-    storeCard: {
-      primaryFields: [
-        {
-          key: "balance",
-          label: primaryLabel,
-          value: primaryValue
-        }
-      ],
-      secondaryFields: [
-        {
-          key: "holderName",
-          label: "Titular",
-          value: customer.fullName || "Cliente"
-        },
-        {
-          key: "holderId",
-          label: "C\xE9dula",
-          value: customer.identification
-        }
-      ],
-      auxiliaryFields: [
-        {
-          key: "rewardPrize",
-          label: "Meta o Premio",
-          value: prize
-        }
-      ],
-      backFields: [
-        {
-          key: "terms",
-          label: "T\xE9rminos y Condiciones",
-          value: `Tarjeta de fidelidad emitida por ${card.tenantName || "el comercio"}. V\xE1lido para compras en la tienda y caja f\xEDsica dictando tu n\xFAmero de c\xE9dula.`
-        },
-        {
-          key: "customerService",
-          label: "Atenci\xF3n al Cliente",
-          value: "Presenta este pase digital o tu n\xFAmero de c\xE9dula oficial al realizar tus pagos."
-        },
-        {
-          key: "poweredBy",
-          label: "Plataforma",
-          value: "Betico Club y Billetera Digital de Fidelidad Multi-comercio."
-        }
-      ]
-    },
-    barcodes: [
-      {
-        format: "PKBarcodeFormatCode128",
-        message: customer.identification,
-        messageEncoding: "iso-8859-1",
-        altText: customer.identification
-      },
-      {
-        format: "PKBarcodeFormatQR",
-        message: `https://betico.app/fidelidad/${card.tenantSlug || ""}?id=${encodeURIComponent(customer.identification)}`,
-        messageEncoding: "iso-8859-1",
-        altText: "Escanear en Caja"
-      }
-    ]
-  };
-}
-function generateApplePassBundle(card, customer) {
-  const passJsonObj = generateApplePassJson(card, customer);
-  const passJsonBuffer = Buffer.from(JSON.stringify(passJsonObj, null, 2), "utf8");
-  const sha1 = crypto7.createHash("sha1").update(passJsonBuffer).digest("hex");
-  const manifest = {
-    "pass.json": sha1
-  };
-  const manifestBuffer = Buffer.from(JSON.stringify(manifest, null, 2), "utf8");
-  return buildZipArchive([
-    { name: "pass.json", data: passJsonBuffer },
-    { name: "manifest.json", data: manifestBuffer }
-  ]);
-}
-function generateGoogleWalletSaveUrl(card, customer) {
-  const issuerId = process.env.GOOGLE_WALLET_ISSUER_ID || "3388000000022222222";
-  const classId = `${issuerId}.betico_club_${card.tenantId.replace(/-/g, "_")}`;
-  const objectId = `${issuerId}.card_${card.id.replace(/-/g, "_")}`;
-  const isPoints = card.programType === "points";
-  const stampsTarget = card.stampsTarget || 10;
-  const balanceStr = isPoints ? `${Number(card.pointsBalance || 0).toLocaleString()} pts` : `${Number(card.currentStamps || 0)}/${stampsTarget} sellos`;
-  const loyaltyClass = {
-    id: classId,
-    issuerName: card.tenantName || "Betico Club",
-    programName: `Club de Clientes ${card.tenantName || "Betico"}`,
-    reviewStatus: "UNDER_REVIEW"
-  };
-  const loyaltyObject = {
-    id: objectId,
-    classId,
-    state: "ACTIVE",
-    accountId: customer.identification,
-    accountName: customer.fullName || "Cliente Betico",
-    barcode: {
-      type: "CODE_128",
-      value: customer.identification,
-      alternateText: customer.identification
-    },
-    loyaltyPoints: {
-      label: isPoints ? "Puntos" : "Sellos",
-      balance: {
-        string: balanceStr
-      }
-    },
-    infoModuleData: {
-      labelValueRows: [
-        {
-          columns: [
-            {
-              label: "Premio o Meta",
-              value: card.stampsPrize || "Premio de Fidelidad"
-            },
-            {
-              label: "Comercio",
-              value: card.tenantName || "Betico"
-            }
-          ]
-        }
-      ]
-    }
-  };
-  const claims = {
-    iss: process.env.GOOGLE_WALLET_CLIENT_EMAIL || "betico-wallet@betico-saas.iam.gserviceaccount.com",
-    aud: "google",
-    typ: "savetowallet",
-    origins: ["https://betico.app"],
-    payload: {
-      loyaltyClasses: [loyaltyClass],
-      loyaltyObjects: [loyaltyObject]
-    }
-  };
-  let token;
-  const privateKey = process.env.GOOGLE_WALLET_PRIVATE_KEY;
-  if (privateKey) {
-    try {
-      token = jwt4.sign(claims, privateKey.replace(/\\n/g, "\n"), { algorithm: "RS256" });
-    } catch (_) {
-      token = jwt4.sign(claims, env.JWT_SECRET);
-    }
-  } else {
-    token = jwt4.sign(claims, env.JWT_SECRET);
-  }
-  const saveUrl = `https://pay.google.com/gp/v/save/${token}`;
-  return {
-    url: saveUrl,
-    jwt: token,
-    loyaltyObject,
-    isConfigured: isGoogleWalletConfigured()
-  };
-}
-function isGoogleWalletConfigured() {
-  return Boolean(
-    process.env.GOOGLE_WALLET_ISSUER_ID && process.env.GOOGLE_WALLET_CLIENT_EMAIL && process.env.GOOGLE_WALLET_PRIVATE_KEY
-  );
-}
-
-// src/server/routes/loyalty-customer.routes.ts
 var router37 = Router37();
 function signCustomerToken(customer) {
   return jwt5.sign(
@@ -23421,7 +23831,14 @@ router37.get("/me/apple-pass", authenticateLoyaltyCustomer, async (req, res) => 
       res.status(404).json({ error: "Tarjeta no encontrada en tu billetera" });
       return;
     }
-    const pkpassBuffer = generateApplePassBundle(selectedCard, { identification, fullName });
+    const tenantSecrets = await getWalletDecryptedSecrets(selectedCard.tenantId);
+    const customCreds = tenantSecrets && tenantSecrets.applePassTypeId ? {
+      applePassTypeId: tenantSecrets.applePassTypeId,
+      appleTeamId: tenantSecrets.appleTeamId,
+      appleP12Buffer: tenantSecrets.appleP12Buffer,
+      appleP12Password: tenantSecrets.appleP12Password
+    } : void 0;
+    const pkpassBuffer = generateApplePassBundle(selectedCard, { identification, fullName }, customCreds);
     const filename = `tarjeta-${selectedCard.tenantSlug || "betico"}.pkpass`;
     res.setHeader("Content-Type", "application/vnd.apple.pkpass");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
@@ -23446,7 +23863,16 @@ router37.get("/me/google-pass-url", authenticateLoyaltyCustomer, async (req, res
       res.status(404).json({ error: "Tarjeta no encontrada en tu billetera" });
       return;
     }
-    const configured = isGoogleWalletConfigured();
+    const tenantSecrets = await getWalletDecryptedSecrets(selectedCard.tenantId);
+    let customCreds = void 0;
+    if (tenantSecrets && tenantSecrets.googleIssuerId && tenantSecrets.googlePrivateKey) {
+      customCreds = {
+        googleIssuerId: tenantSecrets.googleIssuerId,
+        googleClientEmail: tenantSecrets.googleClientEmail,
+        googlePrivateKey: tenantSecrets.googlePrivateKey
+      };
+    }
+    const configured = isGoogleWalletConfigured(customCreds);
     if (!configured) {
       res.json({
         success: true,
@@ -23456,7 +23882,7 @@ router37.get("/me/google-pass-url", authenticateLoyaltyCustomer, async (req, res
       });
       return;
     }
-    const result = generateGoogleWalletSaveUrl(selectedCard, { identification, fullName });
+    const result = generateGoogleWalletSaveUrl(selectedCard, { identification, fullName }, customCreds);
     res.json({
       success: true,
       isConfigured: true,
@@ -23865,12 +24291,12 @@ var secretary_routes_default = router40;
 
 // src/server/routes/billing-native.routes.ts
 import { Router as Router41 } from "express";
-import multer3 from "multer";
+import multer4 from "multer";
 init_hacienda_native_repo();
 init_hacienda_native_service();
 var router41 = Router41();
-var upload3 = multer3({
-  storage: multer3.memoryStorage(),
+var upload4 = multer4({
+  storage: multer4.memoryStorage(),
   limits: { fileSize: 2 * 1024 * 1024 }
   // 2MB max
 });
@@ -23909,7 +24335,7 @@ router41.get("/usage", async (req, res) => {
     res.status(500).json({ error: "Error al obtener consumo de facturaci\xF3n" });
   }
 });
-router41.post("/config", upload3.single("certificateFile"), async (req, res) => {
+router41.post("/config", upload4.single("certificateFile"), async (req, res) => {
   try {
     const tenantId = req.tenantId;
     const body = req.body || {};

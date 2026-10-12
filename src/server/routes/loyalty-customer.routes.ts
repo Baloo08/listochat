@@ -14,6 +14,7 @@ import {
 import { getTenantBySlug } from '../db/tenant.repo.js';
 import { query } from '../db/pool.js';
 import { generateApplePassBundle, generateGoogleWalletSaveUrl, isGoogleWalletConfigured } from '../services/wallet-pass.service.js';
+import { getWalletDecryptedSecrets } from '../db/wallet-config.repo.js';
 
 const router = Router();
 
@@ -188,7 +189,15 @@ router.get('/me/apple-pass', authenticateLoyaltyCustomer, async (req, res) => {
       return;
     }
 
-    const pkpassBuffer = generateApplePassBundle(selectedCard as any, { identification, fullName });
+    const tenantSecrets = await getWalletDecryptedSecrets(selectedCard.tenantId);
+    const customCreds = tenantSecrets && tenantSecrets.applePassTypeId ? {
+      applePassTypeId: tenantSecrets.applePassTypeId,
+      appleTeamId: tenantSecrets.appleTeamId,
+      appleP12Buffer: tenantSecrets.appleP12Buffer,
+      appleP12Password: tenantSecrets.appleP12Password
+    } : undefined;
+
+    const pkpassBuffer = generateApplePassBundle(selectedCard as any, { identification, fullName }, customCreds);
     const filename = `tarjeta-${selectedCard.tenantSlug || 'betico'}.pkpass`;
 
     res.setHeader('Content-Type', 'application/vnd.apple.pkpass');
@@ -218,7 +227,17 @@ router.get('/me/google-pass-url', authenticateLoyaltyCustomer, async (req, res) 
       return;
     }
 
-    const configured = isGoogleWalletConfigured();
+    const tenantSecrets = await getWalletDecryptedSecrets(selectedCard.tenantId);
+    let customCreds: any = undefined;
+    if (tenantSecrets && tenantSecrets.googleIssuerId && tenantSecrets.googlePrivateKey) {
+      customCreds = {
+        googleIssuerId: tenantSecrets.googleIssuerId,
+        googleClientEmail: tenantSecrets.googleClientEmail,
+        googlePrivateKey: tenantSecrets.googlePrivateKey
+      };
+    }
+
+    const configured = isGoogleWalletConfigured(customCreds);
     if (!configured) {
       res.json({
         success: true,
@@ -229,7 +248,7 @@ router.get('/me/google-pass-url', authenticateLoyaltyCustomer, async (req, res) 
       return;
     }
 
-    const result = generateGoogleWalletSaveUrl(selectedCard as any, { identification, fullName });
+    const result = generateGoogleWalletSaveUrl(selectedCard as any, { identification, fullName }, customCreds);
     res.json({
       success: true,
       isConfigured: true,

@@ -996,3 +996,28 @@ export interface LoyaltyTransaction {
   createdBy?: string;
   createdAt: string;
 }
+
+export interface TenantWalletConfig {
+  id?: string;
+  tenantId: string;
+  googleIssuerId: string;
+  googleClientEmail: string;
+  googlePrivateKeyMasked?: string;
+  googleHasKey: boolean;
+  googleIsActive: boolean;
+  googleIsTested: boolean;
+  googleLastTestAt?: string | null;
+  googleLastTestMessage?: string | null;
+  applePassTypeId: string;
+  appleTeamId: string;
+  appleP12Filename?: string;
+  appleHasCertificate: boolean;
+  applePasswordMasked?: string;
+  appleIsActive: boolean;
+  appleIsTested: boolean;
+  appleLastTestAt?: string | null;
+  appleLastTestMessage?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+

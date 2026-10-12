@@ -1233,6 +1233,31 @@ export async function runMigrations() {
     ALTER TABLE tenant_almendro_configs ADD COLUMN IF NOT EXISTS is_simplified_regime BOOLEAN DEFAULT false;
     ALTER TABLE loyalty_programs ADD COLUMN IF NOT EXISTS enable_google_wallet BOOLEAN DEFAULT true;
     ALTER TABLE loyalty_programs ADD COLUMN IF NOT EXISTS enable_apple_wallet BOOLEAN DEFAULT true;
+
+    CREATE TABLE IF NOT EXISTS tenant_wallet_configs (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      google_issuer_id VARCHAR(100) DEFAULT '',
+      google_client_email VARCHAR(255) DEFAULT '',
+      google_private_key_encrypted TEXT DEFAULT '',
+      google_is_active BOOLEAN DEFAULT false,
+      google_is_tested BOOLEAN DEFAULT false,
+      google_last_test_at TIMESTAMPTZ,
+      google_last_test_message TEXT,
+      apple_pass_type_id VARCHAR(150) DEFAULT '',
+      apple_team_id VARCHAR(50) DEFAULT '',
+      apple_p12_encrypted_blob BYTEA,
+      apple_p12_filename VARCHAR(255) DEFAULT '',
+      apple_p12_password_encrypted TEXT DEFAULT '',
+      apple_is_active BOOLEAN DEFAULT false,
+      apple_is_tested BOOLEAN DEFAULT false,
+      apple_last_test_at TIMESTAMPTZ,
+      apple_last_test_message TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(tenant_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_tenant_wallet_configs_tenant ON tenant_wallet_configs(tenant_id);
   `).catch((err) => {
     console.warn('[Migrations] Columns addition warning:', err?.message || err);
   });

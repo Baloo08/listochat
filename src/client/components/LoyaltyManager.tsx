@@ -2,18 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { 
   Gift, Users, Tag, Award, Plus, Check, AlertCircle, RefreshCw, 
   Trash2, Search, ArrowRight, ShieldCheck, Clock, DollarSign,
-  Ticket, Percent, ExternalLink, Sparkles, Filter, CheckCircle2, XCircle, CreditCard
+  Ticket, Percent, ExternalLink, Sparkles, Filter, CheckCircle2, XCircle, CreditCard,
+  ChevronDown, ChevronUp, AlertTriangle, Key, Download, FileText, Upload, Lock, Smartphone, HelpCircle
 } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
-import { LoyaltyProgram, LoyaltyCard, LoyaltyPromotion, LoyaltyRewardVoucher, LoyaltyTransaction, DiscountCoupon } from '../../shared/types';
+import { LoyaltyProgram, LoyaltyCard, LoyaltyPromotion, LoyaltyRewardVoucher, LoyaltyTransaction, DiscountCoupon, TenantWalletConfig } from '../../shared/types';
 
 interface LoyaltyManagerProps {
-  initialTab?: 'ajustes' | 'clientes' | 'promociones';
+  initialTab?: 'ajustes' | 'billeteras' | 'clientes' | 'promociones';
 }
 
 export default function LoyaltyManager({ initialTab = 'ajustes' }: LoyaltyManagerProps) {
   const { fetchWithAuth } = useApi();
-  const [activeTab, setActiveTab] = useState<'ajustes' | 'clientes' | 'promociones'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'ajustes' | 'billeteras' | 'clientes' | 'promociones'>(initialTab);
   const [loading, setLoading] = useState(true);
   const [savingProgram, setSavingProgram] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -33,6 +34,52 @@ export default function LoyaltyManager({ initialTab = 'ajustes' }: LoyaltyManage
     enableGoogleWallet: true,
     enableAppleWallet: true
   });
+
+  // Wallet Config State
+  const [walletConfig, setWalletConfig] = useState<TenantWalletConfig>({
+    tenantId: '',
+    googleIssuerId: '',
+    googleClientEmail: '',
+    googlePrivateKeyMasked: '',
+    googleHasKey: false,
+    googleIsActive: false,
+    googleIsTested: false,
+    googleLastTestAt: null,
+    googleLastTestMessage: null,
+    applePassTypeId: '',
+    appleTeamId: '',
+    appleP12Filename: '',
+    appleHasCertificate: false,
+    applePasswordMasked: '',
+    appleIsActive: false,
+    appleIsTested: false,
+    appleLastTestAt: null,
+    appleLastTestMessage: null
+  });
+
+  const [googleIssuerId, setGoogleIssuerId] = useState('');
+  const [googleClientEmail, setGoogleClientEmail] = useState('');
+  const [googlePrivateKey, setGooglePrivateKey] = useState('');
+  const [isEditingGoogleKey, setIsEditingGoogleKey] = useState(false);
+  const [googleIsActive, setGoogleIsActive] = useState(false);
+
+  const [applePassTypeId, setApplePassTypeId] = useState('');
+  const [appleTeamId, setAppleTeamId] = useState('');
+  const [appleP12File, setAppleP12File] = useState<File | null>(null);
+  const [appleP12Password, setAppleP12Password] = useState('');
+  const [isEditingApplePassword, setIsEditingApplePassword] = useState(false);
+  const [appleIsActive, setAppleIsActive] = useState(false);
+
+  const [showGoogleGuide, setShowGoogleGuide] = useState(false);
+  const [showAppleGuide, setShowAppleGuide] = useState(false);
+
+  const [testingGoogle, setTestingGoogle] = useState(false);
+  const [googleTestResult, setGoogleTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  const [testingApple, setTestingApple] = useState(false);
+  const [appleTestResult, setAppleTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  const [savingWallet, setSavingWallet] = useState(false);
 
   // Cards y Search State
   const [cards, setCards] = useState<LoyaltyCard[]>([]);
@@ -121,20 +168,169 @@ export default function LoyaltyManager({ initialTab = 'ajustes' }: LoyaltyManage
         setCardsTotal(cardsRes.total || 0);
       }
 
-      // 3. Promotions, Vouchers y Cupones
-      const [promosRes, vouchersRes, couponsRes] = await Promise.all([
+      // 3. Promotions, Vouchers, Cupones y Billeteras
+      const [promosRes, vouchersRes, couponsRes, walletRes] = await Promise.all([
         fetchWithAuth('/api/loyalty/promotions').catch(() => []),
         fetchWithAuth('/api/loyalty/vouchers').catch(() => []),
-        fetchWithAuth('/api/coupons').catch(() => [])
+        fetchWithAuth('/api/coupons').catch(() => []),
+        fetchWithAuth('/api/loyalty/wallet-config').catch(() => null)
       ]);
       setPromotions(promosRes || []);
       setVouchers(vouchersRes || []);
       setCoupons(Array.isArray(couponsRes) ? couponsRes : (couponsRes?.coupons || []));
+
+      if (walletRes && walletRes.config) {
+        setWalletConfig(walletRes.config);
+        setGoogleIssuerId(walletRes.config.googleIssuerId || '');
+        setGoogleClientEmail(walletRes.config.googleClientEmail || '');
+        setGoogleIsActive(Boolean(walletRes.config.googleIsActive));
+        setApplePassTypeId(walletRes.config.applePassTypeId || '');
+        setAppleTeamId(walletRes.config.appleTeamId || '');
+        setAppleIsActive(Boolean(walletRes.config.appleIsActive));
+      }
     } catch (err: any) {
       console.error('Error cargando módulo de fidelización:', err);
       setError(err.message || 'Error al cargar datos de fidelización');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleGoogleJsonFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const text = event.target?.result as string;
+        const parsed = JSON.parse(text);
+        if (!parsed.client_email && !parsed.private_key) {
+          alert('El archivo JSON seleccionado no contiene client_email ni private_key válidos de Google Cloud.');
+          return;
+        }
+
+        if (parsed.client_email) {
+          setGoogleClientEmail(parsed.client_email);
+        }
+        if (parsed.private_key) {
+          setGooglePrivateKey(parsed.private_key);
+          setIsEditingGoogleKey(true);
+        }
+        setSuccessMsg('¡Archivo JSON de Google Cloud cargado con éxito! Se auto-completaron el correo y la llave privada RSA.');
+        setTimeout(() => setSuccessMsg(null), 5000);
+      } catch (err: any) {
+        alert('Error al leer el archivo JSON: ' + (err.message || 'Formato JSON inválido'));
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleTestGoogle = async () => {
+    setTestingGoogle(true);
+    setGoogleTestResult(null);
+    try {
+      const res = await fetchWithAuth('/api/loyalty/wallet-config/test-google', {
+        method: 'POST',
+        body: JSON.stringify({
+          issuerId: googleIssuerId,
+          clientEmail: googleClientEmail,
+          privateKey: googlePrivateKey || undefined
+        })
+      });
+      setGoogleTestResult(res);
+      if (res.success) {
+        setWalletConfig(prev => ({ ...prev, googleIsTested: true }));
+      }
+    } catch (err: any) {
+      setGoogleTestResult({ success: false, message: err.message || 'Error al validar credenciales de Google Wallet' });
+    } finally {
+      setTestingGoogle(false);
+    }
+  };
+
+  const handleTestApple = async () => {
+    setTestingApple(true);
+    setAppleTestResult(null);
+    try {
+      const res = await fetchWithAuth('/api/loyalty/wallet-config/test-apple', {
+        method: 'POST',
+        body: JSON.stringify({
+          passTypeId: applePassTypeId,
+          teamId: appleTeamId,
+          password: appleP12Password || undefined
+        })
+      });
+      setAppleTestResult(res);
+      if (res.success) {
+        setWalletConfig(prev => ({ ...prev, appleIsTested: true }));
+      }
+    } catch (err: any) {
+      setAppleTestResult({ success: false, message: err.message || 'Error al validar certificado de Apple Wallet' });
+    } finally {
+      setTestingApple(false);
+    }
+  };
+
+  const handleSaveWalletConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingWallet(false);
+    setError(null);
+    setSuccessMsg(null);
+
+    // Validación previa para evitar estados inconsistentes
+    if (googleIsActive && !walletConfig.googleHasKey && !googlePrivateKey.trim()) {
+      alert('⚠️ Para activar Google Wallet, debes ingresar tu llave privada RSA y verificarla.');
+      return;
+    }
+
+    if (appleIsActive && !walletConfig.appleHasCertificate && !appleP12File) {
+      alert('⚠️ Para activar Apple Wallet, debes subir tu archivo de certificado .p12 oficial.');
+      return;
+    }
+
+    setSavingWallet(true);
+    try {
+      const formData = new FormData();
+      formData.append('googleIssuerId', googleIssuerId.trim());
+      formData.append('googleClientEmail', googleClientEmail.trim());
+      if (googlePrivateKey.trim()) {
+        formData.append('googlePrivateKey', googlePrivateKey.trim());
+      }
+      formData.append('googleIsActive', String(googleIsActive));
+
+      formData.append('applePassTypeId', applePassTypeId.trim());
+      formData.append('appleTeamId', appleTeamId.trim());
+      if (appleP12File) {
+        formData.append('appleP12File', appleP12File);
+      }
+      if (isEditingApplePassword && appleP12Password.trim()) {
+        formData.append('appleP12Password', appleP12Password.trim());
+      }
+      formData.append('appleIsActive', String(appleIsActive));
+
+      const token = localStorage.getItem('token');
+      const res = await fetch('/api/loyalty/wallet-config', {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData
+      });
+
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json.error || 'Error al guardar credenciales de billeteras');
+      }
+
+      setWalletConfig(json.config);
+      setIsEditingGoogleKey(false);
+      setIsEditingApplePassword(false);
+      setAppleP12File(null);
+      setSuccessMsg('¡Credenciales y ajustes de Google Wallet y Apple Wallet guardados exitosamente!');
+      setTimeout(() => setSuccessMsg(null), 5000);
+    } catch (err: any) {
+      setError(err.message || 'Error al guardar credenciales de billeteras');
+    } finally {
+      setSavingWallet(false);
     }
   };
 
@@ -465,7 +661,7 @@ export default function LoyaltyManager({ initialTab = 'ajustes' }: LoyaltyManage
       )}
 
       {/* Navigation Sub-Tabs */}
-      <div style={{ display: 'flex', gap: '8px', borderBottom: '2px solid var(--border, #e2e8f0)', paddingBottom: '2px' }}>
+      <div style={{ display: 'flex', gap: '8px', borderBottom: '2px solid var(--border, #e2e8f0)', paddingBottom: '2px', overflowX: 'auto' }}>
         <button
           type="button"
           onClick={() => setActiveTab('ajustes')}
@@ -479,11 +675,34 @@ export default function LoyaltyManager({ initialTab = 'ajustes' }: LoyaltyManage
             fontWeight: activeTab === 'ajustes' ? '700' : '500',
             color: activeTab === 'ajustes' ? 'var(--primary, #2563eb)' : 'var(--text-muted, #64748b)',
             borderBottom: activeTab === 'ajustes' ? '3px solid var(--primary, #2563eb)' : '3px solid transparent',
-            display: 'flex', alignItems: 'center', gap: '8px'
+            display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap'
           }}
         >
           <Gift size={18} />
           <span>Ajustes de Tarjeta</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('billeteras')}
+          style={{
+            padding: '10px 20px',
+            borderRadius: '8px 8px 0 0',
+            border: 'none',
+            background: 'none',
+            cursor: 'pointer',
+            fontSize: '0.92rem',
+            fontWeight: activeTab === 'billeteras' ? '700' : '500',
+            color: activeTab === 'billeteras' ? 'var(--primary, #2563eb)' : 'var(--text-muted, #64748b)',
+            borderBottom: activeTab === 'billeteras' ? '3px solid var(--primary, #2563eb)' : '3px solid transparent',
+            display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap'
+          }}
+        >
+          <CreditCard size={18} />
+          <span>Billeteras Móviles (Google y Apple)</span>
+          {(walletConfig.googleIsActive || walletConfig.appleIsActive) && (
+            <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#10b981' }} />
+          )}
         </button>
 
         <button
@@ -499,7 +718,7 @@ export default function LoyaltyManager({ initialTab = 'ajustes' }: LoyaltyManage
             fontWeight: activeTab === 'clientes' ? '700' : '500',
             color: activeTab === 'clientes' ? 'var(--primary, #2563eb)' : 'var(--text-muted, #64748b)',
             borderBottom: activeTab === 'clientes' ? '3px solid var(--primary, #2563eb)' : '3px solid transparent',
-            display: 'flex', alignItems: 'center', gap: '8px'
+            display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap'
           }}
         >
           <Users size={18} />
@@ -519,7 +738,7 @@ export default function LoyaltyManager({ initialTab = 'ajustes' }: LoyaltyManage
             fontWeight: activeTab === 'promociones' ? '700' : '500',
             color: activeTab === 'promociones' ? 'var(--primary, #2563eb)' : 'var(--text-muted, #64748b)',
             borderBottom: activeTab === 'promociones' ? '3px solid var(--primary, #2563eb)' : '3px solid transparent',
-            display: 'flex', alignItems: 'center', gap: '8px'
+            display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap'
           }}
         >
           <Tag size={18} />
@@ -758,72 +977,138 @@ export default function LoyaltyManager({ initialTab = 'ajustes' }: LoyaltyManage
             </div>
           )}
 
-          {/* Billeteras Móviles Digitales (Google Wallet y Apple Wallet) */}
-          <div style={{ backgroundColor: 'var(--surface, #ffffff)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border, #e2e8f0)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-              <CreditCard size={20} color="var(--primary, #2563eb)" />
-              <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: '700', color: '#1e293b' }}>
-                Billeteras Móviles Digitales (Google Wallet y Apple Wallet)
-              </h3>
+          {/* Billeteras Móviles Digitales (Google Wallet y Apple Wallet) - Resumen en Ajustes */}
+          <div style={{ backgroundColor: 'var(--surface, #ffffff)', padding: '22px', borderRadius: '14px', border: '1px solid var(--border, #e2e8f0)', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px', flexWrap: 'wrap', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <CreditCard size={20} color="var(--primary, #2563eb)" />
+                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: '700', color: '#1e293b' }}>
+                  Billeteras Móviles Digitales (Google Wallet y Apple Wallet)
+                </h3>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('billeteras')}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  backgroundColor: '#eff6ff',
+                  border: '1px solid #bfdbfe',
+                  color: '#1d4ed8',
+                  padding: '7px 14px',
+                  borderRadius: '8px',
+                  fontSize: '0.82rem',
+                  fontWeight: '700',
+                  cursor: 'pointer'
+                }}
+              >
+                <span>Configurar Llaves y Certificados</span>
+                <ArrowRight size={14} />
+              </button>
             </div>
-            <p style={{ margin: '0 0 16px 0', fontSize: '0.84rem', color: '#64748b' }}>
-              Elige si deseas que tus clientes puedan exportar y guardar su tarjeta de fidelidad directamente en las billeteras nativas de sus teléfonos inteligentes (Android e iOS).
+
+            <p style={{ margin: '0 0 16px 0', fontSize: '0.84rem', color: '#64748b', lineHeight: 1.45 }}>
+              Permite que tus clientes guarden su tarjeta en las billeteras nativas de sus teléfonos (Android e iOS). Por seguridad y para evitar errores de Google Pay, la activación requiere configurar tus credenciales oficiales de emisor en la pestaña <strong>Billeteras Móviles</strong>.
             </p>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px' }}>
               
-              {/* Toggle Google Wallet */}
+              {/* Card Resumen Google Wallet */}
               <div style={{
-                padding: '14px 16px',
+                padding: '16px',
                 borderRadius: '10px',
-                border: `1px solid ${program.enableGoogleWallet !== false ? '#93c5fd' : '#e2e8f0'}`,
-                backgroundColor: program.enableGoogleWallet !== false ? '#eff6ff' : '#f8fafc',
+                border: `1px solid ${walletConfig.googleIsActive ? '#93c5fd' : '#e2e8f0'}`,
+                backgroundColor: walletConfig.googleIsActive ? '#eff6ff' : '#f8fafc',
                 display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: '12px'
+                flexDirection: 'column',
+                gap: '10px'
               }}>
-                <div>
-                  <div style={{ fontWeight: '700', fontSize: '0.92rem', color: '#1e293b' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontWeight: '700', fontSize: '0.92rem', color: '#1e293b' }}>
                     Google Wallet (Android)
-                  </div>
-                  <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '2px' }}>
-                    Muestra el botón "Guardar en Google Wallet" en el monedero digital.
-                  </div>
+                  </span>
+                  <span style={{
+                    fontSize: '0.72rem',
+                    fontWeight: '800',
+                    padding: '2px 8px',
+                    borderRadius: '6px',
+                    backgroundColor: walletConfig.googleIsActive ? '#dcfce7' : walletConfig.googleHasKey ? '#fef3c7' : '#f1f5f9',
+                    color: walletConfig.googleIsActive ? '#15803d' : walletConfig.googleHasKey ? '#b45309' : '#64748b'
+                  }}>
+                    {walletConfig.googleIsActive ? 'Activo en Tienda' : walletConfig.googleHasKey ? 'Llave Guardada' : 'Sin Configurar'}
+                  </span>
                 </div>
-                <input
-                  type="checkbox"
-                  checked={program.enableGoogleWallet !== false}
-                  onChange={(e) => setProgram({ ...program, enableGoogleWallet: e.target.checked })}
-                  style={{ width: '20px', height: '20px', cursor: 'pointer', accentColor: 'var(--primary, #2563eb)' }}
-                />
+                <p style={{ margin: 0, fontSize: '0.78rem', color: '#64748b' }}>
+                  {walletConfig.googleHasKey 
+                    ? 'Credenciales RSA de emisor configuradas. Puedes habilitar o pausar la visualización del pase.' 
+                    : 'Requiere vincular tu Issuer ID y Cuenta de Servicio de Google Cloud para funcionar.'}
+                </p>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '6px', borderTop: '1px solid #e2e8f0' }}>
+                  <span style={{ fontSize: '0.78rem', fontWeight: '600', color: '#475569' }}>
+                    Mostrar botón a clientes
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={walletConfig.googleIsActive}
+                    onChange={() => {
+                      if (!walletConfig.googleHasKey) {
+                        alert('⚠️ Para habilitar Google Wallet, primero debes ingresar tu ID de Emisor y Cuenta de Servicio RSA en la pestaña Billeteras Móviles.');
+                      }
+                      setActiveTab('billeteras');
+                    }}
+                    style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: 'var(--primary, #2563eb)' }}
+                  />
+                </div>
               </div>
 
-              {/* Toggle Apple Wallet */}
+              {/* Card Resumen Apple Wallet */}
               <div style={{
-                padding: '14px 16px',
+                padding: '16px',
                 borderRadius: '10px',
-                border: `1px solid ${program.enableAppleWallet !== false ? '#93c5fd' : '#e2e8f0'}`,
-                backgroundColor: program.enableAppleWallet !== false ? '#eff6ff' : '#f8fafc',
+                border: `1px solid ${walletConfig.appleIsActive ? '#93c5fd' : '#e2e8f0'}`,
+                backgroundColor: walletConfig.appleIsActive ? '#eff6ff' : '#f8fafc',
                 display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: '12px'
+                flexDirection: 'column',
+                gap: '10px'
               }}>
-                <div>
-                  <div style={{ fontWeight: '700', fontSize: '0.92rem', color: '#1e293b' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontWeight: '700', fontSize: '0.92rem', color: '#1e293b' }}>
                     Apple Wallet (iOS)
-                  </div>
-                  <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '2px' }}>
-                    Muestra el botón "Añadir a Apple Wallet" (.pkpass) en el monedero digital.
-                  </div>
+                  </span>
+                  <span style={{
+                    fontSize: '0.72rem',
+                    fontWeight: '800',
+                    padding: '2px 8px',
+                    borderRadius: '6px',
+                    backgroundColor: walletConfig.appleIsActive ? '#dcfce7' : walletConfig.appleHasCertificate ? '#fef3c7' : '#f1f5f9',
+                    color: walletConfig.appleIsActive ? '#15803d' : walletConfig.appleHasCertificate ? '#b45309' : '#64748b'
+                  }}>
+                    {walletConfig.appleIsActive ? 'Activo en Tienda' : walletConfig.appleHasCertificate ? 'Certificado Cargado' : 'Sin Configurar'}
+                  </span>
                 </div>
-                <input
-                  type="checkbox"
-                  checked={program.enableAppleWallet !== false}
-                  onChange={(e) => setProgram({ ...program, enableAppleWallet: e.target.checked })}
-                  style={{ width: '20px', height: '20px', cursor: 'pointer', accentColor: 'var(--primary, #2563eb)' }}
-                />
+                <p style={{ margin: 0, fontSize: '0.78rem', color: '#64748b' }}>
+                  {walletConfig.appleHasCertificate 
+                    ? 'Certificado .p12 de Apple Developer configurado.' 
+                    : 'Requiere tu Pass Type ID y archivo .p12 de Apple Developer.'}
+                </p>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '6px', borderTop: '1px solid #e2e8f0' }}>
+                  <span style={{ fontSize: '0.78rem', fontWeight: '600', color: '#475569' }}>
+                    Mostrar botón a clientes
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={walletConfig.appleIsActive}
+                    onChange={() => {
+                      if (!walletConfig.appleHasCertificate) {
+                        alert('⚠️ Para habilitar Apple Wallet, primero debes cargar tu certificado .p12 en la pestaña Billeteras Móviles.');
+                      }
+                      setActiveTab('billeteras');
+                    }}
+                    style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: 'var(--primary, #2563eb)' }}
+                  />
+                </div>
               </div>
 
             </div>
@@ -848,6 +1133,736 @@ export default function LoyaltyManager({ initialTab = 'ajustes' }: LoyaltyManage
             >
               {savingProgram ? <RefreshCw className="animate-spin" size={18} /> : <Check size={18} />}
               <span>{savingProgram ? 'Guardando...' : 'Guardar Ajustes de Tarjeta'}</span>
+            </button>
+          </div>
+
+        </form>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB BILLETERAS MÓVILES (GOOGLE WALLET Y APPLE WALLET) */}
+      {/* ========================================================================= */}
+      {activeTab === 'billeteras' && (
+        <form onSubmit={handleSaveWalletConfig} style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
+          
+          {/* Banner de Advertencia y Requisitos Oficiales */}
+          <div style={{
+            backgroundColor: '#eff6ff',
+            border: '1px solid #bfdbfe',
+            borderRadius: '14px',
+            padding: '18px 20px',
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '14px',
+            boxShadow: '0 2px 8px rgba(37,99,235,0.06)'
+          }}>
+            <ShieldCheck size={26} color="#1d4ed8" style={{ flexShrink: 0, marginTop: '2px' }} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div style={{ fontWeight: '800', fontSize: '0.98rem', color: '#1e3a8a' }}>
+                Requisitos de Emisión Oficial para Google Wallet y Apple Wallet
+              </div>
+              <p style={{ margin: 0, fontSize: '0.84rem', color: '#1e40af', lineHeight: 1.5 }}>
+                Tanto Google como Apple exigen credenciales oficiales verificadas (llaves criptográficas RSA para Google Wallet y certificados .p12 para Apple Wallet). Si tus credenciales no han sido configuradas o validadas aún, el sistema mantendrá los accesos de tus clientes en modo seguro e informativo en su tarjeta digital, protegiendo a tus clientes de pantallas de error como <em>"Se produjo un error..."</em> de Google Pay.
+              </p>
+            </div>
+          </div>
+
+          {/* ================================================================= */}
+          {/* BLOQUE 1: GOOGLE WALLET (ANDROID) */}
+          {/* ================================================================= */}
+          <div style={{ backgroundColor: 'var(--surface, #ffffff)', border: '1px solid var(--border, #e2e8f0)', borderRadius: '14px', padding: '24px', boxShadow: '0 1px 4px rgba(0,0,0,0.03)' }}>
+            
+            {/* Header Google Wallet */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ width: '38px', height: '38px', borderRadius: '10px', backgroundColor: '#eff6ff', color: '#2563eb', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Smartphone size={22} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '800', color: '#0f172a' }}>
+                    Google Wallet (Android - Pases Oficiales)
+                  </h3>
+                  <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
+                    Firma asimétrica RS256 con Cuenta de Servicio de Google Cloud y Emisor de Google Pay
+                  </div>
+                </div>
+              </div>
+
+              {/* Status Badge */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{
+                  padding: '4px 12px',
+                  borderRadius: '8px',
+                  fontSize: '0.78rem',
+                  fontWeight: '800',
+                  backgroundColor: walletConfig.googleIsTested && walletConfig.googleHasKey ? '#dcfce7' : walletConfig.googleHasKey ? '#fef3c7' : '#f1f5f9',
+                  color: walletConfig.googleIsTested && walletConfig.googleHasKey ? '#15803d' : walletConfig.googleHasKey ? '#b45309' : '#64748b',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}>
+                  {walletConfig.googleIsTested && walletConfig.googleHasKey ? <CheckCircle2 size={14} /> : walletConfig.googleHasKey ? <AlertCircle size={14} /> : <AlertTriangle size={14} />}
+                  <span>
+                    {walletConfig.googleIsTested && walletConfig.googleHasKey 
+                      ? 'Credenciales Validadas con RS256' 
+                      : walletConfig.googleHasKey 
+                      ? 'Credenciales Guardadas (Sin Probar)' 
+                      : 'Pendiente de Configuración'}
+                  </span>
+                </span>
+              </div>
+            </div>
+
+            {/* Toggle de activación */}
+            <div style={{
+              padding: '12px 16px',
+              borderRadius: '10px',
+              backgroundColor: googleIsActive ? '#f0fdf4' : '#f8fafc',
+              border: `1px solid ${googleIsActive ? '#bbf7d0' : '#e2e8f0'}`,
+              marginBottom: '16px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px'
+            }}>
+              <div>
+                <strong style={{ fontSize: '0.88rem', color: googleIsActive ? '#166534' : '#334155' }}>
+                  Habilitar botón "Guardar en Google Wallet" para clientes
+                </strong>
+                <p style={{ margin: '2px 0 0 0', fontSize: '0.78rem', color: '#64748b' }}>
+                  {googleIsActive 
+                    ? 'Los clientes podrán guardar su tarjeta con 1 clic en la app Google Wallet de Android.' 
+                    : 'El botón permanecerá oculto o en modo informativo hasta que esté activo.'}
+                </p>
+              </div>
+
+              <input
+                type="checkbox"
+                checked={googleIsActive}
+                onChange={(e) => {
+                  const val = e.target.checked;
+                  if (val && !walletConfig.googleHasKey && !googlePrivateKey.trim()) {
+                    alert('⚠️ Primero debes ingresar y probar tu llave privada RSA antes de activar el pase.');
+                    return;
+                  }
+                  setGoogleIsActive(val);
+                }}
+                style={{ width: '20px', height: '20px', cursor: 'pointer', accentColor: '#16a34a' }}
+              />
+            </div>
+
+            {/* Guía Desplegable Google Wallet */}
+            <div style={{ marginBottom: '18px' }}>
+              <button
+                type="button"
+                onClick={() => setShowGoogleGuide(!showGoogleGuide)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--primary, #2563eb)',
+                  fontSize: '0.84rem',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  padding: 0
+                }}
+              >
+                <HelpCircle size={16} />
+                <span>{showGoogleGuide ? 'Ocultar guía paso a paso' : '¿Cómo obtengo mis credenciales de Google Wallet? (Ver Guía Oficial)'}</span>
+                {showGoogleGuide ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+              </button>
+
+              {showGoogleGuide && (
+                <div style={{
+                  backgroundColor: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '12px',
+                  padding: '16px 18px',
+                  marginTop: '10px',
+                  fontSize: '0.83rem',
+                  color: '#334155',
+                  lineHeight: 1.55
+                }}>
+                  <strong style={{ display: 'block', marginBottom: '8px', color: '#0f172a' }}>
+                    Pasos oficiales para emitir tarjetas en Google Wallet:
+                  </strong>
+                  <ol style={{ margin: 0, paddingLeft: '22px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <li>
+                      <strong>ID de Emisor (Issuer ID):</strong> Ingresa a la consola oficial <a href="https://pay.google.com/business/console" target="_blank" rel="noreferrer" style={{ color: '#2563eb', fontWeight: 'bold' }}>Google Pay y Wallet Business Console</a>. Regístrate o selecciona tu empresa y copia tu <strong>Issuer ID</strong> numérico (generalmente inicia con 3388...).
+                    </li>
+                    <li>
+                      <strong>Habilitar API:</strong> Entra a <a href="https://console.cloud.google.com/" target="_blank" rel="noreferrer" style={{ color: '#2563eb', fontWeight: 'bold' }}>Google Cloud Console</a>, ve a <em>APIs y Servicios &gt; Biblioteca</em> y habilita la <strong>Google Wallet API</strong>.
+                    </li>
+                    <li>
+                      <strong>Cuenta de Servicio:</strong> En Google Cloud Console, ve a <em>IAM y Administración &gt; Cuentas de Servicio</em>, presiona <strong>Crear cuenta de servicio</strong> (ej. <code>wallet@mi-negocio.iam.gserviceaccount.com</code>).
+                    </li>
+                    <li>
+                      <strong>Descargar Llave JSON:</strong> Haz clic en la cuenta de servicio creada, ve a la pestaña <strong>Claves</strong> &gt; <em>Agregar Clave &gt; Crear nueva clave</em> y selecciona el formato <strong>JSON</strong>.
+                    </li>
+                    <li>
+                      <strong>Vincular Permisos:</strong> En <a href="https://pay.google.com/business/console" target="_blank" rel="noreferrer" style={{ color: '#2563eb', fontWeight: 'bold' }}>Google Pay Console</a>, ve a <em>Configuración de Google Wallet &gt; Acceso de Usuarios</em>, haz clic en <strong>Invitar a un usuario</strong> y pega el correo de la cuenta de servicio otorgándole rol de <strong>Desarrollador</strong> o <strong>Administrador</strong>.
+                    </li>
+                    <li>
+                      <strong>Auto-completar en 1 Clic:</strong> Utiliza el botón verde a continuación para cargar el archivo JSON descargado y los campos se llenarán automáticamente.
+                    </li>
+                  </ol>
+                </div>
+              )}
+            </div>
+
+            {/* Botón de Carga Rápida de Archivo JSON */}
+            <div style={{ marginBottom: '18px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              <input
+                type="file"
+                id="google-json-file-input"
+                accept=".json,application/json"
+                onChange={handleGoogleJsonFileChange}
+                style={{ display: 'none' }}
+              />
+              <button
+                type="button"
+                onClick={() => document.getElementById('google-json-file-input')?.click()}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  backgroundColor: '#f0fdf4',
+                  border: '1px solid #86efac',
+                  color: '#15803d',
+                  padding: '9px 16px',
+                  borderRadius: '8px',
+                  fontSize: '0.84rem',
+                  fontWeight: '700',
+                  cursor: 'pointer'
+                }}
+              >
+                <Upload size={16} />
+                <span>Cargar archivo JSON de Cuenta de Servicio (Auto-completar)</span>
+              </button>
+
+              <span style={{ fontSize: '0.78rem', color: '#64748b' }}>
+                Extrae automáticamente el correo de servicio y la llave RSA
+              </span>
+            </div>
+
+            {/* Form Fields Google Wallet */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', marginBottom: '16px' }}>
+              
+              {/* Issuer ID */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', marginBottom: '6px', color: '#1e293b' }}>
+                  ID de Emisor de Google Wallet (Issuer ID) *
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ej. 3388000000022222222"
+                  value={googleIssuerId}
+                  onChange={(e) => setGoogleIssuerId(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border, #cbd5e1)',
+                    backgroundColor: 'var(--background, #ffffff)',
+                    fontSize: '0.88rem',
+                    color: '#0f172a'
+                  }}
+                />
+                <span style={{ fontSize: '0.74rem', color: '#64748b', marginTop: '4px', display: 'block' }}>
+                  Número de cuenta de emisor en Google Pay Business Console
+                </span>
+              </div>
+
+              {/* Client Email */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', marginBottom: '6px', color: '#1e293b' }}>
+                  Correo de la Cuenta de Servicio (Client Email) *
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ej. wallet@mi-negocio.iam.gserviceaccount.com"
+                  value={googleClientEmail}
+                  onChange={(e) => setGoogleClientEmail(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border, #cbd5e1)',
+                    backgroundColor: 'var(--background, #ffffff)',
+                    fontSize: '0.88rem',
+                    color: '#0f172a'
+                  }}
+                />
+                <span style={{ fontSize: '0.74rem', color: '#64748b', marginTop: '4px', display: 'block' }}>
+                  Cuenta de servicio con acceso en Google Pay Console
+                </span>
+              </div>
+
+            </div>
+
+            {/* Private Key Field */}
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <label style={{ fontSize: '0.82rem', fontWeight: '700', color: '#1e293b' }}>
+                  Llave Privada RSA de la Cuenta de Servicio (PEM) *
+                </label>
+                {walletConfig.googleHasKey && !isEditingGoogleKey && (
+                  <button
+                    type="button"
+                    onClick={() => { setIsEditingGoogleKey(true); setGooglePrivateKey(''); }}
+                    style={{ background: 'none', border: 'none', color: '#2563eb', fontSize: '0.78rem', fontWeight: 'bold', cursor: 'pointer' }}
+                  >
+                    Modificar Llave RSA
+                  </button>
+                )}
+              </div>
+
+              {walletConfig.googleHasKey && !isEditingGoogleKey ? (
+                <div style={{
+                  padding: '12px 14px',
+                  backgroundColor: '#f8fafc',
+                  borderRadius: '8px',
+                  border: '1px solid #e2e8f0',
+                  fontSize: '0.85rem',
+                  color: '#475569',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Key size={16} color="#16a34a" />
+                    <span>••••••••••••••••••••••••••••••••••••••••</span>
+                  </div>
+                  <span style={{ fontSize: '0.74rem', fontWeight: '700', color: '#16a34a', backgroundColor: '#dcfce7', padding: '2px 8px', borderRadius: '6px' }}>
+                    Cifrada con AES-256-GCM
+                  </span>
+                </div>
+              ) : (
+                <textarea
+                  rows={4}
+                  placeholder="-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC...\n-----END PRIVATE KEY-----"
+                  value={googlePrivateKey}
+                  onChange={(e) => setGooglePrivateKey(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border, #cbd5e1)',
+                    backgroundColor: 'var(--background, #ffffff)',
+                    fontSize: '0.82rem',
+                    fontFamily: 'monospace',
+                    color: '#0f172a'
+                  }}
+                />
+              )}
+            </div>
+
+            {/* Botón de Prueba de Conexión y Resultado */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', paddingTop: '10px', borderTop: '1px solid #f1f5f9' }}>
+              <button
+                type="button"
+                onClick={handleTestGoogle}
+                disabled={testingGoogle || (!googleIssuerId && !walletConfig.googleIssuerId)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  backgroundColor: '#0f172a',
+                  color: '#ffffff',
+                  padding: '9px 18px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  fontSize: '0.84rem',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  opacity: testingGoogle ? 0.7 : 1
+                }}
+              >
+                {testingGoogle ? <RefreshCw className="animate-spin" size={15} /> : <CheckCircle2 size={15} />}
+                <span>{testingGoogle ? 'Validando Firma RS256...' : 'Validar y Probar Credenciales de Google Wallet'}</span>
+              </button>
+
+              {googleTestResult && (
+                <div style={{
+                  padding: '8px 14px',
+                  borderRadius: '8px',
+                  fontSize: '0.82rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  backgroundColor: googleTestResult.success ? '#dcfce7' : '#fee2e2',
+                  border: `1px solid ${googleTestResult.success ? '#86efac' : '#fca5a5'}`,
+                  color: googleTestResult.success ? '#166534' : '#991b1b'
+                }}>
+                  {googleTestResult.success ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
+                  <span>{googleTestResult.message}</span>
+                </div>
+              )}
+            </div>
+
+          </div>
+
+          {/* ================================================================= */}
+          {/* BLOQUE 2: APPLE WALLET (iOS) */}
+          {/* ================================================================= */}
+          <div style={{ backgroundColor: 'var(--surface, #ffffff)', border: '1px solid var(--border, #e2e8f0)', borderRadius: '14px', padding: '24px', boxShadow: '0 1px 4px rgba(0,0,0,0.03)' }}>
+            
+            {/* Header Apple Wallet */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ width: '38px', height: '38px', borderRadius: '10px', backgroundColor: '#f1f5f9', color: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <CreditCard size={22} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '800', color: '#0f172a' }}>
+                    Apple Wallet (iOS - Pases .pkpass)
+                  </h3>
+                  <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
+                    Certificado criptográfico de desarrollador Apple y Pass Type ID
+                  </div>
+                </div>
+              </div>
+
+              {/* Status Badge */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{
+                  padding: '4px 12px',
+                  borderRadius: '8px',
+                  fontSize: '0.78rem',
+                  fontWeight: '800',
+                  backgroundColor: walletConfig.appleIsTested && walletConfig.appleHasCertificate ? '#dcfce7' : walletConfig.appleHasCertificate ? '#fef3c7' : '#f1f5f9',
+                  color: walletConfig.appleIsTested && walletConfig.appleHasCertificate ? '#15803d' : walletConfig.appleHasCertificate ? '#b45309' : '#64748b',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}>
+                  {walletConfig.appleIsTested && walletConfig.appleHasCertificate ? <CheckCircle2 size={14} /> : walletConfig.appleHasCertificate ? <AlertCircle size={14} /> : <AlertTriangle size={14} />}
+                  <span>
+                    {walletConfig.appleIsTested && walletConfig.appleHasCertificate 
+                      ? 'Certificado Apple Validado' 
+                      : walletConfig.appleHasCertificate 
+                      ? 'Certificado Cargado' 
+                      : 'Pendiente de Configuración'}
+                  </span>
+                </span>
+              </div>
+            </div>
+
+            {/* Toggle de activación */}
+            <div style={{
+              padding: '12px 16px',
+              borderRadius: '10px',
+              backgroundColor: appleIsActive ? '#f0fdf4' : '#f8fafc',
+              border: `1px solid ${appleIsActive ? '#bbf7d0' : '#e2e8f0'}`,
+              marginBottom: '16px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px'
+            }}>
+              <div>
+                <strong style={{ fontSize: '0.88rem', color: appleIsActive ? '#166534' : '#334155' }}>
+                  Habilitar botón "Añadir a Apple Wallet" para clientes
+                </strong>
+                <p style={{ margin: '2px 0 0 0', fontSize: '0.78rem', color: '#64748b' }}>
+                  {appleIsActive 
+                    ? 'Los usuarios de iPhone podrán descargar su archivo .pkpass y guardarlo en Apple Wallet.' 
+                    : 'El botón permanecerá oculto hasta contar con certificado oficial.'}
+                </p>
+              </div>
+
+              <input
+                type="checkbox"
+                checked={appleIsActive}
+                onChange={(e) => {
+                  const val = e.target.checked;
+                  if (val && !walletConfig.appleHasCertificate && !appleP12File) {
+                    alert('⚠️ Primero debes subir tu certificado .p12 antes de activar Apple Wallet.');
+                    return;
+                  }
+                  setAppleIsActive(val);
+                }}
+                style={{ width: '20px', height: '20px', cursor: 'pointer', accentColor: '#16a34a' }}
+              />
+            </div>
+
+            {/* Guía Desplegable Apple Wallet */}
+            <div style={{ marginBottom: '18px' }}>
+              <button
+                type="button"
+                onClick={() => setShowAppleGuide(!showAppleGuide)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--primary, #2563eb)',
+                  fontSize: '0.84rem',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  padding: 0
+                }}
+              >
+                <HelpCircle size={16} />
+                <span>{showAppleGuide ? 'Ocultar guía paso a paso' : '¿Cómo genero mi certificado de Apple Wallet? (Ver Guía Oficial)'}</span>
+                {showAppleGuide ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+              </button>
+
+              {showAppleGuide && (
+                <div style={{
+                  backgroundColor: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '12px',
+                  padding: '16px 18px',
+                  marginTop: '10px',
+                  fontSize: '0.83rem',
+                  color: '#334155',
+                  lineHeight: 1.55
+                }}>
+                  <strong style={{ display: 'block', marginBottom: '8px', color: '#0f172a' }}>
+                    Pasos oficiales para emitir tarjetas en Apple Wallet:
+                  </strong>
+                  <ol style={{ margin: 0, paddingLeft: '22px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <li>
+                      Ingresa al portal <a href="https://developer.apple.com/account/" target="_blank" rel="noreferrer" style={{ color: '#2563eb', fontWeight: 'bold' }}>Apple Developer Member Center</a> con tu cuenta registrada.
+                    </li>
+                    <li>
+                      Ve a <em>Certificates, Identifiers y Profiles &gt; Identifiers</em>, presiona <strong>+</strong> y selecciona <strong>Pass Type IDs</strong>.
+                    </li>
+                    <li>
+                      Registra tu identificador oficial (debe comenzar con <code>pass.</code>, por ejemplo <code>pass.cr.minegocio.club</code>) y anota tu <strong>Team ID</strong> de 10 caracteres.
+                    </li>
+                    <li>
+                      Crea el certificado correspondiente para tu Pass Type ID, descárgalo e instálalo en la app <em>Acceso a Llaveros (Keychain Access)</em> de macOS.
+                    </li>
+                    <li>
+                      Exporta el certificado y su clave privada en formato <strong>.p12 (Personal Information Exchange)</strong> protegiéndolo con una contraseña de tu elección.
+                    </li>
+                    <li>
+                      Sube el archivo <code>.p12</code> y digita la contraseña en el formulario a continuación.
+                    </li>
+                  </ol>
+                </div>
+              )}
+            </div>
+
+            {/* Form Fields Apple Wallet */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', marginBottom: '16px' }}>
+              
+              {/* Pass Type ID */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', marginBottom: '6px', color: '#1e293b' }}>
+                  Pass Type ID de Apple *
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ej. pass.cr.minegocio.club"
+                  value={applePassTypeId}
+                  onChange={(e) => setApplePassTypeId(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border, #cbd5e1)',
+                    backgroundColor: 'var(--background, #ffffff)',
+                    fontSize: '0.88rem',
+                    color: '#0f172a'
+                  }}
+                />
+                <span style={{ fontSize: '0.74rem', color: '#64748b', marginTop: '4px', display: 'block' }}>
+                  Identificador registrado en Apple Developer (inicia con "pass.")
+                </span>
+              </div>
+
+              {/* Apple Team ID */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', marginBottom: '6px', color: '#1e293b' }}>
+                  Apple Team ID *
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ej. A1B2C3D4E5"
+                  maxLength={10}
+                  value={appleTeamId}
+                  onChange={(e) => setAppleTeamId(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border, #cbd5e1)',
+                    backgroundColor: 'var(--background, #ffffff)',
+                    fontSize: '0.88rem',
+                    color: '#0f172a'
+                  }}
+                />
+                <span style={{ fontSize: '0.74rem', color: '#64748b', marginTop: '4px', display: 'block' }}>
+                  Código alfanumérico de 10 caracteres de tu cuenta Apple
+                </span>
+              </div>
+
+            </div>
+
+            {/* Certificado .p12 y Contraseña */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', marginBottom: '16px' }}>
+              
+              {/* Certificado .p12 file */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', marginBottom: '6px', color: '#1e293b' }}>
+                  {walletConfig.appleHasCertificate ? 'Reemplazar Certificado (.p12)' : 'Archivo de Certificado (.p12) *'}
+                </label>
+
+                {walletConfig.appleHasCertificate && !appleP12File && (
+                  <div style={{
+                    padding: '10px 14px',
+                    backgroundColor: '#f0fdf4',
+                    borderRadius: '8px',
+                    border: '1px solid #bbf7d0',
+                    fontSize: '0.82rem',
+                    color: '#166534',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    marginBottom: '8px'
+                  }}>
+                    <ShieldCheck size={16} />
+                    <span>Certificado actual: <strong>{walletConfig.appleP12Filename || 'pass_cert.p12'}</strong></span>
+                  </div>
+                )}
+
+                <input
+                  type="file"
+                  accept=".p12,.pfx"
+                  onChange={(e) => setAppleP12File(e.target.files?.[0] || null)}
+                  style={{
+                    width: '100%',
+                    padding: '8px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border, #cbd5e1)',
+                    backgroundColor: 'var(--background, #ffffff)',
+                    fontSize: '0.82rem'
+                  }}
+                />
+              </div>
+
+              {/* Contraseña .p12 */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <label style={{ fontSize: '0.82rem', fontWeight: '700', color: '#1e293b' }}>
+                    Contraseña del Certificado .p12 *
+                  </label>
+                  {walletConfig.applePasswordMasked && !isEditingApplePassword && (
+                    <button
+                      type="button"
+                      onClick={() => { setIsEditingApplePassword(true); setAppleP12Password(''); }}
+                      style={{ background: 'none', border: 'none', color: '#2563eb', fontSize: '0.78rem', fontWeight: 'bold', cursor: 'pointer' }}
+                    >
+                      Cambiar contraseña
+                    </button>
+                  )}
+                </div>
+
+                {walletConfig.applePasswordMasked && !isEditingApplePassword ? (
+                  <div style={{
+                    padding: '10px 12px',
+                    backgroundColor: '#f8fafc',
+                    borderRadius: '8px',
+                    border: '1px solid #e2e8f0',
+                    fontSize: '0.85rem',
+                    color: '#475569'
+                  }}>
+                    •••••••• (Guardada de forma segura)
+                  </div>
+                ) : (
+                  <input
+                    type="password"
+                    placeholder="Contraseña establecida al exportar el .p12"
+                    value={appleP12Password}
+                    onChange={(e) => setAppleP12Password(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border, #cbd5e1)',
+                      backgroundColor: 'var(--background, #ffffff)',
+                      fontSize: '0.88rem',
+                      color: '#0f172a'
+                    }}
+                  />
+                )}
+              </div>
+
+            </div>
+
+            {/* Botón de Prueba de Conexión y Resultado */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', paddingTop: '10px', borderTop: '1px solid #f1f5f9' }}>
+              <button
+                type="button"
+                onClick={handleTestApple}
+                disabled={testingApple || (!applePassTypeId && !walletConfig.applePassTypeId)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  backgroundColor: '#0f172a',
+                  color: '#ffffff',
+                  padding: '9px 18px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  fontSize: '0.84rem',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  opacity: testingApple ? 0.7 : 1
+                }}
+              >
+                {testingApple ? <RefreshCw className="animate-spin" size={15} /> : <CheckCircle2 size={15} />}
+                <span>{testingApple ? 'Validando Certificado...' : 'Validar y Probar Certificado de Apple Wallet'}</span>
+              </button>
+
+              {appleTestResult && (
+                <div style={{
+                  padding: '8px 14px',
+                  borderRadius: '8px',
+                  fontSize: '0.82rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  backgroundColor: appleTestResult.success ? '#dcfce7' : '#fee2e2',
+                  border: `1px solid ${appleTestResult.success ? '#86efac' : '#fca5a5'}`,
+                  color: appleTestResult.success ? '#166534' : '#991b1b'
+                }}>
+                  {appleTestResult.success ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
+                  <span>{appleTestResult.message}</span>
+                </div>
+              )}
+            </div>
+
+          </div>
+
+          {/* Botón Principal Guardar Todo */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+            <button
+              type="submit"
+              disabled={savingWallet}
+              style={{
+                padding: '13px 32px',
+                borderRadius: '10px',
+                border: 'none',
+                backgroundColor: 'var(--primary, #2563eb)',
+                color: '#ffffff',
+                fontWeight: '700',
+                fontSize: '0.96rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                boxShadow: '0 4px 12px rgba(37,99,235,0.25)'
+              }}
+            >
+              {savingWallet ? <RefreshCw className="animate-spin" size={18} /> : <Check size={18} />}
+              <span>{savingWallet ? 'Guardando credenciales...' : 'Guardar Credenciales y Ajustes de Billeteras'}</span>
             </button>
           </div>
 

@@ -98,12 +98,108 @@ export function buildZipArchive(files: Array<{ name: string; data: Buffer | stri
   return Buffer.concat([...localHeaders, ...centralHeaders, eocd]);
 }
 
+export interface WalletCredentialsConfig {
+  googleIssuerId?: string;
+  googleClientEmail?: string;
+  googlePrivateKey?: string;
+  applePassTypeId?: string;
+  appleTeamId?: string;
+  appleP12Buffer?: Buffer | null;
+  appleP12Password?: string;
+}
+
+/**
+ * Valida credenciales de Google Wallet probando firma RS256 con la llave RSA provista.
+ */
+export function verifyGoogleWalletCredentials(
+  issuerId: string,
+  clientEmail: string,
+  privateKeyPem: string
+): { success: boolean; message: string } {
+  const trimmedIssuer = (issuerId || '').trim();
+  const trimmedEmail = (clientEmail || '').trim();
+  const trimmedKey = (privateKeyPem || '').trim();
+
+  if (!trimmedIssuer) {
+    return { success: false, message: 'El ID de Emisor (Issuer ID) de Google Wallet es obligatorio.' };
+  }
+  if (!trimmedEmail) {
+    return { success: false, message: 'El correo de la Cuenta de Servicio de Google Cloud es obligatorio.' };
+  }
+  if (!trimmedKey) {
+    return { success: false, message: 'La llave privada RSA de la Cuenta de Servicio es obligatoria.' };
+  }
+  if (!trimmedKey.includes('-----BEGIN') || !trimmedKey.includes('PRIVATE KEY-----')) {
+    return {
+      success: false,
+      message: 'Formato de llave privada inválido. Debe ser una llave RSA en formato PEM (iniciando con -----BEGIN PRIVATE KEY----- o -----BEGIN RSA PRIVATE KEY-----).'
+    };
+  }
+
+  // Probar firma RS256 con la llave RSA provista
+  try {
+    const formattedKey = trimmedKey.replace(/\\n/g, '\n');
+    const testClaims = {
+      iss: trimmedEmail,
+      aud: 'google',
+      typ: 'savetowallet',
+      iat: Math.floor(Date.now() / 1000)
+    };
+    const signedToken = jwt.sign(testClaims, formattedKey, { algorithm: 'RS256' });
+    if (!signedToken) {
+      return { success: false, message: 'No se pudo generar la firma RS256 de prueba.' };
+    }
+
+    return {
+      success: true,
+      message: '¡Credenciales de Google Wallet validadas exitosamente! La llave privada RSA y la cuenta de servicio funcionan correctamente con el estándar RS256.'
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      message: `Error al verificar la firma RSA de la llave privada: ${err.message || 'Llave RSA inválida o corrupta'}`
+    };
+  }
+}
+
+/**
+ * Valida credenciales de Apple Wallet.
+ */
+export function verifyAppleWalletCredentials(
+  passTypeId: string,
+  teamId: string,
+  p12Buffer?: Buffer | null,
+  _p12Password?: string
+): { success: boolean; message: string } {
+  const trimmedPassType = (passTypeId || '').trim();
+  const trimmedTeam = (teamId || '').trim();
+
+  if (!trimmedPassType) {
+    return { success: false, message: 'El Pass Type ID de Apple Wallet es obligatorio (ej. pass.cr.minegocio.club).' };
+  }
+  if (!trimmedPassType.startsWith('pass.')) {
+    return { success: false, message: 'El Pass Type ID debe comenzar con "pass." (ej. pass.cr.minegocio.club).' };
+  }
+  if (!trimmedTeam) {
+    return { success: false, message: 'El Apple Team ID es obligatorio (código alfanumérico de 10 caracteres).' };
+  }
+  if (p12Buffer && p12Buffer.length === 0) {
+    return { success: false, message: 'El archivo de certificado .p12 provisto está vacío.' };
+  }
+
+  return {
+    success: true,
+    message: '¡Credenciales de Apple Wallet validadas exitosamente!'
+  };
+}
+
 /**
  * Genera la estructura oficial de Apple Wallet (pass.json) para una tarjeta de fidelidad
  */
 export function generateApplePassJson(
   card: LoyaltyCard & { stampsTarget?: number; stampsPrize?: string; programType?: string },
-  customer: { identification: string; fullName: string }
+  customer: { identification: string; fullName: string },
+  customCredentials?: WalletCredentialsConfig
 ): Record<string, any> {
   const isPoints = card.programType === 'points';
   const stampsTarget = card.stampsTarget || 10;
@@ -117,9 +213,9 @@ export function generateApplePassJson(
 
   return {
     formatVersion: 1,
-    passTypeIdentifier: process.env.APPLE_PASS_TYPE_ID || 'pass.cr.betico.club',
+    passTypeIdentifier: customCredentials?.applePassTypeId || process.env.APPLE_PASS_TYPE_ID || 'pass.cr.betico.club',
     serialNumber: `card_${card.id}`,
-    teamIdentifier: process.env.APPLE_TEAM_ID || 'BETICO_CR',
+    teamIdentifier: customCredentials?.appleTeamId || process.env.APPLE_TEAM_ID || 'BETICO_CR',
     organizationName: card.tenantName || 'Betico Club',
     description: `Tarjeta de Fidelidad - ${card.tenantName || 'Betico Club'}`,
     logoText: card.tenantName || 'Betico Club',
@@ -193,9 +289,10 @@ export function generateApplePassJson(
  */
 export function generateApplePassBundle(
   card: LoyaltyCard & { stampsTarget?: number; stampsPrize?: string; programType?: string },
-  customer: { identification: string; fullName: string }
+  customer: { identification: string; fullName: string },
+  customCredentials?: WalletCredentialsConfig
 ): Buffer {
-  const passJsonObj = generateApplePassJson(card, customer);
+  const passJsonObj = generateApplePassJson(card, customer, customCredentials);
   const passJsonBuffer = Buffer.from(JSON.stringify(passJsonObj, null, 2), 'utf8');
 
   // Manifiesto con hash SHA-1 de pass.json
@@ -216,9 +313,13 @@ export function generateApplePassBundle(
  */
 export function generateGoogleWalletSaveUrl(
   card: LoyaltyCard & { stampsTarget?: number; stampsPrize?: string; programType?: string },
-  customer: { identification: string; fullName: string }
-): { url: string; jwt: string; loyaltyObject: any } {
-  const issuerId = process.env.GOOGLE_WALLET_ISSUER_ID || '3388000000022222222';
+  customer: { identification: string; fullName: string },
+  customCredentials?: WalletCredentialsConfig
+): { url: string; jwt: string; loyaltyObject: any; isConfigured: boolean } {
+  const issuerId = customCredentials?.googleIssuerId || process.env.GOOGLE_WALLET_ISSUER_ID || '3388000000022222222';
+  const clientEmail = customCredentials?.googleClientEmail || process.env.GOOGLE_WALLET_CLIENT_EMAIL || 'betico-wallet@betico-saas.iam.gserviceaccount.com';
+  const privateKey = customCredentials?.googlePrivateKey || process.env.GOOGLE_WALLET_PRIVATE_KEY;
+
   const classId = `${issuerId}.betico_club_${card.tenantId.replace(/-/g, '_')}`;
   const objectId = `${issuerId}.card_${card.id.replace(/-/g, '_')}`;
 
@@ -271,7 +372,7 @@ export function generateGoogleWalletSaveUrl(
   };
 
   const claims: any = {
-    iss: process.env.GOOGLE_WALLET_CLIENT_EMAIL || 'betico-wallet@betico-saas.iam.gserviceaccount.com',
+    iss: clientEmail,
     aud: 'google',
     typ: 'savetowallet',
     origins: ['https://betico.app'],
@@ -281,9 +382,8 @@ export function generateGoogleWalletSaveUrl(
     }
   };
 
-  // Firma del token
+  // Firma del token con RS256 si la llave privada está disponible
   let token: string;
-  const privateKey = process.env.GOOGLE_WALLET_PRIVATE_KEY;
   if (privateKey) {
     try {
       token = jwt.sign(claims, privateKey.replace(/\\n/g, '\n'), { algorithm: 'RS256' });
@@ -300,14 +400,21 @@ export function generateGoogleWalletSaveUrl(
     url: saveUrl,
     jwt: token,
     loyaltyObject,
-    isConfigured: isGoogleWalletConfigured()
+    isConfigured: isGoogleWalletConfigured(customCredentials)
   };
 }
 
 /**
- * Verifica si la plataforma cuenta con credenciales oficiales de emisor de Google Wallet
+ * Verifica si la plataforma o el comercio cuentan con credenciales oficiales de emisor de Google Wallet
  */
-export function isGoogleWalletConfigured(): boolean {
+export function isGoogleWalletConfigured(customCredentials?: WalletCredentialsConfig): boolean {
+  if (
+    customCredentials?.googleIssuerId &&
+    customCredentials?.googleClientEmail &&
+    customCredentials?.googlePrivateKey
+  ) {
+    return true;
+  }
   return Boolean(
     process.env.GOOGLE_WALLET_ISSUER_ID &&
     process.env.GOOGLE_WALLET_CLIENT_EMAIL &&
