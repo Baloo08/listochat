@@ -913,6 +913,8 @@ export interface LoyaltyProgram {
   stampsTarget: number;          // Total de sellos para completar tarjeta (ej. 10)
   stampsPrize: string;           // Descripción del premio (ej. "1 Café Americano gratis")
   minSpendPerStamp: number;      // Compra mínima para otorgar un sello (ej. ₡3.000)
+  enableGoogleWallet?: boolean;  // Habilitar botón de Google Wallet
+  enableAppleWallet?: boolean;   // Habilitar botón de Apple Wallet
   createdAt?: string;
   updatedAt?: string;
 }
@@ -943,6 +945,8 @@ export interface LoyaltyCard {
   tenantSlug?: string;
   tenantLogoUrl?: string;
   currency?: string;
+  enableGoogleWallet?: boolean;
+  enableAppleWallet?: boolean;
   createdAt: string;
   updatedAt?: string;
 }

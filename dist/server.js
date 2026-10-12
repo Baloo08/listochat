@@ -1804,6 +1804,8 @@ function mapProgramRow(row) {
     stampsTarget: Number(row.stamps_target) || 10,
     stampsPrize: row.stamps_prize || "Premio sorpresa",
     minSpendPerStamp: Number(row.min_spend_per_stamp) || 0,
+    enableGoogleWallet: row.enable_google_wallet !== false,
+    enableAppleWallet: row.enable_apple_wallet !== false,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -1871,8 +1873,10 @@ async function upsertLoyaltyProgram(tenantId, data) {
         stamps_target = COALESCE($7, stamps_target),
         stamps_prize = COALESCE($8, stamps_prize),
         min_spend_per_stamp = COALESCE($9, min_spend_per_stamp),
+        enable_google_wallet = COALESCE($10, enable_google_wallet),
+        enable_apple_wallet = COALESCE($11, enable_apple_wallet),
         updated_at = CURRENT_TIMESTAMP
-      WHERE tenant_id = $10
+      WHERE tenant_id = $12
       RETURNING *
     `, [
       data.isActive !== void 0 ? data.isActive : null,
@@ -1884,6 +1888,8 @@ async function upsertLoyaltyProgram(tenantId, data) {
       data.stampsTarget !== void 0 ? data.stampsTarget : null,
       data.stampsPrize || null,
       data.minSpendPerStamp !== void 0 ? data.minSpendPerStamp : null,
+      data.enableGoogleWallet !== void 0 ? data.enableGoogleWallet : null,
+      data.enableAppleWallet !== void 0 ? data.enableAppleWallet : null,
       tenantId
     ]);
     return mapProgramRow(res.rows[0]);
@@ -1891,8 +1897,9 @@ async function upsertLoyaltyProgram(tenantId, data) {
     const res = await query(`
       INSERT INTO loyalty_programs (
         tenant_id, is_active, program_type, currency, points_spend_ratio,
-        points_redeem_ratio, points_expiry_months, stamps_target, stamps_prize, min_spend_per_stamp
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        points_redeem_ratio, points_expiry_months, stamps_target, stamps_prize, min_spend_per_stamp,
+        enable_google_wallet, enable_apple_wallet
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
       RETURNING *
     `, [
       tenantId,
@@ -1904,7 +1911,9 @@ async function upsertLoyaltyProgram(tenantId, data) {
       data.pointsExpiryMonths || null,
       data.stampsTarget || 10,
       data.stampsPrize || "Premio de lealtad",
-      data.minSpendPerStamp || 0
+      data.minSpendPerStamp || 0,
+      data.enableGoogleWallet !== void 0 ? data.enableGoogleWallet : true,
+      data.enableAppleWallet !== void 0 ? data.enableAppleWallet : true
     ]);
     return mapProgramRow(res.rows[0]);
   }
@@ -1960,7 +1969,9 @@ async function getCustomerWalletCards(identification) {
   const res = await query(`
     SELECT c.*, t.name as tenant_name, t.slug as tenant_slug,
            COALESCE(s.store_logo_url, s.store_theme->>'logoUrl') as tenant_logo_url,
-           p.currency as currency, p.stamps_target, p.stamps_prize, p.program_type
+           p.currency as currency, p.stamps_target, p.stamps_prize, p.program_type,
+           COALESCE(p.enable_google_wallet, true) as enable_google_wallet,
+           COALESCE(p.enable_apple_wallet, true) as enable_apple_wallet
     FROM loyalty_cards c
     JOIN tenants t ON t.id = c.tenant_id
     LEFT JOIN store_settings s ON s.tenant_id = c.tenant_id
@@ -1973,7 +1984,9 @@ async function getCustomerWalletCards(identification) {
     ...mapCardRow(row),
     stampsTarget: row.stamps_target ? Number(row.stamps_target) : 10,
     stampsPrize: row.stamps_prize || "Premio de lealtad",
-    programType: row.program_type || "both"
+    programType: row.program_type || "both",
+    enableGoogleWallet: row.enable_google_wallet !== false,
+    enableAppleWallet: row.enable_apple_wallet !== false
   }));
 }
 async function getCustomerVouchers(identification) {
@@ -6525,6 +6538,8 @@ async function runMigrations() {
     ALTER TABLE tenants ADD COLUMN IF NOT EXISTS custom_invoices_quota INT;
     ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS is_simplified_regime BOOLEAN DEFAULT false;
     ALTER TABLE tenant_almendro_configs ADD COLUMN IF NOT EXISTS is_simplified_regime BOOLEAN DEFAULT false;
+    ALTER TABLE loyalty_programs ADD COLUMN IF NOT EXISTS enable_google_wallet BOOLEAN DEFAULT true;
+    ALTER TABLE loyalty_programs ADD COLUMN IF NOT EXISTS enable_apple_wallet BOOLEAN DEFAULT true;
   `).catch((err) => {
     console.warn("[Migrations] Columns addition warning:", err?.message || err);
   });
@@ -23256,8 +23271,14 @@ function generateGoogleWalletSaveUrl(card, customer) {
   return {
     url: saveUrl,
     jwt: token,
-    loyaltyObject
+    loyaltyObject,
+    isConfigured: isGoogleWalletConfigured()
   };
+}
+function isGoogleWalletConfigured() {
+  return Boolean(
+    process.env.GOOGLE_WALLET_ISSUER_ID && process.env.GOOGLE_WALLET_CLIENT_EMAIL && process.env.GOOGLE_WALLET_PRIVATE_KEY
+  );
 }
 
 // src/server/routes/loyalty-customer.routes.ts
@@ -23425,9 +23446,20 @@ router37.get("/me/google-pass-url", authenticateLoyaltyCustomer, async (req, res
       res.status(404).json({ error: "Tarjeta no encontrada en tu billetera" });
       return;
     }
+    const configured = isGoogleWalletConfigured();
+    if (!configured) {
+      res.json({
+        success: true,
+        isConfigured: false,
+        message: "La integraci\xF3n con Google Wallet se encuentra en proceso de validaci\xF3n oficial por la entidad emisora. Puedes continuar utilizando y acumulando tus puntos y sellos con tu tarjeta digital en Betico Club.",
+        url: null
+      });
+      return;
+    }
     const result = generateGoogleWalletSaveUrl(selectedCard, { identification, fullName });
     res.json({
       success: true,
+      isConfigured: true,
       url: result.url,
       jwt: result.jwt,
       loyaltyObject: result.loyaltyObject

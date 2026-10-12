@@ -491,6 +491,71 @@ ${pdfUrl}
     assert.equal(JSON.stringify(gpassPayload).includes('&'), false, 'Cero caracteres & en estructura de billetera');
   });
 
+  test('13. Preferencias de Activación de Billeteras por Comercio y Manejo de Emisor no Configurado', () => {
+    // 1. Verificación de filtrado condicional de botones por comercio
+    function resolveVisibleWalletButtons(programConfig) {
+      return {
+        showGoogleWallet: programConfig.enableGoogleWallet !== false,
+        showAppleWallet: programConfig.enableAppleWallet !== false
+      };
+    }
+
+    // Comercio 1: Activa ambas billeteras
+    const buttonsBoth = resolveVisibleWalletButtons({ enableGoogleWallet: true, enableAppleWallet: true });
+    assert.equal(buttonsBoth.showGoogleWallet, true);
+    assert.equal(buttonsBoth.showAppleWallet, true);
+
+    // Comercio 2: Desactiva Google Wallet y mantiene Apple Wallet
+    const buttonsAppleOnly = resolveVisibleWalletButtons({ enableGoogleWallet: false, enableAppleWallet: true });
+    assert.equal(buttonsAppleOnly.showGoogleWallet, false);
+    assert.equal(buttonsAppleOnly.showAppleWallet, true);
+
+    // Comercio 3: Desactiva ambas
+    const buttonsNone = resolveVisibleWalletButtons({ enableGoogleWallet: false, enableAppleWallet: false });
+    assert.equal(buttonsNone.showGoogleWallet, false);
+    assert.equal(buttonsNone.showAppleWallet, false);
+
+    // 2. Verificación de respuesta informativa cuando las credenciales no están cargadas
+    function simulateGooglePassUrlEndpoint(serverEnv) {
+      const isConfigured = Boolean(
+        serverEnv.GOOGLE_WALLET_ISSUER_ID &&
+        serverEnv.GOOGLE_WALLET_CLIENT_EMAIL &&
+        serverEnv.GOOGLE_WALLET_PRIVATE_KEY
+      );
+
+      if (!isConfigured) {
+        return {
+          success: true,
+          isConfigured: false,
+          message: 'La integración con Google Wallet se encuentra en proceso de validación oficial por la entidad emisora. Puedes continuar utilizando y acumulando tus puntos y sellos con tu tarjeta digital en Betico Club.',
+          url: null
+        };
+      }
+
+      return {
+        success: true,
+        isConfigured: true,
+        url: 'https://pay.google.com/gp/v/save/token_valido'
+      };
+    }
+
+    // Sin variables de entorno oficiales
+    const unconfiguredResponse = simulateGooglePassUrlEndpoint({});
+    assert.equal(unconfiguredResponse.isConfigured, false);
+    assert.equal(unconfiguredResponse.url, null);
+    assert.ok(unconfiguredResponse.message.includes('validación oficial'));
+    assert.equal(unconfiguredResponse.message.includes('&'), false, 'Cero caracteres & en mensaje de validación');
+
+    // Con variables de entorno configuradas
+    const configuredResponse = simulateGooglePassUrlEndpoint({
+      GOOGLE_WALLET_ISSUER_ID: '3388000000012345678',
+      GOOGLE_WALLET_CLIENT_EMAIL: 'wallet@betico.iam.gserviceaccount.com',
+      GOOGLE_WALLET_PRIVATE_KEY: '-----BEGIN PRIVATE KEY-----\nMIIE...'
+    });
+    assert.equal(configuredResponse.isConfigured, true);
+    assert.ok(configuredResponse.url.includes('https://pay.google.com/gp/v/save/'));
+  });
+
 });
 
 

@@ -38,6 +38,7 @@ export default function LoyaltyWalletCustomerApp({ tenantSlug }: LoyaltyWalletCu
   const [activeTab, setActiveTab] = useState<'cards' | 'vouchers'>('cards');
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [walletLoading, setWalletLoading] = useState<string | null>(null);
+  const [walletNoticeModal, setWalletNoticeModal] = useState<string | null>(null);
 
   const safeCards = Array.isArray(cards) ? cards : [];
   const safeVouchers = Array.isArray(vouchers) ? vouchers : [];
@@ -137,8 +138,15 @@ export default function LoyaltyWalletCustomerApp({ tenantSlug }: LoyaltyWalletCu
         headers: { Authorization: `Bearer ${token}` }
       });
       const data = await res.json();
-      if (!res.ok || !data.url) {
-        throw new Error(data.error || 'Error generando enlace de Google Wallet');
+      if (!res.ok) {
+        throw new Error(data.error || 'Error al conectar con el servicio de billetera');
+      }
+      if (data.isConfigured === false) {
+        setWalletNoticeModal(data.message || 'La integración con Google Wallet se encuentra en proceso de validación oficial por la entidad emisora. Tu tarjeta digital sigue 100% activa en Betico Club.');
+        return;
+      }
+      if (!data.url) {
+        throw new Error('No se pudo generar el enlace de Google Wallet');
       }
       window.open(data.url, '_blank');
     } catch (err: any) {
@@ -825,80 +833,86 @@ export default function LoyaltyWalletCustomerApp({ tenantSlug }: LoyaltyWalletCu
                           )}
 
                           {/* 3. Guardar en Apple Wallet y Google Wallet */}
-                          <div style={{
-                            marginTop: '4px',
-                            paddingTop: '14px',
-                            borderTop: '1px dashed #e2e8f0',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: '8px'
-                          }}>
-                            <span style={{ fontSize: '0.74rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>
-                              Guardar en tu Teléfono
-                            </span>
+                          {(card.enableAppleWallet !== false || card.enableGoogleWallet !== false) && (
+                            <div style={{
+                              marginTop: '4px',
+                              paddingTop: '14px',
+                              borderTop: '1px dashed #e2e8f0',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '8px'
+                            }}>
+                              <span style={{ fontSize: '0.74rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>
+                                Guardar en tu Teléfono
+                              </span>
 
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '8px' }}>
-                              {/* Botón Apple Wallet */}
-                              <button
-                                type="button"
-                                onClick={() => handleDownloadApplePass(card.id)}
-                                disabled={walletLoading === card.id}
-                                style={{
-                                  backgroundColor: '#000000',
-                                  color: '#ffffff',
-                                  border: 'none',
-                                  borderRadius: '10px',
-                                  padding: '10px 14px',
-                                  fontSize: '0.82rem',
-                                  fontWeight: '700',
-                                  cursor: 'pointer',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  gap: '8px',
-                                  boxShadow: '0 2px 6px rgba(0,0,0,0.15)',
-                                  transition: 'transform 0.1s'
-                                }}
-                              >
-                                {walletLoading === card.id ? (
-                                  <RefreshCw size={14} className="animate-spin" />
-                                ) : (
-                                  <CreditCard size={15} />
+                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '8px' }}>
+                                {/* Botón Apple Wallet */}
+                                {card.enableAppleWallet !== false && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDownloadApplePass(card.id)}
+                                    disabled={walletLoading === card.id}
+                                    style={{
+                                      backgroundColor: '#000000',
+                                      color: '#ffffff',
+                                      border: 'none',
+                                      borderRadius: '10px',
+                                      padding: '10px 14px',
+                                      fontSize: '0.82rem',
+                                      fontWeight: '700',
+                                      cursor: 'pointer',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      gap: '8px',
+                                      boxShadow: '0 2px 6px rgba(0,0,0,0.15)',
+                                      transition: 'transform 0.1s'
+                                    }}
+                                  >
+                                    {walletLoading === card.id ? (
+                                      <RefreshCw size={14} className="animate-spin" />
+                                    ) : (
+                                      <CreditCard size={15} />
+                                    )}
+                                    <span>Añadir a Apple Wallet</span>
+                                  </button>
                                 )}
-                                <span>Añadir a Apple Wallet</span>
-                              </button>
 
-                              {/* Botón Google Wallet */}
-                              <button
-                                type="button"
-                                onClick={() => handleOpenGooglePass(card.id)}
-                                disabled={walletLoading === card.id}
-                                style={{
-                                  backgroundColor: '#1e293b',
-                                  color: '#ffffff',
-                                  border: '1px solid #334155',
-                                  borderRadius: '10px',
-                                  padding: '10px 14px',
-                                  fontSize: '0.82rem',
-                                  fontWeight: '700',
-                                  cursor: 'pointer',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  gap: '8px',
-                                  boxShadow: '0 2px 6px rgba(0,0,0,0.08)',
-                                  transition: 'transform 0.1s'
-                                }}
-                              >
-                                {walletLoading === card.id ? (
-                                  <RefreshCw size={14} className="animate-spin" />
-                                ) : (
-                                  <Sparkles size={15} color="#60a5fa" />
+                                {/* Botón Google Wallet */}
+                                {card.enableGoogleWallet !== false && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenGooglePass(card.id)}
+                                    disabled={walletLoading === card.id}
+                                    style={{
+                                      backgroundColor: '#1e293b',
+                                      color: '#ffffff',
+                                      border: '1px solid #334155',
+                                      borderRadius: '10px',
+                                      padding: '10px 14px',
+                                      fontSize: '0.82rem',
+                                      fontWeight: '700',
+                                      cursor: 'pointer',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      gap: '8px',
+                                      boxShadow: '0 2px 6px rgba(0,0,0,0.08)',
+                                      transition: 'transform 0.1s'
+                                    }}
+                                  >
+                                    {walletLoading === card.id ? (
+                                      <RefreshCw size={14} className="animate-spin" />
+                                    ) : (
+                                      <Sparkles size={15} color="#60a5fa" />
+                                    )}
+                                    <span>Guardar en Google Wallet</span>
+                                  </button>
                                 )}
-                                <span>Guardar en Google Wallet</span>
-                              </button>
+                              </div>
                             </div>
-                          </div>
+                          )}
 
                         </div>
                       </div>
@@ -1104,6 +1118,65 @@ export default function LoyaltyWalletCustomerApp({ tenantSlug }: LoyaltyWalletCu
       }}>
         <div>Betico Tech • Club Universal de Fidelización Costa Rica</div>
       </footer>
+
+      {/* Modal Informativo de Validación Oficial de Billetera */}
+      {walletNoticeModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.65)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: '20px', zIndex: 9999, backdropFilter: 'blur(3px)'
+        }}>
+          <div style={{
+            backgroundColor: '#ffffff',
+            borderRadius: '16px',
+            maxWidth: '440px',
+            width: '100%',
+            padding: '24px',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px',
+            textAlign: 'center'
+          }}>
+            <div style={{
+              width: '52px', height: '52px', borderRadius: '50%',
+              backgroundColor: '#eff6ff', color: '#2563eb',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              margin: '0 auto'
+            }}>
+              <ShieldCheck size={28} />
+            </div>
+
+            <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: '800', color: '#0f172a' }}>
+              Validación Oficial en Proceso
+            </h3>
+
+            <p style={{ margin: 0, fontSize: '0.86rem', color: '#475569', lineHeight: '1.5' }}>
+              {walletNoticeModal}
+            </p>
+
+            <button
+              type="button"
+              onClick={() => setWalletNoticeModal(null)}
+              style={{
+                marginTop: '8px',
+                padding: '11px',
+                backgroundColor: '#2563eb',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '10px',
+                fontWeight: '700',
+                fontSize: '0.9rem',
+                cursor: 'pointer'
+              }}
+            >
+              Entendido
+            </button>
+          </div>
+        </div>
+      )}
 
     </div>
   );

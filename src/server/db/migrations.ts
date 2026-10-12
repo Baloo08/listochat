@@ -1231,6 +1231,8 @@ export async function runMigrations() {
     ALTER TABLE tenants ADD COLUMN IF NOT EXISTS custom_invoices_quota INT;
     ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS is_simplified_regime BOOLEAN DEFAULT false;
     ALTER TABLE tenant_almendro_configs ADD COLUMN IF NOT EXISTS is_simplified_regime BOOLEAN DEFAULT false;
+    ALTER TABLE loyalty_programs ADD COLUMN IF NOT EXISTS enable_google_wallet BOOLEAN DEFAULT true;
+    ALTER TABLE loyalty_programs ADD COLUMN IF NOT EXISTS enable_apple_wallet BOOLEAN DEFAULT true;
   `).catch((err) => {
     console.warn('[Migrations] Columns addition warning:', err?.message || err);
   });

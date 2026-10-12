@@ -22,6 +22,8 @@ function mapProgramRow(row: any): LoyaltyProgram {
     stampsTarget: Number(row.stamps_target) || 10,
     stampsPrize: row.stamps_prize || 'Premio sorpresa',
     minSpendPerStamp: Number(row.min_spend_per_stamp) || 0,
+    enableGoogleWallet: row.enable_google_wallet !== false,
+    enableAppleWallet: row.enable_apple_wallet !== false,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -98,8 +100,10 @@ export async function upsertLoyaltyProgram(tenantId: string, data: Partial<Loyal
         stamps_target = COALESCE($7, stamps_target),
         stamps_prize = COALESCE($8, stamps_prize),
         min_spend_per_stamp = COALESCE($9, min_spend_per_stamp),
+        enable_google_wallet = COALESCE($10, enable_google_wallet),
+        enable_apple_wallet = COALESCE($11, enable_apple_wallet),
         updated_at = CURRENT_TIMESTAMP
-      WHERE tenant_id = $10
+      WHERE tenant_id = $12
       RETURNING *
     `, [
       data.isActive !== undefined ? data.isActive : null,
@@ -111,6 +115,8 @@ export async function upsertLoyaltyProgram(tenantId: string, data: Partial<Loyal
       data.stampsTarget !== undefined ? data.stampsTarget : null,
       data.stampsPrize || null,
       data.minSpendPerStamp !== undefined ? data.minSpendPerStamp : null,
+      data.enableGoogleWallet !== undefined ? data.enableGoogleWallet : null,
+      data.enableAppleWallet !== undefined ? data.enableAppleWallet : null,
       tenantId
     ]);
     return mapProgramRow(res.rows[0]);
@@ -118,8 +124,9 @@ export async function upsertLoyaltyProgram(tenantId: string, data: Partial<Loyal
     const res = await query(`
       INSERT INTO loyalty_programs (
         tenant_id, is_active, program_type, currency, points_spend_ratio,
-        points_redeem_ratio, points_expiry_months, stamps_target, stamps_prize, min_spend_per_stamp
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        points_redeem_ratio, points_expiry_months, stamps_target, stamps_prize, min_spend_per_stamp,
+        enable_google_wallet, enable_apple_wallet
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
       RETURNING *
     `, [
       tenantId,
@@ -131,7 +138,9 @@ export async function upsertLoyaltyProgram(tenantId: string, data: Partial<Loyal
       data.pointsExpiryMonths || null,
       data.stampsTarget || 10,
       data.stampsPrize || 'Premio de lealtad',
-      data.minSpendPerStamp || 0
+      data.minSpendPerStamp || 0,
+      data.enableGoogleWallet !== undefined ? data.enableGoogleWallet : true,
+      data.enableAppleWallet !== undefined ? data.enableAppleWallet : true
     ]);
     return mapProgramRow(res.rows[0]);
   }
@@ -205,7 +214,9 @@ export async function getCustomerWalletCards(identification: string): Promise<Lo
   const res = await query(`
     SELECT c.*, t.name as tenant_name, t.slug as tenant_slug,
            COALESCE(s.store_logo_url, s.store_theme->>'logoUrl') as tenant_logo_url,
-           p.currency as currency, p.stamps_target, p.stamps_prize, p.program_type
+           p.currency as currency, p.stamps_target, p.stamps_prize, p.program_type,
+           COALESCE(p.enable_google_wallet, true) as enable_google_wallet,
+           COALESCE(p.enable_apple_wallet, true) as enable_apple_wallet
     FROM loyalty_cards c
     JOIN tenants t ON t.id = c.tenant_id
     LEFT JOIN store_settings s ON s.tenant_id = c.tenant_id
@@ -219,7 +230,9 @@ export async function getCustomerWalletCards(identification: string): Promise<Lo
     ...mapCardRow(row),
     stampsTarget: row.stamps_target ? Number(row.stamps_target) : 10,
     stampsPrize: row.stamps_prize || 'Premio de lealtad',
-    programType: row.program_type || 'both'
+    programType: row.program_type || 'both',
+    enableGoogleWallet: row.enable_google_wallet !== false,
+    enableAppleWallet: row.enable_apple_wallet !== false
   } as any));
 }
 

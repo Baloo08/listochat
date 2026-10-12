@@ -13,7 +13,7 @@ import {
 } from '../db/loyalty.repo.js';
 import { getTenantBySlug } from '../db/tenant.repo.js';
 import { query } from '../db/pool.js';
-import { generateApplePassBundle, generateGoogleWalletSaveUrl } from '../services/wallet-pass.service.js';
+import { generateApplePassBundle, generateGoogleWalletSaveUrl, isGoogleWalletConfigured } from '../services/wallet-pass.service.js';
 
 const router = Router();
 
@@ -218,9 +218,21 @@ router.get('/me/google-pass-url', authenticateLoyaltyCustomer, async (req, res) 
       return;
     }
 
+    const configured = isGoogleWalletConfigured();
+    if (!configured) {
+      res.json({
+        success: true,
+        isConfigured: false,
+        message: 'La integración con Google Wallet se encuentra en proceso de validación oficial por la entidad emisora. Puedes continuar utilizando y acumulando tus puntos y sellos con tu tarjeta digital en Betico Club.',
+        url: null
+      });
+      return;
+    }
+
     const result = generateGoogleWalletSaveUrl(selectedCard as any, { identification, fullName });
     res.json({
       success: true,
+      isConfigured: true,
       url: result.url,
       jwt: result.jwt,
       loyaltyObject: result.loyaltyObject

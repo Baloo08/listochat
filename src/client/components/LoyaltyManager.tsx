@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Gift, Users, Tag, Award, Plus, Check, AlertCircle, RefreshCw, 
   Trash2, Search, ArrowRight, ShieldCheck, Clock, DollarSign,
-  Ticket, Percent, ExternalLink, Sparkles, Filter, CheckCircle2, XCircle
+  Ticket, Percent, ExternalLink, Sparkles, Filter, CheckCircle2, XCircle, CreditCard
 } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
 import { LoyaltyProgram, LoyaltyCard, LoyaltyPromotion, LoyaltyRewardVoucher, LoyaltyTransaction, DiscountCoupon } from '../../shared/types';
@@ -29,7 +29,9 @@ export default function LoyaltyManager({ initialTab = 'ajustes' }: LoyaltyManage
     pointsExpiryMonths: 12,
     stampsTarget: 10,
     stampsPrize: '1 Producto de la casa gratis',
-    minSpendPerStamp: 3000
+    minSpendPerStamp: 3000,
+    enableGoogleWallet: true,
+    enableAppleWallet: true
   });
 
   // Cards y Search State
@@ -755,6 +757,77 @@ export default function LoyaltyManager({ initialTab = 'ajustes' }: LoyaltyManage
               </div>
             </div>
           )}
+
+          {/* Billeteras Móviles Digitales (Google Wallet y Apple Wallet) */}
+          <div style={{ backgroundColor: 'var(--surface, #ffffff)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border, #e2e8f0)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+              <CreditCard size={20} color="var(--primary, #2563eb)" />
+              <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: '700', color: '#1e293b' }}>
+                Billeteras Móviles Digitales (Google Wallet y Apple Wallet)
+              </h3>
+            </div>
+            <p style={{ margin: '0 0 16px 0', fontSize: '0.84rem', color: '#64748b' }}>
+              Elige si deseas que tus clientes puedan exportar y guardar su tarjeta de fidelidad directamente en las billeteras nativas de sus teléfonos inteligentes (Android e iOS).
+            </p>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px' }}>
+              
+              {/* Toggle Google Wallet */}
+              <div style={{
+                padding: '14px 16px',
+                borderRadius: '10px',
+                border: `1px solid ${program.enableGoogleWallet !== false ? '#93c5fd' : '#e2e8f0'}`,
+                backgroundColor: program.enableGoogleWallet !== false ? '#eff6ff' : '#f8fafc',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '12px'
+              }}>
+                <div>
+                  <div style={{ fontWeight: '700', fontSize: '0.92rem', color: '#1e293b' }}>
+                    Google Wallet (Android)
+                  </div>
+                  <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '2px' }}>
+                    Muestra el botón "Guardar en Google Wallet" en el monedero digital.
+                  </div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={program.enableGoogleWallet !== false}
+                  onChange={(e) => setProgram({ ...program, enableGoogleWallet: e.target.checked })}
+                  style={{ width: '20px', height: '20px', cursor: 'pointer', accentColor: 'var(--primary, #2563eb)' }}
+                />
+              </div>
+
+              {/* Toggle Apple Wallet */}
+              <div style={{
+                padding: '14px 16px',
+                borderRadius: '10px',
+                border: `1px solid ${program.enableAppleWallet !== false ? '#93c5fd' : '#e2e8f0'}`,
+                backgroundColor: program.enableAppleWallet !== false ? '#eff6ff' : '#f8fafc',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '12px'
+              }}>
+                <div>
+                  <div style={{ fontWeight: '700', fontSize: '0.92rem', color: '#1e293b' }}>
+                    Apple Wallet (iOS)
+                  </div>
+                  <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '2px' }}>
+                    Muestra el botón "Añadir a Apple Wallet" (.pkpass) en el monedero digital.
+                  </div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={program.enableAppleWallet !== false}
+                  onChange={(e) => setProgram({ ...program, enableAppleWallet: e.target.checked })}
+                  style={{ width: '20px', height: '20px', cursor: 'pointer', accentColor: 'var(--primary, #2563eb)' }}
+                />
+              </div>
+
+            </div>
+          </div>
 
           {/* Submit Button */}
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>

@@ -299,6 +299,18 @@ export function generateGoogleWalletSaveUrl(
   return {
     url: saveUrl,
     jwt: token,
-    loyaltyObject
+    loyaltyObject,
+    isConfigured: isGoogleWalletConfigured()
   };
+}
+
+/**
+ * Verifica si la plataforma cuenta con credenciales oficiales de emisor de Google Wallet
+ */
+export function isGoogleWalletConfigured(): boolean {
+  return Boolean(
+    process.env.GOOGLE_WALLET_ISSUER_ID &&
+    process.env.GOOGLE_WALLET_CLIENT_EMAIL &&
+    process.env.GOOGLE_WALLET_PRIVATE_KEY
+  );
 }
