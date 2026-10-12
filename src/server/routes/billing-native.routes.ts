@@ -120,6 +120,7 @@ router.post('/config', upload.single('certificateFile'), async (req: Request, re
       defaultDocType: body.defaultDocType,
       providerMode: body.providerMode,
       useAlternativeProvider: body.useAlternativeProvider !== undefined ? body.useAlternativeProvider === 'true' || body.useAlternativeProvider === true : undefined,
+      isSimplifiedRegime: body.isSimplifiedRegime !== undefined ? body.isSimplifiedRegime === 'true' || body.isSimplifiedRegime === true : undefined,
       active: body.active !== undefined ? body.active === 'true' || body.active === true : undefined
     });
 

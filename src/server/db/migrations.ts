@@ -1229,6 +1229,8 @@ export async function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_hacienda_usage_tenant ON hacienda_usage_cycles(tenant_id, cycle_start_date);
 
     ALTER TABLE tenants ADD COLUMN IF NOT EXISTS custom_invoices_quota INT;
+    ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS is_simplified_regime BOOLEAN DEFAULT false;
+    ALTER TABLE tenant_almendro_configs ADD COLUMN IF NOT EXISTS is_simplified_regime BOOLEAN DEFAULT false;
   `).catch((err) => {
     console.warn('[Migrations] Columns addition warning:', err?.message || err);
   });

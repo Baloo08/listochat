@@ -57,6 +57,7 @@ interface NativeConfig {
   lastTestMessage?: string | null;
   providerMode: 'BETICO_NATIVE' | 'ALMENDRO_AUTO' | 'EXTERNAL_MANUAL' | 'DISABLED';
   useAlternativeProvider: boolean;
+  isSimplifiedRegime?: boolean;
   active: boolean;
 }
 
@@ -105,6 +106,7 @@ export default function ElectronicBillingView() {
   const [branchCode, setBranchCode] = useState('001');
   const [posCode, setPosCode] = useState('00001');
   const [defaultDocType, setDefaultDocType] = useState<'01' | '04'>('04');
+  const [isSimplifiedRegime, setIsSimplifiedRegime] = useState(false);
 
   // Credenciales ATV
   const [idpUsername, setIdpUsername] = useState('');
@@ -164,6 +166,7 @@ export default function ElectronicBillingView() {
         setBranchCode(c.branchCode || '001');
         setPosCode(c.posCode || '00001');
         setDefaultDocType(c.defaultDocType || '04');
+        setIsSimplifiedRegime(Boolean(c.isSimplifiedRegime));
         setIdpUsername(c.idpUsername || '');
         setHasIdpPassword(Boolean(c.idpPasswordMasked));
         setHasExistingCert(Boolean(c.p12HasCertificate));
@@ -275,6 +278,7 @@ export default function ElectronicBillingView() {
         formData.append('branchCode', branchCode);
         formData.append('posCode', posCode);
         formData.append('defaultDocType', defaultDocType);
+        formData.append('isSimplifiedRegime', String(isSimplifiedRegime));
         formData.append('providerMode', billingMode);
         formData.append('useAlternativeProvider', String(showAlternativeProvider));
         formData.append('idpUsername', idpUsername);
@@ -317,6 +321,7 @@ export default function ElectronicBillingView() {
           billingMode,
           environment: environment === 'production' ? 'PRODUCTION' : 'SANDBOX',
           defaultDocType,
+          isSimplifiedRegime,
           moduleToggles: { storeEnabled, bookingsEnabled, courtsEnabled, restaurantEnabled },
           taxIdNumber: taxpayerIdNumber,
           legalName: taxpayerName,
@@ -334,7 +339,8 @@ export default function ElectronicBillingView() {
         // Guardar también en nativo el providerMode
         await api.post('/api/billing/native/config', {
           providerMode: billingMode,
-          useAlternativeProvider: showAlternativeProvider
+          useAlternativeProvider: showAlternativeProvider,
+          isSimplifiedRegime
         });
 
         alert('✅ ¡Modalidad de facturación guardada exitosamente!');
@@ -763,6 +769,55 @@ export default function ElectronicBillingView() {
                 </select>
               </div>
 
+            </div>
+
+            {/* RÉGIMEN DE TRIBUTACIÓN SIMPLIFICADA (RTS) */}
+            <div style={{
+              marginTop: '10px',
+              marginBottom: '16px',
+              padding: '16px',
+              borderRadius: '12px',
+              border: `1px solid ${isSimplifiedRegime ? '#93c5fd' : 'var(--border)'}`,
+              backgroundColor: isSimplifiedRegime ? '#eff6ff' : 'var(--background)',
+              transition: 'all 0.2s ease'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                  <input
+                    type="checkbox"
+                    id="isSimplifiedRegimeToggle"
+                    checked={isSimplifiedRegime}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setIsSimplifiedRegime(checked);
+                      if (checked) {
+                        setDefaultDocType('04');
+                      }
+                    }}
+                    style={{ width: '18px', height: '18px', accentColor: 'var(--primary)', cursor: 'pointer', marginTop: '2px' }}
+                  />
+                  <div>
+                    <label htmlFor="isSimplifiedRegimeToggle" style={{ display: 'block', fontSize: '0.9rem', fontWeight: '800', color: isSimplifiedRegime ? '#1e40af' : 'var(--text)', cursor: 'pointer' }}>
+                      Régimen de Tributación Simplificada (RTS)
+                    </label>
+                    <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: '#64748b', lineHeight: '1.45' }}>
+                      Si tu negocio pertenece al Régimen Simplificado de Hacienda, tus ventas y reservas emitirán por defecto <strong>Tiquete Electrónico (04)</strong> sin requerir datos de receptor. Si un cliente solicita comprobante formal e ingresa su cédula y nombre en la tienda, el sistema emitirá automáticamente <strong>Factura Electrónica (01)</strong> para esa venta específica.
+                    </p>
+                  </div>
+                </div>
+
+                <span style={{
+                  padding: '3px 10px',
+                  borderRadius: '12px',
+                  fontSize: '0.74rem',
+                  fontWeight: '800',
+                  whiteSpace: 'nowrap',
+                  backgroundColor: isSimplifiedRegime ? '#dbeafe' : '#f1f5f9',
+                  color: isSimplifiedRegime ? '#1d4ed8' : '#64748b'
+                }}>
+                  {isSimplifiedRegime ? 'RTS Activo (Tiquete 04 por defecto)' : 'Régimen General'}
+                </span>
+              </div>
             </div>
 
             {/* Dirección Detallada */}

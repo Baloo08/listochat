@@ -13,6 +13,7 @@ import {
 } from '../db/loyalty.repo.js';
 import { getTenantBySlug } from '../db/tenant.repo.js';
 import { query } from '../db/pool.js';
+import { generateApplePassBundle, generateGoogleWalletSaveUrl } from '../services/wallet-pass.service.js';
 
 const router = Router();
 
@@ -56,7 +57,7 @@ function authenticateLoyaltyCustomer(req: Request, res: Response, next: NextFunc
 }
 
 // ==========================================
-// REGISTRO & INICIO DE SESIÓN
+// REGISTRO E INICIO DE SESIÓN
 // ==========================================
 
 router.post('/register', async (req, res) => {
@@ -162,6 +163,71 @@ router.get('/me/vouchers', authenticateLoyaltyCustomer, async (req, res) => {
   } catch (error) {
     console.error('[LoyaltyCustomerRoutes] /vouchers error:', error);
     res.status(500).json({ error: 'Error al obtener recompensas' });
+  }
+});
+
+// ==========================================
+// INTEGRACIÓN CON WALLETS (APPLE Y GOOGLE)
+// ==========================================
+
+router.get('/me/apple-pass', authenticateLoyaltyCustomer, async (req, res) => {
+  try {
+    const identification = (req as any).loyaltyCustomer.identification;
+    const fullName = (req as any).loyaltyCustomer.fullName;
+    const cardId = req.query.cardId as string;
+
+    const cards = await getCustomerWalletCards(identification);
+    if (!cards || cards.length === 0) {
+      res.status(404).json({ error: 'No tienes tarjetas activas en tu billetera' });
+      return;
+    }
+
+    const selectedCard = cardId ? cards.find((c: any) => c.id === cardId) : cards[0];
+    if (!selectedCard) {
+      res.status(404).json({ error: 'Tarjeta no encontrada en tu billetera' });
+      return;
+    }
+
+    const pkpassBuffer = generateApplePassBundle(selectedCard as any, { identification, fullName });
+    const filename = `tarjeta-${selectedCard.tenantSlug || 'betico'}.pkpass`;
+
+    res.setHeader('Content-Type', 'application/vnd.apple.pkpass');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(pkpassBuffer);
+  } catch (error: any) {
+    console.error('[LoyaltyCustomerRoutes] apple-pass error:', error);
+    res.status(500).json({ error: 'Error generando pase para Apple Wallet' });
+  }
+});
+
+router.get('/me/google-pass-url', authenticateLoyaltyCustomer, async (req, res) => {
+  try {
+    const identification = (req as any).loyaltyCustomer.identification;
+    const fullName = (req as any).loyaltyCustomer.fullName;
+    const cardId = req.query.cardId as string;
+
+    const cards = await getCustomerWalletCards(identification);
+    if (!cards || cards.length === 0) {
+      res.status(404).json({ error: 'No tienes tarjetas activas en tu billetera' });
+      return;
+    }
+
+    const selectedCard = cardId ? cards.find((c: any) => c.id === cardId) : cards[0];
+    if (!selectedCard) {
+      res.status(404).json({ error: 'Tarjeta no encontrada en tu billetera' });
+      return;
+    }
+
+    const result = generateGoogleWalletSaveUrl(selectedCard as any, { identification, fullName });
+    res.json({
+      success: true,
+      url: result.url,
+      jwt: result.jwt,
+      loyaltyObject: result.loyaltyObject
+    });
+  } catch (error: any) {
+    console.error('[LoyaltyCustomerRoutes] google-pass-url error:', error);
+    res.status(500).json({ error: 'Error generando enlace para Google Wallet' });
   }
 });
 

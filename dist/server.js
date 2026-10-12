@@ -3428,6 +3428,7 @@ async function getHaciendaConfigByTenant(tenantId) {
     lastTestMessage: row.last_test_message || null,
     providerMode: row.provider_mode || "BETICO_NATIVE",
     useAlternativeProvider: Boolean(row.use_alternative_provider),
+    isSimplifiedRegime: Boolean(row.is_simplified_regime),
     active: Boolean(row.active),
     createdAt: row.created_at ? row.created_at.toISOString() : "",
     updatedAt: row.updated_at ? row.updated_at.toISOString() : ""
@@ -3485,6 +3486,7 @@ async function saveHaciendaConfig(tenantId, data) {
   const defaultDocType = data.defaultDocType || existing.default_doc_type || "04";
   const providerMode = data.providerMode || existing.provider_mode || "BETICO_NATIVE";
   const useAlternativeProvider = data.useAlternativeProvider !== void 0 ? Boolean(data.useAlternativeProvider) : Boolean(existing.use_alternative_provider);
+  const isSimplifiedRegime = data.isSimplifiedRegime !== void 0 ? Boolean(data.isSimplifiedRegime) : Boolean(existing.is_simplified_regime);
   const active = data.active !== void 0 ? Boolean(data.active) : existing.active !== void 0 ? Boolean(existing.active) : true;
   const idpUsername = data.idpUsername !== void 0 ? data.idpUsername.trim() : existing.idp_username || "";
   let idpPasswordEncrypted = existing.idp_password_encrypted || "";
@@ -3513,10 +3515,10 @@ async function saveHaciendaConfig(tenantId, data) {
       taxpayer_email, taxpayer_phone, economic_activity_code, province, canton, district, neighborhood,
       address_detail, idp_username, idp_password_encrypted, p12_encrypted_blob, p12_pin_encrypted,
       p12_filename, p12_expires_at, branch_code, pos_code, default_doc_type, provider_mode,
-      use_alternative_provider, active, updated_at
+      use_alternative_provider, is_simplified_regime, active, updated_at
     ) VALUES (
       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-      $21, $22, $23, $24, $25, $26, CURRENT_TIMESTAMP
+      $21, $22, $23, $24, $25, $26, $27, CURRENT_TIMESTAMP
     )
     ON CONFLICT (tenant_id) DO UPDATE SET
       environment = EXCLUDED.environment,
@@ -3543,6 +3545,7 @@ async function saveHaciendaConfig(tenantId, data) {
       default_doc_type = EXCLUDED.default_doc_type,
       provider_mode = EXCLUDED.provider_mode,
       use_alternative_provider = EXCLUDED.use_alternative_provider,
+      is_simplified_regime = EXCLUDED.is_simplified_regime,
       active = EXCLUDED.active,
       updated_at = CURRENT_TIMESTAMP`,
     [
@@ -3571,6 +3574,7 @@ async function saveHaciendaConfig(tenantId, data) {
       defaultDocType,
       providerMode,
       useAlternativeProvider,
+      isSimplifiedRegime,
       active
     ]
   );
@@ -5295,7 +5299,7 @@ init_env();
 import express from "express";
 import http from "http";
 import { Server as SocketIOServer } from "socket.io";
-import jwt5 from "jsonwebtoken";
+import jwt6 from "jsonwebtoken";
 import cors from "cors";
 import helmet from "helmet";
 import compression from "compression";
@@ -6519,6 +6523,8 @@ async function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_hacienda_usage_tenant ON hacienda_usage_cycles(tenant_id, cycle_start_date);
 
     ALTER TABLE tenants ADD COLUMN IF NOT EXISTS custom_invoices_quota INT;
+    ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS is_simplified_regime BOOLEAN DEFAULT false;
+    ALTER TABLE tenant_almendro_configs ADD COLUMN IF NOT EXISTS is_simplified_regime BOOLEAN DEFAULT false;
   `).catch((err) => {
     console.warn("[Migrations] Columns addition warning:", err?.message || err);
   });
@@ -7854,12 +7860,12 @@ var TilopaySubscriptionService = class {
     if (/^4/.test(cleanCardNumber)) brand = "VISA";
     else if (/^5[1-5]/.test(cleanCardNumber)) brand = "MASTERCARD";
     else if (/^3[47]/.test(cleanCardNumber)) brand = "AMEX";
-    const jwt6 = await this.getPlatformJwt(platformCfg);
+    const jwt7 = await this.getPlatformJwt(platformCfg);
     const baseUrl = this.getBaseUrl(platformCfg.environment);
     const tokenizeRes = await fetch(`${baseUrl}/tokenize`, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${jwt6}`,
+        "Authorization": `Bearer ${jwt7}`,
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
@@ -7921,7 +7927,7 @@ var TilopaySubscriptionService = class {
     if (!platformCfg) {
       throw new Error("Credenciales de Tilopay de la plataforma no configuradas.");
     }
-    const jwt6 = await this.getPlatformJwt(platformCfg);
+    const jwt7 = await this.getPlatformJwt(platformCfg);
     const baseUrl = this.getBaseUrl(platformCfg.environment);
     const orderNumber = `SUB-${tenant.slug.substring(0, 8)}-${Date.now()}`;
     const cleanPhone = (tenant.whatsappNumber || "88888888").replace(/\D/g, "") || "88888888";
@@ -7959,7 +7965,7 @@ var TilopaySubscriptionService = class {
       chargeRes = await fetch(`${baseUrl}/charge`, {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${jwt6}`,
+          "Authorization": `Bearer ${jwt7}`,
           "Content-Type": "application/json"
         },
         body: JSON.stringify(chargePayload)
@@ -8081,7 +8087,7 @@ Hola *${tenant.name}*, tu mensualidad de *${priceStr}* ha sido cobrada exitosame
           error: "Configuraci\xF3n de Tilopay de la plataforma no disponible para verificar suscripci\xF3n."
         };
       }
-      const jwt6 = await this.getPlatformJwt(platformCfg);
+      const jwt7 = await this.getPlatformJwt(platformCfg);
       const baseUrl = this.getBaseUrl(platformCfg.environment);
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 1e4);
@@ -8089,7 +8095,7 @@ Hola *${tenant.name}*, tu mensualidad de *${priceStr}* ha sido cobrada exitosame
         const res = await fetch(`${baseUrl}/consult`, {
           method: "POST",
           headers: {
-            "Authorization": `Bearer ${jwt6}`,
+            "Authorization": `Bearer ${jwt7}`,
             "Content-Type": "application/json"
           },
           body: JSON.stringify({
@@ -13702,9 +13708,9 @@ router.post("/forgot-password", otpLimiter, async (req, res) => {
       res.status(400).json({ error: "Tu cuenta no tiene un n\xFAmero de WhatsApp vinculado para recibir el c\xF3digo. Por favor contacta a soporte." });
       return;
     }
-    const crypto7 = await import("crypto");
-    const otpCode = crypto7.randomInt(1e5, 999999).toString();
-    const tokenHash = crypto7.createHash("sha256").update(otpCode + user.id).digest("hex");
+    const crypto8 = await import("crypto");
+    const otpCode = crypto8.randomInt(1e5, 999999).toString();
+    const tokenHash = crypto8.createHash("sha256").update(otpCode + user.id).digest("hex");
     await (await Promise.resolve().then(() => (init_pool(), pool_exports))).query(`
       UPDATE password_reset_tokens SET used = true WHERE user_id = $1 AND used = false
     `, [user.id]);
@@ -21938,7 +21944,7 @@ router32.post("/create-card-session", async (req, res) => {
     if (!loginRes.ok || !loginData.access_token) {
       throw new Error(loginData.message || "No fue posible autenticar con la pasarela bancaria.");
     }
-    const jwt6 = loginData.access_token;
+    const jwt7 = loginData.access_token;
     const cleanPhone = (tenant.whatsappNumber || "88888888").replace(/\D/g, "") || "88888888";
     const appUrl = (env.APP_URL || "https://betico.tech").replace(/\/$/, "");
     const orderNumber = `SUB-CARD-${tenant.id}-${Date.now()}`;
@@ -21973,7 +21979,7 @@ router32.post("/create-card-session", async (req, res) => {
     const sessionRes = await fetch(`${baseUrl}/processPayment`, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${jwt6}`,
+        "Authorization": `Bearer ${jwt7}`,
         "Content-Type": "application/json"
       },
       body: JSON.stringify(sessionPayload)
@@ -23005,10 +23011,259 @@ init_loyalty_repo();
 init_tenant_repo();
 init_pool();
 import { Router as Router37 } from "express";
+import jwt5 from "jsonwebtoken";
+
+// src/server/services/wallet-pass.service.ts
+init_env();
+import crypto7 from "crypto";
 import jwt4 from "jsonwebtoken";
+function calculateCrc32(buf) {
+  let table = new Uint32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let k = 0; k < 8; k++) {
+      c = c & 1 ? 3988292384 ^ c >>> 1 : c >>> 1;
+    }
+    table[i] = c;
+  }
+  let crc = 4294967295;
+  for (let i = 0; i < buf.length; i++) {
+    crc = crc >>> 8 ^ table[(crc ^ buf[i]) & 255];
+  }
+  return (crc ^ 4294967295) >>> 0;
+}
+function buildZipArchive(files) {
+  const localHeaders = [];
+  const centralHeaders = [];
+  let offset = 0;
+  for (const file of files) {
+    const nameBuf = Buffer.from(file.name, "utf8");
+    const dataBuf = Buffer.isBuffer(file.data) ? file.data : Buffer.from(file.data, "utf8");
+    const fileCrc = calculateCrc32(dataBuf);
+    const size = dataBuf.length;
+    const localHeader = Buffer.alloc(30 + nameBuf.length);
+    localHeader.writeUInt32LE(67324752, 0);
+    localHeader.writeUInt16LE(20, 4);
+    localHeader.writeUInt16LE(0, 6);
+    localHeader.writeUInt16LE(0, 8);
+    localHeader.writeUInt16LE(0, 10);
+    localHeader.writeUInt16LE(0, 12);
+    localHeader.writeUInt32LE(fileCrc, 14);
+    localHeader.writeUInt32LE(size, 18);
+    localHeader.writeUInt32LE(size, 22);
+    localHeader.writeUInt16LE(nameBuf.length, 26);
+    localHeader.writeUInt16LE(0, 28);
+    nameBuf.copy(localHeader, 30);
+    localHeaders.push(localHeader, dataBuf);
+    const centralHeader = Buffer.alloc(46 + nameBuf.length);
+    centralHeader.writeUInt32LE(33639248, 0);
+    centralHeader.writeUInt16LE(20, 4);
+    centralHeader.writeUInt16LE(20, 6);
+    centralHeader.writeUInt16LE(0, 8);
+    centralHeader.writeUInt16LE(0, 10);
+    centralHeader.writeUInt16LE(0, 12);
+    centralHeader.writeUInt16LE(0, 14);
+    centralHeader.writeUInt32LE(fileCrc, 16);
+    centralHeader.writeUInt32LE(size, 20);
+    centralHeader.writeUInt32LE(size, 24);
+    centralHeader.writeUInt16LE(nameBuf.length, 28);
+    centralHeader.writeUInt16LE(0, 30);
+    centralHeader.writeUInt16LE(0, 32);
+    centralHeader.writeUInt16LE(0, 34);
+    centralHeader.writeUInt16LE(0, 36);
+    centralHeader.writeUInt32LE(0, 38);
+    centralHeader.writeUInt32LE(offset, 42);
+    nameBuf.copy(centralHeader, 46);
+    centralHeaders.push(centralHeader);
+    offset += localHeader.length + dataBuf.length;
+  }
+  const centralDirOffset = offset;
+  let centralDirSize = 0;
+  for (const ch of centralHeaders) {
+    centralDirSize += ch.length;
+  }
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(101010256, 0);
+  eocd.writeUInt16LE(0, 4);
+  eocd.writeUInt16LE(0, 6);
+  eocd.writeUInt16LE(files.length, 8);
+  eocd.writeUInt16LE(files.length, 10);
+  eocd.writeUInt32LE(centralDirSize, 12);
+  eocd.writeUInt32LE(centralDirOffset, 16);
+  eocd.writeUInt16LE(0, 20);
+  return Buffer.concat([...localHeaders, ...centralHeaders, eocd]);
+}
+function generateApplePassJson(card, customer) {
+  const isPoints = card.programType === "points";
+  const stampsTarget = card.stampsTarget || 10;
+  const prize = card.stampsPrize || "Premio de lealtad";
+  const primaryValue = isPoints ? `${Number(card.pointsBalance || 0).toLocaleString()} pts` : `${Number(card.currentStamps || 0)} de ${stampsTarget} sellos`;
+  const primaryLabel = isPoints ? "Puntos Acumulados" : "Sellos Obtenidos";
+  return {
+    formatVersion: 1,
+    passTypeIdentifier: process.env.APPLE_PASS_TYPE_ID || "pass.cr.betico.club",
+    serialNumber: `card_${card.id}`,
+    teamIdentifier: process.env.APPLE_TEAM_ID || "BETICO_CR",
+    organizationName: card.tenantName || "Betico Club",
+    description: `Tarjeta de Fidelidad - ${card.tenantName || "Betico Club"}`,
+    logoText: card.tenantName || "Betico Club",
+    foregroundColor: "rgb(255, 255, 255)",
+    backgroundColor: "rgb(30, 41, 59)",
+    labelColor: "rgb(148, 163, 184)",
+    storeCard: {
+      primaryFields: [
+        {
+          key: "balance",
+          label: primaryLabel,
+          value: primaryValue
+        }
+      ],
+      secondaryFields: [
+        {
+          key: "holderName",
+          label: "Titular",
+          value: customer.fullName || "Cliente"
+        },
+        {
+          key: "holderId",
+          label: "C\xE9dula",
+          value: customer.identification
+        }
+      ],
+      auxiliaryFields: [
+        {
+          key: "rewardPrize",
+          label: "Meta o Premio",
+          value: prize
+        }
+      ],
+      backFields: [
+        {
+          key: "terms",
+          label: "T\xE9rminos y Condiciones",
+          value: `Tarjeta de fidelidad emitida por ${card.tenantName || "el comercio"}. V\xE1lido para compras en la tienda y caja f\xEDsica dictando tu n\xFAmero de c\xE9dula.`
+        },
+        {
+          key: "customerService",
+          label: "Atenci\xF3n al Cliente",
+          value: "Presenta este pase digital o tu n\xFAmero de c\xE9dula oficial al realizar tus pagos."
+        },
+        {
+          key: "poweredBy",
+          label: "Plataforma",
+          value: "Betico Club y Billetera Digital de Fidelidad Multi-comercio."
+        }
+      ]
+    },
+    barcodes: [
+      {
+        format: "PKBarcodeFormatCode128",
+        message: customer.identification,
+        messageEncoding: "iso-8859-1",
+        altText: customer.identification
+      },
+      {
+        format: "PKBarcodeFormatQR",
+        message: `https://betico.app/fidelidad/${card.tenantSlug || ""}?id=${encodeURIComponent(customer.identification)}`,
+        messageEncoding: "iso-8859-1",
+        altText: "Escanear en Caja"
+      }
+    ]
+  };
+}
+function generateApplePassBundle(card, customer) {
+  const passJsonObj = generateApplePassJson(card, customer);
+  const passJsonBuffer = Buffer.from(JSON.stringify(passJsonObj, null, 2), "utf8");
+  const sha1 = crypto7.createHash("sha1").update(passJsonBuffer).digest("hex");
+  const manifest = {
+    "pass.json": sha1
+  };
+  const manifestBuffer = Buffer.from(JSON.stringify(manifest, null, 2), "utf8");
+  return buildZipArchive([
+    { name: "pass.json", data: passJsonBuffer },
+    { name: "manifest.json", data: manifestBuffer }
+  ]);
+}
+function generateGoogleWalletSaveUrl(card, customer) {
+  const issuerId = process.env.GOOGLE_WALLET_ISSUER_ID || "3388000000022222222";
+  const classId = `${issuerId}.betico_club_${card.tenantId.replace(/-/g, "_")}`;
+  const objectId = `${issuerId}.card_${card.id.replace(/-/g, "_")}`;
+  const isPoints = card.programType === "points";
+  const stampsTarget = card.stampsTarget || 10;
+  const balanceStr = isPoints ? `${Number(card.pointsBalance || 0).toLocaleString()} pts` : `${Number(card.currentStamps || 0)}/${stampsTarget} sellos`;
+  const loyaltyClass = {
+    id: classId,
+    issuerName: card.tenantName || "Betico Club",
+    programName: `Club de Clientes ${card.tenantName || "Betico"}`,
+    reviewStatus: "UNDER_REVIEW"
+  };
+  const loyaltyObject = {
+    id: objectId,
+    classId,
+    state: "ACTIVE",
+    accountId: customer.identification,
+    accountName: customer.fullName || "Cliente Betico",
+    barcode: {
+      type: "CODE_128",
+      value: customer.identification,
+      alternateText: customer.identification
+    },
+    loyaltyPoints: {
+      label: isPoints ? "Puntos" : "Sellos",
+      balance: {
+        string: balanceStr
+      }
+    },
+    infoModuleData: {
+      labelValueRows: [
+        {
+          columns: [
+            {
+              label: "Premio o Meta",
+              value: card.stampsPrize || "Premio de Fidelidad"
+            },
+            {
+              label: "Comercio",
+              value: card.tenantName || "Betico"
+            }
+          ]
+        }
+      ]
+    }
+  };
+  const claims = {
+    iss: process.env.GOOGLE_WALLET_CLIENT_EMAIL || "betico-wallet@betico-saas.iam.gserviceaccount.com",
+    aud: "google",
+    typ: "savetowallet",
+    origins: ["https://betico.app"],
+    payload: {
+      loyaltyClasses: [loyaltyClass],
+      loyaltyObjects: [loyaltyObject]
+    }
+  };
+  let token;
+  const privateKey = process.env.GOOGLE_WALLET_PRIVATE_KEY;
+  if (privateKey) {
+    try {
+      token = jwt4.sign(claims, privateKey.replace(/\\n/g, "\n"), { algorithm: "RS256" });
+    } catch (_) {
+      token = jwt4.sign(claims, env.JWT_SECRET);
+    }
+  } else {
+    token = jwt4.sign(claims, env.JWT_SECRET);
+  }
+  const saveUrl = `https://pay.google.com/gp/v/save/${token}`;
+  return {
+    url: saveUrl,
+    jwt: token,
+    loyaltyObject
+  };
+}
+
+// src/server/routes/loyalty-customer.routes.ts
 var router37 = Router37();
 function signCustomerToken(customer) {
-  return jwt4.sign(
+  return jwt5.sign(
     {
       customerId: customer.id,
       identification: customer.identification,
@@ -23027,7 +23282,7 @@ function authenticateLoyaltyCustomer(req, res, next) {
     return;
   }
   try {
-    const decoded = jwt4.verify(token, env.JWT_SECRET);
+    const decoded = jwt5.verify(token, env.JWT_SECRET);
     if (decoded.role !== "loyalty_customer" || !decoded.identification) {
       res.status(403).json({ error: "Token no v\xE1lido para cliente de fidelidad." });
       return;
@@ -23128,6 +23383,58 @@ router37.get("/me/vouchers", authenticateLoyaltyCustomer, async (req, res) => {
   } catch (error) {
     console.error("[LoyaltyCustomerRoutes] /vouchers error:", error);
     res.status(500).json({ error: "Error al obtener recompensas" });
+  }
+});
+router37.get("/me/apple-pass", authenticateLoyaltyCustomer, async (req, res) => {
+  try {
+    const identification = req.loyaltyCustomer.identification;
+    const fullName = req.loyaltyCustomer.fullName;
+    const cardId = req.query.cardId;
+    const cards = await getCustomerWalletCards(identification);
+    if (!cards || cards.length === 0) {
+      res.status(404).json({ error: "No tienes tarjetas activas en tu billetera" });
+      return;
+    }
+    const selectedCard = cardId ? cards.find((c) => c.id === cardId) : cards[0];
+    if (!selectedCard) {
+      res.status(404).json({ error: "Tarjeta no encontrada en tu billetera" });
+      return;
+    }
+    const pkpassBuffer = generateApplePassBundle(selectedCard, { identification, fullName });
+    const filename = `tarjeta-${selectedCard.tenantSlug || "betico"}.pkpass`;
+    res.setHeader("Content-Type", "application/vnd.apple.pkpass");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.send(pkpassBuffer);
+  } catch (error) {
+    console.error("[LoyaltyCustomerRoutes] apple-pass error:", error);
+    res.status(500).json({ error: "Error generando pase para Apple Wallet" });
+  }
+});
+router37.get("/me/google-pass-url", authenticateLoyaltyCustomer, async (req, res) => {
+  try {
+    const identification = req.loyaltyCustomer.identification;
+    const fullName = req.loyaltyCustomer.fullName;
+    const cardId = req.query.cardId;
+    const cards = await getCustomerWalletCards(identification);
+    if (!cards || cards.length === 0) {
+      res.status(404).json({ error: "No tienes tarjetas activas en tu billetera" });
+      return;
+    }
+    const selectedCard = cardId ? cards.find((c) => c.id === cardId) : cards[0];
+    if (!selectedCard) {
+      res.status(404).json({ error: "Tarjeta no encontrada en tu billetera" });
+      return;
+    }
+    const result = generateGoogleWalletSaveUrl(selectedCard, { identification, fullName });
+    res.json({
+      success: true,
+      url: result.url,
+      jwt: result.jwt,
+      loyaltyObject: result.loyaltyObject
+    });
+  } catch (error) {
+    console.error("[LoyaltyCustomerRoutes] google-pass-url error:", error);
+    res.status(500).json({ error: "Error generando enlace para Google Wallet" });
   }
 });
 router37.get("/public/:slug/program", async (req, res) => {
@@ -23615,6 +23922,7 @@ router41.post("/config", upload3.single("certificateFile"), async (req, res) => 
       defaultDocType: body.defaultDocType,
       providerMode: body.providerMode,
       useAlternativeProvider: body.useAlternativeProvider !== void 0 ? body.useAlternativeProvider === "true" || body.useAlternativeProvider === true : void 0,
+      isSimplifiedRegime: body.isSimplifiedRegime !== void 0 ? body.isSimplifiedRegime === "true" || body.isSimplifiedRegime === true : void 0,
       active: body.active !== void 0 ? body.active === "true" || body.active === true : void 0
     });
     res.json({
@@ -24068,7 +24376,7 @@ async function startServer() {
       return next();
     }
     try {
-      const decoded = jwt5.verify(String(token), env.JWT_SECRET);
+      const decoded = jwt6.verify(String(token), env.JWT_SECRET);
       socket.data.user = decoded;
       next();
     } catch (err) {

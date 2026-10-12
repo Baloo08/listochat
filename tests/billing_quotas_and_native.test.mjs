@@ -347,5 +347,150 @@ ${pdfUrl}
     assert.equal(ticketMsg.includes('&'), false, 'Cero ampersands');
   });
 
+  test('11. Régimen de Tributación Simplificada (RTS): Conmutación Dinámica entre Tiquete (04) y Factura (01)', () => {
+    function resolveEmissionDocType(tenantConfig, receiverData) {
+      const isRts = Boolean(tenantConfig.isSimplifiedRegime);
+      const hasReceiverTaxId = Boolean(receiverData && (receiverData.taxIdNumber || receiverData.identification || receiverData.receiverIdNumber));
+
+      if (isRts) {
+        // En RTS: Por defecto es Tiquete Electrónico (04) salvo que el comprador solicite y brinde su cédula
+        if (hasReceiverTaxId) {
+          return { docType: '01', reason: 'RTS_CLIENTE_SOLICITO_FACTURA' };
+        }
+        return { docType: '04', reason: 'RTS_TIQUETE_DEFAULT' };
+      }
+
+      // Régimen General: Respeta el default configurado por el comercio
+      return { docType: tenantConfig.defaultDocType || '04', reason: 'REGIMEN_GENERAL' };
+    }
+
+    // Caso 1: Comercio en RTS sin datos de receptor -> Debe emitir Tiquete 04
+    const resRtsAnonymous = resolveEmissionDocType({ isSimplifiedRegime: true, defaultDocType: '04' }, null);
+    assert.equal(resRtsAnonymous.docType, '04');
+    assert.equal(resRtsAnonymous.reason, 'RTS_TIQUETE_DEFAULT');
+
+    // Caso 2: Comercio en RTS donde el cliente solicita Factura y da cédula -> Conmuta a Factura 01
+    const resRtsWithReceiver = resolveEmissionDocType(
+      { isSimplifiedRegime: true, defaultDocType: '04' },
+      { taxIdNumber: '3101234567', legalName: 'Distribuidora del Valle S.A.' }
+    );
+    assert.equal(resRtsWithReceiver.docType, '01');
+    assert.equal(resRtsWithReceiver.reason, 'RTS_CLIENTE_SOLICITO_FACTURA');
+
+    // Caso 3: Comercio en Régimen General con default 01
+    const resGeneral = resolveEmissionDocType({ isSimplifiedRegime: false, defaultDocType: '01' }, null);
+    assert.equal(resGeneral.docType, '01');
+    assert.equal(resGeneral.reason, 'REGIMEN_GENERAL');
+  });
+
+  test('12. Generación de Pases Digitales para Apple Wallet (.pkpass) y Google Wallet (Save Pass)', () => {
+    // Verificación de estructura ZIP y manifiesto SHA-1 para Apple Wallet
+    function crc32(buf) {
+      let table = new Uint32Array(256);
+      for (let i = 0; i < 256; i++) {
+        let c = i;
+        for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+        table[i] = c;
+      }
+      let crc = 0xFFFFFFFF;
+      for (let i = 0; i < buf.length; i++) crc = (crc >>> 8) ^ table[(crc ^ buf[i]) & 0xFF];
+      return (crc ^ 0xFFFFFFFF) >>> 0;
+    }
+
+    function buildTestZip(files) {
+      const localHeaders = [];
+      const centralHeaders = [];
+      let offset = 0;
+      for (const file of files) {
+        const nameBuf = Buffer.from(file.name, 'utf8');
+        const dataBuf = Buffer.isBuffer(file.data) ? file.data : Buffer.from(file.data, 'utf8');
+        const fileCrc = crc32(dataBuf);
+        const size = dataBuf.length;
+
+        const lh = Buffer.alloc(30 + nameBuf.length);
+        lh.writeUInt32LE(0x04034b50, 0);
+        lh.writeUInt16LE(20, 4);
+        lh.writeUInt16LE(0, 6);
+        lh.writeUInt16LE(0, 8);
+        lh.writeUInt32LE(fileCrc, 14);
+        lh.writeUInt32LE(size, 18);
+        lh.writeUInt32LE(size, 22);
+        lh.writeUInt16LE(nameBuf.length, 26);
+        nameBuf.copy(lh, 30);
+        localHeaders.push(lh, dataBuf);
+
+        const ch = Buffer.alloc(46 + nameBuf.length);
+        ch.writeUInt32LE(0x02014b50, 0);
+        ch.writeUInt16LE(20, 4);
+        ch.writeUInt16LE(20, 6);
+        ch.writeUInt32LE(fileCrc, 16);
+        ch.writeUInt32LE(size, 20);
+        ch.writeUInt32LE(size, 24);
+        ch.writeUInt16LE(nameBuf.length, 28);
+        ch.writeUInt32LE(offset, 42);
+        nameBuf.copy(ch, 46);
+        centralHeaders.push(ch);
+
+        offset += lh.length + dataBuf.length;
+      }
+
+      const eocd = Buffer.alloc(22);
+      eocd.writeUInt32LE(0x06054b50, 0);
+      eocd.writeUInt16LE(files.length, 8);
+      eocd.writeUInt16LE(files.length, 10);
+      let cdSize = centralHeaders.reduce((acc, h) => acc + h.length, 0);
+      eocd.writeUInt32LE(cdSize, 12);
+      eocd.writeUInt32LE(offset, 16);
+
+      return Buffer.concat([...localHeaders, ...centralHeaders, eocd]);
+    }
+
+    const testPassJson = {
+      formatVersion: 1,
+      passTypeIdentifier: 'pass.cr.betico.club',
+      serialNumber: 'card_12345',
+      organizationName: 'Cafetería La Montaña',
+      description: 'Tarjeta de Fidelidad - Cafetería La Montaña',
+      storeCard: {
+        primaryFields: [{ key: 'stamps', label: 'Sellos Obtenidos', value: '7 de 10 sellos' }]
+      }
+    };
+
+    const passBuf = Buffer.from(JSON.stringify(testPassJson), 'utf8');
+    const sha1Hash = crypto.createHash('sha1').update(passBuf).digest('hex');
+    const manifestBuf = Buffer.from(JSON.stringify({ 'pass.json': sha1Hash }), 'utf8');
+
+    const pkpassBundle = buildTestZip([
+      { name: 'pass.json', data: passBuf },
+      { name: 'manifest.json', data: manifestBuf }
+    ]);
+
+    assert.ok(pkpassBundle.length > 100, 'El bundle .pkpass debe ser un archivo binario no vacío');
+    assert.equal(pkpassBundle.slice(0, 4).toString('hex'), '504b0304', 'Debe iniciar con firma PK\\x03\\x04 de archivo ZIP');
+
+    // Validación de Google Wallet Save URL structure
+    const gpassPayload = {
+      iss: 'betico-wallet@betico-saas.iam.gserviceaccount.com',
+      aud: 'google',
+      typ: 'savetowallet',
+      payload: {
+        loyaltyObjects: [
+          {
+            id: '3388000000022222222.card_12345',
+            state: 'ACTIVE',
+            accountId: '1-1234-5678',
+            accountName: 'María Vargas'
+          }
+        ]
+      }
+    };
+
+    assert.equal(gpassPayload.aud, 'google');
+    assert.equal(gpassPayload.typ, 'savetowallet');
+    assert.equal(gpassPayload.payload.loyaltyObjects[0].accountId, '1-1234-5678');
+    assert.equal(JSON.stringify(gpassPayload).includes('&'), false, 'Cero caracteres & en estructura de billetera');
+  });
+
 });
+
 

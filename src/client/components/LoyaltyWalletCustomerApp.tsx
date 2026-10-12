@@ -37,6 +37,7 @@ export default function LoyaltyWalletCustomerApp({ tenantSlug }: LoyaltyWalletCu
   const [loadingData, setLoadingData] = useState(false);
   const [activeTab, setActiveTab] = useState<'cards' | 'vouchers'>('cards');
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const [walletLoading, setWalletLoading] = useState<string | null>(null);
 
   const safeCards = Array.isArray(cards) ? cards : [];
   const safeVouchers = Array.isArray(vouchers) ? vouchers : [];
@@ -98,6 +99,52 @@ export default function LoyaltyWalletCustomerApp({ tenantSlug }: LoyaltyWalletCu
       console.error('Error cargando monedero:', err);
     } finally {
       setLoadingData(false);
+    }
+  };
+
+  const handleDownloadApplePass = async (cardId: string) => {
+    if (!token) return;
+    try {
+      setWalletLoading(cardId);
+      const res = await fetch(`/api/loyalty-customer/me/apple-pass?cardId=${encodeURIComponent(cardId)}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || 'Error descargando pase de Apple Wallet');
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `tarjeta-fidelidad-${cardId}.pkpass`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err: any) {
+      alert(err.message || 'Error al obtener pase de Apple Wallet');
+    } finally {
+      setWalletLoading(null);
+    }
+  };
+
+  const handleOpenGooglePass = async (cardId: string) => {
+    if (!token) return;
+    try {
+      setWalletLoading(cardId);
+      const res = await fetch(`/api/loyalty-customer/me/google-pass-url?cardId=${encodeURIComponent(cardId)}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (!res.ok || !data.url) {
+        throw new Error(data.error || 'Error generando enlace de Google Wallet');
+      }
+      window.open(data.url, '_blank');
+    } catch (err: any) {
+      alert(err.message || 'Error al vincular con Google Wallet');
+    } finally {
+      setWalletLoading(null);
     }
   };
 
@@ -776,6 +823,82 @@ export default function LoyaltyWalletCustomerApp({ tenantSlug }: LoyaltyWalletCu
 
                             </div>
                           )}
+
+                          {/* 3. Guardar en Apple Wallet y Google Wallet */}
+                          <div style={{
+                            marginTop: '4px',
+                            paddingTop: '14px',
+                            borderTop: '1px dashed #e2e8f0',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '8px'
+                          }}>
+                            <span style={{ fontSize: '0.74rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>
+                              Guardar en tu Teléfono
+                            </span>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '8px' }}>
+                              {/* Botón Apple Wallet */}
+                              <button
+                                type="button"
+                                onClick={() => handleDownloadApplePass(card.id)}
+                                disabled={walletLoading === card.id}
+                                style={{
+                                  backgroundColor: '#000000',
+                                  color: '#ffffff',
+                                  border: 'none',
+                                  borderRadius: '10px',
+                                  padding: '10px 14px',
+                                  fontSize: '0.82rem',
+                                  fontWeight: '700',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '8px',
+                                  boxShadow: '0 2px 6px rgba(0,0,0,0.15)',
+                                  transition: 'transform 0.1s'
+                                }}
+                              >
+                                {walletLoading === card.id ? (
+                                  <RefreshCw size={14} className="animate-spin" />
+                                ) : (
+                                  <CreditCard size={15} />
+                                )}
+                                <span>Añadir a Apple Wallet</span>
+                              </button>
+
+                              {/* Botón Google Wallet */}
+                              <button
+                                type="button"
+                                onClick={() => handleOpenGooglePass(card.id)}
+                                disabled={walletLoading === card.id}
+                                style={{
+                                  backgroundColor: '#1e293b',
+                                  color: '#ffffff',
+                                  border: '1px solid #334155',
+                                  borderRadius: '10px',
+                                  padding: '10px 14px',
+                                  fontSize: '0.82rem',
+                                  fontWeight: '700',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '8px',
+                                  boxShadow: '0 2px 6px rgba(0,0,0,0.08)',
+                                  transition: 'transform 0.1s'
+                                }}
+                              >
+                                {walletLoading === card.id ? (
+                                  <RefreshCw size={14} className="animate-spin" />
+                                ) : (
+                                  <Sparkles size={15} color="#60a5fa" />
+                                )}
+                                <span>Guardar en Google Wallet</span>
+                              </button>
+                            </div>
+                          </div>
 
                         </div>
                       </div>

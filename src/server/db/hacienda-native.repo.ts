@@ -31,6 +31,7 @@ export interface TenantHaciendaConfig {
   lastTestMessage?: string | null;
   providerMode: 'BETICO_NATIVE' | 'ALMENDRO_AUTO' | 'EXTERNAL_MANUAL' | 'DISABLED';
   useAlternativeProvider: boolean;
+  isSimplifiedRegime: boolean;
   active: boolean;
   createdAt: string;
   updatedAt: string;
@@ -90,6 +91,7 @@ export async function getHaciendaConfigByTenant(tenantId: string): Promise<Tenan
     lastTestMessage: row.last_test_message || null,
     providerMode: row.provider_mode || 'BETICO_NATIVE',
     useAlternativeProvider: Boolean(row.use_alternative_provider),
+    isSimplifiedRegime: Boolean(row.is_simplified_regime),
     active: Boolean(row.active),
     createdAt: row.created_at ? row.created_at.toISOString() : '',
     updatedAt: row.updated_at ? row.updated_at.toISOString() : ''
@@ -196,6 +198,7 @@ export async function saveHaciendaConfig(
   const defaultDocType = data.defaultDocType || existing.default_doc_type || '04';
   const providerMode = data.providerMode || existing.provider_mode || 'BETICO_NATIVE';
   const useAlternativeProvider = data.useAlternativeProvider !== undefined ? Boolean(data.useAlternativeProvider) : Boolean(existing.use_alternative_provider);
+  const isSimplifiedRegime = data.isSimplifiedRegime !== undefined ? Boolean(data.isSimplifiedRegime) : Boolean(existing.is_simplified_regime);
   const active = data.active !== undefined ? Boolean(data.active) : (existing.active !== undefined ? Boolean(existing.active) : true);
 
   // ATV Username y Password
@@ -231,10 +234,10 @@ export async function saveHaciendaConfig(
       taxpayer_email, taxpayer_phone, economic_activity_code, province, canton, district, neighborhood,
       address_detail, idp_username, idp_password_encrypted, p12_encrypted_blob, p12_pin_encrypted,
       p12_filename, p12_expires_at, branch_code, pos_code, default_doc_type, provider_mode,
-      use_alternative_provider, active, updated_at
+      use_alternative_provider, is_simplified_regime, active, updated_at
     ) VALUES (
       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-      $21, $22, $23, $24, $25, $26, CURRENT_TIMESTAMP
+      $21, $22, $23, $24, $25, $26, $27, CURRENT_TIMESTAMP
     )
     ON CONFLICT (tenant_id) DO UPDATE SET
       environment = EXCLUDED.environment,
@@ -261,6 +264,7 @@ export async function saveHaciendaConfig(
       default_doc_type = EXCLUDED.default_doc_type,
       provider_mode = EXCLUDED.provider_mode,
       use_alternative_provider = EXCLUDED.use_alternative_provider,
+      is_simplified_regime = EXCLUDED.is_simplified_regime,
       active = EXCLUDED.active,
       updated_at = CURRENT_TIMESTAMP`,
     [
@@ -268,7 +272,7 @@ export async function saveHaciendaConfig(
       taxpayerEmail, taxpayerPhone, economicActivityCode, province, canton, district, neighborhood,
       addressDetail, idpUsername, idpPasswordEncrypted, p12EncryptedBlob, p12PinEncrypted,
       p12Filename, p12ExpiresAt, branchCode, posCode, defaultDocType, providerMode,
-      useAlternativeProvider, active
+      useAlternativeProvider, isSimplifiedRegime, active
     ]
   );
 
