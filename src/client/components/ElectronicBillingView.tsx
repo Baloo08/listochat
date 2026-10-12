@@ -22,6 +22,7 @@ import {
   Search,
   Edit3,
   Send,
+  Mail,
   FileSpreadsheet,
   RotateCcw
 } from 'lucide-react';
@@ -73,6 +74,12 @@ interface NativeConfig {
   providerMode: 'BETICO_NATIVE' | 'ALMENDRO_AUTO' | 'EXTERNAL_MANUAL' | 'DISABLED';
   useAlternativeProvider: boolean;
   isSimplifiedRegime?: boolean;
+  emailAutoSend?: boolean;
+  smtpHost?: string;
+  smtpPort?: number;
+  smtpUser?: string;
+  smtpPassMasked?: string;
+  resendApiKeyMasked?: string;
   active: boolean;
 }
 
@@ -236,6 +243,21 @@ export default function ElectronicBillingView({ initialTab }: ElectronicBillingV
   const [testingP12, setTestingP12] = useState(false);
   const [p12TestResult, setP12TestResult] = useState<{ success: boolean; message: string } | null>(null);
 
+  // Entrega prioritaria por Correo Electrónico (Tab 2 y Tab 1)
+  const [emailAutoSend, setEmailAutoSend] = useState<boolean>(true);
+  const [smtpHost, setSmtpHost] = useState<string>('');
+  const [smtpPort, setSmtpPort] = useState<number>(587);
+  const [smtpUser, setSmtpUser] = useState<string>('');
+  const [smtpPass, setSmtpPass] = useState<string>('');
+  const [hasSmtpPass, setHasSmtpPass] = useState<boolean>(false);
+  const [isEditingSmtpPass, setIsEditingSmtpPass] = useState<boolean>(false);
+  const [resendApiKey, setResendApiKey] = useState<string>('');
+  const [hasResendApiKey, setHasResendApiKey] = useState<boolean>(false);
+  const [isEditingResendKey, setIsEditingResendKey] = useState<boolean>(false);
+  const [testingEmail, setTestingEmail] = useState<boolean>(false);
+  const [emailTestResult, setEmailTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [sendingEmailVoucherId, setSendingEmailVoucherId] = useState<string | null>(null);
+
   // Almendro Config (Proveedor alternativo opcional)
   const [almendroApiKey, setAlmendroApiKey] = useState('');
   const [almendroApiKeyMasked, setAlmendroApiKeyMasked] = useState('');
@@ -379,6 +401,14 @@ export default function ElectronicBillingView({ initialTab }: ElectronicBillingV
             : computeDaysRemaining(c.p12ExpiresAt)
         );
         setIsConnected(Boolean(c.isConnected));
+        setEmailAutoSend(c.emailAutoSend !== undefined ? Boolean(c.emailAutoSend) : true);
+        setSmtpHost(c.smtpHost || '');
+        setSmtpPort(Number(c.smtpPort) || 587);
+        setSmtpUser(c.smtpUser || '');
+        setHasSmtpPass(Boolean(c.smtpPassMasked));
+        setIsEditingSmtpPass(!c.smtpPassMasked);
+        setHasResendApiKey(Boolean(c.resendApiKeyMasked));
+        setIsEditingResendKey(!c.resendApiKeyMasked);
 
         if (!c.idpPasswordMasked) {
           setIsEditingPassword(true);
@@ -716,6 +746,17 @@ export default function ElectronicBillingView({ initialTab }: ElectronicBillingV
         formData.append('providerMode', billingMode);
         formData.append('useAlternativeProvider', String(showAlternativeProvider));
         formData.append('idpUsername', idpUsername);
+        formData.append('emailAutoSend', String(emailAutoSend));
+        formData.append('smtpHost', smtpHost.trim());
+        formData.append('smtpPort', String(Number(smtpPort) || 587));
+        formData.append('smtpUser', smtpUser.trim());
+
+        if (isEditingSmtpPass && smtpPass.trim()) {
+          formData.append('smtpPass', smtpPass.trim());
+        }
+        if (isEditingResendKey && resendApiKey.trim()) {
+          formData.append('resendApiKey', resendApiKey.trim());
+        }
 
         if (isEditingPassword && idpPassword.trim()) {
           formData.append('idpPassword', idpPassword.trim());
@@ -746,6 +787,8 @@ export default function ElectronicBillingView({ initialTab }: ElectronicBillingV
         setP12File(null);
         setP12Pin('');
         setIsEditingPassword(false);
+        setSmtpPass('');
+        setResendApiKey('');
         await loadData();
       } else {
         const payload: any = {
@@ -771,7 +814,8 @@ export default function ElectronicBillingView({ initialTab }: ElectronicBillingV
         await api.post('/api/billing/native/config', {
           providerMode: billingMode,
           useAlternativeProvider: showAlternativeProvider,
-          isSimplifiedRegime
+          isSimplifiedRegime,
+          emailAutoSend
         });
 
         alert('✅ Modalidad de facturación guardada exitosamente.');
@@ -781,6 +825,62 @@ export default function ElectronicBillingView({ initialTab }: ElectronicBillingV
       alert('Error guardando configuración: ' + (e.message || 'Intente nuevamente'));
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Probar envío de correo electrónico (Tab 2)
+  const handleTestEmailDelivery = async () => {
+    const defaultTarget = taxpayerEmail.trim() || smtpUser.trim();
+    const targetEmail = window.prompt(
+      'Ingresa el correo electrónico donde deseas recibir la prueba de facturación (PDF y XML):',
+      defaultTarget
+    );
+    if (!targetEmail || !targetEmail.trim()) return;
+
+    try {
+      setTestingEmail(true);
+      setEmailTestResult(null);
+      const res = await api.post('/api/billing/native/test-email', {
+        testEmail: targetEmail.trim(),
+        smtpHost: smtpHost.trim(),
+        smtpPort: Number(smtpPort) || 587,
+        smtpUser: smtpUser.trim(),
+        smtpPass: isEditingSmtpPass && smtpPass.trim() ? smtpPass.trim() : undefined,
+        resendApiKey: isEditingResendKey && resendApiKey.trim() ? resendApiKey.trim() : undefined
+      });
+      setEmailTestResult({
+        success: Boolean(res?.success),
+        message: res?.message || 'Prueba de correo procesada.'
+      });
+    } catch (e: any) {
+      setEmailTestResult({
+        success: false,
+        message: e.message || 'Error probando el envío de correo electrónico.'
+      });
+    } finally {
+      setTestingEmail(false);
+    }
+  };
+
+  // Enviar o reenviar comprobante (PDF y XML) al correo del cliente (Tab 1)
+  const handleSendVoucherEmail = async (voucher: VoucherRow) => {
+    const targetEmail = window.prompt(
+      `Enviar comprobante ${voucher.consecutiveNumber || voucher.numericKey || voucher.id} (PDF y XML oficial de Hacienda) al correo del cliente:`,
+      voucher.receiverEmail || ''
+    );
+    if (!targetEmail || !targetEmail.trim()) return;
+
+    try {
+      setSendingEmailVoucherId(voucher.id);
+      const res = await api.post(`/api/billing/native/vouchers/${voucher.id}/send-email`, {
+        email: targetEmail.trim()
+      });
+      alert(res?.message || `Correo enviado a ${targetEmail.trim()}`);
+      await loadVouchers();
+    } catch (e: any) {
+      alert('Error al enviar comprobante por correo: ' + (e.message || 'Verifica la dirección de correo'));
+    } finally {
+      setSendingEmailVoucherId(null);
     }
   };
 
@@ -2098,6 +2198,35 @@ export default function ElectronicBillingView({ initialTab }: ElectronicBillingV
                                 ID: {v.receiverIdNumber}
                               </div>
                             )}
+                            {v.receiverEmail && (
+                              <div
+                                style={{
+                                  fontSize: '0.72rem',
+                                  color: '#2563eb',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  marginTop: '2px'
+                                }}
+                              >
+                                <Mail size={11} />
+                                <span>{v.receiverEmail}</span>
+                                {(v.metadata as any)?.emailDelivery?.status === 'sent' && (
+                                  <span
+                                    style={{
+                                      backgroundColor: '#dcfce7',
+                                      color: '#166534',
+                                      padding: '1px 5px',
+                                      borderRadius: '4px',
+                                      fontSize: '0.67rem',
+                                      fontWeight: '700'
+                                    }}
+                                  >
+                                    Enviado
+                                  </span>
+                                )}
+                              </div>
+                            )}
                           </td>
                           <td style={{ padding: '10px 8px', fontWeight: '700', color: 'var(--text)' }}>
                             {v.currency === 'USD' ? '$' : '₡'}
@@ -2168,6 +2297,53 @@ export default function ElectronicBillingView({ initialTab }: ElectronicBillingV
                                 <Download size={13} />
                                 <span>PDF</span>
                               </a>
+
+                              <a
+                                href={`/api/almendro/public/voucher-xml/${v.numericKey || v.id}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  padding: '5px 9px',
+                                  borderRadius: '6px',
+                                  backgroundColor: '#f1f5f9',
+                                  color: '#334155',
+                                  textDecoration: 'none',
+                                  fontSize: '0.74rem',
+                                  fontWeight: '700'
+                                }}
+                                title="Descargar XML Oficial Hacienda DGT v4.4"
+                              >
+                                <Download size={13} />
+                                <span>XML</span>
+                              </a>
+
+                              <button
+                                type="button"
+                                disabled={sendingEmailVoucherId === v.id}
+                                onClick={() => handleSendVoucherEmail(v)}
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  padding: '5px 9px',
+                                  borderRadius: '6px',
+                                  border: '1px solid #bfdbfe',
+                                  backgroundColor: '#eff6ff',
+                                  color: '#1d4ed8',
+                                  cursor: 'pointer',
+                                  fontSize: '0.73rem',
+                                  fontWeight: '700'
+                                }}
+                                title="Enviar o reenviar Factura (PDF y XML) al correo electrónico del cliente"
+                              >
+                                <Mail size={12} />
+                                <span>
+                                  {sendingEmailVoucherId === v.id ? 'Enviando...' : 'Enviar al Correo'}
+                                </span>
+                              </button>
 
                               {v.docType !== '03' && (v.status as string) !== 'cancelled' && (
                                 <button
@@ -2921,6 +3097,182 @@ export default function ElectronicBillingView({ initialTab }: ElectronicBillingV
                   <span>Eliminar Certificado Actual</span>
                 </button>
               )}
+            </div>
+          </div>
+
+          {/* Sección C: Entrega Prioritaria de Facturas al Correo del Cliente (PDF y XML) */}
+          <div style={cardStyle}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Mail size={19} color="var(--primary)" />
+                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: '700' }}>
+                  Sección C: Entrega Prioritaria de Facturas al Correo del Cliente (PDF y XML)
+                </h3>
+              </div>
+              <span
+                style={{
+                  fontSize: '0.75rem',
+                  fontWeight: '700',
+                  padding: '4px 10px',
+                  borderRadius: '999px',
+                  backgroundColor: emailAutoSend ? '#dcfce7' : '#f1f5f9',
+                  color: emailAutoSend ? '#15803d' : '#475569',
+                  border: `1px solid ${emailAutoSend ? '#86efac' : '#cbd5e1'}`
+                }}
+              >
+                {emailAutoSend ? 'Envío Automático Activo (PDF + XML)' : 'Envío Automático Pausado'}
+              </span>
+            </div>
+
+            <p style={{ margin: '0 0 14px 0', fontSize: '0.84rem', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+              Cada vez que un cliente realice un pedido en tu tienda, agende una cita o se le emita una factura manual e ingrese su correo electrónico, el sistema le enviará automáticamente el <strong>PDF del Comprobante</strong> y el <strong>XML Oficial DGT v4.4</strong> adjuntos.
+            </p>
+
+            <div
+              style={{
+                padding: '14px 16px',
+                borderRadius: '10px',
+                backgroundColor: emailAutoSend ? '#f0fdf4' : '#f8fafc',
+                border: `1px solid ${emailAutoSend ? '#86efac' : 'var(--border)'}`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '12px',
+                marginBottom: '16px'
+              }}
+            >
+              <div>
+                <div style={{ fontWeight: '700', fontSize: '0.88rem', color: 'var(--text)' }}>
+                  Enviar automáticamente facturas y tiquetes al correo del cliente
+                </div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                  Adjunta el PDF representativo y el archivo XML oficial de Hacienda en el correo que el cliente registró en el sistema.
+                </div>
+              </div>
+              <input
+                type="checkbox"
+                checked={emailAutoSend}
+                onChange={(e) => setEmailAutoSend(e.target.checked)}
+                style={{ width: '20px', height: '20px', accentColor: 'var(--primary)', cursor: 'pointer' }}
+              />
+            </div>
+
+            <div
+              style={{
+                padding: '16px',
+                borderRadius: '10px',
+                backgroundColor: '#f8fafc',
+                border: '1px solid var(--border)',
+                marginBottom: '14px'
+              }}
+            >
+              <div style={{ fontWeight: '700', fontSize: '0.84rem', color: 'var(--text)', marginBottom: '4px' }}>
+                Servidor de Correo del Comercio (Opcional: SMTP Propio o Resend API)
+              </div>
+              <p style={{ margin: '0 0 14px 0', fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: '1.45' }}>
+                Si deseas que las facturas salgan directamente desde el correo oficial de tu negocio (por ejemplo Gmail con Contraseña de Aplicación, Google Workspace, Office 365 o tu propio hosting), configura aquí tu servidor SMTP o llave de Resend. Si lo dejas en blanco, se utilizará el servidor global de la plataforma.
+              </p>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '12px' }}>
+                <div>
+                  <label style={labelStyle}>Servidor SMTP (Host)</label>
+                  <input
+                    type="text"
+                    value={smtpHost}
+                    onChange={(e) => setSmtpHost(e.target.value)}
+                    placeholder="Ej: smtp.gmail.com"
+                    style={inputStyle}
+                  />
+                </div>
+                <div>
+                  <label style={labelStyle}>Puerto SMTP</label>
+                  <input
+                    type="number"
+                    value={smtpPort}
+                    onChange={(e) => setSmtpPort(Number(e.target.value) || 587)}
+                    placeholder="587 o 465"
+                    style={inputStyle}
+                  />
+                </div>
+                <div>
+                  <label style={labelStyle}>Usuario / Correo SMTP</label>
+                  <input
+                    type="email"
+                    value={smtpUser}
+                    onChange={(e) => setSmtpUser(e.target.value)}
+                    placeholder="facturacion@tunegocio.com"
+                    style={inputStyle}
+                  />
+                </div>
+                <div>
+                  <label style={labelStyle}>Contraseña SMTP o App Password</label>
+                  <input
+                    type="password"
+                    value={smtpPass}
+                    onChange={(e) => setSmtpPass(e.target.value)}
+                    placeholder={hasSavedSmtpPass ? '•••••••• (Guardada en bóveda)' : 'Contraseña de aplicación'}
+                    style={inputStyle}
+                  />
+                </div>
+              </div>
+
+              <div style={{ marginTop: '12px' }}>
+                <label style={labelStyle}>Alternativa Cloud: Resend API Key (Opcional)</label>
+                <input
+                  type="password"
+                  value={resendApiKey}
+                  onChange={(e) => setResendApiKey(e.target.value)}
+                  placeholder={hasSavedResendKey ? '•••••••• (Guardada en bóveda)' : 're_xxxxxxxxxxxxxxxxx'}
+                  style={inputStyle}
+                />
+              </div>
+            </div>
+
+            {emailTestResult && (
+              <div
+                style={{
+                  padding: '12px 16px',
+                  borderRadius: '8px',
+                  border: `1px solid ${emailTestResult.success ? '#86efac' : '#fca5a5'}`,
+                  backgroundColor: emailTestResult.success ? '#f0fdf4' : '#fef2f2',
+                  color: emailTestResult.success ? '#166534' : '#991b1b',
+                  fontSize: '0.84rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  marginBottom: '12px'
+                }}
+              >
+                {emailTestResult.success ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
+                <span>{emailTestResult.message}</span>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+              <button
+                type="button"
+                onClick={handleTestEmailDelivery}
+                disabled={testingEmail}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--primary)',
+                  backgroundColor: '#eff6ff',
+                  color: 'var(--primary)',
+                  fontWeight: '700',
+                  fontSize: '0.82rem',
+                  cursor: 'pointer'
+                }}
+              >
+                {testingEmail ? <RefreshCw size={14} className="animate-spin" /> : <Send size={14} />}
+                <span>{testingEmail ? 'Enviando correo de prueba...' : 'Probar Envío de Correo'}</span>
+              </button>
+              <span style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
+                Recuerda hacer clic en <strong>Guardar Credenciales y Llave</strong> abajo después de configurar tu correo.
+              </span>
             </div>
           </div>
 

@@ -386,7 +386,7 @@ export class AlmendroService {
         const xmlSigned = responseBody.xml_signed_url || `${baseUrl}/vouchers/${voucherKey}/xml`;
 
         // Save voucher in electronic_vouchers table
-        await saveElectronicVoucher(tenantId, {
+        const savedVoucher = await saveElectronicVoucher(tenantId, {
           orderId: params.orderId,
           appointmentId: params.appointmentId,
           courtBookingId: params.courtBookingId,
@@ -411,6 +411,13 @@ export class AlmendroService {
           xmlSignedUrl: xmlSigned,
           metadata: responseBody
         });
+
+        // Envío prioritario por correo electrónico al cliente (PDF + XML DGT v4.4)
+        import('./voucher-email.service.js')
+          .then(({ sendVoucherEmailNotification }) =>
+            sendVoucherEmailNotification(tenantId, savedVoucher.id, params.receiver?.email)
+          )
+          .catch((e) => console.error('[AlmendroService] Error enviando comprobante por correo:', e));
 
         return {
           success: true,
@@ -551,13 +558,13 @@ export class AlmendroService {
           branchId: orderBranchId,
           currency: order.currency || 'CRC',
           paymentMethod: paymentMethodCode,
-          receiver: receiverIdNumber ? {
-            idType: receiverIdType,
+          receiver: {
+            idType: receiverIdNumber ? receiverIdType : undefined,
             idNumber: receiverIdNumber,
             name: receiverName,
             email: receiverEmail,
             phone: order.customerPhone
-          } : (order.customerPhone ? { name: receiverName, phone: order.customerPhone } : undefined),
+          },
           items
         });
       } else {
@@ -580,7 +587,7 @@ export class AlmendroService {
           posCode: resolvedPosCode,
           currency: order.currency || 'CRC',
           paymentMethod: paymentMethodCode,
-          receiver: receiverIdNumber ? {
+          receiver: (receiverIdNumber || receiverEmail) ? {
             idType: receiverIdType,
             idNumber: receiverIdNumber,
             name: receiverName,
@@ -652,12 +659,18 @@ export class AlmendroService {
       const { getAppointmentById, updateAppointment } = await import('../db/appointments.repo.js');
       const { getRecordById } = await import('../db/records.repo.js');
       const { getElectronicVoucherByAppointmentId } = await import('../db/tenant-almendro.repo.js');
+      const { getHaciendaConfigByTenant } = await import('../db/hacienda-native.repo.js');
 
       const appt = await getAppointmentById(appointmentId, tenantId);
       if (!appt) return { success: false, message: 'Cita no encontrada' };
 
+      const nativeCfg = await getHaciendaConfigByTenant(tenantId).catch(() => null);
+      const isNativeActive = Boolean(nativeCfg && nativeCfg.active && nativeCfg.providerMode === 'BETICO_NATIVE' && (nativeCfg.taxpayerIdNumber || nativeCfg.isConnected));
+
       const config = await getTenantAlmendroConfigRaw(tenantId);
-      if (!config || !config.isEnabled || !config.apiKey) {
+      const isAlmendroActive = Boolean(config && config.isEnabled && config.apiKey);
+
+      if (!isNativeActive && !isAlmendroActive) {
         return { success: false, message: 'Facturación electrónica no habilitada' };
       }
 
@@ -699,31 +712,53 @@ export class AlmendroService {
       const receiverIdNumber = customerBilling?.idNumber?.replace(/\D/g, '') || patientRecord?.identification || undefined;
       const receiverIdType = customerBilling?.idType || (receiverIdNumber && receiverIdNumber.length === 10 && receiverIdNumber.startsWith('3') ? '02' : '01');
       const receiverName = customerBilling?.legalName || patientRecord?.fullName || appt.name;
-      const receiverEmail = customerBilling?.email || patientRecord?.email || undefined;
+      const receiverEmail = customerBilling?.email || patientRecord?.email || (appt as any).email || undefined;
 
-      const docType: '01' | '04' = receiverIdNumber ? '01' : (config.defaultDocType || '04');
+      const defaultDoc = isNativeActive ? (nativeCfg?.defaultDocType || '04') : (config?.defaultDocType || '04');
+      const docType: '01' | '04' = receiverIdNumber ? '01' : defaultDoc;
+      const defaultCabys = isNativeActive ? (nativeCfg?.defaultCabysCode || '8311100000000') : '8311100000000';
       const unitPrice = Number(appt.amount) || 0;
 
-      const voucherRes = await this.emitVoucher(tenantId, {
-        docType,
-        appointmentId: appt.id,
-        paymentMethod: '01',
-        receiver: receiverIdNumber ? {
-          idType: receiverIdType,
-          idNumber: receiverIdNumber,
-          name: receiverName,
-          email: receiverEmail
-        } : undefined,
-        items: [
-          {
-            cabysCode: '8311100000000',
-            description: `Servicio: ${appt.service}${appt.vehicleModel ? ` (${appt.vehicleModel})` : ''}`,
-            quantity: 1,
-            unitPrice,
-            taxRateCode: '08'
-          }
-        ]
-      });
+      const items = [
+        {
+          cabysCode: defaultCabys,
+          description: `Servicio: ${appt.service}${appt.vehicleModel ? ` (${appt.vehicleModel})` : ''}`,
+          quantity: 1,
+          unitPrice,
+          taxRateCode: '08'
+        }
+      ];
+
+      let voucherRes: { success: boolean; numericKey?: string; pdfUrl?: string; message: string };
+      if (isNativeActive) {
+        const { emitManualOrNativeVoucher } = await import('./hacienda-native.service.js');
+        voucherRes = await emitManualOrNativeVoucher(tenantId, {
+          docType,
+          appointmentId: appt.id,
+          paymentMethod: '01',
+          receiver: {
+            idType: receiverIdNumber ? receiverIdType : undefined,
+            idNumber: receiverIdNumber,
+            name: receiverName,
+            email: receiverEmail,
+            phone: appt.phone
+          },
+          items
+        });
+      } else {
+        voucherRes = await this.emitVoucher(tenantId, {
+          docType,
+          appointmentId: appt.id,
+          paymentMethod: '01',
+          receiver: (receiverIdNumber || receiverEmail) ? {
+            idType: receiverIdType,
+            idNumber: receiverIdNumber,
+            name: receiverName,
+            email: receiverEmail
+          } : undefined,
+          items
+        });
+      }
 
       if (voucherRes.success && voucherRes.numericKey) {
         const updatedBilling = {

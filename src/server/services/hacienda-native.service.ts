@@ -551,6 +551,17 @@ export async function emitManualOrNativeVoucher(
     if (almRes.success && almRes.numericKey) {
       await incrementInvoiceUsage(tenantId);
       const savedVoucher = await getElectronicVoucherByKeyOrId(almRes.numericKey);
+      if (config?.emailAutoSend !== false && (params.receiver?.email || params.orderId || params.appointmentId)) {
+        import('./voucher-email.service.js')
+          .then(({ sendVoucherEmailNotification }) =>
+            sendVoucherEmailNotification({
+              tenantId,
+              voucherKeyOrId: almRes.numericKey!,
+              overrideEmail: params.receiver?.email
+            })
+          )
+          .catch(() => {});
+      }
       if (params.receiver?.phone) {
         sendVoucherWhatsAppNotification({
           tenantId,
@@ -650,6 +661,20 @@ export async function emitManualOrNativeVoucher(
 
   await incrementInvoiceUsage(tenantId);
 
+  // Despacho prioritario por Correo Electrónico al cliente (con PDF + XML DGT v4.4 adjuntos)
+  if (config?.emailAutoSend !== false && (params.receiver?.email || params.orderId || params.appointmentId)) {
+    try {
+      const { sendVoucherEmailNotification } = await import('./voucher-email.service.js');
+      await sendVoucherEmailNotification({
+        tenantId,
+        voucherKeyOrId: consecData.numericKey,
+        overrideEmail: params.receiver?.email
+      });
+    } catch (emailErr: any) {
+      console.warn('[HaciendaNative] Aviso enviando correo de comprobante:', emailErr?.message || emailErr);
+    }
+  }
+
   if (params.receiver?.phone) {
     sendVoucherWhatsAppNotification({
       tenantId,
@@ -662,9 +687,11 @@ export async function emitManualOrNativeVoucher(
     }).catch(() => {});
   }
 
+  const refreshedVoucher = await getElectronicVoucherByKeyOrId(consecData.numericKey).catch(() => voucher);
+
   return {
     success: true,
-    voucher,
+    voucher: refreshedVoucher || voucher,
     numericKey: consecData.numericKey,
     consecutiveNumber: consecData.consecutiveNumber,
     pdfUrl,

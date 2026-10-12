@@ -31,4 +31,11 @@ export const env = {
   UPLOAD_DIR: process.env.UPLOAD_DIR || './uploads',
   NODE_ENV: process.env.NODE_ENV || 'production',
   GEMINI_API_KEY: process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY || '',
+  SMTP_HOST: process.env.SMTP_HOST || '',
+  SMTP_PORT: process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT, 10) : 587,
+  SMTP_USER: process.env.SMTP_USER || '',
+  SMTP_PASS: process.env.SMTP_PASS || '',
+  SMTP_FROM: process.env.SMTP_FROM || 'facturacion@betico.cr',
+  RESEND_API_KEY: process.env.RESEND_API_KEY || '',
 };
+

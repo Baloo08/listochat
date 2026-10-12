@@ -47,6 +47,12 @@ export interface TenantHaciendaConfig {
   providerMode: 'BETICO_NATIVE' | 'ALMENDRO_AUTO' | 'EXTERNAL_MANUAL' | 'DISABLED';
   useAlternativeProvider: boolean;
   isSimplifiedRegime: boolean;
+  emailAutoSend: boolean;
+  smtpHost: string;
+  smtpPort: number;
+  smtpUser: string;
+  smtpPassMasked: string;
+  resendApiKeyMasked: string;
   active: boolean;
   createdAt: string;
   updatedAt: string;
@@ -172,6 +178,12 @@ export async function getHaciendaConfigByTenant(tenantId: string): Promise<Tenan
     providerMode: row.provider_mode || 'BETICO_NATIVE',
     useAlternativeProvider: Boolean(row.use_alternative_provider),
     isSimplifiedRegime: Boolean(row.is_simplified_regime),
+    emailAutoSend: row.email_auto_send !== undefined && row.email_auto_send !== null ? Boolean(row.email_auto_send) : true,
+    smtpHost: row.smtp_host || '',
+    smtpPort: Number(row.smtp_port || 587),
+    smtpUser: row.smtp_user || '',
+    smtpPassMasked: row.smtp_pass_encrypted ? '••••••••' : '',
+    resendApiKeyMasked: row.resend_api_key_encrypted ? '••••••••' : '',
     active: Boolean(row.active),
     createdAt: row.created_at ? new Date(row.created_at).toISOString() : '',
     updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : ''
@@ -187,9 +199,16 @@ export async function getHaciendaDecryptedSecrets(tenantId: string): Promise<{
   idpPassword: string;
   idpUsername: string;
   environment: 'sandbox' | 'production';
+  smtpHost: string;
+  smtpPort: number;
+  smtpUser: string;
+  smtpPass: string;
+  resendApiKey: string;
+  emailAutoSend: boolean;
 } | null> {
   const res = await query(
-    `SELECT p12_encrypted_blob, p12_pin_encrypted, idp_username, idp_password_encrypted, environment 
+    `SELECT p12_encrypted_blob, p12_pin_encrypted, idp_username, idp_password_encrypted, environment,
+            smtp_host, smtp_port, smtp_user, smtp_pass_encrypted, resend_api_key_encrypted, email_auto_send
      FROM tenant_hacienda_configs WHERE tenant_id = $1`,
     [tenantId]
   );
@@ -210,13 +229,21 @@ export async function getHaciendaDecryptedSecrets(tenantId: string): Promise<{
 
   const p12Pin = row.p12_pin_encrypted ? decrypt(row.p12_pin_encrypted) : '';
   const idpPassword = row.idp_password_encrypted ? decrypt(row.idp_password_encrypted) : '';
+  const smtpPass = row.smtp_pass_encrypted ? decrypt(row.smtp_pass_encrypted) : '';
+  const resendApiKey = row.resend_api_key_encrypted ? decrypt(row.resend_api_key_encrypted) : '';
 
   return {
     p12Buffer,
     p12Pin,
     idpPassword,
     idpUsername: row.idp_username || '',
-    environment: row.environment || 'sandbox'
+    environment: row.environment || 'sandbox',
+    smtpHost: row.smtp_host || '',
+    smtpPort: Number(row.smtp_port || 587),
+    smtpUser: row.smtp_user || '',
+    smtpPass,
+    resendApiKey,
+    emailAutoSend: row.email_auto_send !== undefined && row.email_auto_send !== null ? Boolean(row.email_auto_send) : true
   };
 }
 
@@ -259,6 +286,12 @@ export async function saveHaciendaConfig(
     providerMode?: 'BETICO_NATIVE' | 'ALMENDRO_AUTO' | 'EXTERNAL_MANUAL' | 'DISABLED';
     useAlternativeProvider?: boolean;
     isSimplifiedRegime?: boolean;
+    emailAutoSend?: boolean;
+    smtpHost?: string;
+    smtpPort?: number;
+    smtpUser?: string;
+    smtpPass?: string;
+    resendApiKey?: string;
     active?: boolean;
   }
 ): Promise<TenantHaciendaConfig> {
@@ -307,6 +340,26 @@ export async function saveHaciendaConfig(
   const providerMode = data.providerMode || existing.provider_mode || 'BETICO_NATIVE';
   const useAlternativeProvider = data.useAlternativeProvider !== undefined ? Boolean(data.useAlternativeProvider) : Boolean(existing.use_alternative_provider);
   const isSimplifiedRegime = data.isSimplifiedRegime !== undefined ? Boolean(data.isSimplifiedRegime) : Boolean(existing.is_simplified_regime);
+  const emailAutoSend = data.emailAutoSend !== undefined
+    ? Boolean(data.emailAutoSend)
+    : (existing.email_auto_send !== undefined && existing.email_auto_send !== null ? Boolean(existing.email_auto_send) : true);
+  const smtpHost = data.smtpHost !== undefined ? data.smtpHost.trim() : (existing.smtp_host || '');
+  const smtpPort = data.smtpPort !== undefined ? (Number(data.smtpPort) || 587) : Number(existing.smtp_port || 587);
+  const smtpUser = data.smtpUser !== undefined ? data.smtpUser.trim() : (existing.smtp_user || '');
+  let smtpPassEncrypted = existing.smtp_pass_encrypted || '';
+  if (data.smtpPass && data.smtpPass.trim() && !data.smtpPass.includes('••••')) {
+    smtpPassEncrypted = encrypt(data.smtpPass.trim());
+  } else if (data.smtpPass === '') {
+    smtpPassEncrypted = '';
+  }
+
+  let resendApiKeyEncrypted = existing.resend_api_key_encrypted || '';
+  if (data.resendApiKey && data.resendApiKey.trim() && !data.resendApiKey.includes('••••')) {
+    resendApiKeyEncrypted = encrypt(data.resendApiKey.trim());
+  } else if (data.resendApiKey === '') {
+    resendApiKeyEncrypted = '';
+  }
+
   const active = data.active !== undefined ? Boolean(data.active) : (existing.active !== undefined ? Boolean(existing.active) : true);
 
   // ATV Username y Password
@@ -345,14 +398,18 @@ export async function saveHaciendaConfig(
       province, canton, district, neighborhood, address_detail, idp_username, idp_password_encrypted,
       p12_encrypted_blob, p12_pin_encrypted, p12_filename, p12_expires_at, cert_subject, cert_issuer,
       branch_code, pos_code, default_doc_type, seq_factura, seq_tiquete, seq_nota_credito,
-      multi_branch_enabled, provider_mode, use_alternative_provider, is_simplified_regime, active, updated_at
+      multi_branch_enabled, provider_mode, use_alternative_provider, is_simplified_regime,
+      email_auto_send, smtp_host, smtp_port, smtp_user, smtp_pass_encrypted, resend_api_key_encrypted,
+      active, updated_at
     ) VALUES (
       $1, $2, $3, $4, $5, $6,
       $7, $8, $9, $10::jsonb, $11,
       $12, $13, $14, $15, $16, $17, $18,
       $19, $20, $21, $22, $23, $24,
       $25, $26, $27, $28, $29, $30,
-      $31, $32, $33, $34, $35, CURRENT_TIMESTAMP
+      $31, $32, $33, $34,
+      $35, $36, $37, $38, $39, $40,
+      $41, CURRENT_TIMESTAMP
     )
     ON CONFLICT (tenant_id) DO UPDATE SET
       environment = EXCLUDED.environment,
@@ -388,6 +445,12 @@ export async function saveHaciendaConfig(
       provider_mode = EXCLUDED.provider_mode,
       use_alternative_provider = EXCLUDED.use_alternative_provider,
       is_simplified_regime = EXCLUDED.is_simplified_regime,
+      email_auto_send = EXCLUDED.email_auto_send,
+      smtp_host = EXCLUDED.smtp_host,
+      smtp_port = EXCLUDED.smtp_port,
+      smtp_user = EXCLUDED.smtp_user,
+      smtp_pass_encrypted = EXCLUDED.smtp_pass_encrypted,
+      resend_api_key_encrypted = EXCLUDED.resend_api_key_encrypted,
       active = EXCLUDED.active,
       updated_at = CURRENT_TIMESTAMP`,
     [
@@ -396,7 +459,9 @@ export async function saveHaciendaConfig(
       province, canton, district, neighborhood, addressDetail, idpUsername, idpPasswordEncrypted,
       p12EncryptedBlob, p12PinEncrypted, p12Filename, p12ExpiresAt, certSubject, certIssuer,
       branchCode, posCode, defaultDocType, seqFactura, seqTiquete, seqNotaCredito,
-      multiBranchEnabled, providerMode, useAlternativeProvider, isSimplifiedRegime, active
+      multiBranchEnabled, providerMode, useAlternativeProvider, isSimplifiedRegime,
+      emailAutoSend, smtpHost, smtpPort, smtpUser, smtpPassEncrypted, resendApiKeyEncrypted,
+      active
     ]
   );
 

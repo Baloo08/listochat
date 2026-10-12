@@ -282,6 +282,8 @@ describe('Módulo Dedicado de Facturación Electrónica Hacienda (DGT v4.4) y Mu
       assert.ok(routesCode.includes("'/branches'"));
       assert.ok(routesCode.includes("'/emit-manual'"));
       assert.ok(routesCode.includes("'/vouchers/:id/credit-note'"));
+      assert.ok(routesCode.includes("'/vouchers/:id/send-email'"));
+      assert.ok(routesCode.includes("'/test-email'"));
 
       // Consumo en frontend
       assert.ok(viewCode.includes('/api/billing/native/padron/'));
@@ -291,6 +293,31 @@ describe('Módulo Dedicado de Facturación Electrónica Hacienda (DGT v4.4) y Mu
       assert.ok(viewCode.includes('/api/billing/native/branches'));
       assert.ok(viewCode.includes('/api/billing/native/emit-manual'));
       assert.ok(viewCode.includes('/credit-note'));
+      assert.ok(viewCode.includes('/send-email'));
+      assert.ok(viewCode.includes('/api/billing/native/test-email'));
+      assert.ok(viewCode.includes('/api/almendro/public/voucher-xml/'));
+    });
+
+    it('voucher-email.service.ts y almendro.routes.ts proveen envío automático por correo (PDF + XML DGT v4.4) al correo del cliente', () => {
+      const emailServicePath = path.resolve('src/server/services/voucher-email.service.ts');
+      const almendroRoutesPath = path.resolve('src/server/routes/almendro.routes.ts');
+      const emailServiceCode = fs.readFileSync(emailServicePath, 'utf8');
+      const almendroRoutesCode = fs.readFileSync(almendroRoutesPath, 'utf8');
+      const serviceCode = fs.readFileSync(servicePath, 'utf8');
+      const almendroCode = fs.readFileSync(almendroServicePath, 'utf8');
+
+      assert.ok(emailServiceCode.includes('export function buildOfficialHaciendaXmlBuffer'));
+      assert.ok(emailServiceCode.includes('export function buildVoucherEmailHtml'));
+      assert.ok(emailServiceCode.includes('export async function sendVoucherEmailNotification'));
+      assert.ok(emailServiceCode.includes('export async function testTenantEmailDelivery'));
+      assert.ok(emailServiceCode.includes('https://cdn.comprobanteselectronicos.go.cr/xml-schemas/v4.4/'));
+      assert.ok(emailServiceCode.includes('FacturaElectronica'));
+      assert.ok(emailServiceCode.includes('TiqueteElectronico'));
+      assert.ok(emailServiceCode.includes('NotaCreditoElectronica'));
+
+      assert.ok(almendroRoutesCode.includes("'/public/voucher-xml/:keyOrId'"));
+      assert.ok(serviceCode.includes('sendVoucherEmailNotification'));
+      assert.ok(almendroCode.includes('sendVoucherEmailNotification'));
     });
 
     it('ElectronicBillingView.tsx no contiene ningún carácter "&" en textos visibles en español ni en comentarios', () => {
@@ -305,3 +332,4 @@ describe('Módulo Dedicado de Facturación Electrónica Hacienda (DGT v4.4) y Mu
     });
   });
 });
+

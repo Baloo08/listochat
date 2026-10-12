@@ -77,6 +77,12 @@ router.get('/config', async (req: Request, res: Response): Promise<void> => {
         providerMode: 'BETICO_NATIVE',
         useAlternativeProvider: false,
         isSimplifiedRegime: false,
+        emailAutoSend: true,
+        smtpHost: '',
+        smtpPort: 587,
+        smtpUser: '',
+        smtpPassMasked: '',
+        resendApiKeyMasked: '',
         active: true
       }
     });
@@ -183,6 +189,12 @@ router.post('/config', upload.single('certificateFile'), async (req: Request, re
       providerMode: body.providerMode,
       useAlternativeProvider: body.useAlternativeProvider !== undefined ? (body.useAlternativeProvider === 'true' || body.useAlternativeProvider === true) : undefined,
       isSimplifiedRegime: body.isSimplifiedRegime !== undefined ? (body.isSimplifiedRegime === 'true' || body.isSimplifiedRegime === true) : undefined,
+      emailAutoSend: body.emailAutoSend !== undefined ? (body.emailAutoSend === 'true' || body.emailAutoSend === true) : undefined,
+      smtpHost: body.smtpHost,
+      smtpPort: body.smtpPort !== undefined ? Number(body.smtpPort) : undefined,
+      smtpUser: body.smtpUser,
+      smtpPass: body.smtpPass,
+      resendApiKey: body.resendApiKey,
       active: body.active !== undefined ? (body.active === 'true' || body.active === true) : undefined
     });
 
@@ -486,6 +498,42 @@ router.post('/vouchers/:id/credit-note', async (req: Request, res: Response): Pr
   } catch (err: any) {
     console.error('[BillingNativeRoutes] Error emitiendo Nota de Crédito:', err);
     res.status(500).json({ success: false, error: err.message || 'Error al emitir Nota de Crédito' });
+  }
+});
+
+/**
+ * POST /api/billing/native/vouchers/:id/send-email
+ * Envía o reenvía el comprobante electrónico (PDF + XML DGT v4.4 adjuntos) al correo electrónico del cliente.
+ */
+router.post('/vouchers/:id/send-email', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const tenantId = (req as any).tenantId;
+    const { sendVoucherEmailNotification } = await import('../services/voucher-email.service.js');
+    const result = await sendVoucherEmailNotification({
+      tenantId,
+      voucherKeyOrId: String(req.params.id || ''),
+      overrideEmail: req.body?.email ? String(req.body.email).trim() : undefined
+    });
+    res.json(result);
+  } catch (err: any) {
+    console.error('[BillingNativeRoutes] Error enviando correo de comprobante:', err);
+    res.status(500).json({ success: false, message: err.message || 'Error al enviar el comprobante por correo' });
+  }
+});
+
+/**
+ * POST /api/billing/native/test-email
+ * Prueba la configuración de envío de correos (SMTP o Resend) enviando un correo de prueba.
+ */
+router.post('/test-email', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const tenantId = (req as any).tenantId;
+    const { testTenantEmailDelivery } = await import('../services/voucher-email.service.js');
+    const result = await testTenantEmailDelivery(tenantId, req.body || {});
+    res.json(result);
+  } catch (err: any) {
+    console.error('[BillingNativeRoutes] Error en test-email:', err);
+    res.status(500).json({ success: false, message: err.message || 'Error probando envío de correo' });
   }
 });
 

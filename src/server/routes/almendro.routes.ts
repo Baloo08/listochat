@@ -145,6 +145,45 @@ router.get(['/public/voucher-pdf/:keyOrId', '/public/vouchers/:keyOrId/pdf'], as
   }
 });
 
+/**
+ * GET /api/almendro/public/voucher-xml/:keyOrId
+ * Descarga pública del archivo XML oficial DGT v4.4 de Hacienda Costa Rica.
+ */
+router.get(['/public/voucher-xml/:keyOrId', '/public/vouchers/:keyOrId/xml'], async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { keyOrId } = req.params;
+    if (!keyOrId) {
+      res.status(400).send('Clave o identificador de comprobante requerido');
+      return;
+    }
+
+    const { getElectronicVoucherByKeyOrId } = await import('../db/tenant-almendro.repo.js');
+    const { getHaciendaConfigByTenant } = await import('../db/hacienda-native.repo.js');
+    const { buildOfficialHaciendaXmlBuffer } = await import('../services/voucher-email.service.js');
+
+    const voucher = await getElectronicVoucherByKeyOrId(keyOrId);
+    if (!voucher) {
+      res.status(404).json({ success: false, error: 'Comprobante electrónico no encontrado' });
+      return;
+    }
+
+    const haciendaConfig = await getHaciendaConfigByTenant(voucher.tenantId).catch(() => null);
+    const xmlBuffer = buildOfficialHaciendaXmlBuffer(voucher, haciendaConfig);
+    const filename = `Hacienda_${voucher.numericKey || voucher.consecutiveNumber || voucher.id}.xml`;
+
+    res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', xmlBuffer.length);
+    res.send(xmlBuffer);
+  } catch (err: any) {
+    console.error('[AlmendroRoutes] Error generando XML de comprobante:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Error interno al generar el archivo XML del comprobante'
+    });
+  }
+});
+
 // Apply JWT authentication and tenant context to all following routes
 router.use(authenticateToken, tenantContext);
 

@@ -1270,6 +1270,12 @@ export async function runMigrations() {
     ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS seq_factura INT DEFAULT 1;
     ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS seq_tiquete INT DEFAULT 1;
     ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS seq_nota_credito INT DEFAULT 1;
+    ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS email_auto_send BOOLEAN DEFAULT true;
+    ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS smtp_host VARCHAR(255) DEFAULT '';
+    ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS smtp_port INT DEFAULT 587;
+    ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS smtp_user VARCHAR(255) DEFAULT '';
+    ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS smtp_pass_encrypted TEXT DEFAULT '';
+    ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS resend_api_key_encrypted TEXT DEFAULT '';
 
     CREATE TABLE IF NOT EXISTS tenant_hacienda_branches (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

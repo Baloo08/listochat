@@ -40,7 +40,13 @@ var init_env = __esm({
       SUPERADMIN_PASSWORD: process.env.SUPERADMIN_PASSWORD || "BeticoAdmin2026!",
       UPLOAD_DIR: process.env.UPLOAD_DIR || "./uploads",
       NODE_ENV: process.env.NODE_ENV || "production",
-      GEMINI_API_KEY: process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY || ""
+      GEMINI_API_KEY: process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY || "",
+      SMTP_HOST: process.env.SMTP_HOST || "",
+      SMTP_PORT: process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT, 10) : 587,
+      SMTP_USER: process.env.SMTP_USER || "",
+      SMTP_PASS: process.env.SMTP_PASS || "",
+      SMTP_FROM: process.env.SMTP_FROM || "facturacion@betico.cr",
+      RESEND_API_KEY: process.env.RESEND_API_KEY || ""
     };
   }
 });
@@ -3479,6 +3485,12 @@ async function getHaciendaConfigByTenant(tenantId) {
     providerMode: row.provider_mode || "BETICO_NATIVE",
     useAlternativeProvider: Boolean(row.use_alternative_provider),
     isSimplifiedRegime: Boolean(row.is_simplified_regime),
+    emailAutoSend: row.email_auto_send !== void 0 && row.email_auto_send !== null ? Boolean(row.email_auto_send) : true,
+    smtpHost: row.smtp_host || "",
+    smtpPort: Number(row.smtp_port || 587),
+    smtpUser: row.smtp_user || "",
+    smtpPassMasked: row.smtp_pass_encrypted ? "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022" : "",
+    resendApiKeyMasked: row.resend_api_key_encrypted ? "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022" : "",
     active: Boolean(row.active),
     createdAt: row.created_at ? new Date(row.created_at).toISOString() : "",
     updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : ""
@@ -3486,7 +3498,8 @@ async function getHaciendaConfigByTenant(tenantId) {
 }
 async function getHaciendaDecryptedSecrets(tenantId) {
   const res = await query(
-    `SELECT p12_encrypted_blob, p12_pin_encrypted, idp_username, idp_password_encrypted, environment 
+    `SELECT p12_encrypted_blob, p12_pin_encrypted, idp_username, idp_password_encrypted, environment,
+            smtp_host, smtp_port, smtp_user, smtp_pass_encrypted, resend_api_key_encrypted, email_auto_send
      FROM tenant_hacienda_configs WHERE tenant_id = $1`,
     [tenantId]
   );
@@ -3504,12 +3517,20 @@ async function getHaciendaDecryptedSecrets(tenantId) {
   }
   const p12Pin = row.p12_pin_encrypted ? decrypt(row.p12_pin_encrypted) : "";
   const idpPassword = row.idp_password_encrypted ? decrypt(row.idp_password_encrypted) : "";
+  const smtpPass = row.smtp_pass_encrypted ? decrypt(row.smtp_pass_encrypted) : "";
+  const resendApiKey = row.resend_api_key_encrypted ? decrypt(row.resend_api_key_encrypted) : "";
   return {
     p12Buffer,
     p12Pin,
     idpPassword,
     idpUsername: row.idp_username || "",
-    environment: row.environment || "sandbox"
+    environment: row.environment || "sandbox",
+    smtpHost: row.smtp_host || "",
+    smtpPort: Number(row.smtp_port || 587),
+    smtpUser: row.smtp_user || "",
+    smtpPass,
+    resendApiKey,
+    emailAutoSend: row.email_auto_send !== void 0 && row.email_auto_send !== null ? Boolean(row.email_auto_send) : true
   };
 }
 async function saveHaciendaConfig(tenantId, data) {
@@ -3554,6 +3575,22 @@ async function saveHaciendaConfig(tenantId, data) {
   const providerMode = data.providerMode || existing.provider_mode || "BETICO_NATIVE";
   const useAlternativeProvider = data.useAlternativeProvider !== void 0 ? Boolean(data.useAlternativeProvider) : Boolean(existing.use_alternative_provider);
   const isSimplifiedRegime = data.isSimplifiedRegime !== void 0 ? Boolean(data.isSimplifiedRegime) : Boolean(existing.is_simplified_regime);
+  const emailAutoSend = data.emailAutoSend !== void 0 ? Boolean(data.emailAutoSend) : existing.email_auto_send !== void 0 && existing.email_auto_send !== null ? Boolean(existing.email_auto_send) : true;
+  const smtpHost = data.smtpHost !== void 0 ? data.smtpHost.trim() : existing.smtp_host || "";
+  const smtpPort = data.smtpPort !== void 0 ? Number(data.smtpPort) || 587 : Number(existing.smtp_port || 587);
+  const smtpUser = data.smtpUser !== void 0 ? data.smtpUser.trim() : existing.smtp_user || "";
+  let smtpPassEncrypted = existing.smtp_pass_encrypted || "";
+  if (data.smtpPass && data.smtpPass.trim() && !data.smtpPass.includes("\u2022\u2022\u2022\u2022")) {
+    smtpPassEncrypted = encrypt(data.smtpPass.trim());
+  } else if (data.smtpPass === "") {
+    smtpPassEncrypted = "";
+  }
+  let resendApiKeyEncrypted = existing.resend_api_key_encrypted || "";
+  if (data.resendApiKey && data.resendApiKey.trim() && !data.resendApiKey.includes("\u2022\u2022\u2022\u2022")) {
+    resendApiKeyEncrypted = encrypt(data.resendApiKey.trim());
+  } else if (data.resendApiKey === "") {
+    resendApiKeyEncrypted = "";
+  }
   const active = data.active !== void 0 ? Boolean(data.active) : existing.active !== void 0 ? Boolean(existing.active) : true;
   const idpUsername = data.idpUsername !== void 0 ? data.idpUsername.trim() : existing.idp_username || "";
   let idpPasswordEncrypted = existing.idp_password_encrypted || "";
@@ -3585,14 +3622,18 @@ async function saveHaciendaConfig(tenantId, data) {
       province, canton, district, neighborhood, address_detail, idp_username, idp_password_encrypted,
       p12_encrypted_blob, p12_pin_encrypted, p12_filename, p12_expires_at, cert_subject, cert_issuer,
       branch_code, pos_code, default_doc_type, seq_factura, seq_tiquete, seq_nota_credito,
-      multi_branch_enabled, provider_mode, use_alternative_provider, is_simplified_regime, active, updated_at
+      multi_branch_enabled, provider_mode, use_alternative_provider, is_simplified_regime,
+      email_auto_send, smtp_host, smtp_port, smtp_user, smtp_pass_encrypted, resend_api_key_encrypted,
+      active, updated_at
     ) VALUES (
       $1, $2, $3, $4, $5, $6,
       $7, $8, $9, $10::jsonb, $11,
       $12, $13, $14, $15, $16, $17, $18,
       $19, $20, $21, $22, $23, $24,
       $25, $26, $27, $28, $29, $30,
-      $31, $32, $33, $34, $35, CURRENT_TIMESTAMP
+      $31, $32, $33, $34,
+      $35, $36, $37, $38, $39, $40,
+      $41, CURRENT_TIMESTAMP
     )
     ON CONFLICT (tenant_id) DO UPDATE SET
       environment = EXCLUDED.environment,
@@ -3628,6 +3669,12 @@ async function saveHaciendaConfig(tenantId, data) {
       provider_mode = EXCLUDED.provider_mode,
       use_alternative_provider = EXCLUDED.use_alternative_provider,
       is_simplified_regime = EXCLUDED.is_simplified_regime,
+      email_auto_send = EXCLUDED.email_auto_send,
+      smtp_host = EXCLUDED.smtp_host,
+      smtp_port = EXCLUDED.smtp_port,
+      smtp_user = EXCLUDED.smtp_user,
+      smtp_pass_encrypted = EXCLUDED.smtp_pass_encrypted,
+      resend_api_key_encrypted = EXCLUDED.resend_api_key_encrypted,
       active = EXCLUDED.active,
       updated_at = CURRENT_TIMESTAMP`,
     [
@@ -3665,6 +3712,12 @@ async function saveHaciendaConfig(tenantId, data) {
       providerMode,
       useAlternativeProvider,
       isSimplifiedRegime,
+      emailAutoSend,
+      smtpHost,
+      smtpPort,
+      smtpUser,
+      smtpPassEncrypted,
+      resendApiKeyEncrypted,
       active
     ]
   );
@@ -4621,6 +4674,713 @@ var init_tenant_almendro_repo = __esm({
   }
 });
 
+// src/server/services/voucher-email.service.ts
+var voucher_email_service_exports = {};
+__export(voucher_email_service_exports, {
+  buildOfficialHaciendaXmlBuffer: () => buildOfficialHaciendaXmlBuffer,
+  buildVoucherEmailHtml: () => buildVoucherEmailHtml,
+  sendVoucherEmailNotification: () => sendVoucherEmailNotification,
+  testTenantEmailDelivery: () => testTenantEmailDelivery
+});
+import net from "node:net";
+import tls from "node:tls";
+function escapeXml(val) {
+  return String(val ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+}
+function buildOfficialHaciendaXmlBuffer(voucher, haciendaConfig) {
+  const docType = voucher.docType || "04";
+  const rootTag = docType === "01" ? "FacturaElectronica" : docType === "03" ? "NotaCreditoElectronica" : "TiqueteElectronico";
+  const schemaName = docType === "01" ? "facturaElectronica" : docType === "03" ? "notaCreditoElectronica" : "tiqueteElectronico";
+  const xmlns = `https://cdn.comprobanteselectronicos.go.cr/xml-schemas/v4.4/${schemaName}`;
+  const numericKey = String(voucher.numericKey || "").padStart(50, "0").slice(0, 50);
+  const consecutive = String(voucher.consecutiveNumber || "00100001040000000001").padStart(20, "0").slice(0, 20);
+  const activityCode = String(haciendaConfig?.economicActivityCode || "831110").replace(/\D/g, "").padStart(6, "0").slice(0, 6);
+  const issuedAt = voucher.createdAt ? new Date(voucher.createdAt).toISOString() : (/* @__PURE__ */ new Date()).toISOString();
+  const issuerName = haciendaConfig?.taxpayerName || haciendaConfig?.commercialName || "Emisor Autorizado CR";
+  const issuerCommercial = haciendaConfig?.commercialName || issuerName;
+  const issuerIdType = haciendaConfig?.taxpayerIdType || "01";
+  const issuerIdNumber = String(haciendaConfig?.taxpayerIdNumber || "000000000").replace(/\D/g, "");
+  const issuerEmail = haciendaConfig?.taxpayerEmail || "facturacion@betico.cr";
+  const province = String(haciendaConfig?.province || "1").slice(0, 1);
+  const canton = String(haciendaConfig?.canton || "01").padStart(2, "0").slice(0, 2);
+  const district = String(haciendaConfig?.district || "01").padStart(2, "0").slice(0, 2);
+  const neighborhood = String(haciendaConfig?.neighborhood || "01").padStart(2, "0").slice(0, 2);
+  const addressDetail = haciendaConfig?.addressDetail || "Costa Rica";
+  const metadata = voucher.metadata || {};
+  const rawItems = Array.isArray(metadata.items) && metadata.items.length > 0 ? metadata.items : [
+    {
+      lineNumber: 1,
+      cabysCode: haciendaConfig?.defaultCabysCode || "8311100000000",
+      description: "Servicios o productos facturados",
+      quantity: 1,
+      unitPrice: Number(voucher.subtotal || voucher.totalAmount || 0),
+      taxRateCode: Number(voucher.taxAmount || 0) > 0 ? "08" : "10",
+      taxRate: Number(voucher.taxAmount || 0) > 0 ? 13 : 0,
+      lineSubtotal: Number(voucher.subtotal || voucher.totalAmount || 0),
+      lineTax: Number(voucher.taxAmount || 0),
+      lineTotal: Number(voucher.totalAmount || 0)
+    }
+  ];
+  let linesXml = "";
+  rawItems.forEach((it, idx) => {
+    const lineNum = idx + 1;
+    const cabys = String(it.cabysCode || it.cabys_code || "8311100000000").replace(/\D/g, "").padStart(13, "0").slice(0, 13);
+    const qty = Number(it.quantity || 1).toFixed(3);
+    const unitPrice = Number(it.unitPrice ?? it.unit_price ?? 0).toFixed(5);
+    const sub = Number(it.lineSubtotal ?? Number(it.quantity || 1) * Number(it.unitPrice || 0)).toFixed(5);
+    const taxCode = String(it.taxRateCode || "08");
+    const taxRateNum = it.taxRate !== void 0 ? Number(it.taxRate) : taxCode === "10" ? 0 : 13;
+    const taxAmt = Number(it.lineTax ?? Number(sub) * (taxRateNum / 100)).toFixed(5);
+    const totalLine = Number(it.lineTotal ?? Number(sub) + Number(taxAmt)).toFixed(5);
+    const desc = escapeXml(String(it.description || it.detail || "Servicio").slice(0, 160));
+    linesXml += `
+    <LineaDetalle>
+      <NumeroLinea>${lineNum}</NumeroLinea>
+      <CodigoCabys>${cabys}</CodigoCabys>
+      <Cantidad>${qty}</Cantidad>
+      <UnidadMedida>Unid</UnidadMedida>
+      <Detalle>${desc}</Detalle>
+      <PrecioUnitario>${unitPrice}</PrecioUnitario>
+      <MontoTotal>${sub}</MontoTotal>
+      <SubTotal>${sub}</SubTotal>
+      <BaseImponible>${sub}</BaseImponible>
+      <Impuesto>
+        <Codigo>01</Codigo>
+        <CodigoTarifaIVA>${escapeXml(taxCode)}</CodigoTarifaIVA>
+        <Tarifa>${taxRateNum.toFixed(2)}</Tarifa>
+        <Monto>${taxAmt}</Monto>
+      </Impuesto>
+      <ImpuestoNeto>${taxAmt}</ImpuestoNeto>
+      <MontoTotalLinea>${totalLine}</MontoTotalLinea>
+    </LineaDetalle>`;
+  });
+  const receiverBlock = voucher.receiverName || voucher.receiverIdNumber || voucher.receiverEmail ? `
+  <Receptor>
+    <Nombre>${escapeXml(voucher.receiverName || "Cliente Contado")}</Nombre>${voucher.receiverIdNumber ? `
+    <Identificacion>
+      <Tipo>${escapeXml(voucher.receiverIdType || "01")}</Tipo>
+      <Numero>${escapeXml(String(voucher.receiverIdNumber).replace(/\D/g, ""))}</Numero>
+    </Identificacion>` : ""}${voucher.receiverEmail ? `
+    <CorreoElectronico>${escapeXml(voucher.receiverEmail)}</CorreoElectronico>` : ""}
+  </Receptor>` : "";
+  const refKey = voucher.referenceKey || metadata.referenceKey;
+  const referenceBlock = refKey ? `
+  <InformacionReferencia>
+    <TipoDocIR>01</TipoDocIR>
+    <Numero>${escapeXml(refKey)}</Numero>
+    <FechaEmisionIR>${escapeXml(issuedAt)}</FechaEmisionIR>
+    <Codigo>01</Codigo>
+    <Razon>Anulacion de comprobante de referencia</Razon>
+  </InformacionReferencia>` : "";
+  const subtotalVal = Number(voucher.subtotal || 0).toFixed(5);
+  const taxVal = Number(voucher.taxAmount || 0).toFixed(5);
+  const totalVal = Number(voucher.totalAmount || 0).toFixed(5);
+  const currency = escapeXml(voucher.currency || "CRC");
+  const paymentMethod = escapeXml(metadata.paymentMethod || "01");
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<${rootTag} xmlns="${xmlns}" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <Clave>${escapeXml(numericKey)}</Clave>
+  <ProveedorSistemas>${escapeXml(issuerIdNumber || "3101000000")}</ProveedorSistemas>
+  <CodigoActividadEmisor>${escapeXml(activityCode)}</CodigoActividadEmisor>
+  <NumeroConsecutivo>${escapeXml(consecutive)}</NumeroConsecutivo>
+  <FechaEmision>${escapeXml(issuedAt)}</FechaEmision>
+  <Emisor>
+    <Nombre>${escapeXml(issuerName)}</Nombre>
+    <Identificacion>
+      <Tipo>${escapeXml(issuerIdType)}</Tipo>
+      <Numero>${escapeXml(issuerIdNumber)}</Numero>
+    </Identificacion>
+    <NombreComercial>${escapeXml(issuerCommercial)}</NombreComercial>
+    <Ubicacion>
+      <Provincia>${escapeXml(province)}</Provincia>
+      <Canton>${escapeXml(canton)}</Canton>
+      <Distrito>${escapeXml(district)}</Distrito>
+      <Barrio>${escapeXml(neighborhood)}</Barrio>
+      <OtrasSenas>${escapeXml(addressDetail)}</OtrasSenas>
+    </Ubicacion>
+    <CorreoElectronico>${escapeXml(issuerEmail)}</CorreoElectronico>
+  </Emisor>${receiverBlock}
+  <CondicionVenta>01</CondicionVenta>
+  <MedioPago>
+    <TipoMedioPago>${paymentMethod}</TipoMedioPago>
+  </MedioPago>
+  <DetalleServicio>${linesXml}
+  </DetalleServicio>
+  <ResumenFactura>
+    <CodigoTipoMoneda>
+      <CodigoMoneda>${currency}</CodigoMoneda>
+      <TipoCambio>1.00000</TipoCambio>
+    </CodigoTipoMoneda>
+    <TotalVenta>${subtotalVal}</TotalVenta>
+    <TotalVentaNeta>${subtotalVal}</TotalVentaNeta>
+    <TotalImpuesto>${taxVal}</TotalImpuesto>
+    <TotalComprobante>${totalVal}</TotalComprobante>
+  </ResumenFactura>${referenceBlock}
+</${rootTag}>`;
+  return Buffer.from(xml, "utf8");
+}
+function buildVoucherEmailHtml(params) {
+  const { voucher, haciendaConfig, storeName, pdfPublicUrl, xmlPublicUrl } = params;
+  const docLabel = voucher.docType === "01" ? "Factura Electr\xF3nica" : voucher.docType === "03" ? "Nota de Cr\xE9dito Electr\xF3nica" : "Tiquete Electr\xF3nico";
+  const issuerName = haciendaConfig?.taxpayerName || storeName;
+  const issuerId = haciendaConfig?.taxpayerIdNumber || "N/A";
+  const branchCode = voucher.branchCode || haciendaConfig?.branchCode || "001";
+  const posCode = voucher.posCode || haciendaConfig?.posCode || "00001";
+  const consecutive = voucher.consecutiveNumber || "00100001040000000001";
+  const numericKey = voucher.numericKey || "";
+  const receiverName = voucher.receiverName || "Estimado cliente";
+  const receiverId = voucher.receiverIdNumber || "Consumidor Final";
+  const currency = voucher.currency || "CRC";
+  const symbol = currency === "USD" ? "$" : "\u20A1";
+  const fmt = (n) => `${symbol}${Number(n || 0).toLocaleString("es-CR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const metadata = voucher.metadata || {};
+  const items = Array.isArray(metadata.items) && metadata.items.length > 0 ? metadata.items : [
+    {
+      description: "Productos o servicios facturados",
+      quantity: 1,
+      unitPrice: voucher.subtotal || voucher.totalAmount || 0,
+      lineTotal: voucher.totalAmount || 0
+    }
+  ];
+  const rowsHtml = items.map((it) => {
+    const qty = Number(it.quantity || 1);
+    const unitP = Number(it.unitPrice ?? it.unit_price ?? 0);
+    const lineSub = Number(it.lineSubtotal ?? qty * unitP);
+    return `
+        <tr>
+          <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-size:13px;color:#334155;">${qty}</td>
+          <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-size:13px;color:#0f172a;font-weight:500;">${escapeXml(it.description || it.detail || "Item")}</td>
+          <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-size:13px;color:#475569;text-align:right;">${fmt(unitP)}</td>
+          <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-size:13px;color:#0f172a;font-weight:600;text-align:right;">${fmt(lineSub)}</td>
+        </tr>`;
+  }).join("");
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>${escapeXml(docLabel)} - ${escapeXml(storeName)}</title>
+</head>
+<body style="margin:0;padding:24px;background-color:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <div style="max-width:640px;margin:0 auto;background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 4px 20px rgba(15,23,42,0.08);border:1px solid #e2e8f0;">
+    <div style="background:linear-gradient(135deg,#0f172a 0%,#1e3a8a 100%);padding:28px 32px;color:#ffffff;">
+      <div style="font-size:12px;text-transform:uppercase;letter-spacing:1px;color:#93c5fd;font-weight:700;margin-bottom:6px;">
+        Comprobante Electr\xF3nico Oficial DGT v4.4
+      </div>
+      <h1 style="margin:0;font-size:22px;font-weight:800;color:#ffffff;">${escapeXml(docLabel)}</h1>
+      <p style="margin:6px 0 0;font-size:14px;color:#cbd5e1;">
+        Emitido por <strong>${escapeXml(storeName)}</strong> (${escapeXml(issuerName)} \xB7 C\xE9dula ${escapeXml(issuerId)})
+      </p>
+    </div>
+
+    <div style="padding:28px 32px;">
+      <p style="margin:0 0 18px;font-size:15px;color:#334155;line-height:1.5;">
+        Hola <strong>${escapeXml(receiverName)}</strong>, adjunto a este correo encontrar\xE1s tu <strong>${escapeXml(docLabel)}</strong> en formato <strong>PDF</strong> y su archivo <strong>XML oficial de Hacienda</strong>.
+      </p>
+
+      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:16px;margin-bottom:22px;">
+        <div style="font-size:12px;color:#64748b;margin-bottom:4px;">Consecutivo Hacienda (Sucursal ${escapeXml(branchCode)} \xB7 Terminal ${escapeXml(posCode)})</div>
+        <div style="font-family:monospace;font-size:15px;font-weight:700;color:#0f172a;margin-bottom:10px;">${escapeXml(consecutive)}</div>
+        <div style="font-size:12px;color:#64748b;margin-bottom:4px;">Clave Num\xE9rica de 50 D\xEDgitos</div>
+        <div style="font-family:monospace;font-size:12px;color:#1e40af;word-break:break-all;font-weight:600;">${escapeXml(numericKey)}</div>
+        <div style="margin-top:10px;padding-top:10px;border-top:1px solid #e2e8f0;font-size:12px;color:#475569;">
+          <strong>Receptor:</strong> ${escapeXml(receiverName)} (${escapeXml(receiverId)})
+        </div>
+      </div>
+
+      <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
+        <thead>
+          <tr style="background:#f1f5f9;">
+            <th style="padding:10px 12px;text-align:left;font-size:12px;color:#475569;text-transform:uppercase;">Cant.</th>
+            <th style="padding:10px 12px;text-align:left;font-size:12px;color:#475569;text-transform:uppercase;">Detalle</th>
+            <th style="padding:10px 12px;text-align:right;font-size:12px;color:#475569;text-transform:uppercase;">Precio Unit.</th>
+            <th style="padding:10px 12px;text-align:right;font-size:12px;color:#475569;text-transform:uppercase;">Subtotal</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rowsHtml}
+        </tbody>
+      </table>
+
+      <div style="background:#f8fafc;border-radius:10px;padding:16px;margin-bottom:24px;text-align:right;">
+        <div style="font-size:13px;color:#475569;margin-bottom:6px;">Subtotal Neto: <strong>${fmt(voucher.subtotal)}</strong></div>
+        <div style="font-size:13px;color:#475569;margin-bottom:8px;">Impuesto (IVA): <strong>${fmt(voucher.taxAmount)}</strong></div>
+        <div style="font-size:18px;color:#0f172a;font-weight:800;">Total Comprobante: ${fmt(voucher.totalAmount)}</div>
+      </div>
+
+      <div style="text-align:center;margin:26px 0;">
+        <a href="${escapeXml(pdfPublicUrl)}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:12px 24px;border-radius:8px;margin-right:8px;">
+          Descargar Comprobante PDF
+        </a>
+        <a href="${escapeXml(xmlPublicUrl)}" style="display:inline-block;background:#0f172a;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:12px 24px;border-radius:8px;">
+          Descargar XML Hacienda
+        </a>
+      </div>
+
+      <p style="margin:20px 0 0;font-size:12px;color:#64748b;text-align:center;line-height:1.5;">
+        Autorizado mediante resoluci\xF3n de Facturaci\xF3n Electr\xF3nica DGT-R-033-2019 y versi\xF3n 4.4 del Ministerio de Hacienda de Costa Rica.
+      </p>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+async function sendMimeEmailViaSmtp(smtp, mail) {
+  return new Promise((resolve) => {
+    const boundary = `----BeticoBoundary_${Date.now().toString(16)}`;
+    const subjectB64 = Buffer.from(mail.subject, "utf8").toString("base64");
+    const fromNameB64 = Buffer.from(smtp.fromName || "Facturacion Electronica", "utf8").toString("base64");
+    const htmlB64 = Buffer.from(mail.html, "utf8").toString("base64").replace(/(.{76})/g, "$1\r\n");
+    const headers = [
+      `From: =?UTF-8?B?${fromNameB64}?= <${smtp.fromEmail}>`,
+      `To: <${mail.to}>`,
+      ...mail.replyTo ? [`Reply-To: <${mail.replyTo}>`] : [],
+      `Subject: =?UTF-8?B?${subjectB64}?=`,
+      `Date: ${(/* @__PURE__ */ new Date()).toUTCString()}`,
+      `MIME-Version: 1.0`,
+      `Content-Type: multipart/mixed; boundary="${boundary}"`
+    ];
+    const parts = [];
+    parts.push(
+      `--${boundary}\r
+Content-Type: text/html; charset="UTF-8"\r
+Content-Transfer-Encoding: base64\r
+\r
+${htmlB64}\r
+`
+    );
+    for (const att of mail.attachments) {
+      const attB64 = att.content.toString("base64").replace(/(.{76})/g, "$1\r\n");
+      parts.push(
+        `--${boundary}\r
+Content-Type: ${att.contentType}; name="${att.filename}"\r
+Content-Disposition: attachment; filename="${att.filename}"\r
+Content-Transfer-Encoding: base64\r
+\r
+${attB64}\r
+`
+      );
+    }
+    parts.push(`--${boundary}--\r
+`);
+    const rawMime = `${headers.join("\r\n")}\r
+\r
+${parts.join("")}\r
+.`;
+    let socket;
+    let step = 0;
+    let buffer = "";
+    let finished = false;
+    const finish = (result) => {
+      if (finished) return;
+      finished = true;
+      try {
+        socket?.destroy();
+      } catch (_) {
+      }
+      resolve(result);
+    };
+    const timeout = setTimeout(() => {
+      finish({ ok: false, error: "Tiempo de espera agotado conectando al servidor SMTP" });
+    }, 12e3);
+    const sendLine = (cmd) => {
+      socket.write(`${cmd}\r
+`);
+    };
+    const handleResponse = (code, fullText) => {
+      if (code >= 400) {
+        clearTimeout(timeout);
+        finish({ ok: false, error: `Error SMTP (${code}): ${fullText.trim()}` });
+        return;
+      }
+      if (step === 0 && code === 220) {
+        step = 1;
+        sendLine(`EHLO betico.cr`);
+      } else if (step === 1 && code === 250) {
+        if (smtp.port !== 465 && !(socket instanceof tls.TLSSocket) && fullText.toUpperCase().includes("STARTTLS")) {
+          step = 2;
+          sendLine("STARTTLS");
+        } else {
+          step = 3;
+          sendLine("AUTH LOGIN");
+        }
+      } else if (step === 2 && code === 220) {
+        const upgraded = tls.connect(
+          { socket, servername: smtp.host, rejectUnauthorized: false },
+          () => {
+            socket = upgraded;
+            attachListeners(upgraded);
+            step = 1;
+            sendLine(`EHLO betico.cr`);
+          }
+        );
+        upgraded.on("error", (err) => {
+          clearTimeout(timeout);
+          finish({ ok: false, error: `Error TLS SMTP: ${err.message}` });
+        });
+      } else if (step === 3 && code === 334) {
+        step = 4;
+        sendLine(Buffer.from(smtp.user, "utf8").toString("base64"));
+      } else if (step === 4 && code === 334) {
+        step = 5;
+        sendLine(Buffer.from(smtp.pass, "utf8").toString("base64"));
+      } else if (step === 5 && code === 235) {
+        step = 6;
+        sendLine(`MAIL FROM:<${smtp.fromEmail}>`);
+      } else if (step === 6 && code === 250) {
+        step = 7;
+        sendLine(`RCPT TO:<${mail.to}>`);
+      } else if (step === 7 && (code === 250 || code === 251)) {
+        step = 8;
+        sendLine("DATA");
+      } else if (step === 8 && code === 354) {
+        step = 9;
+        sendLine(rawMime);
+      } else if (step === 9 && code === 250) {
+        step = 10;
+        sendLine("QUIT");
+        clearTimeout(timeout);
+        finish({ ok: true });
+      }
+    };
+    const attachListeners = (sock) => {
+      sock.on("data", (chunk) => {
+        buffer += chunk.toString("utf8");
+        const lines = buffer.split("\r\n");
+        buffer = lines.pop() || "";
+        let multiLine = "";
+        for (const line of lines) {
+          multiLine += line + "\n";
+          if (/^\d{3} /.test(line)) {
+            const code = parseInt(line.slice(0, 3), 10);
+            const msg = multiLine;
+            multiLine = "";
+            handleResponse(code, msg);
+          }
+        }
+      });
+      sock.on("error", (err) => {
+        clearTimeout(timeout);
+        finish({ ok: false, error: `Error de red SMTP: ${err.message}` });
+      });
+    };
+    try {
+      if (smtp.port === 465) {
+        socket = tls.connect({ host: smtp.host, port: smtp.port, servername: smtp.host, rejectUnauthorized: false });
+      } else {
+        socket = net.connect({ host: smtp.host, port: smtp.port });
+      }
+      attachListeners(socket);
+    } catch (err) {
+      clearTimeout(timeout);
+      finish({ ok: false, error: err.message });
+    }
+  });
+}
+async function sendEmailViaResend(apiKey, fromAddress, mail) {
+  try {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey.trim()}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        from: fromAddress,
+        to: [mail.to],
+        ...mail.replyTo ? { reply_to: mail.replyTo } : {},
+        subject: mail.subject,
+        html: mail.html,
+        attachments: mail.attachments.map((a) => ({
+          filename: a.filename,
+          content: a.content.toString("base64")
+        }))
+      })
+    });
+    if (res.ok) {
+      return { ok: true };
+    }
+    const errBody = await res.text().catch(() => "");
+    return { ok: false, error: `Resend API (${res.status}): ${errBody.slice(0, 150)}` };
+  } catch (err) {
+    return { ok: false, error: `Error conectando con Resend: ${err.message}` };
+  }
+}
+async function sendVoucherEmailNotification({
+  tenantId,
+  voucherKeyOrId,
+  overrideEmail
+}) {
+  const voucher = await getElectronicVoucherByKeyOrId(voucherKeyOrId);
+  if (!voucher || voucher.tenantId !== tenantId) {
+    return {
+      success: false,
+      transport: "pending_config",
+      recipient: overrideEmail || "",
+      message: "Comprobante electr\xF3nico no encontrado para este negocio."
+    };
+  }
+  let recipientEmail = (overrideEmail || voucher.receiverEmail || "").trim();
+  if (!recipientEmail && voucher.orderId) {
+    const ordRes = await query(
+      `SELECT customer_email, billing_info FROM orders WHERE id = $1 AND tenant_id = $2`,
+      [voucher.orderId, tenantId]
+    ).catch(() => ({ rows: [] }));
+    if (ordRes.rows.length > 0) {
+      const r = ordRes.rows[0];
+      const bInfo = typeof r.billing_info === "string" ? JSON.parse(r.billing_info) : r.billing_info || {};
+      recipientEmail = (bInfo?.email || r.customer_email || "").trim();
+    }
+  }
+  if (!recipientEmail && voucher.appointmentId) {
+    const appRes = await query(
+      `SELECT a.billing_info, cr.email as record_email
+       FROM appointments a
+       LEFT JOIN customer_records cr ON cr.id = a.record_id
+       WHERE a.id = $1 AND a.tenant_id = $2`,
+      [voucher.appointmentId, tenantId]
+    ).catch(() => ({ rows: [] }));
+    if (appRes.rows.length > 0) {
+      const r = appRes.rows[0];
+      const bInfo = typeof r.billing_info === "string" ? JSON.parse(r.billing_info) : r.billing_info || {};
+      recipientEmail = (bInfo?.email || r.record_email || "").trim();
+    }
+  }
+  if (!recipientEmail || !recipientEmail.includes("@")) {
+    return {
+      success: false,
+      transport: "pending_config",
+      recipient: "",
+      message: "El cliente no registr\xF3 una direcci\xF3n de correo electr\xF3nico v\xE1lida para este comprobante."
+    };
+  }
+  if (recipientEmail !== voucher.receiverEmail) {
+    await query(
+      `UPDATE electronic_vouchers SET receiver_email = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND tenant_id = $3`,
+      [recipientEmail, voucher.id, tenantId]
+    ).catch(() => {
+    });
+    voucher.receiverEmail = recipientEmail;
+  }
+  const haciendaConfig = await getHaciendaConfigByTenant(tenantId);
+  const secrets = await getHaciendaDecryptedSecrets(tenantId);
+  const { getStoreSettings: getStoreSettings2 } = await Promise.resolve().then(() => (init_store_settings_repo(), store_settings_repo_exports));
+  const { getTenantById: getTenantById2 } = await Promise.resolve().then(() => (init_tenant_repo(), tenant_repo_exports));
+  const { AlmendroService: AlmendroService2 } = await Promise.resolve().then(() => (init_almendro_service(), almendro_service_exports));
+  const store = await getStoreSettings2(tenantId).catch(() => null);
+  const tenant = await getTenantById2(tenantId).catch(() => null);
+  const storeName = haciendaConfig?.commercialName || store?.storeName || haciendaConfig?.taxpayerName || tenant?.name || "Comercio Afiliado";
+  const pdfResult = await AlmendroService2.getVoucherPdf(voucher.numericKey || voucher.id);
+  const xmlBuffer = buildOfficialHaciendaXmlBuffer(voucher, haciendaConfig);
+  const consecutive = voucher.consecutiveNumber || voucher.numericKey || voucher.id;
+  const attachments = [];
+  if (pdfResult.success && pdfResult.buffer) {
+    attachments.push({
+      filename: `Comprobante_${consecutive}.pdf`,
+      contentType: "application/pdf",
+      content: pdfResult.buffer
+    });
+  }
+  attachments.push({
+    filename: `Hacienda_${voucher.numericKey || consecutive}.xml`,
+    contentType: "application/xml",
+    content: xmlBuffer
+  });
+  const baseUrl = env.APP_URL || "https://betico.tech";
+  const pdfPublicUrl = `${baseUrl}/api/almendro/public/voucher-pdf/${voucher.numericKey || voucher.id}`;
+  const xmlPublicUrl = `${baseUrl}/api/almendro/public/voucher-xml/${voucher.numericKey || voucher.id}`;
+  const docName = voucher.docType === "01" ? "Factura Electr\xF3nica" : voucher.docType === "03" ? "Nota de Cr\xE9dito Electr\xF3nica" : "Tiquete Electr\xF3nico";
+  const subject = `${docName} #${consecutive} - ${storeName}`;
+  const html = buildVoucherEmailHtml({
+    voucher,
+    haciendaConfig,
+    storeName,
+    pdfPublicUrl,
+    xmlPublicUrl
+  });
+  const replyTo = haciendaConfig?.taxpayerEmail || void 0;
+  let transportUsed = "pending_config";
+  let sendAttempt = { ok: false, error: "Servidor de correo saliente no configurado" };
+  if (secrets?.resendApiKey) {
+    transportUsed = "resend_tenant";
+    const fromAddr = `${storeName} <${haciendaConfig?.taxpayerEmail || env.SMTP_FROM || "facturacion@betico.cr"}>`;
+    sendAttempt = await sendEmailViaResend(secrets.resendApiKey, fromAddr, {
+      to: recipientEmail,
+      replyTo,
+      subject,
+      html,
+      attachments
+    });
+  } else if (secrets?.smtpHost && secrets?.smtpUser && secrets?.smtpPass) {
+    transportUsed = "smtp_tenant";
+    sendAttempt = await sendMimeEmailViaSmtp(
+      {
+        host: secrets.smtpHost,
+        port: secrets.smtpPort || 587,
+        user: secrets.smtpUser,
+        pass: secrets.smtpPass,
+        fromEmail: secrets.smtpUser.includes("@") ? secrets.smtpUser : haciendaConfig?.taxpayerEmail || env.SMTP_FROM,
+        fromName: storeName
+      },
+      { to: recipientEmail, replyTo, subject, html, attachments }
+    );
+  } else if (env.RESEND_API_KEY) {
+    transportUsed = "resend_platform";
+    const fromAddr = `${storeName} <${env.SMTP_FROM || "facturacion@betico.cr"}>`;
+    sendAttempt = await sendEmailViaResend(env.RESEND_API_KEY, fromAddr, {
+      to: recipientEmail,
+      replyTo,
+      subject,
+      html,
+      attachments
+    });
+  } else if (env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS) {
+    transportUsed = "smtp_platform";
+    sendAttempt = await sendMimeEmailViaSmtp(
+      {
+        host: env.SMTP_HOST,
+        port: env.SMTP_PORT || 587,
+        user: env.SMTP_USER,
+        pass: env.SMTP_PASS,
+        fromEmail: env.SMTP_FROM || env.SMTP_USER,
+        fromName: storeName
+      },
+      { to: recipientEmail, replyTo, subject, html, attachments }
+    );
+  }
+  const currentMeta = voucher.metadata || {};
+  const updatedMeta = {
+    ...currentMeta,
+    emailDelivery: {
+      status: sendAttempt.ok ? "sent" : transportUsed === "pending_config" ? "queued_pending_smtp" : "failed",
+      recipient: recipientEmail,
+      transport: transportUsed,
+      sentAt: (/* @__PURE__ */ new Date()).toISOString(),
+      attachmentsCount: attachments.length,
+      error: sendAttempt.ok ? void 0 : sendAttempt.error
+    }
+  };
+  await query(
+    `UPDATE electronic_vouchers SET metadata = $1::jsonb, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND tenant_id = $3`,
+    [JSON.stringify(updatedMeta), voucher.id, tenantId]
+  ).catch(() => {
+  });
+  await query(
+    `INSERT INTO notifications_log (id, tenant_id, recipient, message, trigger_type, status)
+     VALUES ($1, $2, $3, $4, 'electronic_invoice_email', $5)`,
+    [
+      `email_${Date.now()}_${Math.floor(Math.random() * 1e3)}`,
+      tenantId,
+      recipientEmail,
+      `${docName} #${consecutive} (PDF + XML) -> ${recipientEmail}`,
+      sendAttempt.ok ? "sent" : "queued"
+    ]
+  ).catch(() => {
+  });
+  if (sendAttempt.ok) {
+    return {
+      success: true,
+      transport: transportUsed,
+      recipient: recipientEmail,
+      message: `Comprobante enviado exitosamente por correo electr\xF3nico (PDF + XML) a ${recipientEmail}`
+    };
+  }
+  if (transportUsed === "pending_config") {
+    return {
+      success: false,
+      transport: "pending_config",
+      recipient: recipientEmail,
+      message: `El comprobante qued\xF3 preparado con PDF y XML para ${recipientEmail}. Para despachar correos en tiempo real, configura el servidor SMTP o Resend en la pesta\xF1a "Credenciales y Llave .p12".`
+    };
+  }
+  return {
+    success: false,
+    transport: transportUsed,
+    recipient: recipientEmail,
+    message: `No se pudo entregar el correo a ${recipientEmail}: ${sendAttempt.error}`
+  };
+}
+async function testTenantEmailDelivery(tenantId, params) {
+  const config = await getHaciendaConfigByTenant(tenantId);
+  const secrets = await getHaciendaDecryptedSecrets(tenantId);
+  const recipient = (params.testEmail || config?.taxpayerEmail || "").trim();
+  if (!recipient || !recipient.includes("@")) {
+    return {
+      success: false,
+      message: "Ingresa un correo electr\xF3nico destinatario v\xE1lido para enviar la prueba."
+    };
+  }
+  const smtpHost = (params.smtpHost !== void 0 ? params.smtpHost : secrets?.smtpHost || "").trim();
+  const smtpPort = Number(params.smtpPort || secrets?.smtpPort || 587);
+  const smtpUser = (params.smtpUser !== void 0 ? params.smtpUser : secrets?.smtpUser || "").trim();
+  const smtpPass = params.smtpPass && !params.smtpPass.includes("\u2022\u2022\u2022\u2022") ? params.smtpPass.trim() : secrets?.smtpPass || "";
+  const resendApiKey = params.resendApiKey && !params.resendApiKey.includes("\u2022\u2022\u2022\u2022") ? params.resendApiKey.trim() : secrets?.resendApiKey || "";
+  const storeName = config?.commercialName || config?.taxpayerName || "Facturaci\xF3n Electr\xF3nica Betico";
+  const subject = `Prueba de Env\xEDo de Facturaci\xF3n Electr\xF3nica - ${storeName}`;
+  const html = `<div style="font-family:sans-serif;padding:24px;max-width:560px;margin:0 auto;border:1px solid #e2e8f0;border-radius:12px;">
+    <h2 style="color:#0f172a;margin-top:0;">Conexi\xF3n de Correo Verificada</h2>
+    <p style="color:#334155;line-height:1.5;">Este es un correo de prueba del m\xF3dulo de <strong>Facturaci\xF3n Electr\xF3nica Hacienda DGT v4.4</strong> de <strong>${escapeXml(storeName)}</strong>.</p>
+    <p style="color:#16a34a;font-weight:700;">Las facturas, tiquetes y notas de cr\xE9dito (con sus archivos PDF y XML adjuntos) llegar\xE1n correctamente al correo de tus clientes.</p>
+  </div>`;
+  if (resendApiKey) {
+    const res = await sendEmailViaResend(
+      resendApiKey,
+      `${storeName} <${config?.taxpayerEmail || env.SMTP_FROM || "facturacion@betico.cr"}>`,
+      { to: recipient, subject, html, attachments: [] }
+    );
+    return {
+      success: res.ok,
+      message: res.ok ? `Correo de prueba enviado exitosamente a ${recipient} v\xEDa Resend API.` : res.error || "Error enviando correo de prueba v\xEDa Resend."
+    };
+  }
+  if (smtpHost && smtpUser && smtpPass) {
+    const res = await sendMimeEmailViaSmtp(
+      {
+        host: smtpHost,
+        port: smtpPort,
+        user: smtpUser,
+        pass: smtpPass,
+        fromEmail: smtpUser.includes("@") ? smtpUser : config?.taxpayerEmail || env.SMTP_FROM,
+        fromName: storeName
+      },
+      { to: recipient, subject, html, attachments: [] }
+    );
+    return {
+      success: res.ok,
+      message: res.ok ? `Correo de prueba enviado exitosamente a ${recipient} v\xEDa servidor SMTP (${smtpHost}:${smtpPort}).` : res.error || "Error conectando con el servidor SMTP."
+    };
+  }
+  if (env.RESEND_API_KEY || env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS) {
+    const res = env.RESEND_API_KEY ? await sendEmailViaResend(env.RESEND_API_KEY, `${storeName} <${env.SMTP_FROM}>`, { to: recipient, subject, html, attachments: [] }) : await sendMimeEmailViaSmtp(
+      {
+        host: env.SMTP_HOST,
+        port: env.SMTP_PORT || 587,
+        user: env.SMTP_USER,
+        pass: env.SMTP_PASS,
+        fromEmail: env.SMTP_FROM || env.SMTP_USER,
+        fromName: storeName
+      },
+      { to: recipient, subject, html, attachments: [] }
+    );
+    return {
+      success: res.ok,
+      message: res.ok ? `Correo de prueba enviado exitosamente a ${recipient} usando el servidor global de la plataforma.` : res.error || "Error enviando correo con el servidor global."
+    };
+  }
+  return {
+    success: false,
+    message: "Configura tu servidor SMTP (ej. Gmail / Workspace / cPanel) o tu API Key de Resend para activar el despacho directo de correos."
+  };
+}
+var init_voucher_email_service = __esm({
+  "src/server/services/voucher-email.service.ts"() {
+    "use strict";
+    init_pool();
+    init_hacienda_native_repo();
+    init_tenant_almendro_repo();
+    init_env();
+  }
+});
+
 // src/server/services/hacienda-native.service.ts
 var hacienda_native_service_exports = {};
 __export(hacienda_native_service_exports, {
@@ -4991,6 +5751,16 @@ async function emitManualOrNativeVoucher(tenantId, params) {
     if (almRes.success && almRes.numericKey) {
       await incrementInvoiceUsage(tenantId);
       const savedVoucher = await getElectronicVoucherByKeyOrId(almRes.numericKey);
+      if (config?.emailAutoSend !== false && (params.receiver?.email || params.orderId || params.appointmentId)) {
+        Promise.resolve().then(() => (init_voucher_email_service(), voucher_email_service_exports)).then(
+          ({ sendVoucherEmailNotification: sendVoucherEmailNotification2 }) => sendVoucherEmailNotification2({
+            tenantId,
+            voucherKeyOrId: almRes.numericKey,
+            overrideEmail: params.receiver?.email
+          })
+        ).catch(() => {
+        });
+      }
       if (params.receiver?.phone) {
         sendVoucherWhatsAppNotification({
           tenantId,
@@ -5080,6 +5850,18 @@ async function emitManualOrNativeVoucher(tenantId, params) {
     }
   });
   await incrementInvoiceUsage(tenantId);
+  if (config?.emailAutoSend !== false && (params.receiver?.email || params.orderId || params.appointmentId)) {
+    try {
+      const { sendVoucherEmailNotification: sendVoucherEmailNotification2 } = await Promise.resolve().then(() => (init_voucher_email_service(), voucher_email_service_exports));
+      await sendVoucherEmailNotification2({
+        tenantId,
+        voucherKeyOrId: consecData.numericKey,
+        overrideEmail: params.receiver?.email
+      });
+    } catch (emailErr) {
+      console.warn("[HaciendaNative] Aviso enviando correo de comprobante:", emailErr?.message || emailErr);
+    }
+  }
   if (params.receiver?.phone) {
     sendVoucherWhatsAppNotification({
       tenantId,
@@ -5092,9 +5874,10 @@ async function emitManualOrNativeVoucher(tenantId, params) {
     }).catch(() => {
     });
   }
+  const refreshedVoucher = await getElectronicVoucherByKeyOrId(consecData.numericKey).catch(() => voucher);
   return {
     success: true,
-    voucher,
+    voucher: refreshedVoucher || voucher,
     numericKey: consecData.numericKey,
     consecutiveNumber: consecData.consecutiveNumber,
     pdfUrl,
@@ -5532,7 +6315,7 @@ var init_almendro_service = __esm({
             const voucherKey = responseBody.data?.voucher_key || responseBody.voucher_key || numericKey;
             const pdfUrl = `${env.APP_URL}/api/almendro/public/voucher-pdf/${numericKey}`;
             const xmlSigned = responseBody.xml_signed_url || `${baseUrl}/vouchers/${voucherKey}/xml`;
-            await saveElectronicVoucher(tenantId, {
+            const savedVoucher = await saveElectronicVoucher(tenantId, {
               orderId: params.orderId,
               appointmentId: params.appointmentId,
               courtBookingId: params.courtBookingId,
@@ -5557,6 +6340,9 @@ var init_almendro_service = __esm({
               xmlSignedUrl: xmlSigned,
               metadata: responseBody
             });
+            Promise.resolve().then(() => (init_voucher_email_service(), voucher_email_service_exports)).then(
+              ({ sendVoucherEmailNotification: sendVoucherEmailNotification2 }) => sendVoucherEmailNotification2(tenantId, savedVoucher.id, params.receiver?.email)
+            ).catch((e) => console.error("[AlmendroService] Error enviando comprobante por correo:", e));
             return {
               success: true,
               numericKey,
@@ -5667,13 +6453,13 @@ var init_almendro_service = __esm({
               branchId: orderBranchId,
               currency: order.currency || "CRC",
               paymentMethod: paymentMethodCode,
-              receiver: receiverIdNumber ? {
-                idType: receiverIdType,
+              receiver: {
+                idType: receiverIdNumber ? receiverIdType : void 0,
                 idNumber: receiverIdNumber,
                 name: receiverName,
                 email: receiverEmail,
                 phone: order.customerPhone
-              } : order.customerPhone ? { name: receiverName, phone: order.customerPhone } : void 0,
+              },
               items
             });
           } else {
@@ -5694,7 +6480,7 @@ var init_almendro_service = __esm({
               posCode: resolvedPosCode,
               currency: order.currency || "CRC",
               paymentMethod: paymentMethodCode,
-              receiver: receiverIdNumber ? {
+              receiver: receiverIdNumber || receiverEmail ? {
                 idType: receiverIdType,
                 idNumber: receiverIdNumber,
                 name: receiverName,
@@ -5757,10 +6543,14 @@ var init_almendro_service = __esm({
           const { getAppointmentById: getAppointmentById2, updateAppointment: updateAppointment2 } = await Promise.resolve().then(() => (init_appointments_repo(), appointments_repo_exports));
           const { getRecordById: getRecordById2 } = await Promise.resolve().then(() => (init_records_repo(), records_repo_exports));
           const { getElectronicVoucherByAppointmentId: getElectronicVoucherByAppointmentId2 } = await Promise.resolve().then(() => (init_tenant_almendro_repo(), tenant_almendro_repo_exports));
+          const { getHaciendaConfigByTenant: getHaciendaConfigByTenant2 } = await Promise.resolve().then(() => (init_hacienda_native_repo(), hacienda_native_repo_exports));
           const appt = await getAppointmentById2(appointmentId, tenantId);
           if (!appt) return { success: false, message: "Cita no encontrada" };
+          const nativeCfg = await getHaciendaConfigByTenant2(tenantId).catch(() => null);
+          const isNativeActive = Boolean(nativeCfg && nativeCfg.active && nativeCfg.providerMode === "BETICO_NATIVE" && (nativeCfg.taxpayerIdNumber || nativeCfg.isConnected));
           const config = await getTenantAlmendroConfigRaw(tenantId);
-          if (!config || !config.isEnabled || !config.apiKey) {
+          const isAlmendroActive = Boolean(config && config.isEnabled && config.apiKey);
+          if (!isNativeActive && !isAlmendroActive) {
             return { success: false, message: "Facturaci\xF3n electr\xF3nica no habilitada" };
           }
           if (appt.billingInfo?.numericKey && appt.billingInfo?.invoiceStatus === "issued") {
@@ -5798,29 +6588,50 @@ var init_almendro_service = __esm({
           const receiverIdNumber = customerBilling?.idNumber?.replace(/\D/g, "") || patientRecord?.identification || void 0;
           const receiverIdType = customerBilling?.idType || (receiverIdNumber && receiverIdNumber.length === 10 && receiverIdNumber.startsWith("3") ? "02" : "01");
           const receiverName = customerBilling?.legalName || patientRecord?.fullName || appt.name;
-          const receiverEmail = customerBilling?.email || patientRecord?.email || void 0;
-          const docType = receiverIdNumber ? "01" : config.defaultDocType || "04";
+          const receiverEmail = customerBilling?.email || patientRecord?.email || appt.email || void 0;
+          const defaultDoc = isNativeActive ? nativeCfg?.defaultDocType || "04" : config?.defaultDocType || "04";
+          const docType = receiverIdNumber ? "01" : defaultDoc;
+          const defaultCabys = isNativeActive ? nativeCfg?.defaultCabysCode || "8311100000000" : "8311100000000";
           const unitPrice = Number(appt.amount) || 0;
-          const voucherRes = await this.emitVoucher(tenantId, {
-            docType,
-            appointmentId: appt.id,
-            paymentMethod: "01",
-            receiver: receiverIdNumber ? {
-              idType: receiverIdType,
-              idNumber: receiverIdNumber,
-              name: receiverName,
-              email: receiverEmail
-            } : void 0,
-            items: [
-              {
-                cabysCode: "8311100000000",
-                description: `Servicio: ${appt.service}${appt.vehicleModel ? ` (${appt.vehicleModel})` : ""}`,
-                quantity: 1,
-                unitPrice,
-                taxRateCode: "08"
-              }
-            ]
-          });
+          const items = [
+            {
+              cabysCode: defaultCabys,
+              description: `Servicio: ${appt.service}${appt.vehicleModel ? ` (${appt.vehicleModel})` : ""}`,
+              quantity: 1,
+              unitPrice,
+              taxRateCode: "08"
+            }
+          ];
+          let voucherRes;
+          if (isNativeActive) {
+            const { emitManualOrNativeVoucher: emitManualOrNativeVoucher2 } = await Promise.resolve().then(() => (init_hacienda_native_service(), hacienda_native_service_exports));
+            voucherRes = await emitManualOrNativeVoucher2(tenantId, {
+              docType,
+              appointmentId: appt.id,
+              paymentMethod: "01",
+              receiver: {
+                idType: receiverIdNumber ? receiverIdType : void 0,
+                idNumber: receiverIdNumber,
+                name: receiverName,
+                email: receiverEmail,
+                phone: appt.phone
+              },
+              items
+            });
+          } else {
+            voucherRes = await this.emitVoucher(tenantId, {
+              docType,
+              appointmentId: appt.id,
+              paymentMethod: "01",
+              receiver: receiverIdNumber || receiverEmail ? {
+                idType: receiverIdType,
+                idNumber: receiverIdNumber,
+                name: receiverName,
+                email: receiverEmail
+              } : void 0,
+              items
+            });
+          }
           if (voucherRes.success && voucherRes.numericKey) {
             const updatedBilling = {
               ...appt.billingInfo || { requiresInvoice: true },
@@ -7827,6 +8638,12 @@ async function runMigrations() {
     ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS seq_factura INT DEFAULT 1;
     ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS seq_tiquete INT DEFAULT 1;
     ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS seq_nota_credito INT DEFAULT 1;
+    ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS email_auto_send BOOLEAN DEFAULT true;
+    ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS smtp_host VARCHAR(255) DEFAULT '';
+    ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS smtp_port INT DEFAULT 587;
+    ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS smtp_user VARCHAR(255) DEFAULT '';
+    ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS smtp_pass_encrypted TEXT DEFAULT '';
+    ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS resend_api_key_encrypted TEXT DEFAULT '';
 
     CREATE TABLE IF NOT EXISTS tenant_hacienda_branches (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -23674,6 +24491,36 @@ router34.get(["/public/voucher-pdf/:keyOrId", "/public/vouchers/:keyOrId/pdf"], 
     });
   }
 });
+router34.get(["/public/voucher-xml/:keyOrId", "/public/vouchers/:keyOrId/xml"], async (req, res) => {
+  try {
+    const { keyOrId } = req.params;
+    if (!keyOrId) {
+      res.status(400).send("Clave o identificador de comprobante requerido");
+      return;
+    }
+    const { getElectronicVoucherByKeyOrId: getElectronicVoucherByKeyOrId2 } = await Promise.resolve().then(() => (init_tenant_almendro_repo(), tenant_almendro_repo_exports));
+    const { getHaciendaConfigByTenant: getHaciendaConfigByTenant2 } = await Promise.resolve().then(() => (init_hacienda_native_repo(), hacienda_native_repo_exports));
+    const { buildOfficialHaciendaXmlBuffer: buildOfficialHaciendaXmlBuffer2 } = await Promise.resolve().then(() => (init_voucher_email_service(), voucher_email_service_exports));
+    const voucher = await getElectronicVoucherByKeyOrId2(keyOrId);
+    if (!voucher) {
+      res.status(404).json({ success: false, error: "Comprobante electr\xF3nico no encontrado" });
+      return;
+    }
+    const haciendaConfig = await getHaciendaConfigByTenant2(voucher.tenantId).catch(() => null);
+    const xmlBuffer = buildOfficialHaciendaXmlBuffer2(voucher, haciendaConfig);
+    const filename = `Hacienda_${voucher.numericKey || voucher.consecutiveNumber || voucher.id}.xml`;
+    res.setHeader("Content-Type", "application/xml; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("Content-Length", xmlBuffer.length);
+    res.send(xmlBuffer);
+  } catch (err) {
+    console.error("[AlmendroRoutes] Error generando XML de comprobante:", err);
+    res.status(500).json({
+      success: false,
+      error: "Error interno al generar el archivo XML del comprobante"
+    });
+  }
+});
 router34.use(authenticateToken, tenantContext);
 router34.get("/config", async (req, res) => {
   try {
@@ -25572,6 +26419,12 @@ router41.get("/config", async (req, res) => {
         providerMode: "BETICO_NATIVE",
         useAlternativeProvider: false,
         isSimplifiedRegime: false,
+        emailAutoSend: true,
+        smtpHost: "",
+        smtpPort: 587,
+        smtpUser: "",
+        smtpPassMasked: "",
+        resendApiKeyMasked: "",
         active: true
       }
     });
@@ -25662,6 +26515,12 @@ router41.post("/config", upload4.single("certificateFile"), async (req, res) => 
       providerMode: body.providerMode,
       useAlternativeProvider: body.useAlternativeProvider !== void 0 ? body.useAlternativeProvider === "true" || body.useAlternativeProvider === true : void 0,
       isSimplifiedRegime: body.isSimplifiedRegime !== void 0 ? body.isSimplifiedRegime === "true" || body.isSimplifiedRegime === true : void 0,
+      emailAutoSend: body.emailAutoSend !== void 0 ? body.emailAutoSend === "true" || body.emailAutoSend === true : void 0,
+      smtpHost: body.smtpHost,
+      smtpPort: body.smtpPort !== void 0 ? Number(body.smtpPort) : void 0,
+      smtpUser: body.smtpUser,
+      smtpPass: body.smtpPass,
+      resendApiKey: body.resendApiKey,
       active: body.active !== void 0 ? body.active === "true" || body.active === true : void 0
     });
     res.json({
@@ -25884,6 +26743,32 @@ router41.post("/vouchers/:id/credit-note", async (req, res) => {
   } catch (err) {
     console.error("[BillingNativeRoutes] Error emitiendo Nota de Cr\xE9dito:", err);
     res.status(500).json({ success: false, error: err.message || "Error al emitir Nota de Cr\xE9dito" });
+  }
+});
+router41.post("/vouchers/:id/send-email", async (req, res) => {
+  try {
+    const tenantId = req.tenantId;
+    const { sendVoucherEmailNotification: sendVoucherEmailNotification2 } = await Promise.resolve().then(() => (init_voucher_email_service(), voucher_email_service_exports));
+    const result = await sendVoucherEmailNotification2({
+      tenantId,
+      voucherKeyOrId: String(req.params.id || ""),
+      overrideEmail: req.body?.email ? String(req.body.email).trim() : void 0
+    });
+    res.json(result);
+  } catch (err) {
+    console.error("[BillingNativeRoutes] Error enviando correo de comprobante:", err);
+    res.status(500).json({ success: false, message: err.message || "Error al enviar el comprobante por correo" });
+  }
+});
+router41.post("/test-email", async (req, res) => {
+  try {
+    const tenantId = req.tenantId;
+    const { testTenantEmailDelivery: testTenantEmailDelivery2 } = await Promise.resolve().then(() => (init_voucher_email_service(), voucher_email_service_exports));
+    const result = await testTenantEmailDelivery2(tenantId, req.body || {});
+    res.json(result);
+  } catch (err) {
+    console.error("[BillingNativeRoutes] Error en test-email:", err);
+    res.status(500).json({ success: false, message: err.message || "Error probando env\xEDo de correo" });
   }
 });
 var billing_native_routes_default = router41;
