@@ -64,6 +64,7 @@ import loyaltyCustomerRoutes from './routes/loyalty-customer.routes.js';
 import couponRoutes from './routes/coupon.routes.js';
 import timezoneRoutes from './routes/timezone.routes.js';
 import secretaryRoutes from './routes/secretary.routes.js';
+import billingNativeRoutes from './routes/billing-native.routes.js';
 import seoRoutes from './routes/seo.routes.js';
 import { injectSeoMetadata } from './services/seo.service.js';
 
@@ -248,6 +249,7 @@ async function startServer() {
   app.use('/api/coupons', couponRoutes);
   app.use('/api/timezone', timezoneRoutes);
   app.use('/api/secretary', secretaryRoutes);
+  app.use('/api/billing/native', billingNativeRoutes);
   app.use('/', seoRoutes);
 
   // Serve static assets in production, setup vite dev server in dev

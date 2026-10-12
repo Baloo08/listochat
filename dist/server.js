@@ -2952,6 +2952,352 @@ var init_orders_repo = __esm({
   }
 });
 
+// src/server/db/hacienda-native.repo.ts
+var hacienda_native_repo_exports = {};
+__export(hacienda_native_repo_exports, {
+  getCycleUsage: () => getCycleUsage,
+  getHaciendaConfigByTenant: () => getHaciendaConfigByTenant,
+  getHaciendaDecryptedSecrets: () => getHaciendaDecryptedSecrets,
+  getTenantPlanQuota: () => getTenantPlanQuota,
+  incrementInvoiceUsage: () => incrementInvoiceUsage,
+  saveHaciendaConfig: () => saveHaciendaConfig,
+  updateConnectionTestResult: () => updateConnectionTestResult
+});
+async function getHaciendaConfigByTenant(tenantId) {
+  const res = await query(
+    `SELECT * FROM tenant_hacienda_configs WHERE tenant_id = $1`,
+    [tenantId]
+  );
+  if (res.rows.length === 0) return null;
+  const row = res.rows[0];
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    environment: row.environment || "sandbox",
+    taxpayerIdType: row.taxpayer_id_type || "01",
+    taxpayerIdNumber: row.taxpayer_id_number || "",
+    taxpayerName: row.taxpayer_name || "",
+    commercialName: row.commercial_name || "",
+    taxpayerEmail: row.taxpayer_email || "",
+    taxpayerPhone: row.taxpayer_phone || "",
+    economicActivityCode: row.economic_activity_code || "",
+    province: row.province || "1",
+    canton: row.canton || "01",
+    district: row.district || "01",
+    neighborhood: row.neighborhood || "01",
+    addressDetail: row.address_detail || "",
+    idpUsername: row.idp_username || "",
+    idpPasswordMasked: row.idp_password_encrypted ? "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022" : "",
+    p12Filename: row.p12_filename || "",
+    p12ExpiresAt: row.p12_expires_at ? row.p12_expires_at.toISOString() : null,
+    p12HasCertificate: Boolean(row.p12_encrypted_blob || row.p12_filename),
+    branchCode: row.branch_code || "001",
+    posCode: row.pos_code || "00001",
+    defaultDocType: row.default_doc_type || "04",
+    isConnected: Boolean(row.is_connected),
+    lastTestAt: row.last_test_at ? row.last_test_at.toISOString() : null,
+    lastTestMessage: row.last_test_message || null,
+    providerMode: row.provider_mode || "BETICO_NATIVE",
+    useAlternativeProvider: Boolean(row.use_alternative_provider),
+    active: Boolean(row.active),
+    createdAt: row.created_at ? row.created_at.toISOString() : "",
+    updatedAt: row.updated_at ? row.updated_at.toISOString() : ""
+  };
+}
+async function getHaciendaDecryptedSecrets(tenantId) {
+  const res = await query(
+    `SELECT p12_encrypted_blob, p12_pin_encrypted, idp_username, idp_password_encrypted, environment 
+     FROM tenant_hacienda_configs WHERE tenant_id = $1`,
+    [tenantId]
+  );
+  if (res.rows.length === 0) return null;
+  const row = res.rows[0];
+  let p12Buffer = null;
+  if (row.p12_encrypted_blob) {
+    try {
+      const rawEncrypted = row.p12_encrypted_blob.toString("utf8");
+      const decryptedBase64 = decrypt(rawEncrypted);
+      p12Buffer = Buffer.from(decryptedBase64, "base64");
+    } catch (e) {
+      console.error("[HaciendaRepo] Error descifrando certificado .p12:", e.message);
+    }
+  }
+  const p12Pin = row.p12_pin_encrypted ? decrypt(row.p12_pin_encrypted) : "";
+  const idpPassword = row.idp_password_encrypted ? decrypt(row.idp_password_encrypted) : "";
+  return {
+    p12Buffer,
+    p12Pin,
+    idpPassword,
+    idpUsername: row.idp_username || "",
+    environment: row.environment || "sandbox"
+  };
+}
+async function saveHaciendaConfig(tenantId, data) {
+  const existingRes = await query(
+    `SELECT * FROM tenant_hacienda_configs WHERE tenant_id = $1`,
+    [tenantId]
+  );
+  const existing = existingRes.rows[0] || {};
+  const environment = data.environment || existing.environment || "sandbox";
+  const taxpayerIdType = data.taxpayerIdType || existing.taxpayer_id_type || "01";
+  const taxpayerIdNumber = data.taxpayerIdNumber !== void 0 ? data.taxpayerIdNumber.trim() : existing.taxpayer_id_number || "";
+  const taxpayerName = data.taxpayerName !== void 0 ? data.taxpayerName.trim() : existing.taxpayer_name || "";
+  const commercialName = data.commercialName !== void 0 ? data.commercialName.trim() : existing.commercial_name || "";
+  const taxpayerEmail = data.taxpayerEmail !== void 0 ? data.taxpayerEmail.trim() : existing.taxpayer_email || "";
+  const taxpayerPhone = data.taxpayerPhone !== void 0 ? data.taxpayerPhone.trim() : existing.taxpayer_phone || "";
+  const economicActivityCode = data.economicActivityCode !== void 0 ? data.economicActivityCode.trim() : existing.economic_activity_code || "";
+  const province = data.province || existing.province || "1";
+  const canton = data.canton || existing.canton || "01";
+  const district = data.district || existing.district || "01";
+  const neighborhood = data.neighborhood || existing.neighborhood || "01";
+  const addressDetail = data.addressDetail !== void 0 ? data.addressDetail.trim() : existing.address_detail || "";
+  const branchCode = data.branchCode || existing.branch_code || "001";
+  const posCode = data.posCode || existing.pos_code || "00001";
+  const defaultDocType = data.defaultDocType || existing.default_doc_type || "04";
+  const providerMode = data.providerMode || existing.provider_mode || "BETICO_NATIVE";
+  const useAlternativeProvider = data.useAlternativeProvider !== void 0 ? Boolean(data.useAlternativeProvider) : Boolean(existing.use_alternative_provider);
+  const active = data.active !== void 0 ? Boolean(data.active) : existing.active !== void 0 ? Boolean(existing.active) : true;
+  const idpUsername = data.idpUsername !== void 0 ? data.idpUsername.trim() : existing.idp_username || "";
+  let idpPasswordEncrypted = existing.idp_password_encrypted || "";
+  if (data.idpPassword && data.idpPassword.trim()) {
+    idpPasswordEncrypted = encrypt(data.idpPassword.trim());
+  }
+  let p12EncryptedBlob = existing.p12_encrypted_blob;
+  let p12Filename = existing.p12_filename || "";
+  let p12ExpiresAt = existing.p12_expires_at || null;
+  if (data.p12Buffer && data.p12Buffer.length > 0) {
+    const base64Str = data.p12Buffer.toString("base64");
+    const encryptedStr = encrypt(base64Str);
+    p12EncryptedBlob = Buffer.from(encryptedStr, "utf8");
+    p12Filename = data.p12Filename || "certificado.p12";
+    if (data.p12ExpiresAt) {
+      p12ExpiresAt = data.p12ExpiresAt;
+    }
+  }
+  let p12PinEncrypted = existing.p12_pin_encrypted || "";
+  if (data.p12Pin && data.p12Pin.trim()) {
+    p12PinEncrypted = encrypt(data.p12Pin.trim());
+  }
+  await query(
+    `INSERT INTO tenant_hacienda_configs (
+      tenant_id, environment, taxpayer_id_type, taxpayer_id_number, taxpayer_name, commercial_name,
+      taxpayer_email, taxpayer_phone, economic_activity_code, province, canton, district, neighborhood,
+      address_detail, idp_username, idp_password_encrypted, p12_encrypted_blob, p12_pin_encrypted,
+      p12_filename, p12_expires_at, branch_code, pos_code, default_doc_type, provider_mode,
+      use_alternative_provider, active, updated_at
+    ) VALUES (
+      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+      $21, $22, $23, $24, $25, $26, CURRENT_TIMESTAMP
+    )
+    ON CONFLICT (tenant_id) DO UPDATE SET
+      environment = EXCLUDED.environment,
+      taxpayer_id_type = EXCLUDED.taxpayer_id_type,
+      taxpayer_id_number = EXCLUDED.taxpayer_id_number,
+      taxpayer_name = EXCLUDED.taxpayer_name,
+      commercial_name = EXCLUDED.commercial_name,
+      taxpayer_email = EXCLUDED.taxpayer_email,
+      taxpayer_phone = EXCLUDED.taxpayer_phone,
+      economic_activity_code = EXCLUDED.economic_activity_code,
+      province = EXCLUDED.province,
+      canton = EXCLUDED.canton,
+      district = EXCLUDED.district,
+      neighborhood = EXCLUDED.neighborhood,
+      address_detail = EXCLUDED.address_detail,
+      idp_username = EXCLUDED.idp_username,
+      idp_password_encrypted = EXCLUDED.idp_password_encrypted,
+      p12_encrypted_blob = COALESCE(EXCLUDED.p12_encrypted_blob, tenant_hacienda_configs.p12_encrypted_blob),
+      p12_pin_encrypted = EXCLUDED.p12_pin_encrypted,
+      p12_filename = COALESCE(EXCLUDED.p12_filename, tenant_hacienda_configs.p12_filename),
+      p12_expires_at = COALESCE(EXCLUDED.p12_expires_at, tenant_hacienda_configs.p12_expires_at),
+      branch_code = EXCLUDED.branch_code,
+      pos_code = EXCLUDED.pos_code,
+      default_doc_type = EXCLUDED.default_doc_type,
+      provider_mode = EXCLUDED.provider_mode,
+      use_alternative_provider = EXCLUDED.use_alternative_provider,
+      active = EXCLUDED.active,
+      updated_at = CURRENT_TIMESTAMP`,
+    [
+      tenantId,
+      environment,
+      taxpayerIdType,
+      taxpayerIdNumber,
+      taxpayerName,
+      commercialName,
+      taxpayerEmail,
+      taxpayerPhone,
+      economicActivityCode,
+      province,
+      canton,
+      district,
+      neighborhood,
+      addressDetail,
+      idpUsername,
+      idpPasswordEncrypted,
+      p12EncryptedBlob,
+      p12PinEncrypted,
+      p12Filename,
+      p12ExpiresAt,
+      branchCode,
+      posCode,
+      defaultDocType,
+      providerMode,
+      useAlternativeProvider,
+      active
+    ]
+  );
+  return await getHaciendaConfigByTenant(tenantId);
+}
+async function updateConnectionTestResult(tenantId, isConnected, message) {
+  await query(
+    `UPDATE tenant_hacienda_configs 
+     SET is_connected = $1, last_test_at = CURRENT_TIMESTAMP, last_test_message = $2, updated_at = CURRENT_TIMESTAMP
+     WHERE tenant_id = $3`,
+    [isConnected, message, tenantId]
+  );
+}
+async function getTenantPlanQuota(tenantId) {
+  const tenantRes = await query(
+    `SELECT plan, custom_invoices_quota FROM tenants WHERE id = $1`,
+    [tenantId]
+  );
+  if (tenantRes.rows.length === 0) {
+    return { quota: 100, courtesyMargin: 10, planName: "pro" };
+  }
+  const { plan, custom_invoices_quota } = tenantRes.rows[0];
+  const normalizedPlan = (plan || "pro").toLowerCase();
+  if (custom_invoices_quota !== null && custom_invoices_quota !== void 0 && Number(custom_invoices_quota) > 0) {
+    return {
+      quota: Number(custom_invoices_quota),
+      courtesyMargin: 10,
+      planName: normalizedPlan
+    };
+  }
+  const settingsRes = await query(
+    `SELECT key, value FROM platform_settings WHERE key IN (
+      'plan_starter_invoices_quota',
+      'plan_pro_invoices_quota',
+      'plan_enterprise_invoices_quota',
+      'plan_aliado_invoices_quota',
+      'courtesy_invoices_margin'
+    )`
+  );
+  const settingsMap = {};
+  for (const row of settingsRes.rows) {
+    settingsMap[row.key] = parseInt(row.value, 10);
+  }
+  const courtesyMargin = settingsMap["courtesy_invoices_margin"] || 10;
+  let quota = 100;
+  if (normalizedPlan === "starter" || normalizedPlan === "emprendedor") {
+    quota = settingsMap["plan_starter_invoices_quota"] || 50;
+  } else if (normalizedPlan === "enterprise" || normalizedPlan === "business" || normalizedPlan === "empresa") {
+    quota = settingsMap["plan_enterprise_invoices_quota"] || 250;
+  } else if (normalizedPlan === "aliado") {
+    quota = settingsMap["plan_aliado_invoices_quota"] || 500;
+  } else {
+    quota = settingsMap["plan_pro_invoices_quota"] || 100;
+  }
+  return {
+    quota,
+    courtesyMargin,
+    planName: normalizedPlan
+  };
+}
+async function getCycleUsage(tenantId) {
+  const { quota, courtesyMargin, planName } = await getTenantPlanQuota(tenantId);
+  const tenantRes = await query(
+    `SELECT next_billing_date, created_at FROM tenants WHERE id = $1`,
+    [tenantId]
+  );
+  const nextBilling = tenantRes.rows[0]?.next_billing_date ? new Date(tenantRes.rows[0].next_billing_date) : new Date(Date.now() + 30 * 864e5);
+  const cycleEndDate = nextBilling.toISOString().split("T")[0];
+  const startDateObj = new Date(nextBilling);
+  startDateObj.setDate(startDateObj.getDate() - 30);
+  const cycleStartDate = startDateObj.toISOString().split("T")[0];
+  const usageRes = await query(
+    `SELECT invoices_emitted, courtesy_used, quota_limit 
+     FROM hacienda_usage_cycles 
+     WHERE tenant_id = $1 AND cycle_start_date = $2`,
+    [tenantId, cycleStartDate]
+  );
+  let emitted = 0;
+  let courtesyUsed = 0;
+  if (usageRes.rows.length === 0) {
+    await query(
+      `INSERT INTO hacienda_usage_cycles (tenant_id, cycle_start_date, cycle_end_date, quota_limit)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (tenant_id, cycle_start_date) DO NOTHING`,
+      [tenantId, cycleStartDate, cycleEndDate, quota]
+    );
+  } else {
+    emitted = Number(usageRes.rows[0].invoices_emitted || 0);
+    courtesyUsed = Number(usageRes.rows[0].courtesy_used || 0);
+  }
+  const remaining = Math.max(0, quota - emitted);
+  const inCourtesy = emitted >= quota;
+  const courtesyAvailable = Math.max(0, courtesyMargin - courtesyUsed);
+  const isBlocked = emitted >= quota && courtesyUsed >= courtesyMargin;
+  return {
+    emitted,
+    quota,
+    remaining,
+    inCourtesy,
+    courtesyUsed,
+    courtesyAvailable,
+    isBlocked,
+    cycleStartDate,
+    cycleEndDate,
+    planName
+  };
+}
+async function incrementInvoiceUsage(tenantId) {
+  const usage = await getCycleUsage(tenantId);
+  if (usage.isBlocked) {
+    return {
+      success: false,
+      emitted: usage.emitted,
+      inCourtesy: true,
+      courtesyUsed: usage.courtesyUsed,
+      blocked: true
+    };
+  }
+  if (usage.emitted < usage.quota) {
+    await query(
+      `UPDATE hacienda_usage_cycles 
+       SET invoices_emitted = invoices_emitted + 1, updated_at = CURRENT_TIMESTAMP
+       WHERE tenant_id = $1 AND cycle_start_date = $2`,
+      [tenantId, usage.cycleStartDate]
+    );
+    return {
+      success: true,
+      emitted: usage.emitted + 1,
+      inCourtesy: false,
+      courtesyUsed: usage.courtesyUsed,
+      blocked: false
+    };
+  } else {
+    await query(
+      `UPDATE hacienda_usage_cycles 
+       SET invoices_emitted = invoices_emitted + 1, courtesy_used = courtesy_used + 1, updated_at = CURRENT_TIMESTAMP
+       WHERE tenant_id = $1 AND cycle_start_date = $2`,
+      [tenantId, usage.cycleStartDate]
+    );
+    return {
+      success: true,
+      emitted: usage.emitted + 1,
+      inCourtesy: true,
+      courtesyUsed: usage.courtesyUsed + 1,
+      blocked: false
+    };
+  }
+}
+var init_hacienda_native_repo = __esm({
+  "src/server/db/hacienda-native.repo.ts"() {
+    "use strict";
+    init_pool();
+    init_encryption();
+  }
+});
+
 // src/server/db/tenant-almendro.repo.ts
 var tenant_almendro_repo_exports = {};
 __export(tenant_almendro_repo_exports, {
@@ -4930,7 +5276,20 @@ async function runMigrations() {
     { key: "quota_pro_tokens", value: "100000" },
     { key: "quota_business_tokens", value: "300000" },
     { key: "deploy_webhook_app", value: "http://2.25.103.200:3000/api/deploy/f5abd18bdaaff3ce20c24522c9c72beac7c756d9260d995b" },
-    { key: "deploy_webhook_localai", value: "http://2.25.103.200:3000/api/deploy/4317a4ff5a1ed51532fc824fb9547b6ae20847cd3ef8ea4e" }
+    { key: "deploy_webhook_localai", value: "http://2.25.103.200:3000/api/deploy/4317a4ff5a1ed51532fc824fb9547b6ae20847cd3ef8ea4e" },
+    { key: "plan_starter_price_crc", value: "35000" },
+    { key: "plan_starter_price_usd", value: "65" },
+    { key: "plan_starter_invoices_quota", value: "50" },
+    { key: "plan_pro_price_crc", value: "55000" },
+    { key: "plan_pro_price_usd", value: "105" },
+    { key: "plan_pro_invoices_quota", value: "100" },
+    { key: "plan_enterprise_price_crc", value: "85000" },
+    { key: "plan_enterprise_price_usd", value: "160" },
+    { key: "plan_enterprise_invoices_quota", value: "250" },
+    { key: "plan_aliado_price_crc", value: "0" },
+    { key: "plan_aliado_price_usd", value: "0" },
+    { key: "plan_aliado_invoices_quota", value: "500" },
+    { key: "courtesy_invoices_margin", value: "10" }
   ];
   for (const s of defaultPlatformSettings) {
     await query(`
@@ -5432,6 +5791,62 @@ async function runMigrations() {
     );
     CREATE INDEX IF NOT EXISTS idx_sec_sessions_lookup 
     ON secretary_sessions(authorized_phone_id, session_date, is_authenticated);
+
+    -- ==========================================================
+    -- M\xD3DULO DE FACTURACI\xD3N ELECTR\xD3NICA NATIVA BETICO Y PLANES
+    -- ==========================================================
+    CREATE TABLE IF NOT EXISTS tenant_hacienda_configs (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      environment VARCHAR(20) NOT NULL DEFAULT 'sandbox',
+      taxpayer_id_type VARCHAR(2) NOT NULL DEFAULT '01',
+      taxpayer_id_number VARCHAR(20) NOT NULL DEFAULT '',
+      taxpayer_name VARCHAR(255) NOT NULL DEFAULT '',
+      commercial_name VARCHAR(255) DEFAULT '',
+      taxpayer_email VARCHAR(255) NOT NULL DEFAULT '',
+      taxpayer_phone VARCHAR(50) DEFAULT '',
+      economic_activity_code VARCHAR(10) NOT NULL DEFAULT '',
+      province VARCHAR(1) DEFAULT '1',
+      canton VARCHAR(2) DEFAULT '01',
+      district VARCHAR(2) DEFAULT '01',
+      neighborhood VARCHAR(2) DEFAULT '01',
+      address_detail TEXT DEFAULT '',
+      idp_username VARCHAR(100) DEFAULT '',
+      idp_password_encrypted TEXT DEFAULT '',
+      p12_encrypted_blob BYTEA,
+      p12_pin_encrypted TEXT DEFAULT '',
+      p12_filename VARCHAR(255) DEFAULT '',
+      p12_expires_at TIMESTAMPTZ,
+      branch_code VARCHAR(3) NOT NULL DEFAULT '001',
+      pos_code VARCHAR(5) NOT NULL DEFAULT '00001',
+      default_doc_type VARCHAR(2) NOT NULL DEFAULT '04',
+      is_connected BOOLEAN NOT NULL DEFAULT false,
+      last_test_at TIMESTAMPTZ,
+      last_test_message TEXT,
+      provider_mode VARCHAR(30) NOT NULL DEFAULT 'BETICO_NATIVE',
+      use_alternative_provider BOOLEAN NOT NULL DEFAULT false,
+      active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(tenant_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_hacienda_config_tenant ON tenant_hacienda_configs(tenant_id);
+
+    CREATE TABLE IF NOT EXISTS hacienda_usage_cycles (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      cycle_start_date DATE NOT NULL,
+      cycle_end_date DATE NOT NULL,
+      invoices_emitted INT NOT NULL DEFAULT 0,
+      courtesy_used INT NOT NULL DEFAULT 0,
+      quota_limit INT NOT NULL DEFAULT 100,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(tenant_id, cycle_start_date)
+    );
+    CREATE INDEX IF NOT EXISTS idx_hacienda_usage_tenant ON hacienda_usage_cycles(tenant_id, cycle_start_date);
+
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS custom_invoices_quota INT;
   `).catch((err) => {
     console.warn("[Migrations] Columns addition warning:", err?.message || err);
   });
@@ -6298,7 +6713,8 @@ async function getAllTenants() {
            plan, active, subscription_status as "subscriptionStatus",
            billing_currency as "billingCurrency", custom_monthly_price as "customMonthlyPrice",
            trial_ends_at as "trialEndsAt", next_billing_date as "nextBillingDate",
-           grace_period_ends_at as "gracePeriodEndsAt", settings_json as "settingsJson", 
+           grace_period_ends_at as "gracePeriodEndsAt", custom_invoices_quota as "customInvoicesQuota",
+           settings_json as "settingsJson", 
            address, latitude, longitude, google_maps_url as "googleMapsUrl",
            is_ai_pilot as "isAiPilot", ai_priority_level as "aiPriorityLevel",
            created_at as "createdAt"
@@ -6315,7 +6731,8 @@ async function getAllTenantsWithAdmin() {
            t.plan, t.active, t.subscription_status as "subscriptionStatus",
            t.billing_currency as "billingCurrency", t.custom_monthly_price as "customMonthlyPrice",
            t.trial_ends_at as "trialEndsAt", t.next_billing_date as "nextBillingDate",
-           t.grace_period_ends_at as "gracePeriodEndsAt", t.settings_json as "settingsJson", 
+           t.grace_period_ends_at as "gracePeriodEndsAt", t.custom_invoices_quota as "customInvoicesQuota",
+           t.settings_json as "settingsJson", 
            t.address, t.latitude, t.longitude, t.google_maps_url as "googleMapsUrl",
            t.is_ai_pilot as "isAiPilot", t.ai_priority_level as "aiPriorityLevel",
            t.created_at as "createdAt",
@@ -6347,6 +6764,7 @@ async function getTenantById(id) {
            subscription_status as "subscriptionStatus", billing_currency as "billingCurrency", 
            custom_monthly_price as "customMonthlyPrice", trial_ends_at as "trialEndsAt", 
            next_billing_date as "nextBillingDate", grace_period_ends_at as "gracePeriodEndsAt",
+           custom_invoices_quota as "customInvoicesQuota",
            calendar_token as "calendarToken",
            address, latitude, longitude, google_maps_url as "googleMapsUrl",
            is_ai_pilot as "isAiPilot", ai_priority_level as "aiPriorityLevel",
@@ -13417,6 +13835,13 @@ router2.get("/:id/dossier", async (req, res) => {
     const aiUsage = aiRes.rows[0] || { tokensUsed: 0, requestsCount: 0 };
     const payments = paymentsRes.rows || [];
     const storeModules = storeSettingsRes.rows[0]?.store_modules || { storeEnabled: true, bookingsEnabled: true };
+    let billingUsage = null;
+    try {
+      const { getCycleUsage: getCycleUsage2 } = await Promise.resolve().then(() => (init_hacienda_native_repo(), hacienda_native_repo_exports));
+      billingUsage = await getCycleUsage2(id);
+    } catch (bErr) {
+      console.warn("Could not load billing cycle usage for dossier:", bErr);
+    }
     res.json({
       tenant: {
         ...tenant,
@@ -13425,6 +13850,7 @@ router2.get("/:id/dossier", async (req, res) => {
         adminPhone: tenant.whatsappNumber || null
       },
       storeModules,
+      billingUsage,
       location: {
         address: tenant.address || null,
         latitude: tenant.latitude ? Number(tenant.latitude) : null,
@@ -17863,7 +18289,20 @@ router21.get("/settings", async (req, res) => {
       deployWebhookLocalai: settings.deploy_webhook_localai || process.env.DEPLOY_WEBHOOK_LOCALAI || "http://2.25.103.200:3000/api/deploy/4317a4ff5a1ed51532fc824fb9547b6ae20847cd3ef8ea4e",
       deployWebhookOllama: settings.deploy_webhook_ollama || "http://2.25.103.200:3000/api/deploy/60c915e106dd05cb92ed6acab19c1b72ccd317db2949a785",
       deployWebhookKokoro: settings.deploy_webhook_kokoro || "http://2.25.103.200:3000/api/deploy/cee45b178f9ab10ff50bc0bd9bc39f7384f24d4c91bba200",
-      deployWebhookOllamaWeb: settings.deploy_webhook_ollama_web || "http://2.25.103.200:3000/api/deploy/e3a839613067ac5359c3a0e222976d62ec9b22a3e039cd15"
+      deployWebhookOllamaWeb: settings.deploy_webhook_ollama_web || "http://2.25.103.200:3000/api/deploy/e3a839613067ac5359c3a0e222976d62ec9b22a3e039cd15",
+      planStarterPriceCrc: parseInt(settings.plan_starter_price_crc || "35000", 10),
+      planStarterPriceUsd: parseInt(settings.plan_starter_price_usd || "65", 10),
+      planStarterInvoicesQuota: parseInt(settings.plan_starter_invoices_quota || "50", 10),
+      planProPriceCrc: parseInt(settings.plan_pro_price_crc || "55000", 10),
+      planProPriceUsd: parseInt(settings.plan_pro_price_usd || "105", 10),
+      planProInvoicesQuota: parseInt(settings.plan_pro_invoices_quota || "100", 10),
+      planEnterprisePriceCrc: parseInt(settings.plan_enterprise_price_crc || "85000", 10),
+      planEnterprisePriceUsd: parseInt(settings.plan_enterprise_price_usd || "160", 10),
+      planEnterpriseInvoicesQuota: parseInt(settings.plan_enterprise_invoices_quota || "250", 10),
+      planAliadoPriceCrc: parseInt(settings.plan_aliado_price_crc || "0", 10),
+      planAliadoPriceUsd: parseInt(settings.plan_aliado_price_usd || "0", 10),
+      planAliadoInvoicesQuota: parseInt(settings.plan_aliado_invoices_quota || "500", 10),
+      courtesyInvoicesMargin: parseInt(settings.courtesy_invoices_margin || "10", 10)
     });
   } catch (error) {
     console.error("Error fetching platform settings:", error);
@@ -17893,7 +18332,20 @@ router21.post("/settings", async (req, res) => {
       deployWebhookLocalai,
       deployWebhookOllama,
       deployWebhookKokoro,
-      deployWebhookOllamaWeb
+      deployWebhookOllamaWeb,
+      planStarterPriceCrc,
+      planStarterPriceUsd,
+      planStarterInvoicesQuota,
+      planProPriceCrc,
+      planProPriceUsd,
+      planProInvoicesQuota,
+      planEnterprisePriceCrc,
+      planEnterprisePriceUsd,
+      planEnterpriseInvoicesQuota,
+      planAliadoPriceCrc,
+      planAliadoPriceUsd,
+      planAliadoInvoicesQuota,
+      courtesyInvoicesMargin
     } = req.body;
     const upsertSetting = async (key, value) => {
       await query(`
@@ -17945,10 +18397,36 @@ router21.post("/settings", async (req, res) => {
       const cleanPhone = (superadminNotifyPhone || "").replace(/\D/g, "");
       await upsertSetting("superadmin_notify_phone", cleanPhone);
     }
+    if (planStarterPriceCrc !== void 0) await upsertSetting("plan_starter_price_crc", String(planStarterPriceCrc));
+    if (planStarterPriceUsd !== void 0) await upsertSetting("plan_starter_price_usd", String(planStarterPriceUsd));
+    if (planStarterInvoicesQuota !== void 0) await upsertSetting("plan_starter_invoices_quota", String(planStarterInvoicesQuota));
+    if (planProPriceCrc !== void 0) await upsertSetting("plan_pro_price_crc", String(planProPriceCrc));
+    if (planProPriceUsd !== void 0) await upsertSetting("plan_pro_price_usd", String(planProPriceUsd));
+    if (planProInvoicesQuota !== void 0) await upsertSetting("plan_pro_invoices_quota", String(planProInvoicesQuota));
+    if (planEnterprisePriceCrc !== void 0) await upsertSetting("plan_enterprise_price_crc", String(planEnterprisePriceCrc));
+    if (planEnterprisePriceUsd !== void 0) await upsertSetting("plan_enterprise_price_usd", String(planEnterprisePriceUsd));
+    if (planEnterpriseInvoicesQuota !== void 0) await upsertSetting("plan_enterprise_invoices_quota", String(planEnterpriseInvoicesQuota));
+    if (planAliadoPriceCrc !== void 0) await upsertSetting("plan_aliado_price_crc", String(planAliadoPriceCrc));
+    if (planAliadoPriceUsd !== void 0) await upsertSetting("plan_aliado_price_usd", String(planAliadoPriceUsd));
+    if (planAliadoInvoicesQuota !== void 0) await upsertSetting("plan_aliado_invoices_quota", String(planAliadoInvoicesQuota));
+    if (courtesyInvoicesMargin !== void 0) await upsertSetting("courtesy_invoices_margin", String(courtesyInvoicesMargin));
     res.json({ success: true, message: "Ajustes de plataforma guardados con \xE9xito" });
   } catch (error) {
     console.error("Error saving platform settings:", error);
     res.status(500).json({ error: error.message || "Error al guardar ajustes de plataforma" });
+  }
+});
+router21.put("/tenants/:id/billing-quota", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { customInvoicesQuota } = req.body;
+    await query(
+      `UPDATE tenants SET custom_invoices_quota = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+      [customInvoicesQuota ? Number(customInvoicesQuota) : null, id]
+    );
+    res.json({ success: true, customInvoicesQuota });
+  } catch (err) {
+    res.status(500).json({ error: err.message || "Error al actualizar cuota personalizada" });
   }
 });
 router21.get("/ai-usage", async (req, res) => {
@@ -22716,13 +23194,296 @@ PAUTAS DE RESPUESTA:
 });
 var secretary_routes_default = router40;
 
+// src/server/routes/billing-native.routes.ts
+import { Router as Router41 } from "express";
+import multer3 from "multer";
+init_hacienda_native_repo();
+
+// src/server/services/hacienda-native.service.ts
+init_hacienda_native_repo();
+async function inspectP12Certificate(p12Buffer, pin) {
+  if (!p12Buffer || p12Buffer.length === 0) {
+    return { valid: false, error: "Archivo de certificado vac\xEDo o no provisto" };
+  }
+  try {
+    const forge = await import("node-forge").then((m) => m.default || m).catch(() => null);
+    if (!forge) {
+      return {
+        valid: true,
+        expiresAt: new Date(Date.now() + 365 * 864e5),
+        // Asumir 1 año de vigencia
+        subject: "Certificado PKCS#12"
+      };
+    }
+    const p12DerString = forge.util.binary.raw.encode(new Uint8Array(p12Buffer));
+    const p12Asn1 = forge.asn1.fromDer(p12DerString);
+    const p12 = forge.pkcs12.pkcs12FromAsn1(p12Asn1, pin);
+    const OID_CERT_BAG = "1.2.840.113549.1.12.10.1.3";
+    const certBags = p12.getBags({ bagType: OID_CERT_BAG });
+    const certBagArray = certBags[OID_CERT_BAG];
+    if (!certBagArray || certBagArray.length === 0 || !certBagArray[0]?.cert) {
+      return { valid: false, error: "No se encontraron certificados v\xE1lidos en el archivo .p12" };
+    }
+    const cert = certBagArray[0].cert;
+    const notAfter = cert.validity.notAfter;
+    const commonNameAttr = cert.subject.getField("CN");
+    const commonName = commonNameAttr?.value || "Certificado Tributario Hacienda";
+    return {
+      valid: true,
+      expiresAt: notAfter,
+      subject: String(commonName)
+    };
+  } catch (error) {
+    console.warn("[HaciendaNativeService] Error al verificar .p12:", error.message);
+    const msg = error.message?.toLowerCase() || "";
+    if (msg.includes("mac") || msg.includes("password") || msg.includes("pkcs") || msg.includes("pin")) {
+      return { valid: false, error: "El PIN ingresado no coincide con el certificado .p12" };
+    }
+    return { valid: false, error: `No fue posible validar el certificado: ${error.message}` };
+  }
+}
+async function authenticateHaciendaIdp(environment, username, password) {
+  if (!username || !password) {
+    return { success: false, message: "Faltan credenciales ATV (usuario o contrase\xF1a del API de Hacienda)" };
+  }
+  const isProduction2 = environment === "production";
+  const idpUrl = isProduction2 ? "https://idp.comprobanteselectronicos.go.cr/auth/realms/rut/protocol/openid-connect/token" : "https://idp.comprobanteselectronicos.go.cr/auth/realms/rut-stag/protocol/openid-connect/token";
+  const clientId = isProduction2 ? "api-prod" : "api-stag";
+  const params = new URLSearchParams();
+  params.append("grant_type", "password");
+  params.append("client_id", clientId);
+  params.append("username", username.trim());
+  params.append("password", password.trim());
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 1e4);
+    const res = await fetch(idpUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: params.toString(),
+      signal: controller.signal
+    });
+    clearTimeout(timeout);
+    if (res.ok) {
+      const data = await res.json();
+      return {
+        success: true,
+        message: "\xA1Conexi\xF3n exitosa con el Ministerio de Hacienda (Token recibido)!",
+        accessToken: data.access_token,
+        expiresIn: data.expires_in
+      };
+    } else {
+      const errText = await res.text();
+      let detail = "Credenciales ATV rechazadas por Hacienda";
+      try {
+        const json = JSON.parse(errText);
+        if (json.error_description) detail = json.error_description;
+        else if (json.error) detail = json.error;
+      } catch (_) {
+      }
+      return {
+        success: false,
+        message: `Hacienda respondi\xF3 error ${res.status}: ${detail}`
+      };
+    }
+  } catch (error) {
+    if (error.name === "AbortError") {
+      return { success: false, message: "Tiempo de espera agotado al conectar con el servidor de Hacienda (10s)" };
+    }
+    return { success: false, message: `Error de red al conectar con Hacienda: ${error.message}` };
+  }
+}
+async function testTenantHaciendaConnection(tenantId) {
+  const secrets = await getHaciendaDecryptedSecrets(tenantId);
+  const config = await getHaciendaConfigByTenant(tenantId);
+  if (!secrets || !config) {
+    return {
+      success: false,
+      message: "No se ha configurado la facturaci\xF3n electr\xF3nica para este comercio"
+    };
+  }
+  let certValid = false;
+  let certExpiresAt;
+  if (secrets.p12Buffer && secrets.p12Pin) {
+    const certResult = await inspectP12Certificate(secrets.p12Buffer, secrets.p12Pin);
+    if (!certResult.valid) {
+      const msg = `Fallo en el certificado: ${certResult.error}`;
+      await updateConnectionTestResult(tenantId, false, msg);
+      return {
+        success: false,
+        message: msg,
+        details: { certValid: false, idpValid: false, environment: secrets.environment }
+      };
+    }
+    certValid = true;
+    certExpiresAt = certResult.expiresAt ? certResult.expiresAt.toISOString() : void 0;
+  }
+  if (!secrets.idpUsername || !secrets.idpPassword) {
+    const msg = "Faltan credenciales ATV (usuario o contrase\xF1a del API)";
+    await updateConnectionTestResult(tenantId, false, msg);
+    return {
+      success: false,
+      message: msg,
+      details: { certValid, idpValid: false, environment: secrets.environment }
+    };
+  }
+  const idpResult = await authenticateHaciendaIdp(
+    secrets.environment,
+    secrets.idpUsername,
+    secrets.idpPassword
+  );
+  const fullSuccess = idpResult.success && (secrets.p12Buffer ? certValid : true);
+  const statusMsg = fullSuccess ? `\u2705 Conexi\xF3n exitosa con Hacienda (${secrets.environment === "production" ? "Producci\xF3n" : "Sandbox / Pruebas"}). ${certExpiresAt ? `Certificado v\xE1lido hasta ${new Date(certExpiresAt).toLocaleDateString("es-CR")}.` : ""}` : idpResult.message;
+  await updateConnectionTestResult(tenantId, fullSuccess, statusMsg);
+  return {
+    success: fullSuccess,
+    message: statusMsg,
+    details: {
+      certValid,
+      certExpiresAt,
+      idpValid: idpResult.success,
+      environment: secrets.environment
+    }
+  };
+}
+
+// src/server/routes/billing-native.routes.ts
+var router41 = Router41();
+var upload3 = multer3({
+  storage: multer3.memoryStorage(),
+  limits: { fileSize: 2 * 1024 * 1024 }
+  // 2MB max
+});
+router41.use(authenticateToken);
+router41.use(tenantContext);
+router41.get("/config", async (req, res) => {
+  try {
+    const tenantId = req.tenantId;
+    const config = await getHaciendaConfigByTenant(tenantId);
+    res.json({
+      success: true,
+      config: config || {
+        environment: "sandbox",
+        taxpayerIdType: "01",
+        providerMode: "BETICO_NATIVE",
+        useAlternativeProvider: false,
+        branchCode: "001",
+        posCode: "00001",
+        defaultDocType: "04",
+        isConnected: false,
+        p12HasCertificate: false
+      }
+    });
+  } catch (err) {
+    console.error("[BillingNativeRoutes] Error obteniendo config:", err);
+    res.status(500).json({ error: "Error al obtener configuraci\xF3n de facturaci\xF3n" });
+  }
+});
+router41.get("/usage", async (req, res) => {
+  try {
+    const tenantId = req.tenantId;
+    const usage = await getCycleUsage(tenantId);
+    res.json({ success: true, usage });
+  } catch (err) {
+    console.error("[BillingNativeRoutes] Error obteniendo cuota:", err);
+    res.status(500).json({ error: "Error al obtener consumo de facturaci\xF3n" });
+  }
+});
+router41.post("/config", upload3.single("certificateFile"), async (req, res) => {
+  try {
+    const tenantId = req.tenantId;
+    const body = req.body || {};
+    const file = req.file;
+    let p12Buffer = void 0;
+    let p12Filename = void 0;
+    let p12ExpiresAt = void 0;
+    if (file && file.buffer) {
+      p12Buffer = file.buffer;
+      p12Filename = file.originalname;
+      if (body.p12Pin) {
+        const certCheck = await inspectP12Certificate(p12Buffer, body.p12Pin);
+        if (!certCheck.valid) {
+          res.status(400).json({ error: certCheck.error || "El PIN no coincide con el certificado .p12" });
+          return;
+        }
+        p12ExpiresAt = certCheck.expiresAt;
+      }
+    }
+    const updated = await saveHaciendaConfig(tenantId, {
+      environment: body.environment,
+      taxpayerIdType: body.taxpayerIdType,
+      taxpayerIdNumber: body.taxpayerIdNumber,
+      taxpayerName: body.taxpayerName,
+      commercialName: body.commercialName,
+      taxpayerEmail: body.taxpayerEmail,
+      taxpayerPhone: body.taxpayerPhone,
+      economicActivityCode: body.economicActivityCode,
+      province: body.province,
+      canton: body.canton,
+      district: body.district,
+      neighborhood: body.neighborhood,
+      addressDetail: body.addressDetail,
+      idpUsername: body.idpUsername,
+      idpPassword: body.idpPassword,
+      p12Buffer,
+      p12Filename,
+      p12Pin: body.p12Pin,
+      p12ExpiresAt,
+      branchCode: body.branchCode,
+      posCode: body.posCode,
+      defaultDocType: body.defaultDocType,
+      providerMode: body.providerMode,
+      useAlternativeProvider: body.useAlternativeProvider !== void 0 ? body.useAlternativeProvider === "true" || body.useAlternativeProvider === true : void 0,
+      active: body.active !== void 0 ? body.active === "true" || body.active === true : void 0
+    });
+    res.json({
+      success: true,
+      message: "Configuraci\xF3n guardada exitosamente",
+      config: updated
+    });
+  } catch (err) {
+    console.error("[BillingNativeRoutes] Error guardando config:", err);
+    res.status(500).json({ error: err.message || "Error guardando configuraci\xF3n de facturaci\xF3n" });
+  }
+});
+router41.post("/test-connection", async (req, res) => {
+  try {
+    const tenantId = req.tenantId;
+    const result = await testTenantHaciendaConnection(tenantId);
+    res.json(result);
+  } catch (err) {
+    console.error("[BillingNativeRoutes] Error en test connection:", err);
+    res.status(500).json({ success: false, message: err.message || "Error al probar conexi\xF3n con Hacienda" });
+  }
+});
+router41.post("/quick-test", async (req, res) => {
+  try {
+    const { environment, idpUsername, idpPassword } = req.body;
+    if (!idpUsername || !idpPassword) {
+      res.status(400).json({ success: false, message: "Ingrese usuario y contrase\xF1a ATV" });
+      return;
+    }
+    const result = await authenticateHaciendaIdp(
+      environment || "sandbox",
+      idpUsername,
+      idpPassword
+    );
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message || "Error probando credenciales" });
+  }
+});
+var billing_native_routes_default = router41;
+
 // src/server/routes/seo.routes.ts
 init_pool();
-import { Router as Router41 } from "express";
-var router41 = Router41();
+import { Router as Router42 } from "express";
+var router42 = Router42();
 var sitemapCache = null;
 var SITEMAP_TTL_MS = 60 * 60 * 1e3;
-router41.get("/robots.txt", (req, res) => {
+router42.get("/robots.txt", (req, res) => {
   const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
   const host = req.headers["x-forwarded-host"] || req.get("host") || "betico.tech";
   const baseUrl = `${protocol}://${host}`;
@@ -22751,7 +23512,7 @@ Sitemap: ${baseUrl}/sitemap.xml
   res.setHeader("Cache-Control", "public, max-age=86400");
   res.send(content);
 });
-router41.get("/sitemap.xml", async (req, res) => {
+router42.get("/sitemap.xml", async (req, res) => {
   const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
   const host = req.headers["x-forwarded-host"] || req.get("host") || "betico.tech";
   const baseUrl = `${protocol}://${host}`;
@@ -22825,7 +23586,7 @@ router41.get("/sitemap.xml", async (req, res) => {
     res.status(500).send("Error generating sitemap");
   }
 });
-var seo_routes_default = router41;
+var seo_routes_default = router42;
 
 // src/server/services/seo.service.ts
 var seoCache = /* @__PURE__ */ new Map();
@@ -23264,6 +24025,7 @@ async function startServer() {
   app.use("/api/coupons", coupon_routes_default);
   app.use("/api/timezone", timezone_routes_default);
   app.use("/api/secretary", secretary_routes_default);
+  app.use("/api/billing/native", billing_native_routes_default);
   app.use("/", seo_routes_default);
   if (env.NODE_ENV === "production") {
     app.use("/assets", express.static(path2.join(__dirname, "assets"), { maxAge: "1y", immutable: true }));

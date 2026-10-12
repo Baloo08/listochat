@@ -160,9 +160,23 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
   const [systemMetrics, setSystemMetrics] = useState<any>(null);
   const [loadingMetrics, setLoadingMetrics] = useState(false);
 
-  // 6. NOTIFICATIONS STATE
   const [superadminNotifyPhone, setSuperadminNotifyPhone] = useState('');
   const [savingPlatform, setSavingPlatform] = useState(false);
+
+  // 7. PLAN PRICING Y CUOTAS DE FACTURACIÓN STATE
+  const [planStarterPriceCrc, setPlanStarterPriceCrc] = useState(35000);
+  const [planStarterPriceUsd, setPlanStarterPriceUsd] = useState(65);
+  const [planStarterInvoicesQuota, setPlanStarterInvoicesQuota] = useState(50);
+  const [planProPriceCrc, setPlanProPriceCrc] = useState(55000);
+  const [planProPriceUsd, setPlanProPriceUsd] = useState(105);
+  const [planProInvoicesQuota, setPlanProInvoicesQuota] = useState(100);
+  const [planEnterprisePriceCrc, setPlanEnterprisePriceCrc] = useState(85000);
+  const [planEnterprisePriceUsd, setPlanEnterprisePriceUsd] = useState(160);
+  const [planEnterpriseInvoicesQuota, setPlanEnterpriseInvoicesQuota] = useState(250);
+  const [planAliadoPriceCrc, setPlanAliadoPriceCrc] = useState(0);
+  const [planAliadoPriceUsd, setPlanAliadoPriceUsd] = useState(0);
+  const [planAliadoInvoicesQuota, setPlanAliadoInvoicesQuota] = useState(500);
+  const [courtesyInvoicesMargin, setCourtesyInvoicesMargin] = useState(10);
   const [platformSavedToast, setPlatformSavedToast] = useState(false);
 
   // 7. AUDIT STATE
@@ -225,6 +239,19 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
         if (data.deployWebhookApp) setDeployWebhookApp(data.deployWebhookApp);
         if (data.deployWebhookLocalai) setDeployWebhookLocalai(data.deployWebhookLocalai);
         if (data.superadminNotifyPhone) setSuperadminNotifyPhone(data.superadminNotifyPhone);
+        if (data.planStarterPriceCrc !== undefined) setPlanStarterPriceCrc(data.planStarterPriceCrc);
+        if (data.planStarterPriceUsd !== undefined) setPlanStarterPriceUsd(data.planStarterPriceUsd);
+        if (data.planStarterInvoicesQuota !== undefined) setPlanStarterInvoicesQuota(data.planStarterInvoicesQuota);
+        if (data.planProPriceCrc !== undefined) setPlanProPriceCrc(data.planProPriceCrc);
+        if (data.planProPriceUsd !== undefined) setPlanProPriceUsd(data.planProPriceUsd);
+        if (data.planProInvoicesQuota !== undefined) setPlanProInvoicesQuota(data.planProInvoicesQuota);
+        if (data.planEnterprisePriceCrc !== undefined) setPlanEnterprisePriceCrc(data.planEnterprisePriceCrc);
+        if (data.planEnterprisePriceUsd !== undefined) setPlanEnterprisePriceUsd(data.planEnterprisePriceUsd);
+        if (data.planEnterpriseInvoicesQuota !== undefined) setPlanEnterpriseInvoicesQuota(data.planEnterpriseInvoicesQuota);
+        if (data.planAliadoPriceCrc !== undefined) setPlanAliadoPriceCrc(data.planAliadoPriceCrc);
+        if (data.planAliadoPriceUsd !== undefined) setPlanAliadoPriceUsd(data.planAliadoPriceUsd);
+        if (data.planAliadoInvoicesQuota !== undefined) setPlanAliadoInvoicesQuota(data.planAliadoInvoicesQuota);
+        if (data.courtesyInvoicesMargin !== undefined) setCourtesyInvoicesMargin(data.courtesyInvoicesMargin);
       }
     } catch (e) {
       console.error(e);
@@ -353,7 +380,20 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
         quotaBusinessTokens,
         deployWebhookApp,
         deployWebhookLocalai,
-        superadminNotifyPhone
+        superadminNotifyPhone,
+        planStarterPriceCrc,
+        planStarterPriceUsd,
+        planStarterInvoicesQuota,
+        planProPriceCrc,
+        planProPriceUsd,
+        planProInvoicesQuota,
+        planEnterprisePriceCrc,
+        planEnterprisePriceUsd,
+        planEnterpriseInvoicesQuota,
+        planAliadoPriceCrc,
+        planAliadoPriceUsd,
+        planAliadoInvoicesQuota,
+        courtesyInvoicesMargin
       });
       setPlatformSavedToast(true);
       setTimeout(() => setPlatformSavedToast(false), 3000);
@@ -2021,6 +2061,161 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
               </div>
             </div>
           )}
+
+          {/* ========================================================================= */}
+          {/* PLANES Y CUOTAS DE FACTURACIÓN ELECTRÓNICA Y SUSCRIPCIONES */}
+          {/* ========================================================================= */}
+          <div style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '14px', padding: '24px', marginTop: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px', marginBottom: '18px' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Award size={20} color="var(--primary)" />
+                  <h2 style={{ fontSize: '1.2rem', fontWeight: '800', margin: 0, color: 'var(--text)' }}>
+                    Planes, Tarifas y Cuotas de Facturación Electrónica
+                  </h2>
+                </div>
+                <p style={{ margin: '4px 0 0 0', color: 'var(--text-muted)', fontSize: '0.84rem' }}>
+                  Configura los precios mensuales y la cantidad de comprobantes incluidos por plan para todos los comercios del SaaS
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleSavePlatformSettings}
+                disabled={savingPlatform}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '9px 20px',
+                  backgroundColor: 'var(--primary)',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontWeight: 'bold',
+                  fontSize: '0.85rem',
+                  cursor: savingPlatform ? 'not-allowed' : 'pointer'
+                }}
+              >
+                {savingPlatform ? <RefreshCw size={14} className="animate-spin" /> : <Check size={14} />}
+                <span>{savingPlatform ? 'Guardando...' : 'Guardar Planes y Cuotas'}</span>
+              </button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', marginBottom: '18px' }}>
+              
+              {/* PLAN STARTER / EMPRENDEDOR */}
+              <div style={{ border: '1px solid var(--border)', borderRadius: '12px', padding: '16px', backgroundColor: 'var(--background)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <span style={{ fontWeight: '800', fontSize: '0.95rem', color: 'var(--text)' }}>Plan Starter / Emprendedor</span>
+                  <span style={{ fontSize: '0.72rem', fontWeight: 'bold', backgroundColor: '#eff6ff', color: '#1d4ed8', padding: '2px 8px', borderRadius: '12px' }}>Básico</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: '3px' }}>Precio (CRC)</label>
+                    <input type="number" value={planStarterPriceCrc} onChange={(e) => setPlanStarterPriceCrc(Number(e.target.value))} style={{ width: '100%', padding: '7px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: '3px' }}>Precio (USD)</label>
+                    <input type="number" value={planStarterPriceUsd} onChange={(e) => setPlanStarterPriceUsd(Number(e.target.value))} style={{ width: '100%', padding: '7px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }} />
+                  </div>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: '3px' }}>Comprobantes mensuales incluidos</label>
+                  <input type="number" value={planStarterInvoicesQuota} onChange={(e) => setPlanStarterInvoicesQuota(Number(e.target.value))} style={{ width: '100%', padding: '7px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem', fontWeight: 'bold' }} />
+                </div>
+              </div>
+
+              {/* PLAN PRO */}
+              <div style={{ border: '2px solid var(--primary)', borderRadius: '12px', padding: '16px', backgroundColor: '#f0fdf4' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <span style={{ fontWeight: '800', fontSize: '0.95rem', color: '#166534' }}>Plan Pro</span>
+                  <span style={{ fontSize: '0.72rem', fontWeight: 'bold', backgroundColor: '#dcfce7', color: '#15803d', padding: '2px 8px', borderRadius: '12px' }}>Popular</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: '3px' }}>Precio (CRC)</label>
+                    <input type="number" value={planProPriceCrc} onChange={(e) => setPlanProPriceCrc(Number(e.target.value))} style={{ width: '100%', padding: '7px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: '3px' }}>Precio (USD)</label>
+                    <input type="number" value={planProPriceUsd} onChange={(e) => setPlanProPriceUsd(Number(e.target.value))} style={{ width: '100%', padding: '7px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }} />
+                  </div>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: '3px' }}>Comprobantes mensuales incluidos</label>
+                  <input type="number" value={planProInvoicesQuota} onChange={(e) => setPlanProInvoicesQuota(Number(e.target.value))} style={{ width: '100%', padding: '7px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem', fontWeight: 'bold' }} />
+                </div>
+              </div>
+
+              {/* PLAN ENTERPRISE */}
+              <div style={{ border: '1px solid var(--border)', borderRadius: '12px', padding: '16px', backgroundColor: 'var(--background)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <span style={{ fontWeight: '800', fontSize: '0.95rem', color: 'var(--text)' }}>Plan Enterprise</span>
+                  <span style={{ fontSize: '0.72rem', fontWeight: 'bold', backgroundColor: '#fef3c7', color: '#b45309', padding: '2px 8px', borderRadius: '12px' }}>Empresarial</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: '3px' }}>Precio (CRC)</label>
+                    <input type="number" value={planEnterprisePriceCrc} onChange={(e) => setPlanEnterprisePriceCrc(Number(e.target.value))} style={{ width: '100%', padding: '7px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: '3px' }}>Precio (USD)</label>
+                    <input type="number" value={planEnterprisePriceUsd} onChange={(e) => setPlanEnterprisePriceUsd(Number(e.target.value))} style={{ width: '100%', padding: '7px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem' }} />
+                  </div>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: '3px' }}>Comprobantes mensuales incluidos</label>
+                  <input type="number" value={planEnterpriseInvoicesQuota} onChange={(e) => setPlanEnterpriseInvoicesQuota(Number(e.target.value))} style={{ width: '100%', padding: '7px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem', fontWeight: 'bold' }} />
+                </div>
+              </div>
+
+              {/* PLAN ALIADO */}
+              <div style={{ border: '1px solid var(--border)', borderRadius: '12px', padding: '16px', backgroundColor: 'var(--background)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <span style={{ fontWeight: '800', fontSize: '0.95rem', color: 'var(--text)' }}>Plan Aliado</span>
+                  <span style={{ fontSize: '0.72rem', fontWeight: 'bold', backgroundColor: '#f1f5f9', color: '#475569', padding: '2px 8px', borderRadius: '12px' }}>Exento ₡0</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: '3px' }}>Precio (CRC)</label>
+                    <input type="number" disabled value={0} style={{ width: '100%', padding: '7px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem', backgroundColor: '#f1f5f9' }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: '3px' }}>Precio (USD)</label>
+                    <input type="number" disabled value={0} style={{ width: '100%', padding: '7px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem', backgroundColor: '#f1f5f9' }} />
+                  </div>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: '3px' }}>Comprobantes mensuales incluidos</label>
+                  <input type="number" value={planAliadoInvoicesQuota} onChange={(e) => setPlanAliadoInvoicesQuota(Number(e.target.value))} style={{ width: '100%', padding: '7px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.85rem', fontWeight: 'bold' }} />
+                </div>
+              </div>
+
+            </div>
+
+            {/* MARGEN DE CORTESÍA GLOBAL */}
+            <div style={{ backgroundColor: '#f8fafc', border: '1px solid var(--border)', borderRadius: '10px', padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+              <div>
+                <strong style={{ fontSize: '0.86rem', display: 'block', color: 'var(--text)' }}>
+                  Margen de Gracia y Cortesía (Regla Global de Negocio)
+                </strong>
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                  Cantidad de comprobantes adicionales permitidos después de agotar el 100% de la cuota antes de bloquear la emisión automática
+                </span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <input
+                  type="number"
+                  value={courtesyInvoicesMargin}
+                  onChange={(e) => setCourtesyInvoicesMargin(Number(e.target.value))}
+                  style={{ width: '80px', padding: '7px 10px', borderRadius: '6px', border: '1px solid var(--border)', textAlign: 'center', fontWeight: 'bold' }}
+                />
+                <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>comprobantes extra</span>
+              </div>
+            </div>
+
+          </div>
 
         </div>
       )}

@@ -100,7 +100,20 @@ router.get('/settings', async (req, res) => {
       deployWebhookLocalai: settings.deploy_webhook_localai || process.env.DEPLOY_WEBHOOK_LOCALAI || 'http://2.25.103.200:3000/api/deploy/4317a4ff5a1ed51532fc824fb9547b6ae20847cd3ef8ea4e',
       deployWebhookOllama: settings.deploy_webhook_ollama || 'http://2.25.103.200:3000/api/deploy/60c915e106dd05cb92ed6acab19c1b72ccd317db2949a785',
       deployWebhookKokoro: settings.deploy_webhook_kokoro || 'http://2.25.103.200:3000/api/deploy/cee45b178f9ab10ff50bc0bd9bc39f7384f24d4c91bba200',
-      deployWebhookOllamaWeb: settings.deploy_webhook_ollama_web || 'http://2.25.103.200:3000/api/deploy/e3a839613067ac5359c3a0e222976d62ec9b22a3e039cd15'
+      deployWebhookOllamaWeb: settings.deploy_webhook_ollama_web || 'http://2.25.103.200:3000/api/deploy/e3a839613067ac5359c3a0e222976d62ec9b22a3e039cd15',
+      planStarterPriceCrc: parseInt(settings.plan_starter_price_crc || '35000', 10),
+      planStarterPriceUsd: parseInt(settings.plan_starter_price_usd || '65', 10),
+      planStarterInvoicesQuota: parseInt(settings.plan_starter_invoices_quota || '50', 10),
+      planProPriceCrc: parseInt(settings.plan_pro_price_crc || '55000', 10),
+      planProPriceUsd: parseInt(settings.plan_pro_price_usd || '105', 10),
+      planProInvoicesQuota: parseInt(settings.plan_pro_invoices_quota || '100', 10),
+      planEnterprisePriceCrc: parseInt(settings.plan_enterprise_price_crc || '85000', 10),
+      planEnterprisePriceUsd: parseInt(settings.plan_enterprise_price_usd || '160', 10),
+      planEnterpriseInvoicesQuota: parseInt(settings.plan_enterprise_invoices_quota || '250', 10),
+      planAliadoPriceCrc: parseInt(settings.plan_aliado_price_crc || '0', 10),
+      planAliadoPriceUsd: parseInt(settings.plan_aliado_price_usd || '0', 10),
+      planAliadoInvoicesQuota: parseInt(settings.plan_aliado_invoices_quota || '500', 10),
+      courtesyInvoicesMargin: parseInt(settings.courtesy_invoices_margin || '10', 10)
     });
   } catch (error) {
     console.error('Error fetching platform settings:', error);
@@ -131,7 +144,20 @@ router.post('/settings', async (req, res) => {
       deployWebhookLocalai,
       deployWebhookOllama,
       deployWebhookKokoro,
-      deployWebhookOllamaWeb
+      deployWebhookOllamaWeb,
+      planStarterPriceCrc,
+      planStarterPriceUsd,
+      planStarterInvoicesQuota,
+      planProPriceCrc,
+      planProPriceUsd,
+      planProInvoicesQuota,
+      planEnterprisePriceCrc,
+      planEnterprisePriceUsd,
+      planEnterpriseInvoicesQuota,
+      planAliadoPriceCrc,
+      planAliadoPriceUsd,
+      planAliadoInvoicesQuota,
+      courtesyInvoicesMargin
     } = req.body;
 
     const upsertSetting = async (key: string, value: string) => {
@@ -189,10 +215,39 @@ router.post('/settings', async (req, res) => {
       await upsertSetting('superadmin_notify_phone', cleanPhone);
     }
 
+    if (planStarterPriceCrc !== undefined) await upsertSetting('plan_starter_price_crc', String(planStarterPriceCrc));
+    if (planStarterPriceUsd !== undefined) await upsertSetting('plan_starter_price_usd', String(planStarterPriceUsd));
+    if (planStarterInvoicesQuota !== undefined) await upsertSetting('plan_starter_invoices_quota', String(planStarterInvoicesQuota));
+    if (planProPriceCrc !== undefined) await upsertSetting('plan_pro_price_crc', String(planProPriceCrc));
+    if (planProPriceUsd !== undefined) await upsertSetting('plan_pro_price_usd', String(planProPriceUsd));
+    if (planProInvoicesQuota !== undefined) await upsertSetting('plan_pro_invoices_quota', String(planProInvoicesQuota));
+    if (planEnterprisePriceCrc !== undefined) await upsertSetting('plan_enterprise_price_crc', String(planEnterprisePriceCrc));
+    if (planEnterprisePriceUsd !== undefined) await upsertSetting('plan_enterprise_price_usd', String(planEnterprisePriceUsd));
+    if (planEnterpriseInvoicesQuota !== undefined) await upsertSetting('plan_enterprise_invoices_quota', String(planEnterpriseInvoicesQuota));
+    if (planAliadoPriceCrc !== undefined) await upsertSetting('plan_aliado_price_crc', String(planAliadoPriceCrc));
+    if (planAliadoPriceUsd !== undefined) await upsertSetting('plan_aliado_price_usd', String(planAliadoPriceUsd));
+    if (planAliadoInvoicesQuota !== undefined) await upsertSetting('plan_aliado_invoices_quota', String(planAliadoInvoicesQuota));
+    if (courtesyInvoicesMargin !== undefined) await upsertSetting('courtesy_invoices_margin', String(courtesyInvoicesMargin));
+
     res.json({ success: true, message: 'Ajustes de plataforma guardados con éxito' });
   } catch (error: any) {
     console.error('Error saving platform settings:', error);
     res.status(500).json({ error: error.message || 'Error al guardar ajustes de plataforma' });
+  }
+});
+
+// GESTIÓN DE CUOTA DE FACTURACIÓN EN EXPEDIENTE DE INQUILINO
+router.put('/tenants/:id/billing-quota', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { customInvoicesQuota } = req.body;
+    await query(
+      `UPDATE tenants SET custom_invoices_quota = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+      [customInvoicesQuota ? Number(customInvoicesQuota) : null, id]
+    );
+    res.json({ success: true, customInvoicesQuota });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Error al actualizar cuota personalizada' });
   }
 });
 

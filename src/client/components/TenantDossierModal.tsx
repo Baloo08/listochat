@@ -37,6 +37,11 @@ export default function TenantDossierModal({ tenantId, onClose, onRefresh }: Pro
   const [autoBillingEnabled, setAutoBillingEnabled] = useState(false);
   const [chargingTilopay, setChargingTilopay] = useState(false);
 
+  // Electronic billing quota states
+  const [customQuotaInput, setCustomQuotaInput] = useState<string>('');
+  const [savingQuota, setSavingQuota] = useState(false);
+  const [billingUsageData, setBillingUsageData] = useState<any>(null);
+
   const api = useApi();
 
   const loadDossier = async () => {
@@ -51,6 +56,14 @@ export default function TenantDossierModal({ tenantId, onClose, onRefresh }: Pro
         }
         setPayAmount(Number(res.tenant?.customMonthlyPrice) || 55000);
         setAutoBillingEnabled(Boolean(res.tenant?.auto_billing_enabled || res.tenant?.autoBillingEnabled));
+        if (res.tenant?.customInvoicesQuota !== undefined && res.tenant?.customInvoicesQuota !== null) {
+          setCustomQuotaInput(String(res.tenant.customInvoicesQuota));
+        } else {
+          setCustomQuotaInput('');
+        }
+        if (res.billingUsage) {
+          setBillingUsageData(res.billingUsage);
+        }
       }
 
       // Load registered Tilopay cards
@@ -62,6 +75,26 @@ export default function TenantDossierModal({ tenantId, onClose, onRefresh }: Pro
       alert('Error cargando expediente: ' + err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSaveBillingQuota = async (resetToDefault = false) => {
+    setSavingQuota(true);
+    try {
+      const quotaVal = resetToDefault ? null : (customQuotaInput.trim() === '' ? null : parseInt(customQuotaInput, 10));
+      await api.put(`/api/superadmin/platform/tenants/${tenantId}/billing-quota`, {
+        customInvoicesQuota: quotaVal
+      });
+      alert(resetToDefault ? '¡Cuota restablecida al valor por defecto del plan!' : '¡Cuota personalizada guardada con éxito!');
+      if (resetToDefault) {
+        setCustomQuotaInput('');
+      }
+      await loadDossier();
+      if (onRefresh) onRefresh();
+    } catch (err: any) {
+      alert('Error guardando cuota de facturación: ' + (err.message || 'Error'));
+    } finally {
+      setSavingQuota(false);
     }
   };
 
@@ -307,7 +340,7 @@ export default function TenantDossierModal({ tenantId, onClose, onRefresh }: Pro
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <ShieldCheck size={18} color="#38bdf8" />
                 <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: '800', color: '#f8fafc' }}>
-                  Infraestructura & Servidores Vinculados (Solo Lectura)
+                  Infraestructura y Servidores Vinculados (Solo Lectura)
                 </h3>
               </div>
               <span style={{ fontSize: '0.72rem', color: '#94a3b8', backgroundColor: 'rgba(255,255,255,0.05)', padding: '2px 8px', borderRadius: '6px' }}>
@@ -376,7 +409,7 @@ export default function TenantDossierModal({ tenantId, onClose, onRefresh }: Pro
           {/* UBICACIÓN GEOGRÁFICA Y NAVEGACIÓN GPS */}
           <div style={{ backgroundColor: '#1e293b', padding: '16px 20px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.06)' }}>
             <div style={{ fontSize: '0.78rem', fontWeight: '800', color: '#34d399', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <MapPin size={16} color="#34d399" /> 📍 Ubicación del Negocio & Navegación
+              <MapPin size={16} color="#34d399" /> 📍 Ubicación del Negocio y Navegación
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '14px', alignItems: 'center' }}>
               <div>
@@ -491,7 +524,7 @@ export default function TenantDossierModal({ tenantId, onClose, onRefresh }: Pro
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <CreditCard size={20} color="#38bdf8" />
-                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: '800' }}>Estado de Cuenta & Próximo Cobro</h3>
+                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: '800' }}>Estado de Cuenta y Próximo Cobro</h3>
               </div>
 
               <div style={{ display: 'flex', gap: '8px' }}>
@@ -632,6 +665,102 @@ export default function TenantDossierModal({ tenantId, onClose, onRefresh }: Pro
 
           </div>
 
+          {/* ELECTRONIC BILLING QUOTA AND USAGE SECTION */}
+          <div style={{ backgroundColor: '#1e293b', padding: '20px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.06)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <FileText size={18} color="#38bdf8" />
+                <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: '800', color: '#f8fafc' }}>
+                  Facturación Electrónica Nativa y Cuota de Comprobantes
+                </h4>
+              </div>
+              <span style={{ fontSize: '0.72rem', color: '#94a3b8', backgroundColor: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.25)', padding: '2px 8px', borderRadius: '6px' }}>
+                Plan: <strong style={{ color: '#38bdf8', textTransform: 'uppercase' }}>{tenant.plan || 'pro'}</strong>
+              </span>
+            </div>
+
+            {/* Cycle and Quota Metrics */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginBottom: '16px' }}>
+              <div style={{ backgroundColor: 'rgba(15, 23, 42, 0.6)', padding: '12px 14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                <div style={{ fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 'bold' }}>
+                  Uso en Ciclo Actual
+                </div>
+                <div style={{ fontSize: '1.25rem', fontWeight: '800', color: billingUsageData?.isBlocked ? '#f87171' : billingUsageData?.inCourtesy ? '#fbbf24' : '#34d399', marginTop: '4px' }}>
+                  {billingUsageData?.emitted ?? 0} / {billingUsageData?.quota ?? (tenant.customInvoicesQuota || 100)} docs
+                </div>
+                <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '2px' }}>
+                  Restantes: <strong style={{ color: '#f8fafc' }}>{billingUsageData?.remaining ?? Math.max(0, (billingUsageData?.quota ?? 100) - (billingUsageData?.emitted ?? 0))}</strong>
+                </div>
+              </div>
+
+              <div style={{ backgroundColor: 'rgba(15, 23, 42, 0.6)', padding: '12px 14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                <div style={{ fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 'bold' }}>
+                  Margen de Cortesía (+10)
+                </div>
+                <div style={{ fontSize: '1.25rem', fontWeight: '800', color: billingUsageData?.inCourtesy ? '#fbbf24' : '#94a3b8', marginTop: '4px' }}>
+                  {billingUsageData?.courtesyUsed ?? 0} / 10 usados
+                </div>
+                <div style={{ fontSize: '0.72rem', color: billingUsageData?.isBlocked ? '#f87171' : '#94a3b8', marginTop: '2px' }}>
+                  {billingUsageData?.isBlocked ? '🚫 Bloqueado por límite alcanzado' : billingUsageData?.inCourtesy ? '⚠️ En gracia de cortesía activa' : 'Normal (disponible si agota cuota)'}
+                </div>
+              </div>
+
+              <div style={{ backgroundColor: 'rgba(15, 23, 42, 0.6)', padding: '12px 14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                <div style={{ fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 'bold' }}>
+                  Ciclo de Facturación
+                </div>
+                <div style={{ fontSize: '0.85rem', fontWeight: '700', color: '#cbd5e1', marginTop: '6px' }}>
+                  {billingUsageData?.cycleStartDate ? `${billingUsageData.cycleStartDate} al ${billingUsageData.cycleEndDate}` : 'Alineado al corte mensual'}
+                </div>
+                <div style={{ fontSize: '0.72rem', color: '#38bdf8', marginTop: '4px' }}>
+                  Próximo corte: {selectedDate || 'No definida'}
+                </div>
+              </div>
+            </div>
+
+            {/* Quota Override Form */}
+            <div style={{ backgroundColor: 'rgba(15, 23, 42, 0.4)', padding: '14px 16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <div style={{ fontSize: '0.8rem', fontWeight: '700', color: '#cbd5e1', marginBottom: '8px' }}>
+                Ajuste Individual de Cuota de Comprobantes para este Comercio
+              </div>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <div style={{ flex: '1', minWidth: '220px' }}>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="Cuota por defecto del plan (vacío)"
+                    value={customQuotaInput}
+                    onChange={(e) => setCustomQuotaInput(e.target.value)}
+                    style={{ width: '100%', padding: '8px 12px', backgroundColor: '#0f172a', color: '#f8fafc', border: '1px solid #334155', borderRadius: '8px', fontSize: '0.85rem', boxSizing: 'border-box' }}
+                  />
+                  <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '4px' }}>
+                    {tenant.customInvoicesQuota ? `Actualmente personalizada en: ${tenant.customInvoicesQuota} docs/mes.` : 'Actualmente usando cuota estándar del plan.'}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleSaveBillingQuota(false)}
+                  disabled={savingQuota}
+                  style={{ padding: '8px 16px', backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', fontSize: '0.82rem', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
+                  {savingQuota ? 'Guardando...' : 'Guardar Cuota'}
+                </button>
+
+                {tenant.customInvoicesQuota && (
+                  <button
+                    type="button"
+                    onClick={() => handleSaveBillingQuota(true)}
+                    disabled={savingQuota}
+                    style={{ padding: '8px 12px', backgroundColor: '#334155', color: '#cbd5e1', border: 'none', borderRadius: '8px', fontSize: '0.78rem', fontWeight: '600', cursor: 'pointer' }}
+                  >
+                    Restablecer al Plan
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
           {/* PAYMENT HISTORY TABLE */}
           <div style={{ backgroundColor: '#1e293b', padding: '20px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.06)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
@@ -695,7 +824,7 @@ export default function TenantDossierModal({ tenantId, onClose, onRefresh }: Pro
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <FileText size={18} color="#f59e0b" />
-                <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: '800' }}>Bitácora & Anotaciones Internas de Soporte (Solo SuperAdmin)</h4>
+                <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: '800' }}>Bitácora y Anotaciones Internas de Soporte (Solo SuperAdmin)</h4>
               </div>
               <button
                 onClick={handleSaveNotes}
@@ -768,7 +897,7 @@ export default function TenantDossierModal({ tenantId, onClose, onRefresh }: Pro
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '10px' }}>
                   <button type="button" onClick={() => setShowPayModal(false)} style={{ padding: '8px 14px', backgroundColor: 'transparent', color: '#94a3b8', border: '1px solid #334155', borderRadius: '8px' }}>Cancelar</button>
                   <button type="submit" disabled={savingPay} style={{ padding: '8px 18px', backgroundColor: '#10b981', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold' }}>
-                    {savingPay ? 'Registrando...' : 'Confirmar & Extender 30 Días'}
+                    {savingPay ? 'Registrando...' : 'Confirmar y Extender 30 Días'}
                   </button>
                 </div>
               </form>

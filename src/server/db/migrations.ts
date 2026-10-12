@@ -651,7 +651,20 @@ export async function runMigrations() {
     { key: 'quota_pro_tokens', value: '100000' },
     { key: 'quota_business_tokens', value: '300000' },
     { key: 'deploy_webhook_app', value: 'http://2.25.103.200:3000/api/deploy/f5abd18bdaaff3ce20c24522c9c72beac7c756d9260d995b' },
-    { key: 'deploy_webhook_localai', value: 'http://2.25.103.200:3000/api/deploy/4317a4ff5a1ed51532fc824fb9547b6ae20847cd3ef8ea4e' }
+    { key: 'deploy_webhook_localai', value: 'http://2.25.103.200:3000/api/deploy/4317a4ff5a1ed51532fc824fb9547b6ae20847cd3ef8ea4e' },
+    { key: 'plan_starter_price_crc', value: '35000' },
+    { key: 'plan_starter_price_usd', value: '65' },
+    { key: 'plan_starter_invoices_quota', value: '50' },
+    { key: 'plan_pro_price_crc', value: '55000' },
+    { key: 'plan_pro_price_usd', value: '105' },
+    { key: 'plan_pro_invoices_quota', value: '100' },
+    { key: 'plan_enterprise_price_crc', value: '85000' },
+    { key: 'plan_enterprise_price_usd', value: '160' },
+    { key: 'plan_enterprise_invoices_quota', value: '250' },
+    { key: 'plan_aliado_price_crc', value: '0' },
+    { key: 'plan_aliado_price_usd', value: '0' },
+    { key: 'plan_aliado_invoices_quota', value: '500' },
+    { key: 'courtesy_invoices_margin', value: '10' }
   ];
 
   for (const s of defaultPlatformSettings) {
@@ -1160,6 +1173,62 @@ export async function runMigrations() {
     );
     CREATE INDEX IF NOT EXISTS idx_sec_sessions_lookup 
     ON secretary_sessions(authorized_phone_id, session_date, is_authenticated);
+
+    -- ==========================================================
+    -- MÓDULO DE FACTURACIÓN ELECTRÓNICA NATIVA BETICO Y PLANES
+    -- ==========================================================
+    CREATE TABLE IF NOT EXISTS tenant_hacienda_configs (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      environment VARCHAR(20) NOT NULL DEFAULT 'sandbox',
+      taxpayer_id_type VARCHAR(2) NOT NULL DEFAULT '01',
+      taxpayer_id_number VARCHAR(20) NOT NULL DEFAULT '',
+      taxpayer_name VARCHAR(255) NOT NULL DEFAULT '',
+      commercial_name VARCHAR(255) DEFAULT '',
+      taxpayer_email VARCHAR(255) NOT NULL DEFAULT '',
+      taxpayer_phone VARCHAR(50) DEFAULT '',
+      economic_activity_code VARCHAR(10) NOT NULL DEFAULT '',
+      province VARCHAR(1) DEFAULT '1',
+      canton VARCHAR(2) DEFAULT '01',
+      district VARCHAR(2) DEFAULT '01',
+      neighborhood VARCHAR(2) DEFAULT '01',
+      address_detail TEXT DEFAULT '',
+      idp_username VARCHAR(100) DEFAULT '',
+      idp_password_encrypted TEXT DEFAULT '',
+      p12_encrypted_blob BYTEA,
+      p12_pin_encrypted TEXT DEFAULT '',
+      p12_filename VARCHAR(255) DEFAULT '',
+      p12_expires_at TIMESTAMPTZ,
+      branch_code VARCHAR(3) NOT NULL DEFAULT '001',
+      pos_code VARCHAR(5) NOT NULL DEFAULT '00001',
+      default_doc_type VARCHAR(2) NOT NULL DEFAULT '04',
+      is_connected BOOLEAN NOT NULL DEFAULT false,
+      last_test_at TIMESTAMPTZ,
+      last_test_message TEXT,
+      provider_mode VARCHAR(30) NOT NULL DEFAULT 'BETICO_NATIVE',
+      use_alternative_provider BOOLEAN NOT NULL DEFAULT false,
+      active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(tenant_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_hacienda_config_tenant ON tenant_hacienda_configs(tenant_id);
+
+    CREATE TABLE IF NOT EXISTS hacienda_usage_cycles (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      cycle_start_date DATE NOT NULL,
+      cycle_end_date DATE NOT NULL,
+      invoices_emitted INT NOT NULL DEFAULT 0,
+      courtesy_used INT NOT NULL DEFAULT 0,
+      quota_limit INT NOT NULL DEFAULT 100,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(tenant_id, cycle_start_date)
+    );
+    CREATE INDEX IF NOT EXISTS idx_hacienda_usage_tenant ON hacienda_usage_cycles(tenant_id, cycle_start_date);
+
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS custom_invoices_quota INT;
   `).catch((err) => {
     console.warn('[Migrations] Columns addition warning:', err?.message || err);
   });

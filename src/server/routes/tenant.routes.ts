@@ -365,6 +365,14 @@ router.get('/:id/dossier', async (req, res) => {
     const payments = paymentsRes.rows || [];
     const storeModules = storeSettingsRes.rows[0]?.store_modules || { storeEnabled: true, bookingsEnabled: true };
 
+    let billingUsage = null;
+    try {
+      const { getCycleUsage } = await import('../db/hacienda-native.repo.js');
+      billingUsage = await getCycleUsage(id);
+    } catch (bErr) {
+      console.warn('Could not load billing cycle usage for dossier:', bErr);
+    }
+
     res.json({
       tenant: {
         ...tenant,
@@ -373,6 +381,7 @@ router.get('/:id/dossier', async (req, res) => {
         adminPhone: tenant.whatsappNumber || null
       },
       storeModules,
+      billingUsage,
       location: {
         address: tenant.address || null,
         latitude: tenant.latitude ? Number(tenant.latitude) : null,
