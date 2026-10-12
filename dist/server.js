@@ -629,6 +629,254 @@ var init_evolution = __esm({
   }
 });
 
+// src/server/db/tenant.repo.ts
+var tenant_repo_exports = {};
+__export(tenant_repo_exports, {
+  createTenant: () => createTenant,
+  deleteTenant: () => deleteTenant,
+  getAllTenants: () => getAllTenants,
+  getAllTenantsWithAdmin: () => getAllTenantsWithAdmin,
+  getTenantByCustomDomain: () => getTenantByCustomDomain,
+  getTenantByEvolutionInstance: () => getTenantByEvolutionInstance,
+  getTenantById: () => getTenantById,
+  getTenantBySlug: () => getTenantBySlug,
+  updateTenant: () => updateTenant
+});
+async function getAllTenants() {
+  const result = await query(`
+    SELECT id, name, slug, custom_domain as "customDomain", 
+           ai_provider as "aiProvider", ai_model as "aiModel", 
+           evolution_instance as "evolutionInstance", whatsapp_number as "whatsappNumber",
+           plan, active, subscription_status as "subscriptionStatus",
+           billing_currency as "billingCurrency", custom_monthly_price as "customMonthlyPrice",
+           trial_ends_at as "trialEndsAt", next_billing_date as "nextBillingDate",
+           grace_period_ends_at as "gracePeriodEndsAt", custom_invoices_quota as "customInvoicesQuota",
+           settings_json as "settingsJson", 
+           address, latitude, longitude, google_maps_url as "googleMapsUrl",
+           is_ai_pilot as "isAiPilot", ai_priority_level as "aiPriorityLevel",
+           created_at as "createdAt"
+    FROM tenants 
+    ORDER BY created_at DESC
+  `);
+  return result.rows;
+}
+async function getAllTenantsWithAdmin() {
+  const result = await query(`
+    SELECT t.id, t.name, t.slug, t.custom_domain as "customDomain", 
+           t.ai_provider as "aiProvider", t.ai_model as "aiModel", 
+           t.evolution_instance as "evolutionInstance", t.whatsapp_number as "whatsappNumber",
+           t.plan, t.active, t.subscription_status as "subscriptionStatus",
+           t.billing_currency as "billingCurrency", t.custom_monthly_price as "customMonthlyPrice",
+           t.trial_ends_at as "trialEndsAt", t.next_billing_date as "nextBillingDate",
+           t.grace_period_ends_at as "gracePeriodEndsAt", t.custom_invoices_quota as "customInvoicesQuota",
+           t.settings_json as "settingsJson", 
+           t.address, t.latitude, t.longitude, t.google_maps_url as "googleMapsUrl",
+           t.is_ai_pilot as "isAiPilot", t.ai_priority_level as "aiPriorityLevel",
+           t.created_at as "createdAt",
+           COALESCE(u.email, 'Sin registrar') as "adminEmail",
+           u.id as "adminId",
+           t.id as "postgresTenantId",
+           'whatsapp_saas' as "postgresDb",
+           'public' as "postgresSchema",
+           (t.settings_json->'easypanel'->>'project') as "easypanelProject",
+           (t.settings_json->'easypanel'->>'service') as "easypanelService"
+    FROM tenants t
+    LEFT JOIN LATERAL (
+      SELECT id, email
+      FROM users
+      WHERE tenant_id = t.id AND role IN ('admin', 'tenant_admin')
+      ORDER BY created_at ASC
+      LIMIT 1
+    ) u ON true
+    ORDER BY t.created_at DESC
+  `);
+  return result.rows;
+}
+async function getTenantById(id) {
+  const result = await query(`
+    SELECT id, name, slug, custom_domain as "customDomain", 
+           ai_provider as "aiProvider", ai_api_key_encrypted as "aiApiKeyEncrypted",
+           ai_model as "aiModel", evolution_instance as "evolutionInstance", 
+           whatsapp_number as "whatsappNumber", plan, active, 
+           subscription_status as "subscriptionStatus", billing_currency as "billingCurrency", 
+           custom_monthly_price as "customMonthlyPrice", trial_ends_at as "trialEndsAt", 
+           next_billing_date as "nextBillingDate", grace_period_ends_at as "gracePeriodEndsAt",
+           custom_invoices_quota as "customInvoicesQuota",
+           calendar_token as "calendarToken",
+           address, latitude, longitude, google_maps_url as "googleMapsUrl",
+           is_ai_pilot as "isAiPilot", ai_priority_level as "aiPriorityLevel",
+           settings_json as "settingsJson", created_at as "createdAt",
+           id as "postgresTenantId",
+           'whatsapp_saas' as "postgresDb",
+           'public' as "postgresSchema",
+           (settings_json->'easypanel'->>'project') as "easypanelProject",
+           (settings_json->'easypanel'->>'service') as "easypanelService"
+    FROM tenants WHERE id = $1
+  `, [id]);
+  return result.rows[0] || null;
+}
+async function getTenantBySlug(slug) {
+  const cleanSlug = (slug || "").trim().toLowerCase();
+  const result = await query(`
+    SELECT t.id, t.name, t.slug, t.custom_domain as "customDomain", 
+           t.ai_provider as "aiProvider", t.ai_api_key_encrypted as "aiApiKeyEncrypted",
+           t.ai_model as "aiModel", t.evolution_instance as "evolutionInstance", 
+           t.whatsapp_number as "whatsappNumber", t.plan, t.active, 
+           t.subscription_status as "subscriptionStatus", t.billing_currency as "billingCurrency",
+           t.custom_monthly_price as "customMonthlyPrice", t.trial_ends_at as "trialEndsAt",
+           t.calendar_token as "calendarToken",
+           t.address, t.latitude, t.longitude, t.google_maps_url as "googleMapsUrl",
+           t.is_ai_pilot as "isAiPilot", t.ai_priority_level as "aiPriorityLevel",
+           t.settings_json as "settingsJson", t.created_at as "createdAt"
+    FROM tenants t
+    LEFT JOIN store_settings ss ON ss.tenant_id = t.id
+    WHERE LOWER(t.slug) = $1 OR LOWER(ss.store_slug) = $1
+    LIMIT 1
+  `, [cleanSlug]);
+  return result.rows[0] || null;
+}
+async function getTenantByCustomDomain(domain) {
+  const result = await query(`
+    SELECT id, name, slug, custom_domain as "customDomain", 
+           ai_provider as "aiProvider", ai_api_key_encrypted as "aiApiKeyEncrypted",
+           ai_model as "aiModel", evolution_instance as "evolutionInstance", 
+           whatsapp_number as "whatsappNumber", plan, active, 
+           is_ai_pilot as "isAiPilot", ai_priority_level as "aiPriorityLevel",
+           settings_json as "settingsJson", created_at as "createdAt"
+    FROM tenants WHERE custom_domain = $1
+  `, [domain]);
+  return result.rows[0] || null;
+}
+async function getTenantByEvolutionInstance(instanceName) {
+  const result = await query(`
+    SELECT id, name, slug, custom_domain as "customDomain", 
+           ai_provider as "aiProvider", ai_api_key_encrypted as "aiApiKeyEncrypted",
+           ai_model as "aiModel", evolution_instance as "evolutionInstance", 
+           whatsapp_number as "whatsappNumber", plan, active, 
+           is_ai_pilot as "isAiPilot", ai_priority_level as "aiPriorityLevel",
+           settings_json as "settingsJson", created_at as "createdAt"
+    FROM tenants WHERE evolution_instance = $1
+  `, [instanceName]);
+  return result.rows[0] || null;
+}
+async function createTenant(data) {
+  const finalPrice = data.customMonthlyPrice !== void 0 ? Number(data.customMonthlyPrice) : data.plan === "enterprise" ? 85e3 : data.plan === "aliado" ? 0 : data.plan === "emprendedor" ? 35e3 : 55e3;
+  const result = await query(`
+    INSERT INTO tenants (
+      name, slug, custom_domain, ai_provider, ai_api_key_encrypted, 
+      ai_model, evolution_instance, whatsapp_number, plan, active,
+      custom_monthly_price, billing_currency, subscription_status, trial_ends_at, settings_json,
+      address, latitude, longitude, google_maps_url, is_ai_pilot, ai_priority_level
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+    RETURNING id, name, slug, custom_domain as "customDomain", 
+           ai_provider as "aiProvider", ai_model as "aiModel", 
+           evolution_instance as "evolutionInstance", whatsapp_number as "whatsappNumber",
+           plan, active, custom_monthly_price as "customMonthlyPrice", billing_currency as "billingCurrency",
+           subscription_status as "subscriptionStatus", trial_ends_at as "trialEndsAt",
+           settings_json as "settingsJson", address, latitude, longitude, google_maps_url as "googleMapsUrl",
+           is_ai_pilot as "isAiPilot", ai_priority_level as "aiPriorityLevel",
+           created_at as "createdAt"
+  `, [
+    data.name,
+    data.slug,
+    data.customDomain,
+    data.aiProvider || "gemini",
+    data.aiApiKeyEncrypted,
+    data.aiModel || "gemini-2.5-flash",
+    data.evolutionInstance,
+    data.whatsappNumber || data.phone || null,
+    data.plan || "pro",
+    data.active !== false,
+    finalPrice,
+    data.billingCurrency || "CRC",
+    data.subscriptionStatus || "active",
+    data.trialEndsAt || null,
+    data.settingsJson || null,
+    data.address || null,
+    data.latitude ? Number(data.latitude) : null,
+    data.longitude ? Number(data.longitude) : null,
+    data.googleMapsUrl || data.google_maps_url || null,
+    Boolean(data.isAiPilot),
+    Number(data.aiPriorityLevel) || 0
+  ]);
+  return result.rows[0];
+}
+async function updateTenant(id, data) {
+  const allowedColumns = {
+    name: "name",
+    slug: "slug",
+    customDomain: "custom_domain",
+    custom_domain: "custom_domain",
+    aiProvider: "ai_provider",
+    ai_provider: "ai_provider",
+    aiApiKeyEncrypted: "ai_api_key_encrypted",
+    ai_api_key_encrypted: "ai_api_key_encrypted",
+    aiModel: "ai_model",
+    ai_model: "ai_model",
+    evolutionInstance: "evolution_instance",
+    evolution_instance: "evolution_instance",
+    whatsappNumber: "whatsapp_number",
+    whatsapp_number: "whatsapp_number",
+    phone: "whatsapp_number",
+    plan: "plan",
+    active: "active",
+    settingsJson: "settings_json",
+    settings_json: "settings_json",
+    subscriptionStatus: "subscription_status",
+    subscription_status: "subscription_status",
+    billingCurrency: "billing_currency",
+    billing_currency: "billing_currency",
+    customMonthlyPrice: "custom_monthly_price",
+    custom_monthly_price: "custom_monthly_price",
+    trialEndsAt: "trial_ends_at",
+    trial_ends_at: "trial_ends_at",
+    nextBillingDate: "next_billing_date",
+    next_billing_date: "next_billing_date",
+    gracePeriodEndsAt: "grace_period_ends_at",
+    grace_period_ends_at: "grace_period_ends_at",
+    address: "address",
+    latitude: "latitude",
+    longitude: "longitude",
+    googleMapsUrl: "google_maps_url",
+    google_maps_url: "google_maps_url",
+    isAiPilot: "is_ai_pilot",
+    is_ai_pilot: "is_ai_pilot",
+    aiPriorityLevel: "ai_priority_level",
+    ai_priority_level: "ai_priority_level"
+  };
+  const validEntries = Object.entries(data).filter(([k, v]) => allowedColumns[k] !== void 0 && v !== void 0);
+  if (validEntries.length === 0) return getTenantById(id);
+  const setClause = validEntries.map(([key], index) => {
+    const dbColumn = allowedColumns[key];
+    return `${dbColumn} = $${index + 2}`;
+  }).join(", ");
+  const values = validEntries.map(([, val]) => val);
+  const result = await query(`
+    UPDATE tenants SET ${setClause}
+    WHERE id = $1
+    RETURNING id, name, slug, custom_domain as "customDomain", 
+           ai_provider as "aiProvider", ai_model as "aiModel", 
+           evolution_instance as "evolutionInstance", whatsapp_number as "whatsappNumber",
+           plan, active, subscription_status as "subscriptionStatus",
+           billing_currency as "billingCurrency", custom_monthly_price as "customMonthlyPrice",
+           trial_ends_at as "trialEndsAt", settings_json as "settingsJson",
+           address, latitude, longitude, google_maps_url as "googleMapsUrl",
+           is_ai_pilot as "isAiPilot", ai_priority_level as "aiPriorityLevel",
+           created_at as "createdAt"
+  `, [id, ...values]);
+  return result.rows[0] || null;
+}
+async function deleteTenant(id) {
+  const result = await query("DELETE FROM tenants WHERE id = $1", [id]);
+  return (result.rowCount || 0) > 0;
+}
+var init_tenant_repo = __esm({
+  "src/server/db/tenant.repo.ts"() {
+    "use strict";
+    init_pool();
+  }
+});
+
 // src/server/services/superadmin-notify.service.ts
 async function getSuperadminNotifyPhone() {
   try {
@@ -1334,6 +1582,187 @@ var init_ai_provider = __esm({
     init_encryption();
     init_env();
     DEFAULT_GEMINI_KEY = env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || "AQ.Ab8RN6IHcdDKDITkdIOjt8SznSc6lS_1grotOA6SQ6fjZnd2SQ";
+  }
+});
+
+// src/server/db/store-settings.repo.ts
+var store_settings_repo_exports = {};
+__export(store_settings_repo_exports, {
+  getStoreSettings: () => getStoreSettings,
+  saveStoreSettings: () => saveStoreSettings,
+  upsertStoreSettings: () => upsertStoreSettings
+});
+async function getStoreSettings(tenantId) {
+  const result = await query(`
+    SELECT id, tenant_id as "tenantId", store_enabled as "storeEnabled", store_mode as "storeMode",
+           store_modules as "storeModules", restaurant_config as "restaurantConfig",
+           delivery_config as "deliveryConfig", correos_cr_config as "correosCrConfig",
+           local_delivery_config as "localDeliveryConfig", store_schedule as "storeSchedule",
+           custom_stages as "customStages", notification_templates as "notificationTemplates",
+           store_name as "storeName", store_slug as "storeSlug", store_description as "storeDescription",
+           store_logo_url as "storeLogoUrl", store_banner_url as "storeBannerUrl",
+           store_theme as "storeTheme", currency, accept_sinpe as "acceptSinpe",
+           accept_sinpe_tilopay as "acceptSinpeTilopay",
+           sinpe_phone as "sinpePhone", sinpe_name as "sinpeName", accept_transfer as "acceptTransfer",
+           bank_account_info as "bankAccountInfo", accept_cash_on_delivery as "acceptCashOnDelivery",
+           delivery_enabled as "deliveryEnabled", delivery_fee as "deliveryFee",
+           pickup_enabled as "pickupEnabled", whatsapp_checkout as "whatsappCheckout",
+           min_order_amount as "minOrderAmount", store_message as "storeMessage"
+    FROM store_settings 
+    WHERE tenant_id = $1
+  `, [tenantId]);
+  const row = result.rows[0];
+  if (!row) return null;
+  const storeTheme = row.storeTheme || {};
+  const storeLogoUrl = row.storeLogoUrl || storeTheme.logoUrl || "";
+  const storeBannerUrl = row.storeBannerUrl || storeTheme.bannerUrl || "";
+  return {
+    ...row,
+    storeLogoUrl,
+    storeBannerUrl,
+    storeModules: row.storeModules || { storeEnabled: true, bookingsEnabled: true },
+    storeSchedule: row.storeSchedule || { isOpenManual: true, autoScheduleEnabled: false, schedule: {} },
+    correosCrConfig: row.correosCrConfig || {
+      enabled: true,
+      serviceType: "pyme",
+      originType: "GAM",
+      includeIva: true,
+      rates: [
+        { label: "Pymes Liviano (0 a 500 g)", minGrams: 0, maxGrams: 500, gamPrice: 1100, restoPrice: 1350 },
+        { label: "Pymes Especial Gold (0 a 2 kg)", minGrams: 501, maxGrams: 2e3, gamPrice: 1769.91, restoPrice: 2477.88 },
+        { label: "Pyme Plus (0 a 3 kg)", minGrams: 2001, maxGrams: 3e3, gamPrice: 2425, restoPrice: 3360 },
+        { label: "Carga Liviana (3 a 10 kg)", minGrams: 3001, maxGrams: 1e4, gamPrice: 3982.3, restoPrice: 3982.3 },
+        { label: "Pesado Express (10 a 20 kg)", minGrams: 10001, maxGrams: 2e4, gamPrice: 9800, restoPrice: 9800, extraPerKg: 1e3 },
+        { label: "Pesado Express (20 a 30 kg)", minGrams: 20001, maxGrams: 3e4, gamPrice: 14e3, restoPrice: 14e3, extraPerKg: 1e3 }
+      ]
+    },
+    localDeliveryConfig: row.localDeliveryConfig || { enabled: true, fee: 2500, freeAbove: 35e3, estimatedHours: "24 a 48 horas" },
+    customStages: row.customStages || (row.storeMode === "restaurant" ? {
+      fase_1: "Comanda Recibida",
+      fase_2: "En Cocina / Preparaci\xF3n",
+      fase_3: "Listo para Servir / Entregar",
+      fase_4: "En Camino (Delivery)",
+      fase_5: "Entregado / Servido"
+    } : {
+      fase_1: "Pedido Recibido",
+      fase_2: "En Empaque / Preparaci\xF3n",
+      fase_3: "Listo para Despacho",
+      fase_4: "En Tr\xE1nsito (Delivery / Gu\xEDa)",
+      fase_5: "Entregado con \xC9xito"
+    })
+  };
+}
+async function upsertStoreSettings(tenantId, data) {
+  const result = await query(`
+    INSERT INTO store_settings (
+      tenant_id, store_enabled, store_mode, store_modules, restaurant_config, delivery_config,
+      correos_cr_config, local_delivery_config, store_schedule, custom_stages, notification_templates,
+      store_name, store_slug, store_description, store_logo_url,
+      store_banner_url, store_theme, currency, accept_sinpe, accept_sinpe_tilopay, sinpe_phone, sinpe_name,
+      accept_transfer, bank_account_info, accept_cash_on_delivery, delivery_enabled,
+      delivery_fee, pickup_enabled, whatsapp_checkout, min_order_amount, store_message
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31)
+    ON CONFLICT (tenant_id) DO UPDATE SET
+      store_enabled = EXCLUDED.store_enabled,
+      store_mode = EXCLUDED.store_mode,
+      store_modules = EXCLUDED.store_modules,
+      restaurant_config = EXCLUDED.restaurant_config,
+      delivery_config = EXCLUDED.delivery_config,
+      correos_cr_config = EXCLUDED.correos_cr_config,
+      local_delivery_config = EXCLUDED.local_delivery_config,
+      store_schedule = EXCLUDED.store_schedule,
+      custom_stages = EXCLUDED.custom_stages,
+      notification_templates = EXCLUDED.notification_templates,
+      store_name = EXCLUDED.store_name,
+      store_slug = EXCLUDED.store_slug,
+      store_description = EXCLUDED.store_description,
+      store_logo_url = CASE 
+        WHEN EXCLUDED.store_logo_url IS NOT NULL AND EXCLUDED.store_logo_url != '' THEN EXCLUDED.store_logo_url 
+        ELSE store_settings.store_logo_url 
+      END,
+      store_banner_url = CASE 
+        WHEN EXCLUDED.store_banner_url IS NOT NULL AND EXCLUDED.store_banner_url != '' THEN EXCLUDED.store_banner_url 
+        ELSE store_settings.store_banner_url 
+      END,
+      store_theme = CASE
+        WHEN EXCLUDED.store_theme IS NOT NULL AND COALESCE(EXCLUDED.store_theme->>'logoUrl', '') != '' THEN EXCLUDED.store_theme
+        WHEN store_settings.store_logo_url IS NOT NULL AND store_settings.store_logo_url != '' THEN 
+          jsonb_set(
+            jsonb_set(COALESCE(EXCLUDED.store_theme, '{}'::jsonb), '{logoUrl}', to_jsonb(store_settings.store_logo_url)),
+            '{bannerUrl}', to_jsonb(COALESCE(store_settings.store_banner_url, ''))
+          )
+        ELSE EXCLUDED.store_theme
+      END,
+      currency = EXCLUDED.currency,
+      accept_sinpe = EXCLUDED.accept_sinpe,
+      accept_sinpe_tilopay = EXCLUDED.accept_sinpe_tilopay,
+      sinpe_phone = EXCLUDED.sinpe_phone,
+      sinpe_name = EXCLUDED.sinpe_name,
+      accept_transfer = EXCLUDED.accept_transfer,
+      bank_account_info = EXCLUDED.bank_account_info,
+      accept_cash_on_delivery = EXCLUDED.accept_cash_on_delivery,
+      delivery_enabled = EXCLUDED.delivery_enabled,
+      delivery_fee = EXCLUDED.delivery_fee,
+      pickup_enabled = EXCLUDED.pickup_enabled,
+      whatsapp_checkout = EXCLUDED.whatsapp_checkout,
+      min_order_amount = EXCLUDED.min_order_amount,
+      store_message = EXCLUDED.store_message,
+      updated_at = CURRENT_TIMESTAMP
+    RETURNING id, tenant_id as "tenantId", store_enabled as "storeEnabled", store_mode as "storeMode",
+              store_modules as "storeModules", restaurant_config as "restaurantConfig",
+              delivery_config as "deliveryConfig", correos_cr_config as "correosCrConfig",
+              local_delivery_config as "localDeliveryConfig", store_schedule as "storeSchedule",
+              custom_stages as "customStages", notification_templates as "notificationTemplates",
+              store_name as "storeName", store_slug as "storeSlug", store_description as "storeDescription",
+              store_logo_url as "storeLogoUrl", store_banner_url as "storeBannerUrl",
+              store_theme as "storeTheme", currency, accept_sinpe as "acceptSinpe",
+              accept_sinpe_tilopay as "acceptSinpeTilopay",
+              sinpe_phone as "sinpePhone", sinpe_name as "sinpeName", accept_transfer as "acceptTransfer",
+              bank_account_info as "bankAccountInfo", accept_cash_on_delivery as "acceptCashOnDelivery",
+              delivery_enabled as "deliveryEnabled", delivery_fee as "deliveryFee",
+              pickup_enabled as "pickupEnabled", whatsapp_checkout as "whatsappCheckout",
+              min_order_amount as "minOrderAmount", store_message as "storeMessage"
+  `, [
+    tenantId,
+    data.storeEnabled !== false,
+    data.storeMode || "retail",
+    JSON.stringify(data.storeModules || { storeEnabled: true, bookingsEnabled: true }),
+    JSON.stringify(data.restaurantConfig || {}),
+    JSON.stringify(data.deliveryConfig || {}),
+    JSON.stringify(data.correosCrConfig || {}),
+    JSON.stringify(data.localDeliveryConfig || {}),
+    JSON.stringify(data.storeSchedule || {}),
+    JSON.stringify(data.customStages || {}),
+    JSON.stringify(data.notificationTemplates || {}),
+    data.storeName || "Mi Negocio",
+    data.storeSlug || "tienda",
+    data.storeDescription || "",
+    data.storeLogoUrl || data.storeTheme?.logoUrl || "",
+    data.storeBannerUrl || data.storeTheme?.bannerUrl || "",
+    JSON.stringify(data.storeTheme || { primaryColor: "#16a34a", cardRadius: "rounded", cardShadow: "md", fontFamily: "Inter" }),
+    data.currency || "CRC",
+    data.acceptSinpe !== false,
+    data.acceptSinpeTilopay === true,
+    data.sinpePhone || "",
+    data.sinpeName || "",
+    data.acceptTransfer !== false,
+    data.bankAccountInfo || "",
+    data.acceptCashOnDelivery || false,
+    data.deliveryEnabled || false,
+    data.deliveryFee || 0,
+    data.pickupEnabled !== false,
+    data.whatsappCheckout !== false,
+    data.minOrderAmount || 0,
+    data.storeMessage || ""
+  ]);
+  return result.rows[0];
+}
+var saveStoreSettings;
+var init_store_settings_repo = __esm({
+  "src/server/db/store-settings.repo.ts"() {
+    "use strict";
+    init_pool();
+    saveStoreSettings = upsertStoreSettings;
   }
 });
 
@@ -3651,6 +4080,221 @@ var init_tenant_almendro_repo = __esm({
   }
 });
 
+// src/server/services/hacienda-native.service.ts
+var hacienda_native_service_exports = {};
+__export(hacienda_native_service_exports, {
+  authenticateHaciendaIdp: () => authenticateHaciendaIdp,
+  inspectP12Certificate: () => inspectP12Certificate,
+  sendVoucherWhatsAppNotification: () => sendVoucherWhatsAppNotification,
+  testTenantHaciendaConnection: () => testTenantHaciendaConnection
+});
+async function inspectP12Certificate(p12Buffer, pin) {
+  if (!p12Buffer || p12Buffer.length === 0) {
+    return { valid: false, error: "Archivo de certificado vac\xEDo o no provisto" };
+  }
+  try {
+    const forge = await import("node-forge").then((m) => m.default || m).catch(() => null);
+    if (!forge) {
+      return {
+        valid: true,
+        expiresAt: new Date(Date.now() + 365 * 864e5),
+        // Asumir 1 año de vigencia
+        subject: "Certificado PKCS#12"
+      };
+    }
+    const p12DerString = forge.util.binary.raw.encode(new Uint8Array(p12Buffer));
+    const p12Asn1 = forge.asn1.fromDer(p12DerString);
+    const p12 = forge.pkcs12.pkcs12FromAsn1(p12Asn1, pin);
+    const OID_CERT_BAG = "1.2.840.113549.1.12.10.1.3";
+    const certBags = p12.getBags({ bagType: OID_CERT_BAG });
+    const certBagArray = certBags[OID_CERT_BAG];
+    if (!certBagArray || certBagArray.length === 0 || !certBagArray[0]?.cert) {
+      return { valid: false, error: "No se encontraron certificados v\xE1lidos en el archivo .p12" };
+    }
+    const cert = certBagArray[0].cert;
+    const notAfter = cert.validity.notAfter;
+    const commonNameAttr = cert.subject.getField("CN");
+    const commonName = commonNameAttr?.value || "Certificado Tributario Hacienda";
+    return {
+      valid: true,
+      expiresAt: notAfter,
+      subject: String(commonName)
+    };
+  } catch (error) {
+    console.warn("[HaciendaNativeService] Error al verificar .p12:", error.message);
+    const msg = error.message?.toLowerCase() || "";
+    if (msg.includes("mac") || msg.includes("password") || msg.includes("pkcs") || msg.includes("pin")) {
+      return { valid: false, error: "El PIN ingresado no coincide con el certificado .p12" };
+    }
+    return { valid: false, error: `No fue posible validar el certificado: ${error.message}` };
+  }
+}
+async function authenticateHaciendaIdp(environment, username, password) {
+  if (!username || !password) {
+    return { success: false, message: "Faltan credenciales ATV (usuario o contrase\xF1a del API de Hacienda)" };
+  }
+  const isProduction2 = environment === "production";
+  const idpUrl = isProduction2 ? "https://idp.comprobanteselectronicos.go.cr/auth/realms/rut/protocol/openid-connect/token" : "https://idp.comprobanteselectronicos.go.cr/auth/realms/rut-stag/protocol/openid-connect/token";
+  const clientId = isProduction2 ? "api-prod" : "api-stag";
+  const params = new URLSearchParams();
+  params.append("grant_type", "password");
+  params.append("client_id", clientId);
+  params.append("username", username.trim());
+  params.append("password", password.trim());
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 1e4);
+    const res = await fetch(idpUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: params.toString(),
+      signal: controller.signal
+    });
+    clearTimeout(timeout);
+    if (res.ok) {
+      const data = await res.json();
+      return {
+        success: true,
+        message: "\xA1Conexi\xF3n exitosa con el Ministerio de Hacienda (Token recibido)!",
+        accessToken: data.access_token,
+        expiresIn: data.expires_in
+      };
+    } else {
+      const errText = await res.text();
+      let detail = "Credenciales ATV rechazadas por Hacienda";
+      try {
+        const json = JSON.parse(errText);
+        if (json.error_description) detail = json.error_description;
+        else if (json.error) detail = json.error;
+      } catch (_) {
+      }
+      return {
+        success: false,
+        message: `Hacienda respondi\xF3 error ${res.status}: ${detail}`
+      };
+    }
+  } catch (error) {
+    if (error.name === "AbortError") {
+      return { success: false, message: "Tiempo de espera agotado al conectar con el servidor de Hacienda (10s)" };
+    }
+    return { success: false, message: `Error de red al conectar con Hacienda: ${error.message}` };
+  }
+}
+async function testTenantHaciendaConnection(tenantId) {
+  const secrets = await getHaciendaDecryptedSecrets(tenantId);
+  const config = await getHaciendaConfigByTenant(tenantId);
+  if (!secrets || !config) {
+    return {
+      success: false,
+      message: "No se ha configurado la facturaci\xF3n electr\xF3nica para este comercio"
+    };
+  }
+  let certValid = false;
+  let certExpiresAt;
+  if (secrets.p12Buffer && secrets.p12Pin) {
+    const certResult = await inspectP12Certificate(secrets.p12Buffer, secrets.p12Pin);
+    if (!certResult.valid) {
+      const msg = `Fallo en el certificado: ${certResult.error}`;
+      await updateConnectionTestResult(tenantId, false, msg);
+      return {
+        success: false,
+        message: msg,
+        details: { certValid: false, idpValid: false, environment: secrets.environment }
+      };
+    }
+    certValid = true;
+    certExpiresAt = certResult.expiresAt ? certResult.expiresAt.toISOString() : void 0;
+  }
+  if (!secrets.idpUsername || !secrets.idpPassword) {
+    const msg = "Faltan credenciales ATV (usuario o contrase\xF1a del API)";
+    await updateConnectionTestResult(tenantId, false, msg);
+    return {
+      success: false,
+      message: msg,
+      details: { certValid, idpValid: false, environment: secrets.environment }
+    };
+  }
+  const idpResult = await authenticateHaciendaIdp(
+    secrets.environment,
+    secrets.idpUsername,
+    secrets.idpPassword
+  );
+  const fullSuccess = idpResult.success && (secrets.p12Buffer ? certValid : true);
+  const statusMsg = fullSuccess ? `\u2705 Conexi\xF3n exitosa con Hacienda (${secrets.environment === "production" ? "Producci\xF3n" : "Sandbox / Pruebas"}). ${certExpiresAt ? `Certificado v\xE1lido hasta ${new Date(certExpiresAt).toLocaleDateString("es-CR")}.` : ""}` : idpResult.message;
+  await updateConnectionTestResult(tenantId, fullSuccess, statusMsg);
+  return {
+    success: fullSuccess,
+    message: statusMsg,
+    details: {
+      certValid,
+      certExpiresAt,
+      idpValid: idpResult.success,
+      environment: secrets.environment
+    }
+  };
+}
+async function sendVoucherWhatsAppNotification({
+  tenantId,
+  customerName,
+  customerPhone,
+  referenceLabel,
+  docType,
+  numericKey,
+  pdfUrl
+}) {
+  try {
+    if (!customerPhone) return false;
+    const { getTenantById: getTenantById2 } = await Promise.resolve().then(() => (init_tenant_repo(), tenant_repo_exports));
+    const { getStoreSettings: getStoreSettings2 } = await Promise.resolve().then(() => (init_store_settings_repo(), store_settings_repo_exports));
+    const { sendMessage: sendMessage2 } = await Promise.resolve().then(() => (init_evolution(), evolution_exports));
+    const { query: query3 } = await Promise.resolve().then(() => (init_pool(), pool_exports));
+    const tenant = await getTenantById2(tenantId);
+    const store = await getStoreSettings2(tenantId);
+    const storeName = store?.storeName || tenant?.name || "nuestro negocio";
+    const instanceName = tenant?.evolutionInstance;
+    const clean = customerPhone.replace(/\D/g, "");
+    const finalPhone = clean.length === 8 ? `506${clean}` : clean;
+    if (!instanceName || finalPhone.length < 8) {
+      return false;
+    }
+    const docName = docType === "01" ? "Factura Electr\xF3nica" : "Tiquete Electr\xF3nico";
+    const safePdfUrl = pdfUrl || `${process.env.APP_URL || "https://app.listochat.com"}/api/almendro/public/voucher-pdf/${numericKey}`;
+    const msg = `\u{1F9FE} *\xA1Tu ${docName} est\xE1 lista!*
+
+Hola *${customerName || "Estimado cliente"}*, te compartimos el comprobante electr\xF3nico correspondiente a tu *${referenceLabel}* en *${storeName}*:
+
+\u{1F517} *Descargar PDF:*
+${safePdfUrl}
+
+\u{1F511} *Clave Num\xE9rica de Hacienda:*
+\`${numericKey}\`
+
+\xA1Muchas gracias por tu preferencia y confianza! \u2B50`;
+    await sendMessage2(instanceName, finalPhone, msg);
+    await query3(`
+      INSERT INTO notifications_log (id, tenant_id, recipient, message, trigger_type, status)
+      VALUES ($1, $2, $3, $4, 'electronic_invoice_sent', 'sent')
+    `, [
+      `notif_${Date.now()}`,
+      tenantId,
+      finalPhone,
+      `${docName} enviada a ${customerName || finalPhone}`
+    ]);
+    return true;
+  } catch (err) {
+    console.warn("[VoucherNotification] Error enviando WhatsApp con factura:", err.message);
+    return false;
+  }
+}
+var init_hacienda_native_service = __esm({
+  "src/server/services/hacienda-native.service.ts"() {
+    "use strict";
+    init_hacienda_native_repo();
+  }
+});
+
 // src/server/services/almendro.service.ts
 var almendro_service_exports = {};
 __export(almendro_service_exports, {
@@ -4087,6 +4731,20 @@ var init_almendro_service = __esm({
               issuedAt: (/* @__PURE__ */ new Date()).toISOString()
             };
             await updateOrder2(order.id, tenantId, { billingInfo: updatedBilling });
+            try {
+              const { sendVoucherWhatsAppNotification: sendVoucherWhatsAppNotification2 } = await Promise.resolve().then(() => (init_hacienda_native_service(), hacienda_native_service_exports));
+              sendVoucherWhatsAppNotification2({
+                tenantId,
+                customerName: order.customerName,
+                customerPhone: order.customerPhone,
+                referenceLabel: `Pedido #ORD-${order.orderNumber}`,
+                docType,
+                numericKey: voucherRes.numericKey,
+                pdfUrl: voucherRes.pdfUrl
+              }).catch((notifErr) => console.warn("[AlmendroService] Error enviando WhatsApp de factura:", notifErr));
+            } catch (impErr) {
+              console.warn("[AlmendroService] No se pudo cargar m\xF3dulo de notificaci\xF3n:", impErr);
+            }
             return {
               success: true,
               numericKey: voucherRes.numericKey,
@@ -4191,6 +4849,20 @@ var init_almendro_service = __esm({
               issuedAt: (/* @__PURE__ */ new Date()).toISOString()
             };
             await updateAppointment2(appt.id, tenantId, { billingInfo: updatedBilling });
+            try {
+              const { sendVoucherWhatsAppNotification: sendVoucherWhatsAppNotification2 } = await Promise.resolve().then(() => (init_hacienda_native_service(), hacienda_native_service_exports));
+              sendVoucherWhatsAppNotification2({
+                tenantId,
+                customerName: appt.customerName,
+                customerPhone: appt.customerPhone,
+                referenceLabel: `Cita del ${appt.date || ""} (${appt.time || ""})`,
+                docType: appt.billingInfo?.idNumber ? "01" : config.defaultDocType || "04",
+                numericKey: voucherRes.numericKey,
+                pdfUrl: voucherRes.pdfUrl
+              }).catch((notifErr) => console.warn("[AlmendroService] Error enviando WhatsApp de factura para cita:", notifErr));
+            } catch (impErr) {
+              console.warn("[AlmendroService] No se pudo cargar m\xF3dulo de notificaci\xF3n:", impErr);
+            }
             return {
               success: true,
               numericKey: voucherRes.numericKey,
@@ -6701,228 +7373,8 @@ async function runCourtCleanup() {
 // src/server/services/campaign-queue.service.ts
 init_pool();
 init_evolution();
+init_tenant_repo();
 import { Redis } from "ioredis";
-
-// src/server/db/tenant.repo.ts
-init_pool();
-async function getAllTenants() {
-  const result = await query(`
-    SELECT id, name, slug, custom_domain as "customDomain", 
-           ai_provider as "aiProvider", ai_model as "aiModel", 
-           evolution_instance as "evolutionInstance", whatsapp_number as "whatsappNumber",
-           plan, active, subscription_status as "subscriptionStatus",
-           billing_currency as "billingCurrency", custom_monthly_price as "customMonthlyPrice",
-           trial_ends_at as "trialEndsAt", next_billing_date as "nextBillingDate",
-           grace_period_ends_at as "gracePeriodEndsAt", custom_invoices_quota as "customInvoicesQuota",
-           settings_json as "settingsJson", 
-           address, latitude, longitude, google_maps_url as "googleMapsUrl",
-           is_ai_pilot as "isAiPilot", ai_priority_level as "aiPriorityLevel",
-           created_at as "createdAt"
-    FROM tenants 
-    ORDER BY created_at DESC
-  `);
-  return result.rows;
-}
-async function getAllTenantsWithAdmin() {
-  const result = await query(`
-    SELECT t.id, t.name, t.slug, t.custom_domain as "customDomain", 
-           t.ai_provider as "aiProvider", t.ai_model as "aiModel", 
-           t.evolution_instance as "evolutionInstance", t.whatsapp_number as "whatsappNumber",
-           t.plan, t.active, t.subscription_status as "subscriptionStatus",
-           t.billing_currency as "billingCurrency", t.custom_monthly_price as "customMonthlyPrice",
-           t.trial_ends_at as "trialEndsAt", t.next_billing_date as "nextBillingDate",
-           t.grace_period_ends_at as "gracePeriodEndsAt", t.custom_invoices_quota as "customInvoicesQuota",
-           t.settings_json as "settingsJson", 
-           t.address, t.latitude, t.longitude, t.google_maps_url as "googleMapsUrl",
-           t.is_ai_pilot as "isAiPilot", t.ai_priority_level as "aiPriorityLevel",
-           t.created_at as "createdAt",
-           COALESCE(u.email, 'Sin registrar') as "adminEmail",
-           u.id as "adminId",
-           t.id as "postgresTenantId",
-           'whatsapp_saas' as "postgresDb",
-           'public' as "postgresSchema",
-           (t.settings_json->'easypanel'->>'project') as "easypanelProject",
-           (t.settings_json->'easypanel'->>'service') as "easypanelService"
-    FROM tenants t
-    LEFT JOIN LATERAL (
-      SELECT id, email
-      FROM users
-      WHERE tenant_id = t.id AND role IN ('admin', 'tenant_admin')
-      ORDER BY created_at ASC
-      LIMIT 1
-    ) u ON true
-    ORDER BY t.created_at DESC
-  `);
-  return result.rows;
-}
-async function getTenantById(id) {
-  const result = await query(`
-    SELECT id, name, slug, custom_domain as "customDomain", 
-           ai_provider as "aiProvider", ai_api_key_encrypted as "aiApiKeyEncrypted",
-           ai_model as "aiModel", evolution_instance as "evolutionInstance", 
-           whatsapp_number as "whatsappNumber", plan, active, 
-           subscription_status as "subscriptionStatus", billing_currency as "billingCurrency", 
-           custom_monthly_price as "customMonthlyPrice", trial_ends_at as "trialEndsAt", 
-           next_billing_date as "nextBillingDate", grace_period_ends_at as "gracePeriodEndsAt",
-           custom_invoices_quota as "customInvoicesQuota",
-           calendar_token as "calendarToken",
-           address, latitude, longitude, google_maps_url as "googleMapsUrl",
-           is_ai_pilot as "isAiPilot", ai_priority_level as "aiPriorityLevel",
-           settings_json as "settingsJson", created_at as "createdAt",
-           id as "postgresTenantId",
-           'whatsapp_saas' as "postgresDb",
-           'public' as "postgresSchema",
-           (settings_json->'easypanel'->>'project') as "easypanelProject",
-           (settings_json->'easypanel'->>'service') as "easypanelService"
-    FROM tenants WHERE id = $1
-  `, [id]);
-  return result.rows[0] || null;
-}
-async function getTenantBySlug(slug) {
-  const cleanSlug = (slug || "").trim().toLowerCase();
-  const result = await query(`
-    SELECT t.id, t.name, t.slug, t.custom_domain as "customDomain", 
-           t.ai_provider as "aiProvider", t.ai_api_key_encrypted as "aiApiKeyEncrypted",
-           t.ai_model as "aiModel", t.evolution_instance as "evolutionInstance", 
-           t.whatsapp_number as "whatsappNumber", t.plan, t.active, 
-           t.subscription_status as "subscriptionStatus", t.billing_currency as "billingCurrency",
-           t.custom_monthly_price as "customMonthlyPrice", t.trial_ends_at as "trialEndsAt",
-           t.calendar_token as "calendarToken",
-           t.address, t.latitude, t.longitude, t.google_maps_url as "googleMapsUrl",
-           t.is_ai_pilot as "isAiPilot", t.ai_priority_level as "aiPriorityLevel",
-           t.settings_json as "settingsJson", t.created_at as "createdAt"
-    FROM tenants t
-    LEFT JOIN store_settings ss ON ss.tenant_id = t.id
-    WHERE LOWER(t.slug) = $1 OR LOWER(ss.store_slug) = $1
-    LIMIT 1
-  `, [cleanSlug]);
-  return result.rows[0] || null;
-}
-async function getTenantByEvolutionInstance(instanceName) {
-  const result = await query(`
-    SELECT id, name, slug, custom_domain as "customDomain", 
-           ai_provider as "aiProvider", ai_api_key_encrypted as "aiApiKeyEncrypted",
-           ai_model as "aiModel", evolution_instance as "evolutionInstance", 
-           whatsapp_number as "whatsappNumber", plan, active, 
-           is_ai_pilot as "isAiPilot", ai_priority_level as "aiPriorityLevel",
-           settings_json as "settingsJson", created_at as "createdAt"
-    FROM tenants WHERE evolution_instance = $1
-  `, [instanceName]);
-  return result.rows[0] || null;
-}
-async function createTenant(data) {
-  const finalPrice = data.customMonthlyPrice !== void 0 ? Number(data.customMonthlyPrice) : data.plan === "enterprise" ? 85e3 : data.plan === "aliado" ? 0 : data.plan === "emprendedor" ? 35e3 : 55e3;
-  const result = await query(`
-    INSERT INTO tenants (
-      name, slug, custom_domain, ai_provider, ai_api_key_encrypted, 
-      ai_model, evolution_instance, whatsapp_number, plan, active,
-      custom_monthly_price, billing_currency, subscription_status, trial_ends_at, settings_json,
-      address, latitude, longitude, google_maps_url, is_ai_pilot, ai_priority_level
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
-    RETURNING id, name, slug, custom_domain as "customDomain", 
-           ai_provider as "aiProvider", ai_model as "aiModel", 
-           evolution_instance as "evolutionInstance", whatsapp_number as "whatsappNumber",
-           plan, active, custom_monthly_price as "customMonthlyPrice", billing_currency as "billingCurrency",
-           subscription_status as "subscriptionStatus", trial_ends_at as "trialEndsAt",
-           settings_json as "settingsJson", address, latitude, longitude, google_maps_url as "googleMapsUrl",
-           is_ai_pilot as "isAiPilot", ai_priority_level as "aiPriorityLevel",
-           created_at as "createdAt"
-  `, [
-    data.name,
-    data.slug,
-    data.customDomain,
-    data.aiProvider || "gemini",
-    data.aiApiKeyEncrypted,
-    data.aiModel || "gemini-2.5-flash",
-    data.evolutionInstance,
-    data.whatsappNumber || data.phone || null,
-    data.plan || "pro",
-    data.active !== false,
-    finalPrice,
-    data.billingCurrency || "CRC",
-    data.subscriptionStatus || "active",
-    data.trialEndsAt || null,
-    data.settingsJson || null,
-    data.address || null,
-    data.latitude ? Number(data.latitude) : null,
-    data.longitude ? Number(data.longitude) : null,
-    data.googleMapsUrl || data.google_maps_url || null,
-    Boolean(data.isAiPilot),
-    Number(data.aiPriorityLevel) || 0
-  ]);
-  return result.rows[0];
-}
-async function updateTenant(id, data) {
-  const allowedColumns = {
-    name: "name",
-    slug: "slug",
-    customDomain: "custom_domain",
-    custom_domain: "custom_domain",
-    aiProvider: "ai_provider",
-    ai_provider: "ai_provider",
-    aiApiKeyEncrypted: "ai_api_key_encrypted",
-    ai_api_key_encrypted: "ai_api_key_encrypted",
-    aiModel: "ai_model",
-    ai_model: "ai_model",
-    evolutionInstance: "evolution_instance",
-    evolution_instance: "evolution_instance",
-    whatsappNumber: "whatsapp_number",
-    whatsapp_number: "whatsapp_number",
-    phone: "whatsapp_number",
-    plan: "plan",
-    active: "active",
-    settingsJson: "settings_json",
-    settings_json: "settings_json",
-    subscriptionStatus: "subscription_status",
-    subscription_status: "subscription_status",
-    billingCurrency: "billing_currency",
-    billing_currency: "billing_currency",
-    customMonthlyPrice: "custom_monthly_price",
-    custom_monthly_price: "custom_monthly_price",
-    trialEndsAt: "trial_ends_at",
-    trial_ends_at: "trial_ends_at",
-    nextBillingDate: "next_billing_date",
-    next_billing_date: "next_billing_date",
-    gracePeriodEndsAt: "grace_period_ends_at",
-    grace_period_ends_at: "grace_period_ends_at",
-    address: "address",
-    latitude: "latitude",
-    longitude: "longitude",
-    googleMapsUrl: "google_maps_url",
-    google_maps_url: "google_maps_url",
-    isAiPilot: "is_ai_pilot",
-    is_ai_pilot: "is_ai_pilot",
-    aiPriorityLevel: "ai_priority_level",
-    ai_priority_level: "ai_priority_level"
-  };
-  const validEntries = Object.entries(data).filter(([k, v]) => allowedColumns[k] !== void 0 && v !== void 0);
-  if (validEntries.length === 0) return getTenantById(id);
-  const setClause = validEntries.map(([key], index) => {
-    const dbColumn = allowedColumns[key];
-    return `${dbColumn} = $${index + 2}`;
-  }).join(", ");
-  const values = validEntries.map(([, val]) => val);
-  const result = await query(`
-    UPDATE tenants SET ${setClause}
-    WHERE id = $1
-    RETURNING id, name, slug, custom_domain as "customDomain", 
-           ai_provider as "aiProvider", ai_model as "aiModel", 
-           evolution_instance as "evolutionInstance", whatsapp_number as "whatsappNumber",
-           plan, active, subscription_status as "subscriptionStatus",
-           billing_currency as "billingCurrency", custom_monthly_price as "customMonthlyPrice",
-           trial_ends_at as "trialEndsAt", settings_json as "settingsJson",
-           address, latitude, longitude, google_maps_url as "googleMapsUrl",
-           is_ai_pilot as "isAiPilot", ai_priority_level as "aiPriorityLevel",
-           created_at as "createdAt"
-  `, [id, ...values]);
-  return result.rows[0] || null;
-}
-async function deleteTenant(id) {
-  const result = await query("DELETE FROM tenants WHERE id = $1", [id]);
-  return (result.rowCount || 0) > 0;
-}
-
-// src/server/services/campaign-queue.service.ts
 var REDIS_URL = process.env.REDIS_URL || "redis://:BeticoRedis2026@betico_redis:6379";
 var redis = null;
 try {
@@ -8392,174 +8844,9 @@ async function deleteProduct(id, tenantId) {
   return (result.rowCount || 0) > 0;
 }
 
-// src/server/db/store-settings.repo.ts
-init_pool();
-async function getStoreSettings(tenantId) {
-  const result = await query(`
-    SELECT id, tenant_id as "tenantId", store_enabled as "storeEnabled", store_mode as "storeMode",
-           store_modules as "storeModules", restaurant_config as "restaurantConfig",
-           delivery_config as "deliveryConfig", correos_cr_config as "correosCrConfig",
-           local_delivery_config as "localDeliveryConfig", store_schedule as "storeSchedule",
-           custom_stages as "customStages", notification_templates as "notificationTemplates",
-           store_name as "storeName", store_slug as "storeSlug", store_description as "storeDescription",
-           store_logo_url as "storeLogoUrl", store_banner_url as "storeBannerUrl",
-           store_theme as "storeTheme", currency, accept_sinpe as "acceptSinpe",
-           accept_sinpe_tilopay as "acceptSinpeTilopay",
-           sinpe_phone as "sinpePhone", sinpe_name as "sinpeName", accept_transfer as "acceptTransfer",
-           bank_account_info as "bankAccountInfo", accept_cash_on_delivery as "acceptCashOnDelivery",
-           delivery_enabled as "deliveryEnabled", delivery_fee as "deliveryFee",
-           pickup_enabled as "pickupEnabled", whatsapp_checkout as "whatsappCheckout",
-           min_order_amount as "minOrderAmount", store_message as "storeMessage"
-    FROM store_settings 
-    WHERE tenant_id = $1
-  `, [tenantId]);
-  const row = result.rows[0];
-  if (!row) return null;
-  const storeTheme = row.storeTheme || {};
-  const storeLogoUrl = row.storeLogoUrl || storeTheme.logoUrl || "";
-  const storeBannerUrl = row.storeBannerUrl || storeTheme.bannerUrl || "";
-  return {
-    ...row,
-    storeLogoUrl,
-    storeBannerUrl,
-    storeModules: row.storeModules || { storeEnabled: true, bookingsEnabled: true },
-    storeSchedule: row.storeSchedule || { isOpenManual: true, autoScheduleEnabled: false, schedule: {} },
-    correosCrConfig: row.correosCrConfig || {
-      enabled: true,
-      serviceType: "pyme",
-      originType: "GAM",
-      includeIva: true,
-      rates: [
-        { label: "Pymes Liviano (0 a 500 g)", minGrams: 0, maxGrams: 500, gamPrice: 1100, restoPrice: 1350 },
-        { label: "Pymes Especial Gold (0 a 2 kg)", minGrams: 501, maxGrams: 2e3, gamPrice: 1769.91, restoPrice: 2477.88 },
-        { label: "Pyme Plus (0 a 3 kg)", minGrams: 2001, maxGrams: 3e3, gamPrice: 2425, restoPrice: 3360 },
-        { label: "Carga Liviana (3 a 10 kg)", minGrams: 3001, maxGrams: 1e4, gamPrice: 3982.3, restoPrice: 3982.3 },
-        { label: "Pesado Express (10 a 20 kg)", minGrams: 10001, maxGrams: 2e4, gamPrice: 9800, restoPrice: 9800, extraPerKg: 1e3 },
-        { label: "Pesado Express (20 a 30 kg)", minGrams: 20001, maxGrams: 3e4, gamPrice: 14e3, restoPrice: 14e3, extraPerKg: 1e3 }
-      ]
-    },
-    localDeliveryConfig: row.localDeliveryConfig || { enabled: true, fee: 2500, freeAbove: 35e3, estimatedHours: "24 a 48 horas" },
-    customStages: row.customStages || (row.storeMode === "restaurant" ? {
-      fase_1: "Comanda Recibida",
-      fase_2: "En Cocina / Preparaci\xF3n",
-      fase_3: "Listo para Servir / Entregar",
-      fase_4: "En Camino (Delivery)",
-      fase_5: "Entregado / Servido"
-    } : {
-      fase_1: "Pedido Recibido",
-      fase_2: "En Empaque / Preparaci\xF3n",
-      fase_3: "Listo para Despacho",
-      fase_4: "En Tr\xE1nsito (Delivery / Gu\xEDa)",
-      fase_5: "Entregado con \xC9xito"
-    })
-  };
-}
-async function upsertStoreSettings(tenantId, data) {
-  const result = await query(`
-    INSERT INTO store_settings (
-      tenant_id, store_enabled, store_mode, store_modules, restaurant_config, delivery_config,
-      correos_cr_config, local_delivery_config, store_schedule, custom_stages, notification_templates,
-      store_name, store_slug, store_description, store_logo_url,
-      store_banner_url, store_theme, currency, accept_sinpe, accept_sinpe_tilopay, sinpe_phone, sinpe_name,
-      accept_transfer, bank_account_info, accept_cash_on_delivery, delivery_enabled,
-      delivery_fee, pickup_enabled, whatsapp_checkout, min_order_amount, store_message
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31)
-    ON CONFLICT (tenant_id) DO UPDATE SET
-      store_enabled = EXCLUDED.store_enabled,
-      store_mode = EXCLUDED.store_mode,
-      store_modules = EXCLUDED.store_modules,
-      restaurant_config = EXCLUDED.restaurant_config,
-      delivery_config = EXCLUDED.delivery_config,
-      correos_cr_config = EXCLUDED.correos_cr_config,
-      local_delivery_config = EXCLUDED.local_delivery_config,
-      store_schedule = EXCLUDED.store_schedule,
-      custom_stages = EXCLUDED.custom_stages,
-      notification_templates = EXCLUDED.notification_templates,
-      store_name = EXCLUDED.store_name,
-      store_slug = EXCLUDED.store_slug,
-      store_description = EXCLUDED.store_description,
-      store_logo_url = CASE 
-        WHEN EXCLUDED.store_logo_url IS NOT NULL AND EXCLUDED.store_logo_url != '' THEN EXCLUDED.store_logo_url 
-        ELSE store_settings.store_logo_url 
-      END,
-      store_banner_url = CASE 
-        WHEN EXCLUDED.store_banner_url IS NOT NULL AND EXCLUDED.store_banner_url != '' THEN EXCLUDED.store_banner_url 
-        ELSE store_settings.store_banner_url 
-      END,
-      store_theme = CASE
-        WHEN EXCLUDED.store_theme IS NOT NULL AND COALESCE(EXCLUDED.store_theme->>'logoUrl', '') != '' THEN EXCLUDED.store_theme
-        WHEN store_settings.store_logo_url IS NOT NULL AND store_settings.store_logo_url != '' THEN 
-          jsonb_set(
-            jsonb_set(COALESCE(EXCLUDED.store_theme, '{}'::jsonb), '{logoUrl}', to_jsonb(store_settings.store_logo_url)),
-            '{bannerUrl}', to_jsonb(COALESCE(store_settings.store_banner_url, ''))
-          )
-        ELSE EXCLUDED.store_theme
-      END,
-      currency = EXCLUDED.currency,
-      accept_sinpe = EXCLUDED.accept_sinpe,
-      accept_sinpe_tilopay = EXCLUDED.accept_sinpe_tilopay,
-      sinpe_phone = EXCLUDED.sinpe_phone,
-      sinpe_name = EXCLUDED.sinpe_name,
-      accept_transfer = EXCLUDED.accept_transfer,
-      bank_account_info = EXCLUDED.bank_account_info,
-      accept_cash_on_delivery = EXCLUDED.accept_cash_on_delivery,
-      delivery_enabled = EXCLUDED.delivery_enabled,
-      delivery_fee = EXCLUDED.delivery_fee,
-      pickup_enabled = EXCLUDED.pickup_enabled,
-      whatsapp_checkout = EXCLUDED.whatsapp_checkout,
-      min_order_amount = EXCLUDED.min_order_amount,
-      store_message = EXCLUDED.store_message,
-      updated_at = CURRENT_TIMESTAMP
-    RETURNING id, tenant_id as "tenantId", store_enabled as "storeEnabled", store_mode as "storeMode",
-              store_modules as "storeModules", restaurant_config as "restaurantConfig",
-              delivery_config as "deliveryConfig", correos_cr_config as "correosCrConfig",
-              local_delivery_config as "localDeliveryConfig", store_schedule as "storeSchedule",
-              custom_stages as "customStages", notification_templates as "notificationTemplates",
-              store_name as "storeName", store_slug as "storeSlug", store_description as "storeDescription",
-              store_logo_url as "storeLogoUrl", store_banner_url as "storeBannerUrl",
-              store_theme as "storeTheme", currency, accept_sinpe as "acceptSinpe",
-              accept_sinpe_tilopay as "acceptSinpeTilopay",
-              sinpe_phone as "sinpePhone", sinpe_name as "sinpeName", accept_transfer as "acceptTransfer",
-              bank_account_info as "bankAccountInfo", accept_cash_on_delivery as "acceptCashOnDelivery",
-              delivery_enabled as "deliveryEnabled", delivery_fee as "deliveryFee",
-              pickup_enabled as "pickupEnabled", whatsapp_checkout as "whatsappCheckout",
-              min_order_amount as "minOrderAmount", store_message as "storeMessage"
-  `, [
-    tenantId,
-    data.storeEnabled !== false,
-    data.storeMode || "retail",
-    JSON.stringify(data.storeModules || { storeEnabled: true, bookingsEnabled: true }),
-    JSON.stringify(data.restaurantConfig || {}),
-    JSON.stringify(data.deliveryConfig || {}),
-    JSON.stringify(data.correosCrConfig || {}),
-    JSON.stringify(data.localDeliveryConfig || {}),
-    JSON.stringify(data.storeSchedule || {}),
-    JSON.stringify(data.customStages || {}),
-    JSON.stringify(data.notificationTemplates || {}),
-    data.storeName || "Mi Negocio",
-    data.storeSlug || "tienda",
-    data.storeDescription || "",
-    data.storeLogoUrl || data.storeTheme?.logoUrl || "",
-    data.storeBannerUrl || data.storeTheme?.bannerUrl || "",
-    JSON.stringify(data.storeTheme || { primaryColor: "#16a34a", cardRadius: "rounded", cardShadow: "md", fontFamily: "Inter" }),
-    data.currency || "CRC",
-    data.acceptSinpe !== false,
-    data.acceptSinpeTilopay === true,
-    data.sinpePhone || "",
-    data.sinpeName || "",
-    data.acceptTransfer !== false,
-    data.bankAccountInfo || "",
-    data.acceptCashOnDelivery || false,
-    data.deliveryEnabled || false,
-    data.deliveryFee || 0,
-    data.pickupEnabled !== false,
-    data.whatsappCheckout !== false,
-    data.minOrderAmount || 0,
-    data.storeMessage || ""
-  ]);
-  return result.rows[0];
-}
-var saveStoreSettings = upsertStoreSettings;
+// src/server/services/agent.ts
+init_tenant_repo();
+init_store_settings_repo();
 
 // src/server/db/schedule.repo.ts
 init_pool();
@@ -9052,6 +9339,8 @@ init_records_repo();
 init_pool();
 
 // src/server/services/tenant-model.service.ts
+init_tenant_repo();
+init_store_settings_repo();
 var debounceTimers = /* @__PURE__ */ new Map();
 function sanitizeModelName(nameOrSlug) {
   if (!nameOrSlug) return "default";
@@ -9226,6 +9515,8 @@ async function ensureAllVirtualModels() {
 // src/server/services/agent-orchestrator.ts
 init_ai_provider();
 init_encryption();
+init_tenant_repo();
+init_store_settings_repo();
 init_records_repo();
 
 // src/server/db/website.repo.ts
@@ -9443,6 +9734,7 @@ init_pool();
 
 // src/server/services/loyalty.service.ts
 init_loyalty_repo();
+init_store_settings_repo();
 init_pool();
 async function processOrderLoyalty(tenantId, orderData) {
   try {
@@ -11620,6 +11912,7 @@ async function rescheduleBookingFromWhatsApp(tenantId, phone, rescheduleData) {
 
 // src/server/services/order.service.ts
 init_orders_repo();
+init_store_settings_repo();
 init_pool();
 
 // src/server/services/coupon.service.ts
@@ -11986,6 +12279,7 @@ async function createOrderFromWhatsApp(tenantId, orderData) {
 
 // src/server/services/message-queue.service.ts
 init_evolution();
+init_tenant_repo();
 
 // src/server/db/ai-command-logs.repo.ts
 init_pool();
@@ -12039,6 +12333,7 @@ async function logAICommand(tenantId, remoteJid, commandType, payload, status, e
 
 // src/server/services/secretary.service.ts
 init_pool();
+init_tenant_repo();
 init_evolution();
 init_encryption();
 init_ai_provider();
@@ -12795,8 +13090,10 @@ async function processSingleMessage(msg) {
 
 // src/server/services/evolution-api.service.ts
 init_evolution();
-import crypto5 from "crypto";
+init_tenant_repo();
+init_store_settings_repo();
 init_orders_repo();
+import crypto5 from "crypto";
 
 // src/server/services/event-bus.service.ts
 import { EventEmitter } from "events";
@@ -13010,6 +13307,9 @@ function requireSuperAdmin(req, res, next) {
 
 // src/server/routes/auth.routes.ts
 init_users_repo();
+init_tenant_repo();
+init_store_settings_repo();
+init_tenant_repo();
 init_users_repo();
 init_pool();
 
@@ -13519,7 +13819,9 @@ var auth_routes_default = router;
 // src/server/routes/tenant.routes.ts
 import { Router as Router2 } from "express";
 import crypto6 from "crypto";
+init_tenant_repo();
 init_users_repo();
+init_store_settings_repo();
 var router2 = Router2();
 router2.use(authenticateToken);
 router2.use(requireSuperAdmin);
@@ -14170,6 +14472,8 @@ var services_routes_default = router4;
 // src/server/routes/appointments.routes.ts
 import { Router as Router5 } from "express";
 init_appointments_repo();
+init_tenant_repo();
+init_store_settings_repo();
 init_tenant_payment_repo();
 
 // src/server/services/tilopay-tenant.service.ts
@@ -15150,6 +15454,7 @@ var appointments_routes_default = router5;
 
 // src/server/routes/chats.routes.ts
 import { Router as Router6 } from "express";
+init_tenant_repo();
 init_evolution();
 init_pool();
 var router6 = Router6();
@@ -15220,6 +15525,8 @@ var chats_routes_default = router6;
 import { Router as Router7 } from "express";
 init_encryption();
 init_pool();
+init_store_settings_repo();
+init_tenant_repo();
 init_loyalty_repo();
 var router7 = Router7();
 router7.use(authenticateToken);
@@ -15375,6 +15682,7 @@ var agent_routes_default = router7;
 
 // src/server/routes/evolution.routes.ts
 import { Router as Router8 } from "express";
+init_tenant_repo();
 init_evolution();
 init_env();
 var router8 = Router8();
@@ -15488,6 +15796,8 @@ var notifications_routes_default = router9;
 
 // src/server/routes/store.routes.ts
 import { Router as Router10 } from "express";
+init_store_settings_repo();
+init_tenant_repo();
 var router10 = Router10();
 router10.use(authenticateToken);
 router10.use(tenantContext);
@@ -15530,6 +15840,7 @@ var store_routes_default = router10;
 import { Router as Router11 } from "express";
 import multer from "multer";
 import * as XLSX from "xlsx";
+init_tenant_repo();
 init_ai_provider();
 init_encryption();
 init_pool();
@@ -15878,6 +16189,8 @@ var products_routes_default = router11;
 // src/server/routes/orders.routes.ts
 import { Router as Router12 } from "express";
 init_orders_repo();
+init_tenant_repo();
+init_store_settings_repo();
 init_evolution();
 init_pool();
 init_almendro_service();
@@ -16476,7 +16789,9 @@ router15.post("/multiple", upload2.array("files", 10), async (req, res) => {
 var upload_routes_default = router15;
 
 // src/server/routes/storefront.routes.ts
+init_tenant_repo();
 import { Router as Router16 } from "express";
+init_store_settings_repo();
 init_orders_repo();
 init_evolution();
 init_pool();
@@ -16959,8 +17274,9 @@ var storefront_routes_default = router16;
 
 // src/server/routes/webhook.routes.ts
 init_env();
-import { Router as Router17 } from "express";
+init_tenant_repo();
 init_evolution();
+import { Router as Router17 } from "express";
 init_pool();
 
 // src/server/services/audio-transcriber.service.ts
@@ -17308,8 +17624,9 @@ Hemos recibido tu comprobante para el pedido *#${pendingOrder.orderNumber}* (\u2
 var webhook_routes_default = router17;
 
 // src/server/routes/calendar.routes.ts
-import { Router as Router18 } from "express";
+init_tenant_repo();
 init_appointments_repo();
+import { Router as Router18 } from "express";
 var router18 = Router18();
 function normalizeDateStr(dateVal) {
   return normalizeDateInput(dateVal);
@@ -17426,6 +17743,8 @@ import jwt2 from "jsonwebtoken";
 import rateLimit3 from "express-rate-limit";
 init_drivers_repo();
 init_orders_repo();
+init_tenant_repo();
+init_store_settings_repo();
 init_evolution();
 init_pool();
 var router19 = Router19();
@@ -17865,6 +18184,7 @@ var drivers_routes_default = router19;
 import { Router as Router20 } from "express";
 import os from "os";
 init_pool();
+init_tenant_repo();
 var router20 = Router20();
 router20.use(authenticateToken);
 router20.use(requireSuperAdmin);
@@ -18951,6 +19271,7 @@ var superadmin_platform_routes_default = router21;
 // src/server/routes/campaigns.routes.ts
 import { Router as Router22 } from "express";
 init_pool();
+init_tenant_repo();
 var router22 = Router22();
 router22.use(authenticateToken);
 router22.get("/reminder-settings", async (req, res) => {
@@ -19427,6 +19748,7 @@ init_env();
 import { Router as Router24 } from "express";
 import jwt3 from "jsonwebtoken";
 import rateLimit4 from "express-rate-limit";
+init_tenant_repo();
 init_pool();
 var router24 = Router24();
 var specialistPortalLoginLimiter = rateLimit4({
@@ -19809,7 +20131,9 @@ router25.post("/", async (req, res) => {
 var website_routes_default = router25;
 
 // src/server/routes/website-public.routes.ts
+init_tenant_repo();
 import { Router as Router26 } from "express";
+init_store_settings_repo();
 var router26 = Router26();
 router26.get("/:slug", async (req, res) => {
   try {
@@ -19910,6 +20234,7 @@ var queue_routes_default = router27;
 
 // src/server/routes/courts.routes.ts
 import { Router as Router28 } from "express";
+init_tenant_repo();
 init_tenant_payment_repo();
 init_evolution();
 init_pool();
@@ -20594,6 +20919,7 @@ init_pool();
 init_orders_repo();
 import { Router as Router29 } from "express";
 init_appointments_repo();
+init_tenant_repo();
 init_evolution();
 init_crypto_service();
 init_almendro_service();
@@ -21431,6 +21757,7 @@ var tenant_payment_routes_default = router31;
 import { Router as Router32 } from "express";
 import jwtLib from "jsonwebtoken";
 init_pool();
+init_tenant_repo();
 init_evolution();
 init_env();
 var router32 = Router32();
@@ -21983,6 +22310,7 @@ var records_routes_default = router33;
 import { Router as Router34 } from "express";
 init_tenant_almendro_repo();
 init_almendro_service();
+init_tenant_repo();
 init_appointments_repo();
 init_records_repo();
 var router34 = Router34();
@@ -22674,9 +23002,10 @@ var loyalty_routes_default = router36;
 // src/server/routes/loyalty-customer.routes.ts
 init_env();
 init_loyalty_repo();
+init_tenant_repo();
+init_pool();
 import { Router as Router37 } from "express";
 import jwt4 from "jsonwebtoken";
-init_pool();
 var router37 = Router37();
 function signCustomerToken(customer) {
   return jwt4.sign(
@@ -23011,6 +23340,7 @@ var timezone_routes_default = router39;
 
 // src/server/routes/secretary.routes.ts
 import { Router as Router40 } from "express";
+init_tenant_repo();
 init_encryption();
 init_ai_provider();
 init_pool();
@@ -23198,158 +23528,7 @@ var secretary_routes_default = router40;
 import { Router as Router41 } from "express";
 import multer3 from "multer";
 init_hacienda_native_repo();
-
-// src/server/services/hacienda-native.service.ts
-init_hacienda_native_repo();
-async function inspectP12Certificate(p12Buffer, pin) {
-  if (!p12Buffer || p12Buffer.length === 0) {
-    return { valid: false, error: "Archivo de certificado vac\xEDo o no provisto" };
-  }
-  try {
-    const forge = await import("node-forge").then((m) => m.default || m).catch(() => null);
-    if (!forge) {
-      return {
-        valid: true,
-        expiresAt: new Date(Date.now() + 365 * 864e5),
-        // Asumir 1 año de vigencia
-        subject: "Certificado PKCS#12"
-      };
-    }
-    const p12DerString = forge.util.binary.raw.encode(new Uint8Array(p12Buffer));
-    const p12Asn1 = forge.asn1.fromDer(p12DerString);
-    const p12 = forge.pkcs12.pkcs12FromAsn1(p12Asn1, pin);
-    const OID_CERT_BAG = "1.2.840.113549.1.12.10.1.3";
-    const certBags = p12.getBags({ bagType: OID_CERT_BAG });
-    const certBagArray = certBags[OID_CERT_BAG];
-    if (!certBagArray || certBagArray.length === 0 || !certBagArray[0]?.cert) {
-      return { valid: false, error: "No se encontraron certificados v\xE1lidos en el archivo .p12" };
-    }
-    const cert = certBagArray[0].cert;
-    const notAfter = cert.validity.notAfter;
-    const commonNameAttr = cert.subject.getField("CN");
-    const commonName = commonNameAttr?.value || "Certificado Tributario Hacienda";
-    return {
-      valid: true,
-      expiresAt: notAfter,
-      subject: String(commonName)
-    };
-  } catch (error) {
-    console.warn("[HaciendaNativeService] Error al verificar .p12:", error.message);
-    const msg = error.message?.toLowerCase() || "";
-    if (msg.includes("mac") || msg.includes("password") || msg.includes("pkcs") || msg.includes("pin")) {
-      return { valid: false, error: "El PIN ingresado no coincide con el certificado .p12" };
-    }
-    return { valid: false, error: `No fue posible validar el certificado: ${error.message}` };
-  }
-}
-async function authenticateHaciendaIdp(environment, username, password) {
-  if (!username || !password) {
-    return { success: false, message: "Faltan credenciales ATV (usuario o contrase\xF1a del API de Hacienda)" };
-  }
-  const isProduction2 = environment === "production";
-  const idpUrl = isProduction2 ? "https://idp.comprobanteselectronicos.go.cr/auth/realms/rut/protocol/openid-connect/token" : "https://idp.comprobanteselectronicos.go.cr/auth/realms/rut-stag/protocol/openid-connect/token";
-  const clientId = isProduction2 ? "api-prod" : "api-stag";
-  const params = new URLSearchParams();
-  params.append("grant_type", "password");
-  params.append("client_id", clientId);
-  params.append("username", username.trim());
-  params.append("password", password.trim());
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 1e4);
-    const res = await fetch(idpUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded"
-      },
-      body: params.toString(),
-      signal: controller.signal
-    });
-    clearTimeout(timeout);
-    if (res.ok) {
-      const data = await res.json();
-      return {
-        success: true,
-        message: "\xA1Conexi\xF3n exitosa con el Ministerio de Hacienda (Token recibido)!",
-        accessToken: data.access_token,
-        expiresIn: data.expires_in
-      };
-    } else {
-      const errText = await res.text();
-      let detail = "Credenciales ATV rechazadas por Hacienda";
-      try {
-        const json = JSON.parse(errText);
-        if (json.error_description) detail = json.error_description;
-        else if (json.error) detail = json.error;
-      } catch (_) {
-      }
-      return {
-        success: false,
-        message: `Hacienda respondi\xF3 error ${res.status}: ${detail}`
-      };
-    }
-  } catch (error) {
-    if (error.name === "AbortError") {
-      return { success: false, message: "Tiempo de espera agotado al conectar con el servidor de Hacienda (10s)" };
-    }
-    return { success: false, message: `Error de red al conectar con Hacienda: ${error.message}` };
-  }
-}
-async function testTenantHaciendaConnection(tenantId) {
-  const secrets = await getHaciendaDecryptedSecrets(tenantId);
-  const config = await getHaciendaConfigByTenant(tenantId);
-  if (!secrets || !config) {
-    return {
-      success: false,
-      message: "No se ha configurado la facturaci\xF3n electr\xF3nica para este comercio"
-    };
-  }
-  let certValid = false;
-  let certExpiresAt;
-  if (secrets.p12Buffer && secrets.p12Pin) {
-    const certResult = await inspectP12Certificate(secrets.p12Buffer, secrets.p12Pin);
-    if (!certResult.valid) {
-      const msg = `Fallo en el certificado: ${certResult.error}`;
-      await updateConnectionTestResult(tenantId, false, msg);
-      return {
-        success: false,
-        message: msg,
-        details: { certValid: false, idpValid: false, environment: secrets.environment }
-      };
-    }
-    certValid = true;
-    certExpiresAt = certResult.expiresAt ? certResult.expiresAt.toISOString() : void 0;
-  }
-  if (!secrets.idpUsername || !secrets.idpPassword) {
-    const msg = "Faltan credenciales ATV (usuario o contrase\xF1a del API)";
-    await updateConnectionTestResult(tenantId, false, msg);
-    return {
-      success: false,
-      message: msg,
-      details: { certValid, idpValid: false, environment: secrets.environment }
-    };
-  }
-  const idpResult = await authenticateHaciendaIdp(
-    secrets.environment,
-    secrets.idpUsername,
-    secrets.idpPassword
-  );
-  const fullSuccess = idpResult.success && (secrets.p12Buffer ? certValid : true);
-  const statusMsg = fullSuccess ? `\u2705 Conexi\xF3n exitosa con Hacienda (${secrets.environment === "production" ? "Producci\xF3n" : "Sandbox / Pruebas"}). ${certExpiresAt ? `Certificado v\xE1lido hasta ${new Date(certExpiresAt).toLocaleDateString("es-CR")}.` : ""}` : idpResult.message;
-  await updateConnectionTestResult(tenantId, fullSuccess, statusMsg);
-  return {
-    success: fullSuccess,
-    message: statusMsg,
-    details: {
-      certValid,
-      certExpiresAt,
-      idpValid: idpResult.success,
-      environment: secrets.environment
-    }
-  };
-}
-
-// src/server/routes/billing-native.routes.ts
+init_hacienda_native_service();
 var router41 = Router41();
 var upload3 = multer3({
   storage: multer3.memoryStorage(),
@@ -23589,6 +23768,8 @@ router42.get("/sitemap.xml", async (req, res) => {
 var seo_routes_default = router42;
 
 // src/server/services/seo.service.ts
+init_tenant_repo();
+init_store_settings_repo();
 var seoCache = /* @__PURE__ */ new Map();
 var CACHE_TTL_MS = 10 * 60 * 1e3;
 function toAbsoluteUrl(imagePath, baseUrl) {

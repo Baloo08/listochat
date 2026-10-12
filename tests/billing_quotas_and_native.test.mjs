@@ -302,4 +302,50 @@ describe('Facturación Electrónica Betico Nativa y Control de Cuotas por Plan (
     }
   });
 
+  test('10. Notificación Automática por WhatsApp con Factura/Tiquete PDF y Clave Numérica', () => {
+    function formatInvoiceWhatsAppMsg(customerName, referenceLabel, storeName, docType, numericKey, pdfUrl) {
+      const docName = docType === '01' ? 'Factura Electrónica' : 'Tiquete Electrónico';
+      return `🧾 *¡Tu ${docName} está lista!*
+
+Hola *${customerName || 'Estimado cliente'}*, te compartimos el comprobante electrónico correspondiente a tu *${referenceLabel}* en *${storeName}*:
+
+🔗 *Descargar PDF:*
+${pdfUrl}
+
+🔑 *Clave Numérica de Hacienda:*
+\`${numericKey}\`
+
+¡Muchas gracias por tu preferencia y confianza! ⭐`;
+    }
+
+    const invoiceMsg = formatInvoiceWhatsAppMsg(
+      'María Vargas',
+      'Pedido #ORD-4512',
+      'Boutique Bella',
+      '01',
+      '50612102600310188990000100001010000001234123456789',
+      'https://app.listochat.com/api/almendro/public/voucher-pdf/50612102600310188990000100001010000001234123456789'
+    );
+
+    assert.ok(invoiceMsg.includes('Factura Electrónica'), 'Debe identificar el tipo de documento 01');
+    assert.ok(invoiceMsg.includes('María Vargas'), 'Debe saludar al cliente por su nombre');
+    assert.ok(invoiceMsg.includes('Pedido #ORD-4512'), 'Debe incluir la referencia del pedido');
+    assert.ok(invoiceMsg.includes('50612102600310188990000100001010000001234123456789'), 'Debe incluir la clave numérica de 50 dígitos');
+    assert.ok(invoiceMsg.includes('/api/almendro/public/voucher-pdf/'), 'Debe incluir el enlace de descarga');
+    assert.equal(invoiceMsg.includes('&'), false, 'El mensaje por WhatsApp no debe contener ampersands');
+
+    // Prueba con Tiquete Electrónico 04
+    const ticketMsg = formatInvoiceWhatsAppMsg(
+      'Carlos Rojas',
+      'Cita del 2026-10-15 (14:30)',
+      'Barbería San José',
+      '04',
+      '50612102600310188990000100001040000005678123456789',
+      'https://app.listochat.com/api/almendro/public/voucher-pdf/50612102600310188990000100001040000005678123456789'
+    );
+    assert.ok(ticketMsg.includes('Tiquete Electrónico'), 'Debe identificar el tipo de documento 04');
+    assert.equal(ticketMsg.includes('&'), false, 'Cero ampersands');
+  });
+
 });
+

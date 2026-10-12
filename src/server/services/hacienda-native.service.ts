@@ -210,3 +210,76 @@ export async function testTenantHaciendaConnection(tenantId: string): Promise<{
     }
   };
 }
+
+/**
+ * Envía una notificación automática por WhatsApp al cliente cuando se emite una Factura o Tiquete.
+ */
+export async function sendVoucherWhatsAppNotification({
+  tenantId,
+  customerName,
+  customerPhone,
+  referenceLabel,
+  docType,
+  numericKey,
+  pdfUrl
+}: {
+  tenantId: string;
+  customerName?: string;
+  customerPhone?: string;
+  referenceLabel: string;
+  docType: '01' | '04' | string;
+  numericKey: string;
+  pdfUrl?: string;
+}): Promise<boolean> {
+  try {
+    if (!customerPhone) return false;
+    const { getTenantById } = await import('../db/tenant.repo.js');
+    const { getStoreSettings } = await import('../db/store-settings.repo.js');
+    const { sendMessage } = await import('./evolution.js');
+    const { query } = await import('../db/pool.js');
+
+    const tenant = await getTenantById(tenantId);
+    const store = await getStoreSettings(tenantId);
+    const storeName = store?.storeName || tenant?.name || 'nuestro negocio';
+    const instanceName = tenant?.evolutionInstance;
+
+    const clean = customerPhone.replace(/\D/g, '');
+    const finalPhone = clean.length === 8 ? `506${clean}` : clean;
+
+    if (!instanceName || finalPhone.length < 8) {
+      return false;
+    }
+
+    const docName = docType === '01' ? 'Factura Electrónica' : 'Tiquete Electrónico';
+    const safePdfUrl = pdfUrl || `${process.env.APP_URL || 'https://app.listochat.com'}/api/almendro/public/voucher-pdf/${numericKey}`;
+
+    const msg = `🧾 *¡Tu ${docName} está lista!*
+
+Hola *${customerName || 'Estimado cliente'}*, te compartimos el comprobante electrónico correspondiente a tu *${referenceLabel}* en *${storeName}*:
+
+🔗 *Descargar PDF:*
+${safePdfUrl}
+
+🔑 *Clave Numérica de Hacienda:*
+\`${numericKey}\`
+
+¡Muchas gracias por tu preferencia y confianza! ⭐`;
+
+    await sendMessage(instanceName, finalPhone, msg);
+
+    await query(`
+      INSERT INTO notifications_log (id, tenant_id, recipient, message, trigger_type, status)
+      VALUES ($1, $2, $3, $4, 'electronic_invoice_sent', 'sent')
+    `, [
+      `notif_${Date.now()}`,
+      tenantId,
+      finalPhone,
+      `${docName} enviada a ${customerName || finalPhone}`
+    ]);
+
+    return true;
+  } catch (err: any) {
+    console.warn('[VoucherNotification] Error enviando WhatsApp con factura:', err.message);
+    return false;
+  }
+}

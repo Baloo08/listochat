@@ -549,6 +549,22 @@ export class AlmendroService {
 
         await updateOrder(order.id, tenantId, { billingInfo: updatedBilling });
 
+        // Notificación automática por WhatsApp al cliente con su comprobante
+        try {
+          const { sendVoucherWhatsAppNotification } = await import('./hacienda-native.service.js');
+          sendVoucherWhatsAppNotification({
+            tenantId,
+            customerName: order.customerName,
+            customerPhone: order.customerPhone,
+            referenceLabel: `Pedido #ORD-${order.orderNumber}`,
+            docType,
+            numericKey: voucherRes.numericKey,
+            pdfUrl: voucherRes.pdfUrl
+          }).catch(notifErr => console.warn('[AlmendroService] Error enviando WhatsApp de factura:', notifErr));
+        } catch (impErr) {
+          console.warn('[AlmendroService] No se pudo cargar módulo de notificación:', impErr);
+        }
+
         return {
           success: true,
           numericKey: voucherRes.numericKey,
@@ -666,6 +682,23 @@ export class AlmendroService {
           issuedAt: new Date().toISOString()
         };
         await updateAppointment(appt.id, tenantId, { billingInfo: updatedBilling });
+
+        // Notificación automática por WhatsApp al cliente con su comprobante de cita
+        try {
+          const { sendVoucherWhatsAppNotification } = await import('./hacienda-native.service.js');
+          sendVoucherWhatsAppNotification({
+            tenantId,
+            customerName: appt.customerName,
+            customerPhone: appt.customerPhone,
+            referenceLabel: `Cita del ${appt.date || ''} (${appt.time || ''})`,
+            docType: appt.billingInfo?.idNumber ? '01' : (config.defaultDocType || '04'),
+            numericKey: voucherRes.numericKey,
+            pdfUrl: voucherRes.pdfUrl
+          }).catch(notifErr => console.warn('[AlmendroService] Error enviando WhatsApp de factura para cita:', notifErr));
+        } catch (impErr) {
+          console.warn('[AlmendroService] No se pudo cargar módulo de notificación:', impErr);
+        }
+
         return {
           success: true,
           numericKey: voucherRes.numericKey,
