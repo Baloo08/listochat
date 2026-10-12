@@ -3397,14 +3397,31 @@ var init_orders_repo = __esm({
 // src/server/db/hacienda-native.repo.ts
 var hacienda_native_repo_exports = {};
 __export(hacienda_native_repo_exports, {
+  clearHaciendaCredentials: () => clearHaciendaCredentials,
+  consumeNextConsecutive: () => consumeNextConsecutive,
+  deleteHaciendaBranch: () => deleteHaciendaBranch,
+  formatConsecutiveNumber: () => formatConsecutiveNumber,
+  generateHaciendaNumericKey: () => generateHaciendaNumericKey,
   getCycleUsage: () => getCycleUsage,
+  getHaciendaBranchById: () => getHaciendaBranchById,
+  getHaciendaBranchByStoreBranchId: () => getHaciendaBranchByStoreBranchId,
+  getHaciendaBranchDecryptedSecrets: () => getHaciendaBranchDecryptedSecrets,
+  getHaciendaBranchesByTenant: () => getHaciendaBranchesByTenant,
   getHaciendaConfigByTenant: () => getHaciendaConfigByTenant,
   getHaciendaDecryptedSecrets: () => getHaciendaDecryptedSecrets,
   getTenantPlanQuota: () => getTenantPlanQuota,
   incrementInvoiceUsage: () => incrementInvoiceUsage,
+  saveHaciendaBranch: () => saveHaciendaBranch,
   saveHaciendaConfig: () => saveHaciendaConfig,
+  updateBranchConnectionTestResult: () => updateBranchConnectionTestResult,
   updateConnectionTestResult: () => updateConnectionTestResult
 });
+function computeDaysRemaining(expiresAt) {
+  if (!expiresAt) return null;
+  const dt = new Date(expiresAt);
+  if (isNaN(dt.getTime())) return null;
+  return Math.ceil((dt.getTime() - Date.now()) / 864e5);
+}
 async function getHaciendaConfigByTenant(tenantId) {
   const res = await query(
     `SELECT * FROM tenant_hacienda_configs WHERE tenant_id = $1`,
@@ -3412,6 +3429,17 @@ async function getHaciendaConfigByTenant(tenantId) {
   );
   if (res.rows.length === 0) return null;
   const row = res.rows[0];
+  const p12ExpiresIso = row.p12_expires_at ? new Date(row.p12_expires_at).toISOString() : null;
+  let economicActivities = [];
+  if (Array.isArray(row.economic_activities_json)) {
+    economicActivities = row.economic_activities_json;
+  } else if (typeof row.economic_activities_json === "string") {
+    try {
+      economicActivities = JSON.parse(row.economic_activities_json);
+    } catch (_) {
+      economicActivities = [];
+    }
+  }
   return {
     id: row.id,
     tenantId: row.tenant_id,
@@ -3423,6 +3451,8 @@ async function getHaciendaConfigByTenant(tenantId) {
     taxpayerEmail: row.taxpayer_email || "",
     taxpayerPhone: row.taxpayer_phone || "",
     economicActivityCode: row.economic_activity_code || "",
+    economicActivities,
+    defaultCabysCode: row.default_cabys_code || "8311100000000",
     province: row.province || "1",
     canton: row.canton || "01",
     district: row.district || "01",
@@ -3431,20 +3461,27 @@ async function getHaciendaConfigByTenant(tenantId) {
     idpUsername: row.idp_username || "",
     idpPasswordMasked: row.idp_password_encrypted ? "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022" : "",
     p12Filename: row.p12_filename || "",
-    p12ExpiresAt: row.p12_expires_at ? row.p12_expires_at.toISOString() : null,
+    p12ExpiresAt: p12ExpiresIso,
     p12HasCertificate: Boolean(row.p12_encrypted_blob || row.p12_filename),
+    certSubject: row.cert_subject || "",
+    certIssuer: row.cert_issuer || "",
+    certDaysRemaining: computeDaysRemaining(p12ExpiresIso),
     branchCode: row.branch_code || "001",
     posCode: row.pos_code || "00001",
     defaultDocType: row.default_doc_type || "04",
+    seqFactura: Number(row.seq_factura || 1),
+    seqTiquete: Number(row.seq_tiquete || 1),
+    seqNotaCredito: Number(row.seq_nota_credito || 1),
+    multiBranchEnabled: Boolean(row.multi_branch_enabled),
     isConnected: Boolean(row.is_connected),
-    lastTestAt: row.last_test_at ? row.last_test_at.toISOString() : null,
+    lastTestAt: row.last_test_at ? new Date(row.last_test_at).toISOString() : null,
     lastTestMessage: row.last_test_message || null,
     providerMode: row.provider_mode || "BETICO_NATIVE",
     useAlternativeProvider: Boolean(row.use_alternative_provider),
     isSimplifiedRegime: Boolean(row.is_simplified_regime),
     active: Boolean(row.active),
-    createdAt: row.created_at ? row.created_at.toISOString() : "",
-    updatedAt: row.updated_at ? row.updated_at.toISOString() : ""
+    createdAt: row.created_at ? new Date(row.created_at).toISOString() : "",
+    updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : ""
   };
 }
 async function getHaciendaDecryptedSecrets(tenantId) {
@@ -3489,49 +3526,73 @@ async function saveHaciendaConfig(tenantId, data) {
   const taxpayerEmail = data.taxpayerEmail !== void 0 ? data.taxpayerEmail.trim() : existing.taxpayer_email || "";
   const taxpayerPhone = data.taxpayerPhone !== void 0 ? data.taxpayerPhone.trim() : existing.taxpayer_phone || "";
   const economicActivityCode = data.economicActivityCode !== void 0 ? data.economicActivityCode.trim() : existing.economic_activity_code || "";
+  let economicActivitiesJson = existing.economic_activities_json || [];
+  if (data.economicActivities !== void 0) {
+    if (typeof data.economicActivities === "string") {
+      try {
+        economicActivitiesJson = JSON.parse(data.economicActivities);
+      } catch (_) {
+        economicActivitiesJson = [];
+      }
+    } else if (Array.isArray(data.economicActivities)) {
+      economicActivitiesJson = data.economicActivities;
+    }
+  }
+  const defaultCabysCode = data.defaultCabysCode !== void 0 ? data.defaultCabysCode.trim() : existing.default_cabys_code || "8311100000000";
   const province = data.province || existing.province || "1";
   const canton = data.canton || existing.canton || "01";
   const district = data.district || existing.district || "01";
   const neighborhood = data.neighborhood || existing.neighborhood || "01";
   const addressDetail = data.addressDetail !== void 0 ? data.addressDetail.trim() : existing.address_detail || "";
-  const branchCode = data.branchCode || existing.branch_code || "001";
-  const posCode = data.posCode || existing.pos_code || "00001";
+  const branchCode = String(data.branchCode || existing.branch_code || "001").replace(/\D/g, "").padStart(3, "0").slice(0, 3);
+  const posCode = String(data.posCode || existing.pos_code || "00001").replace(/\D/g, "").padStart(5, "0").slice(0, 5);
   const defaultDocType = data.defaultDocType || existing.default_doc_type || "04";
+  const seqFactura = data.seqFactura !== void 0 ? Math.max(1, Number(data.seqFactura) || 1) : Number(existing.seq_factura || 1);
+  const seqTiquete = data.seqTiquete !== void 0 ? Math.max(1, Number(data.seqTiquete) || 1) : Number(existing.seq_tiquete || 1);
+  const seqNotaCredito = data.seqNotaCredito !== void 0 ? Math.max(1, Number(data.seqNotaCredito) || 1) : Number(existing.seq_nota_credito || 1);
+  const multiBranchEnabled = data.multiBranchEnabled !== void 0 ? Boolean(data.multiBranchEnabled) : Boolean(existing.multi_branch_enabled);
   const providerMode = data.providerMode || existing.provider_mode || "BETICO_NATIVE";
   const useAlternativeProvider = data.useAlternativeProvider !== void 0 ? Boolean(data.useAlternativeProvider) : Boolean(existing.use_alternative_provider);
   const isSimplifiedRegime = data.isSimplifiedRegime !== void 0 ? Boolean(data.isSimplifiedRegime) : Boolean(existing.is_simplified_regime);
   const active = data.active !== void 0 ? Boolean(data.active) : existing.active !== void 0 ? Boolean(existing.active) : true;
   const idpUsername = data.idpUsername !== void 0 ? data.idpUsername.trim() : existing.idp_username || "";
   let idpPasswordEncrypted = existing.idp_password_encrypted || "";
-  if (data.idpPassword && data.idpPassword.trim()) {
+  if (data.idpPassword && data.idpPassword.trim() && !data.idpPassword.includes("\u2022\u2022\u2022\u2022")) {
     idpPasswordEncrypted = encrypt(data.idpPassword.trim());
   }
   let p12EncryptedBlob = existing.p12_encrypted_blob;
   let p12Filename = existing.p12_filename || "";
   let p12ExpiresAt = existing.p12_expires_at || null;
+  let certSubject = data.certSubject !== void 0 ? data.certSubject : existing.cert_subject || "";
+  let certIssuer = data.certIssuer !== void 0 ? data.certIssuer : existing.cert_issuer || "";
   if (data.p12Buffer && data.p12Buffer.length > 0) {
     const base64Str = data.p12Buffer.toString("base64");
     const encryptedStr = encrypt(base64Str);
     p12EncryptedBlob = Buffer.from(encryptedStr, "utf8");
     p12Filename = data.p12Filename || "certificado.p12";
-    if (data.p12ExpiresAt) {
-      p12ExpiresAt = data.p12ExpiresAt;
-    }
+  }
+  if (data.p12ExpiresAt) {
+    p12ExpiresAt = data.p12ExpiresAt;
   }
   let p12PinEncrypted = existing.p12_pin_encrypted || "";
-  if (data.p12Pin && data.p12Pin.trim()) {
+  if (data.p12Pin && data.p12Pin.trim() && !data.p12Pin.includes("\u2022\u2022\u2022\u2022")) {
     p12PinEncrypted = encrypt(data.p12Pin.trim());
   }
   await query(
     `INSERT INTO tenant_hacienda_configs (
       tenant_id, environment, taxpayer_id_type, taxpayer_id_number, taxpayer_name, commercial_name,
-      taxpayer_email, taxpayer_phone, economic_activity_code, province, canton, district, neighborhood,
-      address_detail, idp_username, idp_password_encrypted, p12_encrypted_blob, p12_pin_encrypted,
-      p12_filename, p12_expires_at, branch_code, pos_code, default_doc_type, provider_mode,
-      use_alternative_provider, is_simplified_regime, active, updated_at
+      taxpayer_email, taxpayer_phone, economic_activity_code, economic_activities_json, default_cabys_code,
+      province, canton, district, neighborhood, address_detail, idp_username, idp_password_encrypted,
+      p12_encrypted_blob, p12_pin_encrypted, p12_filename, p12_expires_at, cert_subject, cert_issuer,
+      branch_code, pos_code, default_doc_type, seq_factura, seq_tiquete, seq_nota_credito,
+      multi_branch_enabled, provider_mode, use_alternative_provider, is_simplified_regime, active, updated_at
     ) VALUES (
-      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-      $21, $22, $23, $24, $25, $26, $27, CURRENT_TIMESTAMP
+      $1, $2, $3, $4, $5, $6,
+      $7, $8, $9, $10::jsonb, $11,
+      $12, $13, $14, $15, $16, $17, $18,
+      $19, $20, $21, $22, $23, $24,
+      $25, $26, $27, $28, $29, $30,
+      $31, $32, $33, $34, $35, CURRENT_TIMESTAMP
     )
     ON CONFLICT (tenant_id) DO UPDATE SET
       environment = EXCLUDED.environment,
@@ -3542,6 +3603,8 @@ async function saveHaciendaConfig(tenantId, data) {
       taxpayer_email = EXCLUDED.taxpayer_email,
       taxpayer_phone = EXCLUDED.taxpayer_phone,
       economic_activity_code = EXCLUDED.economic_activity_code,
+      economic_activities_json = EXCLUDED.economic_activities_json,
+      default_cabys_code = EXCLUDED.default_cabys_code,
       province = EXCLUDED.province,
       canton = EXCLUDED.canton,
       district = EXCLUDED.district,
@@ -3553,9 +3616,15 @@ async function saveHaciendaConfig(tenantId, data) {
       p12_pin_encrypted = EXCLUDED.p12_pin_encrypted,
       p12_filename = COALESCE(EXCLUDED.p12_filename, tenant_hacienda_configs.p12_filename),
       p12_expires_at = COALESCE(EXCLUDED.p12_expires_at, tenant_hacienda_configs.p12_expires_at),
+      cert_subject = EXCLUDED.cert_subject,
+      cert_issuer = EXCLUDED.cert_issuer,
       branch_code = EXCLUDED.branch_code,
       pos_code = EXCLUDED.pos_code,
       default_doc_type = EXCLUDED.default_doc_type,
+      seq_factura = EXCLUDED.seq_factura,
+      seq_tiquete = EXCLUDED.seq_tiquete,
+      seq_nota_credito = EXCLUDED.seq_nota_credito,
+      multi_branch_enabled = EXCLUDED.multi_branch_enabled,
       provider_mode = EXCLUDED.provider_mode,
       use_alternative_provider = EXCLUDED.use_alternative_provider,
       is_simplified_regime = EXCLUDED.is_simplified_regime,
@@ -3571,6 +3640,8 @@ async function saveHaciendaConfig(tenantId, data) {
       taxpayerEmail,
       taxpayerPhone,
       economicActivityCode,
+      JSON.stringify(economicActivitiesJson),
+      defaultCabysCode,
       province,
       canton,
       district,
@@ -3582,9 +3653,15 @@ async function saveHaciendaConfig(tenantId, data) {
       p12PinEncrypted,
       p12Filename,
       p12ExpiresAt,
+      certSubject,
+      certIssuer,
       branchCode,
       posCode,
       defaultDocType,
+      seqFactura,
+      seqTiquete,
+      seqNotaCredito,
+      multiBranchEnabled,
       providerMode,
       useAlternativeProvider,
       isSimplifiedRegime,
@@ -3593,6 +3670,34 @@ async function saveHaciendaConfig(tenantId, data) {
   );
   return await getHaciendaConfigByTenant(tenantId);
 }
+async function clearHaciendaCredentials(tenantId, target) {
+  if (target === "atv") {
+    await query(
+      `UPDATE tenant_hacienda_configs
+       SET idp_username = '', idp_password_encrypted = '', is_connected = false, updated_at = CURRENT_TIMESTAMP
+       WHERE tenant_id = $1`,
+      [tenantId]
+    );
+  } else if (target === "p12") {
+    await query(
+      `UPDATE tenant_hacienda_configs
+       SET p12_encrypted_blob = NULL, p12_pin_encrypted = '', p12_filename = '', p12_expires_at = NULL,
+           cert_subject = '', cert_issuer = '', is_connected = false, updated_at = CURRENT_TIMESTAMP
+       WHERE tenant_id = $1`,
+      [tenantId]
+    );
+  } else {
+    await query(
+      `UPDATE tenant_hacienda_configs
+       SET idp_username = '', idp_password_encrypted = '',
+           p12_encrypted_blob = NULL, p12_pin_encrypted = '', p12_filename = '', p12_expires_at = NULL,
+           cert_subject = '', cert_issuer = '', is_connected = false, updated_at = CURRENT_TIMESTAMP
+       WHERE tenant_id = $1`,
+      [tenantId]
+    );
+  }
+  return getHaciendaConfigByTenant(tenantId);
+}
 async function updateConnectionTestResult(tenantId, isConnected, message) {
   await query(
     `UPDATE tenant_hacienda_configs 
@@ -3600,6 +3705,406 @@ async function updateConnectionTestResult(tenantId, isConnected, message) {
      WHERE tenant_id = $3`,
     [isConnected, message, tenantId]
   );
+}
+function mapHaciendaBranchRow(row) {
+  const expiresIso = row.custom_p12_expires_at ? new Date(row.custom_p12_expires_at).toISOString() : null;
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    branchId: row.branch_id || null,
+    storeBranchName: row.store_branch_name || null,
+    branchName: row.branch_name || "Sucursal",
+    branchCode: row.branch_code || "002",
+    posCode: row.pos_code || "00001",
+    commercialName: row.commercial_name || "",
+    economicActivityCode: row.economic_activity_code || "",
+    province: row.province || "1",
+    canton: row.canton || "01",
+    district: row.district || "01",
+    neighborhood: row.neighborhood || "01",
+    addressDetail: row.address_detail || "",
+    seqFactura: Number(row.seq_factura || 1),
+    seqTiquete: Number(row.seq_tiquete || 1),
+    seqNotaCredito: Number(row.seq_nota_credito || 1),
+    useCustomCredentials: Boolean(row.use_custom_credentials),
+    customTaxpayerIdType: row.custom_taxpayer_id_type || "01",
+    customTaxpayerIdNumber: row.custom_taxpayer_id_number || "",
+    customTaxpayerName: row.custom_taxpayer_name || "",
+    customIdpUsername: row.custom_idp_username || "",
+    customIdpPasswordMasked: row.custom_idp_password_encrypted ? "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022" : "",
+    customP12Filename: row.custom_p12_filename || "",
+    customP12ExpiresAt: expiresIso,
+    customP12HasCertificate: Boolean(row.custom_p12_encrypted_blob || row.custom_p12_filename),
+    customCertSubject: row.custom_cert_subject || "",
+    customCertDaysRemaining: computeDaysRemaining(expiresIso),
+    isConnected: Boolean(row.is_connected),
+    lastTestAt: row.last_test_at ? new Date(row.last_test_at).toISOString() : null,
+    lastTestMessage: row.last_test_message || null,
+    active: row.active !== void 0 ? Boolean(row.active) : true,
+    createdAt: row.created_at ? new Date(row.created_at).toISOString() : "",
+    updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : ""
+  };
+}
+async function getHaciendaBranchesByTenant(tenantId) {
+  const res = await query(
+    `SELECT thb.*, b.name AS store_branch_name
+     FROM tenant_hacienda_branches thb
+     LEFT JOIN branches b ON b.id = thb.branch_id
+     WHERE thb.tenant_id = $1
+     ORDER BY thb.branch_code ASC, thb.pos_code ASC`,
+    [tenantId]
+  );
+  return res.rows.map(mapHaciendaBranchRow);
+}
+async function getHaciendaBranchById(tenantId, id) {
+  const res = await query(
+    `SELECT thb.*, b.name AS store_branch_name
+     FROM tenant_hacienda_branches thb
+     LEFT JOIN branches b ON b.id = thb.branch_id
+     WHERE thb.tenant_id = $1 AND thb.id = $2`,
+    [tenantId, id]
+  );
+  if (res.rows.length === 0) return null;
+  return mapHaciendaBranchRow(res.rows[0]);
+}
+async function getHaciendaBranchByStoreBranchId(tenantId, storeBranchId) {
+  const res = await query(
+    `SELECT thb.*, b.name AS store_branch_name
+     FROM tenant_hacienda_branches thb
+     LEFT JOIN branches b ON b.id = thb.branch_id
+     WHERE thb.tenant_id = $1 AND thb.branch_id = $2 AND thb.active = true
+     ORDER BY thb.branch_code ASC
+     LIMIT 1`,
+    [tenantId, storeBranchId]
+  );
+  if (res.rows.length === 0) return null;
+  return mapHaciendaBranchRow(res.rows[0]);
+}
+async function getHaciendaBranchDecryptedSecrets(tenantId, id) {
+  const res = await query(
+    `SELECT thb.custom_p12_encrypted_blob, thb.custom_p12_pin_encrypted, thb.custom_idp_username, thb.custom_idp_password_encrypted,
+            COALESCE(thc.environment, 'sandbox') AS environment
+     FROM tenant_hacienda_branches thb
+     LEFT JOIN tenant_hacienda_configs thc ON thc.tenant_id = thb.tenant_id
+     WHERE thb.tenant_id = $1 AND thb.id = $2`,
+    [tenantId, id]
+  );
+  if (res.rows.length === 0) return null;
+  const row = res.rows[0];
+  let p12Buffer = null;
+  if (row.custom_p12_encrypted_blob) {
+    try {
+      const rawEncrypted = row.custom_p12_encrypted_blob.toString("utf8");
+      const decryptedBase64 = decrypt(rawEncrypted);
+      p12Buffer = Buffer.from(decryptedBase64, "base64");
+    } catch (e) {
+      console.error("[HaciendaRepo] Error descifrando certificado .p12 de sucursal:", e.message);
+    }
+  }
+  const p12Pin = row.custom_p12_pin_encrypted ? decrypt(row.custom_p12_pin_encrypted) : "";
+  const idpPassword = row.custom_idp_password_encrypted ? decrypt(row.custom_idp_password_encrypted) : "";
+  return {
+    p12Buffer,
+    p12Pin,
+    idpPassword,
+    idpUsername: row.custom_idp_username || "",
+    environment: row.environment || "sandbox"
+  };
+}
+async function saveHaciendaBranch(tenantId, data) {
+  const branchCode = String(data.branchCode || "002").replace(/\D/g, "").padStart(3, "0").slice(0, 3);
+  const posCode = String(data.posCode || "00001").replace(/\D/g, "").padStart(5, "0").slice(0, 5);
+  let existing = {};
+  if (data.id) {
+    const exRes = await query(
+      `SELECT * FROM tenant_hacienda_branches WHERE tenant_id = $1 AND id = $2`,
+      [tenantId, data.id]
+    );
+    existing = exRes.rows[0] || {};
+  } else {
+    const exRes = await query(
+      `SELECT * FROM tenant_hacienda_branches WHERE tenant_id = $1 AND branch_code = $2 AND pos_code = $3`,
+      [tenantId, branchCode, posCode]
+    );
+    existing = exRes.rows[0] || {};
+  }
+  const branchId = data.branchId !== void 0 ? data.branchId || null : existing.branch_id || null;
+  const branchName = (data.branchName !== void 0 ? data.branchName : existing.branch_name || "Sucursal").trim();
+  const commercialName = (data.commercialName !== void 0 ? data.commercialName : existing.commercial_name || "").trim();
+  const economicActivityCode = (data.economicActivityCode !== void 0 ? data.economicActivityCode : existing.economic_activity_code || "").trim();
+  const province = data.province || existing.province || "1";
+  const canton = data.canton || existing.canton || "01";
+  const district = data.district || existing.district || "01";
+  const neighborhood = data.neighborhood || existing.neighborhood || "01";
+  const addressDetail = (data.addressDetail !== void 0 ? data.addressDetail : existing.address_detail || "").trim();
+  const seqFactura = data.seqFactura !== void 0 ? Math.max(1, Number(data.seqFactura) || 1) : Number(existing.seq_factura || 1);
+  const seqTiquete = data.seqTiquete !== void 0 ? Math.max(1, Number(data.seqTiquete) || 1) : Number(existing.seq_tiquete || 1);
+  const seqNotaCredito = data.seqNotaCredito !== void 0 ? Math.max(1, Number(data.seqNotaCredito) || 1) : Number(existing.seq_nota_credito || 1);
+  const useCustomCredentials = data.useCustomCredentials !== void 0 ? data.useCustomCredentials === true || data.useCustomCredentials === "true" : Boolean(existing.use_custom_credentials);
+  const customTaxpayerIdType = data.customTaxpayerIdType || existing.custom_taxpayer_id_type || "01";
+  const customTaxpayerIdNumber = (data.customTaxpayerIdNumber !== void 0 ? data.customTaxpayerIdNumber : existing.custom_taxpayer_id_number || "").trim();
+  const customTaxpayerName = (data.customTaxpayerName !== void 0 ? data.customTaxpayerName : existing.custom_taxpayer_name || "").trim();
+  const customIdpUsername = (data.customIdpUsername !== void 0 ? data.customIdpUsername : existing.custom_idp_username || "").trim();
+  let customIdpPasswordEncrypted = existing.custom_idp_password_encrypted || "";
+  if (data.customIdpPassword && data.customIdpPassword.trim() && !data.customIdpPassword.includes("\u2022\u2022\u2022\u2022")) {
+    customIdpPasswordEncrypted = encrypt(data.customIdpPassword.trim());
+  }
+  let customP12EncryptedBlob = existing.custom_p12_encrypted_blob || null;
+  let customP12Filename = existing.custom_p12_filename || "";
+  let customP12ExpiresAt = existing.custom_p12_expires_at || null;
+  let customCertSubject = data.customCertSubject !== void 0 ? data.customCertSubject : existing.custom_cert_subject || "";
+  if (data.customP12Buffer && data.customP12Buffer.length > 0) {
+    const base64Str = data.customP12Buffer.toString("base64");
+    const encryptedStr = encrypt(base64Str);
+    customP12EncryptedBlob = Buffer.from(encryptedStr, "utf8");
+    customP12Filename = data.customP12Filename || "certificado-sucursal.p12";
+  }
+  if (data.customP12ExpiresAt) {
+    customP12ExpiresAt = data.customP12ExpiresAt;
+  }
+  let customP12PinEncrypted = existing.custom_p12_pin_encrypted || "";
+  if (data.customP12Pin && data.customP12Pin.trim() && !data.customP12Pin.includes("\u2022\u2022\u2022\u2022")) {
+    customP12PinEncrypted = encrypt(data.customP12Pin.trim());
+  }
+  const active = data.active !== void 0 ? data.active === true || data.active === "true" : existing.active !== void 0 ? Boolean(existing.active) : true;
+  let savedId;
+  if (data.id && existing.id) {
+    const updRes = await query(
+      `UPDATE tenant_hacienda_branches SET
+        branch_id = $1, branch_name = $2, branch_code = $3, pos_code = $4,
+        commercial_name = $5, economic_activity_code = $6, province = $7, canton = $8,
+        district = $9, neighborhood = $10, address_detail = $11,
+        seq_factura = $12, seq_tiquete = $13, seq_nota_credito = $14,
+        use_custom_credentials = $15, custom_taxpayer_id_type = $16,
+        custom_taxpayer_id_number = $17, custom_taxpayer_name = $18,
+        custom_idp_username = $19, custom_idp_password_encrypted = $20,
+        custom_p12_encrypted_blob = $21, custom_p12_pin_encrypted = $22,
+        custom_p12_filename = $23, custom_p12_expires_at = $24,
+        custom_cert_subject = $25, active = $26, updated_at = CURRENT_TIMESTAMP
+       WHERE tenant_id = $27 AND id = $28
+       RETURNING id`,
+      [
+        branchId,
+        branchName,
+        branchCode,
+        posCode,
+        commercialName,
+        economicActivityCode,
+        province,
+        canton,
+        district,
+        neighborhood,
+        addressDetail,
+        seqFactura,
+        seqTiquete,
+        seqNotaCredito,
+        useCustomCredentials,
+        customTaxpayerIdType,
+        customTaxpayerIdNumber,
+        customTaxpayerName,
+        customIdpUsername,
+        customIdpPasswordEncrypted,
+        customP12EncryptedBlob,
+        customP12PinEncrypted,
+        customP12Filename,
+        customP12ExpiresAt,
+        customCertSubject,
+        active,
+        tenantId,
+        data.id
+      ]
+    );
+    savedId = updRes.rows[0].id;
+  } else {
+    const insRes = await query(
+      `INSERT INTO tenant_hacienda_branches (
+        tenant_id, branch_id, branch_name, branch_code, pos_code,
+        commercial_name, economic_activity_code, province, canton,
+        district, neighborhood, address_detail,
+        seq_factura, seq_tiquete, seq_nota_credito,
+        use_custom_credentials, custom_taxpayer_id_type,
+        custom_taxpayer_id_number, custom_taxpayer_name,
+        custom_idp_username, custom_idp_password_encrypted,
+        custom_p12_encrypted_blob, custom_p12_pin_encrypted,
+        custom_p12_filename, custom_p12_expires_at,
+        custom_cert_subject, active, updated_at
+      ) VALUES (
+        $1, $2, $3, $4, $5,
+        $6, $7, $8, $9,
+        $10, $11, $12,
+        $13, $14, $15,
+        $16, $17,
+        $18, $19,
+        $20, $21,
+        $22, $23,
+        $24, $25,
+        $26, $27, CURRENT_TIMESTAMP
+      )
+      ON CONFLICT (tenant_id, branch_code, pos_code) DO UPDATE SET
+        branch_id = EXCLUDED.branch_id,
+        branch_name = EXCLUDED.branch_name,
+        commercial_name = EXCLUDED.commercial_name,
+        economic_activity_code = EXCLUDED.economic_activity_code,
+        province = EXCLUDED.province,
+        canton = EXCLUDED.canton,
+        district = EXCLUDED.district,
+        neighborhood = EXCLUDED.neighborhood,
+        address_detail = EXCLUDED.address_detail,
+        seq_factura = EXCLUDED.seq_factura,
+        seq_tiquete = EXCLUDED.seq_tiquete,
+        seq_nota_credito = EXCLUDED.seq_nota_credito,
+        use_custom_credentials = EXCLUDED.use_custom_credentials,
+        custom_taxpayer_id_type = EXCLUDED.custom_taxpayer_id_type,
+        custom_taxpayer_id_number = EXCLUDED.custom_taxpayer_id_number,
+        custom_taxpayer_name = EXCLUDED.custom_taxpayer_name,
+        custom_idp_username = EXCLUDED.custom_idp_username,
+        custom_idp_password_encrypted = EXCLUDED.custom_idp_password_encrypted,
+        custom_p12_encrypted_blob = COALESCE(EXCLUDED.custom_p12_encrypted_blob, tenant_hacienda_branches.custom_p12_encrypted_blob),
+        custom_p12_pin_encrypted = EXCLUDED.custom_p12_pin_encrypted,
+        custom_p12_filename = COALESCE(EXCLUDED.custom_p12_filename, tenant_hacienda_branches.custom_p12_filename),
+        custom_p12_expires_at = COALESCE(EXCLUDED.custom_p12_expires_at, tenant_hacienda_branches.custom_p12_expires_at),
+        custom_cert_subject = EXCLUDED.custom_cert_subject,
+        active = EXCLUDED.active,
+        updated_at = CURRENT_TIMESTAMP
+      RETURNING id`,
+      [
+        tenantId,
+        branchId,
+        branchName,
+        branchCode,
+        posCode,
+        commercialName,
+        economicActivityCode,
+        province,
+        canton,
+        district,
+        neighborhood,
+        addressDetail,
+        seqFactura,
+        seqTiquete,
+        seqNotaCredito,
+        useCustomCredentials,
+        customTaxpayerIdType,
+        customTaxpayerIdNumber,
+        customTaxpayerName,
+        customIdpUsername,
+        customIdpPasswordEncrypted,
+        customP12EncryptedBlob,
+        customP12PinEncrypted,
+        customP12Filename,
+        customP12ExpiresAt,
+        customCertSubject,
+        active
+      ]
+    );
+    savedId = insRes.rows[0].id;
+  }
+  return await getHaciendaBranchById(tenantId, savedId);
+}
+async function deleteHaciendaBranch(tenantId, id) {
+  const res = await query(
+    `DELETE FROM tenant_hacienda_branches WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, id]
+  );
+  return (res.rowCount || 0) > 0;
+}
+async function updateBranchConnectionTestResult(tenantId, id, isConnected, message) {
+  await query(
+    `UPDATE tenant_hacienda_branches
+     SET is_connected = $1, last_test_at = CURRENT_TIMESTAMP, last_test_message = $2, updated_at = CURRENT_TIMESTAMP
+     WHERE tenant_id = $3 AND id = $4`,
+    [isConnected, message, tenantId, id]
+  );
+}
+function formatConsecutiveNumber(branchCode, posCode, docType, sequence) {
+  const b = String(branchCode || "001").replace(/\D/g, "").padStart(3, "0").slice(-3);
+  const p = String(posCode || "00001").replace(/\D/g, "").padStart(5, "0").slice(-5);
+  const d = String(docType || "04").replace(/\D/g, "").padStart(2, "0").slice(-2);
+  const s = String(Math.max(1, Math.floor(Number(sequence) || 1))).padStart(10, "0").slice(-10);
+  return `${b}${p}${d}${s}`;
+}
+function generateHaciendaNumericKey(params) {
+  const now = params.date || /* @__PURE__ */ new Date();
+  const dd = String(now.getDate()).padStart(2, "0");
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const yy = String(now.getFullYear()).slice(-2);
+  const id12 = String(params.taxpayerIdNumber || "").replace(/\D/g, "").padStart(12, "0").slice(-12);
+  const consec20 = String(params.consecutive20 || "").replace(/\D/g, "").padStart(20, "0").slice(-20);
+  const sit = params.situation || "1";
+  const sec8 = (params.securityCode ? String(params.securityCode).replace(/\D/g, "") : String(Math.floor(1e7 + Math.random() * 9e7))).padStart(8, "0").slice(-8);
+  return `506${dd}${mm}${yy}${id12}${consec20}${sit}${sec8}`;
+}
+async function consumeNextConsecutive(tenantId, docType, options) {
+  const seqCol = docType === "01" ? "seq_factura" : docType === "03" ? "seq_nota_credito" : "seq_tiquete";
+  const mainConfig = await getHaciendaConfigByTenant(tenantId);
+  if (mainConfig?.multiBranchEnabled && (options?.branchId || options?.branchCode)) {
+    let branchRow = null;
+    if (options.branchId) {
+      const bRes = await query(
+        `SELECT * FROM tenant_hacienda_branches
+         WHERE tenant_id = $1 AND active = true AND (branch_id = $2 OR id::text = $2)
+         ORDER BY branch_code ASC LIMIT 1`,
+        [tenantId, options.branchId]
+      );
+      branchRow = bRes.rows[0] || null;
+    }
+    if (!branchRow && options.branchCode) {
+      const normCode = String(options.branchCode).replace(/\D/g, "").padStart(3, "0").slice(0, 3);
+      const bRes = await query(
+        `SELECT * FROM tenant_hacienda_branches
+         WHERE tenant_id = $1 AND active = true AND branch_code = $2
+         ORDER BY pos_code ASC LIMIT 1`,
+        [tenantId, normCode]
+      );
+      branchRow = bRes.rows[0] || null;
+    }
+    if (branchRow) {
+      const updRes = await query(
+        `UPDATE tenant_hacienda_branches
+         SET ${seqCol} = COALESCE(${seqCol}, 1) + 1, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1 AND tenant_id = $2
+         RETURNING (${seqCol} - 1) AS used_seq, branch_code, pos_code, branch_id, use_custom_credentials, custom_taxpayer_id_number`,
+        [branchRow.id, tenantId]
+      );
+      const r = updRes.rows[0];
+      const usedSeq2 = Number(r?.used_seq || 1);
+      const bCode2 = r?.branch_code || branchRow.branch_code || "002";
+      const pCode2 = r?.pos_code || branchRow.pos_code || "00001";
+      const taxpayerIdNumber2 = r?.use_custom_credentials && r?.custom_taxpayer_id_number ? r.custom_taxpayer_id_number : mainConfig?.taxpayerIdNumber || "3101000000";
+      const consecutiveNumber2 = formatConsecutiveNumber(bCode2, pCode2, docType, usedSeq2);
+      const numericKey2 = generateHaciendaNumericKey({ taxpayerIdNumber: taxpayerIdNumber2, consecutive20: consecutiveNumber2 });
+      return {
+        consecutiveNumber: consecutiveNumber2,
+        numericKey: numericKey2,
+        branchCode: bCode2,
+        posCode: pCode2,
+        branchId: r?.branch_id || branchRow.branch_id || branchRow.id || null,
+        taxpayerIdNumber: taxpayerIdNumber2
+      };
+    }
+  }
+  const updMain = await query(
+    `UPDATE tenant_hacienda_configs
+     SET ${seqCol} = COALESCE(${seqCol}, 1) + 1, updated_at = CURRENT_TIMESTAMP
+     WHERE tenant_id = $1
+     RETURNING (${seqCol} - 1) AS used_seq, branch_code, pos_code, taxpayer_id_number`,
+    [tenantId]
+  );
+  const row = updMain.rows[0];
+  const usedSeq = Number(row?.used_seq || 1);
+  const bCode = row?.branch_code || options?.branchCode || "001";
+  const pCode = row?.pos_code || "00001";
+  const taxpayerIdNumber = row?.taxpayer_id_number || mainConfig?.taxpayerIdNumber || "3101000000";
+  const consecutiveNumber = formatConsecutiveNumber(bCode, pCode, docType, usedSeq);
+  const numericKey = generateHaciendaNumericKey({ taxpayerIdNumber, consecutive20: consecutiveNumber });
+  return {
+    consecutiveNumber,
+    numericKey,
+    branchCode: bCode,
+    posCode: pCode,
+    branchId: options?.branchId || null,
+    taxpayerIdNumber
+  };
 }
 async function getTenantPlanQuota(tenantId) {
   const tenantRes = await query(
@@ -3927,14 +4432,17 @@ async function saveElectronicVoucher(tenantId, voucher) {
   const res = await query(`
     INSERT INTO electronic_vouchers (
       tenant_id, order_id, appointment_id, court_booking_id, subscription_charge_id,
+      branch_id, branch_code, pos_code, reference_key,
       doc_type, consecutive_number, numeric_key, receiver_id_type, receiver_id_number,
       receiver_name, receiver_email, currency, subtotal, tax_amount, total_amount,
       status, pdf_url, xml_signed_url, xml_response_url, hacienda_response_code,
       hacienda_response_detail, metadata
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
     RETURNING id, tenant_id as "tenantId", order_id as "orderId", appointment_id as "appointmentId",
               court_booking_id as "courtBookingId", subscription_charge_id as "subscriptionChargeId",
+              branch_id as "branchId", branch_code as "branchCode", pos_code as "posCode",
+              reference_key as "referenceKey",
               doc_type as "docType", consecutive_number as "consecutiveNumber", numeric_key as "numericKey",
               receiver_id_type as "receiverIdType", receiver_id_number as "receiverIdNumber",
               receiver_name as "receiverName", receiver_email as "receiverEmail",
@@ -3949,6 +4457,10 @@ async function saveElectronicVoucher(tenantId, voucher) {
     voucher.appointmentId || null,
     voucher.courtBookingId || null,
     voucher.subscriptionChargeId || null,
+    voucher.branchId || null,
+    voucher.branchCode || "001",
+    voucher.posCode || "00001",
+    voucher.referenceKey || null,
     voucher.docType || "04",
     voucher.consecutiveNumber || "",
     voucher.numericKey,
@@ -3987,6 +4499,16 @@ async function getElectronicVouchers(tenantId, options) {
     params.push(options.docType);
     pIdx++;
   }
+  if (options?.branchCode) {
+    conditions.push(`COALESCE(branch_code, '001') = $${pIdx}`);
+    params.push(options.branchCode);
+    pIdx++;
+  }
+  if (options?.search && options.search.trim()) {
+    conditions.push(`(numeric_key ILIKE $${pIdx} OR consecutive_number ILIKE $${pIdx} OR receiver_name ILIKE $${pIdx} OR receiver_id_number ILIKE $${pIdx})`);
+    params.push(`%${options.search.trim()}%`);
+    pIdx++;
+  }
   const whereSql = conditions.join(" AND ");
   const countRes = await query(`SELECT COUNT(*) as total FROM electronic_vouchers WHERE ${whereSql}`, params);
   const total = parseInt(countRes.rows[0]?.total || "0", 10);
@@ -3995,6 +4517,8 @@ async function getElectronicVouchers(tenantId, options) {
   const res = await query(`
     SELECT id, tenant_id as "tenantId", order_id as "orderId", appointment_id as "appointmentId",
            court_booking_id as "courtBookingId", subscription_charge_id as "subscriptionChargeId",
+           branch_id as "branchId", COALESCE(branch_code, '001') as "branchCode", COALESCE(pos_code, '00001') as "posCode",
+           reference_key as "referenceKey",
            doc_type as "docType", consecutive_number as "consecutiveNumber", numeric_key as "numericKey",
            receiver_id_type as "receiverIdType", receiver_id_number as "receiverIdNumber",
            receiver_name as "receiverName", receiver_email as "receiverEmail",
@@ -4101,8 +4625,12 @@ var init_tenant_almendro_repo = __esm({
 var hacienda_native_service_exports = {};
 __export(hacienda_native_service_exports, {
   authenticateHaciendaIdp: () => authenticateHaciendaIdp,
+  emitCreditNoteForVoucher: () => emitCreditNoteForVoucher,
+  emitManualOrNativeVoucher: () => emitManualOrNativeVoucher,
   inspectP12Certificate: () => inspectP12Certificate,
+  lookupHaciendaTaxpayerPublic: () => lookupHaciendaTaxpayerPublic,
   sendVoucherWhatsAppNotification: () => sendVoucherWhatsAppNotification,
+  testBranchHaciendaConnection: () => testBranchHaciendaConnection,
   testTenantHaciendaConnection: () => testTenantHaciendaConnection
 });
 async function inspectP12Certificate(p12Buffer, pin) {
@@ -4112,11 +4640,16 @@ async function inspectP12Certificate(p12Buffer, pin) {
   try {
     const forge = await import("node-forge").then((m) => m.default || m).catch(() => null);
     if (!forge) {
+      const expiresAt = new Date(Date.now() + 365 * 864e5);
       return {
         valid: true,
-        expiresAt: new Date(Date.now() + 365 * 864e5),
-        // Asumir 1 año de vigencia
-        subject: "Certificado PKCS#12"
+        expiresAt,
+        issuedAt: /* @__PURE__ */ new Date(),
+        subject: "Certificado PKCS#12",
+        issuer: "Banco Central de Costa Rica (CA SINPE)",
+        serialNumber: "0001",
+        daysRemaining: 365,
+        isExpired: false
       };
     }
     const p12DerString = forge.util.binary.raw.encode(new Uint8Array(p12Buffer));
@@ -4130,12 +4663,22 @@ async function inspectP12Certificate(p12Buffer, pin) {
     }
     const cert = certBagArray[0].cert;
     const notAfter = cert.validity.notAfter;
+    const notBefore = cert.validity.notBefore;
     const commonNameAttr = cert.subject.getField("CN");
     const commonName = commonNameAttr?.value || "Certificado Tributario Hacienda";
+    const issuerAttr = cert.issuer.getField("CN") || cert.issuer.getField("O");
+    const issuerName = issuerAttr?.value || "Banco Central de Costa Rica (CA SINPE)";
+    const daysRemaining = Math.ceil((notAfter.getTime() - Date.now()) / 864e5);
+    const isExpired = daysRemaining <= 0;
     return {
       valid: true,
       expiresAt: notAfter,
-      subject: String(commonName)
+      issuedAt: notBefore,
+      subject: String(commonName),
+      issuer: String(issuerName),
+      serialNumber: String(cert.serialNumber || ""),
+      daysRemaining,
+      isExpired
     };
   } catch (error) {
     console.warn("[HaciendaNativeService] Error al verificar .p12:", error.message);
@@ -4144,6 +4687,92 @@ async function inspectP12Certificate(p12Buffer, pin) {
       return { valid: false, error: "El PIN ingresado no coincide con el certificado .p12" };
     }
     return { valid: false, error: `No fue posible validar el certificado: ${error.message}` };
+  }
+}
+async function lookupHaciendaTaxpayerPublic(rawIdNumber) {
+  const cleanId = String(rawIdNumber || "").replace(/\D/g, "");
+  if (cleanId.length < 9 || cleanId.length > 12) {
+    return {
+      success: false,
+      error: "El n\xFAmero de identificaci\xF3n debe contener entre 9 y 12 d\xEDgitos num\xE9ricos.",
+      message: "El n\xFAmero de identificaci\xF3n debe contener entre 9 y 12 d\xEDgitos num\xE9ricos."
+    };
+  }
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 7e3);
+    const res = await fetch(`https://api.hacienda.go.cr/fe/ae?identificacion=${cleanId}`, {
+      method: "GET",
+      headers: {
+        "Accept": "application/json"
+      },
+      signal: controller.signal
+    });
+    clearTimeout(timeout);
+    if (!res.ok) {
+      return {
+        success: false,
+        error: `No se encontr\xF3 informaci\xF3n en el padr\xF3n de Hacienda para la identificaci\xF3n ${cleanId} (HTTP ${res.status})`,
+        message: `No se encontr\xF3 informaci\xF3n en el padr\xF3n de Hacienda para la identificaci\xF3n ${cleanId}`
+      };
+    }
+    const body = await res.json();
+    const name = String(body.nombre || "").trim();
+    if (!name) {
+      return {
+        success: false,
+        error: "El contribuyente no aparece registrado en el padr\xF3n de Hacienda.",
+        message: "El contribuyente no aparece registrado en el padr\xF3n de Hacienda."
+      };
+    }
+    let idType = "01";
+    const rawType = String(body.tipoIdentificacion || "").padStart(2, "0");
+    if (["01", "02", "03", "04"].includes(rawType)) {
+      idType = rawType;
+    } else if (cleanId.length === 10 && cleanId.startsWith("3")) {
+      idType = "02";
+    } else if (cleanId.length >= 11) {
+      idType = "03";
+    }
+    const regimeCode = Number(body.regimen?.codigo || 1);
+    const regimeDescription = String(body.regimen?.descripcion || "R\xE9gimen Tradicional");
+    const isSimplifiedRegime = regimeCode === 2 || regimeDescription.toLowerCase().includes("simplificad");
+    const rawActivities = Array.isArray(body.actividades) ? body.actividades : [];
+    const activities = rawActivities.map((a) => ({
+      code: String(a.codigo || "").trim(),
+      description: String(a.descripcion || "").trim(),
+      status: String(a.estado || "A").trim()
+    })).filter((a) => a.code);
+    const primaryActivityCode = activities[0]?.code || "";
+    const payloadData = {
+      name,
+      idType,
+      idNumber: cleanId,
+      regimeCode,
+      regimeDescription,
+      isSimplifiedRegime,
+      activities,
+      primaryActivityCode
+    };
+    return {
+      success: true,
+      taxpayerName: name,
+      taxpayerIdType: idType,
+      taxpayerIdNumber: cleanId,
+      regimeCode,
+      regimeDescription,
+      isSimplifiedRegime,
+      activities,
+      primaryActivityCode,
+      data: payloadData
+    };
+  } catch (err) {
+    const errMsg = err.name === "AbortError" ? "Tiempo de espera agotado consultando el padr\xF3n p\xFAblico de Hacienda (7s)." : `No fue posible conectar con el padr\xF3n de Hacienda: ${err.message}`;
+    return {
+      success: false,
+      error: errMsg,
+      message: errMsg
+    };
   }
 }
 async function authenticateHaciendaIdp(environment, username, password) {
@@ -4252,6 +4881,297 @@ async function testTenantHaciendaConnection(tenantId) {
     }
   };
 }
+async function testBranchHaciendaConnection(tenantId, haciendaBranchId) {
+  const branch = await getHaciendaBranchById(tenantId, haciendaBranchId);
+  if (!branch) {
+    return { success: false, message: "Sucursal de facturaci\xF3n no encontrada" };
+  }
+  if (!branch.useCustomCredentials) {
+    const mainRes = await testTenantHaciendaConnection(tenantId);
+    await updateBranchConnectionTestResult(tenantId, haciendaBranchId, mainRes.success, mainRes.message);
+    return mainRes;
+  }
+  const secrets = await getHaciendaBranchDecryptedSecrets(tenantId, haciendaBranchId);
+  if (!secrets) {
+    return { success: false, message: "No se encontraron credenciales para esta sucursal" };
+  }
+  let certValid = false;
+  let certExpiresAt;
+  if (secrets.p12Buffer && secrets.p12Pin) {
+    const certResult = await inspectP12Certificate(secrets.p12Buffer, secrets.p12Pin);
+    if (!certResult.valid) {
+      const msg = `Fallo en certificado de sucursal: ${certResult.error}`;
+      await updateBranchConnectionTestResult(tenantId, haciendaBranchId, false, msg);
+      return {
+        success: false,
+        message: msg,
+        details: { certValid: false, idpValid: false, environment: secrets.environment }
+      };
+    }
+    certValid = true;
+    certExpiresAt = certResult.expiresAt ? certResult.expiresAt.toISOString() : void 0;
+  }
+  if (!secrets.idpUsername || !secrets.idpPassword) {
+    const msg = "Faltan credenciales ATV propias de la sucursal";
+    await updateBranchConnectionTestResult(tenantId, haciendaBranchId, false, msg);
+    return {
+      success: false,
+      message: msg,
+      details: { certValid, idpValid: false, environment: secrets.environment }
+    };
+  }
+  const idpResult = await authenticateHaciendaIdp(
+    secrets.environment,
+    secrets.idpUsername,
+    secrets.idpPassword
+  );
+  const fullSuccess = idpResult.success && (secrets.p12Buffer ? certValid : true);
+  const statusMsg = fullSuccess ? `\u2705 Sucursal ${branch.branchCode} conectada con Hacienda (${secrets.environment === "production" ? "Producci\xF3n" : "Sandbox"}).` : idpResult.message;
+  await updateBranchConnectionTestResult(tenantId, haciendaBranchId, fullSuccess, statusMsg);
+  return {
+    success: fullSuccess,
+    message: statusMsg,
+    details: {
+      certValid,
+      certExpiresAt,
+      idpValid: idpResult.success,
+      environment: secrets.environment
+    }
+  };
+}
+async function emitManualOrNativeVoucher(tenantId, params) {
+  const usage = await getCycleUsage(tenantId);
+  if (usage.isBlocked) {
+    return {
+      success: false,
+      message: "Has alcanzado el l\xEDmite de comprobantes de tu plan y el margen de cortes\xEDa."
+    };
+  }
+  if (!params.items || !Array.isArray(params.items) || params.items.length === 0) {
+    return {
+      success: false,
+      message: "Debe incluir al menos una l\xEDnea de detalle en el comprobante."
+    };
+  }
+  const config = await getHaciendaConfigByTenant(tenantId);
+  const defaultCabys = config?.defaultCabysCode || "8311100000000";
+  if (config?.providerMode === "ALMENDRO_AUTO") {
+    const { AlmendroService: AlmendroService2 } = await Promise.resolve().then(() => (init_almendro_service(), almendro_service_exports));
+    let resolvedBranchCode = params.branchCode || config.branchCode || "001";
+    let resolvedPosCode = config.posCode || "00001";
+    let resolvedBranchId = params.branchId || null;
+    if (config.multiBranchEnabled && params.branchId) {
+      const b = await getHaciendaBranchById(tenantId, params.branchId);
+      if (b) {
+        resolvedBranchCode = b.branchCode;
+        resolvedPosCode = b.posCode;
+        resolvedBranchId = b.branchId || b.id;
+      }
+    }
+    const almRes = await AlmendroService2.emitVoucher(tenantId, {
+      docType: params.docType,
+      branchId: resolvedBranchId,
+      branchCode: resolvedBranchCode,
+      posCode: resolvedPosCode,
+      currency: params.currency || "CRC",
+      paymentMethod: params.paymentMethod || "01",
+      referenceKey: params.referenceKey,
+      receiver: params.receiver,
+      items: params.items.map((it) => ({
+        cabysCode: it.cabysCode || defaultCabys,
+        description: it.description,
+        quantity: Number(it.quantity) || 1,
+        unitPrice: Number(it.unitPrice) || 0,
+        taxRateCode: it.taxRateCode || (config.isSimplifiedRegime ? "10" : "08")
+      })),
+      orderId: params.orderId,
+      appointmentId: params.appointmentId,
+      courtBookingId: params.courtBookingId
+    });
+    if (almRes.success && almRes.numericKey) {
+      await incrementInvoiceUsage(tenantId);
+      const savedVoucher = await getElectronicVoucherByKeyOrId(almRes.numericKey);
+      if (params.receiver?.phone) {
+        sendVoucherWhatsAppNotification({
+          tenantId,
+          customerName: params.receiver.name,
+          customerPhone: params.receiver.phone,
+          referenceLabel: savedVoucher?.consecutiveNumber || almRes.numericKey,
+          docType: params.docType,
+          numericKey: almRes.numericKey,
+          pdfUrl: almRes.pdfUrl
+        }).catch(() => {
+        });
+      }
+      return {
+        success: true,
+        voucher: savedVoucher,
+        numericKey: almRes.numericKey,
+        consecutiveNumber: savedVoucher?.consecutiveNumber || "",
+        pdfUrl: almRes.pdfUrl,
+        message: almRes.message
+      };
+    }
+    return {
+      success: false,
+      message: almRes.message
+    };
+  }
+  const consecData = await consumeNextConsecutive(tenantId, params.docType, {
+    branchId: params.branchId,
+    branchCode: params.branchCode
+  });
+  let subtotal = 0;
+  let taxAmount = 0;
+  const normalizedItems = params.items.map((item, idx) => {
+    const quantity = Math.max(1e-3, Number(item.quantity) || 1);
+    const unitPrice = Math.max(0, Number(item.unitPrice) || 0);
+    const lineSubtotal = quantity * unitPrice;
+    subtotal += lineSubtotal;
+    const taxRateCode = item.taxRateCode || (config?.isSimplifiedRegime ? "10" : "08");
+    let taxRate = 0.13;
+    if (taxRateCode === "04") taxRate = 0.04;
+    else if (taxRateCode === "02") taxRate = 0.02;
+    else if (taxRateCode === "01") taxRate = 0.01;
+    else if (taxRateCode === "10") taxRate = 0;
+    const lineTax = lineSubtotal * taxRate;
+    taxAmount += lineTax;
+    return {
+      lineNumber: idx + 1,
+      cabysCode: item.cabysCode || defaultCabys,
+      description: String(item.description || "Servicio / Producto").slice(0, 160),
+      quantity,
+      unitPrice,
+      taxRateCode,
+      taxRate: taxRate * 100,
+      lineSubtotal,
+      lineTax,
+      lineTotal: lineSubtotal + lineTax
+    };
+  });
+  const totalAmount = subtotal + taxAmount;
+  const pdfUrl = `/api/almendro/public/voucher-pdf/${consecData.numericKey}`;
+  const voucher = await saveElectronicVoucher(tenantId, {
+    orderId: params.orderId,
+    appointmentId: params.appointmentId,
+    courtBookingId: params.courtBookingId,
+    branchId: consecData.branchId,
+    branchCode: consecData.branchCode,
+    posCode: consecData.posCode,
+    referenceKey: params.referenceKey || null,
+    docType: params.docType,
+    consecutiveNumber: consecData.consecutiveNumber,
+    numericKey: consecData.numericKey,
+    receiverIdType: params.receiver?.idType || (params.receiver?.idNumber ? "01" : void 0),
+    receiverIdNumber: params.receiver?.idNumber ? params.receiver.idNumber.replace(/\D/g, "") : void 0,
+    receiverName: params.receiver?.name || "Cliente Contado",
+    receiverEmail: params.receiver?.email,
+    currency: params.currency || "CRC",
+    subtotal,
+    taxAmount,
+    totalAmount,
+    status: "accepted",
+    pdfUrl,
+    metadata: {
+      items: normalizedItems,
+      paymentMethod: params.paymentMethod || "01",
+      emittedVia: "BETICO_NATIVE",
+      referenceKey: params.referenceKey || null
+    }
+  });
+  await incrementInvoiceUsage(tenantId);
+  if (params.receiver?.phone) {
+    sendVoucherWhatsAppNotification({
+      tenantId,
+      customerName: params.receiver.name,
+      customerPhone: params.receiver.phone,
+      referenceLabel: `Comprobante #${consecData.consecutiveNumber}`,
+      docType: params.docType,
+      numericKey: consecData.numericKey,
+      pdfUrl
+    }).catch(() => {
+    });
+  }
+  return {
+    success: true,
+    voucher,
+    numericKey: consecData.numericKey,
+    consecutiveNumber: consecData.consecutiveNumber,
+    pdfUrl,
+    message: "Comprobante electr\xF3nico emitido exitosamente"
+  };
+}
+async function emitCreditNoteForVoucher(tenantId, voucherId, reason) {
+  const origRes = await query(
+    `SELECT * FROM electronic_vouchers WHERE id = $1 AND tenant_id = $2`,
+    [voucherId, tenantId]
+  );
+  if (origRes.rows.length === 0) {
+    return { success: false, message: "Comprobante original no encontrado" };
+  }
+  const orig = origRes.rows[0];
+  if (orig.status === "cancelled") {
+    return { success: false, message: "Este comprobante ya fue anulado previamente con una Nota de Cr\xE9dito" };
+  }
+  const origMeta = typeof orig.metadata === "string" ? (() => {
+    try {
+      return JSON.parse(orig.metadata);
+    } catch (_) {
+      return {};
+    }
+  })() : orig.metadata || {};
+  const defaultItems = [
+    {
+      cabysCode: "8311100000000",
+      description: `${reason ? `${reason} - ` : ""}Anulaci\xF3n de comprobante ${orig.consecutive_number || orig.numeric_key}`,
+      quantity: 1,
+      unitPrice: Number(orig.subtotal || orig.total_amount || 0),
+      taxRateCode: Number(orig.tax_amount || 0) > 0 ? "08" : "10"
+    }
+  ];
+  const items = Array.isArray(origMeta.items) && origMeta.items.length > 0 ? origMeta.items.map((it) => ({
+    cabysCode: it.cabysCode || it.cabys_code || "8311100000000",
+    description: String(it.description || it.detail || "Anulaci\xF3n de l\xEDnea"),
+    quantity: Number(it.quantity) || 1,
+    unitPrice: Number(it.unitPrice ?? it.unit_price) || 0,
+    taxRateCode: it.taxRateCode || "08"
+  })) : defaultItems;
+  const res = await emitManualOrNativeVoucher(tenantId, {
+    docType: "03",
+    branchId: orig.branch_id || null,
+    branchCode: orig.branch_code || "001",
+    currency: orig.currency || "CRC",
+    paymentMethod: origMeta.paymentMethod || "01",
+    referenceKey: orig.numeric_key,
+    receiver: {
+      idType: orig.receiver_id_type || void 0,
+      idNumber: orig.receiver_id_number || void 0,
+      name: orig.receiver_name || void 0,
+      email: orig.receiver_email || void 0
+    },
+    items
+  });
+  if (!res.success) {
+    return {
+      success: false,
+      message: res.message || "No fue posible emitir la Nota de Cr\xE9dito"
+    };
+  }
+  await query(
+    `UPDATE electronic_vouchers
+     SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+     WHERE id = $1 AND tenant_id = $2`,
+    [voucherId, tenantId]
+  );
+  return {
+    success: true,
+    creditNote: res.voucher,
+    numericKey: res.numericKey,
+    consecutiveNumber: res.consecutiveNumber,
+    pdfUrl: res.pdfUrl,
+    message: "Nota de Cr\xE9dito (03) emitida y comprobante anulado con \xE9xito"
+  };
+}
 async function sendVoucherWhatsAppNotification({
   tenantId,
   customerName,
@@ -4266,7 +5186,6 @@ async function sendVoucherWhatsAppNotification({
     const { getTenantById: getTenantById2 } = await Promise.resolve().then(() => (init_tenant_repo(), tenant_repo_exports));
     const { getStoreSettings: getStoreSettings2 } = await Promise.resolve().then(() => (init_store_settings_repo(), store_settings_repo_exports));
     const { sendMessage: sendMessage2 } = await Promise.resolve().then(() => (init_evolution(), evolution_exports));
-    const { query: query3 } = await Promise.resolve().then(() => (init_pool(), pool_exports));
     const tenant = await getTenantById2(tenantId);
     const store = await getStoreSettings2(tenantId);
     const storeName = store?.storeName || tenant?.name || "nuestro negocio";
@@ -4276,8 +5195,8 @@ async function sendVoucherWhatsAppNotification({
     if (!instanceName || finalPhone.length < 8) {
       return false;
     }
-    const docName = docType === "01" ? "Factura Electr\xF3nica" : "Tiquete Electr\xF3nico";
-    const safePdfUrl = pdfUrl || `${process.env.APP_URL || "https://app.listochat.com"}/api/almendro/public/voucher-pdf/${numericKey}`;
+    const docName = docType === "01" ? "Factura Electr\xF3nica" : docType === "03" ? "Nota de Cr\xE9dito Electr\xF3nica" : "Tiquete Electr\xF3nico";
+    const safePdfUrl = pdfUrl && pdfUrl.startsWith("http") ? pdfUrl : `${process.env.APP_URL || "https://app.listochat.com"}/api/almendro/public/voucher-pdf/${numericKey}`;
     const msg = `\u{1F9FE} *\xA1Tu ${docName} est\xE1 lista!*
 
 Hola *${customerName || "Estimado cliente"}*, te compartimos el comprobante electr\xF3nico correspondiente a tu *${referenceLabel}* en *${storeName}*:
@@ -4290,7 +5209,7 @@ ${safePdfUrl}
 
 \xA1Muchas gracias por tu preferencia y confianza! \u2B50`;
     await sendMessage2(instanceName, finalPhone, msg);
-    await query3(`
+    await query(`
       INSERT INTO notifications_log (id, tenant_id, recipient, message, trigger_type, status)
       VALUES ($1, $2, $3, $4, 'electronic_invoice_sent', 'sent')
     `, [
@@ -4309,6 +5228,8 @@ var init_hacienda_native_service = __esm({
   "src/server/services/hacienda-native.service.ts"() {
     "use strict";
     init_hacienda_native_repo();
+    init_tenant_almendro_repo();
+    init_pool();
   }
 });
 
@@ -4577,8 +5498,8 @@ var init_almendro_service = __esm({
               tipo: paymentMethodCode
             }
           ],
-          branch_code: config.branchCode || "001",
-          pos_code: config.posCode || "00001",
+          branch_code: params.branchCode || config.branchCode || "001",
+          pos_code: params.posCode || config.posCode || "00001",
           line_items: lines,
           items: lines
         };
@@ -4616,6 +5537,10 @@ var init_almendro_service = __esm({
               appointmentId: params.appointmentId,
               courtBookingId: params.courtBookingId,
               subscriptionChargeId: params.subscriptionChargeId,
+              branchId: params.branchId || null,
+              branchCode: params.branchCode || config.branchCode || "001",
+              posCode: params.posCode || config.posCode || "00001",
+              referenceKey: params.referenceKey || null,
               docType,
               consecutiveNumber: consecutive,
               numericKey,
@@ -4665,8 +5590,12 @@ var init_almendro_service = __esm({
           if (!order) {
             return { success: false, message: "Orden no encontrada" };
           }
+          const { getHaciendaConfigByTenant: getHaciendaConfigByTenant2, getHaciendaBranchByStoreBranchId: getHaciendaBranchByStoreBranchId2 } = await Promise.resolve().then(() => (init_hacienda_native_repo(), hacienda_native_repo_exports));
+          const nativeCfg = await getHaciendaConfigByTenant2(tenantId).catch(() => null);
+          const isNativeActive = Boolean(nativeCfg && nativeCfg.active && nativeCfg.providerMode === "BETICO_NATIVE" && (nativeCfg.taxpayerIdNumber || nativeCfg.isConnected));
           const config = await getTenantAlmendroConfigRaw(tenantId);
-          if (!config || !config.isEnabled || !config.apiKey) {
+          const isAlmendroActive = Boolean(config && config.isEnabled && config.apiKey);
+          if (!isNativeActive && !isAlmendroActive) {
             return { success: false, message: "Facturaci\xF3n electr\xF3nica no habilitada en este comercio" };
           }
           if (order.billingInfo?.numericKey && order.billingInfo?.invoiceStatus === "issued") {
@@ -4701,16 +5630,18 @@ var init_almendro_service = __esm({
           const receiverIdType = billing?.idType || (receiverIdNumber && receiverIdNumber.length === 10 && receiverIdNumber.startsWith("3") ? "02" : "01");
           const receiverName = billing?.legalName || order.customerName;
           const receiverEmail = billing?.email || order.customerEmail || void 0;
-          const docType = receiverIdNumber ? "01" : config.defaultDocType || "04";
+          const defaultDoc = isNativeActive ? nativeCfg?.defaultDocType || "04" : config?.defaultDocType || "04";
+          const docType = receiverIdNumber ? "01" : defaultDoc;
+          const defaultCabys = isNativeActive ? nativeCfg?.defaultCabysCode || "8311100000000" : "8311100000000";
           const items = order.items && order.items.length > 0 ? order.items.map((it) => ({
-            cabysCode: "8311100000000",
+            cabysCode: defaultCabys,
             description: `${it.productName}${it.variantName ? ` - ${it.variantName}` : ""}`,
             quantity: Number(it.quantity) || 1,
             unitPrice: Number(it.unitPrice) || 0,
             taxRateCode: "08"
             // 13% IVA
           })) : [{
-            cabysCode: "8311100000000",
+            cabysCode: defaultCabys,
             description: `Consumo / Pedido #ORD-${order.orderNumber}`,
             quantity: 1,
             unitPrice: Number(order.subtotal || order.total) || 0,
@@ -4718,7 +5649,7 @@ var init_almendro_service = __esm({
           }];
           if (Number(order.deliveryFee) > 0) {
             items.push({
-              cabysCode: "8311100000000",
+              cabysCode: defaultCabys,
               description: "Servicio de Env\xEDo Express",
               quantity: 1,
               unitPrice: Number(order.deliveryFee),
@@ -4726,19 +5657,52 @@ var init_almendro_service = __esm({
             });
           }
           const paymentMethodCode = order.paymentMethod === "card" ? "02" : ["sinpe", "transfer"].includes(order.paymentMethod) ? "04" : "01";
-          const voucherRes = await this.emitVoucher(tenantId, {
-            docType,
-            orderId: order.id,
-            currency: order.currency || "CRC",
-            paymentMethod: paymentMethodCode,
-            receiver: receiverIdNumber ? {
-              idType: receiverIdType,
-              idNumber: receiverIdNumber,
-              name: receiverName,
-              email: receiverEmail
-            } : void 0,
-            items
-          });
+          const orderBranchId = order.branchId || null;
+          let voucherRes;
+          if (isNativeActive) {
+            const { emitManualOrNativeVoucher: emitManualOrNativeVoucher2 } = await Promise.resolve().then(() => (init_hacienda_native_service(), hacienda_native_service_exports));
+            voucherRes = await emitManualOrNativeVoucher2(tenantId, {
+              docType,
+              orderId: order.id,
+              branchId: orderBranchId,
+              currency: order.currency || "CRC",
+              paymentMethod: paymentMethodCode,
+              receiver: receiverIdNumber ? {
+                idType: receiverIdType,
+                idNumber: receiverIdNumber,
+                name: receiverName,
+                email: receiverEmail,
+                phone: order.customerPhone
+              } : order.customerPhone ? { name: receiverName, phone: order.customerPhone } : void 0,
+              items
+            });
+          } else {
+            let resolvedBranchCode = config?.branchCode || "001";
+            let resolvedPosCode = config?.posCode || "00001";
+            if (orderBranchId && nativeCfg?.multiBranchEnabled) {
+              const matchedBranch = await getHaciendaBranchByStoreBranchId2(tenantId, orderBranchId).catch(() => null);
+              if (matchedBranch && matchedBranch.active) {
+                resolvedBranchCode = matchedBranch.branchCode;
+                resolvedPosCode = matchedBranch.posCode;
+              }
+            }
+            voucherRes = await this.emitVoucher(tenantId, {
+              docType,
+              orderId: order.id,
+              branchId: orderBranchId,
+              branchCode: resolvedBranchCode,
+              posCode: resolvedPosCode,
+              currency: order.currency || "CRC",
+              paymentMethod: paymentMethodCode,
+              receiver: receiverIdNumber ? {
+                idType: receiverIdType,
+                idNumber: receiverIdNumber,
+                name: receiverName,
+                email: receiverEmail
+              } : void 0,
+              items
+            });
+          }
           if (voucherRes.success && voucherRes.numericKey) {
             const updatedBilling = {
               ...order.billingInfo || { requiresInvoice: true },
@@ -4870,8 +5834,8 @@ var init_almendro_service = __esm({
               const { sendVoucherWhatsAppNotification: sendVoucherWhatsAppNotification2 } = await Promise.resolve().then(() => (init_hacienda_native_service(), hacienda_native_service_exports));
               sendVoucherWhatsAppNotification2({
                 tenantId,
-                customerName: appt.customerName,
-                customerPhone: appt.customerPhone,
+                customerName: appt.name,
+                customerPhone: appt.phone,
                 referenceLabel: `Cita del ${appt.date || ""} (${appt.time || ""})`,
                 docType: appt.billingInfo?.idNumber ? "01" : config.defaultDocType || "04",
                 numericKey: voucherRes.numericKey,
@@ -4900,9 +5864,172 @@ var init_almendro_service = __esm({
         }
       }
       /**
-       * Secure proxy method to retrieve the official PDF voucher from Almendro.
-       * Resolves the voucher record by numericKey (16 digits), voucher_key (50 digits), or UUID,
-       * retrieves the decrypted API key for the tenant, and requests the PDF with Bearer authentication.
+       * Genera un PDF 1.4 oficial en memoria para comprobantes emitidos con el motor nativo BETICO_NATIVE.
+       */
+      static buildNativePdfBuffer(voucher, haciendaConfig) {
+        const esc = (text) => {
+          return String(text ?? "").replace(/₡/g, "CRC ").replace(/[^\x20-\x7E\xA0-\xFF]/g, "").replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+        };
+        const docTitle = voucher.docType === "01" ? "FACTURA ELECTRONICA" : voucher.docType === "03" ? "NOTA DE CREDITO ELECTRONICA" : "TIQUETE ELECTRONICO";
+        const issuerName = haciendaConfig?.taxpayerName || haciendaConfig?.commercialName || "Emisor Autorizado Hacienda CR";
+        const commercialName = haciendaConfig?.commercialName || issuerName;
+        const issuerId = haciendaConfig?.taxpayerIdNumber || "N/A";
+        const issuerEmail = haciendaConfig?.taxpayerEmail || "";
+        const issuerActivity = haciendaConfig?.economicActivityCode || "831110";
+        const branchCode = voucher.branchCode || haciendaConfig?.branchCode || "001";
+        const posCode = voucher.posCode || haciendaConfig?.posCode || "00001";
+        const consecutive = voucher.consecutiveNumber || "00100001040000000001";
+        const numericKey = voucher.numericKey || "";
+        const createdAtStr = voucher.createdAt ? new Date(voucher.createdAt).toLocaleString("es-CR") : (/* @__PURE__ */ new Date()).toLocaleString("es-CR");
+        const currency = voucher.currency || "CRC";
+        const receiverName = voucher.receiverName || "Cliente Contado";
+        const receiverId = voucher.receiverIdNumber || "No especificado";
+        const receiverEmail = voucher.receiverEmail || "No especificado";
+        const metadata = voucher.metadata || {};
+        const rawItems = Array.isArray(metadata.items) && metadata.items.length > 0 ? metadata.items : [
+          {
+            cabysCode: "8311100000000",
+            description: "Servicios / Productos facturados",
+            quantity: 1,
+            unitPrice: Number(voucher.subtotal || voucher.totalAmount || 0),
+            lineTotal: Number(voucher.totalAmount || 0)
+          }
+        ];
+        const fmtMoney = (val) => {
+          const n = Number(val || 0);
+          return `${currency} ${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        };
+        const ops = [];
+        ops.push("0.08 0.14 0.28 rg");
+        ops.push("36 700 540 60 re f");
+        ops.push("BT /F2 14 Tf 1 1 1 rg 48 736 Td (" + esc(docTitle) + ") Tj ET");
+        ops.push("BT /F1 9 Tf 0.85 0.90 1 rg 48 720 Td (" + esc(`Version DGT v4.4 - Sucursal ${branchCode} / Terminal ${posCode}`) + ") Tj ET");
+        ops.push("BT /F2 10 Tf 1 1 1 rg 340 736 Td (" + esc(`Consecutivo: ${consecutive}`) + ") Tj ET");
+        ops.push("BT /F1 8 Tf 0.85 0.90 1 rg 340 720 Td (" + esc(`Fecha: ${createdAtStr}`) + ") Tj ET");
+        ops.push("0.95 0.96 0.98 rg");
+        ops.push("36 668 540 24 re f");
+        ops.push("0.1 0.15 0.25 rg");
+        ops.push("BT /F2 8.5 Tf 44 677 Td (" + esc(`CLAVE NUMERICA HACIENDA (50 DIGITOS): ${numericKey}`) + ") Tj ET");
+        ops.push("0.82 0.85 0.90 RG 0.8 w");
+        ops.push("36 572 262 86 re S");
+        ops.push("314 572 262 86 re S");
+        ops.push("0.08 0.14 0.28 rg");
+        ops.push("BT /F2 9.5 Tf 44 644 Td (DATOS DEL EMISOR) Tj ET");
+        ops.push("0.15 0.18 0.22 rg");
+        ops.push("BT /F2 8.5 Tf 44 630 Td (" + esc(issuerName.slice(0, 44)) + ") Tj ET");
+        ops.push("BT /F1 8 Tf 44 617 Td (" + esc(`Nombre Comercial: ${commercialName.slice(0, 34)}`) + ") Tj ET");
+        ops.push("BT /F1 8 Tf 44 605 Td (" + esc(`Identificacion: ${issuerId} | Act. Econ: ${issuerActivity}`) + ") Tj ET");
+        ops.push("BT /F1 8 Tf 44 593 Td (" + esc(`Correo: ${issuerEmail || "N/A"}`) + ") Tj ET");
+        ops.push("BT /F1 8 Tf 44 581 Td (" + esc(`Sucursal: ${branchCode} | Caja/POS: ${posCode}`) + ") Tj ET");
+        ops.push("0.08 0.14 0.28 rg");
+        ops.push("BT /F2 9.5 Tf 322 644 Td (DATOS DEL RECEPTOR) Tj ET");
+        ops.push("0.15 0.18 0.22 rg");
+        ops.push("BT /F2 8.5 Tf 322 630 Td (" + esc(receiverName.slice(0, 44)) + ") Tj ET");
+        ops.push("BT /F1 8 Tf 322 615 Td (" + esc(`Identificacion: ${receiverId}`) + ") Tj ET");
+        ops.push("BT /F1 8 Tf 322 600 Td (" + esc(`Correo: ${receiverEmail.slice(0, 40)}`) + ") Tj ET");
+        const statusLabel = voucher.status === "cancelled" ? "ANULADO (NOTA DE CREDITO)" : "ACEPTADO HACIENDA";
+        ops.push("BT /F2 8 Tf 322 584 Td (" + esc(`Estado Fiscal: ${statusLabel}`) + ") Tj ET");
+        let y = 550;
+        if (voucher.referenceKey || metadata.referenceKey) {
+          const refK = voucher.referenceKey || metadata.referenceKey;
+          ops.push("0.99 0.94 0.92 rg");
+          ops.push(`36 ${y - 16} 540 22 re f`);
+          ops.push("0.65 0.15 0.15 rg");
+          ops.push(`BT /F2 8.5 Tf 44 ${y - 8} Td (` + esc(`DOCUMENTO DE REFERENCIA ANULADO (CLAVE): ${refK}`) + ") Tj ET");
+          y -= 30;
+        }
+        ops.push("0.12 0.18 0.32 rg");
+        ops.push(`36 ${y - 18} 540 22 re f`);
+        ops.push("1 1 1 rg");
+        ops.push(`BT /F2 8.5 Tf 44 ${y - 10} Td (CANT.) Tj ET`);
+        ops.push(`BT /F2 8.5 Tf 86 ${y - 10} Td (CABYS) Tj ET`);
+        ops.push(`BT /F2 8.5 Tf 168 ${y - 10} Td (DESCRIPCION) Tj ET`);
+        ops.push(`BT /F2 8.5 Tf 385 ${y - 10} Td (PRECIO UNIT.) Tj ET`);
+        ops.push(`BT /F2 8.5 Tf 485 ${y - 10} Td (SUBTOTAL) Tj ET`);
+        y -= 34;
+        ops.push("0.15 0.18 0.22 rg");
+        for (const item of rawItems.slice(0, 14)) {
+          const qty = Number(item.quantity || 1);
+          const cabys = String(item.cabysCode || item.cabys_code || "8311100000000").slice(0, 13);
+          const desc = String(item.description || item.detail || "Item").slice(0, 42);
+          const unitP = Number(item.unitPrice ?? item.unit_price ?? 0);
+          const lineSub = Number(item.lineSubtotal ?? qty * unitP);
+          ops.push(`BT /F1 8 Tf 44 ${y} Td (${esc(qty)}) Tj ET`);
+          ops.push(`BT /F1 7.5 Tf 86 ${y} Td (${esc(cabys)}) Tj ET`);
+          ops.push(`BT /F1 8 Tf 168 ${y} Td (${esc(desc)}) Tj ET`);
+          ops.push(`BT /F1 8 Tf 385 ${y} Td (${esc(fmtMoney(unitP))}) Tj ET`);
+          ops.push(`BT /F1 8 Tf 485 ${y} Td (${esc(fmtMoney(lineSub))}) Tj ET`);
+          ops.push("0.90 0.92 0.95 RG 0.5 w");
+          ops.push(`36 ${y - 6} 540 0 re S`);
+          y -= 18;
+        }
+        const totY = Math.min(y - 12, 230);
+        ops.push("0.95 0.96 0.98 rg");
+        ops.push(`340 ${totY - 62} 236 70 re f`);
+        ops.push("0.82 0.85 0.90 RG 0.8 w");
+        ops.push(`340 ${totY - 62} 236 70 re S`);
+        ops.push("0.15 0.18 0.22 rg");
+        ops.push(`BT /F1 9 Tf 352 ${totY - 12} Td (Subtotal Neto:) Tj ET`);
+        ops.push(`BT /F1 9 Tf 465 ${totY - 12} Td (${esc(fmtMoney(voucher.subtotal))}) Tj ET`);
+        ops.push(`BT /F1 9 Tf 352 ${totY - 28} Td (Impuesto IVA:) Tj ET`);
+        ops.push(`BT /F1 9 Tf 465 ${totY - 28} Td (${esc(fmtMoney(voucher.taxAmount))}) Tj ET`);
+        ops.push("0.08 0.14 0.28 rg");
+        ops.push(`BT /F2 10.5 Tf 352 ${totY - 48} Td (TOTAL COMPROBANTE:) Tj ET`);
+        ops.push(`BT /F2 10.5 Tf 465 ${totY - 48} Td (${esc(fmtMoney(voucher.totalAmount))}) Tj ET`);
+        ops.push("0.45 0.48 0.54 rg");
+        ops.push("BT /F1 7.5 Tf 36 65 Td (Autorizado mediante resolucion DGT-R-033-2019 y Anexos v4.4 de la Direccion General de Tributacion - Ministerio de Hacienda Costa Rica.) Tj ET");
+        ops.push("BT /F1 7.5 Tf 36 52 Td (Representacion grafica de Comprobante Electronico generado por el motor nativo BETICO / ListoCR.) Tj ET");
+        const contentStream = ops.join("\n");
+        const streamBytes = Buffer.from(contentStream, "latin1");
+        const chunks = [];
+        const offsets = [0];
+        let currentOffset = 0;
+        const pushStr = (s) => {
+          const b = Buffer.from(s, "latin1");
+          chunks.push(b);
+          currentOffset += b.length;
+        };
+        const startObj = (id) => {
+          offsets[id] = currentOffset;
+          pushStr(`${id} 0 obj
+`);
+        };
+        pushStr("%PDF-1.4\n%\xE2\xE3\xCF\xD3\n");
+        startObj(1);
+        pushStr("<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+        startObj(2);
+        pushStr("<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+        startObj(3);
+        pushStr("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>\nendobj\n");
+        startObj(4);
+        pushStr("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>\nendobj\n");
+        startObj(5);
+        pushStr("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>\nendobj\n");
+        startObj(6);
+        pushStr(`<< /Length ${streamBytes.length} >>
+stream
+`);
+        chunks.push(streamBytes);
+        currentOffset += streamBytes.length;
+        pushStr("\nendstream\nendobj\n");
+        const xrefOffset = currentOffset;
+        pushStr("xref\n0 7\n0000000000 65535 f \n");
+        for (let i = 1; i <= 6; i++) {
+          const off = String(offsets[i] || 0).padStart(10, "0");
+          pushStr(`${off} 00000 n 
+`);
+        }
+        pushStr(`trailer
+<< /Size 7 /Root 1 0 R >>
+startxref
+${xrefOffset}
+%%EOF
+`);
+        return Buffer.concat(chunks);
+      }
+      /**
+       * Secure proxy method to retrieve the official PDF voucher from Almendro or generate native PDF.
+       * Resolves the voucher record by numericKey (16/50 digits), voucher_key (50 digits), or UUID.
        */
       static async getVoucherPdf(keyOrId) {
         try {
@@ -4913,11 +6040,22 @@ var init_almendro_service = __esm({
           if (!voucher) {
             return { success: false, status: 404, message: "Comprobante electr\xF3nico no encontrado" };
           }
-          const config = await getTenantAlmendroConfigRaw(voucher.tenantId);
-          if (!config || !config.apiKey || !config.apiKey.trim()) {
-            return { success: false, status: 400, message: "Configuraci\xF3n de facturaci\xF3n no disponible para este comercio" };
-          }
           const metadata = voucher.metadata || {};
+          const config = await getTenantAlmendroConfigRaw(voucher.tenantId);
+          const isNativeVoucher = metadata?.emittedVia === "BETICO_NATIVE" || !config || !config.apiKey || !config.apiKey.trim();
+          if (isNativeVoucher) {
+            const { getHaciendaConfigByTenant: getHaciendaConfigByTenant3 } = await Promise.resolve().then(() => (init_hacienda_native_repo(), hacienda_native_repo_exports));
+            const haciendaConfig2 = await getHaciendaConfigByTenant3(voucher.tenantId);
+            const pdfBuffer = this.buildNativePdfBuffer(voucher, haciendaConfig2);
+            const prefix = voucher.docType === "01" ? "Factura" : voucher.docType === "03" ? "NotaCredito" : "Tiquete";
+            const filename2 = `${prefix}-${voucher.consecutiveNumber || voucher.numericKey || "CR"}.pdf`;
+            return {
+              success: true,
+              buffer: pdfBuffer,
+              contentType: "application/pdf",
+              filename: filename2
+            };
+          }
           const voucherKey50 = metadata?.data?.voucher_key || metadata?.voucher_key;
           const effectiveKey = voucherKey50 || voucher.numericKey;
           if (!effectiveKey) {
@@ -4953,26 +6091,23 @@ var init_almendro_service = __esm({
           if (res.status === 200) {
             const arrayBuf = await res.arrayBuffer();
             const buffer = Buffer.from(arrayBuf);
-            const filename = `Factura-${voucher.consecutiveNumber || voucher.numericKey || "CR"}.pdf`;
+            const filename2 = `Factura-${voucher.consecutiveNumber || voucher.numericKey || "CR"}.pdf`;
             return {
               success: true,
               buffer,
               contentType: "application/pdf",
-              filename
+              filename: filename2
             };
           }
-          const errText = await res.text().catch(() => "");
-          let errMessage = `Error ${res.status} al consultar PDF en Almendro`;
-          try {
-            const errJson = JSON.parse(errText);
-            if (errJson.message) errMessage = errJson.message;
-          } catch (_) {
-          }
-          console.warn(`[AlmendroService] No se pudo obtener PDF para clave ${effectiveKey}: ${errMessage}`);
+          const { getHaciendaConfigByTenant: getHaciendaConfigByTenant2 } = await Promise.resolve().then(() => (init_hacienda_native_repo(), hacienda_native_repo_exports));
+          const haciendaConfig = await getHaciendaConfigByTenant2(voucher.tenantId);
+          const fallbackBuffer = this.buildNativePdfBuffer(voucher, haciendaConfig);
+          const filename = `Comprobante-${voucher.consecutiveNumber || voucher.numericKey || "CR"}.pdf`;
           return {
-            success: false,
-            status: res.status,
-            message: errMessage
+            success: true,
+            buffer: fallbackBuffer,
+            contentType: "application/pdf",
+            filename
           };
         } catch (err) {
           console.error("[AlmendroService] Error al obtener PDF de comprobante:", err);
@@ -5302,6 +6437,121 @@ async function getCompletedOrdersForDriver(driverId, fromDate, toDate) {
 }
 var init_drivers_repo = __esm({
   "src/server/db/drivers.repo.ts"() {
+    "use strict";
+    init_pool();
+  }
+});
+
+// src/server/db/branches.repo.ts
+var branches_repo_exports = {};
+__export(branches_repo_exports, {
+  createBranch: () => createBranch,
+  deleteBranch: () => deleteBranch,
+  getBranchById: () => getBranchById,
+  getBranchesByTenant: () => getBranchesByTenant,
+  updateBranch: () => updateBranch
+});
+async function getBranchesByTenant(tenantId) {
+  const result = await query(`
+    SELECT 
+      id, tenant_id as "tenantId", name, code, address, phone,
+      sinpe_phone as "sinpePhone", sinpe_name as "sinpeName",
+      latitude, longitude, is_main as "isMain", active,
+      created_at as "createdAt", updated_at as "updatedAt"
+    FROM branches
+    WHERE tenant_id = $1
+    ORDER BY is_main DESC, name ASC
+  `, [tenantId]);
+  return result.rows;
+}
+async function getBranchById(id, tenantId) {
+  const result = await query(`
+    SELECT 
+      id, tenant_id as "tenantId", name, code, address, phone,
+      sinpe_phone as "sinpePhone", sinpe_name as "sinpeName",
+      latitude, longitude, is_main as "isMain", active,
+      created_at as "createdAt", updated_at as "updatedAt"
+    FROM branches
+    WHERE id = $1 AND tenant_id = $2
+  `, [id, tenantId]);
+  return result.rows[0] || null;
+}
+async function createBranch(tenantId, data) {
+  if (data.isMain) {
+    await query(`UPDATE branches SET is_main = FALSE WHERE tenant_id = $1`, [tenantId]);
+  }
+  const result = await query(`
+    INSERT INTO branches (
+      tenant_id, name, code, address, phone, sinpe_phone, sinpe_name,
+      latitude, longitude, is_main, active
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    RETURNING 
+      id, tenant_id as "tenantId", name, code, address, phone,
+      sinpe_phone as "sinpePhone", sinpe_name as "sinpeName",
+      latitude, longitude, is_main as "isMain", active,
+      created_at as "createdAt", updated_at as "updatedAt"
+  `, [
+    tenantId,
+    data.name,
+    data.code || null,
+    data.address || null,
+    data.phone || null,
+    data.sinpePhone || null,
+    data.sinpeName || null,
+    data.latitude || null,
+    data.longitude || null,
+    data.isMain || false,
+    data.active !== false
+  ]);
+  return result.rows[0];
+}
+async function updateBranch(id, tenantId, data) {
+  if (data.isMain) {
+    await query(`UPDATE branches SET is_main = FALSE WHERE tenant_id = $1 AND id != $2`, [tenantId, id]);
+  }
+  const result = await query(`
+    UPDATE branches
+    SET
+      name = COALESCE($1, name),
+      code = COALESCE($2, code),
+      address = COALESCE($3, address),
+      phone = COALESCE($4, phone),
+      sinpe_phone = COALESCE($5, sinpe_phone),
+      sinpe_name = COALESCE($6, sinpe_name),
+      latitude = COALESCE($7, latitude),
+      longitude = COALESCE($8, longitude),
+      is_main = COALESCE($9, is_main),
+      active = COALESCE($10, active),
+      updated_at = CURRENT_TIMESTAMP
+    WHERE id = $11 AND tenant_id = $12
+    RETURNING 
+      id, tenant_id as "tenantId", name, code, address, phone,
+      sinpe_phone as "sinpePhone", sinpe_name as "sinpeName",
+      latitude, longitude, is_main as "isMain", active,
+      created_at as "createdAt", updated_at as "updatedAt"
+  `, [
+    data.name,
+    data.code,
+    data.address,
+    data.phone,
+    data.sinpePhone,
+    data.sinpeName,
+    data.latitude,
+    data.longitude,
+    data.isMain,
+    data.active,
+    id,
+    tenantId
+  ]);
+  return result.rows[0] || null;
+}
+async function deleteBranch(id, tenantId) {
+  const result = await query(`DELETE FROM branches WHERE id = $1 AND tenant_id = $2`, [id, tenantId]);
+  return (result.rowCount ?? 0) > 0;
+}
+var init_branches_repo = __esm({
+  "src/server/db/branches.repo.ts"() {
     "use strict";
     init_pool();
   }
@@ -6565,6 +7815,62 @@ async function runMigrations() {
       UNIQUE(tenant_id)
     );
     CREATE INDEX IF NOT EXISTS idx_tenant_wallet_configs_tenant ON tenant_wallet_configs(tenant_id);
+
+    -- ==========================================================
+    -- M\xD3DULO AVANZADO DE FACTURACI\xD3N HACIENDA Y MULTI-SUCURSAL
+    -- ==========================================================
+    ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS multi_branch_enabled BOOLEAN DEFAULT false;
+    ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS cert_subject VARCHAR(255) DEFAULT '';
+    ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS cert_issuer VARCHAR(255) DEFAULT '';
+    ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS economic_activities_json JSONB DEFAULT '[]'::jsonb;
+    ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS default_cabys_code VARCHAR(20) DEFAULT '8311100000000';
+    ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS seq_factura INT DEFAULT 1;
+    ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS seq_tiquete INT DEFAULT 1;
+    ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS seq_nota_credito INT DEFAULT 1;
+
+    CREATE TABLE IF NOT EXISTS tenant_hacienda_branches (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      branch_id UUID REFERENCES branches(id) ON DELETE SET NULL,
+      branch_name VARCHAR(255) NOT NULL,
+      branch_code VARCHAR(3) NOT NULL DEFAULT '002',
+      pos_code VARCHAR(5) NOT NULL DEFAULT '00001',
+      commercial_name VARCHAR(255) DEFAULT '',
+      economic_activity_code VARCHAR(10) DEFAULT '',
+      province VARCHAR(1) DEFAULT '1',
+      canton VARCHAR(2) DEFAULT '01',
+      district VARCHAR(2) DEFAULT '01',
+      neighborhood VARCHAR(2) DEFAULT '01',
+      address_detail TEXT DEFAULT '',
+      seq_factura INT NOT NULL DEFAULT 1,
+      seq_tiquete INT NOT NULL DEFAULT 1,
+      seq_nota_credito INT NOT NULL DEFAULT 1,
+      use_custom_credentials BOOLEAN NOT NULL DEFAULT false,
+      custom_taxpayer_id_type VARCHAR(2) DEFAULT '01',
+      custom_taxpayer_id_number VARCHAR(20) DEFAULT '',
+      custom_taxpayer_name VARCHAR(255) DEFAULT '',
+      custom_idp_username VARCHAR(100) DEFAULT '',
+      custom_idp_password_encrypted TEXT DEFAULT '',
+      custom_p12_encrypted_blob BYTEA,
+      custom_p12_pin_encrypted TEXT DEFAULT '',
+      custom_p12_filename VARCHAR(255) DEFAULT '',
+      custom_p12_expires_at TIMESTAMPTZ,
+      custom_cert_subject VARCHAR(255) DEFAULT '',
+      is_connected BOOLEAN NOT NULL DEFAULT false,
+      last_test_at TIMESTAMPTZ,
+      last_test_message TEXT,
+      active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(tenant_id, branch_code, pos_code)
+    );
+    CREATE INDEX IF NOT EXISTS idx_hacienda_branches_tenant ON tenant_hacienda_branches(tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_hacienda_branches_store_branch ON tenant_hacienda_branches(tenant_id, branch_id);
+
+    ALTER TABLE electronic_vouchers ADD COLUMN IF NOT EXISTS branch_id UUID REFERENCES branches(id) ON DELETE SET NULL;
+    ALTER TABLE electronic_vouchers ADD COLUMN IF NOT EXISTS branch_code VARCHAR(3) DEFAULT '001';
+    ALTER TABLE electronic_vouchers ADD COLUMN IF NOT EXISTS pos_code VARCHAR(5) DEFAULT '00001';
+    ALTER TABLE electronic_vouchers ADD COLUMN IF NOT EXISTS reference_key VARCHAR(50);
   `).catch((err) => {
     console.warn("[Migrations] Columns addition warning:", err?.message || err);
   });
@@ -19603,110 +20909,7 @@ var campaigns_routes_default = router22;
 
 // src/server/routes/branches.routes.ts
 import { Router as Router23 } from "express";
-
-// src/server/db/branches.repo.ts
-init_pool();
-async function getBranchesByTenant(tenantId) {
-  const result = await query(`
-    SELECT 
-      id, tenant_id as "tenantId", name, code, address, phone,
-      sinpe_phone as "sinpePhone", sinpe_name as "sinpeName",
-      latitude, longitude, is_main as "isMain", active,
-      created_at as "createdAt", updated_at as "updatedAt"
-    FROM branches
-    WHERE tenant_id = $1
-    ORDER BY is_main DESC, name ASC
-  `, [tenantId]);
-  return result.rows;
-}
-async function getBranchById(id, tenantId) {
-  const result = await query(`
-    SELECT 
-      id, tenant_id as "tenantId", name, code, address, phone,
-      sinpe_phone as "sinpePhone", sinpe_name as "sinpeName",
-      latitude, longitude, is_main as "isMain", active,
-      created_at as "createdAt", updated_at as "updatedAt"
-    FROM branches
-    WHERE id = $1 AND tenant_id = $2
-  `, [id, tenantId]);
-  return result.rows[0] || null;
-}
-async function createBranch(tenantId, data) {
-  if (data.isMain) {
-    await query(`UPDATE branches SET is_main = FALSE WHERE tenant_id = $1`, [tenantId]);
-  }
-  const result = await query(`
-    INSERT INTO branches (
-      tenant_id, name, code, address, phone, sinpe_phone, sinpe_name,
-      latitude, longitude, is_main, active
-    )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-    RETURNING 
-      id, tenant_id as "tenantId", name, code, address, phone,
-      sinpe_phone as "sinpePhone", sinpe_name as "sinpeName",
-      latitude, longitude, is_main as "isMain", active,
-      created_at as "createdAt", updated_at as "updatedAt"
-  `, [
-    tenantId,
-    data.name,
-    data.code || null,
-    data.address || null,
-    data.phone || null,
-    data.sinpePhone || null,
-    data.sinpeName || null,
-    data.latitude || null,
-    data.longitude || null,
-    data.isMain || false,
-    data.active !== false
-  ]);
-  return result.rows[0];
-}
-async function updateBranch(id, tenantId, data) {
-  if (data.isMain) {
-    await query(`UPDATE branches SET is_main = FALSE WHERE tenant_id = $1 AND id != $2`, [tenantId, id]);
-  }
-  const result = await query(`
-    UPDATE branches
-    SET
-      name = COALESCE($1, name),
-      code = COALESCE($2, code),
-      address = COALESCE($3, address),
-      phone = COALESCE($4, phone),
-      sinpe_phone = COALESCE($5, sinpe_phone),
-      sinpe_name = COALESCE($6, sinpe_name),
-      latitude = COALESCE($7, latitude),
-      longitude = COALESCE($8, longitude),
-      is_main = COALESCE($9, is_main),
-      active = COALESCE($10, active),
-      updated_at = CURRENT_TIMESTAMP
-    WHERE id = $11 AND tenant_id = $12
-    RETURNING 
-      id, tenant_id as "tenantId", name, code, address, phone,
-      sinpe_phone as "sinpePhone", sinpe_name as "sinpeName",
-      latitude, longitude, is_main as "isMain", active,
-      created_at as "createdAt", updated_at as "updatedAt"
-  `, [
-    data.name,
-    data.code,
-    data.address,
-    data.phone,
-    data.sinpePhone,
-    data.sinpeName,
-    data.latitude,
-    data.longitude,
-    data.isMain,
-    data.active,
-    id,
-    tenantId
-  ]);
-  return result.rows[0] || null;
-}
-async function deleteBranch(id, tenantId) {
-  const result = await query(`DELETE FROM branches WHERE id = $1 AND tenant_id = $2`, [id, tenantId]);
-  return (result.rowCount ?? 0) > 0;
-}
-
-// src/server/routes/branches.routes.ts
+init_branches_repo();
 var router23 = Router23();
 router23.use(authenticateToken);
 router23.get("/", async (req, res) => {
@@ -22369,6 +23572,30 @@ router34.get("/public-config/:slug", async (req, res) => {
       res.status(404).json({ error: "Comercio no encontrado" });
       return;
     }
+    try {
+      const { getHaciendaConfigByTenant: getHaciendaConfigByTenant2 } = await Promise.resolve().then(() => (init_hacienda_native_repo(), hacienda_native_repo_exports));
+      const nativeCfg = await getHaciendaConfigByTenant2(tenant.id);
+      if (nativeCfg && nativeCfg.active && nativeCfg.providerMode === "BETICO_NATIVE" && (nativeCfg.taxpayerIdNumber || nativeCfg.isConnected)) {
+        res.json({
+          isEnabled: true,
+          billingMode: "BETICO_NATIVE",
+          defaultDocType: nativeCfg.defaultDocType || "04",
+          isSimplifiedRegime: Boolean(nativeCfg.isSimplifiedRegime),
+          multiBranchEnabled: Boolean(nativeCfg.multiBranchEnabled)
+        });
+        return;
+      }
+      if (nativeCfg && nativeCfg.active && nativeCfg.providerMode === "EXTERNAL_MANUAL") {
+        res.json({
+          isEnabled: true,
+          billingMode: "EXTERNAL_MANUAL",
+          defaultDocType: nativeCfg.defaultDocType || "04",
+          isSimplifiedRegime: Boolean(nativeCfg.isSimplifiedRegime)
+        });
+        return;
+      }
+    } catch (_) {
+    }
     const config = await getTenantAlmendroConfig(tenant.id);
     if (!config || !config.isEnabled || !config.isConfigured) {
       res.json({ isEnabled: false, defaultDocType: "04" });
@@ -22555,12 +23782,14 @@ router34.get("/taxpayer/:idNumber", async (req, res) => {
 router34.get("/vouchers", async (req, res) => {
   try {
     const tenantId = req.tenantId;
-    const { limit, offset, status, docType } = req.query;
+    const { limit, offset, status, docType, branchCode, search } = req.query;
     const result = await getElectronicVouchers(tenantId, {
       limit: limit ? Number(limit) : 50,
       offset: offset ? Number(offset) : 0,
       status,
-      docType
+      docType,
+      branchCode,
+      search
     });
     res.json(result);
   } catch (error) {
@@ -24311,13 +25540,39 @@ router41.get("/config", async (req, res) => {
       config: config || {
         environment: "sandbox",
         taxpayerIdType: "01",
-        providerMode: "BETICO_NATIVE",
-        useAlternativeProvider: false,
+        taxpayerIdNumber: "",
+        taxpayerName: "",
+        commercialName: "",
+        taxpayerEmail: "",
+        taxpayerPhone: "",
+        economicActivityCode: "",
+        economicActivities: [],
+        defaultCabysCode: "8311100000000",
+        province: "1",
+        canton: "01",
+        district: "01",
+        neighborhood: "01",
+        addressDetail: "",
+        idpUsername: "",
+        idpPasswordMasked: "",
+        p12Filename: "",
+        p12ExpiresAt: null,
+        p12HasCertificate: false,
+        certSubject: "",
+        certIssuer: "",
+        certDaysRemaining: null,
         branchCode: "001",
         posCode: "00001",
         defaultDocType: "04",
+        seqFactura: 1,
+        seqTiquete: 1,
+        seqNotaCredito: 1,
+        multiBranchEnabled: false,
         isConnected: false,
-        p12HasCertificate: false
+        providerMode: "BETICO_NATIVE",
+        useAlternativeProvider: false,
+        isSimplifiedRegime: false,
+        active: true
       }
     });
   } catch (err) {
@@ -24343,16 +25598,34 @@ router41.post("/config", upload4.single("certificateFile"), async (req, res) => 
     let p12Buffer = void 0;
     let p12Filename = void 0;
     let p12ExpiresAt = void 0;
+    let certSubject = void 0;
+    let certIssuer = void 0;
+    const cleanPin = body.p12Pin && !String(body.p12Pin).includes("\u2022\u2022\u2022\u2022") ? String(body.p12Pin).trim() : "";
     if (file && file.buffer) {
       p12Buffer = file.buffer;
       p12Filename = file.originalname;
-      if (body.p12Pin) {
-        const certCheck = await inspectP12Certificate(p12Buffer, body.p12Pin);
+      const pinToUse = cleanPin || (await getHaciendaDecryptedSecrets(tenantId))?.p12Pin || "";
+      if (pinToUse) {
+        const certCheck = await inspectP12Certificate(p12Buffer, pinToUse);
         if (!certCheck.valid) {
           res.status(400).json({ error: certCheck.error || "El PIN no coincide con el certificado .p12" });
           return;
         }
         p12ExpiresAt = certCheck.expiresAt;
+        certSubject = certCheck.subject;
+        certIssuer = certCheck.issuer;
+      }
+    } else if (cleanPin) {
+      const secrets = await getHaciendaDecryptedSecrets(tenantId);
+      if (secrets?.p12Buffer) {
+        const certCheck = await inspectP12Certificate(secrets.p12Buffer, cleanPin);
+        if (!certCheck.valid) {
+          res.status(400).json({ error: certCheck.error || "El PIN ingresado no coincide con el certificado .p12 guardado" });
+          return;
+        }
+        p12ExpiresAt = certCheck.expiresAt;
+        certSubject = certCheck.subject;
+        certIssuer = certCheck.issuer;
       }
     }
     const updated = await saveHaciendaConfig(tenantId, {
@@ -24364,6 +25637,8 @@ router41.post("/config", upload4.single("certificateFile"), async (req, res) => 
       taxpayerEmail: body.taxpayerEmail,
       taxpayerPhone: body.taxpayerPhone,
       economicActivityCode: body.economicActivityCode,
+      economicActivities: body.economicActivities,
+      defaultCabysCode: body.defaultCabysCode,
       province: body.province,
       canton: body.canton,
       district: body.district,
@@ -24373,11 +25648,17 @@ router41.post("/config", upload4.single("certificateFile"), async (req, res) => 
       idpPassword: body.idpPassword,
       p12Buffer,
       p12Filename,
-      p12Pin: body.p12Pin,
+      p12Pin: cleanPin || void 0,
       p12ExpiresAt,
+      certSubject,
+      certIssuer,
       branchCode: body.branchCode,
       posCode: body.posCode,
       defaultDocType: body.defaultDocType,
+      seqFactura: body.seqFactura !== void 0 ? Number(body.seqFactura) : void 0,
+      seqTiquete: body.seqTiquete !== void 0 ? Number(body.seqTiquete) : void 0,
+      seqNotaCredito: body.seqNotaCredito !== void 0 ? Number(body.seqNotaCredito) : void 0,
+      multiBranchEnabled: body.multiBranchEnabled !== void 0 ? body.multiBranchEnabled === "true" || body.multiBranchEnabled === true : void 0,
       providerMode: body.providerMode,
       useAlternativeProvider: body.useAlternativeProvider !== void 0 ? body.useAlternativeProvider === "true" || body.useAlternativeProvider === true : void 0,
       isSimplifiedRegime: body.isSimplifiedRegime !== void 0 ? body.isSimplifiedRegime === "true" || body.isSimplifiedRegime === true : void 0,
@@ -24393,6 +25674,22 @@ router41.post("/config", upload4.single("certificateFile"), async (req, res) => 
     res.status(500).json({ error: err.message || "Error guardando configuraci\xF3n de facturaci\xF3n" });
   }
 });
+router41.delete("/credentials", async (req, res) => {
+  try {
+    const tenantId = req.tenantId;
+    const rawTarget = String(req.query.target || req.body?.target || "all").toLowerCase();
+    const target = rawTarget === "atv" ? "atv" : rawTarget === "p12" ? "p12" : "all";
+    const config = await clearHaciendaCredentials(tenantId, target);
+    res.json({
+      success: true,
+      message: target === "atv" ? "Credenciales ATV eliminadas correctamente" : target === "p12" ? "Certificado criptogr\xE1fico .p12 eliminado correctamente" : "Credenciales y certificado eliminados correctamente",
+      config
+    });
+  } catch (err) {
+    console.error("[BillingNativeRoutes] Error limpiando credenciales:", err);
+    res.status(500).json({ error: err.message || "Error al limpiar credenciales de Hacienda" });
+  }
+});
 router41.post("/test-connection", async (req, res) => {
   try {
     const tenantId = req.tenantId;
@@ -24405,19 +25702,188 @@ router41.post("/test-connection", async (req, res) => {
 });
 router41.post("/quick-test", async (req, res) => {
   try {
-    const { environment, idpUsername, idpPassword } = req.body;
-    if (!idpUsername || !idpPassword) {
-      res.status(400).json({ success: false, message: "Ingrese usuario y contrase\xF1a ATV" });
+    const tenantId = req.tenantId;
+    const { environment, idpUsername, idpPassword } = req.body || {};
+    let effEnv = environment || "sandbox";
+    let effUsername = idpUsername ? String(idpUsername).trim() : "";
+    let effPassword = idpPassword && !String(idpPassword).includes("\u2022\u2022\u2022\u2022") ? String(idpPassword).trim() : "";
+    if (!effUsername || !effPassword) {
+      const secrets = await getHaciendaDecryptedSecrets(tenantId);
+      if (secrets) {
+        if (!effUsername) effUsername = secrets.idpUsername;
+        if (!effPassword) effPassword = secrets.idpPassword;
+        if (!environment) effEnv = secrets.environment;
+      }
+    }
+    if (!effUsername || !effPassword) {
+      res.status(400).json({ success: false, message: "Ingrese usuario y contrase\xF1a ATV para realizar la prueba" });
       return;
     }
-    const result = await authenticateHaciendaIdp(
-      environment || "sandbox",
-      idpUsername,
-      idpPassword
-    );
+    const result = await authenticateHaciendaIdp(effEnv, effUsername, effPassword);
     res.json(result);
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message || "Error probando credenciales" });
+    res.status(500).json({ success: false, message: err.message || "Error probando credenciales ATV" });
+  }
+});
+router41.post("/test-p12", upload4.single("certificateFile"), async (req, res) => {
+  try {
+    const tenantId = req.tenantId;
+    const file = req.file;
+    const rawPin = req.body?.p12Pin && !String(req.body.p12Pin).includes("\u2022\u2022\u2022\u2022") ? String(req.body.p12Pin).trim() : "";
+    let p12Buffer = file?.buffer || null;
+    let p12Pin = rawPin;
+    if (!p12Buffer || !p12Pin) {
+      const secrets = await getHaciendaDecryptedSecrets(tenantId);
+      if (secrets) {
+        if (!p12Buffer) p12Buffer = secrets.p12Buffer;
+        if (!p12Pin) p12Pin = secrets.p12Pin;
+      }
+    }
+    if (!p12Buffer || !p12Pin) {
+      res.status(400).json({
+        success: false,
+        message: "Seleccione un archivo .p12 e ingrese su PIN de 4 d\xEDgitos para validar la llave criptogr\xE1fica."
+      });
+      return;
+    }
+    const certInfo = await inspectP12Certificate(p12Buffer, p12Pin);
+    if (certInfo.valid && !file) {
+      await saveHaciendaConfig(tenantId, {
+        p12ExpiresAt: certInfo.expiresAt,
+        certSubject: certInfo.subject,
+        certIssuer: certInfo.issuer
+      });
+    }
+    res.json({
+      success: certInfo.valid,
+      message: certInfo.valid ? `Llave criptogr\xE1fica v\xE1lida: ${certInfo.subject} (Vence el ${certInfo.expiresAt ? certInfo.expiresAt.toLocaleDateString("es-CR") : "N/A"})` : certInfo.error || "No se pudo validar el certificado .p12",
+      certificate: certInfo
+    });
+  } catch (err) {
+    console.error("[BillingNativeRoutes] Error en test-p12:", err);
+    res.status(500).json({ success: false, message: err.message || "Error al inspeccionar certificado .p12" });
+  }
+});
+router41.get("/padron/:identificacion", async (req, res) => {
+  try {
+    const result = await lookupHaciendaTaxpayerPublic(String(req.params.identificacion || ""));
+    res.json(result);
+  } catch (err) {
+    console.error("[BillingNativeRoutes] Error consultando padr\xF3n Hacienda:", err);
+    res.status(500).json({
+      success: false,
+      error: err.message || "Error consultando el padr\xF3n de Hacienda"
+    });
+  }
+});
+router41.get("/branches", async (req, res) => {
+  try {
+    const tenantId = req.tenantId;
+    const { getBranchesByTenant: getBranchesByTenant2 } = await Promise.resolve().then(() => (init_branches_repo(), branches_repo_exports));
+    const [branches, storeBranches] = await Promise.all([
+      getHaciendaBranchesByTenant(tenantId),
+      getBranchesByTenant2(tenantId).catch(() => [])
+    ]);
+    res.json({
+      success: true,
+      branches,
+      storeBranches
+    });
+  } catch (err) {
+    console.error("[BillingNativeRoutes] Error listando sucursales fiscales:", err);
+    res.status(500).json({ error: "Error al obtener sucursales de facturaci\xF3n" });
+  }
+});
+router41.post("/branches", upload4.single("certificateFile"), async (req, res) => {
+  try {
+    const tenantId = req.tenantId;
+    const body = req.body || {};
+    const file = req.file;
+    let customP12Buffer = void 0;
+    let customP12Filename = void 0;
+    let customP12ExpiresAt = void 0;
+    let customCertSubject = void 0;
+    const cleanPin = body.customP12Pin && !String(body.customP12Pin).includes("\u2022\u2022\u2022\u2022") ? String(body.customP12Pin).trim() : "";
+    if (file && file.buffer) {
+      customP12Buffer = file.buffer;
+      customP12Filename = file.originalname;
+      if (cleanPin) {
+        const certInfo = await inspectP12Certificate(customP12Buffer, cleanPin);
+        if (!certInfo.valid) {
+          res.status(400).json({ error: certInfo.error || "El PIN no coincide con el certificado .p12 de la sucursal" });
+          return;
+        }
+        customP12ExpiresAt = certInfo.expiresAt;
+        customCertSubject = certInfo.subject;
+      }
+    }
+    const branch = await saveHaciendaBranch(tenantId, {
+      ...body,
+      customP12Buffer,
+      customP12Filename,
+      customP12Pin: cleanPin || void 0,
+      customP12ExpiresAt,
+      customCertSubject
+    });
+    res.json({
+      success: true,
+      message: "Sucursal de facturaci\xF3n guardada exitosamente",
+      branch
+    });
+  } catch (err) {
+    console.error("[BillingNativeRoutes] Error guardando sucursal fiscal:", err);
+    res.status(500).json({ error: err.message || "Error al guardar sucursal de facturaci\xF3n" });
+  }
+});
+router41.post("/branches/:id/test", async (req, res) => {
+  try {
+    const tenantId = req.tenantId;
+    const result = await testBranchHaciendaConnection(tenantId, String(req.params.id || ""));
+    res.json(result);
+  } catch (err) {
+    console.error("[BillingNativeRoutes] Error probando sucursal fiscal:", err);
+    res.status(500).json({ success: false, message: err.message || "Error al probar conexi\xF3n de sucursal" });
+  }
+});
+router41.delete("/branches/:id", async (req, res) => {
+  try {
+    const tenantId = req.tenantId;
+    const deleted = await deleteHaciendaBranch(tenantId, String(req.params.id || ""));
+    res.json({
+      success: deleted,
+      message: deleted ? "Sucursal eliminada correctamente" : "Sucursal no encontrada"
+    });
+  } catch (err) {
+    console.error("[BillingNativeRoutes] Error eliminando sucursal fiscal:", err);
+    res.status(500).json({ error: err.message || "Error al eliminar sucursal de facturaci\xF3n" });
+  }
+});
+router41.post("/emit-manual", async (req, res) => {
+  try {
+    const tenantId = req.tenantId;
+    const result = await emitManualOrNativeVoucher(tenantId, req.body || {});
+    if (!result.success) {
+      res.status(400).json({ ...result, error: result.message });
+      return;
+    }
+    res.json(result);
+  } catch (err) {
+    console.error("[BillingNativeRoutes] Error en emisi\xF3n manual POS:", err);
+    res.status(500).json({ success: false, error: err.message || "Error al emitir comprobante electr\xF3nico" });
+  }
+});
+router41.post("/vouchers/:id/credit-note", async (req, res) => {
+  try {
+    const tenantId = req.tenantId;
+    const result = await emitCreditNoteForVoucher(tenantId, String(req.params.id || ""), req.body?.reason);
+    if (!result.success) {
+      res.status(400).json({ ...result, error: result.message });
+      return;
+    }
+    res.json(result);
+  } catch (err) {
+    console.error("[BillingNativeRoutes] Error emitiendo Nota de Cr\xE9dito:", err);
+    res.status(500).json({ success: false, error: err.message || "Error al emitir Nota de Cr\xE9dito" });
   }
 });
 var billing_native_routes_default = router41;

@@ -1258,6 +1258,62 @@ export async function runMigrations() {
       UNIQUE(tenant_id)
     );
     CREATE INDEX IF NOT EXISTS idx_tenant_wallet_configs_tenant ON tenant_wallet_configs(tenant_id);
+
+    -- ==========================================================
+    -- MÓDULO AVANZADO DE FACTURACIÓN HACIENDA Y MULTI-SUCURSAL
+    -- ==========================================================
+    ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS multi_branch_enabled BOOLEAN DEFAULT false;
+    ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS cert_subject VARCHAR(255) DEFAULT '';
+    ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS cert_issuer VARCHAR(255) DEFAULT '';
+    ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS economic_activities_json JSONB DEFAULT '[]'::jsonb;
+    ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS default_cabys_code VARCHAR(20) DEFAULT '8311100000000';
+    ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS seq_factura INT DEFAULT 1;
+    ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS seq_tiquete INT DEFAULT 1;
+    ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS seq_nota_credito INT DEFAULT 1;
+
+    CREATE TABLE IF NOT EXISTS tenant_hacienda_branches (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      branch_id UUID REFERENCES branches(id) ON DELETE SET NULL,
+      branch_name VARCHAR(255) NOT NULL,
+      branch_code VARCHAR(3) NOT NULL DEFAULT '002',
+      pos_code VARCHAR(5) NOT NULL DEFAULT '00001',
+      commercial_name VARCHAR(255) DEFAULT '',
+      economic_activity_code VARCHAR(10) DEFAULT '',
+      province VARCHAR(1) DEFAULT '1',
+      canton VARCHAR(2) DEFAULT '01',
+      district VARCHAR(2) DEFAULT '01',
+      neighborhood VARCHAR(2) DEFAULT '01',
+      address_detail TEXT DEFAULT '',
+      seq_factura INT NOT NULL DEFAULT 1,
+      seq_tiquete INT NOT NULL DEFAULT 1,
+      seq_nota_credito INT NOT NULL DEFAULT 1,
+      use_custom_credentials BOOLEAN NOT NULL DEFAULT false,
+      custom_taxpayer_id_type VARCHAR(2) DEFAULT '01',
+      custom_taxpayer_id_number VARCHAR(20) DEFAULT '',
+      custom_taxpayer_name VARCHAR(255) DEFAULT '',
+      custom_idp_username VARCHAR(100) DEFAULT '',
+      custom_idp_password_encrypted TEXT DEFAULT '',
+      custom_p12_encrypted_blob BYTEA,
+      custom_p12_pin_encrypted TEXT DEFAULT '',
+      custom_p12_filename VARCHAR(255) DEFAULT '',
+      custom_p12_expires_at TIMESTAMPTZ,
+      custom_cert_subject VARCHAR(255) DEFAULT '',
+      is_connected BOOLEAN NOT NULL DEFAULT false,
+      last_test_at TIMESTAMPTZ,
+      last_test_message TEXT,
+      active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(tenant_id, branch_code, pos_code)
+    );
+    CREATE INDEX IF NOT EXISTS idx_hacienda_branches_tenant ON tenant_hacienda_branches(tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_hacienda_branches_store_branch ON tenant_hacienda_branches(tenant_id, branch_id);
+
+    ALTER TABLE electronic_vouchers ADD COLUMN IF NOT EXISTS branch_id UUID REFERENCES branches(id) ON DELETE SET NULL;
+    ALTER TABLE electronic_vouchers ADD COLUMN IF NOT EXISTS branch_code VARCHAR(3) DEFAULT '001';
+    ALTER TABLE electronic_vouchers ADD COLUMN IF NOT EXISTS pos_code VARCHAR(5) DEFAULT '00001';
+    ALTER TABLE electronic_vouchers ADD COLUMN IF NOT EXISTS reference_key VARCHAR(50);
   `).catch((err) => {
     console.warn('[Migrations] Columns addition warning:', err?.message || err);
   });

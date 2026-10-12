@@ -599,18 +599,27 @@ function MainApp({ pathname }: { pathname: string }) {
       ]
     }] : []),
 
-    // 8. CONFIGURACIÓN
+    // 8. FACTURACIÓN HACIENDA
+    {
+      title: 'FACTURACIÓN HACIENDA',
+      items: [
+        { id: 'facturacion_comprobantes', label: 'Comprobantes y Emisión', icon: <FileText size={18} /> },
+        { id: 'facturacion_credenciales', label: 'Credenciales y Llave .p12', icon: <ShieldCheck size={18} /> },
+        { id: 'facturacion_sucursales', label: 'Datos Fiscales y Sucursales', icon: <Building2 size={18} /> }
+      ]
+    },
+
+    // 9. CONFIGURACIÓN
     {
       title: 'CONFIGURACIÓN',
       items: [
         { id: 'configuracion', label: 'Ajustes Generales', icon: <Settings size={18} /> },
         { id: 'suscripcion', label: 'Mi Suscripción y Pagos', icon: <CreditCard size={18} /> },
-        { id: 'facturacion', label: 'Facturación Electrónica', icon: <FileText size={18} /> },
         { id: 'usuarios', label: 'Equipo y Usuarios', icon: <Users size={18} /> }
       ]
     },
 
-    // 8. SEDES Y SUCURSALES (Condicional por plan / branchesEnabled)
+    // 10. SEDES Y SUCURSALES (Condicional por plan / branchesEnabled)
     ...(branchesEnabled ? [{
       title: 'SEDES Y SUCURSALES',
       items: [
@@ -677,7 +686,13 @@ function MainApp({ pathname }: { pathname: string }) {
         case 'whatsapp': return <EvolutionManager />;
         case 'notificaciones': return <NotificationsCenter />;
         case 'usuarios': return <UsersManagement />;
-        case 'facturacion': return <ElectronicBillingView />;
+        case 'facturacion':
+        case 'facturacion_comprobantes':
+          return <ElectronicBillingView initialTab="comprobantes" />;
+        case 'facturacion_credenciales':
+          return <ElectronicBillingView initialTab="credenciales" />;
+        case 'facturacion_sucursales':
+          return <ElectronicBillingView initialTab="sucursales" />;
         case 'suscripcion': return <TenantSubscriptionView />;
         case 'configuracion': return <TenantSettings />;
         default: return <Dashboard />;
@@ -1086,6 +1101,9 @@ function MainApp({ pathname }: { pathname: string }) {
                 currentPage === 'configuracion' ? 'Ajustes Generales' :
                 currentPage === 'suscripcion' ? 'Mi Suscripción y Pagos' :
                 currentPage === 'facturacion' ? 'Facturación Electrónica' :
+                currentPage === 'facturacion_comprobantes' ? 'Comprobantes y Emisión' :
+                currentPage === 'facturacion_credenciales' ? 'Credenciales y Llave .p12' :
+                currentPage === 'facturacion_sucursales' ? 'Datos Fiscales y Sucursales' :
                 currentPage === 'usuarios' ? 'Equipo y Usuarios' :
                 currentPage === 'sucursales' ? 'Sedes y Sucursales' :
                 currentPage === 'notificaciones' ? 'Notificaciones' :
@@ -1119,7 +1137,7 @@ function MainApp({ pathname }: { pathname: string }) {
               <HelpCircle size={20} color="#059669" />
             </button>
 
-            {/* User Avatar & Info */}
+            {/* User Avatar e Info */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 8px', borderRadius: '8px', backgroundColor: 'var(--background)', border: '1px solid var(--border)' }}>
               <div style={{
                 width: '28px',

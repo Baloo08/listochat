@@ -29,6 +29,32 @@ router.get('/public-config/:slug', async (req: Request, res: Response): Promise<
       return;
     }
 
+    // 1. Verificar primero configuración nativa Betico Hacienda
+    try {
+      const { getHaciendaConfigByTenant } = await import('../db/hacienda-native.repo.js');
+      const nativeCfg = await getHaciendaConfigByTenant(tenant.id);
+      if (nativeCfg && nativeCfg.active && nativeCfg.providerMode === 'BETICO_NATIVE' && (nativeCfg.taxpayerIdNumber || nativeCfg.isConnected)) {
+        res.json({
+          isEnabled: true,
+          billingMode: 'BETICO_NATIVE',
+          defaultDocType: nativeCfg.defaultDocType || '04',
+          isSimplifiedRegime: Boolean(nativeCfg.isSimplifiedRegime),
+          multiBranchEnabled: Boolean(nativeCfg.multiBranchEnabled)
+        });
+        return;
+      }
+      if (nativeCfg && nativeCfg.active && nativeCfg.providerMode === 'EXTERNAL_MANUAL') {
+        res.json({
+          isEnabled: true,
+          billingMode: 'EXTERNAL_MANUAL',
+          defaultDocType: nativeCfg.defaultDocType || '04',
+          isSimplifiedRegime: Boolean(nativeCfg.isSimplifiedRegime)
+        });
+        return;
+      }
+    } catch (_) {}
+
+    // 2. Fallback a configuración de Almendro
     const config = await getTenantAlmendroConfig(tenant.id);
     if (!config || !config.isEnabled || !config.isConfigured) {
       res.json({ isEnabled: false, defaultDocType: '04' });
@@ -265,13 +291,15 @@ router.get('/taxpayer/:idNumber', async (req: Request, res: Response): Promise<v
 router.get('/vouchers', async (req: Request, res: Response): Promise<void> => {
   try {
     const tenantId = (req as any).tenantId;
-    const { limit, offset, status, docType } = req.query;
+    const { limit, offset, status, docType, branchCode, search } = req.query;
 
     const result = await getElectronicVouchers(tenantId, {
       limit: limit ? Number(limit) : 50,
       offset: offset ? Number(offset) : 0,
       status: status as string,
-      docType: docType as string
+      docType: docType as string,
+      branchCode: branchCode as string,
+      search: search as string
     });
 
     res.json(result);

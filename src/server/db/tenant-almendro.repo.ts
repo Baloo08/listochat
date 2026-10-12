@@ -254,6 +254,10 @@ export async function saveElectronicVoucher(
     appointmentId?: string;
     courtBookingId?: string;
     subscriptionChargeId?: string;
+    branchId?: string | null;
+    branchCode?: string;
+    posCode?: string;
+    referenceKey?: string | null;
     docType: string;
     consecutiveNumber: string;
     numericKey: string;
@@ -279,14 +283,17 @@ export async function saveElectronicVoucher(
   const res = await query(`
     INSERT INTO electronic_vouchers (
       tenant_id, order_id, appointment_id, court_booking_id, subscription_charge_id,
+      branch_id, branch_code, pos_code, reference_key,
       doc_type, consecutive_number, numeric_key, receiver_id_type, receiver_id_number,
       receiver_name, receiver_email, currency, subtotal, tax_amount, total_amount,
       status, pdf_url, xml_signed_url, xml_response_url, hacienda_response_code,
       hacienda_response_detail, metadata
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
     RETURNING id, tenant_id as "tenantId", order_id as "orderId", appointment_id as "appointmentId",
               court_booking_id as "courtBookingId", subscription_charge_id as "subscriptionChargeId",
+              branch_id as "branchId", branch_code as "branchCode", pos_code as "posCode",
+              reference_key as "referenceKey",
               doc_type as "docType", consecutive_number as "consecutiveNumber", numeric_key as "numericKey",
               receiver_id_type as "receiverIdType", receiver_id_number as "receiverIdNumber",
               receiver_name as "receiverName", receiver_email as "receiverEmail",
@@ -301,6 +308,10 @@ export async function saveElectronicVoucher(
     voucher.appointmentId || null,
     voucher.courtBookingId || null,
     voucher.subscriptionChargeId || null,
+    voucher.branchId || null,
+    voucher.branchCode || '001',
+    voucher.posCode || '00001',
+    voucher.referenceKey || null,
     voucher.docType || '04',
     voucher.consecutiveNumber || '',
     voucher.numericKey,
@@ -325,12 +336,12 @@ export async function saveElectronicVoucher(
 }
 
 /**
- * Retrieves vouchers for a tenant with pagination and optional status filter.
+ * Retrieves vouchers for a tenant with pagination and optional status/docType/branchCode/search filters.
  * Strictly filtered by tenant_id.
  */
 export async function getElectronicVouchers(
   tenantId: string,
-  options?: { limit?: number; offset?: number; status?: string; docType?: string }
+  options?: { limit?: number; offset?: number; status?: string; docType?: string; branchCode?: string; search?: string }
 ): Promise<{ vouchers: ElectronicVoucher[]; total: number }> {
   if (!tenantId) throw new Error('tenantId es requerido para consultar comprobantes');
 
@@ -353,6 +364,18 @@ export async function getElectronicVouchers(
     pIdx++;
   }
 
+  if (options?.branchCode) {
+    conditions.push(`COALESCE(branch_code, '001') = $${pIdx}`);
+    params.push(options.branchCode);
+    pIdx++;
+  }
+
+  if (options?.search && options.search.trim()) {
+    conditions.push(`(numeric_key ILIKE $${pIdx} OR consecutive_number ILIKE $${pIdx} OR receiver_name ILIKE $${pIdx} OR receiver_id_number ILIKE $${pIdx})`);
+    params.push(`%${options.search.trim()}%`);
+    pIdx++;
+  }
+
   const whereSql = conditions.join(' AND ');
 
   const countRes = await query(`SELECT COUNT(*) as total FROM electronic_vouchers WHERE ${whereSql}`, params);
@@ -364,6 +387,8 @@ export async function getElectronicVouchers(
   const res = await query(`
     SELECT id, tenant_id as "tenantId", order_id as "orderId", appointment_id as "appointmentId",
            court_booking_id as "courtBookingId", subscription_charge_id as "subscriptionChargeId",
+           branch_id as "branchId", COALESCE(branch_code, '001') as "branchCode", COALESCE(pos_code, '00001') as "posCode",
+           reference_key as "referenceKey",
            doc_type as "docType", consecutive_number as "consecutiveNumber", numeric_key as "numericKey",
            receiver_id_type as "receiverIdType", receiver_id_number as "receiverIdNumber",
            receiver_name as "receiverName", receiver_email as "receiverEmail",

@@ -866,6 +866,48 @@ export interface TenantAlmendroConfig {
   updatedAt?: string;
 }
 
+export interface HaciendaEconomicActivity {
+  code: string;
+  description: string;
+  defaultCabys?: string;
+}
+
+export interface HaciendaBranchConfig {
+  id: string;
+  tenantId: string;
+  branchId?: string | null;
+  storeBranchName?: string;
+  branchName: string;
+  branchCode: string;
+  posCode: string;
+  commercialName?: string;
+  economicActivityCode?: string;
+  province: string;
+  canton: string;
+  district: string;
+  neighborhood: string;
+  addressDetail: string;
+  seqFactura: number;
+  seqTiquete: number;
+  seqNotaCredito: number;
+  useCustomCredentials: boolean;
+  customTaxpayerIdType?: '01' | '02' | '03' | '04';
+  customTaxpayerIdNumber?: string;
+  customTaxpayerName?: string;
+  customIdpUsername?: string;
+  customIdpPasswordMasked?: string;
+  customP12Filename?: string;
+  customP12ExpiresAt?: string | null;
+  customP12HasCertificate?: boolean;
+  customCertSubject?: string;
+  isConnected: boolean;
+  lastTestAt?: string | null;
+  lastTestMessage?: string | null;
+  active: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface ElectronicVoucher {
   id: string;
   tenantId: string;
@@ -873,6 +915,10 @@ export interface ElectronicVoucher {
   appointmentId?: string;
   courtBookingId?: string;
   subscriptionChargeId?: string;
+  branchId?: string | null;
+  branchCode?: string;
+  posCode?: string;
+  referenceKey?: string | null;
   docType: string;             // 01: Factura, 03: Nota Crédito, 04: Tiquete
   consecutiveNumber: string;
   numericKey: string;          // Clave de 50 dígitos Hacienda
