@@ -10,6 +10,8 @@ import { getTenantById } from '../db/tenant.repo.js';
 import { createBooking as createCourtBooking, getCourtsByTenant, rescheduleCourtBooking } from '../db/courts.repo.js';
 import { logAICommand } from '../db/ai-command-logs.repo.js';
 import { query } from '../db/pool.js';
+import { getTodayCR } from './timezone.service.js';
+import { handleSecretaryInboundMessage } from './secretary.service.js';
 
 let io: SocketServer | null = null;
 const activeChats = new Set<string>();
@@ -67,7 +69,22 @@ async function processSingleMessage(msg: any) {
   try {
     console.log(`[Queue] Processing message from ${msg.pushName} (${msg.cleanPhone}): "${msg.userMessage.slice(0, 50)}..."`);
     
-    // Check if in human mode
+    // 0. Interceptar Modo Secretario (personal autorizado de la empresa)
+    // Se ejecuta de forma prioritaria e independiente, incluso si aiChatbotEnabled está apagado o en human mode
+    const secretaryResult = await handleSecretaryInboundMessage(
+      msg.tenantId,
+      msg.cleanPhone,
+      msg.remoteJid,
+      msg.userMessage,
+      msg.pushName,
+      msg.instanceName
+    );
+    if (secretaryResult && secretaryResult.handled) {
+      await markDone(msg.id, secretaryResult.replyText || 'SECRETARY_HANDLED');
+      return;
+    }
+
+    // Check if in human mode (para clientes normales)
     const session = await getChatSession(msg.tenantId, msg.remoteJid);
     if (session?.isHumanMode) {
       console.log(`[Queue] Chat ${msg.remoteJid} is in HUMAN MODE. Skipping.`);
@@ -179,7 +196,7 @@ async function processSingleMessage(msg: any) {
           const cleanTime = rawTime.includes(':') ? rawTime.split(':').slice(0, 2).join(':') + ':00' : '19:00:00';
           const newCourtBooking = await createCourtBooking(msg.tenantId, {
             courtId: matchedCourt.id,
-            date: cData.date || new Date().toISOString().split('T')[0],
+            date: cData.date || getTodayCR(),
             time: cleanTime,
             durationMinutes: cData.durationMinutes || matchedCourt.durationMinutes || 60,
             bookingMode: cData.bookingMode === 'seek_match' ? 'seek_match' : 'full',

@@ -39,6 +39,8 @@ import SubscriptionReturnView from './components/SubscriptionReturnView';
 import ElectronicBillingView from './components/ElectronicBillingView';
 import LoyaltyManager from './components/LoyaltyManager';
 import LoyaltyWalletCustomerApp from './components/LoyaltyWalletCustomerApp';
+import SecretaryManager from './components/SecretaryManager';
+import { BusinessAdvisorCopilot, BusinessAdvisorView } from './components/BusinessAdvisorCopilot';
 import { io } from 'socket.io-client';
 import { playOrderNotificationSound, playBookingNotificationSound } from './utils/sound';
 
@@ -56,6 +58,7 @@ import {
   Bell,
   Users,
   Settings,
+  Shield,
   ShieldAlert,
   LogOut,
   ArrowLeft,
@@ -477,36 +480,36 @@ function MainApp({ pathname }: { pathname: string }) {
     {
       title: 'GESTIÓN DE NEGOCIOS',
       items: [
-        { id: 'sa_tenants', label: 'Inquilinos & Negocios', icon: <Building2 size={18} /> },
-        { id: 'sa_collections', label: 'Cobranza & Semáforo', icon: <CreditCard size={18} /> },
-        { id: 'sa_financials', label: 'Finanzas & Suscripciones', icon: <DollarSign size={18} /> }
+        { id: 'sa_tenants', label: 'Inquilinos y Negocios', icon: <Building2 size={18} /> },
+        { id: 'sa_collections', label: 'Cobranza y Semáforo', icon: <CreditCard size={18} /> },
+        { id: 'sa_financials', label: 'Finanzas y Suscripciones', icon: <DollarSign size={18} /> }
       ]
     },
     {
-      title: 'BETICO IA & MODELOS',
+      title: 'BETICO IA Y MODELOS',
       items: [
-        { id: 'sa_ai_engine', label: 'Motor Betico IA & Modelos', icon: <Bot size={18} /> },
-        { id: 'sa_ai_usage', label: 'Consumo & Cuotas', icon: <TrendingUp size={18} /> }
+        { id: 'sa_ai_engine', label: 'Motor Betico IA y Modelos', icon: <Bot size={18} /> },
+        { id: 'sa_ai_usage', label: 'Consumo y Cuotas', icon: <TrendingUp size={18} /> }
       ]
     },
     {
-      title: 'WHATSAPP & COMUNICACIÓN',
+      title: 'WHATSAPP Y COMUNICACIÓN',
       items: [
         { id: 'sa_bots', label: 'Bots de WhatsApp', icon: <MessageSquare size={18} /> }
       ]
     },
     {
-      title: 'INFRAESTRUCTURA & SEGURIDAD',
+      title: 'INFRAESTRUCTURA Y SEGURIDAD',
       items: [
-        { id: 'sa_system', label: 'Servidor & Despliegues', icon: <Server size={18} /> },
+        { id: 'sa_system', label: 'Servidor y Despliegues', icon: <Server size={18} /> },
         { id: 'sa_notifications', label: 'Alertas SuperAdmin', icon: <Bell size={18} /> },
-        { id: 'sa_audit', label: 'Auditoría & Accesos', icon: <ShieldCheck size={18} /> }
+        { id: 'sa_audit', label: 'Auditoría y Accesos', icon: <ShieldCheck size={18} /> }
       ]
     }
   ];
 
-  const isEnterpriseOrFranchise = ['enterprise', 'business', 'franquicia', 'empresa'].includes((user as any)?.tenantPlan || '');
-  const branchesEnabled = storeModules.branchesEnabled === true || isEnterpriseOrFranchise;
+  const isEnterpriseOrFranquicia = ['enterprise', 'business', 'franquicia', 'empresa'].includes((user as any)?.tenantPlan || '');
+  const branchesEnabled = storeModules.branchesEnabled === true || isEnterpriseOrFranquicia;
 
   const tenantNavGroups: NavGroup[] = [
     // 1. OPERACIONES
@@ -521,11 +524,13 @@ function MainApp({ pathname }: { pathname: string }) {
     {
       title: 'COMUNICACIÓN',
       items: [
-        { id: 'whatsapp', label: 'WhatsApp & Bot', icon: <Phone size={18} /> },
+        { id: 'whatsapp', label: 'WhatsApp y Bot', icon: <Phone size={18} /> },
         { id: 'chats', label: 'Chats en Vivo', icon: <MessageSquare size={18} /> },
         { id: 'queue', label: 'Cola de Mensajes', icon: <Clock size={18} /> },
-        { id: 'campaigns', label: 'Difusión & Campañas', icon: <Send size={18} /> },
-        { id: 'agente', label: 'Personalidad Agente IA', icon: <Bot size={18} /> }
+        { id: 'campaigns', label: 'Difusión y Campañas', icon: <Send size={18} /> },
+        { id: 'agente', label: 'Personalidad Agente IA', icon: <Bot size={18} /> },
+        { id: 'secretario', label: 'Secretario WhatsApp', icon: <Shield size={18} /> },
+        { id: 'asesor', label: 'Asesor de Negocio', icon: <Sparkles size={18} /> }
       ]
     },
 
@@ -543,10 +548,10 @@ function MainApp({ pathname }: { pathname: string }) {
         title: 'MENÚ',
         items: [
           { id: 'tienda', label: 'Ajuste de Tienda', icon: <ShoppingBag size={18} /> },
-          { id: 'productos', label: 'Menú & Platillos', icon: <Package size={18} /> },
+          { id: 'productos', label: 'Menú y Platillos', icon: <Package size={18} /> },
           {
             id: 'ordenes',
-            label: 'Comandas & Cocina',
+            label: 'Comandas y Cocina',
             icon: <ClipboardList size={18} />,
             badge: unreadOrdersCount > 0 ? unreadOrdersCount : undefined
           }
@@ -555,10 +560,10 @@ function MainApp({ pathname }: { pathname: string }) {
         title: 'TIENDA',
         items: [
           { id: 'tienda', label: 'Ajuste de Tienda', icon: <ShoppingBag size={18} /> },
-          { id: 'productos', label: 'Productos & Catálogo', icon: <Package size={18} /> },
+          { id: 'productos', label: 'Productos y Catálogo', icon: <Package size={18} /> },
           {
             id: 'ordenes',
-            label: 'Pedidos & Despacho',
+            label: 'Pedidos y Despacho',
             icon: <ClipboardList size={18} />,
             badge: unreadOrdersCount > 0 ? unreadOrdersCount : undefined
           }
@@ -599,9 +604,9 @@ function MainApp({ pathname }: { pathname: string }) {
       title: 'CONFIGURACIÓN',
       items: [
         { id: 'configuracion', label: 'Ajustes Generales', icon: <Settings size={18} /> },
-        { id: 'suscripcion', label: 'Mi Suscripción & Pagos', icon: <CreditCard size={18} /> },
+        { id: 'suscripcion', label: 'Mi Suscripción y Pagos', icon: <CreditCard size={18} /> },
         { id: 'facturacion', label: 'Facturación Electrónica', icon: <FileText size={18} /> },
-        { id: 'usuarios', label: 'Equipo & Usuarios', icon: <Users size={18} /> }
+        { id: 'usuarios', label: 'Equipo y Usuarios', icon: <Users size={18} /> }
       ]
     },
 
@@ -609,7 +614,7 @@ function MainApp({ pathname }: { pathname: string }) {
     ...(branchesEnabled ? [{
       title: 'SEDES Y SUCURSALES',
       items: [
-        { id: 'sucursales', label: 'Sedes & Sucursales', icon: <Building2 size={18} /> }
+        { id: 'sucursales', label: 'Sedes y Sucursales', icon: <Building2 size={18} /> }
       ]
     }] : [])
   ];
@@ -667,6 +672,8 @@ function MainApp({ pathname }: { pathname: string }) {
         case 'fidelidad_promociones':
           return <LoyaltyManager initialTab="promociones" />;
         case 'agente': return <AgentPromptStudio />;
+        case 'secretario': return <SecretaryManager />;
+        case 'asesor': return <BusinessAdvisorView />;
         case 'whatsapp': return <EvolutionManager />;
         case 'notificaciones': return <NotificationsCenter />;
         case 'usuarios': return <UsersManagement />;
@@ -1054,31 +1061,33 @@ function MainApp({ pathname }: { pathname: string }) {
               textOverflow: 'ellipsis'
             }}>
               {
-                currentPage === 'sa_tenants' ? 'Inquilinos & Negocios' :
-                currentPage === 'sa_collections' ? 'Cobranza & Cuentas' :
+                currentPage === 'sa_tenants' ? 'Inquilinos y Negocios' :
+                currentPage === 'sa_collections' ? 'Cobranza y Cuentas' :
                 currentPage === 'sa_financials' ? 'Finanzas del SaaS' :
-                currentPage === 'sa_system' ? 'Servidor & Recursos' :
-                currentPage === 'sa_apis' ? 'APIs & Tráfico' :
-                currentPage === 'sa_audit' ? 'Auditoría & Seguridad' :
+                currentPage === 'sa_system' ? 'Servidor y Recursos' :
+                currentPage === 'sa_apis' ? 'APIs y Tráfico' :
+                currentPage === 'sa_audit' ? 'Auditoría y Seguridad' :
                 currentPage === 'dashboard' ? 'Dashboard' :
-                currentPage === 'whatsapp' ? 'WhatsApp & Bot' :
+                currentPage === 'whatsapp' ? 'WhatsApp y Bot' :
                 currentPage === 'chats' ? 'Chats en Vivo' :
                 currentPage === 'queue' ? 'Cola de Mensajes' :
-                currentPage === 'campaigns' ? 'Difusión & Campañas' :
+                currentPage === 'campaigns' ? 'Difusión y Campañas' :
                 currentPage === 'agente' ? 'Personalidad Agente IA' :
+                currentPage === 'secretario' ? 'Secretario WhatsApp' :
+                currentPage === 'asesor' ? 'Asesor de Negocio' :
                 currentPage === 'sitio' ? 'Sitio Web' :
                 currentPage === 'tienda' ? 'Ajuste de Tienda' :
-                currentPage === 'productos' ? (storeMode === 'restaurant' ? 'Menú & Platillos' : 'Productos & Catálogo') :
-                currentPage === 'ordenes' ? (storeMode === 'restaurant' ? 'Comandas & Cocina' : 'Pedidos & Despacho') :
+                currentPage === 'productos' ? (storeMode === 'restaurant' ? 'Menú y Platillos' : 'Productos y Catálogo') :
+                currentPage === 'ordenes' ? (storeMode === 'restaurant' ? 'Comandas y Cocina' : 'Pedidos y Despacho') :
                 currentPage === 'canchas' ? 'Gestión de Canchas' :
                 currentPage === 'canchas_reservas' ? 'Reserva de Canchas' :
                 currentPage === 'reservas' ? 'Reservas' :
                 currentPage === 'servicios' ? 'Servicios Profesionales' :
                 currentPage === 'configuracion' ? 'Ajustes Generales' :
-                currentPage === 'suscripcion' ? 'Mi Suscripción & Pagos' :
+                currentPage === 'suscripcion' ? 'Mi Suscripción y Pagos' :
                 currentPage === 'facturacion' ? 'Facturación Electrónica' :
-                currentPage === 'usuarios' ? 'Equipo & Usuarios' :
-                currentPage === 'sucursales' ? 'Sedes & Sucursales' :
+                currentPage === 'usuarios' ? 'Equipo y Usuarios' :
+                currentPage === 'sucursales' ? 'Sedes y Sucursales' :
                 currentPage === 'notificaciones' ? 'Notificaciones' :
                 currentPage
               }
@@ -1281,6 +1290,9 @@ function MainApp({ pathname }: { pathname: string }) {
         </div>
 
       </div>
+
+      {/* Asesor de Negocio Flotante (Copilot para inquilinos) */}
+      {user?.role !== 'superadmin' && <BusinessAdvisorCopilot />}
 
       {/* Guided Tour Modal */}
       {showTourModal && (

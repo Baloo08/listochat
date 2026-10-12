@@ -1,5 +1,6 @@
 import { query } from './pool.js';
 import { Court, CourtBooking } from '../../shared/types.js';
+import { getTodayCR, getCurrentMinutesCR } from '../services/timezone.service.js';
 
 function mapCourtRow(row: any): Court {
   return {
@@ -550,9 +551,8 @@ export async function getAvailableSlots(tenantId: string, courtId: string, date:
   await expireOldMatches().catch(() => {});
 
   // 0. Filter past dates (Costa Rica UTC-6)
-  const nowCR = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Costa_Rica' }));
-  const todayCR = `${nowCR.getFullYear()}-${String(nowCR.getMonth() + 1).padStart(2, '0')}-${String(nowCR.getDate()).padStart(2, '0')}`;
-  const currentMinutesNow = (nowCR.getHours() * 60) + nowCR.getMinutes();
+  const todayCR = getTodayCR();
+  const currentMinutesNow = getCurrentMinutesCR();
 
   if (date < todayCR) {
     return [];

@@ -68,6 +68,11 @@ var init_pool = __esm({
       idleTimeoutMillis: 3e4,
       connectionTimeoutMillis: 5e3
     });
+    pool.on("connect", (client) => {
+      client.query("SET TIME ZONE 'America/Costa_Rica'").catch((err) => {
+        console.error("Error setting session timezone on pool connect:", err);
+      });
+    });
     pool.on("error", (err) => {
       console.error("Unexpected error on idle client", err);
     });
@@ -5392,6 +5397,41 @@ async function runMigrations() {
     -- Columnas de cup\xF3n en pedidos
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS coupon_code VARCHAR(50);
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(10, 2) DEFAULT 0;
+
+    -- ==========================================================
+    -- M\xD3DULO DE SECRETARIO VIRTUAL WHATSAPP Y SESIONES PIN
+    -- ==========================================================
+    CREATE TABLE IF NOT EXISTS secretary_authorized_phones (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      phone VARCHAR(50) NOT NULL,
+      name VARCHAR(255) NOT NULL,
+      role VARCHAR(50) NOT NULL DEFAULT 'owner',
+      pin_hash VARCHAR(255) NOT NULL,
+      failed_attempts INT NOT NULL DEFAULT 0,
+      locked_until TIMESTAMPTZ,
+      active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(tenant_id, phone)
+    );
+    CREATE INDEX IF NOT EXISTS idx_secretary_phone ON secretary_authorized_phones(phone);
+    CREATE INDEX IF NOT EXISTS idx_secretary_tenant ON secretary_authorized_phones(tenant_id);
+
+    CREATE TABLE IF NOT EXISTS secretary_sessions (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      authorized_phone_id UUID NOT NULL REFERENCES secretary_authorized_phones(id) ON DELETE CASCADE,
+      session_date DATE NOT NULL,
+      is_authenticated BOOLEAN NOT NULL DEFAULT false,
+      authenticated_at TIMESTAMPTZ,
+      last_activity_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      expires_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(authorized_phone_id, session_date)
+    );
+    CREATE INDEX IF NOT EXISTS idx_sec_sessions_lookup 
+    ON secretary_sessions(authorized_phone_id, session_date, is_authenticated);
   `).catch((err) => {
     console.warn("[Migrations] Columns addition warning:", err?.message || err);
   });
@@ -5404,6 +5444,129 @@ init_pool();
 // src/server/services/reminder.service.ts
 init_pool();
 init_evolution();
+
+// src/server/services/timezone.service.ts
+var COSTA_RICA_TIMEZONE = "America/Costa_Rica";
+var COSTA_RICA_OFFSET_STRING = "-06:00";
+function getNowCR(referenceDate = /* @__PURE__ */ new Date()) {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: COSTA_RICA_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    weekday: "short",
+    hour12: false
+  });
+  const parts = formatter.formatToParts(referenceDate);
+  const partMap = {};
+  for (const part of parts) {
+    partMap[part.type] = part.value;
+  }
+  const year = parseInt(partMap.year, 10);
+  const month = parseInt(partMap.month, 10);
+  const day = parseInt(partMap.day, 10);
+  let hour = parseInt(partMap.hour, 10);
+  if (hour === 24) hour = 0;
+  const minute = parseInt(partMap.minute, 10);
+  const second = parseInt(partMap.second, 10);
+  const weekdayMap = {
+    Mon: 1,
+    Tue: 2,
+    Wed: 3,
+    Thu: 4,
+    Fri: 5,
+    Sat: 6,
+    Sun: 7
+  };
+  const dayOfWeek = weekdayMap[partMap.weekday] || 1;
+  const pad = (n) => String(n).padStart(2, "0");
+  const dateStr = `${year}-${pad(month)}-${pad(day)}`;
+  const timeStr = `${pad(hour)}:${pad(minute)}`;
+  return {
+    year,
+    month,
+    day,
+    hour,
+    minute,
+    second,
+    dayOfWeek,
+    dateStr,
+    timeStr,
+    totalMinutes: hour * 60 + minute
+  };
+}
+function getTodayCR(referenceDate = /* @__PURE__ */ new Date()) {
+  return getNowCR(referenceDate).dateStr;
+}
+function getCurrentTimeCR(referenceDate = /* @__PURE__ */ new Date()) {
+  return getNowCR(referenceDate).timeStr;
+}
+function getCurrentMinutesCR(referenceDate = /* @__PURE__ */ new Date()) {
+  return getNowCR(referenceDate).totalMinutes;
+}
+function getDayOfWeekCR(dateStr) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dateObj = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+  const rawDay = dateObj.getUTCDay();
+  return rawDay === 0 ? 7 : rawDay;
+}
+function isDateInPastCR(dateStr, referenceDate = /* @__PURE__ */ new Date()) {
+  return dateStr < getTodayCR(referenceDate);
+}
+function isSlotInPastCR(dateStr, timeStr, bufferMinutes = 0, referenceDate = /* @__PURE__ */ new Date()) {
+  const today = getTodayCR(referenceDate);
+  if (dateStr < today) return true;
+  if (dateStr > today) return false;
+  let cleanTime = (timeStr || "").trim();
+  const isPM = /pm/i.test(cleanTime);
+  const isAM = /am/i.test(cleanTime);
+  cleanTime = cleanTime.replace(/\s*(am|pm)/i, "");
+  const [hPart, mPart = "0"] = cleanTime.split(":");
+  let h = parseInt(hPart, 10);
+  const m = parseInt(mPart, 10);
+  if (isPM && h < 12) h += 12;
+  if (isAM && h === 12) h = 0;
+  const slotMinutes = h * 60 + (isNaN(m) ? 0 : m);
+  const nowMinutes = getCurrentMinutesCR(referenceDate);
+  return slotMinutes <= nowMinutes + bufferMinutes;
+}
+function parseCRDateAndTimeToUtc(dateStr, timeStr) {
+  const [year, month, day] = dateStr.split("-").map(Number);
+  let cleanTime = (timeStr || "00:00").trim();
+  const isPM = /pm/i.test(cleanTime);
+  const isAM = /am/i.test(cleanTime);
+  cleanTime = cleanTime.replace(/\s*(am|pm)/i, "");
+  const [hPart, mPart = "0"] = cleanTime.split(":");
+  let hour = parseInt(hPart, 10);
+  const minute = parseInt(mPart, 10);
+  if (isPM && hour < 12) hour += 12;
+  if (isAM && hour === 12) hour = 0;
+  return new Date(Date.UTC(year, month - 1, day, hour + 6, minute, 0));
+}
+function normalizeDateInput(inputDate, referenceDate = /* @__PURE__ */ new Date()) {
+  if (!inputDate) return getTodayCR(referenceDate);
+  const str = String(inputDate).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+  if (str.includes("T")) return str.split("T")[0];
+  if (str.includes("/")) {
+    const parts = str.split("/");
+    if (parts.length === 3) {
+      if (parts[0].length === 4) return `${parts[0]}-${parts[1].padStart(2, "0")}-${parts[2].padStart(2, "0")}`;
+      return `${parts[2]}-${parts[1].padStart(2, "0")}-${parts[0].padStart(2, "0")}`;
+    }
+  }
+  const parsed = new Date(str);
+  if (!isNaN(parsed.getTime())) {
+    const formatter = new Intl.DateTimeFormat("en-CA", { timeZone: COSTA_RICA_TIMEZONE, dateStyle: "short" });
+    return formatter.format(parsed);
+  }
+  return getTodayCR(referenceDate);
+}
+
+// src/server/services/reminder.service.ts
 var DEFAULT_REMINDER_CONFIG = {
   enabled: true,
   firstReminderEnabled: true,
@@ -5446,9 +5609,7 @@ async function checkAndSendReminders() {
         `, [tenant.id]);
         for (const appt of apptsRes.rows) {
           if (!appt.whatsapp || !appt.date || !appt.time) continue;
-          const [year, month, day] = appt.date.split("-").map(Number);
-          const [hour, minute] = appt.time.split(":").map(Number);
-          const apptDate = new Date(year, month - 1, day, hour, minute || 0);
+          const apptDate = parseCRDateAndTimeToUtc(appt.date, appt.time);
           const diffMs = apptDate.getTime() - now.getTime();
           const diffHours = diffMs / (1e3 * 60 * 60);
           if (diffHours < 0) continue;
@@ -6024,9 +6185,8 @@ ${auditEntry}` : auditEntry;
 async function getAvailableSlots(tenantId, courtId, date) {
   await expireOldMatches().catch(() => {
   });
-  const nowCR = new Date((/* @__PURE__ */ new Date()).toLocaleString("en-US", { timeZone: "America/Costa_Rica" }));
-  const todayCR = `${nowCR.getFullYear()}-${String(nowCR.getMonth() + 1).padStart(2, "0")}-${String(nowCR.getDate()).padStart(2, "0")}`;
-  const currentMinutesNow = nowCR.getHours() * 60 + nowCR.getMinutes();
+  const todayCR = getTodayCR();
+  const currentMinutesNow = getCurrentMinutesCR();
   if (date < todayCR) {
     return [];
   }
@@ -6035,8 +6195,8 @@ async function getAvailableSlots(tenantId, courtId, date) {
   if (!courtRow || courtRow.active === false) {
     return [];
   }
-  const selectedDate = /* @__PURE__ */ new Date(`${date}T00:00:00`);
-  const dayOfWeek = selectedDate.getDay() === 0 ? 7 : selectedDate.getDay();
+  const selectedDate2 = /* @__PURE__ */ new Date(`${date}T00:00:00`);
+  const dayOfWeek = selectedDate2.getDay() === 0 ? 7 : selectedDate2.getDay();
   let startMinutes = 8 * 60;
   let endMinutes = 22 * 60;
   let slotMinutes = Number(courtRow.duration_minutes) || 60;
@@ -9227,6 +9387,9 @@ async function processWithOrchestrator(tenantId, userMessage, senderPhone, sende
   ].filter(Boolean);
   const socialLinksStr = socialLinksArr.join(" | ");
   const now = /* @__PURE__ */ new Date();
+  const crParts = getNowCR(now);
+  const crTodayStr = crParts.dateStr;
+  const crTimeShort = crParts.timeStr;
   const crTime = new Intl.DateTimeFormat("es-CR", {
     timeZone: "America/Costa_Rica",
     dateStyle: "full",
@@ -9425,7 +9588,7 @@ REGLAS DE ORO DE VENTA Y CIERRE DE PEDIDOS (CALIDEZ TICA Y CERO ALUCINACI\xD3N):
       ).join("\n") + "\n";
       let busySlotsText = "";
       try {
-        const todayStr = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+        const todayStr = crTodayStr;
         const busyRes = await query(`
           SELECT date, time, service
           FROM appointments
@@ -9488,10 +9651,11 @@ ${customerRecord?.fullName ? `Cliente Registrado: ${customerRecord.fullName}
 REGLAS DE AGENDAMIENTO PROACTIVO:
 1. L\xCDMITE DE SERVICIOS (CERO ALUCINACI\xD3N): SOLO ofrece y agenda los servicios que figuran en 'Servicios Disponibles'. Si el cliente solicita un servicio, atenci\xF3n m\xE9dica o tratamiento que NO est\xE1 en la lista oficial, ind\xEDcale amablemente que no disponen de ese servicio y ofrece conectar con un asesor humano. NUNCA inventes servicios ni tarifas.
 2. Responde con calidez tica (*pura vida*, con mucho gusto).
-3. Pregunta amablemente la fecha y hora preferida, asegur\xE1ndote de que NO coincida con los HORARIOS YA OCUPADOS.
-4. REGLA DE ORO ANTE HORARIOS OCUPADOS: Si la hora solicitada choca con un horario ocupado, NUNCA te limites a decir 'no est\xE1 disponible'. PROP\xD3N PROACTIVAMENTE las 2 o 3 opciones libres m\xE1s cercanas del mismo d\xEDa o del d\xEDa siguiente.
-5. Si el cliente solicita m\xFAltiples servicios, suma los tiempos de duraci\xF3n estimados para agendar un bloque continuo suficiente.
-6. Al acordar la cita completa con el cliente (nombre, servicio, fecha y hora confirmada), emite al final:
+3. HORARIO OFICIAL ACTUAL (Costa Rica UTC-6): Hoy es ${crTodayStr} y la hora actual es ${crTimeShort}. NUNCA ofrezcas ni confirmes horarios que ya hayan pasado hoy. Si el cliente pide un horario que ya pas\xF3 hoy, ind\xEDcale amablemente que ya pas\xF3 y ofrece turnos libres futuros del d\xEDa o para ma\xF1ana.
+4. Pregunta amablemente la fecha y hora preferida, asegur\xE1ndote de que NO coincida con los HORARIOS YA OCUPADOS.
+5. REGLA DE ORO ANTE HORARIOS OCUPADOS: Si la hora solicitada choca con un horario ocupado, NUNCA te limites a decir 'no est\xE1 disponible'. PROP\xD3N PROACTIVAMENTE las 2 o 3 opciones libres m\xE1s cercanas del mismo d\xEDa o del d\xEDa siguiente.
+6. Si el cliente solicita m\xFAltiples servicios, suma los tiempos de duraci\xF3n estimados para agendar un bloque continuo suficiente.
+7. Al acordar la cita completa con el cliente (nombre, servicio, fecha y hora confirmada), emite al final:
 <<<COMMAND_BOOKING: {"service":"nombre","date":"YYYY-MM-DD","time":"HH:MM","customerName":"${customerRecord?.fullName || senderName}","recordId":"${customerRecord?.id || ""}","specialistName":"opcional"}>>>
 7. Para reagendar una cita existente confirmada:
 <<<COMMAND_RESCHEDULE_BOOKING: {"newDate":"YYYY-MM-DD","newTime":"HH:MM"}>>>
@@ -10868,18 +11032,6 @@ var saveChatMessage = createChatMessage;
 // src/server/services/booking.service.ts
 init_appointments_repo();
 init_pool();
-function normalizeBookingDate(inputDate) {
-  if (!inputDate) return (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
-  const str = String(inputDate).trim();
-  if (str.includes("T")) return str.split("T")[0];
-  if (str.includes("/")) return str.replace(/\//g, "-");
-  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
-  const parsed = new Date(str);
-  if (!isNaN(parsed.getTime())) {
-    return parsed.toISOString().split("T")[0];
-  }
-  return (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
-}
 async function createBookingFromCommand(tenantId, bookingData) {
   try {
     const services = await getServicesByTenant(tenantId);
@@ -10887,8 +11039,12 @@ async function createBookingFromCommand(tenantId, bookingData) {
       (s) => s.name.toLowerCase().includes((bookingData.service || "").toLowerCase())
     ) || services[0];
     const price = matchedService ? matchedService.price : 0;
-    const bookingDate = normalizeBookingDate(bookingData.date);
+    const bookingDate = normalizeDateInput(bookingData.date);
     const bookingTime = bookingData.time || "10:00 AM";
+    if (isSlotInPastCR(bookingDate, bookingTime)) {
+      console.warn(`[createBookingFromCommand] Rejected past slot: ${bookingDate} ${bookingTime}`);
+      throw new Error(`El horario ${bookingDate} a las ${bookingTime} ya pas\xF3 en la hora de Costa Rica. Por favor selecciona una hora futura.`);
+    }
     const collisionCheck = await query(`
       SELECT id, name, time 
       FROM appointments 
@@ -11463,6 +11619,427 @@ async function logAICommand(tenantId, remoteJid, commandType, payload, status, e
   }
 }
 
+// src/server/services/secretary.service.ts
+init_pool();
+init_evolution();
+init_encryption();
+init_ai_provider();
+
+// src/server/db/secretary.repo.ts
+init_pool();
+import crypto4 from "crypto";
+function hashPin(pin, salt) {
+  const useSalt = salt || crypto4.randomBytes(16).toString("hex");
+  const hash = crypto4.pbkdf2Sync(pin, useSalt, 1e4, 32, "sha256").toString("hex");
+  return `${useSalt}:${hash}`;
+}
+function verifyPin(pin, storedHash) {
+  if (!storedHash || !storedHash.includes(":")) return false;
+  const [salt, originalHash] = storedHash.split(":");
+  const computed = crypto4.pbkdf2Sync(pin, salt, 1e4, 32, "sha256").toString("hex");
+  return crypto4.timingSafeEqual(Buffer.from(computed), Buffer.from(originalHash));
+}
+function mapPhoneRow(r) {
+  return {
+    id: r.id,
+    tenantId: r.tenant_id,
+    phone: r.phone,
+    name: r.name,
+    role: r.role || "owner",
+    failedAttempts: r.failed_attempts || 0,
+    lockedUntil: r.locked_until ? new Date(r.locked_until).toISOString() : null,
+    active: r.active !== false,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at
+  };
+}
+async function getAuthorizedPhonesByTenant(tenantId) {
+  const res = await query(`
+    SELECT * FROM secretary_authorized_phones
+    WHERE tenant_id = $1
+    ORDER BY created_at ASC
+  `, [tenantId]);
+  return res.rows.map(mapPhoneRow);
+}
+async function getAuthorizedPhoneByNumber(tenantId, cleanPhone) {
+  const norm = cleanPhone.replace(/\D/g, "");
+  const res = await query(`
+    SELECT * FROM secretary_authorized_phones
+    WHERE tenant_id = $1 AND (phone = $2 OR phone = $3)
+    LIMIT 1
+  `, [tenantId, norm, norm.startsWith("506") ? norm.slice(3) : `506${norm}`]);
+  return res.rows[0] ? mapPhoneRow(res.rows[0]) : null;
+}
+async function createAuthorizedPhone(tenantId, data) {
+  const clean = data.phone.replace(/\D/g, "");
+  const normalizedPhone = clean.length === 8 ? `506${clean}` : clean;
+  const pinHash = hashPin(data.pin);
+  const res = await query(`
+    INSERT INTO secretary_authorized_phones (tenant_id, phone, name, role, pin_hash)
+    VALUES ($1, $2, $3, $4, $5)
+    ON CONFLICT (tenant_id, phone)
+    DO UPDATE SET name = $3, role = $4, pin_hash = $5, active = true, failed_attempts = 0, locked_until = NULL, updated_at = CURRENT_TIMESTAMP
+    RETURNING *
+  `, [tenantId, normalizedPhone, data.name.trim(), data.role || "owner", pinHash]);
+  return mapPhoneRow(res.rows[0]);
+}
+async function updateAuthorizedPhone(id, tenantId, data) {
+  const updates = ["updated_at = CURRENT_TIMESTAMP"];
+  const values = [id, tenantId];
+  let pIdx = 3;
+  if (data.name !== void 0) {
+    updates.push(`name = $${pIdx++}`);
+    values.push(data.name.trim());
+  }
+  if (data.role !== void 0) {
+    updates.push(`role = $${pIdx++}`);
+    values.push(data.role);
+  }
+  if (data.pin !== void 0 && data.pin.trim().length > 0) {
+    updates.push(`pin_hash = $${pIdx++}`);
+    values.push(hashPin(data.pin));
+    updates.push(`failed_attempts = 0`);
+    updates.push(`locked_until = NULL`);
+  }
+  if (data.active !== void 0) {
+    updates.push(`active = $${pIdx++}`);
+    values.push(data.active);
+  }
+  const res = await query(`
+    UPDATE secretary_authorized_phones
+    SET ${updates.join(", ")}
+    WHERE id = $1 AND tenant_id = $2
+    RETURNING *
+  `, values);
+  return res.rows[0] ? mapPhoneRow(res.rows[0]) : null;
+}
+async function deleteAuthorizedPhone(id, tenantId) {
+  const res = await query(`
+    DELETE FROM secretary_authorized_phones
+    WHERE id = $1 AND tenant_id = $2
+  `, [id, tenantId]);
+  return (res.rowCount || 0) > 0;
+}
+async function registerFailedPinAttempt(id) {
+  const cur = await query(`SELECT failed_attempts FROM secretary_authorized_phones WHERE id = $1`, [id]);
+  const attempts = (cur.rows[0]?.failed_attempts || 0) + 1;
+  if (attempts >= 3) {
+    await query(`
+      UPDATE secretary_authorized_phones
+      SET failed_attempts = $1, locked_until = CURRENT_TIMESTAMP + INTERVAL '15 minutes', updated_at = CURRENT_TIMESTAMP
+      WHERE id = $2
+    `, [attempts, id]);
+    return { locked: true, remainingAttempts: 0 };
+  } else {
+    await query(`
+      UPDATE secretary_authorized_phones
+      SET failed_attempts = $1, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $2
+    `, [attempts, id]);
+    return { locked: false, remainingAttempts: 3 - attempts };
+  }
+}
+async function resetFailedAttempts(id) {
+  await query(`
+    UPDATE secretary_authorized_phones
+    SET failed_attempts = 0, locked_until = NULL, updated_at = CURRENT_TIMESTAMP
+    WHERE id = $1
+  `, [id]);
+}
+async function getSecretarySession(authorizedPhoneId, sessionDate) {
+  const res = await query(`
+    SELECT * FROM secretary_sessions
+    WHERE authorized_phone_id = $1 AND session_date = $2::date
+    LIMIT 1
+  `, [authorizedPhoneId, sessionDate]);
+  if (!res.rows[0]) return null;
+  const r = res.rows[0];
+  return {
+    id: r.id,
+    tenantId: r.tenant_id,
+    authorizedPhoneId: r.authorized_phone_id,
+    sessionDate: r.session_date,
+    isAuthenticated: r.is_authenticated === true,
+    authenticatedAt: r.authenticated_at,
+    lastActivityAt: r.last_activity_at,
+    expiresAt: r.expires_at,
+    createdAt: r.created_at
+  };
+}
+async function authenticateSecretarySession(tenantId, authorizedPhoneId, sessionDate) {
+  const res = await query(`
+    INSERT INTO secretary_sessions (
+      tenant_id, authorized_phone_id, session_date, is_authenticated,
+      authenticated_at, last_activity_at, expires_at
+    )
+    VALUES (
+      $1, $2, $3::date, true,
+      CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, (CURRENT_TIMESTAMP + INTERVAL '24 hours')
+    )
+    ON CONFLICT (authorized_phone_id, session_date)
+    DO UPDATE SET
+      is_authenticated = true,
+      authenticated_at = CURRENT_TIMESTAMP,
+      last_activity_at = CURRENT_TIMESTAMP,
+      expires_at = (CURRENT_TIMESTAMP + INTERVAL '24 hours')
+    RETURNING *
+  `, [tenantId, authorizedPhoneId, sessionDate]);
+  const r = res.rows[0];
+  return {
+    id: r.id,
+    tenantId: r.tenant_id,
+    authorizedPhoneId: r.authorized_phone_id,
+    sessionDate: r.session_date,
+    isAuthenticated: true,
+    authenticatedAt: r.authenticated_at,
+    lastActivityAt: r.last_activity_at,
+    expiresAt: r.expires_at,
+    createdAt: r.created_at
+  };
+}
+
+// src/server/services/secretary.service.ts
+async function handleSecretaryInboundMessage(tenantId, cleanPhone, remoteJid, userMessage, pushName, instanceName) {
+  const secretary = await getAuthorizedPhoneByNumber(tenantId, cleanPhone);
+  if (!secretary || !secretary.active) {
+    return null;
+  }
+  const tenant = await getTenantById(tenantId);
+  const tenantName = tenant?.name || "Tu Negocio";
+  const todayStr = getTodayCR();
+  const timeStr = getCurrentTimeCR();
+  if (secretary.lockedUntil && new Date(secretary.lockedUntil) > /* @__PURE__ */ new Date()) {
+    const lockMsg = `\u{1F512} *Acceso Temporalmente Bloqueado*
+
+Hola *${secretary.name}*, has superado el l\xEDmite de intentos permitidos para tu PIN. Por seguridad, el acceso al Modo Secretario estar\xE1 bloqueado durante 15 minutos.`;
+    await sendMessage(instanceName, cleanPhone, lockMsg);
+    await saveSecretaryLog(tenantId, remoteJid, lockMsg);
+    return { handled: true, replyText: lockMsg, status: "locked" };
+  }
+  const session = await getSecretarySession(secretary.id, todayStr);
+  const isAuthenticatedToday = Boolean(session && session.isAuthenticated);
+  if (!isAuthenticatedToday) {
+    const isPinFormat = /^\s*\d{4}\s*$/.test(userMessage);
+    if (isPinFormat) {
+      const pin = userMessage.trim();
+      const isValid = verifyPin(pin, secretary.pin_hash || await getPinHash(secretary.id));
+      if (isValid) {
+        await resetFailedAttempts(secretary.id);
+        await authenticateSecretarySession(tenantId, secretary.id, todayStr);
+        const dailySummary = await buildDailyOperationalSummary(tenantId, todayStr);
+        const welcomeMsg = `\u2705 *\xA1Bienvenido al Modo Secretario, ${secretary.name}!* \u{1F389}
+\u{1F510} Sesi\xF3n autenticada con \xE9xito para hoy (*${todayStr}*, ${timeStr} CR).
+
+\u{1F4CB} *RESUMEN OPERATIVO DE HOY:*
+${dailySummary}
+
+\u{1F4AC} *\xBFQu\xE9 deseas gestionar?*
+Puedes pedirme:
+\u2022 *"Ver agenda de hoy"* o de cualquier fecha
+\u2022 *"Disponibilidad de canchas"* o turnos libres
+\u2022 *"Agendar cita"* (indicando cliente, servicio y hora)
+\u2022 *"Cancelar cita"* de un cliente
+\u2022 *"Ingresos del d\xEDa"* y cobros pendientes`;
+        await sendMessage(instanceName, cleanPhone, welcomeMsg);
+        await saveSecretaryLog(tenantId, remoteJid, welcomeMsg);
+        return { handled: true, replyText: welcomeMsg, status: "authenticated" };
+      } else {
+        const { locked, remainingAttempts } = await registerFailedPinAttempt(secretary.id);
+        let errorMsg = "";
+        if (locked) {
+          errorMsg = `\u{1F512} *PIN Incorrecto.* Has acumulado 3 intentos fallidos. Tu acceso al Modo Secretario ha sido bloqueado por 15 minutos por seguridad.`;
+        } else {
+          errorMsg = `\u274C *PIN Incorrecto.*
+Te quedan *${remainingAttempts} intento(s)* antes de bloquear el acceso.
+
+Por favor ingresa tu PIN de 4 d\xEDgitos:`;
+        }
+        await sendMessage(instanceName, cleanPhone, errorMsg);
+        await saveSecretaryLog(tenantId, remoteJid, errorMsg);
+        return { handled: true, replyText: errorMsg, status: locked ? "locked" : "challenge_sent" };
+      }
+    } else {
+      const roleLabel = secretary.role === "owner" ? "Due\xF1o" : secretary.role === "manager" ? "Administrador" : "Recepcionista";
+      const challengeMsg = `\u{1F512} *Modo Secretario Betico \u2014 ${tenantName}*
+
+Hola *${secretary.name}* (${roleLabel}). Para ingresar al panel operativo y administrativo de hoy, por favor ingresa tu *PIN de 4 d\xEDgitos*:`;
+      await sendMessage(instanceName, cleanPhone, challengeMsg);
+      await saveSecretaryLog(tenantId, remoteJid, challengeMsg);
+      return { handled: true, replyText: challengeMsg, status: "challenge_sent" };
+    }
+  }
+  if (!tenant?.aiApiKeyEncrypted) {
+    const byokNotice = `\u26A0\uFE0F *Modo Secretario Requiere Clave Propia (BYOK)*
+
+Hola *${secretary.name}*, para utilizar la asistencia avanzada del Secretario Virtual por WhatsApp, tu negocio debe configurar su propia API Key de IA en el portal web (*Ajustes > Inteligencia Artificial*).
+
+Esto garantiza privacidad total, procesamiento sin l\xEDmites de cuota y auditor\xEDa directa.`;
+    await sendMessage(instanceName, cleanPhone, byokNotice);
+    await saveSecretaryLog(tenantId, remoteJid, byokNotice);
+    return { handled: true, replyText: byokNotice, status: "byok_required" };
+  }
+  const apiKey = decrypt(tenant.aiApiKeyEncrypted);
+  const aiConfig = {
+    provider: tenant.aiProvider || "gemini",
+    apiKey,
+    model: tenant.aiModel || "gemini-2.5-flash",
+    temperature: 0.3
+  };
+  const [appointmentsContext, courtsContext, servicesList] = await Promise.all([
+    queryAppointmentsForSecretary(tenantId, todayStr),
+    queryCourtsForSecretary(tenantId, todayStr),
+    queryServicesForSecretary(tenantId)
+  ]);
+  const secretarySystemPrompt = `
+Eres el Secretario Virtual Interno de ${tenantName}.
+Tu interlocutor es ${secretary.name} (${secretary.role}), personal autorizado de la empresa.
+Fecha y hora actual oficial en Costa Rica: ${todayStr} a las ${timeStr} (UTC-6).
+
+INFORMACI\xD3N OPERATIVA DEL COMERCIO:
+\u{1F4C5} CITAS AGENDADAS (Pr\xF3ximos d\xEDas):
+${appointmentsContext || "No hay citas registradas para hoy ni pr\xF3ximos d\xEDas."}
+
+\u26BD CANCHAS Y RESERVAS DEPORTIVAS:
+${courtsContext || "No hay reservas de canchas para hoy."}
+
+\u{1F6E0}\uFE0F CAT\xC1LOGO DE SERVICIOS:
+${servicesList}
+
+INSTRUCCIONES Y REGLAS DE RESPUESTA:
+1. Responde de forma ejecutiva, clara, ordenada y con respeto y calidez tica.
+2. Tienes acceso completo a la informaci\xF3n operativa. Si te preguntan por la agenda, da el listado ordenado por hora con el nombre del cliente, tel\xE9fono y estado.
+3. Si el secretario te pide agendar una cita para un cliente, emite al final del mensaje:
+<<<COMMAND_BOOKING: {"service":"nombre servicio","date":"YYYY-MM-DD","time":"HH:MM","customerName":"Nombre Cliente","customerPhone":"Tel\xE9fono"}>>>
+4. Si el secretario te pide cancelar una cita, emite al final del mensaje:
+<<<COMMAND_CANCEL_BOOKING: {"date":"YYYY-MM-DD","customerPhone":"Tel\xE9fono o ID","reason":"solicitado por administraci\xF3n"}>>>
+5. NUNCA inventes informaci\xF3n. Si un horario est\xE1 ocupado, dilo claramente.
+6. En texto en espa\xF1ol NUNCA uses el signo '&', siempre usa la conjunci\xF3n 'y'.
+`.trim();
+  try {
+    const aiResponse = await callAI(aiConfig, {
+      system: secretarySystemPrompt,
+      messages: [{ role: "user", content: userMessage }]
+    });
+    const replyText = aiResponse.text || "Entendido. \xBFEn qu\xE9 m\xE1s puedo asistirte?";
+    await executeSecretaryCommands(tenantId, replyText);
+    const cleanReply = replyText.replace(/<<<COMMAND_[^>]+>>>/g, "").trim();
+    await sendMessage(instanceName, cleanPhone, cleanReply);
+    await saveSecretaryLog(tenantId, remoteJid, cleanReply);
+    return { handled: true, replyText: cleanReply, status: "ai_replied" };
+  } catch (aiErr) {
+    console.error("[SecretaryService] AI call error:", aiErr);
+    const fallbackMsg = `\u26A0\uFE0F No pude procesar tu solicitud en este momento debido a un error con la clave de IA configurada: ${aiErr?.message || "Error de conexi\xF3n"}. Por favor verifica en el portal web.`;
+    await sendMessage(instanceName, cleanPhone, fallbackMsg);
+    await saveSecretaryLog(tenantId, remoteJid, fallbackMsg);
+    return { handled: true, replyText: fallbackMsg, status: "byok_required" };
+  }
+}
+async function getPinHash(secretaryId) {
+  const res = await query(`SELECT pin_hash FROM secretary_authorized_phones WHERE id = $1`, [secretaryId]);
+  return res.rows[0]?.pin_hash || "";
+}
+async function buildDailyOperationalSummary(tenantId, todayStr) {
+  try {
+    const apptsRes = await query(`
+      SELECT COUNT(*) as total,
+             COUNT(*) FILTER (WHERE status = 'confirmed') as confirmed,
+             COUNT(*) FILTER (WHERE status = 'pending') as pending,
+             COUNT(*) FILTER (WHERE status IN ('completed', 'completado', 'completada', 'realizada')) as completed,
+             COALESCE(SUM(amount) FILTER (WHERE payment_status = 'paid'), 0) as paid_amount
+      FROM appointments
+      WHERE tenant_id = $1 AND date = $2::date
+    `, [tenantId, todayStr]);
+    const courtsRes = await query(`
+      SELECT COUNT(*) as total
+      FROM court_bookings
+      WHERE tenant_id = $1 AND date = $2::date AND status NOT IN ('cancelled')
+    `, [tenantId, todayStr]);
+    const a = apptsRes.rows[0] || {};
+    const courtsCount = courtsRes.rows[0]?.total || 0;
+    return `\u2022 Citas hoy: ${a.total || 0} (${a.confirmed || 0} confirmadas, ${a.pending || 0} pendientes, ${a.completed || 0} realizadas)
+\u2022 Partidos/Canchas hoy: ${courtsCount} reservas activas
+\u2022 Cobrado en citas hoy: \u20A1${Number(a.paid_amount || 0).toLocaleString("es-CR")}`;
+  } catch (err) {
+    return "\u2022 Informaci\xF3n del d\xEDa disponible mediante consulta.";
+  }
+}
+async function queryAppointmentsForSecretary(tenantId, todayStr) {
+  const res = await query(`
+    SELECT date, time, service, name, whatsapp, status, payment_status, amount
+    FROM appointments
+    WHERE tenant_id = $1 AND date >= $2::date AND status NOT IN ('cancelled', 'cancelado')
+    ORDER BY date ASC, time ASC
+    LIMIT 25
+  `, [tenantId, todayStr]);
+  if (res.rows.length === 0) return "";
+  return res.rows.map(
+    (r) => `  \u2022 ${r.date} a las ${r.time}: ${r.service} para ${r.name || "Cliente"} (Tel: ${r.whatsapp || "N/A"}) [Estado: ${r.status}, Pago: ${r.payment_status}]`
+  ).join("\n");
+}
+async function queryCourtsForSecretary(tenantId, todayStr) {
+  const res = await query(`
+    SELECT cb.date, cb.time, cb.booking_mode, cb.team_a_name, cb.team_a_captain, cb.status, c.name as court_name
+    FROM court_bookings cb
+    JOIN courts c ON cb.court_id = c.id
+    WHERE cb.tenant_id = $1 AND cb.date >= $2::date AND cb.status NOT IN ('cancelled')
+    ORDER BY cb.date ASC, cb.time ASC
+    LIMIT 20
+  `, [tenantId, todayStr]);
+  if (res.rows.length === 0) return "";
+  return res.rows.map(
+    (r) => `  \u2022 ${r.date} a las ${r.time}: ${r.court_name} (${r.booking_mode}) - Equipo: ${r.team_a_name || r.team_a_captain} [Estado: ${r.status}]`
+  ).join("\n");
+}
+async function queryServicesForSecretary(tenantId) {
+  const res = await query(`
+    SELECT name, price, duration, category
+    FROM services
+    WHERE tenant_id = $1 AND active = true
+    ORDER BY name ASC
+  `, [tenantId]);
+  if (res.rows.length === 0) return "No hay servicios configurados.";
+  return res.rows.map(
+    (s) => `  \u2022 ${s.name}: \u20A1${Number(s.price || 0).toLocaleString("es-CR")} (${s.duration || "60m"}${s.category ? `, Cat: ${s.category}` : ""})`
+  ).join("\n");
+}
+async function executeSecretaryCommands(tenantId, replyText) {
+  const bookingMatch = replyText.match(/<<<COMMAND_BOOKING:\s*({[\s\S]*?})>>>/);
+  if (bookingMatch) {
+    try {
+      const data = JSON.parse(bookingMatch[1]);
+      await createBookingFromCommand(tenantId, data);
+      console.log("[SecretaryService] Cita agendada por secretario IA:", data);
+    } catch (err) {
+      console.error("[SecretaryService] Error ejecutando COMMAND_BOOKING:", err);
+    }
+  }
+  const cancelMatch = replyText.match(/<<<COMMAND_CANCEL_BOOKING:\s*({[\s\S]*?})>>>/);
+  if (cancelMatch) {
+    try {
+      const data = JSON.parse(cancelMatch[1]);
+      await cancelBookingFromWhatsApp(tenantId, data.customerPhone || "", data.date || "", data.service || "");
+      console.log("[SecretaryService] Cita cancelada por secretario IA:", data);
+    } catch (err) {
+      console.error("[SecretaryService] Error ejecutando COMMAND_CANCEL_BOOKING:", err);
+    }
+  }
+}
+async function saveSecretaryLog(tenantId, remoteJid, text) {
+  try {
+    await saveChatMessage(tenantId, {
+      id: `sec_${Date.now()}`,
+      remoteJid,
+      pushName: "Secretario Betico",
+      fromMe: true,
+      messageText: text,
+      aiResponse: text,
+      status: "sent"
+    });
+  } catch (err) {
+    console.error("[SecretaryService] Error guardando log en chats:", err);
+  }
+}
+
 // src/server/services/message-queue.service.ts
 var io = null;
 var activeChats = /* @__PURE__ */ new Set();
@@ -11502,6 +12079,18 @@ async function tickQueue() {
 async function processSingleMessage(msg) {
   try {
     console.log(`[Queue] Processing message from ${msg.pushName} (${msg.cleanPhone}): "${msg.userMessage.slice(0, 50)}..."`);
+    const secretaryResult = await handleSecretaryInboundMessage(
+      msg.tenantId,
+      msg.cleanPhone,
+      msg.remoteJid,
+      msg.userMessage,
+      msg.pushName,
+      msg.instanceName
+    );
+    if (secretaryResult && secretaryResult.handled) {
+      await markDone(msg.id, secretaryResult.replyText || "SECRETARY_HANDLED");
+      return;
+    }
     const session = await getChatSession(msg.tenantId, msg.remoteJid);
     if (session?.isHumanMode) {
       console.log(`[Queue] Chat ${msg.remoteJid} is in HUMAN MODE. Skipping.`);
@@ -11595,7 +12184,7 @@ async function processSingleMessage(msg) {
           const cleanTime = rawTime.includes(":") ? rawTime.split(":").slice(0, 2).join(":") + ":00" : "19:00:00";
           const newCourtBooking = await createBooking(msg.tenantId, {
             courtId: matchedCourt.id,
-            date: cData.date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0],
+            date: cData.date || getTodayCR(),
             time: cleanTime,
             durationMinutes: cData.durationMinutes || matchedCourt.durationMinutes || 60,
             bookingMode: cData.bookingMode === "seek_match" ? "seek_match" : "full",
@@ -11788,7 +12377,7 @@ async function processSingleMessage(msg) {
 
 // src/server/services/evolution-api.service.ts
 init_evolution();
-import crypto4 from "crypto";
+import crypto5 from "crypto";
 init_orders_repo();
 
 // src/server/services/event-bus.service.ts
@@ -11857,7 +12446,7 @@ var EvolutionApiService = class {
    * dynamic payment link and a 60-minute TTL.
    */
   static async createOrderAndGeneratePaymentLink(tenantId, orderData) {
-    const paymentLinkToken = crypto4.randomUUID();
+    const paymentLinkToken = crypto5.randomUUID();
     const expiresAt = new Date(Date.now() + 60 * 60 * 1e3);
     const store = await getStoreSettings(tenantId);
     const tenant = await getTenantById(tenantId);
@@ -12395,9 +12984,9 @@ router.post("/forgot-password", otpLimiter, async (req, res) => {
       res.status(400).json({ error: "Tu cuenta no tiene un n\xFAmero de WhatsApp vinculado para recibir el c\xF3digo. Por favor contacta a soporte." });
       return;
     }
-    const crypto6 = await import("crypto");
-    const otpCode = crypto6.randomInt(1e5, 999999).toString();
-    const tokenHash = crypto6.createHash("sha256").update(otpCode + user.id).digest("hex");
+    const crypto7 = await import("crypto");
+    const otpCode = crypto7.randomInt(1e5, 999999).toString();
+    const tokenHash = crypto7.createHash("sha256").update(otpCode + user.id).digest("hex");
     await (await Promise.resolve().then(() => (init_pool(), pool_exports))).query(`
       UPDATE password_reset_tokens SET used = true WHERE user_id = $1 AND used = false
     `, [user.id]);
@@ -12511,7 +13100,7 @@ var auth_routes_default = router;
 
 // src/server/routes/tenant.routes.ts
 import { Router as Router2 } from "express";
-import crypto5 from "crypto";
+import crypto6 from "crypto";
 init_users_repo();
 var router2 = Router2();
 router2.use(authenticateToken);
@@ -12719,7 +13308,7 @@ router2.put("/:id", async (req, res) => {
             name: body.contactName ? body.contactName.trim() : `${body.name || "Admin"}`,
             email: body.email.toLowerCase().trim(),
             role: "admin",
-            password: crypto5.randomBytes(9).toString("base64url") + "!1Aa"
+            password: crypto6.randomBytes(9).toString("base64url") + "!1Aa"
           });
         }
       } catch (userErr) {
@@ -13602,10 +14191,9 @@ router5.get("/public/:slug/available-slots", async (req, res) => {
       return;
     }
     const schedule = await getScheduleSettings(tenant.id);
-    const dateStr = String(date);
-    const nowCR = new Date((/* @__PURE__ */ new Date()).toLocaleString("en-US", { timeZone: "America/Costa_Rica" }));
-    const todayCR = `${nowCR.getFullYear()}-${String(nowCR.getMonth() + 1).padStart(2, "0")}-${String(nowCR.getDate()).padStart(2, "0")}`;
-    const currentMinutesNow = nowCR.getHours() * 60 + nowCR.getMinutes();
+    const dateStr = normalizeDateInput(date);
+    const todayCR = getTodayCR();
+    const currentMinutesNow = getCurrentMinutesCR();
     if (dateStr < todayCR) {
       res.json({
         date: dateStr,
@@ -13627,8 +14215,7 @@ router5.get("/public/:slug/available-slots", async (req, res) => {
         return;
       }
     }
-    const selectedDate = /* @__PURE__ */ new Date(`${dateStr}T00:00:00`);
-    const dayOfWeek = selectedDate.getDay() === 0 ? 7 : selectedDate.getDay();
+    const dayOfWeek = getDayOfWeekCR(dateStr);
     let specialist = null;
     if (specialistId) {
       const specRes = await query(`SELECT * FROM specialists WHERE id = $1 AND tenant_id = $2`, [specialistId, tenant.id]);
@@ -16299,11 +16886,7 @@ import { Router as Router18 } from "express";
 init_appointments_repo();
 var router18 = Router18();
 function normalizeDateStr(dateVal) {
-  if (!dateVal) return (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
-  if (dateVal instanceof Date) {
-    return dateVal.toISOString().split("T")[0];
-  }
-  return String(dateVal).split("T")[0].trim();
+  return normalizeDateInput(dateVal);
 }
 function formatICSDate(dateVal, timeVal) {
   const dateStr = normalizeDateStr(dateVal);
@@ -21890,13 +22473,256 @@ router38.post("/redeem", async (req, res) => {
 });
 var coupon_routes_default = router38;
 
-// src/server/routes/seo.routes.ts
-init_pool();
+// src/server/routes/timezone.routes.ts
 import { Router as Router39 } from "express";
 var router39 = Router39();
+router39.get("/diagnostic", authenticateToken, (req, res) => {
+  const now = /* @__PURE__ */ new Date();
+  const cr = getNowCR(now);
+  const dayNames = ["Lunes", "Martes", "Mi\xE9rcoles", "Jueves", "Viernes", "S\xE1bado", "Domingo"];
+  const dayName = dayNames[cr.dayOfWeek - 1] || "Lunes";
+  const utcDateStr = now.toISOString().split("T")[0];
+  const isNightShiftActive = utcDateStr !== cr.dateStr;
+  res.json({
+    vpsUtcTime: now.toISOString(),
+    vpsUtcHour: now.getUTCHours(),
+    costaRicaLocalTime: `${cr.dateStr} ${cr.timeStr}:${String(cr.second).padStart(2, "0")}`,
+    costaRicaDate: cr.dateStr,
+    costaRicaTime: cr.timeStr,
+    costaRicaDayOfWeek: dayName,
+    costaRicaDayNumber: cr.dayOfWeek,
+    offsetHours: -6,
+    offsetString: COSTA_RICA_OFFSET_STRING,
+    timezoneName: COSTA_RICA_TIMEZONE,
+    isNightShiftActive,
+    nightShiftExplanation: isNightShiftActive ? "La frontera nocturna est\xE1 ACTIVA: El reloj UTC del servidor ya se encuentra en el d\xEDa siguiente, pero Betico mantiene estrictamente la fecha de hoy para Costa Rica." : "La sincronizaci\xF3n diurna es nominal: Tanto el UTC como la hora local comparten el mismo d\xEDa del calendario.",
+    status: "synchronized",
+    statusMessage: "Horarios sincronizados con Costa Rica (UTC-6)"
+  });
+});
+router39.post("/simulate", authenticateToken, (req, res) => {
+  const { date, time, simulatedCurrentHour, simulatedCurrentMinute } = req.body;
+  let refDate = /* @__PURE__ */ new Date();
+  if (simulatedCurrentHour !== void 0 && simulatedCurrentMinute !== void 0) {
+    const nowParts = getNowCR();
+    const [y, m, d] = (date || nowParts.dateStr).split("-").map(Number);
+    const utcHour = (Number(simulatedCurrentHour) + 6) % 24;
+    refDate = new Date(Date.UTC(y, m - 1, d, utcHour, Number(simulatedCurrentMinute), 0));
+  }
+  const currentCR = getNowCR(refDate);
+  const targetDate = date || currentCR.dateStr;
+  const targetTime = time || "10:00";
+  const isPastDate = isDateInPastCR(targetDate, refDate);
+  const isPastSlot = isSlotInPastCR(targetDate, targetTime, 0, refDate);
+  const dayNumber = getDayOfWeekCR(targetDate);
+  const dayNames = ["Lunes", "Martes", "Mi\xE9rcoles", "Jueves", "Viernes", "S\xE1bado", "Domingo"];
+  res.json({
+    simulatedNowCR: `${currentCR.dateStr} ${currentCR.timeStr}`,
+    simulatedNowDate: currentCR.dateStr,
+    simulatedNowTime: currentCR.timeStr,
+    targetDate,
+    targetTime,
+    targetDayOfWeek: dayNames[dayNumber - 1],
+    isPastDate,
+    isPastSlot,
+    isAllowedForBooking: !isPastSlot,
+    verdict: isPastSlot ? "BLOQUEADO: El turno se considera horario pasado en la hora oficial de Costa Rica." : "DISPONIBLE: El turno es v\xE1lido para agendamiento y no genera conflicto temporal."
+  });
+});
+var timezone_routes_default = router39;
+
+// src/server/routes/secretary.routes.ts
+import { Router as Router40 } from "express";
+init_encryption();
+init_ai_provider();
+init_pool();
+var router40 = Router40();
+router40.get("/phones", authenticateToken, tenantContext, async (req, res) => {
+  try {
+    const tenantId = req.tenantId;
+    const phones = await getAuthorizedPhonesByTenant(tenantId);
+    res.json(phones);
+  } catch (error) {
+    console.error("Error fetching secretary phones:", error);
+    res.status(500).json({ error: "Error al obtener tel\xE9fonos autorizados" });
+  }
+});
+router40.post("/phones", authenticateToken, tenantContext, async (req, res) => {
+  try {
+    const tenantId = req.tenantId;
+    const { phone, name, role, pin } = req.body;
+    if (!phone || !name || !pin) {
+      return res.status(400).json({ error: "Tel\xE9fono, nombre y PIN son obligatorios" });
+    }
+    const cleanPin = String(pin).trim();
+    if (!/^\d{4}$/.test(cleanPin)) {
+      return res.status(400).json({ error: "El PIN debe ser exactamente de 4 d\xEDgitos num\xE9ricos" });
+    }
+    const created = await createAuthorizedPhone(tenantId, {
+      phone,
+      name,
+      role: role || "owner",
+      pin: cleanPin
+    });
+    res.json(created);
+  } catch (error) {
+    console.error("Error creating secretary phone:", error);
+    res.status(500).json({ error: "Error al registrar tel\xE9fono autorizado" });
+  }
+});
+router40.put("/phones/:id", authenticateToken, tenantContext, async (req, res) => {
+  try {
+    const tenantId = req.tenantId;
+    const { id } = req.params;
+    const { name, role, pin, active } = req.body;
+    if (pin && !/^\d{4}$/.test(String(pin).trim())) {
+      return res.status(400).json({ error: "El PIN debe ser de 4 d\xEDgitos num\xE9ricos" });
+    }
+    const updated = await updateAuthorizedPhone(id, tenantId, {
+      name,
+      role,
+      pin: pin ? String(pin).trim() : void 0,
+      active
+    });
+    if (!updated) {
+      return res.status(404).json({ error: "Tel\xE9fono autorizado no encontrado" });
+    }
+    res.json(updated);
+  } catch (error) {
+    console.error("Error updating secretary phone:", error);
+    res.status(500).json({ error: "Error al actualizar tel\xE9fono autorizado" });
+  }
+});
+router40.delete("/phones/:id", authenticateToken, tenantContext, async (req, res) => {
+  try {
+    const tenantId = req.tenantId;
+    const { id } = req.params;
+    const success = await deleteAuthorizedPhone(id, tenantId);
+    if (!success) {
+      return res.status(404).json({ error: "Tel\xE9fono autorizado no encontrado" });
+    }
+    res.json({ success: true, message: "Tel\xE9fono autorizado eliminado" });
+  } catch (error) {
+    console.error("Error deleting secretary phone:", error);
+    res.status(500).json({ error: "Error al eliminar tel\xE9fono autorizado" });
+  }
+});
+router40.post("/business-advisor/chat", authenticateToken, tenantContext, async (req, res) => {
+  try {
+    const tenantId = req.tenantId;
+    const { message, conversationHistory = [] } = req.body;
+    if (!message || typeof message !== "string") {
+      return res.status(400).json({ error: "Mensaje requerido" });
+    }
+    const tenant = await getTenantById(tenantId);
+    if (!tenant?.aiApiKeyEncrypted) {
+      return res.status(403).json({
+        error: "BYOK_REQUIRED",
+        message: "El Asesor Estrat\xE9gico de Negocios requiere que configures tu propia clave de IA (BYOK) en Ajustes > Inteligencia Artificial para operar."
+      });
+    }
+    const todayStr = getTodayCR();
+    const timeStr = getCurrentTimeCR();
+    const [todayStatsRes, monthStatsRes, lowStockRes, topServicesRes] = await Promise.all([
+      query(`
+        SELECT 
+          COUNT(*) FILTER (WHERE date = $2::date) as today_appointments,
+          COUNT(*) FILTER (WHERE date = $2::date AND (payment_status = 'paid' OR status IN ('completed', 'realizada'))) as today_completed,
+          COALESCE(SUM(amount) FILTER (WHERE date = $2::date AND payment_status = 'paid'), 0) as today_revenue
+        FROM appointments
+        WHERE tenant_id = $1
+      `, [tenantId, todayStr]),
+      query(`
+        SELECT 
+          COUNT(*) as month_appointments,
+          COALESCE(SUM(amount) FILTER (WHERE payment_status = 'paid'), 0) as month_revenue
+        FROM appointments
+        WHERE tenant_id = $1 AND date >= DATE_TRUNC('month', $2::date)::date
+      `, [tenantId, todayStr]),
+      query(`
+        SELECT name, stock, price
+        FROM products
+        WHERE tenant_id = $1 AND active = true AND stock <= 5
+        LIMIT 5
+      `, [tenantId]),
+      query(`
+        SELECT service, COUNT(*) as count, SUM(amount) as total
+        FROM appointments
+        WHERE tenant_id = $1 AND status NOT IN ('cancelled', 'cancelado')
+        GROUP BY service
+        ORDER BY count DESC
+        LIMIT 5
+      `, [tenantId])
+    ]);
+    const todayStats = todayStatsRes.rows[0] || {};
+    const monthStats = monthStatsRes.rows[0] || {};
+    const lowStockItems = lowStockRes.rows || [];
+    const topServices = topServicesRes.rows || [];
+    const metricsSnapshot = {
+      todayDate: todayStr,
+      currentTime: timeStr,
+      todayAppointments: parseInt(todayStats.today_appointments || "0", 10),
+      todayCompleted: parseInt(todayStats.today_completed || "0", 10),
+      todayRevenue: Number(todayStats.today_revenue || 0),
+      monthAppointments: parseInt(monthStats.month_appointments || "0", 10),
+      monthRevenue: Number(monthStats.month_revenue || 0),
+      lowStockCount: lowStockItems.length,
+      topServices: topServices.map((s) => s.service)
+    };
+    const apiKey = decrypt(tenant.aiApiKeyEncrypted);
+    const aiConfig = {
+      provider: tenant.aiProvider || "gemini",
+      apiKey,
+      model: tenant.aiModel || "gemini-2.5-flash",
+      temperature: 0.3
+    };
+    const systemPrompt = `
+Eres el Asesor Estrat\xE9gico de Negocios y Copilot Empresarial de ${tenant.name || "este negocio"}.
+Tu objetivo es analizar con rigor gerencial y cercan\xEDa profesional los datos y operaciones del comercio en Costa Rica para ayudar al due\xF1o a tomar decisiones estrat\xE9gicas, maximizar sus ingresos y optimizar sus horarios.
+
+M\xC9TRICAS OFICIALES EN TIEMPO REAL (${todayStr} a las ${timeStr} CR):
+\u2022 Ingresos cobrados hoy en citas: \u20A1${metricsSnapshot.todayRevenue.toLocaleString("es-CR")}
+\u2022 Citas agendadas hoy: ${metricsSnapshot.todayAppointments} (${metricsSnapshot.todayCompleted} completadas)
+\u2022 Ingresos acumulados del mes: \u20A1${metricsSnapshot.monthRevenue.toLocaleString("es-CR")} (${metricsSnapshot.monthAppointments} citas en total)
+\u2022 Servicios m\xE1s solicitados: ${topServices.map((s) => `${s.service} (${s.count} veces)`).join(", ") || "Sin citas registradas a\xFAn"}
+\u2022 Productos con alerta de stock bajo (<= 5 unid): ${lowStockItems.map((p) => `${p.name} (Quedan: ${p.stock})`).join(", ") || "Inventario saludable"}
+
+PAUTAS DE RESPUESTA:
+1. Responde de forma clara, directa, con formato ejecutivo (vi\xF1etas, negritas) y calidez costarricense.
+2. Si el usuario te hace una pregunta general sobre c\xF3mo mejorar ventas, fidelizaci\xF3n o reducir cancelaciones, fundamenta tus consejos en las m\xE9tricas actuales del negocio.
+3. Prop\xF3n t\xE1cticas accionables: promociones en horas de baja demanda, recordatorios preventivos y campa\xF1as de reactivaci\xF3n.
+4. En texto en espa\xF1ol NUNCA utilices el signo '&', siempre utiliza la conjunci\xF3n 'y'.
+`.trim();
+    const formattedHistory = (conversationHistory || []).map((m) => ({
+      role: m.role === "user" ? "user" : "assistant",
+      content: m.content || ""
+    }));
+    const response = await callAI(aiConfig, {
+      system: systemPrompt,
+      messages: [...formattedHistory, { role: "user", content: message }]
+    });
+    res.json({
+      reply: response.text,
+      tokensUsed: response.tokensUsed,
+      metricsSnapshot
+    });
+  } catch (error) {
+    console.error("Error in business advisor chat:", error);
+    res.status(500).json({
+      error: "Error en consulta del asesor",
+      message: error?.message || "Error procesando solicitud con IA"
+    });
+  }
+});
+var secretary_routes_default = router40;
+
+// src/server/routes/seo.routes.ts
+init_pool();
+import { Router as Router41 } from "express";
+var router41 = Router41();
 var sitemapCache = null;
 var SITEMAP_TTL_MS = 60 * 60 * 1e3;
-router39.get("/robots.txt", (req, res) => {
+router41.get("/robots.txt", (req, res) => {
   const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
   const host = req.headers["x-forwarded-host"] || req.get("host") || "betico.tech";
   const baseUrl = `${protocol}://${host}`;
@@ -21925,7 +22751,7 @@ Sitemap: ${baseUrl}/sitemap.xml
   res.setHeader("Cache-Control", "public, max-age=86400");
   res.send(content);
 });
-router39.get("/sitemap.xml", async (req, res) => {
+router41.get("/sitemap.xml", async (req, res) => {
   const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
   const host = req.headers["x-forwarded-host"] || req.get("host") || "betico.tech";
   const baseUrl = `${protocol}://${host}`;
@@ -21999,7 +22825,7 @@ router39.get("/sitemap.xml", async (req, res) => {
     res.status(500).send("Error generating sitemap");
   }
 });
-var seo_routes_default = router39;
+var seo_routes_default = router41;
 
 // src/server/services/seo.service.ts
 var seoCache = /* @__PURE__ */ new Map();
@@ -22436,6 +23262,8 @@ async function startServer() {
   app.use("/api/loyalty", loyalty_routes_default);
   app.use("/api/loyalty-customer", publicLimiter, loyalty_customer_routes_default);
   app.use("/api/coupons", coupon_routes_default);
+  app.use("/api/timezone", timezone_routes_default);
+  app.use("/api/secretary", secretary_routes_default);
   app.use("/", seo_routes_default);
   if (env.NODE_ENV === "production") {
     app.use("/assets", express.static(path2.join(__dirname, "assets"), { maxAge: "1y", immutable: true }));

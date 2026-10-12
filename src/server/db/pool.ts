@@ -15,6 +15,12 @@ const pool = new Pool({
   connectionTimeoutMillis: 5000,
 });
 
+pool.on('connect', (client) => {
+  client.query("SET TIME ZONE 'America/Costa_Rica'").catch((err) => {
+    console.error('Error setting session timezone on pool connect:', err);
+  });
+});
+
 pool.on('error', (err) => {
   console.error('Unexpected error on idle client', err);
 });

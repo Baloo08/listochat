@@ -2,19 +2,7 @@ import { createAppointment, updateAppointment } from '../db/appointments.repo.js
 import { getServicesByTenant } from '../db/services.repo.js';
 import { getSpecialistsByTenant } from '../db/specialists.repo.js';
 import { query } from '../db/pool.js';
-
-function normalizeBookingDate(inputDate: any): string {
-  if (!inputDate) return new Date().toISOString().split('T')[0];
-  const str = String(inputDate).trim();
-  if (str.includes('T')) return str.split('T')[0];
-  if (str.includes('/')) return str.replace(/\//g, '-');
-  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
-  const parsed = new Date(str);
-  if (!isNaN(parsed.getTime())) {
-    return parsed.toISOString().split('T')[0];
-  }
-  return new Date().toISOString().split('T')[0];
-}
+import { normalizeDateInput, isSlotInPastCR } from './timezone.service.js';
 
 export async function createBookingFromCommand(tenantId: string, bookingData: any): Promise<any> {
   try {
@@ -24,8 +12,14 @@ export async function createBookingFromCommand(tenantId: string, bookingData: an
     ) || services[0];
 
     const price = matchedService ? matchedService.price : 0;
-    const bookingDate = normalizeBookingDate(bookingData.date);
+    const bookingDate = normalizeDateInput(bookingData.date);
     const bookingTime = bookingData.time || '10:00 AM';
+
+    // Verify slot is not in the past (America/Costa_Rica UTC-6)
+    if (isSlotInPastCR(bookingDate, bookingTime)) {
+      console.warn(`[createBookingFromCommand] Rejected past slot: ${bookingDate} ${bookingTime}`);
+      throw new Error(`El horario ${bookingDate} a las ${bookingTime} ya pasó en la hora de Costa Rica. Por favor selecciona una hora futura.`);
+    }
 
     // Verify slot collision (prevent double booking)
     const collisionCheck = await query(`

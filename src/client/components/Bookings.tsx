@@ -32,6 +32,7 @@ import { useApi } from '../hooks/useApi';
 import { Appointment, DayBreakConfig, BookingField } from '../../shared/types';
 import { formatShortDate, formatShortTime, formatShortDateTime } from '../../shared/formatters';
 import RecordsManager from './RecordsManager';
+import TimezoneSimulatorWidget from './TimezoneSimulatorWidget';
 
 const DAYS_OF_WEEK = [
   { num: 1, name: 'Lunes', key: 'monday' },
@@ -1133,6 +1134,9 @@ export default function Bookings() {
       {activeTab === 'schedule' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           
+          {/* Timezone Diagnosis & Simulator Widget */}
+          <TimezoneSimulatorWidget />
+
           {/* Schedule Settings Card */}
           <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>

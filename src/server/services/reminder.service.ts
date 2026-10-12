@@ -1,6 +1,7 @@
 import { query } from '../db/pool.js';
 import { sendMessage } from './evolution.js';
 import { ReminderConfig } from '../../shared/types.js';
+import { parseCRDateAndTimeToUtc } from './timezone.service.js';
 
 const DEFAULT_REMINDER_CONFIG: ReminderConfig = {
   enabled: true,
@@ -57,12 +58,8 @@ async function checkAndSendReminders() {
         for (const appt of apptsRes.rows) {
           if (!appt.whatsapp || !appt.date || !appt.time) continue;
 
-          // Parse appointment datetime
-          // date: YYYY-MM-DD, time: HH:MM
-          const [year, month, day] = appt.date.split('-').map(Number);
-          const [hour, minute] = appt.time.split(':').map(Number);
-          const apptDate = new Date(year, month - 1, day, hour, minute || 0);
-
+          // Parse appointment datetime strictly in Costa Rica timezone
+          const apptDate = parseCRDateAndTimeToUtc(appt.date, appt.time);
           const diffMs = apptDate.getTime() - now.getTime();
           const diffHours = diffMs / (1000 * 60 * 60);
 

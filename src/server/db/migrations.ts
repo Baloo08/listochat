@@ -1125,6 +1125,41 @@ export async function runMigrations() {
     -- Columnas de cupón en pedidos
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS coupon_code VARCHAR(50);
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(10, 2) DEFAULT 0;
+
+    -- ==========================================================
+    -- MÓDULO DE SECRETARIO VIRTUAL WHATSAPP Y SESIONES PIN
+    -- ==========================================================
+    CREATE TABLE IF NOT EXISTS secretary_authorized_phones (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      phone VARCHAR(50) NOT NULL,
+      name VARCHAR(255) NOT NULL,
+      role VARCHAR(50) NOT NULL DEFAULT 'owner',
+      pin_hash VARCHAR(255) NOT NULL,
+      failed_attempts INT NOT NULL DEFAULT 0,
+      locked_until TIMESTAMPTZ,
+      active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(tenant_id, phone)
+    );
+    CREATE INDEX IF NOT EXISTS idx_secretary_phone ON secretary_authorized_phones(phone);
+    CREATE INDEX IF NOT EXISTS idx_secretary_tenant ON secretary_authorized_phones(tenant_id);
+
+    CREATE TABLE IF NOT EXISTS secretary_sessions (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      authorized_phone_id UUID NOT NULL REFERENCES secretary_authorized_phones(id) ON DELETE CASCADE,
+      session_date DATE NOT NULL,
+      is_authenticated BOOLEAN NOT NULL DEFAULT false,
+      authenticated_at TIMESTAMPTZ,
+      last_activity_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      expires_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(authorized_phone_id, session_date)
+    );
+    CREATE INDEX IF NOT EXISTS idx_sec_sessions_lookup 
+    ON secretary_sessions(authorized_phone_id, session_date, is_authenticated);
   `).catch((err) => {
     console.warn('[Migrations] Columns addition warning:', err?.message || err);
   });

@@ -11,6 +11,7 @@ import { TilopayTenantService } from '../services/tilopay-tenant.service.js';
 import { sendMessage } from '../services/evolution.js';
 import { query } from '../db/pool.js';
 import { logAuditEvent } from '../db/audit.repo.js';
+import { getTodayCR, getCurrentMinutesCR, getDayOfWeekCR, isDateInPastCR, normalizeDateInput } from '../services/timezone.service.js';
 
 const router = Router();
 
@@ -102,12 +103,11 @@ router.get('/public/:slug/available-slots', async (req, res) => {
     }
 
     const schedule = await getScheduleSettings(tenant.id);
-    const dateStr = String(date);
+    const dateStr = normalizeDateInput(date);
 
     // Filter past dates (Costa Rica UTC-6)
-    const nowCR = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Costa_Rica' }));
-    const todayCR = `${nowCR.getFullYear()}-${String(nowCR.getMonth() + 1).padStart(2, '0')}-${String(nowCR.getDate()).padStart(2, '0')}`;
-    const currentMinutesNow = (nowCR.getHours() * 60) + nowCR.getMinutes();
+    const todayCR = getTodayCR();
+    const currentMinutesNow = getCurrentMinutesCR();
 
     if (dateStr < todayCR) {
       res.json({
@@ -133,8 +133,7 @@ router.get('/public/:slug/available-slots', async (req, res) => {
       }
     }
 
-    const selectedDate = new Date(`${dateStr}T00:00:00`);
-    const dayOfWeek = selectedDate.getDay() === 0 ? 7 : selectedDate.getDay(); // 1 = Lunes, 7 = Domingo
+    const dayOfWeek = getDayOfWeekCR(dateStr); // 1 = Lunes, 7 = Domingo
 
     // Check specialist if passed
     let specialist: any = null;

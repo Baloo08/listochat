@@ -22,6 +22,7 @@ import {
   redeemPointsForBot
 } from './loyalty.service.js';
 import { getLoyaltyProgram } from '../db/loyalty.repo.js';
+import { getTodayCR, getNowCR, getCurrentTimeCR } from './timezone.service.js';
 
 export type SubagentId = 'sales' | 'booking' | 'courts' | 'handoff' | 'general' | 'loyalty';
 
@@ -225,6 +226,9 @@ export async function processWithOrchestrator(
 
   // Get current Costa Rica time
   const now = new Date();
+  const crParts = getNowCR(now);
+  const crTodayStr = crParts.dateStr;
+  const crTimeShort = crParts.timeStr;
   const crTime = new Intl.DateTimeFormat('es-CR', {
     timeZone: 'America/Costa_Rica',
     dateStyle: 'full',
@@ -391,7 +395,7 @@ REGLAS DE ORO DE VENTA Y CIERRE DE PEDIDOS (CALIDEZ TICA Y CERO ALUCINACIÓN):
 
       let busySlotsText = '';
       try {
-        const todayStr = new Date().toISOString().split('T')[0];
+        const todayStr = crTodayStr;
         const busyRes = await query(`
           SELECT date, time, service
           FROM appointments
@@ -461,10 +465,11 @@ ${customerRecord?.fullName ? `Cliente Registrado: ${customerRecord.fullName}\n` 
 REGLAS DE AGENDAMIENTO PROACTIVO:
 1. LÍMITE DE SERVICIOS (CERO ALUCINACIÓN): SOLO ofrece y agenda los servicios que figuran en 'Servicios Disponibles'. Si el cliente solicita un servicio, atención médica o tratamiento que NO está en la lista oficial, indícale amablemente que no disponen de ese servicio y ofrece conectar con un asesor humano. NUNCA inventes servicios ni tarifas.
 2. Responde con calidez tica (*pura vida*, con mucho gusto).
-3. Pregunta amablemente la fecha y hora preferida, asegurándote de que NO coincida con los HORARIOS YA OCUPADOS.
-4. REGLA DE ORO ANTE HORARIOS OCUPADOS: Si la hora solicitada choca con un horario ocupado, NUNCA te limites a decir 'no está disponible'. PROPÓN PROACTIVAMENTE las 2 o 3 opciones libres más cercanas del mismo día o del día siguiente.
-5. Si el cliente solicita múltiples servicios, suma los tiempos de duración estimados para agendar un bloque continuo suficiente.
-6. Al acordar la cita completa con el cliente (nombre, servicio, fecha y hora confirmada), emite al final:
+3. HORARIO OFICIAL ACTUAL (Costa Rica UTC-6): Hoy es ${crTodayStr} y la hora actual es ${crTimeShort}. NUNCA ofrezcas ni confirmes horarios que ya hayan pasado hoy. Si el cliente pide un horario que ya pasó hoy, indícale amablemente que ya pasó y ofrece turnos libres futuros del día o para mañana.
+4. Pregunta amablemente la fecha y hora preferida, asegurándote de que NO coincida con los HORARIOS YA OCUPADOS.
+5. REGLA DE ORO ANTE HORARIOS OCUPADOS: Si la hora solicitada choca con un horario ocupado, NUNCA te limites a decir 'no está disponible'. PROPÓN PROACTIVAMENTE las 2 o 3 opciones libres más cercanas del mismo día o del día siguiente.
+6. Si el cliente solicita múltiples servicios, suma los tiempos de duración estimados para agendar un bloque continuo suficiente.
+7. Al acordar la cita completa con el cliente (nombre, servicio, fecha y hora confirmada), emite al final:
 <<<COMMAND_BOOKING: {"service":"nombre","date":"YYYY-MM-DD","time":"HH:MM","customerName":"${customerRecord?.fullName || senderName}","recordId":"${customerRecord?.id || ''}","specialistName":"opcional"}>>>
 7. Para reagendar una cita existente confirmada:
 <<<COMMAND_RESCHEDULE_BOOKING: {"newDate":"YYYY-MM-DD","newTime":"HH:MM"}>>>

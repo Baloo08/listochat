@@ -2,15 +2,12 @@ import { Router } from 'express';
 import { getTenantBySlug } from '../db/tenant.repo.js';
 import { getAppointmentsByTenant } from '../db/appointments.repo.js';
 import { getServicesByTenant } from '../db/services.repo.js';
+import { normalizeDateInput } from '../services/timezone.service.js';
 
 const router = Router();
 
 function normalizeDateStr(dateVal: any): string {
-  if (!dateVal) return new Date().toISOString().split('T')[0];
-  if (dateVal instanceof Date) {
-    return dateVal.toISOString().split('T')[0];
-  }
-  return String(dateVal).split('T')[0].trim();
+  return normalizeDateInput(dateVal);
 }
 
 function formatICSDate(dateVal: any, timeVal: any): string {
