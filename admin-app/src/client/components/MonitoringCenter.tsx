@@ -39,7 +39,11 @@ import {
 } from 'lucide-react';
 import { useAdminApi } from '../useAdminApi';
 
-export default function MonitoringCenter() {
+interface MonitoringCenterProps {
+  onOpenHacienda?: (subTab?: 'comprobantes' | 'credenciales' | 'sucursales') => void;
+}
+
+export default function MonitoringCenter({ onOpenHacienda }: MonitoringCenterProps) {
   const api = useAdminApi();
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
@@ -68,13 +72,23 @@ export default function MonitoringCenter() {
   const [payNotes, setPayNotes] = useState('');
   const [savingPay, setSavingPay] = useState(false);
 
-  // Tilopay Card Modal & Actions State
+  // Estado de Modal y Acciones de Tarjeta Tilopay
   const [showCardModal, setShowCardModal] = useState(false);
   const [cardLast4Input, setCardLast4Input] = useState('');
   const [cardBrandInput, setCardBrandInput] = useState('VISA');
   const [cardHolderInput, setCardHolderInput] = useState('');
   const [savingCard, setSavingCard] = useState(false);
   const [chargingTilopay, setChargingTilopay] = useState(false);
+
+  // Fiscal Billing Preferences State (Hacienda CR)
+  const [requiresInvoice, setRequiresInvoice] = useState(false);
+  const [billingIdType, setBillingIdType] = useState('01');
+  const [billingIdNumber, setBillingIdNumber] = useState('');
+  const [billingLegalName, setBillingLegalName] = useState('');
+  const [billingEmail, setBillingEmail] = useState('');
+  const [savingBillingPref, setSavingBillingPref] = useState(false);
+  const [lookingUpPadron, setLookingUpPadron] = useState(false);
+  const [emittingSubInvoice, setEmittingSubInvoice] = useState(false);
 
   // Copy Feedback States
   const [copiedUuid, setCopiedUuid] = useState(false);
@@ -112,10 +126,85 @@ export default function MonitoringCenter() {
       setNotesText(data.tenant.internalNotes || '');
       setSelectedDate(data.tenant.nextBillingDate || '');
       setPayAmount(Number(data.tenant.customMonthlyPrice) || 55000);
+      setRequiresInvoice(Boolean(data.tenant.requiresSubscriptionInvoice));
+      setBillingIdType(data.tenant.billingIdType || '01');
+      setBillingIdNumber(data.tenant.billingIdNumber || '');
+      setBillingLegalName(data.tenant.billingLegalName || data.tenant.name || '');
+      setBillingEmail(data.tenant.billingEmail || data.tenant.adminEmail || '');
     } catch (err: any) {
       alert('Error al cargar expediente del cliente: ' + (err.message || 'Error'));
     } finally {
       setLoadingDossier(false);
+    }
+  };
+
+  const handleLookupPadron = async () => {
+    const cleanId = billingIdNumber.replace(/\D/g, '');
+    if (!cleanId || cleanId.length < 9) {
+      alert('Ingresa un número de cédula válido (mínimo 9 dígitos) para consultar en Hacienda.');
+      return;
+    }
+    setLookingUpPadron(true);
+    try {
+      const res = await api.get(`/api/billing/native/padron/${cleanId}`);
+      const foundName = res?.nombre || res?.legalName || res?.name || res?.razonSocial || '';
+      const foundType = res?.tipoIdentificacion || res?.idType || (cleanId.length === 10 ? '02' : cleanId.length > 10 ? '03' : '01');
+      if (foundName) {
+        setBillingLegalName(foundName);
+        setBillingIdType(foundType);
+        setBillingIdNumber(cleanId);
+        setActionMessage(`Contribuyente localizado en Hacienda: ${foundName}`);
+      } else {
+        alert('No se encontraron datos en el Padrón de Hacienda para esa cédula.');
+      }
+    } catch (err: any) {
+      alert('Error consultando Hacienda: ' + (err.message || 'No encontrado'));
+    } finally {
+      setLookingUpPadron(false);
+    }
+  };
+
+  const handleSaveBillingPreference = async () => {
+    if (!selectedTenantId) return;
+    setSavingBillingPref(true);
+    try {
+      const res = await api.put(`/api/monitoring/tenant/${selectedTenantId}/billing-preference`, {
+        requiresSubscriptionInvoice: requiresInvoice,
+        billingIdType,
+        billingIdNumber: billingIdNumber.replace(/\D/g, ''),
+        billingLegalName: billingLegalName.trim(),
+        billingEmail: billingEmail.trim()
+      });
+      setActionMessage(res?.message || 'Preferencia y datos fiscales de facturación guardados correctamente.');
+      await loadDossier(selectedTenantId);
+    } catch (err: any) {
+      alert('Error al guardar preferencia de facturación: ' + (err.message || 'Error'));
+    } finally {
+      setSavingBillingPref(false);
+    }
+  };
+
+  const handleEmitSubscriptionInvoiceNow = async () => {
+    if (!selectedTenantId || !dossier) return;
+    const recipient = billingEmail || dossier.tenant.adminEmail || 'correo del cliente';
+    const docLabel = billingIdNumber.replace(/\D/g, '') ? 'Factura Electrónica (01)' : 'Tiquete Electrónico (04)';
+    if (!confirm(`¿Emitir ${docLabel} de suscripción ahora para "${dossier.tenant.name}" y enviar PDF + XML DGT v4.4 a ${recipient}?`)) {
+      return;
+    }
+    setEmittingSubInvoice(true);
+    try {
+      const res = await api.post(`/api/monitoring/tenant/${selectedTenantId}/emit-subscription-invoice`, {});
+      const clave = res?.voucher?.clave || res?.clave || '';
+      const consecutivo = res?.voucher?.consecutivo || res?.consecutivo || '';
+      setActionMessage(
+        res?.message ||
+          `Comprobante electrónico emitido con éxito. ${consecutivo ? `Consecutivo: ${consecutivo}` : ''} ${clave ? `· Clave: ${clave}` : ''}`
+      );
+      await loadDossier(selectedTenantId);
+    } catch (err: any) {
+      alert('Error al emitir factura de suscripción: ' + (err.message || 'Error'));
+    } finally {
+      setEmittingSubInvoice(false);
     }
   };
 
@@ -359,7 +448,7 @@ export default function MonitoringCenter() {
 
   return (
     <div style={{ padding: '24px', maxWidth: '1400px', margin: '0 auto' }}>
-      {/* Top Banner & Search */}
+      {/* Banner Superior y Búsqueda */}
       <div style={{
         backgroundColor: '#0f2426',
         border: '1px solid #1a3e40',
@@ -1212,6 +1301,238 @@ export default function MonitoringCenter() {
               </div>
             </div>
 
+            {/* FACTURACIÓN ELECTRÓNICA DE SUSCRIPCIÓN (HACIENDA CR — BETICO FACTURAS) */}
+            <div style={{
+              marginTop: '22px',
+              paddingTop: '20px',
+              borderTop: '1px solid #163638',
+              backgroundColor: '#0a1a1c',
+              borderRadius: '14px',
+              padding: '20px',
+              border: '1px solid #1a3e40'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '14px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                  <FileText size={20} color="#34D399" />
+                  <h4 style={{ margin: 0, fontSize: '1rem', color: '#FAF8F5', fontWeight: 800 }}>
+                    Facturación Electrónica de Suscripción (Hacienda CR — Betico Facturas)
+                  </h4>
+                  <span style={{
+                    padding: '3px 10px',
+                    borderRadius: '6px',
+                    fontSize: '0.72rem',
+                    fontWeight: 700,
+                    backgroundColor: requiresInvoice ? 'rgba(52, 211, 153, 0.2)' : 'rgba(148, 163, 184, 0.15)',
+                    color: requiresInvoice ? '#34D399' : '#94a3b8',
+                    border: requiresInvoice ? '1px solid rgba(52, 211, 153, 0.4)' : '1px solid rgba(148, 163, 184, 0.3)'
+                  }}>
+                    {requiresInvoice ? 'Factura Solicitada (Emisión Automática)' : 'No Solicitada (Solo Bajo Petición)'}
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={handleEmitSubscriptionInvoiceNow}
+                    disabled={emittingSubInvoice}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '8px 14px',
+                      backgroundColor: '#0B3C3D',
+                      border: '1px solid #34D399',
+                      borderRadius: '8px',
+                      color: '#FAF8F5',
+                      fontSize: '0.8rem',
+                      fontWeight: 700,
+                      cursor: emittingSubInvoice ? 'wait' : 'pointer'
+                    }}
+                  >
+                    <Send size={14} color="#34D399" />
+                    {emittingSubInvoice ? 'Emitiendo en Hacienda...' : 'Emitir Factura de Suscripción Ahora'}
+                  </button>
+
+                  {onOpenHacienda && (
+                    <button
+                      type="button"
+                      onClick={() => onOpenHacienda('credenciales')}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '8px 12px',
+                        backgroundColor: '#123032',
+                        border: '1px solid #234b4e',
+                        borderRadius: '8px',
+                        color: '#38bdf8',
+                        fontSize: '0.78rem',
+                        fontWeight: 700,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <Key size={14} />
+                      Configurar Hacienda SuperAdmin
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Regla de emisión bajo solicitud */}
+              <div style={{
+                padding: '12px 14px',
+                backgroundColor: '#071213',
+                border: requiresInvoice ? '1px solid rgba(52, 211, 153, 0.35)' : '1px solid #1a3e40',
+                borderRadius: '10px',
+                marginBottom: '16px'
+              }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '0.88rem', fontWeight: 700, color: '#FAF8F5' }}>
+                  <input
+                    type="checkbox"
+                    checked={requiresInvoice}
+                    onChange={(e) => setRequiresInvoice(e.target.checked)}
+                    style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#34D399' }}
+                  />
+                  <span>El cliente solicitó factura electrónica (Emisión automática al cobrar o registrar pago)</span>
+                </label>
+                <p style={{ margin: '6px 0 0 26px', fontSize: '0.78rem', color: '#94a3b8' }}>
+                  Solo en los casos en que se active expresamente esta opción se emitirá factura electrónica al cobrar la suscripción. Si está desactivada, no se emite a menos que el cliente la pida.
+                </p>
+              </div>
+
+              {/* Grid de Datos Fiscales del Cliente */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.76rem', color: '#94a3b8', marginBottom: '4px', fontWeight: 600 }}>
+                    Cédula del Cliente
+                  </label>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <input
+                      type="text"
+                      value={billingIdNumber}
+                      onChange={(e) => setBillingIdNumber(e.target.value)}
+                      placeholder="Ej. 3101123456"
+                      style={{
+                        flex: 1,
+                        padding: '8px 10px',
+                        backgroundColor: '#071213',
+                        border: '1px solid #234b4e',
+                        borderRadius: '8px',
+                        color: '#FAF8F5',
+                        fontSize: '0.83rem'
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleLookupPadron}
+                      disabled={lookingUpPadron}
+                      style={{
+                        padding: '8px 10px',
+                        backgroundColor: '#16383b',
+                        border: '1px solid #245053',
+                        borderRadius: '8px',
+                        color: '#34D399',
+                        fontSize: '0.75rem',
+                        fontWeight: 700,
+                        cursor: lookingUpPadron ? 'wait' : 'pointer',
+                        whiteSpace: 'nowrap'
+                      }}
+                    >
+                      {lookingUpPadron ? 'Buscando...' : 'Buscar en Hacienda'}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.76rem', color: '#94a3b8', marginBottom: '4px', fontWeight: 600 }}>
+                    Tipo de Identificación
+                  </label>
+                  <select
+                    value={billingIdType}
+                    onChange={(e) => setBillingIdType(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '8px 10px',
+                      backgroundColor: '#071213',
+                      border: '1px solid #234b4e',
+                      borderRadius: '8px',
+                      color: '#FAF8F5',
+                      fontSize: '0.83rem'
+                    }}
+                  >
+                    <option value="01">01 - Cédula Física</option>
+                    <option value="02">02 - Cédula Jurídica</option>
+                    <option value="03">03 - DIMEX</option>
+                    <option value="04">04 - NITE</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.76rem', color: '#94a3b8', marginBottom: '4px', fontWeight: 600 }}>
+                    Nombre o Razón Social Receptor
+                  </label>
+                  <input
+                    type="text"
+                    value={billingLegalName}
+                    onChange={(e) => setBillingLegalName(e.target.value)}
+                    placeholder="Razón social inscrita en Hacienda"
+                    style={{
+                      width: '100%',
+                      padding: '8px 10px',
+                      backgroundColor: '#071213',
+                      border: '1px solid #234b4e',
+                      borderRadius: '8px',
+                      color: '#FAF8F5',
+                      fontSize: '0.83rem',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.76rem', color: '#94a3b8', marginBottom: '4px', fontWeight: 600 }}>
+                    Correo para envío de PDF y XML DGT v4.4
+                  </label>
+                  <input
+                    type="email"
+                    value={billingEmail}
+                    onChange={(e) => setBillingEmail(e.target.value)}
+                    placeholder="facturacion@comercio.cr"
+                    style={{
+                      width: '100%',
+                      padding: '8px 10px',
+                      backgroundColor: '#071213',
+                      border: '1px solid #234b4e',
+                      borderRadius: '8px',
+                      color: '#FAF8F5',
+                      fontSize: '0.83rem',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '14px' }}>
+                <button
+                  type="button"
+                  onClick={handleSaveBillingPreference}
+                  disabled={savingBillingPref}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: '#10b981',
+                    border: 'none',
+                    borderRadius: '8px',
+                    color: 'white',
+                    fontSize: '0.82rem',
+                    fontWeight: 700,
+                    cursor: savingBillingPref ? 'wait' : 'pointer'
+                  }}
+                >
+                  {savingBillingPref ? 'Guardando...' : 'Guardar Preferencia y Datos Fiscales'}
+                </button>
+              </div>
+            </div>
+
           </div>
 
           {/* BITÁCORA Y ANOTACIONES INTERNAS DE SOPORTE */}
@@ -1471,7 +1792,21 @@ export default function MonitoringCenter() {
       {showPayModal && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.8)', zIndex: 90, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
           <div style={{ backgroundColor: '#0f2426', padding: '26px', borderRadius: '16px', maxWidth: '440px', width: '100%', border: '1px solid #34D399' }}>
-            <h3 style={{ margin: '0 0 16px 0', fontSize: '1.2rem', fontWeight: 800, color: '#FAF8F5' }}>💵 Registrar Pago del Cliente</h3>
+            <h3 style={{ margin: '0 0 12px 0', fontSize: '1.2rem', fontWeight: 800, color: '#FAF8F5' }}>💵 Registrar Pago del Cliente</h3>
+            <div style={{
+              padding: '10px 12px',
+              borderRadius: '8px',
+              marginBottom: '14px',
+              fontSize: '0.78rem',
+              fontWeight: 600,
+              backgroundColor: requiresInvoice ? 'rgba(52, 211, 153, 0.15)' : 'rgba(148, 163, 184, 0.12)',
+              border: requiresInvoice ? '1px solid rgba(52, 211, 153, 0.4)' : '1px solid #234b4e',
+              color: requiresInvoice ? '#34D399' : '#cbd5e1'
+            }}>
+              {requiresInvoice
+                ? 'El cliente solicitó factura: Se emitirá y enviará automáticamente su Factura Electrónica (PDF + XML) al confirmar el pago.'
+                : 'El cliente NO tiene activa la solicitud automática de factura. Solo se registrará el pago.'}
+            </div>
             <form onSubmit={handleRecordPayment} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div>
                 <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '4px' }}>Monto a Registrar</label>

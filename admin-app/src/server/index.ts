@@ -12,6 +12,9 @@ import billingRoutes from './routes/billing.routes.js';
 import auditRoutes from './routes/audit.routes.js';
 import platformRoutes from './routes/platform.routes.js';
 import botsChatsRoutes from './routes/bots-chats.routes.js';
+import billingNativeRoutes from '../../../src/server/routes/billing-native.routes.js';
+import almendroRoutes from '../../../src/server/routes/almendro.routes.js';
+import { runMigrations } from '../../../src/server/db/migrations.js';
 
 dotenv.config();
 
@@ -44,7 +47,9 @@ app.use('/api/auth', authRoutes);
 app.use('/api/monitoring', monitoringRoutes);
 app.use('/api/system', systemRoutes);
 app.use('/api/tenants', tenantsRoutes);
+app.use('/api/billing/native', billingNativeRoutes);
 app.use('/api/billing', billingRoutes);
+app.use('/api/almendro', almendroRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/platform', platformRoutes);
 app.use('/api/bots-chats', botsChatsRoutes);
@@ -61,6 +66,8 @@ app.get('*', (req, res) => {
     }
   });
 });
+
+runMigrations().catch(err => console.warn('[Betico Ops] Migration check warning:', err?.message));
 
 app.listen(PORT, () => {
   console.log(`[Betico Ops] Servidor administrativo aislado iniciado en el puerto ${PORT}`);

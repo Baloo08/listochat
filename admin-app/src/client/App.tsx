@@ -10,7 +10,8 @@ import {
   Shield,
   Loader2,
   MessageSquare,
-  Sliders
+  Sliders,
+  FileText
 } from 'lucide-react';
 import { useAdminAuth } from './useAdminAuth';
 import LoginView from './components/LoginView';
@@ -21,12 +22,19 @@ import BillingManager from './components/BillingManager';
 import AuditLogsView from './components/AuditLogsView';
 import MasterBotsAndLiveChats from './components/MasterBotsAndLiveChats';
 import PlatformSettingsView from './components/PlatformSettingsView';
+import ElectronicBillingView from '../../../src/client/components/ElectronicBillingView';
 
-type Tab = 'monitoring' | 'tenants' | 'bots' | 'billing' | 'system' | 'platform' | 'audit';
+type Tab = 'monitoring' | 'tenants' | 'bots' | 'billing' | 'hacienda' | 'system' | 'platform' | 'audit';
 
 export default function App() {
   const { isAuthenticated, user, loading, login, logout } = useAdminAuth();
   const [currentTab, setCurrentTab] = useState<Tab>('monitoring');
+  const [haciendaSubTab, setHaciendaSubTab] = useState<'comprobantes' | 'credenciales' | 'sucursales'>('credenciales');
+
+  const handleOpenHacienda = (subTab?: 'comprobantes' | 'credenciales' | 'sucursales') => {
+    if (subTab) setHaciendaSubTab(subTab);
+    setCurrentTab('hacienda');
+  };
 
   if (loading) {
     return (
@@ -70,7 +78,7 @@ export default function App() {
           justifyContent: 'space-between',
           gap: '20px'
         }}>
-          {/* Brand Logo & Title */}
+          {/* Logotipo y Título */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div style={{
               width: '36px',
@@ -182,6 +190,27 @@ export default function App() {
             </button>
 
             <button
+              onClick={() => setCurrentTab('hacienda')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '8px 12px',
+                borderRadius: '8px',
+                border: currentTab === 'hacienda' ? '1px solid #34D399' : '1px solid rgba(52, 211, 153, 0.25)',
+                backgroundColor: currentTab === 'hacienda' ? '#0B3C3D' : 'rgba(11, 60, 61, 0.35)',
+                color: currentTab === 'hacienda' ? '#34D399' : '#FAF8F5',
+                fontWeight: 700,
+                fontSize: '0.82rem',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+            >
+              <FileText size={15} />
+              Betico Facturas (Hacienda)
+            </button>
+
+            <button
               onClick={() => setCurrentTab('system')}
               style={{
                 display: 'flex',
@@ -245,7 +274,7 @@ export default function App() {
             </button>
           </nav>
 
-          {/* User Profile & Actions */}
+          {/* Perfil de Usuario y Acciones */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <a
               href="https://betico.tech"
@@ -315,10 +344,15 @@ export default function App() {
 
       {/* Main Body View */}
       <main>
-        {currentTab === 'monitoring' && <MonitoringCenter />}
-        {currentTab === 'tenants' && <TenantsManager />}
+        {currentTab === 'monitoring' && <MonitoringCenter onOpenHacienda={handleOpenHacienda} />}
+        {currentTab === 'tenants' && <TenantsManager onOpenHacienda={handleOpenHacienda} />}
         {currentTab === 'bots' && <MasterBotsAndLiveChats />}
-        {currentTab === 'billing' && <BillingManager />}
+        {currentTab === 'billing' && <BillingManager onOpenHacienda={handleOpenHacienda} />}
+        {currentTab === 'hacienda' && (
+          <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '20px 24px' }}>
+            <ElectronicBillingView key={haciendaSubTab} initialTab={haciendaSubTab} isSuperAdminMode={true} />
+          </div>
+        )}
         {currentTab === 'system' && <SystemHealth />}
         {currentTab === 'platform' && <PlatformSettingsView />}
         {currentTab === 'audit' && <AuditLogsView />}

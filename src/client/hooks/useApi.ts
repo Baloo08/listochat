@@ -2,7 +2,7 @@ import { useCallback } from 'react';
 
 export function useApi() {
   const fetchWithAuth = useCallback(async (url: string, options: RequestInit = {}) => {
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem('token') || localStorage.getItem('betico_admin_token');
     
     const headers = {
       'Content-Type': 'application/json',

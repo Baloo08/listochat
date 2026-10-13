@@ -625,7 +625,7 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
       const res = await fetch('/api/billing/native/test-p12', {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${localStorage.getItem('token') || ''}`
+          Authorization: `Bearer ${localStorage.getItem('token') || localStorage.getItem('betico_admin_token') || ''}`
         },
         body: formData
       });
@@ -790,7 +790,7 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
         const res = await fetch('/api/billing/native/config', {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${localStorage.getItem('token') || ''}`
+            Authorization: `Bearer ${localStorage.getItem('token') || localStorage.getItem('betico_admin_token') || ''}`
           },
           body: formData
         });
@@ -1135,7 +1135,7 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
       const res = await fetch('/api/billing/native/branches', {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${localStorage.getItem('token') || ''}`
+          Authorization: `Bearer ${localStorage.getItem('token') || localStorage.getItem('betico_admin_token') || ''}`
         },
         body: formData
       });

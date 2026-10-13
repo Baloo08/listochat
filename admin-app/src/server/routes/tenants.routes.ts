@@ -21,10 +21,16 @@ router.get('/', async (req, res) => {
              t.grace_period_ends_at as "gracePeriodEndsAt", t.settings_json as "settingsJson", 
              t.address, t.latitude, t.longitude, t.google_maps_url as "googleMapsUrl",
              t.created_at as "createdAt",
+             COALESCE(t.requires_subscription_invoice, false) as "requiresSubscriptionInvoice",
+             COALESCE(NULLIF(t.billing_id_type, ''), thc.taxpayer_id_type, '01') as "billingIdType",
+             COALESCE(NULLIF(t.billing_id_number, ''), thc.taxpayer_id_number, '') as "billingIdNumber",
+             COALESCE(NULLIF(t.billing_legal_name, ''), thc.taxpayer_name, t.name) as "billingLegalName",
+             COALESCE(NULLIF(t.billing_email, ''), thc.taxpayer_email, u.email, '') as "billingEmail",
              COALESCE(u.email, 'Sin registrar') as "adminEmail",
              COALESCE(u.name, 'Admin') as "adminName",
              u.id as "adminId"
       FROM tenants t
+      LEFT JOIN tenant_hacienda_configs thc ON thc.tenant_id = t.id
       LEFT JOIN LATERAL (
         SELECT id, email, name
         FROM users
@@ -52,7 +58,12 @@ router.post('/', async (req: AuthenticatedRequest, res) => {
       adminEmail,
       whatsappNumber,
       customMonthlyPrice = 0,
-      billingCurrency = 'CRC'
+      billingCurrency = 'CRC',
+      requiresSubscriptionInvoice = false,
+      billingIdType = '01',
+      billingIdNumber = '',
+      billingLegalName = '',
+      billingEmail = ''
     } = req.body;
 
     if (!name || !slug) {
@@ -71,10 +82,24 @@ router.post('/', async (req: AuthenticatedRequest, res) => {
     const tenantRes = await query(
       `INSERT INTO tenants (
         name, slug, plan, active, whatsapp_number, custom_monthly_price, 
-        billing_currency, trial_ends_at, subscription_status
-      ) VALUES ($1, $2, $3, true, $4, $5, $6, CURRENT_TIMESTAMP + (INTERVAL '1 day' * $7), 'trial')
+        billing_currency, trial_ends_at, subscription_status,
+        requires_subscription_invoice, billing_id_type, billing_id_number, billing_legal_name, billing_email
+      ) VALUES ($1, $2, $3, true, $4, $5, $6, CURRENT_TIMESTAMP + (INTERVAL '1 day' * $7), 'trial', $8, $9, $10, $11, $12)
       RETURNING *`,
-      [name.trim(), cleanSlug, plan, whatsappNumber || null, Number(customMonthlyPrice) || 0, billingCurrency, trialDays]
+      [
+        name.trim(),
+        cleanSlug,
+        plan,
+        whatsappNumber || null,
+        Number(customMonthlyPrice) || 0,
+        billingCurrency,
+        trialDays,
+        Boolean(requiresSubscriptionInvoice),
+        billingIdType || '01',
+        billingIdNumber || '',
+        billingLegalName || name.trim(),
+        billingEmail || adminEmail || ''
+      ]
     );
 
     const tenant = tenantRes.rows[0];
@@ -99,7 +124,7 @@ router.post('/', async (req: AuthenticatedRequest, res) => {
     ).catch(() => {});
 
     await logAdminAction(req.user!.userId, 'create_tenant', 'tenant', tenant.id, {
-      name, slug: cleanSlug, plan, adminEmail: finalEmail, customMonthlyPrice
+      name, slug: cleanSlug, plan, adminEmail: finalEmail, customMonthlyPrice, requiresSubscriptionInvoice: Boolean(requiresSubscriptionInvoice)
     }, req);
 
     res.status(201).json({
@@ -132,6 +157,11 @@ router.put('/:id', async (req: AuthenticatedRequest, res) => {
     if (body.billingCurrency !== undefined) { fields.push(`billing_currency = $${idx++}`); params.push(body.billingCurrency); }
     if (body.address !== undefined) { fields.push(`address = $${idx++}`); params.push(body.address); }
     if (body.googleMapsUrl !== undefined) { fields.push(`google_maps_url = $${idx++}`); params.push(body.googleMapsUrl); }
+    if (body.requiresSubscriptionInvoice !== undefined) { fields.push(`requires_subscription_invoice = $${idx++}`); params.push(Boolean(body.requiresSubscriptionInvoice)); }
+    if (body.billingIdType !== undefined) { fields.push(`billing_id_type = $${idx++}`); params.push(body.billingIdType); }
+    if (body.billingIdNumber !== undefined) { fields.push(`billing_id_number = $${idx++}`); params.push(body.billingIdNumber); }
+    if (body.billingLegalName !== undefined) { fields.push(`billing_legal_name = $${idx++}`); params.push(body.billingLegalName); }
+    if (body.billingEmail !== undefined) { fields.push(`billing_email = $${idx++}`); params.push(body.billingEmail); }
 
     if (fields.length > 0) {
       fields.push(`updated_at = CURRENT_TIMESTAMP`);
@@ -164,6 +194,81 @@ router.put('/:id', async (req: AuthenticatedRequest, res) => {
   } catch (error: any) {
     console.error('[Update Tenant] Error:', error);
     res.status(500).json({ error: 'Error al actualizar el comercio' });
+  }
+});
+
+// 3b. Update tenant billing preference & fiscal data
+router.put('/:id/billing-preference', async (req: AuthenticatedRequest, res) => {
+  const { id } = req.params;
+  const body = req.body || {};
+
+  try {
+    const fields: string[] = [];
+    const params: any[] = [id];
+    let idx = 2;
+
+    if (body.requiresSubscriptionInvoice !== undefined) {
+      fields.push(`requires_subscription_invoice = $${idx++}`);
+      params.push(Boolean(body.requiresSubscriptionInvoice));
+    }
+    if (body.billingIdType !== undefined) {
+      fields.push(`billing_id_type = $${idx++}`);
+      params.push(body.billingIdType);
+    }
+    if (body.billingIdNumber !== undefined) {
+      fields.push(`billing_id_number = $${idx++}`);
+      params.push(body.billingIdNumber);
+    }
+    if (body.billingLegalName !== undefined) {
+      fields.push(`billing_legal_name = $${idx++}`);
+      params.push(body.billingLegalName);
+    }
+    if (body.billingEmail !== undefined) {
+      fields.push(`billing_email = $${idx++}`);
+      params.push(body.billingEmail);
+    }
+
+    if (fields.length > 0) {
+      fields.push(`updated_at = CURRENT_TIMESTAMP`);
+      await query(`UPDATE tenants SET ${fields.join(', ')} WHERE id = $1`, params);
+    }
+
+    await logAdminAction(req.user!.userId, 'update_billing_preference', 'tenant', id, body, req);
+
+    res.json({ success: true, message: 'Preferencia de facturación electrónica actualizada' });
+  } catch (error: any) {
+    console.error('[Update Tenant Billing Preference] Error:', error);
+    res.status(500).json({ error: 'Error al actualizar preferencia de facturación' });
+  }
+});
+
+// 3c. Emit subscription invoice for tenant
+router.post('/:id/emit-subscription-invoice', async (req: AuthenticatedRequest, res) => {
+  const { id } = req.params;
+  try {
+    const { emitPlatformSubscriptionInvoiceForTenant } = await import('../../../../src/server/services/hacienda-native.service.js');
+    const result = await emitPlatformSubscriptionInvoiceForTenant(id, {
+      amount: req.body?.amount,
+      currency: req.body?.currency,
+      paymentMethod: req.body?.paymentMethod || '04',
+      periodLabel: req.body?.periodLabel,
+      forceEmit: true
+    });
+
+    await logAdminAction(req.user!.userId, 'emit_subscription_invoice', 'tenant', id, {
+      success: result.success,
+      clave: result.numericKey,
+      consecutivo: result.consecutiveNumber
+    }, req);
+
+    if (result.success) {
+      res.status(200).json({ ...result, clave: result.numericKey, consecutivo: result.consecutiveNumber });
+    } else {
+      res.status(400).json(result);
+    }
+  } catch (error: any) {
+    console.error('[Emit Subscription Invoice] Error:', error);
+    res.status(500).json({ success: false, error: error.message || 'Error al emitir factura de suscripción' });
   }
 });
 

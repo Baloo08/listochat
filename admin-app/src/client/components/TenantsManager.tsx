@@ -10,11 +10,16 @@ import {
   CheckCircle2,
   XCircle,
   RefreshCw,
-  AlertCircle
+  AlertCircle,
+  FileText
 } from 'lucide-react';
 import { useAdminApi } from '../useAdminApi';
 
-export default function TenantsManager() {
+interface TenantsManagerProps {
+  onOpenHacienda?: (subTab?: 'comprobantes' | 'credenciales' | 'sucursales') => void;
+}
+
+export default function TenantsManager({ onOpenHacienda }: TenantsManagerProps) {
   const api = useAdminApi();
   const [tenants, setTenants] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -36,11 +41,18 @@ export default function TenantsManager() {
     adminEmail: '',
     whatsappNumber: '',
     customMonthlyPrice: 0,
-    billingCurrency: 'CRC'
+    billingCurrency: 'CRC',
+    requiresSubscriptionInvoice: false,
+    billingIdType: '01',
+    billingIdNumber: '',
+    billingLegalName: '',
+    billingEmail: ''
   });
   const [editData, setEditData] = useState<any>({});
   const [newPassword, setNewPassword] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
+  const [lookingUpPadron, setLookingUpPadron] = useState(false);
+  const [emittingTenantId, setEmittingTenantId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const fetchTenants = async () => {
@@ -61,7 +73,68 @@ export default function TenantsManager() {
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 4000);
+    setTimeout(() => setToastMessage(null), 5000);
+  };
+
+  const handleLookupPadron = async (mode: 'create' | 'edit') => {
+    const rawId = mode === 'create' ? formData.billingIdNumber : editData.billingIdNumber;
+    const cleanId = (rawId || '').replace(/\D/g, '');
+    if (!cleanId || cleanId.length < 9) {
+      alert('Ingresa una cédula válida (mínimo 9 dígitos) para buscar en Hacienda.');
+      return;
+    }
+    setLookingUpPadron(true);
+    try {
+      const res = await api.get(`/api/billing/native/padron/${cleanId}`);
+      const foundName = res?.nombre || res?.legalName || res?.name || res?.razonSocial || '';
+      const foundType = res?.tipoIdentificacion || res?.idType || (cleanId.length === 10 ? '02' : cleanId.length > 10 ? '03' : '01');
+      if (foundName) {
+        if (mode === 'create') {
+          setFormData((prev) => ({
+            ...prev,
+            billingIdNumber: cleanId,
+            billingLegalName: foundName,
+            billingIdType: foundType
+          }));
+        } else {
+          setEditData((prev: any) => ({
+            ...prev,
+            billingIdNumber: cleanId,
+            billingLegalName: foundName,
+            billingIdType: foundType
+          }));
+        }
+        showToast(`Contribuyente localizado en Hacienda: ${foundName}`);
+      } else {
+        alert('No se encontraron datos en el Padrón de Hacienda para esa cédula.');
+      }
+    } catch (err: any) {
+      alert('Error consultando Hacienda: ' + (err.message || 'No encontrado'));
+    } finally {
+      setLookingUpPadron(false);
+    }
+  };
+
+  const handleEmitSubscriptionInvoice = async (t: any) => {
+    const recipient = t.billingEmail || t.adminEmail || 'correo del comercio';
+    const docType = t.billingIdNumber ? 'Factura Electrónica (01)' : 'Tiquete Electrónico (04)';
+    if (!confirm(`¿Emitir ${docType} de Suscripción para "${t.name}" y enviar PDF y XML DGT v4.4 a ${recipient}?`)) {
+      return;
+    }
+    setEmittingTenantId(t.id);
+    try {
+      const res = await api.post(`/api/tenants/${t.id}/emit-subscription-invoice`, {});
+      const clave = res?.voucher?.clave || res?.clave || '';
+      const consecutivo = res?.voucher?.consecutivo || res?.consecutivo || '';
+      showToast(
+        `Comprobante emitido para ${t.name}. ${consecutivo ? `Consecutivo: ${consecutivo}` : ''} ${clave ? `· Clave: ${clave}` : ''}`
+      );
+      await fetchTenants();
+    } catch (err: any) {
+      alert('Error al emitir factura electrónica: ' + (err.message || 'Error'));
+    } finally {
+      setEmittingTenantId(null);
+    }
   };
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
@@ -77,7 +150,12 @@ export default function TenantsManager() {
         adminEmail: '',
         whatsappNumber: '',
         customMonthlyPrice: 0,
-        billingCurrency: 'CRC'
+        billingCurrency: 'CRC',
+        requiresSubscriptionInvoice: false,
+        billingIdType: '01',
+        billingIdNumber: '',
+        billingLegalName: '',
+        billingEmail: ''
       });
       showToast(`Comercio creado con éxito. Contraseña temporal: ${res.tempPassword}`);
       await fetchTenants();
@@ -201,7 +279,30 @@ export default function TenantsManager() {
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '10px' }}>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          {onOpenHacienda && (
+            <button
+              type="button"
+              onClick={() => onOpenHacienda('credenciales')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '10px 14px',
+                backgroundColor: '#123032',
+                border: '1px solid #234b4e',
+                borderRadius: '8px',
+                color: '#34D399',
+                fontSize: '0.84rem',
+                fontWeight: 700,
+                cursor: 'pointer'
+              }}
+            >
+              <FileText size={15} />
+              Configurar Hacienda CR
+            </button>
+          )}
+
           <button
             onClick={() => setShowCreateModal(true)}
             style={{
@@ -340,19 +441,32 @@ export default function TenantsManager() {
                       <div style={{ color: '#64748b', fontSize: '0.75rem' }}>slug: {t.slug}</div>
                     </td>
                     <td style={{ padding: '14px 18px' }}>
-                      <span style={{
-                        display: 'inline-block',
-                        padding: '2px 8px',
-                        borderRadius: '4px',
-                        backgroundColor: '#16383b',
-                        color: '#FAF8F5',
-                        fontWeight: 700,
-                        textTransform: 'uppercase',
-                        fontSize: '0.75rem',
-                        marginBottom: '4px'
-                      }}>
-                        {t.plan}
-                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginBottom: '4px' }}>
+                        <span style={{
+                          display: 'inline-block',
+                          padding: '2px 8px',
+                          borderRadius: '4px',
+                          backgroundColor: '#16383b',
+                          color: '#FAF8F5',
+                          fontWeight: 700,
+                          textTransform: 'uppercase',
+                          fontSize: '0.75rem'
+                        }}>
+                          {t.plan}
+                        </span>
+                        <span style={{
+                          display: 'inline-block',
+                          padding: '2px 7px',
+                          borderRadius: '4px',
+                          fontSize: '0.7rem',
+                          fontWeight: 700,
+                          backgroundColor: t.requiresSubscriptionInvoice ? 'rgba(52, 211, 153, 0.16)' : 'rgba(148, 163, 184, 0.14)',
+                          color: t.requiresSubscriptionInvoice ? '#34D399' : '#94a3b8',
+                          border: t.requiresSubscriptionInvoice ? '1px solid rgba(52, 211, 153, 0.35)' : '1px solid rgba(148, 163, 184, 0.25)'
+                        }}>
+                          {t.requiresSubscriptionInvoice ? 'Factura: Solicitada' : 'Sin factura auto'}
+                        </span>
+                      </div>
                       <div style={{ color: '#94a3b8', fontSize: '0.75rem' }}>
                         {t.billingCurrency === 'USD' ? `$${t.customMonthlyPrice || 0}` : `₡${Number(t.customMonthlyPrice || 0).toLocaleString()}`} / mes
                       </div>
@@ -401,6 +515,23 @@ export default function TenantsManager() {
                         </button>
 
                         <button
+                          onClick={() => handleEmitSubscriptionInvoice(t)}
+                          disabled={emittingTenantId === t.id}
+                          title="Emitir Factura Electrónica de Suscripción"
+                          style={{
+                            padding: '6px 10px',
+                            backgroundColor: '#123032',
+                            border: '1px solid #34D399',
+                            borderRadius: '6px',
+                            color: '#34D399',
+                            fontSize: '0.75rem',
+                            cursor: emittingTenantId === t.id ? 'wait' : 'pointer'
+                          }}
+                        >
+                          <FileText size={12} />
+                        </button>
+
+                        <button
                           onClick={() => {
                             setSelectedTenant(t);
                             setEditData({
@@ -411,7 +542,12 @@ export default function TenantsManager() {
                               whatsappNumber: t.whatsappNumber || '',
                               customMonthlyPrice: t.customMonthlyPrice || 0,
                               billingCurrency: t.billingCurrency || 'CRC',
-                              adminEmail: t.adminEmail
+                              adminEmail: t.adminEmail,
+                              requiresSubscriptionInvoice: Boolean(t.requiresSubscriptionInvoice),
+                              billingIdType: t.billingIdType || '01',
+                              billingIdNumber: t.billingIdNumber || '',
+                              billingLegalName: t.billingLegalName || t.name || '',
+                              billingEmail: t.billingEmail || t.adminEmail || ''
                             });
                             setShowEditModal(true);
                           }}
@@ -490,7 +626,7 @@ export default function TenantsManager() {
             border: '1px solid #1a3e40',
             borderRadius: '16px',
             width: '100%',
-            maxWidth: '520px',
+            maxWidth: '560px',
             padding: '28px',
             maxHeight: '90vh',
             overflowY: 'auto'
@@ -507,7 +643,7 @@ export default function TenantsManager() {
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   placeholder="Ej: Cafetería Central"
-                  style={{ width: '100%', padding: '10px', backgroundColor: '#091819', border: '1px solid #234b4e', borderRadius: '8px', color: '#FAF8F5' }}
+                  style={{ width: '100%', padding: '10px', backgroundColor: '#091819', border: '1px solid #234b4e', borderRadius: '8px', color: '#FAF8F5', boxSizing: 'border-box' }}
                 />
               </div>
 
@@ -519,7 +655,7 @@ export default function TenantsManager() {
                   value={formData.slug}
                   onChange={(e) => setFormData({ ...formData, slug: e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '-') })}
                   placeholder="cafeteria-central"
-                  style={{ width: '100%', padding: '10px', backgroundColor: '#091819', border: '1px solid #234b4e', borderRadius: '8px', color: '#FAF8F5' }}
+                  style={{ width: '100%', padding: '10px', backgroundColor: '#091819', border: '1px solid #234b4e', borderRadius: '8px', color: '#FAF8F5', boxSizing: 'border-box' }}
                 />
               </div>
 
@@ -556,7 +692,7 @@ export default function TenantsManager() {
                   type="number"
                   value={formData.customMonthlyPrice}
                   onChange={(e) => setFormData({ ...formData, customMonthlyPrice: Number(e.target.value) })}
-                  style={{ width: '100%', padding: '10px', backgroundColor: '#091819', border: '1px solid #234b4e', borderRadius: '8px', color: '#FAF8F5' }}
+                  style={{ width: '100%', padding: '10px', backgroundColor: '#091819', border: '1px solid #234b4e', borderRadius: '8px', color: '#FAF8F5', boxSizing: 'border-box' }}
                 />
               </div>
 
@@ -567,7 +703,7 @@ export default function TenantsManager() {
                   value={formData.adminEmail}
                   onChange={(e) => setFormData({ ...formData, adminEmail: e.target.value })}
                   placeholder="admin@cafeteriacentral.cr"
-                  style={{ width: '100%', padding: '10px', backgroundColor: '#091819', border: '1px solid #234b4e', borderRadius: '8px', color: '#FAF8F5' }}
+                  style={{ width: '100%', padding: '10px', backgroundColor: '#091819', border: '1px solid #234b4e', borderRadius: '8px', color: '#FAF8F5', boxSizing: 'border-box' }}
                 />
               </div>
 
@@ -578,8 +714,99 @@ export default function TenantsManager() {
                   value={formData.whatsappNumber}
                   onChange={(e) => setFormData({ ...formData, whatsappNumber: e.target.value })}
                   placeholder="50688888888"
-                  style={{ width: '100%', padding: '10px', backgroundColor: '#091819', border: '1px solid #234b4e', borderRadius: '8px', color: '#FAF8F5' }}
+                  style={{ width: '100%', padding: '10px', backgroundColor: '#091819', border: '1px solid #234b4e', borderRadius: '8px', color: '#FAF8F5', boxSizing: 'border-box' }}
                 />
+              </div>
+
+              {/* Sección: Facturación Electrónica de Suscripción (Hacienda CR) */}
+              <div style={{
+                marginTop: '6px',
+                padding: '14px',
+                backgroundColor: '#091819',
+                border: '1px solid #1a3e40',
+                borderRadius: '10px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '10px'
+              }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#34D399', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <FileText size={15} />
+                  Facturación Electrónica de Suscripción (Hacienda CR)
+                </div>
+
+                <div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem', color: '#FAF8F5', fontWeight: 700, cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={formData.requiresSubscriptionInvoice}
+                      onChange={(e) => setFormData({ ...formData, requiresSubscriptionInvoice: e.target.checked })}
+                      style={{ accentColor: '#34D399', cursor: 'pointer' }}
+                    />
+                    <span>El cliente solicitó factura electrónica</span>
+                  </label>
+                  <p style={{ margin: '4px 0 0 22px', fontSize: '0.74rem', color: '#94a3b8' }}>
+                    Si está desactivada, no se emitirá factura al cobrar su mensualidad a menos que el cliente la pida.
+                  </p>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: '10px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', color: '#cbd5e1', marginBottom: '4px' }}>Cédula del Cliente</label>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <input
+                        type="text"
+                        value={formData.billingIdNumber}
+                        onChange={(e) => setFormData({ ...formData, billingIdNumber: e.target.value })}
+                        placeholder="Ej: 3101123456"
+                        style={{ flex: 1, padding: '8px', backgroundColor: '#071213', border: '1px solid #234b4e', borderRadius: '6px', color: '#FAF8F5', fontSize: '0.8rem' }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleLookupPadron('create')}
+                        disabled={lookingUpPadron}
+                        style={{ padding: '8px 10px', backgroundColor: '#16383b', border: '1px solid #245053', borderRadius: '6px', color: '#34D399', fontSize: '0.74rem', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                      >
+                        {lookingUpPadron ? '...' : 'Buscar en Hacienda'}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', color: '#cbd5e1', marginBottom: '4px' }}>Tipo de Cédula</label>
+                    <select
+                      value={formData.billingIdType}
+                      onChange={(e) => setFormData({ ...formData, billingIdType: e.target.value })}
+                      style={{ width: '100%', padding: '8px', backgroundColor: '#071213', border: '1px solid #234b4e', borderRadius: '6px', color: '#FAF8F5', fontSize: '0.8rem' }}
+                    >
+                      <option value="01">01 Física</option>
+                      <option value="02">02 Jurídica</option>
+                      <option value="03">03 DIMEX</option>
+                      <option value="04">04 NITE</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', color: '#cbd5e1', marginBottom: '4px' }}>Nombre o Razón Social para Factura</label>
+                  <input
+                    type="text"
+                    value={formData.billingLegalName}
+                    onChange={(e) => setFormData({ ...formData, billingLegalName: e.target.value })}
+                    placeholder="Razón social inscrita en Hacienda"
+                    style={{ width: '100%', padding: '8px', backgroundColor: '#071213', border: '1px solid #234b4e', borderRadius: '6px', color: '#FAF8F5', fontSize: '0.8rem', boxSizing: 'border-box' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', color: '#cbd5e1', marginBottom: '4px' }}>Correo para envío de Factura (PDF y XML)</label>
+                  <input
+                    type="email"
+                    value={formData.billingEmail}
+                    onChange={(e) => setFormData({ ...formData, billingEmail: e.target.value })}
+                    placeholder="facturacion@comercio.cr"
+                    style={{ width: '100%', padding: '8px', backgroundColor: '#071213', border: '1px solid #234b4e', borderRadius: '6px', color: '#FAF8F5', fontSize: '0.8rem', boxSizing: 'border-box' }}
+                  />
+                </div>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
@@ -620,7 +847,7 @@ export default function TenantsManager() {
             border: '1px solid #1a3e40',
             borderRadius: '16px',
             width: '100%',
-            maxWidth: '520px',
+            maxWidth: '560px',
             padding: '28px',
             maxHeight: '90vh',
             overflowY: 'auto'
@@ -636,7 +863,7 @@ export default function TenantsManager() {
                   required
                   value={editData.name || ''}
                   onChange={(e) => setEditData({ ...editData, name: e.target.value })}
-                  style={{ width: '100%', padding: '10px', backgroundColor: '#091819', border: '1px solid #234b4e', borderRadius: '8px', color: '#FAF8F5' }}
+                  style={{ width: '100%', padding: '10px', backgroundColor: '#091819', border: '1px solid #234b4e', borderRadius: '8px', color: '#FAF8F5', boxSizing: 'border-box' }}
                 />
               </div>
 
@@ -647,7 +874,7 @@ export default function TenantsManager() {
                   required
                   value={editData.slug || ''}
                   onChange={(e) => setEditData({ ...editData, slug: e.target.value })}
-                  style={{ width: '100%', padding: '10px', backgroundColor: '#091819', border: '1px solid #234b4e', borderRadius: '8px', color: '#FAF8F5' }}
+                  style={{ width: '100%', padding: '10px', backgroundColor: '#091819', border: '1px solid #234b4e', borderRadius: '8px', color: '#FAF8F5', boxSizing: 'border-box' }}
                 />
               </div>
 
@@ -678,13 +905,36 @@ export default function TenantsManager() {
                 </div>
               </div>
 
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', color: '#cbd5e1', marginBottom: '4px' }}>Precio Mensual Acordado</label>
+                  <input
+                    type="number"
+                    value={editData.customMonthlyPrice ?? 0}
+                    onChange={(e) => setEditData({ ...editData, customMonthlyPrice: Number(e.target.value) })}
+                    style={{ width: '100%', padding: '10px', backgroundColor: '#091819', border: '1px solid #234b4e', borderRadius: '8px', color: '#FAF8F5', boxSizing: 'border-box' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', color: '#cbd5e1', marginBottom: '4px' }}>Moneda</label>
+                  <select
+                    value={editData.billingCurrency || 'CRC'}
+                    onChange={(e) => setEditData({ ...editData, billingCurrency: e.target.value })}
+                    style={{ width: '100%', padding: '10px', backgroundColor: '#091819', border: '1px solid #234b4e', borderRadius: '8px', color: '#FAF8F5' }}
+                  >
+                    <option value="CRC">Colones (CRC)</option>
+                    <option value="USD">Dólares (USD)</option>
+                  </select>
+                </div>
+              </div>
+
               <div>
                 <label style={{ display: 'block', fontSize: '0.8rem', color: '#cbd5e1', marginBottom: '4px' }}>Correo de Administrador</label>
                 <input
                   type="email"
                   value={editData.adminEmail || ''}
                   onChange={(e) => setEditData({ ...editData, adminEmail: e.target.value })}
-                  style={{ width: '100%', padding: '10px', backgroundColor: '#091819', border: '1px solid #234b4e', borderRadius: '8px', color: '#FAF8F5' }}
+                  style={{ width: '100%', padding: '10px', backgroundColor: '#091819', border: '1px solid #234b4e', borderRadius: '8px', color: '#FAF8F5', boxSizing: 'border-box' }}
                 />
               </div>
 
@@ -694,8 +944,99 @@ export default function TenantsManager() {
                   type="text"
                   value={editData.whatsappNumber || ''}
                   onChange={(e) => setEditData({ ...editData, whatsappNumber: e.target.value })}
-                  style={{ width: '100%', padding: '10px', backgroundColor: '#091819', border: '1px solid #234b4e', borderRadius: '8px', color: '#FAF8F5' }}
+                  style={{ width: '100%', padding: '10px', backgroundColor: '#091819', border: '1px solid #234b4e', borderRadius: '8px', color: '#FAF8F5', boxSizing: 'border-box' }}
                 />
+              </div>
+
+              {/* Sección: Facturación Electrónica de Suscripción (Hacienda CR) */}
+              <div style={{
+                marginTop: '6px',
+                padding: '14px',
+                backgroundColor: '#091819',
+                border: '1px solid #1a3e40',
+                borderRadius: '10px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '10px'
+              }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#34D399', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <FileText size={15} />
+                  Facturación Electrónica de Suscripción (Hacienda CR)
+                </div>
+
+                <div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem', color: '#FAF8F5', fontWeight: 700, cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(editData.requiresSubscriptionInvoice)}
+                      onChange={(e) => setEditData({ ...editData, requiresSubscriptionInvoice: e.target.checked })}
+                      style={{ accentColor: '#34D399', cursor: 'pointer' }}
+                    />
+                    <span>El cliente solicitó factura electrónica</span>
+                  </label>
+                  <p style={{ margin: '4px 0 0 22px', fontSize: '0.74rem', color: '#94a3b8' }}>
+                    Si está desactivada, no se emitirá factura al cobrar su mensualidad a menos que el cliente la pida.
+                  </p>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: '10px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', color: '#cbd5e1', marginBottom: '4px' }}>Cédula del Cliente</label>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <input
+                        type="text"
+                        value={editData.billingIdNumber || ''}
+                        onChange={(e) => setEditData({ ...editData, billingIdNumber: e.target.value })}
+                        placeholder="Ej: 3101123456"
+                        style={{ flex: 1, padding: '8px', backgroundColor: '#071213', border: '1px solid #234b4e', borderRadius: '6px', color: '#FAF8F5', fontSize: '0.8rem' }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleLookupPadron('edit')}
+                        disabled={lookingUpPadron}
+                        style={{ padding: '8px 10px', backgroundColor: '#16383b', border: '1px solid #245053', borderRadius: '6px', color: '#34D399', fontSize: '0.74rem', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                      >
+                        {lookingUpPadron ? '...' : 'Buscar en Hacienda'}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', color: '#cbd5e1', marginBottom: '4px' }}>Tipo de Cédula</label>
+                    <select
+                      value={editData.billingIdType || '01'}
+                      onChange={(e) => setEditData({ ...editData, billingIdType: e.target.value })}
+                      style={{ width: '100%', padding: '8px', backgroundColor: '#071213', border: '1px solid #234b4e', borderRadius: '6px', color: '#FAF8F5', fontSize: '0.8rem' }}
+                    >
+                      <option value="01">01 Física</option>
+                      <option value="02">02 Jurídica</option>
+                      <option value="03">03 DIMEX</option>
+                      <option value="04">04 NITE</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', color: '#cbd5e1', marginBottom: '4px' }}>Nombre o Razón Social para Factura</label>
+                  <input
+                    type="text"
+                    value={editData.billingLegalName || ''}
+                    onChange={(e) => setEditData({ ...editData, billingLegalName: e.target.value })}
+                    placeholder="Razón social inscrita en Hacienda"
+                    style={{ width: '100%', padding: '8px', backgroundColor: '#071213', border: '1px solid #234b4e', borderRadius: '6px', color: '#FAF8F5', fontSize: '0.8rem', boxSizing: 'border-box' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', color: '#cbd5e1', marginBottom: '4px' }}>Correo para envío de Factura (PDF y XML)</label>
+                  <input
+                    type="email"
+                    value={editData.billingEmail || ''}
+                    onChange={(e) => setEditData({ ...editData, billingEmail: e.target.value })}
+                    placeholder="facturacion@comercio.cr"
+                    style={{ width: '100%', padding: '8px', backgroundColor: '#071213', border: '1px solid #234b4e', borderRadius: '6px', color: '#FAF8F5', fontSize: '0.8rem', boxSizing: 'border-box' }}
+                  />
+                </div>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>

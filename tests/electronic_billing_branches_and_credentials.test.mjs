@@ -372,7 +372,47 @@ describe('Módulo Dedicado de Facturación Electrónica Hacienda (DGT v4.4) y Mu
       assert.ok(superAdminPanelCode.includes('requiresSubscriptionInvoice'));
       assert.ok(dossierModalCode.includes('requiresSubscriptionInvoice'));
     });
+
+    it('Aplicación aislada admin-app (Betico Ops) integra Betico Facturas (Hacienda DGT v4.4), selector de tenants y regla estricta de "El cliente solicitó factura"', () => {
+      const adminAppCode = fs.readFileSync(path.resolve('admin-app/src/client/App.tsx'), 'utf8');
+      const adminBillingCode = fs.readFileSync(path.resolve('admin-app/src/client/components/BillingManager.tsx'), 'utf8');
+      const adminMonitoringCode = fs.readFileSync(path.resolve('admin-app/src/client/components/MonitoringCenter.tsx'), 'utf8');
+      const adminTenantsCode = fs.readFileSync(path.resolve('admin-app/src/client/components/TenantsManager.tsx'), 'utf8');
+      const adminServerIndex = fs.readFileSync(path.resolve('admin-app/src/server/index.ts'), 'utf8');
+      const adminTenantsRoutes = fs.readFileSync(path.resolve('admin-app/src/server/routes/tenants.routes.ts'), 'utf8');
+      const adminMonitoringRoutes = fs.readFileSync(path.resolve('admin-app/src/server/routes/monitoring.routes.ts'), 'utf8');
+      const adminBillingRoutes = fs.readFileSync(path.resolve('admin-app/src/server/routes/billing.routes.ts'), 'utf8');
+      const adminPkg = JSON.parse(fs.readFileSync(path.resolve('admin-app/package.json'), 'utf8'));
+
+      // 1. Dependencias críticas en admin-app/package.json para Docker
+      assert.ok(adminPkg.dependencies.multer, 'admin-app debe incluir multer en dependencies');
+      assert.ok(adminPkg.dependencies['node-forge'], 'admin-app debe incluir node-forge en dependencies');
+
+      // 2. Backend de admin-app monta /api/billing/native y /api/almendro
+      assert.ok(adminServerIndex.includes("'/api/billing/native'"));
+      assert.ok(adminServerIndex.includes("'/api/almendro'"));
+      assert.ok(adminBillingRoutes.includes("'/collections'"));
+
+      // 3. Regla estricta requiresSubscriptionInvoice en rutas de admin-app
+      assert.ok(adminTenantsRoutes.includes("'/:id/billing-preference'"));
+      assert.ok(adminTenantsRoutes.includes("'/:id/emit-subscription-invoice'"));
+      assert.ok(adminMonitoringRoutes.includes("'/tenant/:id/billing-preference'"));
+      assert.ok(adminMonitoringRoutes.includes("'/tenant/:id/emit-subscription-invoice'"));
+      assert.ok(adminMonitoringRoutes.includes('requires_subscription_invoice'));
+      assert.ok(adminMonitoringRoutes.includes('emitPlatformSubscriptionInvoiceForTenant'));
+
+      // 4. Frontend de admin-app (Betico Ops) con Betico Facturas (Hacienda) y controles por cliente
+      assert.ok(adminAppCode.includes('ElectronicBillingView'));
+      assert.ok(adminAppCode.includes('isSuperAdminMode={true}'));
+      assert.ok(adminBillingCode.includes('ElectronicBillingView'));
+      assert.ok(adminBillingCode.includes('requiresSubscriptionInvoice'));
+      assert.ok(adminMonitoringCode.includes('requiresInvoice') || adminMonitoringCode.includes('requiresSubscriptionInvoice'));
+      assert.ok(adminMonitoringCode.includes('/emit-subscription-invoice'));
+      assert.ok(adminTenantsCode.includes('requiresSubscriptionInvoice'));
+      assert.ok(adminTenantsCode.includes('/emit-subscription-invoice'));
+    });
   });
 });
+
 
 

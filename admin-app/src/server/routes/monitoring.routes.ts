@@ -146,13 +146,15 @@ router.get('/tenant/:id', async (req, res) => {
     }
 
     // F. Store & Invoicing Settings Health Check
-    const [storeRes, almendroRes] = await Promise.all([
+    const [storeRes, almendroRes, haciendaRes] = await Promise.all([
       query(`SELECT * FROM store_settings WHERE tenant_id = $1`, [id]).catch(() => ({ rows: [] })),
-      query(`SELECT * FROM tenant_almendro_configs WHERE tenant_id = $1`, [id]).catch(() => ({ rows: [] }))
+      query(`SELECT * FROM tenant_almendro_configs WHERE tenant_id = $1`, [id]).catch(() => ({ rows: [] })),
+      query(`SELECT * FROM tenant_hacienda_configs WHERE tenant_id = $1`, [id]).catch(() => ({ rows: [] }))
     ]);
 
     const storeSettings = storeRes.rows[0] || {};
     const almendroConfig = almendroRes.rows[0] || {};
+    const nativeHacienda = haciendaRes.rows[0] || {};
 
     const rawModules = storeSettings.store_modules || {};
     const storeModules = {
@@ -172,8 +174,9 @@ router.get('/tenant/:id', async (req, res) => {
     };
 
     const invoicingHealth = {
-      configured: Boolean(almendroConfig.active && almendroConfig.company_id),
-      environment: almendroConfig.is_sandbox ? 'staging' : 'produccion'
+      configured: Boolean((nativeHacienda.active && nativeHacienda.provider_mode === 'BETICO_NATIVE' && (nativeHacienda.taxpayer_id_number || nativeHacienda.is_connected)) || (almendroConfig.active && almendroConfig.company_id)),
+      environment: (nativeHacienda.environment || (almendroConfig.is_sandbox ? 'sandbox' : 'production')),
+      providerMode: nativeHacienda.provider_mode || (almendroConfig.active ? 'ALMENDRO_AUTO' : 'BETICO_NATIVE')
     };
 
     // G. Live Error Diagnostics: recent failed messages in queue
@@ -274,6 +277,19 @@ router.get('/tenant/:id', async (req, res) => {
       [id]
     ).catch(() => ({ rows: [] }));
 
+    // M. Subscription Vouchers emitted by SuperAdmin to this tenant
+    const subscriptionVouchersRes = await query(
+      `SELECT v.id, v.doc_type as "docType", v.numeric_key as "numericKey", v.consecutive_number as "consecutiveNumber",
+              v.receiver_name as "receiverName", v.receiver_id_number as "receiverIdNumber", v.receiver_email as "receiverEmail",
+              v.currency, v.total_invoice as "totalInvoice", v.hacienda_status as "haciendaStatus", v.created_at as "createdAt"
+       FROM electronic_vouchers v
+       JOIN tenants pt ON pt.id = v.tenant_id AND pt.slug = 'superadmin'
+       WHERE v.receiver_id_number = COALESCE(NULLIF($1, ''), '__none__')
+          OR v.receiver_name ILIKE $2
+       ORDER BY v.created_at DESC LIMIT 20`,
+      [tenant.billing_id_number || nativeHacienda.taxpayer_id_number || '', `%${tenant.name}%`]
+    ).catch(() => ({ rows: [] }));
+
     res.json({
       tenant: {
         id: tenant.id,
@@ -296,6 +312,11 @@ router.get('/tenant/:id', async (req, res) => {
         internalNotes: tenant.internal_notes || '',
         autoBillingEnabled: Boolean(tenant.auto_billing_enabled),
         lastAutoChargeStatus: tenant.last_auto_charge_status || null,
+        requiresSubscriptionInvoice: Boolean(tenant.requires_subscription_invoice),
+        billingIdType: tenant.billing_id_type || nativeHacienda.taxpayer_id_type || '01',
+        billingIdNumber: tenant.billing_id_number || nativeHacienda.taxpayer_id_number || '',
+        billingLegalName: tenant.billing_legal_name || nativeHacienda.taxpayer_name || tenant.name,
+        billingEmail: tenant.billing_email || nativeHacienda.taxpayer_email || tenant.adminEmail || '',
         createdAt: tenant.created_at,
         adminName: tenant.adminName,
         adminEmail: tenant.adminEmail,
@@ -319,6 +340,7 @@ router.get('/tenant/:id', async (req, res) => {
       storeModules,
       billingCards: cardsRes.rows,
       payments: paymentsRes.rows,
+      subscriptionVouchers: subscriptionVouchersRes.rows,
       metrics: {
         messages: {
           today: parseInt(msgStats.todayMsgs || '0', 10),
@@ -391,13 +413,87 @@ router.put('/tenant/:id/next-billing-date', async (req: AuthenticatedRequest, re
   }
 });
 
+// 4b. Action: Update Tenant Billing Preference & Fiscal Data
+router.put('/tenant/:id/billing-preference', async (req: AuthenticatedRequest, res) => {
+  const { id } = req.params;
+  const body = req.body || {};
+
+  try {
+    const fields: string[] = [];
+    const params: any[] = [id];
+    let idx = 2;
+
+    if (body.requiresSubscriptionInvoice !== undefined) {
+      fields.push(`requires_subscription_invoice = $${idx++}`);
+      params.push(Boolean(body.requiresSubscriptionInvoice));
+    }
+    if (body.billingIdType !== undefined) {
+      fields.push(`billing_id_type = $${idx++}`);
+      params.push(body.billingIdType);
+    }
+    if (body.billingIdNumber !== undefined) {
+      fields.push(`billing_id_number = $${idx++}`);
+      params.push(body.billingIdNumber);
+    }
+    if (body.billingLegalName !== undefined) {
+      fields.push(`billing_legal_name = $${idx++}`);
+      params.push(body.billingLegalName);
+    }
+    if (body.billingEmail !== undefined) {
+      fields.push(`billing_email = $${idx++}`);
+      params.push(body.billingEmail);
+    }
+
+    if (fields.length > 0) {
+      fields.push(`updated_at = CURRENT_TIMESTAMP`);
+      await query(`UPDATE tenants SET ${fields.join(', ')} WHERE id = $1`, params);
+    }
+
+    await logAdminAction(req.user!.userId, 'update_billing_preference', 'tenant', id, body, req);
+    res.json({ success: true, message: 'Preferencia y datos fiscales de facturación actualizados' });
+  } catch (error: any) {
+    console.error('[Action Billing Preference] Error:', error);
+    res.status(500).json({ error: 'Error al actualizar preferencia de facturación' });
+  }
+});
+
+// 4c. Action: Emit Subscription Invoice for Tenant
+router.post('/tenant/:id/emit-subscription-invoice', async (req: AuthenticatedRequest, res) => {
+  const { id } = req.params;
+  try {
+    const { emitPlatformSubscriptionInvoiceForTenant } = await import('../../../../src/server/services/hacienda-native.service.js');
+    const result = await emitPlatformSubscriptionInvoiceForTenant(id, {
+      amount: req.body?.amount,
+      currency: req.body?.currency,
+      paymentMethod: req.body?.paymentMethod || '04',
+      periodLabel: req.body?.periodLabel,
+      forceEmit: true
+    });
+
+    await logAdminAction(req.user!.userId, 'emit_subscription_invoice', 'tenant', id, {
+      success: result.success,
+      clave: result.numericKey,
+      consecutivo: result.consecutiveNumber
+    }, req);
+
+    if (result.success) {
+      res.status(200).json({ ...result, clave: result.numericKey, consecutivo: result.consecutiveNumber });
+    } else {
+      res.status(400).json(result);
+    }
+  } catch (error: any) {
+    console.error('[Action Emit Subscription Invoice] Error:', error);
+    res.status(500).json({ success: false, error: error.message || 'Error al emitir factura de suscripción' });
+  }
+});
+
 // 5. Action: Manual Payment Registration (+30 days)
 router.post('/tenant/:id/record-payment', async (req: AuthenticatedRequest, res) => {
   const { id } = req.params;
   const { amount, currency = 'CRC', paymentMethod = 'sinpe', reference = '', notes = '', extendDays = 30 } = req.body;
 
   try {
-    const tenantRes = await query(`SELECT id, name, custom_monthly_price, billing_currency, next_billing_date FROM tenants WHERE id = $1`, [id]);
+    const tenantRes = await query(`SELECT id, name, custom_monthly_price, billing_currency, next_billing_date, requires_subscription_invoice FROM tenants WHERE id = $1`, [id]);
     if (tenantRes.rows.length === 0) {
       res.status(404).json({ error: 'Negocio no encontrado' });
       return;
@@ -428,11 +524,32 @@ router.post('/tenant/:id/record-payment', async (req: AuthenticatedRequest, res)
       [daysToAdd, finalAmount, reference || null, notes || null, id]
     );
 
-    await logAdminAction(req.user!.userId, 'record_payment', 'tenant', id, { amount: finalAmount, currency: finalCurrency, paymentMethod, reference, daysToAdd }, req);
+    let invoiceResult: any = null;
+    if (Boolean(t.requires_subscription_invoice) === true || req.body?.emitInvoice === true) {
+      try {
+        const { emitPlatformSubscriptionInvoiceForTenant } = await import('../../../../src/server/services/hacienda-native.service.js');
+        invoiceResult = await emitPlatformSubscriptionInvoiceForTenant(id, {
+          amount: finalAmount,
+          currency: finalCurrency,
+          paymentMethod: paymentMethod === 'card' ? '02' : '04',
+          forceEmit: Boolean(req.body?.emitInvoice)
+        });
+      } catch (invErr: any) {
+        console.warn('[Action Record Payment] Warning emitting subscription invoice:', invErr?.message);
+        invoiceResult = { success: false, error: invErr?.message };
+      }
+    }
+
+    await logAdminAction(req.user!.userId, 'record_payment', 'tenant', id, { amount: finalAmount, currency: finalCurrency, paymentMethod, reference, daysToAdd, invoiceEmitted: Boolean(invoiceResult?.success) }, req);
+
+    const invoiceSuffix = invoiceResult?.success
+      ? ` Factura electrónica emitida (${invoiceResult.consecutiveNumber || invoiceResult.numericKey}).`
+      : '';
 
     res.json({
       success: true,
-      message: `¡Pago de ${finalCurrency} ${finalAmount.toLocaleString('es-CR')} registrado exitosamente! Suscripción extendida por ${daysToAdd} días.`
+      invoiceResult,
+      message: `¡Pago de ${finalCurrency} ${finalAmount.toLocaleString('es-CR')} registrado exitosamente! Suscripción extendida por ${daysToAdd} días.${invoiceSuffix}`
     });
   } catch (error: any) {
     console.error('[Action Record Payment] Error:', error);
@@ -513,7 +630,7 @@ router.post('/tenant/:id/charge-tilopay', async (req: AuthenticatedRequest, res)
 
   try {
     const [tenantRes, cardRes] = await Promise.all([
-      query(`SELECT id, name, slug, custom_monthly_price, billing_currency, next_billing_date FROM tenants WHERE id = $1`, [id]),
+      query(`SELECT id, name, slug, custom_monthly_price, billing_currency, next_billing_date, requires_subscription_invoice FROM tenants WHERE id = $1`, [id]),
       query(`SELECT id, card_last4, card_brand, tilopay_token_encrypted FROM tenant_billing_cards WHERE tenant_id = $1 AND is_active = true ORDER BY is_default DESC, created_at DESC LIMIT 1`, [id])
     ]);
 
@@ -604,14 +721,36 @@ router.post('/tenant/:id/charge-tilopay', async (req: AuthenticatedRequest, res)
       [id, amount, currency, orderNumber, `Cobro automático Tilopay tarjeta •••• ${card.card_last4}`]
     );
 
-    await logAdminAction(req.user!.userId, 'charge_tilopay_subscription', 'tenant', id, { amount, currency, orderNumber, cardLast4: card.card_last4 }, req);
+    let invoiceResult: any = null;
+    if (Boolean(tenant.requires_subscription_invoice) === true || req.body?.emitInvoice === true) {
+      try {
+        const { emitPlatformSubscriptionInvoiceForTenant } = await import('../../../../src/server/services/hacienda-native.service.js');
+        invoiceResult = await emitPlatformSubscriptionInvoiceForTenant(id, {
+          amount,
+          currency,
+          paymentMethod: '02',
+          subscriptionChargeId: chargeId,
+          forceEmit: Boolean(req.body?.emitInvoice)
+        });
+      } catch (invErr: any) {
+        console.warn('[Action Charge Tilopay] Warning emitting subscription invoice:', invErr?.message);
+        invoiceResult = { success: false, error: invErr?.message };
+      }
+    }
+
+    await logAdminAction(req.user!.userId, 'charge_tilopay_subscription', 'tenant', id, { amount, currency, orderNumber, cardLast4: card.card_last4, invoiceEmitted: Boolean(invoiceResult?.success) }, req);
+
+    const invoiceSuffix = invoiceResult?.success
+      ? ` Factura electrónica emitida (${invoiceResult.consecutiveNumber || invoiceResult.numericKey}).`
+      : '';
 
     res.json({
       success: true,
       orderNumber,
       amount,
       currency,
-      message: `¡Cobro de ${currency} ${amount.toLocaleString('es-CR')} procesado con éxito en Tilopay! Suscripción extendida por 30 días.`
+      invoiceResult,
+      message: `¡Cobro de ${currency} ${amount.toLocaleString('es-CR')} procesado con éxito en Tilopay! Suscripción extendida por 30 días.${invoiceSuffix}`
     });
   } catch (error: any) {
     console.error('[Action Charge Tilopay] Error:', error);
