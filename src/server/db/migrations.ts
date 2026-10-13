@@ -1320,6 +1320,13 @@ export async function runMigrations() {
     ALTER TABLE electronic_vouchers ADD COLUMN IF NOT EXISTS branch_code VARCHAR(3) DEFAULT '001';
     ALTER TABLE electronic_vouchers ADD COLUMN IF NOT EXISTS pos_code VARCHAR(5) DEFAULT '00001';
     ALTER TABLE electronic_vouchers ADD COLUMN IF NOT EXISTS reference_key VARCHAR(50);
+
+    -- Preferencia de facturación electrónica de suscripción por inquilino (SuperAdmin -> Tenant)
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS requires_subscription_invoice BOOLEAN DEFAULT false;
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_id_type VARCHAR(10) DEFAULT '01';
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_id_number VARCHAR(30) DEFAULT '';
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_legal_name VARCHAR(255) DEFAULT '';
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_email VARCHAR(255) DEFAULT '';
   `).catch((err) => {
     console.warn('[Migrations] Columns addition warning:', err?.message || err);
   });

@@ -32,6 +32,11 @@ export interface Tenant {
   settingsJson?: Record<string, any>;
   isAiPilot?: boolean;
   aiPriorityLevel?: number;
+  requiresSubscriptionInvoice?: boolean;
+  billingIdType?: string;
+  billingIdNumber?: string;
+  billingLegalName?: string;
+  billingEmail?: string;
 }
 
 export interface User {

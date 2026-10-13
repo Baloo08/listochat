@@ -485,6 +485,7 @@ export async function emitManualOrNativeVoucher(
     orderId?: string;
     appointmentId?: string;
     courtBookingId?: string;
+    subscriptionChargeId?: string;
   }
 ): Promise<{
   success: boolean;
@@ -545,13 +546,14 @@ export async function emitManualOrNativeVoucher(
       })),
       orderId: params.orderId,
       appointmentId: params.appointmentId,
-      courtBookingId: params.courtBookingId
+      courtBookingId: params.courtBookingId,
+      subscriptionChargeId: params.subscriptionChargeId
     });
 
     if (almRes.success && almRes.numericKey) {
       await incrementInvoiceUsage(tenantId);
       const savedVoucher = await getElectronicVoucherByKeyOrId(almRes.numericKey);
-      if (config?.emailAutoSend !== false && (params.receiver?.email || params.orderId || params.appointmentId)) {
+      if (config?.emailAutoSend !== false && (params.receiver?.email || params.orderId || params.appointmentId || params.subscriptionChargeId)) {
         import('./voucher-email.service.js')
           .then(({ sendVoucherEmailNotification }) =>
             sendVoucherEmailNotification({
@@ -634,6 +636,7 @@ export async function emitManualOrNativeVoucher(
     orderId: params.orderId,
     appointmentId: params.appointmentId,
     courtBookingId: params.courtBookingId,
+    subscriptionChargeId: params.subscriptionChargeId,
     branchId: consecData.branchId,
     branchCode: consecData.branchCode,
     posCode: consecData.posCode,
@@ -662,7 +665,7 @@ export async function emitManualOrNativeVoucher(
   await incrementInvoiceUsage(tenantId);
 
   // Despacho prioritario por Correo Electrónico al cliente (con PDF + XML DGT v4.4 adjuntos)
-  if (config?.emailAutoSend !== false && (params.receiver?.email || params.orderId || params.appointmentId)) {
+  if (config?.emailAutoSend !== false && (params.receiver?.email || params.orderId || params.appointmentId || params.subscriptionChargeId)) {
     try {
       const { sendVoucherEmailNotification } = await import('./voucher-email.service.js');
       await sendVoucherEmailNotification({
@@ -697,6 +700,106 @@ export async function emitManualOrNativeVoucher(
     pdfUrl,
     message: 'Comprobante electrónico emitido exitosamente'
   };
+}
+
+/**
+ * Emite una Factura o Tiquete Electrónico desde el perfil fiscal del SuperAdmin (Plataforma Betico)
+ * hacia un comercio inquilino por concepto de pago de suscripción mensual.
+ * Respeta estrictamente la preferencia `requiresSubscriptionInvoice` del cliente salvo que `forceEmit` sea true.
+ */
+export async function emitPlatformSubscriptionInvoiceForTenant(
+  targetTenantId: string,
+  options?: {
+    amount?: number;
+    currency?: string;
+    paymentMethod?: '01' | '02' | '04';
+    periodLabel?: string;
+    subscriptionChargeId?: string;
+    forceEmit?: boolean;
+  }
+): Promise<{
+  success: boolean;
+  skipped?: boolean;
+  numericKey?: string;
+  consecutiveNumber?: string;
+  pdfUrl?: string;
+  voucher?: any;
+  message: string;
+}> {
+  const { getTenantById } = await import('../db/tenant.repo.js');
+  const { getAdminUserByTenant } = await import('../db/users.repo.js');
+  const { getOrCreateSuperadminTenantId } = await import('./tilopay-subscription.service.js');
+  const { getTenantAlmendroConfigRaw } = await import('../db/tenant-almendro.repo.js');
+
+  const targetTenant = await getTenantById(targetTenantId);
+  if (!targetTenant) {
+    return { success: false, message: 'Inquilino no encontrado' };
+  }
+
+  const requestedByClient = Boolean((targetTenant as any).requiresSubscriptionInvoice);
+  if (!requestedByClient && !options?.forceEmit) {
+    return {
+      success: false,
+      skipped: true,
+      message: 'El cliente no tiene activa la opción de solicitud de factura electrónica.'
+    };
+  }
+
+  const superadminTenantId = await getOrCreateSuperadminTenantId();
+  const haciendaCfg = await getHaciendaConfigByTenant(superadminTenantId);
+  const almendroCfg = await getTenantAlmendroConfigRaw(superadminTenantId).catch(() => null);
+
+  if (haciendaCfg?.providerMode === 'DISABLED') {
+    return {
+      success: false,
+      skipped: true,
+      message: 'La facturación electrónica del SuperAdmin está deshabilitada.'
+    };
+  }
+
+  const adminUser = await getAdminUserByTenant(targetTenantId).catch(() => null);
+
+  const idNumber = String((targetTenant as any).billingIdNumber || '').replace(/\D/g, '');
+  const idType = (targetTenant as any).billingIdType || (idNumber.length === 10 && idNumber.startsWith('3') ? '02' : '01');
+  const name = (targetTenant as any).billingLegalName || targetTenant.name || 'Cliente Betico';
+  const email = (targetTenant as any).billingEmail || adminUser?.email || '';
+  const phone = targetTenant.whatsappNumber || '';
+
+  const docType: '01' | '04' = idNumber.length >= 9 ? '01' : '04';
+
+  const unitPrice = options?.amount !== undefined
+    ? Number(options.amount)
+    : Number(targetTenant.customMonthlyPrice || 35000);
+  const currency = options?.currency || targetTenant.billingCurrency || 'CRC';
+  const planLabel = String(targetTenant.plan || 'pro').toUpperCase();
+  const periodStr = options?.periodLabel || new Date().toLocaleDateString('es-CR', { month: 'long', year: 'numeric' });
+
+  const defaultCabys = haciendaCfg?.defaultCabysCode || almendroCfg?.economicActivityCode || '8314100000000';
+
+  const emitRes = await emitManualOrNativeVoucher(superadminTenantId, {
+    docType,
+    currency,
+    paymentMethod: options?.paymentMethod || '04',
+    subscriptionChargeId: options?.subscriptionChargeId,
+    receiver: {
+      idType: idNumber ? idType : undefined,
+      idNumber: idNumber || undefined,
+      name,
+      email: email || undefined,
+      phone: phone || undefined
+    },
+    items: [
+      {
+        cabysCode: defaultCabys,
+        description: `Suscripción Plataforma Betico SaaS - Plan ${planLabel} (${targetTenant.name} - ${periodStr})`,
+        quantity: 1,
+        unitPrice,
+        taxRateCode: haciendaCfg?.isSimplifiedRegime ? '10' : '08'
+      }
+    ]
+  });
+
+  return emitRes;
 }
 
 /**
@@ -821,7 +924,7 @@ export async function sendVoucherWhatsAppNotification({
     const tenant = await getTenantById(tenantId);
     const store = await getStoreSettings(tenantId);
     const storeName = store?.storeName || tenant?.name || 'nuestro negocio';
-    const instanceName = tenant?.evolutionInstance;
+    const instanceName = tenant?.evolutionInstance || (tenant?.slug === 'superadmin' ? 'betico_soporte' : undefined);
 
     const clean = customerPhone.replace(/\D/g, '');
     const finalPhone = clean.length === 8 ? `506${clean}` : clean;
@@ -865,3 +968,4 @@ ${safePdfUrl}
     return false;
   }
 }
+

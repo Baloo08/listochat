@@ -184,7 +184,8 @@ export class TilopaySubscriptionService {
       SELECT id, name, slug, whatsapp_number as "whatsappNumber",
              custom_monthly_price as "customMonthlyPrice",
              billing_currency as "billingCurrency",
-             evolution_instance as "evolutionInstance"
+             evolution_instance as "evolutionInstance",
+             requires_subscription_invoice as "requiresSubscriptionInvoice"
       FROM tenants
       WHERE id = $1
     `, [tenantId]);
@@ -325,6 +326,20 @@ export class TilopaySubscriptionService {
         try {
           await sendMessage('betico_soporte', cleanPhone, receiptMsg);
         } catch (e) {}
+      }
+
+      if (Boolean(tenant.requiresSubscriptionInvoice)) {
+        try {
+          const { emitPlatformSubscriptionInvoiceForTenant } = await import('./hacienda-native.service.js');
+          await emitPlatformSubscriptionInvoiceForTenant(tenantId, {
+            amount,
+            currency,
+            paymentMethod: '02',
+            subscriptionChargeId: charge?.id
+          });
+        } catch (invErr: any) {
+          console.warn('[TilopaySubscription] Error auto-emitiendo factura electrónica de suscripción:', invErr?.message || invErr);
+        }
       }
 
       return {

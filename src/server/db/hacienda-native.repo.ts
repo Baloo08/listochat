@@ -106,6 +106,13 @@ export interface BillingCycleUsage {
   cycleStartDate: string;
   cycleEndDate: string;
   planName: string;
+  baseQuota?: number;
+  courtesyMargin?: number;
+  effectiveQuota?: number;
+  hardLimit?: number;
+  isOverBaseQuota?: boolean;
+  remainingCourtesy?: number;
+  plan?: string;
 }
 
 function computeDaysRemaining(expiresAt?: Date | string | null): number | null {
@@ -970,7 +977,7 @@ export async function getTenantPlanQuota(tenantId: string): Promise<{
 }> {
   // 1. Obtener datos del inquilino (plan y posible cuota personalizada)
   const tenantRes = await query(
-    `SELECT plan, custom_invoices_quota FROM tenants WHERE id = $1`,
+    `SELECT slug, plan, custom_invoices_quota FROM tenants WHERE id = $1`,
     [tenantId]
   );
 
@@ -978,7 +985,15 @@ export async function getTenantPlanQuota(tenantId: string): Promise<{
     return { quota: 100, courtesyMargin: 10, planName: 'pro' };
   }
 
-  const { plan, custom_invoices_quota } = tenantRes.rows[0];
+  const { slug, plan, custom_invoices_quota } = tenantRes.rows[0];
+  if (slug === 'superadmin') {
+    return {
+      quota: 999999,
+      courtesyMargin: 999999,
+      planName: 'superadmin_platform'
+    };
+  }
+
   const normalizedPlan = (plan || 'pro').toLowerCase();
 
   // Si tiene cuota personalizada específica en su expediente, esa prevalece
@@ -1032,14 +1047,15 @@ export async function getTenantPlanQuota(tenantId: string): Promise<{
 export async function getCycleUsage(tenantId: string): Promise<BillingCycleUsage> {
   const { quota, courtesyMargin, planName } = await getTenantPlanQuota(tenantId);
 
-  // Obtener next_billing_date del inquilino
+  // Obtener datos y next_billing_date del inquilino
   const tenantRes = await query(
-    `SELECT next_billing_date, created_at FROM tenants WHERE id = $1`,
+    `SELECT slug, plan, custom_invoices_quota, next_billing_date, created_at FROM tenants WHERE id = $1`,
     [tenantId]
   );
+  const t = tenantRes.rows[0];
 
-  const nextBilling = tenantRes.rows[0]?.next_billing_date 
-    ? new Date(tenantRes.rows[0].next_billing_date)
+  const nextBilling = t?.next_billing_date 
+    ? new Date(t.next_billing_date)
     : new Date(Date.now() + 30 * 86400000);
 
   // Ciclo termina en nextBillingDate y empezó 30 días antes (o un mes antes)
@@ -1071,6 +1087,35 @@ export async function getCycleUsage(tenantId: string): Promise<BillingCycleUsage
     courtesyUsed = Number(usageRes.rows[0].courtesy_used || 0);
   }
 
+  if (t?.slug === 'superadmin') {
+    const baseQuota = 999999;
+    const cm = 999999;
+    const effectiveQuota = 999999;
+    const hardLimit = 999999;
+    const isOverBaseQuota = false;
+    const isBlocked = false;
+    const remainingCourtesy = 999999;
+    return {
+      emitted,
+      quota: baseQuota,
+      remaining: Math.max(0, baseQuota - emitted),
+      inCourtesy: false,
+      courtesyUsed: 0,
+      courtesyAvailable: remainingCourtesy,
+      isBlocked,
+      cycleStartDate,
+      cycleEndDate,
+      planName: 'superadmin_platform',
+      baseQuota,
+      courtesyMargin: cm,
+      effectiveQuota,
+      hardLimit,
+      isOverBaseQuota,
+      remainingCourtesy,
+      plan: 'superadmin_platform'
+    };
+  }
+
   const remaining = Math.max(0, quota - emitted);
   const inCourtesy = emitted >= quota;
   const courtesyAvailable = Math.max(0, courtesyMargin - courtesyUsed);
@@ -1086,7 +1131,14 @@ export async function getCycleUsage(tenantId: string): Promise<BillingCycleUsage
     isBlocked,
     cycleStartDate,
     cycleEndDate,
-    planName
+    planName,
+    baseQuota: quota,
+    courtesyMargin,
+    effectiveQuota: quota,
+    hardLimit: quota + courtesyMargin,
+    isOverBaseQuota: inCourtesy,
+    remainingCourtesy: courtesyAvailable,
+    plan: planName
   };
 }
 

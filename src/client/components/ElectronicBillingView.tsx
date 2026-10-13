@@ -31,6 +31,7 @@ import { formatShortDateTime } from '../utils/dateFormat';
 
 export interface ElectronicBillingViewProps {
   initialTab?: 'comprobantes' | 'credenciales' | 'sucursales';
+  isSuperAdminMode?: boolean;
 }
 
 interface EconomicActivityItem {
@@ -168,7 +169,7 @@ function formatConsecutivePreview(branchCode: string, posCode: string, docType: 
   return `${b}${p}${d}${s}`;
 }
 
-export default function ElectronicBillingView({ initialTab }: ElectronicBillingViewProps) {
+export default function ElectronicBillingView({ initialTab, isSuperAdminMode = false }: ElectronicBillingViewProps) {
   const api = useApi();
 
   // Navegación interna sincronizada con la barra lateral
@@ -309,6 +310,7 @@ export default function ElectronicBillingView({ initialTab }: ElectronicBillingV
   const [manualDocType, setManualDocType] = useState<'04' | '01'>('04');
   const [manualBranchCode, setManualBranchCode] = useState('001');
   const [manualPaymentMethod, setManualPaymentMethod] = useState<'01' | '02' | '04'>('01');
+  const [manualCurrency, setManualCurrency] = useState<'CRC' | 'USD'>('CRC');
   const [manualReceiverIdType, setManualReceiverIdType] = useState<'01' | '02' | '03' | '04'>('01');
   const [manualReceiverId, setManualReceiverId] = useState('');
   const [manualReceiverName, setManualReceiverName] = useState('');
@@ -316,6 +318,8 @@ export default function ElectronicBillingView({ initialTab }: ElectronicBillingV
   const [manualReceiverPhone, setManualReceiverPhone] = useState('');
   const [searchingReceiverPadron, setSearchingReceiverPadron] = useState(false);
   const [emittingManual, setEmittingManual] = useState(false);
+  const [platformTenants, setPlatformTenants] = useState<any[]>([]);
+  const [selectedPlatformTenantId, setSelectedPlatformTenantId] = useState<string>('');
   const [manualLines, setManualLines] = useState<ManualInvoiceLine[]>([
     {
       id: 'line-1',
@@ -335,6 +339,16 @@ export default function ElectronicBillingView({ initialTab }: ElectronicBillingV
   const [filterDocType, setFilterDocType] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [cancellingVoucherId, setCancellingVoucherId] = useState<string | null>(null);
+
+  const loadPlatformTenants = async () => {
+    if (!isSuperAdminMode) return;
+    try {
+      const res = await api.get('/api/tenants');
+      if (Array.isArray(res)) {
+        setPlatformTenants(res);
+      }
+    } catch (_) {}
+  };
 
   const loadBranches = async () => {
     try {
@@ -482,7 +496,10 @@ export default function ElectronicBillingView({ initialTab }: ElectronicBillingV
   useEffect(() => {
     loadData();
     loadVouchers();
-  }, []);
+    if (isSuperAdminMode) {
+      loadPlatformTenants();
+    }
+  }, [isSuperAdminMode]);
 
   // Consulta al Padrón de Hacienda para Contribuyente Emisor (Tab 3)
   const handleConsultTaxpayerPadron = async () => {
@@ -944,6 +961,7 @@ export default function ElectronicBillingView({ initialTab }: ElectronicBillingV
 
       const payload = {
         docType: manualDocType,
+        currency: manualCurrency,
         branchCode: manualBranchCode || branchCode || '001',
         haciendaBranchId: selectedBranchObj?.id || undefined,
         paymentMethod: manualPaymentMethod,
@@ -975,6 +993,7 @@ export default function ElectronicBillingView({ initialTab }: ElectronicBillingV
           `✅ Comprobante (${manualDocType === '01' ? 'Factura Electrónica 01' : 'Tiquete Electrónico 04'}) emitido correctamente.`
       );
       setShowManualInvoicer(false);
+      setSelectedPlatformTenantId('');
       setManualReceiverId('');
       setManualReceiverName('');
       setManualReceiverEmail('');
@@ -1214,11 +1233,36 @@ export default function ElectronicBillingView({ initialTab }: ElectronicBillingV
             <FileText size={26} />
           </div>
           <div>
+            {isSuperAdminMode && (
+              <div
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  backgroundColor: '#eef2ff',
+                  color: '#4338ca',
+                  border: '1px solid #c7d2fe',
+                  borderRadius: '999px',
+                  padding: '3px 10px',
+                  fontSize: '0.7rem',
+                  fontWeight: '800',
+                  letterSpacing: '0.03em',
+                  marginBottom: '6px'
+                }}
+              >
+                <ShieldCheck size={13} />
+                SUPERADMIN PLATAFORMA · FACTURACIÓN OFICIAL A TENANTS (BETICO FACTURAS)
+              </div>
+            )}
             <h1 style={{ margin: 0, fontSize: '1.3rem', fontWeight: '800', color: 'var(--text)' }}>
-              Módulo de Facturación Electrónica Costa Rica (Hacienda DGT v4.4)
+              {isSuperAdminMode
+                ? 'Betico Facturas — Facturación Electrónica de Suscripciones (Hacienda DGT v4.4)'
+                : 'Módulo de Facturación Electrónica Costa Rica (Hacienda DGT v4.4)'}
             </h1>
             <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-              Emisión directa de Facturas Electrónicas (01), Tiquetes (04) y Notas de Crédito (03) con firma XAdES-EPES
+              {isSuperAdminMode
+                ? 'Cuenta fiscal de la plataforma Betico para facturar suscripciones a comercios clientes con firma XAdES-EPES'
+                : 'Emisión directa de Facturas Electrónicas (01), Tiquetes (04) y Notas de Crédito (03) con firma XAdES-EPES'}
             </span>
           </div>
         </div>
@@ -1365,108 +1409,160 @@ export default function ElectronicBillingView({ initialTab }: ElectronicBillingV
       {activeTab === 'comprobantes' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
           {/* 1. Tarjeta de Cuota Mensual y Consumo */}
-          {usage && (
-            <div
-              style={{
-                backgroundColor: 'var(--surface)',
-                border: `1px solid ${isOverLimit ? '#fca5a5' : isNearLimit ? '#fde68a' : 'var(--border)'}`,
-                borderRadius: '14px',
-                padding: '20px',
-                boxShadow: 'var(--shadow-xs)',
-                background: isOverLimit
-                  ? 'linear-gradient(180deg, #fff5f5 0%, var(--surface) 100%)'
-                  : 'var(--surface)'
-              }}
-            >
+          {usage &&
+            (isSuperAdminMode ||
+            (usage as any)?.plan === 'superadmin_platform' ||
+            usage?.planName === 'superadmin_platform' ? (
               <div
                 style={{
+                  backgroundColor: '#f0fdf4',
+                  border: '1px solid #86efac',
+                  borderRadius: '14px',
+                  padding: '20px',
+                  boxShadow: 'var(--shadow-xs)',
                   display: 'flex',
                   justifyContent: 'space-between',
-                  alignItems: 'flex-start',
+                  alignItems: 'center',
                   flexWrap: 'wrap',
-                  gap: '12px',
-                  marginBottom: '14px'
+                  gap: '16px'
                 }}
               >
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
-                    <Award size={18} color="var(--primary)" />
-                    <h3 style={{ margin: 0, fontSize: '1.0rem', fontWeight: '800', color: 'var(--text)' }}>
-                      Cuota Mensual de Facturación ({usage.planName.toUpperCase()})
+                    <Award size={18} color="#15803d" />
+                    <h3 style={{ margin: 0, fontSize: '1.0rem', fontWeight: '800', color: '#14532d' }}>
+                      Cuenta Fiscal SuperAdmin (Plataforma Betico) — Emisión Ilimitada de Comprobantes
                     </h3>
-                    {usage.inCourtesy && (
-                      <span
-                        style={{
-                          backgroundColor: '#fef3c7',
-                          color: '#b453d9',
-                          fontSize: '0.72rem',
-                          fontWeight: '800',
-                          padding: '2px 8px',
-                          borderRadius: '12px'
-                        }}
-                      >
-                        🎁 Margen de Cortesía Activo (+{usage.courtesyUsed}/10)
-                      </span>
-                    )}
+                    <span
+                      style={{
+                        backgroundColor: '#dcfce7',
+                        color: '#166534',
+                        border: '1px solid #86efac',
+                        fontSize: '0.72rem',
+                        fontWeight: '800',
+                        padding: '2px 10px',
+                        borderRadius: '999px'
+                      }}
+                    >
+                      SIN LÍMITE DE CUOTA
+                    </span>
                   </div>
-                  <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                    Tu plan incluye <strong>{usage.quota} comprobantes oficiales</strong> cada mes sin costo adicional.
+                  <p style={{ margin: 0, fontSize: '0.82rem', color: '#166534' }}>
+                    Emite facturas electrónicas (01), tiquetes (04) y notas de crédito (03) a todos tus tenants con envío directo de PDF y XML por correo.
                   </p>
                 </div>
 
                 <div style={{ textAlign: 'right' }}>
-                  <span style={{ fontSize: '1.25rem', fontWeight: '900', color: isOverLimit ? '#dc2626' : 'var(--text)' }}>
-                    {usage.emitted} / {usage.quota}
+                  <span style={{ fontSize: '1.35rem', fontWeight: '900', color: '#15803d' }}>
+                    {(usage as any)?.emittedCount ?? usage?.emitted ?? 0}
                   </span>
-                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginLeft: '4px' }}>
-                    comprobantes
+                  <span style={{ fontSize: '0.82rem', color: '#166534', marginLeft: '6px', fontWeight: '700' }}>
+                    comprobantes emitidos este mes
                   </span>
                 </div>
               </div>
-
+            ) : (
               <div
                 style={{
-                  width: '100%',
-                  height: '10px',
-                  backgroundColor: '#e2e8f0',
-                  borderRadius: '6px',
-                  overflow: 'hidden',
-                  marginBottom: '10px'
+                  backgroundColor: 'var(--surface)',
+                  border: `1px solid ${isOverLimit ? '#fca5a5' : isNearLimit ? '#fde68a' : 'var(--border)'}`,
+                  borderRadius: '14px',
+                  padding: '20px',
+                  boxShadow: 'var(--shadow-xs)',
+                  background: isOverLimit
+                    ? 'linear-gradient(180deg, #fff5f5 0%, var(--surface) 100%)'
+                    : 'var(--surface)'
                 }}
               >
                 <div
                   style={{
-                    width: `${percentUsed}%`,
-                    height: '100%',
-                    backgroundColor: isOverLimit ? '#ef4444' : isNearLimit ? '#f59e0b' : '#10b981',
-                    borderRadius: '6px',
-                    transition: 'width 0.4s ease'
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'flex-start',
+                    flexWrap: 'wrap',
+                    gap: '12px',
+                    marginBottom: '14px'
                   }}
-                />
-              </div>
+                >
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
+                      <Award size={18} color="var(--primary)" />
+                      <h3 style={{ margin: 0, fontSize: '1.0rem', fontWeight: '800', color: 'var(--text)' }}>
+                        Cuota Mensual de Facturación ({usage.planName.toUpperCase()})
+                      </h3>
+                      {usage.inCourtesy && (
+                        <span
+                          style={{
+                            backgroundColor: '#fef3c7',
+                            color: '#b453d9',
+                            fontSize: '0.72rem',
+                            fontWeight: '800',
+                            padding: '2px 8px',
+                            borderRadius: '12px'
+                          }}
+                        >
+                          🎁 Margen de Cortesía Activo (+{usage.courtesyUsed}/10)
+                        </span>
+                      )}
+                    </div>
+                    <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                      Tu plan incluye <strong>{usage.quota} comprobantes oficiales</strong> cada mes sin costo adicional.
+                    </p>
+                  </div>
 
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  fontSize: '0.78rem',
-                  color: 'var(--text-muted)',
-                  flexWrap: 'wrap',
-                  gap: '8px'
-                }}
-              >
-                <span>
-                  {isOverLimit
-                    ? `⚠️ Has completado tu cuota base de ${usage.quota} comprobantes. Puedes emitir hasta 10 comprobantes de cortesía.`
-                    : `Te quedan ${usage.remaining} comprobantes disponibles este ciclo.`}
-                </span>
-                <span>
-                  Tu ciclo se reinicia el <strong>{usage.cycleEndDate}</strong> con tu fecha de corte.
-                </span>
+                  <div style={{ textAlign: 'right' }}>
+                    <span style={{ fontSize: '1.25rem', fontWeight: '900', color: isOverLimit ? '#dc2626' : 'var(--text)' }}>
+                      {usage.emitted} / {usage.quota}
+                    </span>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginLeft: '4px' }}>
+                      comprobantes
+                    </span>
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    width: '100%',
+                    height: '10px',
+                    backgroundColor: '#e2e8f0',
+                    borderRadius: '6px',
+                    overflow: 'hidden',
+                    marginBottom: '10px'
+                  }}
+                >
+                  <div
+                    style={{
+                      width: `${percentUsed}%`,
+                      height: '100%',
+                      backgroundColor: isOverLimit ? '#ef4444' : isNearLimit ? '#f59e0b' : '#10b981',
+                      borderRadius: '6px',
+                      transition: 'width 0.4s ease'
+                    }}
+                  />
+                </div>
+
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    fontSize: '0.78rem',
+                    color: 'var(--text-muted)',
+                    flexWrap: 'wrap',
+                    gap: '8px'
+                  }}
+                >
+                  <span>
+                    {isOverLimit
+                      ? `⚠️ Has completado tu cuota base de ${usage.quota} comprobantes. Puedes emitir hasta 10 comprobantes de cortesía.`
+                      : `Te quedan ${usage.remaining} comprobantes disponibles este ciclo.`}
+                  </span>
+                  <span>
+                    Tu ciclo se reinicia el <strong>{usage.cycleEndDate}</strong> con tu fecha de corte.
+                  </span>
+                </div>
               </div>
-            </div>
-          )}
+            ))}
 
           {/* 2. Barra de Acción y Facturador Rápido Manual */}
           <div
@@ -1537,7 +1633,7 @@ export default function ElectronicBillingView({ initialTab }: ElectronicBillingV
                 <div
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
                     gap: '14px'
                   }}
                 >
@@ -1612,7 +1708,148 @@ export default function ElectronicBillingView({ initialTab }: ElectronicBillingV
                       <option value="04">SINPE Móvil o Transferencia (04)</option>
                     </select>
                   </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', marginBottom: '5px' }}>
+                      Moneda *
+                    </label>
+                    <select
+                      value={manualCurrency}
+                      onChange={(e) => setManualCurrency(e.target.value as 'CRC' | 'USD')}
+                      style={{
+                        width: '100%',
+                        padding: '9px 12px',
+                        borderRadius: '8px',
+                        border: '1px solid var(--border)',
+                        backgroundColor: 'var(--background)',
+                        fontWeight: '700'
+                      }}
+                    >
+                      <option value="CRC">Colones (CRC ₡)</option>
+                      <option value="USD">Dólares (USD $)</option>
+                    </select>
+                  </div>
                 </div>
+
+                {/* Selector de Tenant para SuperAdmin */}
+                {isSuperAdminMode && (
+                  <div
+                    style={{
+                      backgroundColor: '#eef2ff',
+                      border: '1px solid #c7d2fe',
+                      borderRadius: '12px',
+                      padding: '14px 16px'
+                    }}
+                  >
+                    <label
+                      style={{
+                        display: 'block',
+                        fontSize: '0.82rem',
+                        fontWeight: '800',
+                        color: '#3730a3',
+                        marginBottom: '6px'
+                      }}
+                    >
+                      Seleccionar Cliente de Tenant (Inquilino de Betico) para Autocompletar Factura
+                    </label>
+                    <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+                      <select
+                        value={selectedPlatformTenantId}
+                        onChange={(e) => {
+                          const tid = e.target.value;
+                          setSelectedPlatformTenantId(tid);
+                          const t = platformTenants.find((item: any) => String(item.id) === tid);
+                          if (!t) return;
+                          const rawId = String(t.billingIdNumber || t.taxId || '').replace(/[^0-9]/g, '');
+                          const inferredType: '01' | '02' | '03' | '04' =
+                            t.billingIdType && ['01', '02', '03', '04'].includes(t.billingIdType)
+                              ? t.billingIdType
+                              : rawId.length === 9
+                              ? '01'
+                              : rawId.length === 10
+                              ? '02'
+                              : rawId.length >= 11
+                              ? '03'
+                              : '01';
+                          setManualReceiverName(t.billingLegalName || t.name || '');
+                          setManualReceiverId(rawId);
+                          setManualReceiverIdType(inferredType);
+                          setManualReceiverEmail(t.billingEmail || t.adminEmail || '');
+                          setManualReceiverPhone(t.phoneNumber || '');
+                          setManualDocType(rawId.length >= 9 ? '01' : '04');
+                          const curr: 'CRC' | 'USD' = t.billingCurrency === 'USD' ? 'USD' : 'CRC';
+                          setManualCurrency(curr);
+                          const defaultPrice = Number(t.customMonthlyPrice || 35000);
+                          setManualLines([
+                            {
+                              id: 'line-sa-1',
+                              description: `Suscripción Plataforma Betico SaaS - Plan ${String(t.plan || 'Pro').toUpperCase()} (${t.name})`,
+                              cabysCode: defaultCabysCode || '8314100000000',
+                              quantity: 1,
+                              unitPrice: defaultPrice,
+                              taxRateCode: isSimplifiedRegime ? '10' : '08'
+                            }
+                          ]);
+                        }}
+                        style={{
+                          flex: 1,
+                          minWidth: '280px',
+                          padding: '9px 12px',
+                          borderRadius: '8px',
+                          border: '1px solid #a5b4fc',
+                          backgroundColor: '#ffffff',
+                          fontWeight: '700',
+                          color: '#1e1b4b',
+                          fontSize: '0.84rem'
+                        }}
+                      >
+                        <option value="">-- Seleccionar comercio cliente (o completar manualmente abajo) --</option>
+                        {platformTenants.map((t: any) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name} ({t.slug}) — Plan {String(t.plan || '').toUpperCase()} —{' '}
+                            {t.requiresSubscriptionInvoice ? 'Solicitó Factura' : 'Sin solicitud automática'}
+                          </option>
+                        ))}
+                      </select>
+
+                      {(() => {
+                        const selTenant = platformTenants.find((item: any) => String(item.id) === selectedPlatformTenantId);
+                        const cleanCed = String(manualReceiverId || '').replace(/[^0-9]/g, '');
+                        if (
+                          selTenant &&
+                          cleanCed.length >= 9 &&
+                          cleanCed.length <= 12 &&
+                          (!selTenant.billingLegalName || selTenant.billingLegalName === selTenant.name)
+                        ) {
+                          return (
+                            <button
+                              type="button"
+                              onClick={handleConsultReceiverPadron}
+                              disabled={padronReceiverLoading}
+                              style={{
+                                padding: '9px 14px',
+                                borderRadius: '8px',
+                                border: '1px solid #6366f1',
+                                backgroundColor: '#4f46e5',
+                                color: '#ffffff',
+                                fontWeight: '700',
+                                fontSize: '0.8rem',
+                                cursor: padronReceiverLoading ? 'wait' : 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '6px'
+                              }}
+                            >
+                              <Search size={14} />
+                              {padronReceiverLoading ? 'Consultando...' : 'Consultar Cédula en Hacienda'}
+                            </button>
+                          );
+                        }
+                        return null;
+                      })()}
+                    </div>
+                  </div>
+                )}
 
                 {/* Datos del Cliente Receptor */}
                 <div
@@ -3101,7 +3338,15 @@ export default function ElectronicBillingView({ initialTab }: ElectronicBillingV
           </div>
 
           {/* Sección C: Entrega Prioritaria de Facturas al Correo del Cliente (PDF y XML) */}
-          <div style={cardStyle}>
+          <div
+            style={{
+              backgroundColor: 'var(--surface)',
+              border: '1px solid var(--border)',
+              borderRadius: '14px',
+              padding: '20px',
+              boxShadow: 'var(--shadow-xs)'
+            }}
+          >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Mail size={19} color="var(--primary)" />
@@ -3175,55 +3420,95 @@ export default function ElectronicBillingView({ initialTab }: ElectronicBillingV
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '12px' }}>
                 <div>
-                  <label style={labelStyle}>Servidor SMTP (Host)</label>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', marginBottom: '5px' }}>
+                    Servidor SMTP (Host)
+                  </label>
                   <input
                     type="text"
                     value={smtpHost}
                     onChange={(e) => setSmtpHost(e.target.value)}
                     placeholder="Ej: smtp.gmail.com"
-                    style={inputStyle}
+                    style={{
+                      width: '100%',
+                      padding: '9px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border)',
+                      backgroundColor: 'var(--background)'
+                    }}
                   />
                 </div>
                 <div>
-                  <label style={labelStyle}>Puerto SMTP</label>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', marginBottom: '5px' }}>
+                    Puerto SMTP
+                  </label>
                   <input
                     type="number"
                     value={smtpPort}
                     onChange={(e) => setSmtpPort(Number(e.target.value) || 587)}
                     placeholder="587 o 465"
-                    style={inputStyle}
+                    style={{
+                      width: '100%',
+                      padding: '9px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border)',
+                      backgroundColor: 'var(--background)'
+                    }}
                   />
                 </div>
                 <div>
-                  <label style={labelStyle}>Usuario / Correo SMTP</label>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', marginBottom: '5px' }}>
+                    Usuario o Correo SMTP
+                  </label>
                   <input
                     type="email"
                     value={smtpUser}
                     onChange={(e) => setSmtpUser(e.target.value)}
                     placeholder="facturacion@tunegocio.com"
-                    style={inputStyle}
+                    style={{
+                      width: '100%',
+                      padding: '9px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border)',
+                      backgroundColor: 'var(--background)'
+                    }}
                   />
                 </div>
                 <div>
-                  <label style={labelStyle}>Contraseña SMTP o App Password</label>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', marginBottom: '5px' }}>
+                    Contraseña SMTP o App Password
+                  </label>
                   <input
                     type="password"
                     value={smtpPass}
                     onChange={(e) => setSmtpPass(e.target.value)}
-                    placeholder={hasSavedSmtpPass ? '•••••••• (Guardada en bóveda)' : 'Contraseña de aplicación'}
-                    style={inputStyle}
+                    placeholder={hasSmtpPass ? '•••••••• (Guardada en bóveda)' : 'Contraseña de aplicación'}
+                    style={{
+                      width: '100%',
+                      padding: '9px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border)',
+                      backgroundColor: 'var(--background)'
+                    }}
                   />
                 </div>
               </div>
 
               <div style={{ marginTop: '12px' }}>
-                <label style={labelStyle}>Alternativa Cloud: Resend API Key (Opcional)</label>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', marginBottom: '5px' }}>
+                  Alternativa Cloud: Resend API Key (Opcional)
+                </label>
                 <input
                   type="password"
                   value={resendApiKey}
                   onChange={(e) => setResendApiKey(e.target.value)}
-                  placeholder={hasSavedResendKey ? '•••••••• (Guardada en bóveda)' : 're_xxxxxxxxxxxxxxxxx'}
-                  style={inputStyle}
+                  placeholder={hasResendApiKey ? '•••••••• (Guardada en bóveda)' : 're_xxxxxxxxxxxxxxxxx'}
+                  style={{
+                    width: '100%',
+                    padding: '9px 12px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border)',
+                    backgroundColor: 'var(--background)'
+                  }}
                 />
               </div>
             </div>

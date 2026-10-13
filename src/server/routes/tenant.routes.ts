@@ -43,7 +43,8 @@ router.post('/', async (req, res) => {
     const { 
       name, slug, plan, email, adminEmail, phone, whatsappNumber, 
       contactName, customMonthlyPrice, billingCurrency, isTrial, trialDays,
-      address, latitude, longitude, googleMapsUrl, google_maps_url
+      address, latitude, longitude, googleMapsUrl, google_maps_url,
+      requiresSubscriptionInvoice, billingIdType, billingIdNumber, billingLegalName, billingEmail
     } = req.body;
     
     if (!name) {
@@ -102,8 +103,13 @@ router.post('/', async (req, res) => {
       aiPriorityLevel: req.body.aiPriorityLevel !== undefined ? Number(req.body.aiPriorityLevel) || 0 : 0,
       aiModel: 'gemini-2.5-flash',
       aiProvider: 'gemini',
-      active: true
-    });
+      active: true,
+      requiresSubscriptionInvoice: Boolean(requiresSubscriptionInvoice),
+      billingIdType: billingIdType || req.body.fiscalTipoIdentificacion || '01',
+      billingIdNumber: (billingIdNumber ?? req.body.fiscalIdentificacion) ? String(billingIdNumber ?? req.body.fiscalIdentificacion).trim() : '',
+      billingLegalName: (billingLegalName ?? req.body.fiscalNombreReceptor) ? String(billingLegalName ?? req.body.fiscalNombreReceptor).trim() : '',
+      billingEmail: (billingEmail ?? req.body.fiscalEmailReceptor) ? String(billingEmail ?? req.body.fiscalEmailReceptor).trim() : (finalEmail || '')
+    } as any);
 
     if (finalEmail) {
       await createUser({
@@ -165,6 +171,25 @@ router.put('/:id', async (req, res) => {
     if (body.active !== undefined) tenantUpdateData.active = Boolean(body.active);
     if (body.isAiPilot !== undefined) tenantUpdateData.isAiPilot = Boolean(body.isAiPilot);
     if (body.aiPriorityLevel !== undefined) tenantUpdateData.aiPriorityLevel = Number(body.aiPriorityLevel) || 0;
+    if (body.requiresSubscriptionInvoice !== undefined) {
+      tenantUpdateData.requiresSubscriptionInvoice = Boolean(body.requiresSubscriptionInvoice);
+    }
+    const resolvedIdType = body.billingIdType ?? body.fiscalTipoIdentificacion;
+    if (resolvedIdType !== undefined) {
+      tenantUpdateData.billingIdType = String(resolvedIdType || '01').trim();
+    }
+    const resolvedIdNumber = body.billingIdNumber ?? body.fiscalIdentificacion;
+    if (resolvedIdNumber !== undefined) {
+      tenantUpdateData.billingIdNumber = String(resolvedIdNumber || '').trim();
+    }
+    const resolvedLegalName = body.billingLegalName ?? body.fiscalNombreReceptor;
+    if (resolvedLegalName !== undefined) {
+      tenantUpdateData.billingLegalName = String(resolvedLegalName || '').trim();
+    }
+    const resolvedBillEmail = body.billingEmail ?? body.fiscalEmailReceptor;
+    if (resolvedBillEmail !== undefined) {
+      tenantUpdateData.billingEmail = String(resolvedBillEmail || '').trim();
+    }
     
     if (body.isTrial !== undefined) {
       if (body.isTrial) {
@@ -412,6 +437,86 @@ router.get('/:id/dossier', async (req, res) => {
   }
 });
 
+// Update Tenant Subscription Invoice Preference & Fiscal Receiver Info
+router.put('/:id/billing-preference', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const body = req.body || {};
+    const {
+      requiresSubscriptionInvoice
+    } = body;
+
+    const resolvedIdType = body.billingIdType ?? body.fiscalTipoIdentificacion;
+    const resolvedIdNumber = body.billingIdNumber ?? body.fiscalIdentificacion;
+    const resolvedLegalName = body.billingLegalName ?? body.fiscalNombreReceptor;
+    const resolvedBillEmail = body.billingEmail ?? body.fiscalEmailReceptor;
+
+    const updatePayload: any = {};
+    if (requiresSubscriptionInvoice !== undefined) {
+      updatePayload.requiresSubscriptionInvoice = Boolean(requiresSubscriptionInvoice);
+    }
+    if (resolvedIdType !== undefined) {
+      updatePayload.billingIdType = String(resolvedIdType || '01').trim();
+    }
+    if (resolvedIdNumber !== undefined) {
+      updatePayload.billingIdNumber = String(resolvedIdNumber || '').trim();
+    }
+    if (resolvedLegalName !== undefined) {
+      updatePayload.billingLegalName = String(resolvedLegalName || '').trim();
+    }
+    if (resolvedBillEmail !== undefined) {
+      updatePayload.billingEmail = String(resolvedBillEmail || '').trim();
+    }
+
+    const updated = await updateTenant(id, updatePayload);
+    if (!updated) {
+      res.status(404).json({ error: 'Inquilino no encontrado' });
+      return;
+    }
+
+    await logAuditEvent(id, req.user!.userId, 'update_billing_preference', 'tenant', id, updatePayload, req.ip, req.headers['user-agent']);
+
+    res.json({
+      success: true,
+      tenant: updated,
+      message: 'Preferencia de facturación actualizada'
+    });
+  } catch (error: any) {
+    console.error('Error updating billing preference:', error);
+    res.status(500).json({ error: error.message || 'Error al actualizar preferencia de facturación' });
+  }
+});
+
+// Emit Platform Subscription Invoice for Tenant
+router.post('/:id/emit-subscription-invoice', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { emitPlatformSubscriptionInvoiceForTenant } = await import('../services/hacienda-native.service.js');
+
+    const result = await emitPlatformSubscriptionInvoiceForTenant(id, {
+      amount: req.body?.amount !== undefined ? Number(req.body.amount) : undefined,
+      currency: req.body?.currency,
+      paymentMethod: req.body?.paymentMethod || '04',
+      periodLabel: req.body?.periodLabel,
+      forceEmit: true
+    });
+
+    if (!result.success) {
+      res.status(400).json(result);
+      return;
+    }
+
+    res.json({
+      ...result,
+      clave: result.numericKey,
+      consecutivo: result.consecutiveNumber
+    });
+  } catch (error: any) {
+    console.error('Error emitting subscription invoice:', error);
+    res.status(500).json({ success: false, message: error.message || 'Error al emitir factura de suscripción' });
+  }
+});
+
 // Record a Payment
 router.post('/:id/record-payment', async (req, res) => {
   try {
@@ -451,8 +556,29 @@ router.post('/:id/record-payment', async (req, res) => {
 
     await logAuditEvent(id, req.user!.userId, 'record_payment', 'financial', id, { amount: payAmount, reference, daysToExtend }, req.ip, req.headers['user-agent']);
 
+    let invoiceResult: any = null;
+    if (Boolean((tenant as any).requiresSubscriptionInvoice) === true || req.body?.emitInvoice === true) {
+      try {
+        const { emitPlatformSubscriptionInvoiceForTenant } = await import('../services/hacienda-native.service.js');
+        invoiceResult = await emitPlatformSubscriptionInvoiceForTenant(id, {
+          amount: payAmount,
+          currency: payCurrency,
+          paymentMethod: paymentMethod === 'card' ? '02' : '04',
+          forceEmit: Boolean(req.body?.emitInvoice)
+        });
+      } catch (invErr: any) {
+        console.warn('[record-payment] Error auto-emitting subscription invoice:', invErr?.message || invErr);
+        invoiceResult = { success: false, message: invErr?.message || 'Error al emitir factura electrónica' };
+      }
+    }
+
     const updated = await getTenantById(id);
-    res.json({ success: true, message: 'Pago registrado con éxito y suscripción extendida', tenant: updated });
+    res.json({
+      success: true,
+      message: 'Pago registrado con éxito y suscripción extendida',
+      tenant: updated,
+      invoiceResult
+    });
   } catch (error) {
     console.error('Error recording payment:', error);
     res.status(500).json({ error: 'Error al registrar pago' });
@@ -567,7 +693,16 @@ router.get('/billing/collections', async (req, res) => {
         trafficLabel,
         trafficColor,
         subscriptionStatus: t.subscriptionStatus || 'active',
-        internalNotes: t.internalNotes || ''
+        internalNotes: t.internalNotes || '',
+        requiresSubscriptionInvoice: Boolean((t as any).requiresSubscriptionInvoice),
+        billingIdType: (t as any).billingIdType || '01',
+        billingIdNumber: (t as any).billingIdNumber || '',
+        billingLegalName: (t as any).billingLegalName || t.name,
+        billingEmail: (t as any).billingEmail || admin?.email || '',
+        fiscalTipoIdentificacion: (t as any).billingIdType || '01',
+        fiscalIdentificacion: (t as any).billingIdNumber || '',
+        fiscalNombreReceptor: (t as any).billingLegalName || t.name,
+        fiscalEmailReceptor: (t as any).billingEmail || admin?.email || ''
       };
     }));
 
@@ -589,3 +724,4 @@ router.get('/billing/collections', async (req, res) => {
 });
 
 export default router;
+

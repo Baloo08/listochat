@@ -6,7 +6,11 @@ import TenantBillingCardModal from './TenantBillingCardModal';
 import PlatformTilopayModal from './PlatformTilopayModal';
 import PlatformAlmendroModal from './PlatformAlmendroModal';
 
-export default function BillingCollectionsView() {
+interface BillingCollectionsViewProps {
+  onOpenSuperAdminBilling?: (subTab?: 'comprobantes' | 'credenciales' | 'sucursales') => void;
+}
+
+export default function BillingCollectionsView({ onOpenSuperAdminBilling }: BillingCollectionsViewProps = {}) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'paid' | 'due_soon' | 'grace' | 'overdue'>('all');
@@ -16,6 +20,8 @@ export default function BillingCollectionsView() {
   const [showPlatformModal, setShowPlatformModal] = useState(false);
   const [showAlmendroModal, setShowAlmendroModal] = useState(false);
   const [platformStatus, setPlatformStatus] = useState<{ configured: boolean; environment?: string } | null>(null);
+  const [togglingInvoiceTenantId, setTogglingInvoiceTenantId] = useState<string | null>(null);
+  const [emittingInvoiceTenantId, setEmittingInvoiceTenantId] = useState<string | null>(null);
 
   const api = useApi();
 
@@ -40,7 +46,15 @@ export default function BillingCollectionsView() {
   }, []);
 
   const handleRecordPayment = async (c: any) => {
-    if (!confirm(`¿Registrar pago de ${c.currency === 'USD' ? '$' : '₡'}${c.monthlyPrice.toLocaleString('es-CR')} y renovar 30 días para ${c.name}?`)) return;
+    const autoInvoiceNotice = c.requiresSubscriptionInvoice
+      ? 'Se emitirá y enviará automáticamente su Factura Electrónica al correo.'
+      : 'No se emitirá factura electrónica (el cliente no tiene activa la opción de solicitud de factura).';
+    if (
+      !confirm(
+        `¿Registrar pago de ${c.currency === 'USD' ? '$' : '₡'}${Number(c.monthlyPrice || 0).toLocaleString('es-CR')} y renovar 30 días para ${c.name}?\n\n${autoInvoiceNotice}`
+      )
+    )
+      return;
     try {
       await api.post(`/api/tenants/${c.id}/record-payment`, {
         amount: c.monthlyPrice,
@@ -52,6 +66,54 @@ export default function BillingCollectionsView() {
       loadCollections();
     } catch (e: any) {
       alert('Error registrando pago: ' + e.message);
+    }
+  };
+
+  const handleToggleSubscriptionInvoice = async (c: any) => {
+    try {
+      setTogglingInvoiceTenantId(c.id);
+      await api.put(`/api/tenants/${c.id}/billing-preference`, {
+        requiresSubscriptionInvoice: !c.requiresSubscriptionInvoice
+      });
+      await loadCollections();
+    } catch (e: any) {
+      alert('Error actualizando preferencia de factura electrónica: ' + (e.message || 'Intenta de nuevo'));
+    } finally {
+      setTogglingInvoiceTenantId(null);
+    }
+  };
+
+  const handleEmitSubscriptionInvoice = async (c: any) => {
+    const cleanCedula = String(c.billingIdNumber || c.taxId || '').replace(/[^0-9]/g, '');
+    const docLabel = cleanCedula.length >= 9 ? 'Factura Electrónica (01)' : 'Tiquete Electrónico (04)';
+    const targetEmail = c.billingEmail || c.adminEmail || 'sin correo registrado';
+    const priceStr = `${c.currency === 'USD' ? '$' : '₡'}${Number(c.monthlyPrice || 0).toLocaleString('es-CR')}`;
+
+    if (
+      !confirm(
+        `¿Emitir ahora ${docLabel} de suscripción para ${c.billingLegalName || c.name} por ${priceStr}?\n\n` +
+          (cleanCedula ? `Cédula Fiscal: ${cleanCedula}\n` : 'Sin cédula fiscal configurada (se emitirá Tiquete 04)\n') +
+          `Se enviará el PDF y XML oficial a: ${targetEmail}`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setEmittingInvoiceTenantId(c.id);
+      const res = await api.post(`/api/tenants/${c.id}/emit-subscription-invoice`, {
+        amount: c.monthlyPrice,
+        currency: c.currency
+      });
+      alert(
+        res?.message ||
+          `✅ ${docLabel} emitida con éxito para ${c.name}. Se envió copia PDF y XML a ${targetEmail}.`
+      );
+      await loadCollections();
+    } catch (e: any) {
+      alert('Error emitiendo factura de suscripción: ' + (e.message || 'Verifica las credenciales de Hacienda de SuperAdmin.'));
+    } finally {
+      setEmittingInvoiceTenantId(null);
     }
   };
 
@@ -114,7 +176,7 @@ export default function BillingCollectionsView() {
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <CreditCard size={26} color="var(--primary)" />
-            <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 'bold' }}>Cobranza & Cuentas por Cobrar</h1>
+            <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 'bold' }}>Cobranza y Cuentas por Cobrar</h1>
           </div>
           <p style={{ margin: '4px 0 0 0', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
             Semáforo visual de cobros, control de vencimientos y recordatorios automatizados por WhatsApp
@@ -144,12 +206,18 @@ export default function BillingCollectionsView() {
             {platformStatus?.configured ? '🟢 Tilopay Plataforma' : '🔴 Configurar Tilopay'}
           </button>
           <button
-            onClick={() => setShowAlmendroModal(true)}
+            onClick={() => {
+              if (onOpenSuperAdminBilling) {
+                onOpenSuperAdminBilling('credenciales');
+              } else {
+                window.location.href = '/panel?tab=sa_facturacion_credenciales';
+              }
+            }}
             style={{
               padding: '8px 14px',
-              backgroundColor: '#eff6ff',
-              color: '#1d4ed8',
-              border: '1px solid #bfdbfe',
+              backgroundColor: '#eef2ff',
+              color: '#3730a3',
+              border: '1px solid #c7d2fe',
               borderRadius: '8px',
               cursor: 'pointer',
               display: 'flex',
@@ -158,10 +226,48 @@ export default function BillingCollectionsView() {
               fontSize: '0.82rem',
               fontWeight: 'bold'
             }}
-            title="Configurar credenciales de Almendro para facturar suscripciones del SaaS"
+            title="Configurar credenciales de Hacienda DGT v4.4 de Betico para facturar suscripciones a tenants"
           >
             <FileText size={16} />
-            Facturación Almendro
+            <span>Facturación Hacienda (Betico Facturas)</span>
+            <span
+              style={{
+                backgroundColor: '#4f46e5',
+                color: 'white',
+                fontSize: '0.68rem',
+                padding: '1px 6px',
+                borderRadius: '999px',
+                fontWeight: '800'
+              }}
+            >
+              DGT v4.4
+            </span>
+          </button>
+          <button
+            onClick={() => {
+              if (onOpenSuperAdminBilling) {
+                onOpenSuperAdminBilling('comprobantes');
+              } else {
+                window.location.href = '/panel?tab=sa_facturacion_comprobantes';
+              }
+            }}
+            style={{
+              padding: '8px 14px',
+              backgroundColor: '#ecfdf5',
+              color: '#047857',
+              border: '1px solid #a7f3d0',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontSize: '0.82rem',
+              fontWeight: 'bold'
+            }}
+            title="Ir al facturador manual e historial de comprobantes emitidos a tenants"
+          >
+            <FileText size={15} />
+            Emitir / Historial de Facturas
           </button>
           <button
             onClick={handleRunAutoBilling}
@@ -260,7 +366,7 @@ export default function BillingCollectionsView() {
 
       </div>
 
-      {/* TRAFFIC LIGHT FILTERS & SEARCH */}
+      {/* TRAFFIC LIGHT FILTERS Y SEARCH */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', backgroundColor: 'var(--surface)', padding: '4px', borderRadius: '8px', border: '1px solid var(--border)' }}>
           {[
@@ -311,6 +417,7 @@ export default function BillingCollectionsView() {
                 <th style={{ padding: '12px 14px' }}>Monto Pactado</th>
                 <th style={{ padding: '12px 14px' }}>Próximo Pago</th>
                 <th style={{ padding: '12px 14px' }}>Estado / Vencimiento</th>
+                <th style={{ padding: '12px 14px' }}>Factura Electrónica</th>
                 <th style={{ padding: '12px 14px', textAlign: 'right' }}>Acciones Rápidas</th>
               </tr>
             </thead>
@@ -334,6 +441,11 @@ export default function BillingCollectionsView() {
                     <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                       {c.adminEmail} • <code>/{c.slug}</code>
                     </div>
+                    {(c.billingIdNumber || c.billingLegalName) && (
+                      <div style={{ fontSize: '0.72rem', color: '#4f46e5', marginTop: '2px', fontWeight: 600 }}>
+                        Fiscal: {c.billingLegalName || c.name} {c.billingIdNumber ? `(${c.billingIdNumber})` : ''}
+                      </div>
+                    )}
                   </td>
 
                   <td style={{ padding: '12px 14px' }}>
@@ -371,8 +483,33 @@ export default function BillingCollectionsView() {
                     )}
                   </td>
 
+                  <td style={{ padding: '12px 14px' }}>
+                    <button
+                      type="button"
+                      disabled={togglingInvoiceTenantId === c.id}
+                      onClick={() => handleToggleSubscriptionInvoice(c)}
+                      title="Solo cuando esta opción está activa se emitirá factura electrónica automáticamente al registrar o cobrar la suscripción de este cliente."
+                      style={{
+                        padding: '5px 10px',
+                        borderRadius: '999px',
+                        fontSize: '0.73rem',
+                        fontWeight: '800',
+                        cursor: togglingInvoiceTenantId === c.id ? 'wait' : 'pointer',
+                        border: `1px solid ${c.requiresSubscriptionInvoice ? '#86efac' : '#cbd5e1'}`,
+                        backgroundColor: c.requiresSubscriptionInvoice ? '#dcfce7' : '#f1f5f9',
+                        color: c.requiresSubscriptionInvoice ? '#166534' : '#475569',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '5px'
+                      }}
+                    >
+                      <FileText size={12} />
+                      <span>Solicitó Factura: {c.requiresSubscriptionInvoice ? 'Sí' : 'No'}</span>
+                    </button>
+                  </td>
+
                   <td style={{ padding: '12px 14px', textAlign: 'right' }}>
-                    <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                    <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                       
                       <button
                         onClick={() => openWhatsAppCobro(c)}
@@ -404,6 +541,28 @@ export default function BillingCollectionsView() {
                         title="Registrar pago manual (+30 días)"
                       >
                         +30d Pago
+                      </button>
+
+                      <button
+                        onClick={() => handleEmitSubscriptionInvoice(c)}
+                        disabled={emittingInvoiceTenantId === c.id}
+                        style={{
+                          padding: '6px 10px',
+                          backgroundColor: '#eef2ff',
+                          color: '#3730a3',
+                          border: '1px solid #c7d2fe',
+                          borderRadius: '6px',
+                          fontSize: '0.75rem',
+                          fontWeight: 'bold',
+                          cursor: emittingInvoiceTenantId === c.id ? 'wait' : 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px'
+                        }}
+                        title="Emitir ahora Factura Electrónica (01) o Tiquete (04) de suscripción y enviar PDF y XML por correo"
+                      >
+                        <FileText size={13} />
+                        {emittingInvoiceTenantId === c.id ? 'Emitiendo...' : 'Emitir Factura'}
                       </button>
 
                       <button

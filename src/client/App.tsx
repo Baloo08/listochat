@@ -486,6 +486,14 @@ function MainApp({ pathname }: { pathname: string }) {
       ]
     },
     {
+      title: 'FACTURACIÓN HACIENDA',
+      items: [
+        { id: 'sa_facturacion_comprobantes', label: 'Comprobantes y Emisión', icon: <FileText size={18} /> },
+        { id: 'sa_facturacion_credenciales', label: 'Credenciales y Llave .p12', icon: <ShieldCheck size={18} /> },
+        { id: 'sa_facturacion_sucursales', label: 'Datos Fiscales y Sucursales', icon: <Building2 size={18} /> }
+      ]
+    },
+    {
       title: 'BETICO IA Y MODELOS',
       items: [
         { id: 'sa_ai_engine', label: 'Motor Betico IA y Modelos', icon: <Bot size={18} /> },
@@ -636,6 +644,16 @@ function MainApp({ pathname }: { pathname: string }) {
 
   const renderContent = () => {
     if (user?.role === 'superadmin') {
+      if (currentPage === 'sa_facturacion' || currentPage === 'sa_facturacion_comprobantes') {
+        return <ElectronicBillingView initialTab="comprobantes" isSuperAdminMode={true} />;
+      }
+      if (currentPage === 'sa_facturacion_credenciales') {
+        return <ElectronicBillingView initialTab="credenciales" isSuperAdminMode={true} />;
+      }
+      if (currentPage === 'sa_facturacion_sucursales') {
+        return <ElectronicBillingView initialTab="sucursales" isSuperAdminMode={true} />;
+      }
+
       const tabMap: Record<string, 'tenants' | 'collections' | 'financials' | 'ai_engine' | 'ai_usage' | 'bots' | 'system' | 'notifications' | 'audit'> = {
         sa_tenants: 'tenants',
         sa_collections: 'collections',
@@ -654,7 +672,7 @@ function MainApp({ pathname }: { pathname: string }) {
       return (
         <SuperAdminPanel
           activeTabProp={activeTab}
-          onTabChangeProp={(tab) => navigateToTab(`sa_${tab}`)}
+          onTabChangeProp={(tab) => navigateToTab(tab.startsWith('sa_') ? tab : `sa_${tab}`)}
           hideTabBar={true}
         />
       );
@@ -1079,6 +1097,10 @@ function MainApp({ pathname }: { pathname: string }) {
                 currentPage === 'sa_tenants' ? 'Inquilinos y Negocios' :
                 currentPage === 'sa_collections' ? 'Cobranza y Cuentas' :
                 currentPage === 'sa_financials' ? 'Finanzas del SaaS' :
+                currentPage === 'sa_facturacion' ? 'Facturación Hacienda' :
+                currentPage === 'sa_facturacion_comprobantes' ? 'Comprobantes y Emisión' :
+                currentPage === 'sa_facturacion_credenciales' ? 'Credenciales y Llave .p12' :
+                currentPage === 'sa_facturacion_sucursales' ? 'Datos Fiscales y Sucursales' :
                 currentPage === 'sa_system' ? 'Servidor y Recursos' :
                 currentPage === 'sa_apis' ? 'APIs y Tráfico' :
                 currentPage === 'sa_audit' ? 'Auditoría y Seguridad' :

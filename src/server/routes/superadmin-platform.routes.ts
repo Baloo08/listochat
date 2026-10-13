@@ -387,7 +387,9 @@ router.post('/tenants/create', async (req, res) => {
   try {
     const {
       name, slug, contactName, email, phone, plan,
-      customMonthlyPrice, billingCurrency, isTrial, trialDays = 15
+      customMonthlyPrice, billingCurrency, isTrial, trialDays = 15,
+      requiresSubscriptionInvoice, billingIdType, billingIdNumber, billingLegalName, billingEmail,
+      fiscalTipoIdentificacion, fiscalIdentificacion, fiscalNombreReceptor, fiscalEmailReceptor
     } = req.body;
 
     if (!name || !email || !slug) {
@@ -418,18 +420,27 @@ router.post('/tenants/create', async (req, res) => {
     const tenantRes = await query(`
       INSERT INTO tenants (
         name, slug, plan, whatsapp_number, custom_monthly_price, billing_currency,
-        subscription_status, trial_ends_at, next_billing_date, active
+        subscription_status, trial_ends_at, next_billing_date, active,
+        requires_subscription_invoice, billing_id_type, billing_id_number, billing_legal_name, billing_email
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, $14)
       RETURNING id, name, slug, plan, whatsapp_number as "whatsappNumber",
                 custom_monthly_price as "customMonthlyPrice", billing_currency as "billingCurrency",
                 subscription_status as "subscriptionStatus", trial_ends_at as "trialEndsAt",
-                next_billing_date as "nextBillingDate", created_at as "createdAt"
+                next_billing_date as "nextBillingDate", created_at as "createdAt",
+                requires_subscription_invoice as "requiresSubscriptionInvoice",
+                billing_id_type as "billingIdType", billing_id_number as "billingIdNumber",
+                billing_legal_name as "billingLegalName", billing_email as "billingEmail"
     `, [
       name, cleanSlug, plan || 'starter', cleanPhone, price, currency,
       trialEnabled ? 'trial' : 'active',
       trialEnabled ? trialEnd : null,
-      trialEnabled ? trialEnd : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+      trialEnabled ? trialEnd : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      Boolean(requiresSubscriptionInvoice),
+      (billingIdType ?? fiscalTipoIdentificacion) ? String(billingIdType ?? fiscalTipoIdentificacion).trim() : '01',
+      (billingIdNumber ?? fiscalIdentificacion) ? String(billingIdNumber ?? fiscalIdentificacion).trim() : '',
+      (billingLegalName ?? fiscalNombreReceptor) ? String(billingLegalName ?? fiscalNombreReceptor).trim() : '',
+      (billingEmail ?? fiscalEmailReceptor) ? String(billingEmail ?? fiscalEmailReceptor).trim() : email.toLowerCase().trim()
     ]);
 
     const tenant = tenantRes.rows[0];
@@ -491,7 +502,14 @@ router.post('/tenants/:id/approve-payment', async (req, res) => {
     const tenantId = req.params.id;
     const { days = 30 } = req.body;
 
-    const tenantRes = await query(`SELECT id, name, slug, whatsapp_number FROM tenants WHERE id = $1`, [tenantId]);
+    const tenantRes = await query(`
+      SELECT id, name, slug, whatsapp_number,
+             requires_subscription_invoice as "requiresSubscriptionInvoice",
+             custom_monthly_price as "customMonthlyPrice",
+             billing_currency as "billingCurrency"
+      FROM tenants
+      WHERE id = $1
+    `, [tenantId]);
     if (tenantRes.rows.length === 0) {
       res.status(404).json({ error: 'Inquilino no encontrado' });
       return;
@@ -527,7 +545,24 @@ router.post('/tenants/:id/approve-payment', async (req, res) => {
       renewedUntil: nextBilling.toLocaleDateString('es-CR')
     });
 
-    res.json({ success: true, message: 'Pago aprobado y suscripción renovada' });
+    let invoiceResult: any = null;
+    if (Boolean(tenant.requiresSubscriptionInvoice) === true || req.body?.emitInvoice === true) {
+      try {
+        const { emitPlatformSubscriptionInvoiceForTenant } = await import('../services/hacienda-native.service.js');
+        invoiceResult = await emitPlatformSubscriptionInvoiceForTenant(tenantId, {
+          forceEmit: Boolean(req.body?.emitInvoice)
+        });
+      } catch (invErr: any) {
+        console.warn('[approve-payment] Error emitting subscription invoice:', invErr?.message || invErr);
+        invoiceResult = { success: false, message: invErr?.message || 'Error al emitir factura electrónica' };
+      }
+    }
+
+    res.json({
+      success: true,
+      message: 'Pago aprobado y suscripción renovada',
+      invoiceResult
+    });
   } catch (error) {
     console.error('Error approving payment:', error);
     res.status(500).json({ error: 'Error al aprobar pago' });

@@ -330,6 +330,49 @@ describe('Módulo Dedicado de Facturación Electrónica Hacienda (DGT v4.4) y Mu
       const matches = withoutLogicalAnd.match(/&/g);
       assert.equal(matches, null, 'No debe existir ningún carácter "&" en textos visibles en ElectronicBillingView.tsx');
     });
+
+    it('SuperAdmin Portal cuenta con módulo completo de Facturación Hacienda (Betico Facturas), selector de tenants y regla estricta de "El cliente solicitó factura"', () => {
+      const appCode = fs.readFileSync(appPath, 'utf8');
+      const viewCode = fs.readFileSync(viewPath, 'utf8');
+      const serviceCode = fs.readFileSync(servicePath, 'utf8');
+      const repoCode = fs.readFileSync(repoPath, 'utf8');
+      const tenantCtxCode = fs.readFileSync(path.resolve('src/server/middleware/tenantContext.ts'), 'utf8');
+      const tenantRoutesCode = fs.readFileSync(path.resolve('src/server/routes/tenant.routes.ts'), 'utf8');
+      const collectionsViewCode = fs.readFileSync(path.resolve('src/client/components/BillingCollectionsView.tsx'), 'utf8');
+      const superAdminPanelCode = fs.readFileSync(path.resolve('src/client/components/SuperAdminPanel.tsx'), 'utf8');
+      const dossierModalCode = fs.readFileSync(path.resolve('src/client/components/TenantDossierModal.tsx'), 'utf8');
+
+      // 1. Menú lateral del SuperAdmin con 3 sub-vistas dedicadas
+      assert.ok(appCode.includes("id: 'sa_facturacion_comprobantes'"));
+      assert.ok(appCode.includes("id: 'sa_facturacion_credenciales'"));
+      assert.ok(appCode.includes("id: 'sa_facturacion_sucursales'"));
+      assert.ok(appCode.includes('isSuperAdminMode={true}'));
+
+      // 2. tenantContext resuelve la cuenta fiscal del SuperAdmin ('superadmin')
+      assert.ok(tenantCtxCode.includes("role === 'superadmin'"));
+      assert.ok(tenantCtxCode.includes('getOrCreateSuperadminTenantId'));
+
+      // 3. Cuota ilimitada para la cuenta fiscal del SuperAdmin
+      assert.ok(repoCode.includes("superadmin_platform"));
+
+      // 4. Emisión de factura de suscripción con regla estricta requiresSubscriptionInvoice
+      assert.ok(serviceCode.includes('export async function emitPlatformSubscriptionInvoiceForTenant'));
+      assert.ok(serviceCode.includes('requiresSubscriptionInvoice'));
+      assert.ok(serviceCode.includes('El cliente no tiene activa la opción de solicitud de factura electrónica.'));
+
+      // 5. Selector de Clientes de Tenants en Facturador Manual del SuperAdmin
+      assert.ok(viewCode.includes('isSuperAdminMode'));
+      assert.ok(viewCode.includes('Seleccionar Cliente de Tenant'));
+
+      // 6. Endpoints y UI de preferencia de facturación por cliente ("El cliente solicitó factura electrónica")
+      assert.ok(tenantRoutesCode.includes("'/:id/billing-preference'"));
+      assert.ok(tenantRoutesCode.includes("'/:id/emit-subscription-invoice'"));
+      assert.ok(collectionsViewCode.includes('requiresSubscriptionInvoice'));
+      assert.ok(collectionsViewCode.includes('/emit-subscription-invoice'));
+      assert.ok(superAdminPanelCode.includes('requiresSubscriptionInvoice'));
+      assert.ok(dossierModalCode.includes('requiresSubscriptionInvoice'));
+    });
   });
 });
+
 

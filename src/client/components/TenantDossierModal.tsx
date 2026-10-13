@@ -42,6 +42,16 @@ export default function TenantDossierModal({ tenantId, onClose, onRefresh }: Pro
   const [savingQuota, setSavingQuota] = useState(false);
   const [billingUsageData, setBillingUsageData] = useState<any>(null);
 
+  // Subscription Electronic Invoice (Betico Facturas -> Tenant) states
+  const [requiresSubscriptionInvoice, setRequiresSubscriptionInvoice] = useState<boolean>(false);
+  const [fiscalIdentificacion, setFiscalIdentificacion] = useState<string>('');
+  const [fiscalTipoIdentificacion, setFiscalTipoIdentificacion] = useState<string>('01');
+  const [fiscalNombreReceptor, setFiscalNombreReceptor] = useState<string>('');
+  const [fiscalEmailReceptor, setFiscalEmailReceptor] = useState<string>('');
+  const [savingFiscalPref, setSavingFiscalPref] = useState<boolean>(false);
+  const [searchingPadron, setSearchingPadron] = useState<boolean>(false);
+  const [emittingSubInvoice, setEmittingSubInvoice] = useState<boolean>(false);
+
   const api = useApi();
 
   const loadDossier = async () => {
@@ -56,6 +66,11 @@ export default function TenantDossierModal({ tenantId, onClose, onRefresh }: Pro
         }
         setPayAmount(Number(res.tenant?.customMonthlyPrice) || 55000);
         setAutoBillingEnabled(Boolean(res.tenant?.auto_billing_enabled || res.tenant?.autoBillingEnabled));
+        setRequiresSubscriptionInvoice(Boolean(res.tenant?.requiresSubscriptionInvoice));
+        setFiscalIdentificacion(res.tenant?.fiscalIdentificacion || '');
+        setFiscalTipoIdentificacion(res.tenant?.fiscalTipoIdentificacion || '01');
+        setFiscalNombreReceptor(res.tenant?.fiscalNombreReceptor || res.tenant?.name || '');
+        setFiscalEmailReceptor(res.tenant?.fiscalEmailReceptor || res.tenant?.adminEmail || '');
         if (res.tenant?.customInvoicesQuota !== undefined && res.tenant?.customInvoicesQuota !== null) {
           setCustomQuotaInput(String(res.tenant.customInvoicesQuota));
         } else {
@@ -75,6 +90,83 @@ export default function TenantDossierModal({ tenantId, onClose, onRefresh }: Pro
       alert('Error cargando expediente: ' + err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSaveFiscalPreference = async (overrideRequires?: boolean) => {
+    const targetRequires = overrideRequires !== undefined ? overrideRequires : requiresSubscriptionInvoice;
+    setSavingFiscalPref(true);
+    try {
+      await api.put(`/api/tenants/${tenantId}/billing-preference`, {
+        requiresSubscriptionInvoice: targetRequires,
+        fiscalIdentificacion: fiscalIdentificacion.trim(),
+        fiscalTipoIdentificacion,
+        fiscalNombreReceptor: fiscalNombreReceptor.trim(),
+        fiscalEmailReceptor: fiscalEmailReceptor.trim()
+      });
+      setRequiresSubscriptionInvoice(targetRequires);
+      alert(
+        overrideRequires !== undefined
+          ? (targetRequires
+              ? '✅ Facturación electrónica automática de suscripción ACTIVADA para este comercio.'
+              : 'Facturación electrónica automática de suscripción DESACTIVADA.')
+          : '✅ Datos fiscales de facturación de suscripción guardados correctamente.'
+      );
+      await loadDossier();
+      if (onRefresh) onRefresh();
+    } catch (err: any) {
+      alert('Error guardando preferencia fiscal: ' + (err.message || 'Error'));
+    } finally {
+      setSavingFiscalPref(false);
+    }
+  };
+
+  const handlePadronLookup = async () => {
+    const clean = (fiscalIdentificacion || '').replace(/[^0-9]/g, '');
+    if (clean.length < 9) {
+      alert('Ingrese al menos 9 dígitos para consultar el Padrón de Hacienda.');
+      return;
+    }
+    setSearchingPadron(true);
+    try {
+      const res = await api.get(`/api/billing/native/padron/${clean}`);
+      if (res?.found && res?.nombre) {
+        setFiscalIdentificacion(clean);
+        setFiscalTipoIdentificacion(res.tipoIdentificacion || '02');
+        setFiscalNombreReceptor(res.nombre);
+      } else {
+        alert('No se encontró contribuyente con esa cédula en el Padrón de Hacienda.');
+      }
+    } catch (err: any) {
+      alert('Error consultando Hacienda: ' + (err.message || 'Error'));
+    } finally {
+      setSearchingPadron(false);
+    }
+  };
+
+  const handleEmitSubscriptionInvoiceNow = async () => {
+    const symbol = data?.tenant?.billingCurrency === 'USD' ? '$' : '₡';
+    const amount = Number(data?.tenant?.customMonthlyPrice) || 55000;
+    const targetEmail = fiscalEmailReceptor || data?.tenant?.adminEmail || 'Sin correo';
+    const targetName = fiscalNombreReceptor || data?.tenant?.name || 'Cliente';
+    if (!confirm(`¿Emitir y enviar Factura Electrónica oficial de Hacienda (Betico Facturas) ahora mismo para ${targetName}?\n\n• Monto: ${symbol}${amount.toLocaleString('es-CR')}\n• Cédula: ${fiscalIdentificacion || 'No registrada'}\n• Correo destino: ${targetEmail}`)) {
+      return;
+    }
+
+    setEmittingSubInvoice(true);
+    try {
+      const res = await api.post(`/api/tenants/${tenantId}/emit-subscription-invoice`, {
+        amount,
+        currency: data?.tenant?.billingCurrency || 'CRC',
+        notes: 'Emisión directa desde Expediente 360 del Comercio'
+      });
+      alert(`✅ ¡Factura Electrónica emitida y enviada con éxito!\nConsecutivo: ${res?.consecutivo || 'Generado'}\nClave: ${res?.clave || 'Generada'}`);
+      await loadDossier();
+      if (onRefresh) onRefresh();
+    } catch (err: any) {
+      alert('Error al emitir factura electrónica de suscripción: ' + (err.message || 'Verifica las credenciales de Hacienda de Betico Facturas'));
+    } finally {
+      setEmittingSubInvoice(false);
     }
   };
 
@@ -188,7 +280,11 @@ export default function TenantDossierModal({ tenantId, onClose, onRefresh }: Pro
         notes: payNotes,
         extendDays: 30
       });
-      alert('¡Pago registrado con éxito! Suscripción extendida 30 días.');
+      alert(
+        requiresSubscriptionInvoice
+          ? '¡Pago registrado con éxito! Suscripción extendida 30 días y Factura Electrónica de Hacienda enviada al cliente.'
+          : '¡Pago registrado con éxito! Suscripción extendida 30 días.'
+      );
       setShowPayModal(false);
       setPayRef('');
       setPayNotes('');
@@ -334,7 +430,7 @@ export default function TenantDossierModal({ tenantId, onClose, onRefresh }: Pro
         {/* BODY CONTAINER */}
         <div style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: '22px' }}>
           
-          {/* INFRASTRUCTURE & BACKEND MAPPING (READ ONLY) */}
+          {/* INFRASTRUCTURE Y BACKEND MAPPING (READ ONLY) */}
           <div style={{ backgroundColor: '#1e293b', padding: '18px 20px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -519,7 +615,7 @@ export default function TenantDossierModal({ tenantId, onClose, onRefresh }: Pro
             </div>
           </div>
 
-          {/* BILLING & SUBSCRIPTION SECTION */}
+          {/* BILLING Y SUBSCRIPTION SECTION */}
           <div style={{ backgroundColor: '#1e293b', padding: '20px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.06)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -663,6 +759,149 @@ export default function TenantDossierModal({ tenantId, onClose, onRefresh }: Pro
               </div>
             </div>
 
+          </div>
+
+          {/* SUBSCRIPTION ELECTRONIC INVOICE (BETICO FACTURAS -> TENANT) */}
+          <div style={{ backgroundColor: '#1e293b', padding: '20px', borderRadius: '16px', border: '1px solid rgba(59, 130, 246, 0.3)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <FileText size={20} color="#60a5fa" />
+                <div>
+                  <h4 style={{ margin: 0, fontSize: '0.98rem', fontWeight: '800', color: '#f8fafc' }}>
+                    Facturación Electrónica de Suscripción (Hacienda CR · Betico Facturas)
+                  </h4>
+                  <p style={{ margin: '2px 0 0 0', fontSize: '0.76rem', color: '#94a3b8' }}>
+                    Configura si este cliente solicitó factura electrónica mensual de su suscripción y gestiona sus datos fiscales de receptor.
+                  </p>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  disabled={emittingSubInvoice}
+                  onClick={handleEmitSubscriptionInvoiceNow}
+                  style={{
+                    padding: '8px 14px',
+                    backgroundColor: '#2563eb',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '0.78rem',
+                    fontWeight: '700',
+                    cursor: emittingSubInvoice ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  <FileText size={14} /> {emittingSubInvoice ? 'Emitiendo...' : '🧾 Emitir Factura de Suscripción Ahora'}
+                </button>
+              </div>
+            </div>
+
+            {/* Opt-In Toggle Bar */}
+            <div style={{ backgroundColor: requiresSubscriptionInvoice ? 'rgba(37, 99, 235, 0.15)' : 'rgba(15, 23, 42, 0.5)', border: requiresSubscriptionInvoice ? '1px solid rgba(96, 165, 250, 0.4)' : '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '12px 16px', marginBottom: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '0.86rem', fontWeight: '700', color: '#f8fafc' }}>
+                <input
+                  type="checkbox"
+                  checked={requiresSubscriptionInvoice}
+                  disabled={savingFiscalPref}
+                  onChange={(e) => handleSaveFiscalPreference(e.target.checked)}
+                  style={{ width: '17px', height: '17px', cursor: 'pointer' }}
+                />
+                <span>El cliente solicitó factura electrónica (Emisión automática al registrar pago)</span>
+              </label>
+
+              <span style={{
+                padding: '3px 10px',
+                borderRadius: '12px',
+                fontSize: '0.72rem',
+                fontWeight: '800',
+                backgroundColor: requiresSubscriptionInvoice ? 'rgba(52, 211, 153, 0.2)' : 'rgba(148, 163, 184, 0.15)',
+                color: requiresSubscriptionInvoice ? '#34d399' : '#94a3b8'
+              }}>
+                {requiresSubscriptionInvoice ? '✅ Solicitó Factura: Sí' : '⚪ Solicitó Factura: No'}
+              </span>
+            </div>
+
+            {/* Fiscal Receptor Inputs */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px', alignItems: 'end' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.74rem', color: '#94a3b8', fontWeight: '700', marginBottom: '4px' }}>
+                  Cédula Física o Jurídica
+                </label>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <input
+                    type="text"
+                    placeholder="Ej: 3101123456"
+                    value={fiscalIdentificacion}
+                    onChange={(e) => setFiscalIdentificacion(e.target.value)}
+                    style={{ flex: 1, padding: '8px 10px', backgroundColor: '#0f172a', color: '#f8fafc', border: '1px solid #334155', borderRadius: '8px', fontSize: '0.82rem' }}
+                  />
+                  <button
+                    type="button"
+                    disabled={searchingPadron}
+                    onClick={handlePadronLookup}
+                    style={{ padding: '8px 10px', backgroundColor: '#1d4ed8', color: 'white', border: 'none', borderRadius: '8px', fontSize: '0.74rem', fontWeight: '700', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                  >
+                    {searchingPadron ? '...' : 'Buscar en Hacienda'}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.74rem', color: '#94a3b8', fontWeight: '700', marginBottom: '4px' }}>
+                  Tipo de Cédula
+                </label>
+                <select
+                  value={fiscalTipoIdentificacion}
+                  onChange={(e) => setFiscalTipoIdentificacion(e.target.value)}
+                  style={{ width: '100%', padding: '8px 10px', backgroundColor: '#0f172a', color: '#f8fafc', border: '1px solid #334155', borderRadius: '8px', fontSize: '0.82rem' }}
+                >
+                  <option value="01">01 - Cédula Física</option>
+                  <option value="02">02 - Cédula Jurídica</option>
+                  <option value="03">03 - DIMEX</option>
+                  <option value="04">04 - NITE</option>
+                </select>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.74rem', color: '#94a3b8', fontWeight: '700', marginBottom: '4px' }}>
+                  Nombre o Razón Social Fiscal
+                </label>
+                <input
+                  type="text"
+                  placeholder="Razón social registrada en Hacienda"
+                  value={fiscalNombreReceptor}
+                  onChange={(e) => setFiscalNombreReceptor(e.target.value)}
+                  style={{ width: '100%', padding: '8px 10px', backgroundColor: '#0f172a', color: '#f8fafc', border: '1px solid #334155', borderRadius: '8px', fontSize: '0.82rem', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.74rem', color: '#94a3b8', fontWeight: '700', marginBottom: '4px' }}>
+                  Correo para Recepción de Factura
+                </label>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <input
+                    type="email"
+                    placeholder="facturas@comercio.com"
+                    value={fiscalEmailReceptor}
+                    onChange={(e) => setFiscalEmailReceptor(e.target.value)}
+                    style={{ flex: 1, padding: '8px 10px', backgroundColor: '#0f172a', color: '#f8fafc', border: '1px solid #334155', borderRadius: '8px', fontSize: '0.82rem' }}
+                  />
+                  <button
+                    type="button"
+                    disabled={savingFiscalPref}
+                    onClick={() => handleSaveFiscalPreference()}
+                    style={{ padding: '8px 12px', backgroundColor: '#10b981', color: 'white', border: 'none', borderRadius: '8px', fontSize: '0.76rem', fontWeight: '700', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                  >
+                    {savingFiscalPref ? '...' : 'Guardar Datos Fiscales'}
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* ELECTRONIC BILLING QUOTA AND USAGE SECTION */}

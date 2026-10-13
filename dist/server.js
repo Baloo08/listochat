@@ -650,19 +650,29 @@ __export(tenant_repo_exports, {
 });
 async function getAllTenants() {
   const result = await query(`
-    SELECT id, name, slug, custom_domain as "customDomain", 
-           ai_provider as "aiProvider", ai_model as "aiModel", 
-           evolution_instance as "evolutionInstance", whatsapp_number as "whatsappNumber",
-           plan, active, subscription_status as "subscriptionStatus",
-           billing_currency as "billingCurrency", custom_monthly_price as "customMonthlyPrice",
-           trial_ends_at as "trialEndsAt", next_billing_date as "nextBillingDate",
-           grace_period_ends_at as "gracePeriodEndsAt", custom_invoices_quota as "customInvoicesQuota",
-           settings_json as "settingsJson", 
-           address, latitude, longitude, google_maps_url as "googleMapsUrl",
-           is_ai_pilot as "isAiPilot", ai_priority_level as "aiPriorityLevel",
-           created_at as "createdAt"
-    FROM tenants 
-    ORDER BY created_at DESC
+    SELECT t.id, t.name, t.slug, t.custom_domain as "customDomain", 
+           t.ai_provider as "aiProvider", t.ai_model as "aiModel", 
+           t.evolution_instance as "evolutionInstance", t.whatsapp_number as "whatsappNumber",
+           t.plan, t.active, t.subscription_status as "subscriptionStatus",
+           t.billing_currency as "billingCurrency", t.custom_monthly_price as "customMonthlyPrice",
+           t.trial_ends_at as "trialEndsAt", t.next_billing_date as "nextBillingDate",
+           t.grace_period_ends_at as "gracePeriodEndsAt", t.custom_invoices_quota as "customInvoicesQuota",
+           t.settings_json as "settingsJson", 
+           t.address, t.latitude, t.longitude, t.google_maps_url as "googleMapsUrl",
+           t.is_ai_pilot as "isAiPilot", t.ai_priority_level as "aiPriorityLevel",
+           COALESCE(t.requires_subscription_invoice, false) as "requiresSubscriptionInvoice",
+           COALESCE(NULLIF(t.billing_id_type, ''), thc.taxpayer_id_type, '01') as "billingIdType",
+           COALESCE(NULLIF(t.billing_id_number, ''), thc.taxpayer_id_number, '') as "billingIdNumber",
+           COALESCE(NULLIF(t.billing_legal_name, ''), thc.taxpayer_name, t.name) as "billingLegalName",
+           COALESCE(NULLIF(t.billing_email, ''), thc.taxpayer_email, '') as "billingEmail",
+           COALESCE(NULLIF(t.billing_id_type, ''), thc.taxpayer_id_type, '01') as "fiscalTipoIdentificacion",
+           COALESCE(NULLIF(t.billing_id_number, ''), thc.taxpayer_id_number, '') as "fiscalIdentificacion",
+           COALESCE(NULLIF(t.billing_legal_name, ''), thc.taxpayer_name, t.name) as "fiscalNombreReceptor",
+           COALESCE(NULLIF(t.billing_email, ''), thc.taxpayer_email, '') as "fiscalEmailReceptor",
+           t.created_at as "createdAt"
+    FROM tenants t
+    LEFT JOIN tenant_hacienda_configs thc ON thc.tenant_id = t.id
+    ORDER BY t.created_at DESC
   `);
   return result.rows;
 }
@@ -678,6 +688,15 @@ async function getAllTenantsWithAdmin() {
            t.settings_json as "settingsJson", 
            t.address, t.latitude, t.longitude, t.google_maps_url as "googleMapsUrl",
            t.is_ai_pilot as "isAiPilot", t.ai_priority_level as "aiPriorityLevel",
+           COALESCE(t.requires_subscription_invoice, false) as "requiresSubscriptionInvoice",
+           COALESCE(NULLIF(t.billing_id_type, ''), thc.taxpayer_id_type, '01') as "billingIdType",
+           COALESCE(NULLIF(t.billing_id_number, ''), thc.taxpayer_id_number, '') as "billingIdNumber",
+           COALESCE(NULLIF(t.billing_legal_name, ''), thc.taxpayer_name, t.name) as "billingLegalName",
+           COALESCE(NULLIF(t.billing_email, ''), thc.taxpayer_email, u.email, '') as "billingEmail",
+           COALESCE(NULLIF(t.billing_id_type, ''), thc.taxpayer_id_type, '01') as "fiscalTipoIdentificacion",
+           COALESCE(NULLIF(t.billing_id_number, ''), thc.taxpayer_id_number, '') as "fiscalIdentificacion",
+           COALESCE(NULLIF(t.billing_legal_name, ''), thc.taxpayer_name, t.name) as "fiscalNombreReceptor",
+           COALESCE(NULLIF(t.billing_email, ''), thc.taxpayer_email, u.email, '') as "fiscalEmailReceptor",
            t.created_at as "createdAt",
            COALESCE(u.email, 'Sin registrar') as "adminEmail",
            u.id as "adminId",
@@ -687,6 +706,7 @@ async function getAllTenantsWithAdmin() {
            (t.settings_json->'easypanel'->>'project') as "easypanelProject",
            (t.settings_json->'easypanel'->>'service') as "easypanelService"
     FROM tenants t
+    LEFT JOIN tenant_hacienda_configs thc ON thc.tenant_id = t.id
     LEFT JOIN LATERAL (
       SELECT id, email
       FROM users
@@ -700,24 +720,35 @@ async function getAllTenantsWithAdmin() {
 }
 async function getTenantById(id) {
   const result = await query(`
-    SELECT id, name, slug, custom_domain as "customDomain", 
-           ai_provider as "aiProvider", ai_api_key_encrypted as "aiApiKeyEncrypted",
-           ai_model as "aiModel", evolution_instance as "evolutionInstance", 
-           whatsapp_number as "whatsappNumber", plan, active, 
-           subscription_status as "subscriptionStatus", billing_currency as "billingCurrency", 
-           custom_monthly_price as "customMonthlyPrice", trial_ends_at as "trialEndsAt", 
-           next_billing_date as "nextBillingDate", grace_period_ends_at as "gracePeriodEndsAt",
-           custom_invoices_quota as "customInvoicesQuota",
-           calendar_token as "calendarToken",
-           address, latitude, longitude, google_maps_url as "googleMapsUrl",
-           is_ai_pilot as "isAiPilot", ai_priority_level as "aiPriorityLevel",
-           settings_json as "settingsJson", created_at as "createdAt",
-           id as "postgresTenantId",
+    SELECT t.id, t.name, t.slug, t.custom_domain as "customDomain", 
+           t.ai_provider as "aiProvider", t.ai_api_key_encrypted as "aiApiKeyEncrypted",
+           t.ai_model as "aiModel", t.evolution_instance as "evolutionInstance", 
+           t.whatsapp_number as "whatsappNumber", t.plan, t.active, 
+           t.subscription_status as "subscriptionStatus", t.billing_currency as "billingCurrency", 
+           t.custom_monthly_price as "customMonthlyPrice", t.trial_ends_at as "trialEndsAt", 
+           t.next_billing_date as "nextBillingDate", t.grace_period_ends_at as "gracePeriodEndsAt",
+           t.custom_invoices_quota as "customInvoicesQuota",
+           t.calendar_token as "calendarToken",
+           t.address, t.latitude, t.longitude, t.google_maps_url as "googleMapsUrl",
+           t.is_ai_pilot as "isAiPilot", t.ai_priority_level as "aiPriorityLevel",
+           COALESCE(t.requires_subscription_invoice, false) as "requiresSubscriptionInvoice",
+           COALESCE(NULLIF(t.billing_id_type, ''), thc.taxpayer_id_type, '01') as "billingIdType",
+           COALESCE(NULLIF(t.billing_id_number, ''), thc.taxpayer_id_number, '') as "billingIdNumber",
+           COALESCE(NULLIF(t.billing_legal_name, ''), thc.taxpayer_name, t.name) as "billingLegalName",
+           COALESCE(NULLIF(t.billing_email, ''), thc.taxpayer_email, '') as "billingEmail",
+           COALESCE(NULLIF(t.billing_id_type, ''), thc.taxpayer_id_type, '01') as "fiscalTipoIdentificacion",
+           COALESCE(NULLIF(t.billing_id_number, ''), thc.taxpayer_id_number, '') as "fiscalIdentificacion",
+           COALESCE(NULLIF(t.billing_legal_name, ''), thc.taxpayer_name, t.name) as "fiscalNombreReceptor",
+           COALESCE(NULLIF(t.billing_email, ''), thc.taxpayer_email, '') as "fiscalEmailReceptor",
+           t.settings_json as "settingsJson", t.created_at as "createdAt",
+           t.id as "postgresTenantId",
            'whatsapp_saas' as "postgresDb",
            'public' as "postgresSchema",
-           (settings_json->'easypanel'->>'project') as "easypanelProject",
-           (settings_json->'easypanel'->>'service') as "easypanelService"
-    FROM tenants WHERE id = $1
+           (t.settings_json->'easypanel'->>'project') as "easypanelProject",
+           (t.settings_json->'easypanel'->>'service') as "easypanelService"
+    FROM tenants t
+    LEFT JOIN tenant_hacienda_configs thc ON thc.tenant_id = t.id
+    WHERE t.id = $1
   `, [id]);
   return result.rows[0] || null;
 }
@@ -733,6 +764,15 @@ async function getTenantBySlug(slug) {
            t.calendar_token as "calendarToken",
            t.address, t.latitude, t.longitude, t.google_maps_url as "googleMapsUrl",
            t.is_ai_pilot as "isAiPilot", t.ai_priority_level as "aiPriorityLevel",
+           COALESCE(t.requires_subscription_invoice, false) as "requiresSubscriptionInvoice",
+           t.billing_id_type as "billingIdType",
+           t.billing_id_number as "billingIdNumber",
+           t.billing_legal_name as "billingLegalName",
+           t.billing_email as "billingEmail",
+           t.billing_id_type as "fiscalTipoIdentificacion",
+           t.billing_id_number as "fiscalIdentificacion",
+           t.billing_legal_name as "fiscalNombreReceptor",
+           t.billing_email as "fiscalEmailReceptor",
            t.settings_json as "settingsJson", t.created_at as "createdAt"
     FROM tenants t
     LEFT JOIN store_settings ss ON ss.tenant_id = t.id
@@ -767,13 +807,18 @@ async function getTenantByEvolutionInstance(instanceName) {
 }
 async function createTenant(data) {
   const finalPrice = data.customMonthlyPrice !== void 0 ? Number(data.customMonthlyPrice) : data.plan === "enterprise" ? 85e3 : data.plan === "aliado" ? 0 : data.plan === "emprendedor" ? 35e3 : 55e3;
+  const idType = data.billingIdType || data.fiscalTipoIdentificacion || "01";
+  const idNumber = (data.billingIdNumber || data.fiscalIdentificacion || "").replace(/\D/g, "");
+  const legalName = data.billingLegalName || data.fiscalNombreReceptor || "";
+  const billEmail = data.billingEmail || data.fiscalEmailReceptor || "";
   const result = await query(`
     INSERT INTO tenants (
       name, slug, custom_domain, ai_provider, ai_api_key_encrypted, 
       ai_model, evolution_instance, whatsapp_number, plan, active,
       custom_monthly_price, billing_currency, subscription_status, trial_ends_at, settings_json,
-      address, latitude, longitude, google_maps_url, is_ai_pilot, ai_priority_level
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+      address, latitude, longitude, google_maps_url, is_ai_pilot, ai_priority_level,
+      requires_subscription_invoice, billing_id_type, billing_id_number, billing_legal_name, billing_email
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
     RETURNING id, name, slug, custom_domain as "customDomain", 
            ai_provider as "aiProvider", ai_model as "aiModel", 
            evolution_instance as "evolutionInstance", whatsapp_number as "whatsappNumber",
@@ -781,6 +826,15 @@ async function createTenant(data) {
            subscription_status as "subscriptionStatus", trial_ends_at as "trialEndsAt",
            settings_json as "settingsJson", address, latitude, longitude, google_maps_url as "googleMapsUrl",
            is_ai_pilot as "isAiPilot", ai_priority_level as "aiPriorityLevel",
+           requires_subscription_invoice as "requiresSubscriptionInvoice",
+           billing_id_type as "billingIdType",
+           billing_id_number as "billingIdNumber",
+           billing_legal_name as "billingLegalName",
+           billing_email as "billingEmail",
+           billing_id_type as "fiscalTipoIdentificacion",
+           billing_id_number as "fiscalIdentificacion",
+           billing_legal_name as "fiscalNombreReceptor",
+           billing_email as "fiscalEmailReceptor",
            created_at as "createdAt"
   `, [
     data.name,
@@ -803,7 +857,12 @@ async function createTenant(data) {
     data.longitude ? Number(data.longitude) : null,
     data.googleMapsUrl || data.google_maps_url || null,
     Boolean(data.isAiPilot),
-    Number(data.aiPriorityLevel) || 0
+    Number(data.aiPriorityLevel) || 0,
+    Boolean(data.requiresSubscriptionInvoice),
+    idType,
+    idNumber,
+    legalName,
+    billEmail
   ]);
   return result.rows[0];
 }
@@ -848,12 +907,33 @@ async function updateTenant(id, data) {
     isAiPilot: "is_ai_pilot",
     is_ai_pilot: "is_ai_pilot",
     aiPriorityLevel: "ai_priority_level",
-    ai_priority_level: "ai_priority_level"
+    ai_priority_level: "ai_priority_level",
+    requiresSubscriptionInvoice: "requires_subscription_invoice",
+    requires_subscription_invoice: "requires_subscription_invoice",
+    billingIdType: "billing_id_type",
+    billing_id_type: "billing_id_type",
+    fiscalTipoIdentificacion: "billing_id_type",
+    billingIdNumber: "billing_id_number",
+    billing_id_number: "billing_id_number",
+    fiscalIdentificacion: "billing_id_number",
+    billingLegalName: "billing_legal_name",
+    billing_legal_name: "billing_legal_name",
+    fiscalNombreReceptor: "billing_legal_name",
+    billingEmail: "billing_email",
+    billing_email: "billing_email",
+    fiscalEmailReceptor: "billing_email"
   };
-  const validEntries = Object.entries(data).filter(([k, v]) => allowedColumns[k] !== void 0 && v !== void 0);
+  const seenColumns = /* @__PURE__ */ new Set();
+  const validEntries = [];
+  for (const [k, v] of Object.entries(data)) {
+    const col = allowedColumns[k];
+    if (col && v !== void 0 && !seenColumns.has(col)) {
+      seenColumns.add(col);
+      validEntries.push([col, v]);
+    }
+  }
   if (validEntries.length === 0) return getTenantById(id);
-  const setClause = validEntries.map(([key], index) => {
-    const dbColumn = allowedColumns[key];
+  const setClause = validEntries.map(([dbColumn], index) => {
     return `${dbColumn} = $${index + 2}`;
   }).join(", ");
   const values = validEntries.map(([, val]) => val);
@@ -868,6 +948,15 @@ async function updateTenant(id, data) {
            trial_ends_at as "trialEndsAt", settings_json as "settingsJson",
            address, latitude, longitude, google_maps_url as "googleMapsUrl",
            is_ai_pilot as "isAiPilot", ai_priority_level as "aiPriorityLevel",
+           requires_subscription_invoice as "requiresSubscriptionInvoice",
+           billing_id_type as "billingIdType",
+           billing_id_number as "billingIdNumber",
+           billing_legal_name as "billingLegalName",
+           billing_email as "billingEmail",
+           billing_id_type as "fiscalTipoIdentificacion",
+           billing_id_number as "fiscalIdentificacion",
+           billing_legal_name as "fiscalNombreReceptor",
+           billing_email as "fiscalEmailReceptor",
            created_at as "createdAt"
   `, [id, ...values]);
   return result.rows[0] || null;
@@ -1239,6 +1328,184 @@ var init_tenant_payment_repo = __esm({
   }
 });
 
+// src/server/db/tenant-billing.repo.ts
+async function getBillingCards(tenantId) {
+  const res = await query(`
+    SELECT id, tenant_id as "tenantId", card_last4 as "cardLast4",
+           card_brand as "cardBrand", card_holder as "cardHolder",
+           is_default as "isDefault", is_active as "isActive",
+           created_at as "createdAt"
+    FROM tenant_billing_cards
+    WHERE tenant_id = $1 AND is_active = true
+    ORDER BY is_default DESC, created_at DESC
+  `, [tenantId]);
+  return res.rows;
+}
+async function saveBillingCard(tenantId, data) {
+  if (data.isDefault !== false) {
+    await query(`
+      UPDATE tenant_billing_cards
+      SET is_default = false
+      WHERE tenant_id = $1
+    `, [tenantId]);
+  }
+  const res = await query(`
+    INSERT INTO tenant_billing_cards (
+      tenant_id, card_last4, card_brand, card_holder,
+      tilopay_token_encrypted, is_default, is_active
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, true)
+    RETURNING id, tenant_id as "tenantId", card_last4 as "cardLast4",
+              card_brand as "cardBrand", card_holder as "cardHolder",
+              is_default as "isDefault", is_active as "isActive",
+              created_at as "createdAt"
+  `, [
+    tenantId,
+    data.last4,
+    data.brand || "CARD",
+    data.holder || "Cliente",
+    data.tokenEncrypted,
+    data.isDefault !== false
+  ]);
+  return res.rows[0];
+}
+async function getDefaultBillingCard(tenantId) {
+  const res = await query(`
+    SELECT id, tenant_id as "tenantId", card_last4 as "cardLast4",
+           card_brand as "cardBrand", card_holder as "cardHolder",
+           tilopay_token_encrypted as "tilopayTokenEncrypted",
+           is_default as "isDefault", is_active as "isActive",
+           created_at as "createdAt"
+    FROM tenant_billing_cards
+    WHERE tenant_id = $1 AND is_active = true
+    ORDER BY is_default DESC, created_at DESC
+    LIMIT 1
+  `, [tenantId]);
+  return res.rows[0] || null;
+}
+async function deactivateBillingCard(cardId, tenantId) {
+  const res = await query(`
+    UPDATE tenant_billing_cards
+    SET is_active = false, updated_at = CURRENT_TIMESTAMP
+    WHERE id = $1 AND tenant_id = $2
+  `, [cardId, tenantId]);
+  return (res.rowCount ?? 0) > 0;
+}
+async function createBillingCharge(data) {
+  const res = await query(`
+    INSERT INTO tenant_billing_charges (
+      tenant_id, billing_card_id, amount, currency,
+      period_start, period_end, status, tilopay_order_number,
+      tilopay_transaction_id, tilopay_auth_code, failure_reason
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    RETURNING id, tenant_id as "tenantId", billing_card_id as "billingCardId",
+              amount, currency, period_start as "periodStart", period_end as "periodEnd",
+              status, tilopay_order_number as "tilopayOrderNumber",
+              tilopay_transaction_id as "tilopayTransactionId",
+              tilopay_auth_code as "tilopayAuthCode",
+              failure_reason as "failureReason",
+              attempt_count as "attemptCount",
+              last_attempt_at as "lastAttemptAt",
+              created_at as "createdAt"
+  `, [
+    data.tenantId,
+    data.billingCardId || null,
+    data.amount,
+    data.currency || "CRC",
+    data.periodStart || null,
+    data.periodEnd || null,
+    data.status,
+    data.tilopayOrderNumber,
+    data.tilopayTransactionId || null,
+    data.tilopayAuthCode || null,
+    data.failureReason || null
+  ]);
+  return res.rows[0];
+}
+async function updateBillingCharge(orderNumber, update) {
+  const res = await query(`
+    UPDATE tenant_billing_charges
+    SET status = $1,
+        tilopay_transaction_id = COALESCE($2, tilopay_transaction_id),
+        tilopay_auth_code = COALESCE($3, tilopay_auth_code),
+        failure_reason = COALESCE($4, failure_reason),
+        last_attempt_at = CURRENT_TIMESTAMP
+    WHERE tilopay_order_number = $5
+    RETURNING id, tenant_id as "tenantId", billing_card_id as "billingCardId",
+              amount, currency, period_start as "periodStart", period_end as "periodEnd",
+              status, tilopay_order_number as "tilopayOrderNumber",
+              tilopay_transaction_id as "tilopayTransactionId",
+              tilopay_auth_code as "tilopayAuthCode",
+              failure_reason as "failureReason",
+              attempt_count as "attemptCount",
+              last_attempt_at as "lastAttemptAt",
+              created_at as "createdAt"
+  `, [
+    update.status,
+    update.transactionId || null,
+    update.authCode || null,
+    update.failureReason || null,
+    orderNumber
+  ]);
+  return res.rows[0] || null;
+}
+async function getBillingCharges(tenantId, limit = 20) {
+  const res = await query(`
+    SELECT id, tenant_id as "tenantId", billing_card_id as "billingCardId",
+           amount, currency, period_start as "periodStart", period_end as "periodEnd",
+           status, tilopay_order_number as "tilopayOrderNumber",
+           tilopay_transaction_id as "tilopayTransactionId",
+           tilopay_auth_code as "tilopayAuthCode",
+           failure_reason as "failureReason",
+           attempt_count as "attemptCount",
+           last_attempt_at as "lastAttemptAt",
+           created_at as "createdAt"
+    FROM tenant_billing_charges
+    WHERE tenant_id = $1
+    ORDER BY created_at DESC
+    LIMIT $2
+  `, [tenantId, limit]);
+  return res.rows;
+}
+async function getChargeByOrderNumber(orderNumber) {
+  const res = await query(`
+    SELECT id, tenant_id as "tenantId", billing_card_id as "billingCardId",
+           amount, currency, period_start as "periodStart", period_end as "periodEnd",
+           status, tilopay_order_number as "tilopayOrderNumber",
+           tilopay_transaction_id as "tilopayTransactionId",
+           tilopay_auth_code as "tilopayAuthCode",
+           failure_reason as "failureReason",
+           attempt_count as "attemptCount",
+           last_attempt_at as "lastAttemptAt",
+           created_at as "createdAt"
+    FROM tenant_billing_charges
+    WHERE tilopay_order_number = $1
+  `, [orderNumber]);
+  return res.rows[0] || null;
+}
+async function getTenantsDueForAutoBilling() {
+  const res = await query(`
+    SELECT id, name, slug, whatsapp_number as "whatsappNumber",
+           custom_monthly_price as "customMonthlyPrice",
+           billing_currency as "billingCurrency",
+           evolution_instance as "evolutionInstance",
+           subscription_status as "subscriptionStatus"
+    FROM tenants
+    WHERE auto_billing_enabled = true
+      AND active = true
+      AND next_billing_date IS NOT NULL
+      AND next_billing_date <= CURRENT_TIMESTAMP
+  `);
+  return res.rows;
+}
+var init_tenant_billing_repo = __esm({
+  "src/server/db/tenant-billing.repo.ts"() {
+    "use strict";
+    init_pool();
+  }
+});
+
 // src/server/services/encryption.ts
 import crypto3 from "crypto";
 function encrypt(plaintext) {
@@ -1291,303 +1558,1320 @@ var init_encryption = __esm({
   }
 });
 
-// src/server/services/ai-provider.ts
-import { generateText } from "ai";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import { createOpenAI } from "@ai-sdk/openai";
-import { createAnthropic } from "@ai-sdk/anthropic";
-function getDefaultModels(provider) {
-  switch (provider) {
-    case "gemini":
-      return [
-        "gemini-2.5-flash",
-        "gemini-2.5-pro",
-        "gemini-2.5-flash-lite",
-        "gemini-1.5-flash",
-        "gemini-1.5-pro"
-      ];
-    case "openai":
-      return [
-        "gpt-4o",
-        "gpt-4o-mini",
-        "gpt-4-turbo",
-        "o1",
-        "o1-mini",
-        "o3-mini"
-      ];
-    case "anthropic":
-      return [
-        "claude-3-7-sonnet",
-        "claude-3-5-sonnet-20241022",
-        "claude-3-5-haiku-20241022"
-      ];
-    case "deepseek":
-      return [
-        "deepseek-chat",
-        "deepseek-reasoner"
-      ];
-    case "ollama":
-    case "betico_ai":
-      return [
-        "betico-ai",
-        "qwen2.5:1.5b",
-        "qwen2.5:3b"
-      ];
-    case "localai":
-      return [
-        "gpt-4",
-        "gpt-4o"
-      ];
-    default:
-      return [];
-  }
+// src/server/db/hacienda-native.repo.ts
+var hacienda_native_repo_exports = {};
+__export(hacienda_native_repo_exports, {
+  clearHaciendaCredentials: () => clearHaciendaCredentials,
+  consumeNextConsecutive: () => consumeNextConsecutive,
+  deleteHaciendaBranch: () => deleteHaciendaBranch,
+  formatConsecutiveNumber: () => formatConsecutiveNumber,
+  generateHaciendaNumericKey: () => generateHaciendaNumericKey,
+  getCycleUsage: () => getCycleUsage,
+  getHaciendaBranchById: () => getHaciendaBranchById,
+  getHaciendaBranchByStoreBranchId: () => getHaciendaBranchByStoreBranchId,
+  getHaciendaBranchDecryptedSecrets: () => getHaciendaBranchDecryptedSecrets,
+  getHaciendaBranchesByTenant: () => getHaciendaBranchesByTenant,
+  getHaciendaConfigByTenant: () => getHaciendaConfigByTenant,
+  getHaciendaDecryptedSecrets: () => getHaciendaDecryptedSecrets,
+  getTenantPlanQuota: () => getTenantPlanQuota,
+  incrementInvoiceUsage: () => incrementInvoiceUsage,
+  saveHaciendaBranch: () => saveHaciendaBranch,
+  saveHaciendaConfig: () => saveHaciendaConfig,
+  updateBranchConnectionTestResult: () => updateBranchConnectionTestResult,
+  updateConnectionTestResult: () => updateConnectionTestResult
+});
+function computeDaysRemaining(expiresAt) {
+  if (!expiresAt) return null;
+  const dt = new Date(expiresAt);
+  if (isNaN(dt.getTime())) return null;
+  return Math.ceil((dt.getTime() - Date.now()) / 864e5);
 }
-async function warmUpBeticoAI() {
-  try {
-    const ollamaUrl = process.env.OLLAMA_URL || "http://beticoia_ollama:11434/v1";
-    const baseUrl = ollamaUrl.replace(/\/v1\/?$/, "");
-    const res = await fetch(`${baseUrl}/api/generate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "betico-ai",
-        keep_alive: -1
-      })
-    });
-    if (res.ok) {
-      console.log("[AI-Provider] Betico AI (Ollama) warmed up and pinned in RAM (keep_alive: -1).");
-    }
-  } catch (e) {
-    console.warn("[AI-Provider] Warmup warning (Ollama no disponible en este instante):", e.message);
-  }
-}
-async function getMasterAIConfig() {
-  try {
-    const res = await query("SELECT key, value, value_encrypted FROM platform_settings WHERE key IN ('master_ai_provider', 'master_ai_key', 'master_ai_model', 'localai_url', 'localai_model', 'localai_api_key', 'localai_enabled', 'ollama_url', 'ollama_model', 'ollama_enabled')");
-    const settings = {};
-    for (const row of res.rows) {
-      if (row.value_encrypted) {
-        settings[row.key] = decrypt(row.value_encrypted);
-      } else {
-        settings[row.key] = row.value || "";
-      }
-    }
-    const ollamaEnabled = settings.ollama_enabled !== "false";
-    const ollamaUrl = settings.ollama_url || process.env.OLLAMA_URL || "http://beticoia_ollama:11434/v1";
-    const ollamaModel = settings.ollama_model || "betico-ai";
-    if (ollamaEnabled) {
-      return {
-        provider: "betico_ai",
-        apiKey: "ollama",
-        model: ollamaModel,
-        temperature: 0.7,
-        baseUrl: ollamaUrl
-      };
-    }
-    const localaiEnabled = settings.localai_enabled === "true";
-    if (localaiEnabled) {
-      return {
-        provider: "localai",
-        apiKey: settings.localai_api_key || "localai",
-        model: settings.localai_model || "gpt-4",
-        temperature: 0.7,
-        baseUrl: settings.localai_url || "http://beticoia_localai:8080/v1"
-      };
-    }
-    const provider = settings.master_ai_provider || "gemini";
-    const apiKey = settings.master_ai_key || DEFAULT_GEMINI_KEY;
-    const model = settings.master_ai_model || (provider === "gemini" ? "gemini-2.5-flash" : provider === "openai" ? "gpt-4o-mini" : "claude-3-5-haiku-20241022");
-    return {
-      provider,
-      apiKey,
-      model,
-      temperature: 0.7
-    };
-  } catch (e) {
-    return {
-      provider: "gemini",
-      apiKey: DEFAULT_GEMINI_KEY,
-      model: "gemini-2.5-flash",
-      temperature: 0.7
-    };
-  }
-}
-async function callAI(config, input, fallbackConfig) {
-  const provider = config.provider || "gemini";
-  const apiKey = config.apiKey || (provider === "gemini" ? DEFAULT_GEMINI_KEY : "");
-  let chosenModel = config.model;
-  if (provider === "gemini") {
-    if (!chosenModel || chosenModel.includes("betico") || chosenModel.includes("gpt") || chosenModel.includes("claude") || chosenModel.includes("deepseek")) {
-      chosenModel = "gemini-2.5-flash";
-    }
-  } else if (provider === "openai") {
-    if (!chosenModel || chosenModel.includes("betico") || chosenModel.includes("gemini") || chosenModel.includes("claude") || chosenModel.includes("deepseek")) {
-      chosenModel = "gpt-4o-mini";
-    }
-  } else if (provider === "anthropic") {
-    if (!chosenModel || chosenModel.includes("betico") || chosenModel.includes("gemini") || chosenModel.includes("gpt")) {
-      chosenModel = "claude-3-5-haiku-20241022";
-    }
-  } else if (provider === "deepseek") {
-    if (!chosenModel || !chosenModel.includes("deepseek")) {
-      chosenModel = "deepseek-chat";
-    }
-  } else if (provider === "betico_ai" || provider === "ollama") {
-    if (!chosenModel || chosenModel.includes("gpt") || chosenModel.includes("gemini") || chosenModel.includes("claude")) {
-      chosenModel = "betico-ai";
-    }
-  } else if (provider === "localai") {
-    if (!chosenModel || chosenModel.includes("llama") || chosenModel.includes("qwen") || chosenModel.includes("gemini") || chosenModel.includes("claude")) {
-      chosenModel = "gpt-4";
-    }
-  } else if (!chosenModel) {
-    chosenModel = provider === "openai" ? "gpt-4o-mini" : provider === "anthropic" ? "claude-3-5-haiku-20241022" : "gemini-2.5-flash";
-  }
-  const defaultModels = getDefaultModels(provider);
-  let fallbackModels;
-  if ((provider === "betico_ai" || provider === "ollama") && chosenModel.startsWith("betico-ai:tenant_")) {
-    fallbackModels = [chosenModel, "betico-ai"];
-  } else {
-    fallbackModels = [chosenModel, ...defaultModels.filter((m) => m !== chosenModel)];
-  }
-  let lastError = null;
-  for (const modelName of fallbackModels) {
+async function getHaciendaConfigByTenant(tenantId) {
+  const res = await query(
+    `SELECT * FROM tenant_hacienda_configs WHERE tenant_id = $1`,
+    [tenantId]
+  );
+  if (res.rows.length === 0) return null;
+  const row = res.rows[0];
+  const p12ExpiresIso = row.p12_expires_at ? new Date(row.p12_expires_at).toISOString() : null;
+  let economicActivities = [];
+  if (Array.isArray(row.economic_activities_json)) {
+    economicActivities = row.economic_activities_json;
+  } else if (typeof row.economic_activities_json === "string") {
     try {
-      return await executeProvider({
-        provider,
-        apiKey,
-        model: modelName,
-        temperature: config.temperature ?? 0.7,
-        baseUrl: config.baseUrl
-      }, input);
-    } catch (error) {
-      lastError = error;
-      console.error(`Error calling AI with model ${modelName} (${provider}):`, error);
-      if (modelName.startsWith("betico-ai:tenant_")) {
-        console.warn(`[AI-Provider] Virtual model ${modelName} failed or missing in Ollama. Falling back to base betico-ai.`);
-        continue;
-      }
-      if (provider === "localai" || provider === "betico_ai" || provider === "ollama") {
-        break;
-      }
+      economicActivities = JSON.parse(row.economic_activities_json);
+    } catch (_) {
+      economicActivities = [];
     }
   }
-  const effectiveFallbackConfig = fallbackConfig || (provider === "betico_ai" || provider === "ollama" || provider === "localai" ? { provider: "gemini", apiKey: DEFAULT_GEMINI_KEY, model: "gemini-2.5-flash", temperature: config.temperature ?? 0.7 } : { provider: "betico_ai", apiKey: "ollama", model: "betico-ai", temperature: config.temperature ?? 0.7, baseUrl: process.env.OLLAMA_URL || "http://beticoia_ollama:11434/v1" });
-  if (effectiveFallbackConfig && effectiveFallbackConfig.provider !== provider) {
-    try {
-      console.warn(`[AI-Provider] Primary ${provider} failed or timed out. Engaging resilient cross-fallback -> ${effectiveFallbackConfig.provider}/${effectiveFallbackConfig.model}`);
-      return await executeProvider(effectiveFallbackConfig, input);
-    } catch (fallbackErr) {
-      console.error(`[AI-Provider] Cross-fallback ${effectiveFallbackConfig.provider} also failed:`, fallbackErr?.message || fallbackErr);
-    }
-  }
-  console.error("All AI models and fallback engines failed. Last error:", lastError);
   return {
-    text: "Hola, gracias por comunicarte con nosotros. En este momento estamos procesando tu solicitud, en breve un asesor te responder\xE1.",
-    tokensUsed: 0,
-    promptTokens: 0,
-    completionTokens: 0,
-    latencyMs: 0
+    id: row.id,
+    tenantId: row.tenant_id,
+    environment: row.environment || "sandbox",
+    taxpayerIdType: row.taxpayer_id_type || "01",
+    taxpayerIdNumber: row.taxpayer_id_number || "",
+    taxpayerName: row.taxpayer_name || "",
+    commercialName: row.commercial_name || "",
+    taxpayerEmail: row.taxpayer_email || "",
+    taxpayerPhone: row.taxpayer_phone || "",
+    economicActivityCode: row.economic_activity_code || "",
+    economicActivities,
+    defaultCabysCode: row.default_cabys_code || "8311100000000",
+    province: row.province || "1",
+    canton: row.canton || "01",
+    district: row.district || "01",
+    neighborhood: row.neighborhood || "01",
+    addressDetail: row.address_detail || "",
+    idpUsername: row.idp_username || "",
+    idpPasswordMasked: row.idp_password_encrypted ? "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022" : "",
+    p12Filename: row.p12_filename || "",
+    p12ExpiresAt: p12ExpiresIso,
+    p12HasCertificate: Boolean(row.p12_encrypted_blob || row.p12_filename),
+    certSubject: row.cert_subject || "",
+    certIssuer: row.cert_issuer || "",
+    certDaysRemaining: computeDaysRemaining(p12ExpiresIso),
+    branchCode: row.branch_code || "001",
+    posCode: row.pos_code || "00001",
+    defaultDocType: row.default_doc_type || "04",
+    seqFactura: Number(row.seq_factura || 1),
+    seqTiquete: Number(row.seq_tiquete || 1),
+    seqNotaCredito: Number(row.seq_nota_credito || 1),
+    multiBranchEnabled: Boolean(row.multi_branch_enabled),
+    isConnected: Boolean(row.is_connected),
+    lastTestAt: row.last_test_at ? new Date(row.last_test_at).toISOString() : null,
+    lastTestMessage: row.last_test_message || null,
+    providerMode: row.provider_mode || "BETICO_NATIVE",
+    useAlternativeProvider: Boolean(row.use_alternative_provider),
+    isSimplifiedRegime: Boolean(row.is_simplified_regime),
+    emailAutoSend: row.email_auto_send !== void 0 && row.email_auto_send !== null ? Boolean(row.email_auto_send) : true,
+    smtpHost: row.smtp_host || "",
+    smtpPort: Number(row.smtp_port || 587),
+    smtpUser: row.smtp_user || "",
+    smtpPassMasked: row.smtp_pass_encrypted ? "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022" : "",
+    resendApiKeyMasked: row.resend_api_key_encrypted ? "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022" : "",
+    active: Boolean(row.active),
+    createdAt: row.created_at ? new Date(row.created_at).toISOString() : "",
+    updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : ""
   };
 }
-async function executeProvider(config, input) {
-  let model;
-  if (config.provider === "gemini") {
-    const key = config.apiKey || DEFAULT_GEMINI_KEY;
-    const google = createGoogleGenerativeAI({ apiKey: key });
-    model = google(config.model || "gemini-2.5-flash");
-  } else if (config.provider === "openai") {
-    const openai = createOpenAI({ apiKey: config.apiKey });
-    model = openai(config.model || "gpt-4o-mini");
-  } else if (config.provider === "anthropic") {
-    const anthropic = createAnthropic({ apiKey: config.apiKey });
-    model = anthropic(config.model || "claude-3-5-haiku-20241022");
-  } else if (config.provider === "deepseek") {
-    const deepseek = createOpenAI({
-      baseURL: config.baseUrl || "https://api.deepseek.com/v1",
-      apiKey: config.apiKey
-    });
-    model = deepseek(config.model || "deepseek-chat");
-  } else if (config.provider === "ollama" || config.provider === "betico_ai") {
-    const ollama = createOpenAI({
-      baseURL: config.baseUrl || process.env.OLLAMA_URL || "http://beticoia_ollama:11434/v1",
-      apiKey: config.apiKey || "ollama"
-    });
-    model = ollama(config.model || "betico-ai");
-  } else if (config.provider === "localai") {
-    const localai = createOpenAI({
-      baseURL: config.baseUrl || process.env.LOCALAI_URL || "http://beticoia_localai:8080/v1",
-      apiKey: config.apiKey || "localai"
-    });
-    model = localai(config.model || "gpt-4");
-  } else {
-    throw new Error("Unsupported provider: " + config.provider);
-  }
-  const isLocalEngine = config.provider === "betico_ai" || config.provider === "ollama" || config.provider === "localai";
-  const defaultTimeout = isLocalEngine ? 12e4 : 45e3;
-  const timeoutMs = parseInt(process.env.AI_TIMEOUT_MS || String(defaultTimeout), 10);
-  const timeoutPromise = new Promise((_, reject) => {
-    setTimeout(() => reject(new Error(`AI inference timeout after ${Math.round(timeoutMs / 1e3)}s`)), timeoutMs);
-  });
-  const t0 = Date.now();
-  const generatePromise = (async () => {
-    let callParams = {
-      model,
-      temperature: config.temperature ?? 0.7
-    };
-    let promptLengthEstimate = 0;
-    if (typeof input === "string") {
-      callParams.prompt = input;
-      promptLengthEstimate = input.length;
-    } else {
-      let combinedSystem = input.system || "";
-      const cleanMessages = [];
-      if (input.messages && input.messages.length > 0) {
-        for (const m of input.messages) {
-          if (m.role === "system") {
-            combinedSystem = combinedSystem ? `${combinedSystem}
-
-${m.content}` : m.content;
-          } else {
-            cleanMessages.push({ role: m.role, content: m.content });
-          }
-        }
-      }
-      if (combinedSystem) {
-        callParams.system = combinedSystem;
-        promptLengthEstimate += combinedSystem.length;
-      }
-      if (cleanMessages.length > 0) {
-        callParams.messages = cleanMessages;
-        promptLengthEstimate += cleanMessages.reduce((acc, m) => acc + (m.content || "").length, 0);
-      } else if (combinedSystem) {
-        callParams.prompt = combinedSystem;
-      }
+async function getHaciendaDecryptedSecrets(tenantId) {
+  const res = await query(
+    `SELECT p12_encrypted_blob, p12_pin_encrypted, idp_username, idp_password_encrypted, environment,
+            smtp_host, smtp_port, smtp_user, smtp_pass_encrypted, resend_api_key_encrypted, email_auto_send
+     FROM tenant_hacienda_configs WHERE tenant_id = $1`,
+    [tenantId]
+  );
+  if (res.rows.length === 0) return null;
+  const row = res.rows[0];
+  let p12Buffer = null;
+  if (row.p12_encrypted_blob) {
+    try {
+      const rawEncrypted = row.p12_encrypted_blob.toString("utf8");
+      const decryptedBase64 = decrypt(rawEncrypted);
+      p12Buffer = Buffer.from(decryptedBase64, "base64");
+    } catch (e) {
+      console.error("[HaciendaRepo] Error descifrando certificado .p12:", e.message);
     }
-    const { text, usage } = await generateText(callParams);
-    const latencyMs = Date.now() - t0;
-    const promptTokens = usage?.promptTokens || Math.ceil(promptLengthEstimate / 4);
-    const completionTokens = usage?.completionTokens || Math.ceil(text.length / 4);
-    const totalTokens = usage?.totalTokens || promptTokens + completionTokens;
-    console.log(`[AI-Provider] ${config.provider}/${config.model} responded in ${latencyMs}ms, tokens: in=${promptTokens}, out=${completionTokens}, total=${totalTokens}`);
-    return {
-      text,
-      tokensUsed: totalTokens,
-      promptTokens,
-      completionTokens,
-      latencyMs
-    };
-  })();
-  return await Promise.race([generatePromise, timeoutPromise]);
+  }
+  const p12Pin = row.p12_pin_encrypted ? decrypt(row.p12_pin_encrypted) : "";
+  const idpPassword = row.idp_password_encrypted ? decrypt(row.idp_password_encrypted) : "";
+  const smtpPass = row.smtp_pass_encrypted ? decrypt(row.smtp_pass_encrypted) : "";
+  const resendApiKey = row.resend_api_key_encrypted ? decrypt(row.resend_api_key_encrypted) : "";
+  return {
+    p12Buffer,
+    p12Pin,
+    idpPassword,
+    idpUsername: row.idp_username || "",
+    environment: row.environment || "sandbox",
+    smtpHost: row.smtp_host || "",
+    smtpPort: Number(row.smtp_port || 587),
+    smtpUser: row.smtp_user || "",
+    smtpPass,
+    resendApiKey,
+    emailAutoSend: row.email_auto_send !== void 0 && row.email_auto_send !== null ? Boolean(row.email_auto_send) : true
+  };
 }
-var DEFAULT_GEMINI_KEY;
-var init_ai_provider = __esm({
-  "src/server/services/ai-provider.ts"() {
+async function saveHaciendaConfig(tenantId, data) {
+  const existingRes = await query(
+    `SELECT * FROM tenant_hacienda_configs WHERE tenant_id = $1`,
+    [tenantId]
+  );
+  const existing = existingRes.rows[0] || {};
+  const environment = data.environment || existing.environment || "sandbox";
+  const taxpayerIdType = data.taxpayerIdType || existing.taxpayer_id_type || "01";
+  const taxpayerIdNumber = data.taxpayerIdNumber !== void 0 ? data.taxpayerIdNumber.trim() : existing.taxpayer_id_number || "";
+  const taxpayerName = data.taxpayerName !== void 0 ? data.taxpayerName.trim() : existing.taxpayer_name || "";
+  const commercialName = data.commercialName !== void 0 ? data.commercialName.trim() : existing.commercial_name || "";
+  const taxpayerEmail = data.taxpayerEmail !== void 0 ? data.taxpayerEmail.trim() : existing.taxpayer_email || "";
+  const taxpayerPhone = data.taxpayerPhone !== void 0 ? data.taxpayerPhone.trim() : existing.taxpayer_phone || "";
+  const economicActivityCode = data.economicActivityCode !== void 0 ? data.economicActivityCode.trim() : existing.economic_activity_code || "";
+  let economicActivitiesJson = existing.economic_activities_json || [];
+  if (data.economicActivities !== void 0) {
+    if (typeof data.economicActivities === "string") {
+      try {
+        economicActivitiesJson = JSON.parse(data.economicActivities);
+      } catch (_) {
+        economicActivitiesJson = [];
+      }
+    } else if (Array.isArray(data.economicActivities)) {
+      economicActivitiesJson = data.economicActivities;
+    }
+  }
+  const defaultCabysCode = data.defaultCabysCode !== void 0 ? data.defaultCabysCode.trim() : existing.default_cabys_code || "8311100000000";
+  const province = data.province || existing.province || "1";
+  const canton = data.canton || existing.canton || "01";
+  const district = data.district || existing.district || "01";
+  const neighborhood = data.neighborhood || existing.neighborhood || "01";
+  const addressDetail = data.addressDetail !== void 0 ? data.addressDetail.trim() : existing.address_detail || "";
+  const branchCode = String(data.branchCode || existing.branch_code || "001").replace(/\D/g, "").padStart(3, "0").slice(0, 3);
+  const posCode = String(data.posCode || existing.pos_code || "00001").replace(/\D/g, "").padStart(5, "0").slice(0, 5);
+  const defaultDocType = data.defaultDocType || existing.default_doc_type || "04";
+  const seqFactura = data.seqFactura !== void 0 ? Math.max(1, Number(data.seqFactura) || 1) : Number(existing.seq_factura || 1);
+  const seqTiquete = data.seqTiquete !== void 0 ? Math.max(1, Number(data.seqTiquete) || 1) : Number(existing.seq_tiquete || 1);
+  const seqNotaCredito = data.seqNotaCredito !== void 0 ? Math.max(1, Number(data.seqNotaCredito) || 1) : Number(existing.seq_nota_credito || 1);
+  const multiBranchEnabled = data.multiBranchEnabled !== void 0 ? Boolean(data.multiBranchEnabled) : Boolean(existing.multi_branch_enabled);
+  const providerMode = data.providerMode || existing.provider_mode || "BETICO_NATIVE";
+  const useAlternativeProvider = data.useAlternativeProvider !== void 0 ? Boolean(data.useAlternativeProvider) : Boolean(existing.use_alternative_provider);
+  const isSimplifiedRegime = data.isSimplifiedRegime !== void 0 ? Boolean(data.isSimplifiedRegime) : Boolean(existing.is_simplified_regime);
+  const emailAutoSend = data.emailAutoSend !== void 0 ? Boolean(data.emailAutoSend) : existing.email_auto_send !== void 0 && existing.email_auto_send !== null ? Boolean(existing.email_auto_send) : true;
+  const smtpHost = data.smtpHost !== void 0 ? data.smtpHost.trim() : existing.smtp_host || "";
+  const smtpPort = data.smtpPort !== void 0 ? Number(data.smtpPort) || 587 : Number(existing.smtp_port || 587);
+  const smtpUser = data.smtpUser !== void 0 ? data.smtpUser.trim() : existing.smtp_user || "";
+  let smtpPassEncrypted = existing.smtp_pass_encrypted || "";
+  if (data.smtpPass && data.smtpPass.trim() && !data.smtpPass.includes("\u2022\u2022\u2022\u2022")) {
+    smtpPassEncrypted = encrypt(data.smtpPass.trim());
+  } else if (data.smtpPass === "") {
+    smtpPassEncrypted = "";
+  }
+  let resendApiKeyEncrypted = existing.resend_api_key_encrypted || "";
+  if (data.resendApiKey && data.resendApiKey.trim() && !data.resendApiKey.includes("\u2022\u2022\u2022\u2022")) {
+    resendApiKeyEncrypted = encrypt(data.resendApiKey.trim());
+  } else if (data.resendApiKey === "") {
+    resendApiKeyEncrypted = "";
+  }
+  const active = data.active !== void 0 ? Boolean(data.active) : existing.active !== void 0 ? Boolean(existing.active) : true;
+  const idpUsername = data.idpUsername !== void 0 ? data.idpUsername.trim() : existing.idp_username || "";
+  let idpPasswordEncrypted = existing.idp_password_encrypted || "";
+  if (data.idpPassword && data.idpPassword.trim() && !data.idpPassword.includes("\u2022\u2022\u2022\u2022")) {
+    idpPasswordEncrypted = encrypt(data.idpPassword.trim());
+  }
+  let p12EncryptedBlob = existing.p12_encrypted_blob;
+  let p12Filename = existing.p12_filename || "";
+  let p12ExpiresAt = existing.p12_expires_at || null;
+  let certSubject = data.certSubject !== void 0 ? data.certSubject : existing.cert_subject || "";
+  let certIssuer = data.certIssuer !== void 0 ? data.certIssuer : existing.cert_issuer || "";
+  if (data.p12Buffer && data.p12Buffer.length > 0) {
+    const base64Str = data.p12Buffer.toString("base64");
+    const encryptedStr = encrypt(base64Str);
+    p12EncryptedBlob = Buffer.from(encryptedStr, "utf8");
+    p12Filename = data.p12Filename || "certificado.p12";
+  }
+  if (data.p12ExpiresAt) {
+    p12ExpiresAt = data.p12ExpiresAt;
+  }
+  let p12PinEncrypted = existing.p12_pin_encrypted || "";
+  if (data.p12Pin && data.p12Pin.trim() && !data.p12Pin.includes("\u2022\u2022\u2022\u2022")) {
+    p12PinEncrypted = encrypt(data.p12Pin.trim());
+  }
+  await query(
+    `INSERT INTO tenant_hacienda_configs (
+      tenant_id, environment, taxpayer_id_type, taxpayer_id_number, taxpayer_name, commercial_name,
+      taxpayer_email, taxpayer_phone, economic_activity_code, economic_activities_json, default_cabys_code,
+      province, canton, district, neighborhood, address_detail, idp_username, idp_password_encrypted,
+      p12_encrypted_blob, p12_pin_encrypted, p12_filename, p12_expires_at, cert_subject, cert_issuer,
+      branch_code, pos_code, default_doc_type, seq_factura, seq_tiquete, seq_nota_credito,
+      multi_branch_enabled, provider_mode, use_alternative_provider, is_simplified_regime,
+      email_auto_send, smtp_host, smtp_port, smtp_user, smtp_pass_encrypted, resend_api_key_encrypted,
+      active, updated_at
+    ) VALUES (
+      $1, $2, $3, $4, $5, $6,
+      $7, $8, $9, $10::jsonb, $11,
+      $12, $13, $14, $15, $16, $17, $18,
+      $19, $20, $21, $22, $23, $24,
+      $25, $26, $27, $28, $29, $30,
+      $31, $32, $33, $34,
+      $35, $36, $37, $38, $39, $40,
+      $41, CURRENT_TIMESTAMP
+    )
+    ON CONFLICT (tenant_id) DO UPDATE SET
+      environment = EXCLUDED.environment,
+      taxpayer_id_type = EXCLUDED.taxpayer_id_type,
+      taxpayer_id_number = EXCLUDED.taxpayer_id_number,
+      taxpayer_name = EXCLUDED.taxpayer_name,
+      commercial_name = EXCLUDED.commercial_name,
+      taxpayer_email = EXCLUDED.taxpayer_email,
+      taxpayer_phone = EXCLUDED.taxpayer_phone,
+      economic_activity_code = EXCLUDED.economic_activity_code,
+      economic_activities_json = EXCLUDED.economic_activities_json,
+      default_cabys_code = EXCLUDED.default_cabys_code,
+      province = EXCLUDED.province,
+      canton = EXCLUDED.canton,
+      district = EXCLUDED.district,
+      neighborhood = EXCLUDED.neighborhood,
+      address_detail = EXCLUDED.address_detail,
+      idp_username = EXCLUDED.idp_username,
+      idp_password_encrypted = EXCLUDED.idp_password_encrypted,
+      p12_encrypted_blob = COALESCE(EXCLUDED.p12_encrypted_blob, tenant_hacienda_configs.p12_encrypted_blob),
+      p12_pin_encrypted = EXCLUDED.p12_pin_encrypted,
+      p12_filename = COALESCE(EXCLUDED.p12_filename, tenant_hacienda_configs.p12_filename),
+      p12_expires_at = COALESCE(EXCLUDED.p12_expires_at, tenant_hacienda_configs.p12_expires_at),
+      cert_subject = EXCLUDED.cert_subject,
+      cert_issuer = EXCLUDED.cert_issuer,
+      branch_code = EXCLUDED.branch_code,
+      pos_code = EXCLUDED.pos_code,
+      default_doc_type = EXCLUDED.default_doc_type,
+      seq_factura = EXCLUDED.seq_factura,
+      seq_tiquete = EXCLUDED.seq_tiquete,
+      seq_nota_credito = EXCLUDED.seq_nota_credito,
+      multi_branch_enabled = EXCLUDED.multi_branch_enabled,
+      provider_mode = EXCLUDED.provider_mode,
+      use_alternative_provider = EXCLUDED.use_alternative_provider,
+      is_simplified_regime = EXCLUDED.is_simplified_regime,
+      email_auto_send = EXCLUDED.email_auto_send,
+      smtp_host = EXCLUDED.smtp_host,
+      smtp_port = EXCLUDED.smtp_port,
+      smtp_user = EXCLUDED.smtp_user,
+      smtp_pass_encrypted = EXCLUDED.smtp_pass_encrypted,
+      resend_api_key_encrypted = EXCLUDED.resend_api_key_encrypted,
+      active = EXCLUDED.active,
+      updated_at = CURRENT_TIMESTAMP`,
+    [
+      tenantId,
+      environment,
+      taxpayerIdType,
+      taxpayerIdNumber,
+      taxpayerName,
+      commercialName,
+      taxpayerEmail,
+      taxpayerPhone,
+      economicActivityCode,
+      JSON.stringify(economicActivitiesJson),
+      defaultCabysCode,
+      province,
+      canton,
+      district,
+      neighborhood,
+      addressDetail,
+      idpUsername,
+      idpPasswordEncrypted,
+      p12EncryptedBlob,
+      p12PinEncrypted,
+      p12Filename,
+      p12ExpiresAt,
+      certSubject,
+      certIssuer,
+      branchCode,
+      posCode,
+      defaultDocType,
+      seqFactura,
+      seqTiquete,
+      seqNotaCredito,
+      multiBranchEnabled,
+      providerMode,
+      useAlternativeProvider,
+      isSimplifiedRegime,
+      emailAutoSend,
+      smtpHost,
+      smtpPort,
+      smtpUser,
+      smtpPassEncrypted,
+      resendApiKeyEncrypted,
+      active
+    ]
+  );
+  return await getHaciendaConfigByTenant(tenantId);
+}
+async function clearHaciendaCredentials(tenantId, target) {
+  if (target === "atv") {
+    await query(
+      `UPDATE tenant_hacienda_configs
+       SET idp_username = '', idp_password_encrypted = '', is_connected = false, updated_at = CURRENT_TIMESTAMP
+       WHERE tenant_id = $1`,
+      [tenantId]
+    );
+  } else if (target === "p12") {
+    await query(
+      `UPDATE tenant_hacienda_configs
+       SET p12_encrypted_blob = NULL, p12_pin_encrypted = '', p12_filename = '', p12_expires_at = NULL,
+           cert_subject = '', cert_issuer = '', is_connected = false, updated_at = CURRENT_TIMESTAMP
+       WHERE tenant_id = $1`,
+      [tenantId]
+    );
+  } else {
+    await query(
+      `UPDATE tenant_hacienda_configs
+       SET idp_username = '', idp_password_encrypted = '',
+           p12_encrypted_blob = NULL, p12_pin_encrypted = '', p12_filename = '', p12_expires_at = NULL,
+           cert_subject = '', cert_issuer = '', is_connected = false, updated_at = CURRENT_TIMESTAMP
+       WHERE tenant_id = $1`,
+      [tenantId]
+    );
+  }
+  return getHaciendaConfigByTenant(tenantId);
+}
+async function updateConnectionTestResult(tenantId, isConnected, message) {
+  await query(
+    `UPDATE tenant_hacienda_configs 
+     SET is_connected = $1, last_test_at = CURRENT_TIMESTAMP, last_test_message = $2, updated_at = CURRENT_TIMESTAMP
+     WHERE tenant_id = $3`,
+    [isConnected, message, tenantId]
+  );
+}
+function mapHaciendaBranchRow(row) {
+  const expiresIso = row.custom_p12_expires_at ? new Date(row.custom_p12_expires_at).toISOString() : null;
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    branchId: row.branch_id || null,
+    storeBranchName: row.store_branch_name || null,
+    branchName: row.branch_name || "Sucursal",
+    branchCode: row.branch_code || "002",
+    posCode: row.pos_code || "00001",
+    commercialName: row.commercial_name || "",
+    economicActivityCode: row.economic_activity_code || "",
+    province: row.province || "1",
+    canton: row.canton || "01",
+    district: row.district || "01",
+    neighborhood: row.neighborhood || "01",
+    addressDetail: row.address_detail || "",
+    seqFactura: Number(row.seq_factura || 1),
+    seqTiquete: Number(row.seq_tiquete || 1),
+    seqNotaCredito: Number(row.seq_nota_credito || 1),
+    useCustomCredentials: Boolean(row.use_custom_credentials),
+    customTaxpayerIdType: row.custom_taxpayer_id_type || "01",
+    customTaxpayerIdNumber: row.custom_taxpayer_id_number || "",
+    customTaxpayerName: row.custom_taxpayer_name || "",
+    customIdpUsername: row.custom_idp_username || "",
+    customIdpPasswordMasked: row.custom_idp_password_encrypted ? "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022" : "",
+    customP12Filename: row.custom_p12_filename || "",
+    customP12ExpiresAt: expiresIso,
+    customP12HasCertificate: Boolean(row.custom_p12_encrypted_blob || row.custom_p12_filename),
+    customCertSubject: row.custom_cert_subject || "",
+    customCertDaysRemaining: computeDaysRemaining(expiresIso),
+    isConnected: Boolean(row.is_connected),
+    lastTestAt: row.last_test_at ? new Date(row.last_test_at).toISOString() : null,
+    lastTestMessage: row.last_test_message || null,
+    active: row.active !== void 0 ? Boolean(row.active) : true,
+    createdAt: row.created_at ? new Date(row.created_at).toISOString() : "",
+    updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : ""
+  };
+}
+async function getHaciendaBranchesByTenant(tenantId) {
+  const res = await query(
+    `SELECT thb.*, b.name AS store_branch_name
+     FROM tenant_hacienda_branches thb
+     LEFT JOIN branches b ON b.id = thb.branch_id
+     WHERE thb.tenant_id = $1
+     ORDER BY thb.branch_code ASC, thb.pos_code ASC`,
+    [tenantId]
+  );
+  return res.rows.map(mapHaciendaBranchRow);
+}
+async function getHaciendaBranchById(tenantId, id) {
+  const res = await query(
+    `SELECT thb.*, b.name AS store_branch_name
+     FROM tenant_hacienda_branches thb
+     LEFT JOIN branches b ON b.id = thb.branch_id
+     WHERE thb.tenant_id = $1 AND thb.id = $2`,
+    [tenantId, id]
+  );
+  if (res.rows.length === 0) return null;
+  return mapHaciendaBranchRow(res.rows[0]);
+}
+async function getHaciendaBranchByStoreBranchId(tenantId, storeBranchId) {
+  const res = await query(
+    `SELECT thb.*, b.name AS store_branch_name
+     FROM tenant_hacienda_branches thb
+     LEFT JOIN branches b ON b.id = thb.branch_id
+     WHERE thb.tenant_id = $1 AND thb.branch_id = $2 AND thb.active = true
+     ORDER BY thb.branch_code ASC
+     LIMIT 1`,
+    [tenantId, storeBranchId]
+  );
+  if (res.rows.length === 0) return null;
+  return mapHaciendaBranchRow(res.rows[0]);
+}
+async function getHaciendaBranchDecryptedSecrets(tenantId, id) {
+  const res = await query(
+    `SELECT thb.custom_p12_encrypted_blob, thb.custom_p12_pin_encrypted, thb.custom_idp_username, thb.custom_idp_password_encrypted,
+            COALESCE(thc.environment, 'sandbox') AS environment
+     FROM tenant_hacienda_branches thb
+     LEFT JOIN tenant_hacienda_configs thc ON thc.tenant_id = thb.tenant_id
+     WHERE thb.tenant_id = $1 AND thb.id = $2`,
+    [tenantId, id]
+  );
+  if (res.rows.length === 0) return null;
+  const row = res.rows[0];
+  let p12Buffer = null;
+  if (row.custom_p12_encrypted_blob) {
+    try {
+      const rawEncrypted = row.custom_p12_encrypted_blob.toString("utf8");
+      const decryptedBase64 = decrypt(rawEncrypted);
+      p12Buffer = Buffer.from(decryptedBase64, "base64");
+    } catch (e) {
+      console.error("[HaciendaRepo] Error descifrando certificado .p12 de sucursal:", e.message);
+    }
+  }
+  const p12Pin = row.custom_p12_pin_encrypted ? decrypt(row.custom_p12_pin_encrypted) : "";
+  const idpPassword = row.custom_idp_password_encrypted ? decrypt(row.custom_idp_password_encrypted) : "";
+  return {
+    p12Buffer,
+    p12Pin,
+    idpPassword,
+    idpUsername: row.custom_idp_username || "",
+    environment: row.environment || "sandbox"
+  };
+}
+async function saveHaciendaBranch(tenantId, data) {
+  const branchCode = String(data.branchCode || "002").replace(/\D/g, "").padStart(3, "0").slice(0, 3);
+  const posCode = String(data.posCode || "00001").replace(/\D/g, "").padStart(5, "0").slice(0, 5);
+  let existing = {};
+  if (data.id) {
+    const exRes = await query(
+      `SELECT * FROM tenant_hacienda_branches WHERE tenant_id = $1 AND id = $2`,
+      [tenantId, data.id]
+    );
+    existing = exRes.rows[0] || {};
+  } else {
+    const exRes = await query(
+      `SELECT * FROM tenant_hacienda_branches WHERE tenant_id = $1 AND branch_code = $2 AND pos_code = $3`,
+      [tenantId, branchCode, posCode]
+    );
+    existing = exRes.rows[0] || {};
+  }
+  const branchId = data.branchId !== void 0 ? data.branchId || null : existing.branch_id || null;
+  const branchName = (data.branchName !== void 0 ? data.branchName : existing.branch_name || "Sucursal").trim();
+  const commercialName = (data.commercialName !== void 0 ? data.commercialName : existing.commercial_name || "").trim();
+  const economicActivityCode = (data.economicActivityCode !== void 0 ? data.economicActivityCode : existing.economic_activity_code || "").trim();
+  const province = data.province || existing.province || "1";
+  const canton = data.canton || existing.canton || "01";
+  const district = data.district || existing.district || "01";
+  const neighborhood = data.neighborhood || existing.neighborhood || "01";
+  const addressDetail = (data.addressDetail !== void 0 ? data.addressDetail : existing.address_detail || "").trim();
+  const seqFactura = data.seqFactura !== void 0 ? Math.max(1, Number(data.seqFactura) || 1) : Number(existing.seq_factura || 1);
+  const seqTiquete = data.seqTiquete !== void 0 ? Math.max(1, Number(data.seqTiquete) || 1) : Number(existing.seq_tiquete || 1);
+  const seqNotaCredito = data.seqNotaCredito !== void 0 ? Math.max(1, Number(data.seqNotaCredito) || 1) : Number(existing.seq_nota_credito || 1);
+  const useCustomCredentials = data.useCustomCredentials !== void 0 ? data.useCustomCredentials === true || data.useCustomCredentials === "true" : Boolean(existing.use_custom_credentials);
+  const customTaxpayerIdType = data.customTaxpayerIdType || existing.custom_taxpayer_id_type || "01";
+  const customTaxpayerIdNumber = (data.customTaxpayerIdNumber !== void 0 ? data.customTaxpayerIdNumber : existing.custom_taxpayer_id_number || "").trim();
+  const customTaxpayerName = (data.customTaxpayerName !== void 0 ? data.customTaxpayerName : existing.custom_taxpayer_name || "").trim();
+  const customIdpUsername = (data.customIdpUsername !== void 0 ? data.customIdpUsername : existing.custom_idp_username || "").trim();
+  let customIdpPasswordEncrypted = existing.custom_idp_password_encrypted || "";
+  if (data.customIdpPassword && data.customIdpPassword.trim() && !data.customIdpPassword.includes("\u2022\u2022\u2022\u2022")) {
+    customIdpPasswordEncrypted = encrypt(data.customIdpPassword.trim());
+  }
+  let customP12EncryptedBlob = existing.custom_p12_encrypted_blob || null;
+  let customP12Filename = existing.custom_p12_filename || "";
+  let customP12ExpiresAt = existing.custom_p12_expires_at || null;
+  let customCertSubject = data.customCertSubject !== void 0 ? data.customCertSubject : existing.custom_cert_subject || "";
+  if (data.customP12Buffer && data.customP12Buffer.length > 0) {
+    const base64Str = data.customP12Buffer.toString("base64");
+    const encryptedStr = encrypt(base64Str);
+    customP12EncryptedBlob = Buffer.from(encryptedStr, "utf8");
+    customP12Filename = data.customP12Filename || "certificado-sucursal.p12";
+  }
+  if (data.customP12ExpiresAt) {
+    customP12ExpiresAt = data.customP12ExpiresAt;
+  }
+  let customP12PinEncrypted = existing.custom_p12_pin_encrypted || "";
+  if (data.customP12Pin && data.customP12Pin.trim() && !data.customP12Pin.includes("\u2022\u2022\u2022\u2022")) {
+    customP12PinEncrypted = encrypt(data.customP12Pin.trim());
+  }
+  const active = data.active !== void 0 ? data.active === true || data.active === "true" : existing.active !== void 0 ? Boolean(existing.active) : true;
+  let savedId;
+  if (data.id && existing.id) {
+    const updRes = await query(
+      `UPDATE tenant_hacienda_branches SET
+        branch_id = $1, branch_name = $2, branch_code = $3, pos_code = $4,
+        commercial_name = $5, economic_activity_code = $6, province = $7, canton = $8,
+        district = $9, neighborhood = $10, address_detail = $11,
+        seq_factura = $12, seq_tiquete = $13, seq_nota_credito = $14,
+        use_custom_credentials = $15, custom_taxpayer_id_type = $16,
+        custom_taxpayer_id_number = $17, custom_taxpayer_name = $18,
+        custom_idp_username = $19, custom_idp_password_encrypted = $20,
+        custom_p12_encrypted_blob = $21, custom_p12_pin_encrypted = $22,
+        custom_p12_filename = $23, custom_p12_expires_at = $24,
+        custom_cert_subject = $25, active = $26, updated_at = CURRENT_TIMESTAMP
+       WHERE tenant_id = $27 AND id = $28
+       RETURNING id`,
+      [
+        branchId,
+        branchName,
+        branchCode,
+        posCode,
+        commercialName,
+        economicActivityCode,
+        province,
+        canton,
+        district,
+        neighborhood,
+        addressDetail,
+        seqFactura,
+        seqTiquete,
+        seqNotaCredito,
+        useCustomCredentials,
+        customTaxpayerIdType,
+        customTaxpayerIdNumber,
+        customTaxpayerName,
+        customIdpUsername,
+        customIdpPasswordEncrypted,
+        customP12EncryptedBlob,
+        customP12PinEncrypted,
+        customP12Filename,
+        customP12ExpiresAt,
+        customCertSubject,
+        active,
+        tenantId,
+        data.id
+      ]
+    );
+    savedId = updRes.rows[0].id;
+  } else {
+    const insRes = await query(
+      `INSERT INTO tenant_hacienda_branches (
+        tenant_id, branch_id, branch_name, branch_code, pos_code,
+        commercial_name, economic_activity_code, province, canton,
+        district, neighborhood, address_detail,
+        seq_factura, seq_tiquete, seq_nota_credito,
+        use_custom_credentials, custom_taxpayer_id_type,
+        custom_taxpayer_id_number, custom_taxpayer_name,
+        custom_idp_username, custom_idp_password_encrypted,
+        custom_p12_encrypted_blob, custom_p12_pin_encrypted,
+        custom_p12_filename, custom_p12_expires_at,
+        custom_cert_subject, active, updated_at
+      ) VALUES (
+        $1, $2, $3, $4, $5,
+        $6, $7, $8, $9,
+        $10, $11, $12,
+        $13, $14, $15,
+        $16, $17,
+        $18, $19,
+        $20, $21,
+        $22, $23,
+        $24, $25,
+        $26, $27, CURRENT_TIMESTAMP
+      )
+      ON CONFLICT (tenant_id, branch_code, pos_code) DO UPDATE SET
+        branch_id = EXCLUDED.branch_id,
+        branch_name = EXCLUDED.branch_name,
+        commercial_name = EXCLUDED.commercial_name,
+        economic_activity_code = EXCLUDED.economic_activity_code,
+        province = EXCLUDED.province,
+        canton = EXCLUDED.canton,
+        district = EXCLUDED.district,
+        neighborhood = EXCLUDED.neighborhood,
+        address_detail = EXCLUDED.address_detail,
+        seq_factura = EXCLUDED.seq_factura,
+        seq_tiquete = EXCLUDED.seq_tiquete,
+        seq_nota_credito = EXCLUDED.seq_nota_credito,
+        use_custom_credentials = EXCLUDED.use_custom_credentials,
+        custom_taxpayer_id_type = EXCLUDED.custom_taxpayer_id_type,
+        custom_taxpayer_id_number = EXCLUDED.custom_taxpayer_id_number,
+        custom_taxpayer_name = EXCLUDED.custom_taxpayer_name,
+        custom_idp_username = EXCLUDED.custom_idp_username,
+        custom_idp_password_encrypted = EXCLUDED.custom_idp_password_encrypted,
+        custom_p12_encrypted_blob = COALESCE(EXCLUDED.custom_p12_encrypted_blob, tenant_hacienda_branches.custom_p12_encrypted_blob),
+        custom_p12_pin_encrypted = EXCLUDED.custom_p12_pin_encrypted,
+        custom_p12_filename = COALESCE(EXCLUDED.custom_p12_filename, tenant_hacienda_branches.custom_p12_filename),
+        custom_p12_expires_at = COALESCE(EXCLUDED.custom_p12_expires_at, tenant_hacienda_branches.custom_p12_expires_at),
+        custom_cert_subject = EXCLUDED.custom_cert_subject,
+        active = EXCLUDED.active,
+        updated_at = CURRENT_TIMESTAMP
+      RETURNING id`,
+      [
+        tenantId,
+        branchId,
+        branchName,
+        branchCode,
+        posCode,
+        commercialName,
+        economicActivityCode,
+        province,
+        canton,
+        district,
+        neighborhood,
+        addressDetail,
+        seqFactura,
+        seqTiquete,
+        seqNotaCredito,
+        useCustomCredentials,
+        customTaxpayerIdType,
+        customTaxpayerIdNumber,
+        customTaxpayerName,
+        customIdpUsername,
+        customIdpPasswordEncrypted,
+        customP12EncryptedBlob,
+        customP12PinEncrypted,
+        customP12Filename,
+        customP12ExpiresAt,
+        customCertSubject,
+        active
+      ]
+    );
+    savedId = insRes.rows[0].id;
+  }
+  return await getHaciendaBranchById(tenantId, savedId);
+}
+async function deleteHaciendaBranch(tenantId, id) {
+  const res = await query(
+    `DELETE FROM tenant_hacienda_branches WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, id]
+  );
+  return (res.rowCount || 0) > 0;
+}
+async function updateBranchConnectionTestResult(tenantId, id, isConnected, message) {
+  await query(
+    `UPDATE tenant_hacienda_branches
+     SET is_connected = $1, last_test_at = CURRENT_TIMESTAMP, last_test_message = $2, updated_at = CURRENT_TIMESTAMP
+     WHERE tenant_id = $3 AND id = $4`,
+    [isConnected, message, tenantId, id]
+  );
+}
+function formatConsecutiveNumber(branchCode, posCode, docType, sequence) {
+  const b = String(branchCode || "001").replace(/\D/g, "").padStart(3, "0").slice(-3);
+  const p = String(posCode || "00001").replace(/\D/g, "").padStart(5, "0").slice(-5);
+  const d = String(docType || "04").replace(/\D/g, "").padStart(2, "0").slice(-2);
+  const s = String(Math.max(1, Math.floor(Number(sequence) || 1))).padStart(10, "0").slice(-10);
+  return `${b}${p}${d}${s}`;
+}
+function generateHaciendaNumericKey(params) {
+  const now = params.date || /* @__PURE__ */ new Date();
+  const dd = String(now.getDate()).padStart(2, "0");
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const yy = String(now.getFullYear()).slice(-2);
+  const id12 = String(params.taxpayerIdNumber || "").replace(/\D/g, "").padStart(12, "0").slice(-12);
+  const consec20 = String(params.consecutive20 || "").replace(/\D/g, "").padStart(20, "0").slice(-20);
+  const sit = params.situation || "1";
+  const sec8 = (params.securityCode ? String(params.securityCode).replace(/\D/g, "") : String(Math.floor(1e7 + Math.random() * 9e7))).padStart(8, "0").slice(-8);
+  return `506${dd}${mm}${yy}${id12}${consec20}${sit}${sec8}`;
+}
+async function consumeNextConsecutive(tenantId, docType, options) {
+  const seqCol = docType === "01" ? "seq_factura" : docType === "03" ? "seq_nota_credito" : "seq_tiquete";
+  const mainConfig = await getHaciendaConfigByTenant(tenantId);
+  if (mainConfig?.multiBranchEnabled && (options?.branchId || options?.branchCode)) {
+    let branchRow = null;
+    if (options.branchId) {
+      const bRes = await query(
+        `SELECT * FROM tenant_hacienda_branches
+         WHERE tenant_id = $1 AND active = true AND (branch_id = $2 OR id::text = $2)
+         ORDER BY branch_code ASC LIMIT 1`,
+        [tenantId, options.branchId]
+      );
+      branchRow = bRes.rows[0] || null;
+    }
+    if (!branchRow && options.branchCode) {
+      const normCode = String(options.branchCode).replace(/\D/g, "").padStart(3, "0").slice(0, 3);
+      const bRes = await query(
+        `SELECT * FROM tenant_hacienda_branches
+         WHERE tenant_id = $1 AND active = true AND branch_code = $2
+         ORDER BY pos_code ASC LIMIT 1`,
+        [tenantId, normCode]
+      );
+      branchRow = bRes.rows[0] || null;
+    }
+    if (branchRow) {
+      const updRes = await query(
+        `UPDATE tenant_hacienda_branches
+         SET ${seqCol} = COALESCE(${seqCol}, 1) + 1, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1 AND tenant_id = $2
+         RETURNING (${seqCol} - 1) AS used_seq, branch_code, pos_code, branch_id, use_custom_credentials, custom_taxpayer_id_number`,
+        [branchRow.id, tenantId]
+      );
+      const r = updRes.rows[0];
+      const usedSeq2 = Number(r?.used_seq || 1);
+      const bCode2 = r?.branch_code || branchRow.branch_code || "002";
+      const pCode2 = r?.pos_code || branchRow.pos_code || "00001";
+      const taxpayerIdNumber2 = r?.use_custom_credentials && r?.custom_taxpayer_id_number ? r.custom_taxpayer_id_number : mainConfig?.taxpayerIdNumber || "3101000000";
+      const consecutiveNumber2 = formatConsecutiveNumber(bCode2, pCode2, docType, usedSeq2);
+      const numericKey2 = generateHaciendaNumericKey({ taxpayerIdNumber: taxpayerIdNumber2, consecutive20: consecutiveNumber2 });
+      return {
+        consecutiveNumber: consecutiveNumber2,
+        numericKey: numericKey2,
+        branchCode: bCode2,
+        posCode: pCode2,
+        branchId: r?.branch_id || branchRow.branch_id || branchRow.id || null,
+        taxpayerIdNumber: taxpayerIdNumber2
+      };
+    }
+  }
+  const updMain = await query(
+    `UPDATE tenant_hacienda_configs
+     SET ${seqCol} = COALESCE(${seqCol}, 1) + 1, updated_at = CURRENT_TIMESTAMP
+     WHERE tenant_id = $1
+     RETURNING (${seqCol} - 1) AS used_seq, branch_code, pos_code, taxpayer_id_number`,
+    [tenantId]
+  );
+  const row = updMain.rows[0];
+  const usedSeq = Number(row?.used_seq || 1);
+  const bCode = row?.branch_code || options?.branchCode || "001";
+  const pCode = row?.pos_code || "00001";
+  const taxpayerIdNumber = row?.taxpayer_id_number || mainConfig?.taxpayerIdNumber || "3101000000";
+  const consecutiveNumber = formatConsecutiveNumber(bCode, pCode, docType, usedSeq);
+  const numericKey = generateHaciendaNumericKey({ taxpayerIdNumber, consecutive20: consecutiveNumber });
+  return {
+    consecutiveNumber,
+    numericKey,
+    branchCode: bCode,
+    posCode: pCode,
+    branchId: options?.branchId || null,
+    taxpayerIdNumber
+  };
+}
+async function getTenantPlanQuota(tenantId) {
+  const tenantRes = await query(
+    `SELECT slug, plan, custom_invoices_quota FROM tenants WHERE id = $1`,
+    [tenantId]
+  );
+  if (tenantRes.rows.length === 0) {
+    return { quota: 100, courtesyMargin: 10, planName: "pro" };
+  }
+  const { slug, plan, custom_invoices_quota } = tenantRes.rows[0];
+  if (slug === "superadmin") {
+    return {
+      quota: 999999,
+      courtesyMargin: 999999,
+      planName: "superadmin_platform"
+    };
+  }
+  const normalizedPlan = (plan || "pro").toLowerCase();
+  if (custom_invoices_quota !== null && custom_invoices_quota !== void 0 && Number(custom_invoices_quota) > 0) {
+    return {
+      quota: Number(custom_invoices_quota),
+      courtesyMargin: 10,
+      planName: normalizedPlan
+    };
+  }
+  const settingsRes = await query(
+    `SELECT key, value FROM platform_settings WHERE key IN (
+      'plan_starter_invoices_quota',
+      'plan_pro_invoices_quota',
+      'plan_enterprise_invoices_quota',
+      'plan_aliado_invoices_quota',
+      'courtesy_invoices_margin'
+    )`
+  );
+  const settingsMap = {};
+  for (const row of settingsRes.rows) {
+    settingsMap[row.key] = parseInt(row.value, 10);
+  }
+  const courtesyMargin = settingsMap["courtesy_invoices_margin"] || 10;
+  let quota = 100;
+  if (normalizedPlan === "starter" || normalizedPlan === "emprendedor") {
+    quota = settingsMap["plan_starter_invoices_quota"] || 50;
+  } else if (normalizedPlan === "enterprise" || normalizedPlan === "business" || normalizedPlan === "empresa") {
+    quota = settingsMap["plan_enterprise_invoices_quota"] || 250;
+  } else if (normalizedPlan === "aliado") {
+    quota = settingsMap["plan_aliado_invoices_quota"] || 500;
+  } else {
+    quota = settingsMap["plan_pro_invoices_quota"] || 100;
+  }
+  return {
+    quota,
+    courtesyMargin,
+    planName: normalizedPlan
+  };
+}
+async function getCycleUsage(tenantId) {
+  const { quota, courtesyMargin, planName } = await getTenantPlanQuota(tenantId);
+  const tenantRes = await query(
+    `SELECT slug, plan, custom_invoices_quota, next_billing_date, created_at FROM tenants WHERE id = $1`,
+    [tenantId]
+  );
+  const t = tenantRes.rows[0];
+  const nextBilling = t?.next_billing_date ? new Date(t.next_billing_date) : new Date(Date.now() + 30 * 864e5);
+  const cycleEndDate = nextBilling.toISOString().split("T")[0];
+  const startDateObj = new Date(nextBilling);
+  startDateObj.setDate(startDateObj.getDate() - 30);
+  const cycleStartDate = startDateObj.toISOString().split("T")[0];
+  const usageRes = await query(
+    `SELECT invoices_emitted, courtesy_used, quota_limit 
+     FROM hacienda_usage_cycles 
+     WHERE tenant_id = $1 AND cycle_start_date = $2`,
+    [tenantId, cycleStartDate]
+  );
+  let emitted = 0;
+  let courtesyUsed = 0;
+  if (usageRes.rows.length === 0) {
+    await query(
+      `INSERT INTO hacienda_usage_cycles (tenant_id, cycle_start_date, cycle_end_date, quota_limit)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (tenant_id, cycle_start_date) DO NOTHING`,
+      [tenantId, cycleStartDate, cycleEndDate, quota]
+    );
+  } else {
+    emitted = Number(usageRes.rows[0].invoices_emitted || 0);
+    courtesyUsed = Number(usageRes.rows[0].courtesy_used || 0);
+  }
+  if (t?.slug === "superadmin") {
+    const baseQuota = 999999;
+    const cm = 999999;
+    const effectiveQuota = 999999;
+    const hardLimit = 999999;
+    const isOverBaseQuota = false;
+    const isBlocked2 = false;
+    const remainingCourtesy = 999999;
+    return {
+      emitted,
+      quota: baseQuota,
+      remaining: Math.max(0, baseQuota - emitted),
+      inCourtesy: false,
+      courtesyUsed: 0,
+      courtesyAvailable: remainingCourtesy,
+      isBlocked: isBlocked2,
+      cycleStartDate,
+      cycleEndDate,
+      planName: "superadmin_platform",
+      baseQuota,
+      courtesyMargin: cm,
+      effectiveQuota,
+      hardLimit,
+      isOverBaseQuota,
+      remainingCourtesy,
+      plan: "superadmin_platform"
+    };
+  }
+  const remaining = Math.max(0, quota - emitted);
+  const inCourtesy = emitted >= quota;
+  const courtesyAvailable = Math.max(0, courtesyMargin - courtesyUsed);
+  const isBlocked = emitted >= quota && courtesyUsed >= courtesyMargin;
+  return {
+    emitted,
+    quota,
+    remaining,
+    inCourtesy,
+    courtesyUsed,
+    courtesyAvailable,
+    isBlocked,
+    cycleStartDate,
+    cycleEndDate,
+    planName,
+    baseQuota: quota,
+    courtesyMargin,
+    effectiveQuota: quota,
+    hardLimit: quota + courtesyMargin,
+    isOverBaseQuota: inCourtesy,
+    remainingCourtesy: courtesyAvailable,
+    plan: planName
+  };
+}
+async function incrementInvoiceUsage(tenantId) {
+  const usage = await getCycleUsage(tenantId);
+  if (usage.isBlocked) {
+    return {
+      success: false,
+      emitted: usage.emitted,
+      inCourtesy: true,
+      courtesyUsed: usage.courtesyUsed,
+      blocked: true
+    };
+  }
+  if (usage.emitted < usage.quota) {
+    await query(
+      `UPDATE hacienda_usage_cycles 
+       SET invoices_emitted = invoices_emitted + 1, updated_at = CURRENT_TIMESTAMP
+       WHERE tenant_id = $1 AND cycle_start_date = $2`,
+      [tenantId, usage.cycleStartDate]
+    );
+    return {
+      success: true,
+      emitted: usage.emitted + 1,
+      inCourtesy: false,
+      courtesyUsed: usage.courtesyUsed,
+      blocked: false
+    };
+  } else {
+    await query(
+      `UPDATE hacienda_usage_cycles 
+       SET invoices_emitted = invoices_emitted + 1, courtesy_used = courtesy_used + 1, updated_at = CURRENT_TIMESTAMP
+       WHERE tenant_id = $1 AND cycle_start_date = $2`,
+      [tenantId, usage.cycleStartDate]
+    );
+    return {
+      success: true,
+      emitted: usage.emitted + 1,
+      inCourtesy: true,
+      courtesyUsed: usage.courtesyUsed + 1,
+      blocked: false
+    };
+  }
+}
+var init_hacienda_native_repo = __esm({
+  "src/server/db/hacienda-native.repo.ts"() {
     "use strict";
     init_pool();
     init_encryption();
-    init_env();
-    DEFAULT_GEMINI_KEY = env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || "AQ.Ab8RN6IHcdDKDITkdIOjt8SznSc6lS_1grotOA6SQ6fjZnd2SQ";
+  }
+});
+
+// src/server/db/tenant-almendro.repo.ts
+var tenant_almendro_repo_exports = {};
+__export(tenant_almendro_repo_exports, {
+  getElectronicVoucherByAppointmentId: () => getElectronicVoucherByAppointmentId,
+  getElectronicVoucherByKeyOrId: () => getElectronicVoucherByKeyOrId,
+  getElectronicVoucherByOrderId: () => getElectronicVoucherByOrderId,
+  getElectronicVouchers: () => getElectronicVouchers,
+  getTenantAlmendroConfig: () => getTenantAlmendroConfig,
+  getTenantAlmendroConfigRaw: () => getTenantAlmendroConfigRaw,
+  saveElectronicVoucher: () => saveElectronicVoucher,
+  saveTenantAlmendroConfig: () => saveTenantAlmendroConfig
+});
+async function getTenantAlmendroConfig(tenantId) {
+  if (!tenantId) throw new Error("tenantId es requerido para consultar la configuraci\xF3n de Almendro");
+  const res = await query(`
+    SELECT id, tenant_id as "tenantId", is_enabled as "isEnabled",
+           billing_mode as "billingMode", environment,
+           api_key_encrypted as "apiKeyEncrypted", default_doc_type as "defaultDocType",
+           module_toggles as "moduleToggles", tax_id_type as "taxIdType",
+           tax_id_number as "taxIdNumber", legal_name as "legalName",
+           commercial_name as "commercialName", economic_activity_code as "economicActivityCode",
+           branch_code as "branchCode", pos_code as "posCode",
+           created_at as "createdAt", updated_at as "updatedAt"
+    FROM tenant_almendro_configs
+    WHERE tenant_id = $1
+  `, [tenantId]);
+  if (res.rows.length === 0) {
+    return {
+      id: "",
+      tenantId,
+      isEnabled: false,
+      billingMode: "DISABLED",
+      environment: "SANDBOX",
+      apiKeyMasked: "",
+      defaultDocType: "04",
+      moduleToggles: { ...DEFAULT_MODULE_TOGGLES },
+      isConfigured: false
+    };
+  }
+  const row = res.rows[0];
+  let rawKey = "";
+  if (row.apiKeyEncrypted) {
+    try {
+      rawKey = CryptoService.decryptForTenant(tenantId, row.apiKeyEncrypted);
+    } catch (e) {
+      console.error(`[AlmendroRepo] Error descifrando API Key para tenant ${tenantId}:`, e);
+    }
+  }
+  const toggles = row.moduleToggles ? { ...DEFAULT_MODULE_TOGGLES, ...row.moduleToggles } : { ...DEFAULT_MODULE_TOGGLES };
+  const isKeyConfigured = Boolean(rawKey && rawKey.length > 5);
+  const rawBillingMode = row.billingMode;
+  const billingMode = rawBillingMode || (row.isEnabled ? isKeyConfigured ? "ALMENDRO_AUTO" : "EXTERNAL_MANUAL" : "DISABLED");
+  const isConfigured = billingMode === "EXTERNAL_MANUAL" ? true : isKeyConfigured;
+  const isEnabled = Boolean(row.isEnabled) && billingMode !== "DISABLED";
+  return {
+    id: row.id,
+    tenantId: row.tenantId,
+    isEnabled,
+    billingMode,
+    environment: row.environment || "SANDBOX",
+    apiKeyMasked: rawKey ? CryptoService.maskSecret(rawKey) : "",
+    defaultDocType: row.defaultDocType === "01" ? "01" : "04",
+    moduleToggles: toggles,
+    taxIdType: row.taxIdType || "",
+    taxIdNumber: row.taxIdNumber || "",
+    legalName: row.legalName || "",
+    commercialName: row.commercialName || "",
+    economicActivityCode: row.economicActivityCode || "",
+    branchCode: row.branchCode || "001",
+    posCode: row.posCode || "00001",
+    isConfigured,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt
+  };
+}
+async function getTenantAlmendroConfigRaw(tenantId) {
+  if (!tenantId) return null;
+  const res = await query(`
+    SELECT is_enabled as "isEnabled", billing_mode as "billingMode", environment,
+           api_key_encrypted as "apiKeyEncrypted",
+           default_doc_type as "defaultDocType", module_toggles as "moduleToggles",
+           tax_id_type as "taxIdType", tax_id_number as "taxIdNumber",
+           legal_name as "legalName", commercial_name as "commercialName",
+           economic_activity_code as "economicActivityCode",
+           branch_code as "branchCode", pos_code as "posCode"
+    FROM tenant_almendro_configs
+    WHERE tenant_id = $1
+  `, [tenantId]);
+  if (res.rows.length === 0) return null;
+  const row = res.rows[0];
+  let apiKey = "";
+  if (row.apiKeyEncrypted) {
+    try {
+      apiKey = CryptoService.decryptForTenant(tenantId, row.apiKeyEncrypted);
+    } catch (e) {
+      console.error(`[AlmendroRepo] Error descifrando API Key raw para tenant ${tenantId}`);
+    }
+  }
+  const toggles = row.moduleToggles ? { ...DEFAULT_MODULE_TOGGLES, ...row.moduleToggles } : { ...DEFAULT_MODULE_TOGGLES };
+  const rawBillingMode = row.billingMode;
+  const billingMode = rawBillingMode || (row.isEnabled ? apiKey ? "ALMENDRO_AUTO" : "EXTERNAL_MANUAL" : "DISABLED");
+  return {
+    apiKey,
+    isEnabled: Boolean(row.isEnabled),
+    billingMode,
+    environment: row.environment || "SANDBOX",
+    defaultDocType: row.defaultDocType === "01" ? "01" : "04",
+    moduleToggles: toggles,
+    taxIdType: row.taxIdType,
+    taxIdNumber: row.taxIdNumber,
+    legalName: row.legalName,
+    commercialName: row.commercialName,
+    economicActivityCode: row.economicActivityCode,
+    branchCode: row.branchCode || "001",
+    posCode: row.posCode || "00001"
+  };
+}
+async function saveTenantAlmendroConfig(tenantId, data) {
+  if (!tenantId) throw new Error("tenantId es requerido para guardar la configuraci\xF3n de Almendro");
+  const existing = await query(`SELECT api_key_encrypted, module_toggles, billing_mode FROM tenant_almendro_configs WHERE tenant_id = $1`, [tenantId]);
+  let keyToEncrypt = existing.rows[0]?.api_key_encrypted || "";
+  if (data.apiKey && data.apiKey.trim() && !data.apiKey.includes("\u2022\u2022\u2022\u2022")) {
+    keyToEncrypt = CryptoService.encryptForTenant(tenantId, data.apiKey.trim());
+  }
+  const currentToggles = existing.rows[0]?.module_toggles || DEFAULT_MODULE_TOGGLES;
+  const mergedToggles = {
+    ...DEFAULT_MODULE_TOGGLES,
+    ...currentToggles,
+    ...data.moduleToggles || {}
+  };
+  const env2 = data.environment || "SANDBOX";
+  const docType = data.defaultDocType === "01" ? "01" : "04";
+  const branch = data.branchCode || "001";
+  const pos = data.posCode || "00001";
+  const billingMode = data.billingMode || (Boolean(data.isEnabled) ? keyToEncrypt ? "ALMENDRO_AUTO" : "EXTERNAL_MANUAL" : "DISABLED");
+  const isEnabled = Boolean(data.isEnabled) && billingMode !== "DISABLED";
+  await query(`
+    INSERT INTO tenant_almendro_configs (
+      tenant_id, is_enabled, billing_mode, environment, api_key_encrypted,
+      default_doc_type, module_toggles, tax_id_type, tax_id_number,
+      legal_name, commercial_name, economic_activity_code,
+      branch_code, pos_code, updated_at
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)
+    ON CONFLICT (tenant_id) DO UPDATE SET
+      is_enabled = EXCLUDED.is_enabled,
+      billing_mode = EXCLUDED.billing_mode,
+      environment = EXCLUDED.environment,
+      api_key_encrypted = CASE WHEN $5 != '' THEN $5 ELSE tenant_almendro_configs.api_key_encrypted END,
+      default_doc_type = EXCLUDED.default_doc_type,
+      module_toggles = EXCLUDED.module_toggles,
+      tax_id_type = COALESCE(EXCLUDED.tax_id_type, tenant_almendro_configs.tax_id_type),
+      tax_id_number = COALESCE(EXCLUDED.tax_id_number, tenant_almendro_configs.tax_id_number),
+      legal_name = COALESCE(EXCLUDED.legal_name, tenant_almendro_configs.legal_name),
+      commercial_name = COALESCE(EXCLUDED.commercial_name, tenant_almendro_configs.commercial_name),
+      economic_activity_code = COALESCE(EXCLUDED.economic_activity_code, tenant_almendro_configs.economic_activity_code),
+      branch_code = EXCLUDED.branch_code,
+      pos_code = EXCLUDED.pos_code,
+      updated_at = CURRENT_TIMESTAMP
+  `, [
+    tenantId,
+    isEnabled,
+    billingMode,
+    env2,
+    keyToEncrypt,
+    docType,
+    JSON.stringify(mergedToggles),
+    data.taxIdType || null,
+    data.taxIdNumber || null,
+    data.legalName || null,
+    data.commercialName || null,
+    data.economicActivityCode || null,
+    branch,
+    pos
+  ]);
+  const updated = await getTenantAlmendroConfig(tenantId);
+  return updated;
+}
+async function saveElectronicVoucher(tenantId, voucher) {
+  if (!tenantId) throw new Error("tenantId es requerido para registrar un comprobante electr\xF3nico");
+  const res = await query(`
+    INSERT INTO electronic_vouchers (
+      tenant_id, order_id, appointment_id, court_booking_id, subscription_charge_id,
+      branch_id, branch_code, pos_code, reference_key,
+      doc_type, consecutive_number, numeric_key, receiver_id_type, receiver_id_number,
+      receiver_name, receiver_email, currency, subtotal, tax_amount, total_amount,
+      status, pdf_url, xml_signed_url, xml_response_url, hacienda_response_code,
+      hacienda_response_detail, metadata
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
+    RETURNING id, tenant_id as "tenantId", order_id as "orderId", appointment_id as "appointmentId",
+              court_booking_id as "courtBookingId", subscription_charge_id as "subscriptionChargeId",
+              branch_id as "branchId", branch_code as "branchCode", pos_code as "posCode",
+              reference_key as "referenceKey",
+              doc_type as "docType", consecutive_number as "consecutiveNumber", numeric_key as "numericKey",
+              receiver_id_type as "receiverIdType", receiver_id_number as "receiverIdNumber",
+              receiver_name as "receiverName", receiver_email as "receiverEmail",
+              currency, subtotal, tax_amount as "taxAmount", total_amount as "totalAmount",
+              status, pdf_url as "pdfUrl", xml_signed_url as "xmlSignedUrl",
+              xml_response_url as "xmlResponseUrl", hacienda_response_code as "haciendaResponseCode",
+              hacienda_response_detail as "haciendaResponseDetail", metadata,
+              created_at as "createdAt", updated_at as "updatedAt"
+  `, [
+    tenantId,
+    voucher.orderId || null,
+    voucher.appointmentId || null,
+    voucher.courtBookingId || null,
+    voucher.subscriptionChargeId || null,
+    voucher.branchId || null,
+    voucher.branchCode || "001",
+    voucher.posCode || "00001",
+    voucher.referenceKey || null,
+    voucher.docType || "04",
+    voucher.consecutiveNumber || "",
+    voucher.numericKey,
+    voucher.receiverIdType || null,
+    voucher.receiverIdNumber || null,
+    voucher.receiverName || null,
+    voucher.receiverEmail || null,
+    voucher.currency || "CRC",
+    voucher.subtotal || 0,
+    voucher.taxAmount || 0,
+    voucher.totalAmount || 0,
+    voucher.status || "pending",
+    voucher.pdfUrl || null,
+    voucher.xmlSignedUrl || null,
+    voucher.xmlResponseUrl || null,
+    voucher.haciendaResponseCode || null,
+    voucher.haciendaResponseDetail || null,
+    JSON.stringify(voucher.metadata || {})
+  ]);
+  return res.rows[0];
+}
+async function getElectronicVouchers(tenantId, options) {
+  if (!tenantId) throw new Error("tenantId es requerido para consultar comprobantes");
+  const limit = Math.min(Number(options?.limit) || 50, 100);
+  const offset = Math.max(Number(options?.offset) || 0, 0);
+  const conditions = ["tenant_id = $1"];
+  const params = [tenantId];
+  let pIdx = 2;
+  if (options?.status) {
+    conditions.push(`status = $${pIdx}`);
+    params.push(options.status);
+    pIdx++;
+  }
+  if (options?.docType) {
+    conditions.push(`doc_type = $${pIdx}`);
+    params.push(options.docType);
+    pIdx++;
+  }
+  if (options?.branchCode) {
+    conditions.push(`COALESCE(branch_code, '001') = $${pIdx}`);
+    params.push(options.branchCode);
+    pIdx++;
+  }
+  if (options?.search && options.search.trim()) {
+    conditions.push(`(numeric_key ILIKE $${pIdx} OR consecutive_number ILIKE $${pIdx} OR receiver_name ILIKE $${pIdx} OR receiver_id_number ILIKE $${pIdx})`);
+    params.push(`%${options.search.trim()}%`);
+    pIdx++;
+  }
+  const whereSql = conditions.join(" AND ");
+  const countRes = await query(`SELECT COUNT(*) as total FROM electronic_vouchers WHERE ${whereSql}`, params);
+  const total = parseInt(countRes.rows[0]?.total || "0", 10);
+  params.push(limit);
+  params.push(offset);
+  const res = await query(`
+    SELECT id, tenant_id as "tenantId", order_id as "orderId", appointment_id as "appointmentId",
+           court_booking_id as "courtBookingId", subscription_charge_id as "subscriptionChargeId",
+           branch_id as "branchId", COALESCE(branch_code, '001') as "branchCode", COALESCE(pos_code, '00001') as "posCode",
+           reference_key as "referenceKey",
+           doc_type as "docType", consecutive_number as "consecutiveNumber", numeric_key as "numericKey",
+           receiver_id_type as "receiverIdType", receiver_id_number as "receiverIdNumber",
+           receiver_name as "receiverName", receiver_email as "receiverEmail",
+           currency, subtotal, tax_amount as "taxAmount", total_amount as "totalAmount",
+           status, pdf_url as "pdfUrl", xml_signed_url as "xmlSignedUrl",
+           xml_response_url as "xmlResponseUrl", hacienda_response_code as "haciendaResponseCode",
+           hacienda_response_detail as "haciendaResponseDetail", metadata,
+           created_at as "createdAt", updated_at as "updatedAt"
+    FROM electronic_vouchers
+    WHERE ${whereSql}
+    ORDER BY created_at DESC
+    LIMIT $${pIdx} OFFSET $${pIdx + 1}
+  `, params);
+  return {
+    vouchers: res.rows,
+    total
+  };
+}
+async function getElectronicVoucherByOrderId(tenantId, orderId) {
+  if (!tenantId || !orderId) return null;
+  const res = await query(`
+    SELECT id, tenant_id as "tenantId", order_id as "orderId", appointment_id as "appointmentId",
+           court_booking_id as "courtBookingId", subscription_charge_id as "subscriptionChargeId",
+           doc_type as "docType", consecutive_number as "consecutiveNumber", numeric_key as "numericKey",
+           receiver_id_type as "receiverIdType", receiver_id_number as "receiverIdNumber",
+           receiver_name as "receiverName", receiver_email as "receiverEmail",
+           currency, subtotal, tax_amount as "taxAmount", total_amount as "totalAmount",
+           status, pdf_url as "pdfUrl", xml_signed_url as "xmlSignedUrl",
+           xml_response_url as "xmlResponseUrl", hacienda_response_code as "haciendaResponseCode",
+           hacienda_response_detail as "haciendaResponseDetail", metadata,
+           created_at as "createdAt", updated_at as "updatedAt"
+    FROM electronic_vouchers
+    WHERE tenant_id = $1 AND order_id = $2
+    ORDER BY created_at DESC
+    LIMIT 1
+  `, [tenantId, orderId]);
+  return res.rows[0] || null;
+}
+async function getElectronicVoucherByAppointmentId(tenantId, appointmentId) {
+  if (!tenantId || !appointmentId) return null;
+  const res = await query(`
+    SELECT id, tenant_id as "tenantId", order_id as "orderId", appointment_id as "appointmentId",
+           court_booking_id as "courtBookingId", subscription_charge_id as "subscriptionChargeId",
+           doc_type as "docType", consecutive_number as "consecutiveNumber", numeric_key as "numericKey",
+           receiver_id_type as "receiverIdType", receiver_id_number as "receiverIdNumber",
+           receiver_name as "receiverName", receiver_email as "receiverEmail",
+           currency, subtotal, tax_amount as "taxAmount", total_amount as "totalAmount",
+           status, pdf_url as "pdfUrl", xml_signed_url as "xmlSignedUrl",
+           xml_response_url as "xmlResponseUrl", hacienda_response_code as "haciendaResponseCode",
+           hacienda_response_detail as "haciendaResponseDetail", metadata,
+           created_at as "createdAt", updated_at as "updatedAt"
+    FROM electronic_vouchers
+    WHERE tenant_id = $1 AND appointment_id = $2
+    ORDER BY created_at DESC
+    LIMIT 1
+  `, [tenantId, appointmentId]);
+  return res.rows[0] || null;
+}
+async function getElectronicVoucherByKeyOrId(keyOrId) {
+  if (!keyOrId || !keyOrId.trim()) return null;
+  const clean = keyOrId.trim();
+  const querySql = `
+    SELECT id, tenant_id as "tenantId", order_id as "orderId", appointment_id as "appointmentId",
+           court_booking_id as "courtBookingId", subscription_charge_id as "subscriptionChargeId",
+           doc_type as "docType", consecutive_number as "consecutiveNumber", numeric_key as "numericKey",
+           receiver_id_type as "receiverIdType", receiver_id_number as "receiverIdNumber",
+           receiver_name as "receiverName", receiver_email as "receiverEmail",
+           currency, subtotal, tax_amount as "taxAmount", total_amount as "totalAmount",
+           status, pdf_url as "pdfUrl", xml_signed_url as "xmlSignedUrl",
+           xml_response_url as "xmlResponseUrl", hacienda_response_code as "haciendaResponseCode",
+           hacienda_response_detail as "haciendaResponseDetail", metadata,
+           created_at as "createdAt", updated_at as "updatedAt"
+    FROM electronic_vouchers
+    WHERE numeric_key = $1
+       OR id::text = $1
+       OR order_id::text = $1
+       OR appointment_id::text = $1
+       OR metadata->'data'->>'voucher_key' = $1
+       OR metadata->>'voucher_key' = $1
+       OR metadata->>'key' = $1
+    ORDER BY created_at DESC
+    LIMIT 1
+  `;
+  const res = await query(querySql, [clean]);
+  return res.rows[0] || null;
+}
+var DEFAULT_MODULE_TOGGLES;
+var init_tenant_almendro_repo = __esm({
+  "src/server/db/tenant-almendro.repo.ts"() {
+    "use strict";
+    init_pool();
+    init_crypto_service();
+    DEFAULT_MODULE_TOGGLES = {
+      storeEnabled: true,
+      bookingsEnabled: true,
+      courtsEnabled: false,
+      restaurantEnabled: false,
+      subscriptionsEnabled: false
+    };
   }
 });
 
@@ -1769,6 +3053,1234 @@ var init_store_settings_repo = __esm({
     "use strict";
     init_pool();
     saveStoreSettings = upsertStoreSettings;
+  }
+});
+
+// src/server/services/voucher-email.service.ts
+var voucher_email_service_exports = {};
+__export(voucher_email_service_exports, {
+  buildOfficialHaciendaXmlBuffer: () => buildOfficialHaciendaXmlBuffer,
+  buildVoucherEmailHtml: () => buildVoucherEmailHtml,
+  sendVoucherEmailNotification: () => sendVoucherEmailNotification,
+  testTenantEmailDelivery: () => testTenantEmailDelivery
+});
+import net from "node:net";
+import tls from "node:tls";
+function escapeXml(val) {
+  return String(val ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+}
+function buildOfficialHaciendaXmlBuffer(voucher, haciendaConfig) {
+  const docType = voucher.docType || "04";
+  const rootTag = docType === "01" ? "FacturaElectronica" : docType === "03" ? "NotaCreditoElectronica" : "TiqueteElectronico";
+  const schemaName = docType === "01" ? "facturaElectronica" : docType === "03" ? "notaCreditoElectronica" : "tiqueteElectronico";
+  const xmlns = `https://cdn.comprobanteselectronicos.go.cr/xml-schemas/v4.4/${schemaName}`;
+  const numericKey = String(voucher.numericKey || "").padStart(50, "0").slice(0, 50);
+  const consecutive = String(voucher.consecutiveNumber || "00100001040000000001").padStart(20, "0").slice(0, 20);
+  const activityCode = String(haciendaConfig?.economicActivityCode || "831110").replace(/\D/g, "").padStart(6, "0").slice(0, 6);
+  const issuedAt = voucher.createdAt ? new Date(voucher.createdAt).toISOString() : (/* @__PURE__ */ new Date()).toISOString();
+  const issuerName = haciendaConfig?.taxpayerName || haciendaConfig?.commercialName || "Emisor Autorizado CR";
+  const issuerCommercial = haciendaConfig?.commercialName || issuerName;
+  const issuerIdType = haciendaConfig?.taxpayerIdType || "01";
+  const issuerIdNumber = String(haciendaConfig?.taxpayerIdNumber || "000000000").replace(/\D/g, "");
+  const issuerEmail = haciendaConfig?.taxpayerEmail || "facturacion@betico.cr";
+  const province = String(haciendaConfig?.province || "1").slice(0, 1);
+  const canton = String(haciendaConfig?.canton || "01").padStart(2, "0").slice(0, 2);
+  const district = String(haciendaConfig?.district || "01").padStart(2, "0").slice(0, 2);
+  const neighborhood = String(haciendaConfig?.neighborhood || "01").padStart(2, "0").slice(0, 2);
+  const addressDetail = haciendaConfig?.addressDetail || "Costa Rica";
+  const metadata = voucher.metadata || {};
+  const rawItems = Array.isArray(metadata.items) && metadata.items.length > 0 ? metadata.items : [
+    {
+      lineNumber: 1,
+      cabysCode: haciendaConfig?.defaultCabysCode || "8311100000000",
+      description: "Servicios o productos facturados",
+      quantity: 1,
+      unitPrice: Number(voucher.subtotal || voucher.totalAmount || 0),
+      taxRateCode: Number(voucher.taxAmount || 0) > 0 ? "08" : "10",
+      taxRate: Number(voucher.taxAmount || 0) > 0 ? 13 : 0,
+      lineSubtotal: Number(voucher.subtotal || voucher.totalAmount || 0),
+      lineTax: Number(voucher.taxAmount || 0),
+      lineTotal: Number(voucher.totalAmount || 0)
+    }
+  ];
+  let linesXml = "";
+  rawItems.forEach((it, idx) => {
+    const lineNum = idx + 1;
+    const cabys = String(it.cabysCode || it.cabys_code || "8311100000000").replace(/\D/g, "").padStart(13, "0").slice(0, 13);
+    const qty = Number(it.quantity || 1).toFixed(3);
+    const unitPrice = Number(it.unitPrice ?? it.unit_price ?? 0).toFixed(5);
+    const sub = Number(it.lineSubtotal ?? Number(it.quantity || 1) * Number(it.unitPrice || 0)).toFixed(5);
+    const taxCode = String(it.taxRateCode || "08");
+    const taxRateNum = it.taxRate !== void 0 ? Number(it.taxRate) : taxCode === "10" ? 0 : 13;
+    const taxAmt = Number(it.lineTax ?? Number(sub) * (taxRateNum / 100)).toFixed(5);
+    const totalLine = Number(it.lineTotal ?? Number(sub) + Number(taxAmt)).toFixed(5);
+    const desc = escapeXml(String(it.description || it.detail || "Servicio").slice(0, 160));
+    linesXml += `
+    <LineaDetalle>
+      <NumeroLinea>${lineNum}</NumeroLinea>
+      <CodigoCabys>${cabys}</CodigoCabys>
+      <Cantidad>${qty}</Cantidad>
+      <UnidadMedida>Unid</UnidadMedida>
+      <Detalle>${desc}</Detalle>
+      <PrecioUnitario>${unitPrice}</PrecioUnitario>
+      <MontoTotal>${sub}</MontoTotal>
+      <SubTotal>${sub}</SubTotal>
+      <BaseImponible>${sub}</BaseImponible>
+      <Impuesto>
+        <Codigo>01</Codigo>
+        <CodigoTarifaIVA>${escapeXml(taxCode)}</CodigoTarifaIVA>
+        <Tarifa>${taxRateNum.toFixed(2)}</Tarifa>
+        <Monto>${taxAmt}</Monto>
+      </Impuesto>
+      <ImpuestoNeto>${taxAmt}</ImpuestoNeto>
+      <MontoTotalLinea>${totalLine}</MontoTotalLinea>
+    </LineaDetalle>`;
+  });
+  const receiverBlock = voucher.receiverName || voucher.receiverIdNumber || voucher.receiverEmail ? `
+  <Receptor>
+    <Nombre>${escapeXml(voucher.receiverName || "Cliente Contado")}</Nombre>${voucher.receiverIdNumber ? `
+    <Identificacion>
+      <Tipo>${escapeXml(voucher.receiverIdType || "01")}</Tipo>
+      <Numero>${escapeXml(String(voucher.receiverIdNumber).replace(/\D/g, ""))}</Numero>
+    </Identificacion>` : ""}${voucher.receiverEmail ? `
+    <CorreoElectronico>${escapeXml(voucher.receiverEmail)}</CorreoElectronico>` : ""}
+  </Receptor>` : "";
+  const refKey = voucher.referenceKey || metadata.referenceKey;
+  const referenceBlock = refKey ? `
+  <InformacionReferencia>
+    <TipoDocIR>01</TipoDocIR>
+    <Numero>${escapeXml(refKey)}</Numero>
+    <FechaEmisionIR>${escapeXml(issuedAt)}</FechaEmisionIR>
+    <Codigo>01</Codigo>
+    <Razon>Anulacion de comprobante de referencia</Razon>
+  </InformacionReferencia>` : "";
+  const subtotalVal = Number(voucher.subtotal || 0).toFixed(5);
+  const taxVal = Number(voucher.taxAmount || 0).toFixed(5);
+  const totalVal = Number(voucher.totalAmount || 0).toFixed(5);
+  const currency = escapeXml(voucher.currency || "CRC");
+  const paymentMethod = escapeXml(metadata.paymentMethod || "01");
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<${rootTag} xmlns="${xmlns}" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <Clave>${escapeXml(numericKey)}</Clave>
+  <ProveedorSistemas>${escapeXml(issuerIdNumber || "3101000000")}</ProveedorSistemas>
+  <CodigoActividadEmisor>${escapeXml(activityCode)}</CodigoActividadEmisor>
+  <NumeroConsecutivo>${escapeXml(consecutive)}</NumeroConsecutivo>
+  <FechaEmision>${escapeXml(issuedAt)}</FechaEmision>
+  <Emisor>
+    <Nombre>${escapeXml(issuerName)}</Nombre>
+    <Identificacion>
+      <Tipo>${escapeXml(issuerIdType)}</Tipo>
+      <Numero>${escapeXml(issuerIdNumber)}</Numero>
+    </Identificacion>
+    <NombreComercial>${escapeXml(issuerCommercial)}</NombreComercial>
+    <Ubicacion>
+      <Provincia>${escapeXml(province)}</Provincia>
+      <Canton>${escapeXml(canton)}</Canton>
+      <Distrito>${escapeXml(district)}</Distrito>
+      <Barrio>${escapeXml(neighborhood)}</Barrio>
+      <OtrasSenas>${escapeXml(addressDetail)}</OtrasSenas>
+    </Ubicacion>
+    <CorreoElectronico>${escapeXml(issuerEmail)}</CorreoElectronico>
+  </Emisor>${receiverBlock}
+  <CondicionVenta>01</CondicionVenta>
+  <MedioPago>
+    <TipoMedioPago>${paymentMethod}</TipoMedioPago>
+  </MedioPago>
+  <DetalleServicio>${linesXml}
+  </DetalleServicio>
+  <ResumenFactura>
+    <CodigoTipoMoneda>
+      <CodigoMoneda>${currency}</CodigoMoneda>
+      <TipoCambio>1.00000</TipoCambio>
+    </CodigoTipoMoneda>
+    <TotalVenta>${subtotalVal}</TotalVenta>
+    <TotalVentaNeta>${subtotalVal}</TotalVentaNeta>
+    <TotalImpuesto>${taxVal}</TotalImpuesto>
+    <TotalComprobante>${totalVal}</TotalComprobante>
+  </ResumenFactura>${referenceBlock}
+</${rootTag}>`;
+  return Buffer.from(xml, "utf8");
+}
+function buildVoucherEmailHtml(params) {
+  const { voucher, haciendaConfig, storeName, pdfPublicUrl, xmlPublicUrl } = params;
+  const docLabel = voucher.docType === "01" ? "Factura Electr\xF3nica" : voucher.docType === "03" ? "Nota de Cr\xE9dito Electr\xF3nica" : "Tiquete Electr\xF3nico";
+  const issuerName = haciendaConfig?.taxpayerName || storeName;
+  const issuerId = haciendaConfig?.taxpayerIdNumber || "N/A";
+  const branchCode = voucher.branchCode || haciendaConfig?.branchCode || "001";
+  const posCode = voucher.posCode || haciendaConfig?.posCode || "00001";
+  const consecutive = voucher.consecutiveNumber || "00100001040000000001";
+  const numericKey = voucher.numericKey || "";
+  const receiverName = voucher.receiverName || "Estimado cliente";
+  const receiverId = voucher.receiverIdNumber || "Consumidor Final";
+  const currency = voucher.currency || "CRC";
+  const symbol = currency === "USD" ? "$" : "\u20A1";
+  const fmt = (n) => `${symbol}${Number(n || 0).toLocaleString("es-CR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const metadata = voucher.metadata || {};
+  const items = Array.isArray(metadata.items) && metadata.items.length > 0 ? metadata.items : [
+    {
+      description: "Productos o servicios facturados",
+      quantity: 1,
+      unitPrice: voucher.subtotal || voucher.totalAmount || 0,
+      lineTotal: voucher.totalAmount || 0
+    }
+  ];
+  const rowsHtml = items.map((it) => {
+    const qty = Number(it.quantity || 1);
+    const unitP = Number(it.unitPrice ?? it.unit_price ?? 0);
+    const lineSub = Number(it.lineSubtotal ?? qty * unitP);
+    return `
+        <tr>
+          <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-size:13px;color:#334155;">${qty}</td>
+          <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-size:13px;color:#0f172a;font-weight:500;">${escapeXml(it.description || it.detail || "Item")}</td>
+          <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-size:13px;color:#475569;text-align:right;">${fmt(unitP)}</td>
+          <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-size:13px;color:#0f172a;font-weight:600;text-align:right;">${fmt(lineSub)}</td>
+        </tr>`;
+  }).join("");
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>${escapeXml(docLabel)} - ${escapeXml(storeName)}</title>
+</head>
+<body style="margin:0;padding:24px;background-color:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <div style="max-width:640px;margin:0 auto;background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 4px 20px rgba(15,23,42,0.08);border:1px solid #e2e8f0;">
+    <div style="background:linear-gradient(135deg,#0f172a 0%,#1e3a8a 100%);padding:28px 32px;color:#ffffff;">
+      <div style="font-size:12px;text-transform:uppercase;letter-spacing:1px;color:#93c5fd;font-weight:700;margin-bottom:6px;">
+        Comprobante Electr\xF3nico Oficial DGT v4.4
+      </div>
+      <h1 style="margin:0;font-size:22px;font-weight:800;color:#ffffff;">${escapeXml(docLabel)}</h1>
+      <p style="margin:6px 0 0;font-size:14px;color:#cbd5e1;">
+        Emitido por <strong>${escapeXml(storeName)}</strong> (${escapeXml(issuerName)} \xB7 C\xE9dula ${escapeXml(issuerId)})
+      </p>
+    </div>
+
+    <div style="padding:28px 32px;">
+      <p style="margin:0 0 18px;font-size:15px;color:#334155;line-height:1.5;">
+        Hola <strong>${escapeXml(receiverName)}</strong>, adjunto a este correo encontrar\xE1s tu <strong>${escapeXml(docLabel)}</strong> en formato <strong>PDF</strong> y su archivo <strong>XML oficial de Hacienda</strong>.
+      </p>
+
+      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:16px;margin-bottom:22px;">
+        <div style="font-size:12px;color:#64748b;margin-bottom:4px;">Consecutivo Hacienda (Sucursal ${escapeXml(branchCode)} \xB7 Terminal ${escapeXml(posCode)})</div>
+        <div style="font-family:monospace;font-size:15px;font-weight:700;color:#0f172a;margin-bottom:10px;">${escapeXml(consecutive)}</div>
+        <div style="font-size:12px;color:#64748b;margin-bottom:4px;">Clave Num\xE9rica de 50 D\xEDgitos</div>
+        <div style="font-family:monospace;font-size:12px;color:#1e40af;word-break:break-all;font-weight:600;">${escapeXml(numericKey)}</div>
+        <div style="margin-top:10px;padding-top:10px;border-top:1px solid #e2e8f0;font-size:12px;color:#475569;">
+          <strong>Receptor:</strong> ${escapeXml(receiverName)} (${escapeXml(receiverId)})
+        </div>
+      </div>
+
+      <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
+        <thead>
+          <tr style="background:#f1f5f9;">
+            <th style="padding:10px 12px;text-align:left;font-size:12px;color:#475569;text-transform:uppercase;">Cant.</th>
+            <th style="padding:10px 12px;text-align:left;font-size:12px;color:#475569;text-transform:uppercase;">Detalle</th>
+            <th style="padding:10px 12px;text-align:right;font-size:12px;color:#475569;text-transform:uppercase;">Precio Unit.</th>
+            <th style="padding:10px 12px;text-align:right;font-size:12px;color:#475569;text-transform:uppercase;">Subtotal</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rowsHtml}
+        </tbody>
+      </table>
+
+      <div style="background:#f8fafc;border-radius:10px;padding:16px;margin-bottom:24px;text-align:right;">
+        <div style="font-size:13px;color:#475569;margin-bottom:6px;">Subtotal Neto: <strong>${fmt(voucher.subtotal)}</strong></div>
+        <div style="font-size:13px;color:#475569;margin-bottom:8px;">Impuesto (IVA): <strong>${fmt(voucher.taxAmount)}</strong></div>
+        <div style="font-size:18px;color:#0f172a;font-weight:800;">Total Comprobante: ${fmt(voucher.totalAmount)}</div>
+      </div>
+
+      <div style="text-align:center;margin:26px 0;">
+        <a href="${escapeXml(pdfPublicUrl)}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:12px 24px;border-radius:8px;margin-right:8px;">
+          Descargar Comprobante PDF
+        </a>
+        <a href="${escapeXml(xmlPublicUrl)}" style="display:inline-block;background:#0f172a;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:12px 24px;border-radius:8px;">
+          Descargar XML Hacienda
+        </a>
+      </div>
+
+      <p style="margin:20px 0 0;font-size:12px;color:#64748b;text-align:center;line-height:1.5;">
+        Autorizado mediante resoluci\xF3n de Facturaci\xF3n Electr\xF3nica DGT-R-033-2019 y versi\xF3n 4.4 del Ministerio de Hacienda de Costa Rica.
+      </p>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+async function sendMimeEmailViaSmtp(smtp, mail) {
+  return new Promise((resolve) => {
+    const boundary = `----BeticoBoundary_${Date.now().toString(16)}`;
+    const subjectB64 = Buffer.from(mail.subject, "utf8").toString("base64");
+    const fromNameB64 = Buffer.from(smtp.fromName || "Facturacion Electronica", "utf8").toString("base64");
+    const htmlB64 = Buffer.from(mail.html, "utf8").toString("base64").replace(/(.{76})/g, "$1\r\n");
+    const headers = [
+      `From: =?UTF-8?B?${fromNameB64}?= <${smtp.fromEmail}>`,
+      `To: <${mail.to}>`,
+      ...mail.replyTo ? [`Reply-To: <${mail.replyTo}>`] : [],
+      `Subject: =?UTF-8?B?${subjectB64}?=`,
+      `Date: ${(/* @__PURE__ */ new Date()).toUTCString()}`,
+      `MIME-Version: 1.0`,
+      `Content-Type: multipart/mixed; boundary="${boundary}"`
+    ];
+    const parts = [];
+    parts.push(
+      `--${boundary}\r
+Content-Type: text/html; charset="UTF-8"\r
+Content-Transfer-Encoding: base64\r
+\r
+${htmlB64}\r
+`
+    );
+    for (const att of mail.attachments) {
+      const attB64 = att.content.toString("base64").replace(/(.{76})/g, "$1\r\n");
+      parts.push(
+        `--${boundary}\r
+Content-Type: ${att.contentType}; name="${att.filename}"\r
+Content-Disposition: attachment; filename="${att.filename}"\r
+Content-Transfer-Encoding: base64\r
+\r
+${attB64}\r
+`
+      );
+    }
+    parts.push(`--${boundary}--\r
+`);
+    const rawMime = `${headers.join("\r\n")}\r
+\r
+${parts.join("")}\r
+.`;
+    let socket;
+    let step = 0;
+    let buffer = "";
+    let finished = false;
+    const finish = (result) => {
+      if (finished) return;
+      finished = true;
+      try {
+        socket?.destroy();
+      } catch (_) {
+      }
+      resolve(result);
+    };
+    const timeout = setTimeout(() => {
+      finish({ ok: false, error: "Tiempo de espera agotado conectando al servidor SMTP" });
+    }, 12e3);
+    const sendLine = (cmd) => {
+      socket.write(`${cmd}\r
+`);
+    };
+    const handleResponse = (code, fullText) => {
+      if (code >= 400) {
+        clearTimeout(timeout);
+        finish({ ok: false, error: `Error SMTP (${code}): ${fullText.trim()}` });
+        return;
+      }
+      if (step === 0 && code === 220) {
+        step = 1;
+        sendLine(`EHLO betico.cr`);
+      } else if (step === 1 && code === 250) {
+        if (smtp.port !== 465 && !(socket instanceof tls.TLSSocket) && fullText.toUpperCase().includes("STARTTLS")) {
+          step = 2;
+          sendLine("STARTTLS");
+        } else {
+          step = 3;
+          sendLine("AUTH LOGIN");
+        }
+      } else if (step === 2 && code === 220) {
+        const upgraded = tls.connect(
+          { socket, servername: smtp.host, rejectUnauthorized: false },
+          () => {
+            socket = upgraded;
+            attachListeners(upgraded);
+            step = 1;
+            sendLine(`EHLO betico.cr`);
+          }
+        );
+        upgraded.on("error", (err) => {
+          clearTimeout(timeout);
+          finish({ ok: false, error: `Error TLS SMTP: ${err.message}` });
+        });
+      } else if (step === 3 && code === 334) {
+        step = 4;
+        sendLine(Buffer.from(smtp.user, "utf8").toString("base64"));
+      } else if (step === 4 && code === 334) {
+        step = 5;
+        sendLine(Buffer.from(smtp.pass, "utf8").toString("base64"));
+      } else if (step === 5 && code === 235) {
+        step = 6;
+        sendLine(`MAIL FROM:<${smtp.fromEmail}>`);
+      } else if (step === 6 && code === 250) {
+        step = 7;
+        sendLine(`RCPT TO:<${mail.to}>`);
+      } else if (step === 7 && (code === 250 || code === 251)) {
+        step = 8;
+        sendLine("DATA");
+      } else if (step === 8 && code === 354) {
+        step = 9;
+        sendLine(rawMime);
+      } else if (step === 9 && code === 250) {
+        step = 10;
+        sendLine("QUIT");
+        clearTimeout(timeout);
+        finish({ ok: true });
+      }
+    };
+    const attachListeners = (sock) => {
+      sock.on("data", (chunk) => {
+        buffer += chunk.toString("utf8");
+        const lines = buffer.split("\r\n");
+        buffer = lines.pop() || "";
+        let multiLine = "";
+        for (const line of lines) {
+          multiLine += line + "\n";
+          if (/^\d{3} /.test(line)) {
+            const code = parseInt(line.slice(0, 3), 10);
+            const msg = multiLine;
+            multiLine = "";
+            handleResponse(code, msg);
+          }
+        }
+      });
+      sock.on("error", (err) => {
+        clearTimeout(timeout);
+        finish({ ok: false, error: `Error de red SMTP: ${err.message}` });
+      });
+    };
+    try {
+      if (smtp.port === 465) {
+        socket = tls.connect({ host: smtp.host, port: smtp.port, servername: smtp.host, rejectUnauthorized: false });
+      } else {
+        socket = net.connect({ host: smtp.host, port: smtp.port });
+      }
+      attachListeners(socket);
+    } catch (err) {
+      clearTimeout(timeout);
+      finish({ ok: false, error: err.message });
+    }
+  });
+}
+async function sendEmailViaResend(apiKey, fromAddress, mail) {
+  try {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey.trim()}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        from: fromAddress,
+        to: [mail.to],
+        ...mail.replyTo ? { reply_to: mail.replyTo } : {},
+        subject: mail.subject,
+        html: mail.html,
+        attachments: mail.attachments.map((a) => ({
+          filename: a.filename,
+          content: a.content.toString("base64")
+        }))
+      })
+    });
+    if (res.ok) {
+      return { ok: true };
+    }
+    const errBody = await res.text().catch(() => "");
+    return { ok: false, error: `Resend API (${res.status}): ${errBody.slice(0, 150)}` };
+  } catch (err) {
+    return { ok: false, error: `Error conectando con Resend: ${err.message}` };
+  }
+}
+async function sendVoucherEmailNotification({
+  tenantId,
+  voucherKeyOrId,
+  overrideEmail
+}) {
+  const voucher = await getElectronicVoucherByKeyOrId(voucherKeyOrId);
+  if (!voucher || voucher.tenantId !== tenantId) {
+    return {
+      success: false,
+      transport: "pending_config",
+      recipient: overrideEmail || "",
+      message: "Comprobante electr\xF3nico no encontrado para este negocio."
+    };
+  }
+  let recipientEmail = (overrideEmail || voucher.receiverEmail || "").trim();
+  if (!recipientEmail && voucher.orderId) {
+    const ordRes = await query(
+      `SELECT customer_email, billing_info FROM orders WHERE id = $1 AND tenant_id = $2`,
+      [voucher.orderId, tenantId]
+    ).catch(() => ({ rows: [] }));
+    if (ordRes.rows.length > 0) {
+      const r = ordRes.rows[0];
+      const bInfo = typeof r.billing_info === "string" ? JSON.parse(r.billing_info) : r.billing_info || {};
+      recipientEmail = (bInfo?.email || r.customer_email || "").trim();
+    }
+  }
+  if (!recipientEmail && voucher.appointmentId) {
+    const appRes = await query(
+      `SELECT a.billing_info, cr.email as record_email
+       FROM appointments a
+       LEFT JOIN customer_records cr ON cr.id = a.record_id
+       WHERE a.id = $1 AND a.tenant_id = $2`,
+      [voucher.appointmentId, tenantId]
+    ).catch(() => ({ rows: [] }));
+    if (appRes.rows.length > 0) {
+      const r = appRes.rows[0];
+      const bInfo = typeof r.billing_info === "string" ? JSON.parse(r.billing_info) : r.billing_info || {};
+      recipientEmail = (bInfo?.email || r.record_email || "").trim();
+    }
+  }
+  if (!recipientEmail || !recipientEmail.includes("@")) {
+    return {
+      success: false,
+      transport: "pending_config",
+      recipient: "",
+      message: "El cliente no registr\xF3 una direcci\xF3n de correo electr\xF3nico v\xE1lida para este comprobante."
+    };
+  }
+  if (recipientEmail !== voucher.receiverEmail) {
+    await query(
+      `UPDATE electronic_vouchers SET receiver_email = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND tenant_id = $3`,
+      [recipientEmail, voucher.id, tenantId]
+    ).catch(() => {
+    });
+    voucher.receiverEmail = recipientEmail;
+  }
+  const haciendaConfig = await getHaciendaConfigByTenant(tenantId);
+  const secrets = await getHaciendaDecryptedSecrets(tenantId);
+  const { getStoreSettings: getStoreSettings2 } = await Promise.resolve().then(() => (init_store_settings_repo(), store_settings_repo_exports));
+  const { getTenantById: getTenantById2 } = await Promise.resolve().then(() => (init_tenant_repo(), tenant_repo_exports));
+  const { AlmendroService: AlmendroService2 } = await Promise.resolve().then(() => (init_almendro_service(), almendro_service_exports));
+  const store = await getStoreSettings2(tenantId).catch(() => null);
+  const tenant = await getTenantById2(tenantId).catch(() => null);
+  const storeName = haciendaConfig?.commercialName || store?.storeName || haciendaConfig?.taxpayerName || tenant?.name || "Comercio Afiliado";
+  const pdfResult = await AlmendroService2.getVoucherPdf(voucher.numericKey || voucher.id);
+  const xmlBuffer = buildOfficialHaciendaXmlBuffer(voucher, haciendaConfig);
+  const consecutive = voucher.consecutiveNumber || voucher.numericKey || voucher.id;
+  const attachments = [];
+  if (pdfResult.success && pdfResult.buffer) {
+    attachments.push({
+      filename: `Comprobante_${consecutive}.pdf`,
+      contentType: "application/pdf",
+      content: pdfResult.buffer
+    });
+  }
+  attachments.push({
+    filename: `Hacienda_${voucher.numericKey || consecutive}.xml`,
+    contentType: "application/xml",
+    content: xmlBuffer
+  });
+  const baseUrl = env.APP_URL || "https://betico.tech";
+  const pdfPublicUrl = `${baseUrl}/api/almendro/public/voucher-pdf/${voucher.numericKey || voucher.id}`;
+  const xmlPublicUrl = `${baseUrl}/api/almendro/public/voucher-xml/${voucher.numericKey || voucher.id}`;
+  const docName = voucher.docType === "01" ? "Factura Electr\xF3nica" : voucher.docType === "03" ? "Nota de Cr\xE9dito Electr\xF3nica" : "Tiquete Electr\xF3nico";
+  const subject = `${docName} #${consecutive} - ${storeName}`;
+  const html = buildVoucherEmailHtml({
+    voucher,
+    haciendaConfig,
+    storeName,
+    pdfPublicUrl,
+    xmlPublicUrl
+  });
+  const replyTo = haciendaConfig?.taxpayerEmail || void 0;
+  let transportUsed = "pending_config";
+  let sendAttempt = { ok: false, error: "Servidor de correo saliente no configurado" };
+  if (secrets?.resendApiKey) {
+    transportUsed = "resend_tenant";
+    const fromAddr = `${storeName} <${haciendaConfig?.taxpayerEmail || env.SMTP_FROM || "facturacion@betico.cr"}>`;
+    sendAttempt = await sendEmailViaResend(secrets.resendApiKey, fromAddr, {
+      to: recipientEmail,
+      replyTo,
+      subject,
+      html,
+      attachments
+    });
+  } else if (secrets?.smtpHost && secrets?.smtpUser && secrets?.smtpPass) {
+    transportUsed = "smtp_tenant";
+    sendAttempt = await sendMimeEmailViaSmtp(
+      {
+        host: secrets.smtpHost,
+        port: secrets.smtpPort || 587,
+        user: secrets.smtpUser,
+        pass: secrets.smtpPass,
+        fromEmail: secrets.smtpUser.includes("@") ? secrets.smtpUser : haciendaConfig?.taxpayerEmail || env.SMTP_FROM,
+        fromName: storeName
+      },
+      { to: recipientEmail, replyTo, subject, html, attachments }
+    );
+  } else if (env.RESEND_API_KEY) {
+    transportUsed = "resend_platform";
+    const fromAddr = `${storeName} <${env.SMTP_FROM || "facturacion@betico.cr"}>`;
+    sendAttempt = await sendEmailViaResend(env.RESEND_API_KEY, fromAddr, {
+      to: recipientEmail,
+      replyTo,
+      subject,
+      html,
+      attachments
+    });
+  } else if (env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS) {
+    transportUsed = "smtp_platform";
+    sendAttempt = await sendMimeEmailViaSmtp(
+      {
+        host: env.SMTP_HOST,
+        port: env.SMTP_PORT || 587,
+        user: env.SMTP_USER,
+        pass: env.SMTP_PASS,
+        fromEmail: env.SMTP_FROM || env.SMTP_USER,
+        fromName: storeName
+      },
+      { to: recipientEmail, replyTo, subject, html, attachments }
+    );
+  }
+  const currentMeta = voucher.metadata || {};
+  const updatedMeta = {
+    ...currentMeta,
+    emailDelivery: {
+      status: sendAttempt.ok ? "sent" : transportUsed === "pending_config" ? "queued_pending_smtp" : "failed",
+      recipient: recipientEmail,
+      transport: transportUsed,
+      sentAt: (/* @__PURE__ */ new Date()).toISOString(),
+      attachmentsCount: attachments.length,
+      error: sendAttempt.ok ? void 0 : sendAttempt.error
+    }
+  };
+  await query(
+    `UPDATE electronic_vouchers SET metadata = $1::jsonb, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND tenant_id = $3`,
+    [JSON.stringify(updatedMeta), voucher.id, tenantId]
+  ).catch(() => {
+  });
+  await query(
+    `INSERT INTO notifications_log (id, tenant_id, recipient, message, trigger_type, status)
+     VALUES ($1, $2, $3, $4, 'electronic_invoice_email', $5)`,
+    [
+      `email_${Date.now()}_${Math.floor(Math.random() * 1e3)}`,
+      tenantId,
+      recipientEmail,
+      `${docName} #${consecutive} (PDF + XML) -> ${recipientEmail}`,
+      sendAttempt.ok ? "sent" : "queued"
+    ]
+  ).catch(() => {
+  });
+  if (sendAttempt.ok) {
+    return {
+      success: true,
+      transport: transportUsed,
+      recipient: recipientEmail,
+      message: `Comprobante enviado exitosamente por correo electr\xF3nico (PDF + XML) a ${recipientEmail}`
+    };
+  }
+  if (transportUsed === "pending_config") {
+    return {
+      success: false,
+      transport: "pending_config",
+      recipient: recipientEmail,
+      message: `El comprobante qued\xF3 preparado con PDF y XML para ${recipientEmail}. Para despachar correos en tiempo real, configura el servidor SMTP o Resend en la pesta\xF1a "Credenciales y Llave .p12".`
+    };
+  }
+  return {
+    success: false,
+    transport: transportUsed,
+    recipient: recipientEmail,
+    message: `No se pudo entregar el correo a ${recipientEmail}: ${sendAttempt.error}`
+  };
+}
+async function testTenantEmailDelivery(tenantId, params) {
+  const config = await getHaciendaConfigByTenant(tenantId);
+  const secrets = await getHaciendaDecryptedSecrets(tenantId);
+  const recipient = (params.testEmail || config?.taxpayerEmail || "").trim();
+  if (!recipient || !recipient.includes("@")) {
+    return {
+      success: false,
+      message: "Ingresa un correo electr\xF3nico destinatario v\xE1lido para enviar la prueba."
+    };
+  }
+  const smtpHost = (params.smtpHost !== void 0 ? params.smtpHost : secrets?.smtpHost || "").trim();
+  const smtpPort = Number(params.smtpPort || secrets?.smtpPort || 587);
+  const smtpUser = (params.smtpUser !== void 0 ? params.smtpUser : secrets?.smtpUser || "").trim();
+  const smtpPass = params.smtpPass && !params.smtpPass.includes("\u2022\u2022\u2022\u2022") ? params.smtpPass.trim() : secrets?.smtpPass || "";
+  const resendApiKey = params.resendApiKey && !params.resendApiKey.includes("\u2022\u2022\u2022\u2022") ? params.resendApiKey.trim() : secrets?.resendApiKey || "";
+  const storeName = config?.commercialName || config?.taxpayerName || "Facturaci\xF3n Electr\xF3nica Betico";
+  const subject = `Prueba de Env\xEDo de Facturaci\xF3n Electr\xF3nica - ${storeName}`;
+  const html = `<div style="font-family:sans-serif;padding:24px;max-width:560px;margin:0 auto;border:1px solid #e2e8f0;border-radius:12px;">
+    <h2 style="color:#0f172a;margin-top:0;">Conexi\xF3n de Correo Verificada</h2>
+    <p style="color:#334155;line-height:1.5;">Este es un correo de prueba del m\xF3dulo de <strong>Facturaci\xF3n Electr\xF3nica Hacienda DGT v4.4</strong> de <strong>${escapeXml(storeName)}</strong>.</p>
+    <p style="color:#16a34a;font-weight:700;">Las facturas, tiquetes y notas de cr\xE9dito (con sus archivos PDF y XML adjuntos) llegar\xE1n correctamente al correo de tus clientes.</p>
+  </div>`;
+  if (resendApiKey) {
+    const res = await sendEmailViaResend(
+      resendApiKey,
+      `${storeName} <${config?.taxpayerEmail || env.SMTP_FROM || "facturacion@betico.cr"}>`,
+      { to: recipient, subject, html, attachments: [] }
+    );
+    return {
+      success: res.ok,
+      message: res.ok ? `Correo de prueba enviado exitosamente a ${recipient} v\xEDa Resend API.` : res.error || "Error enviando correo de prueba v\xEDa Resend."
+    };
+  }
+  if (smtpHost && smtpUser && smtpPass) {
+    const res = await sendMimeEmailViaSmtp(
+      {
+        host: smtpHost,
+        port: smtpPort,
+        user: smtpUser,
+        pass: smtpPass,
+        fromEmail: smtpUser.includes("@") ? smtpUser : config?.taxpayerEmail || env.SMTP_FROM,
+        fromName: storeName
+      },
+      { to: recipient, subject, html, attachments: [] }
+    );
+    return {
+      success: res.ok,
+      message: res.ok ? `Correo de prueba enviado exitosamente a ${recipient} v\xEDa servidor SMTP (${smtpHost}:${smtpPort}).` : res.error || "Error conectando con el servidor SMTP."
+    };
+  }
+  if (env.RESEND_API_KEY || env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS) {
+    const res = env.RESEND_API_KEY ? await sendEmailViaResend(env.RESEND_API_KEY, `${storeName} <${env.SMTP_FROM}>`, { to: recipient, subject, html, attachments: [] }) : await sendMimeEmailViaSmtp(
+      {
+        host: env.SMTP_HOST,
+        port: env.SMTP_PORT || 587,
+        user: env.SMTP_USER,
+        pass: env.SMTP_PASS,
+        fromEmail: env.SMTP_FROM || env.SMTP_USER,
+        fromName: storeName
+      },
+      { to: recipient, subject, html, attachments: [] }
+    );
+    return {
+      success: res.ok,
+      message: res.ok ? `Correo de prueba enviado exitosamente a ${recipient} usando el servidor global de la plataforma.` : res.error || "Error enviando correo con el servidor global."
+    };
+  }
+  return {
+    success: false,
+    message: "Configura tu servidor SMTP (ej. Gmail / Workspace / cPanel) o tu API Key de Resend para activar el despacho directo de correos."
+  };
+}
+var init_voucher_email_service = __esm({
+  "src/server/services/voucher-email.service.ts"() {
+    "use strict";
+    init_pool();
+    init_hacienda_native_repo();
+    init_tenant_almendro_repo();
+    init_env();
+  }
+});
+
+// src/server/db/orders.repo.ts
+var orders_repo_exports = {};
+__export(orders_repo_exports, {
+  confirmPayment: () => confirmPayment,
+  createOrder: () => createOrder,
+  executeOrderPaymentConfirmation: () => executeOrderPaymentConfirmation,
+  getOrderById: () => getOrderById,
+  getOrdersByTenant: () => getOrdersByTenant,
+  updateOrder: () => updateOrder,
+  updateOrderStatus: () => updateOrderStatus
+});
+async function getOrdersByTenant(tenantId, filters) {
+  const result = await query(`
+    SELECT o.id, o.tenant_id as "tenantId", o.order_number as "orderNumber", o.customer_name as "customerName",
+           o.customer_phone as "customerPhone", o.customer_email as "customerEmail", o.customer_address as "customerAddress",
+           o.whatsapp_jid as "whatsappJid", o.source, o.subtotal, o.delivery_fee as "deliveryFee", o.discount, o.discount_amount as "discountAmount", o.coupon_code as "couponCode", o.total,
+           o.currency, o.status, o.payment_method as "paymentMethod", o.payment_status as "paymentStatus",
+           o.payment_reference as "paymentReference", o.payment_proof_url as "paymentProofUrl", o.payment_proof_status as "paymentProofStatus", o.notes, o.delivery_method as "deliveryMethod",
+           o.consumption_mode as "consumptionMode", o.table_number as "tableNumber", o.customer_location as "customerLocation",
+           o.chat_message_id as "chatMessageId", o.driver_id as "driverId", o.waze_url as "wazeUrl",
+           o.billing_info as "billingInfo",
+           o.tracking_token as "trackingToken",
+           o.branch_id as "branchId", b.name as "branchName",
+           o.created_at as "createdAt", o.updated_at as "updatedAt",
+           COALESCE(
+             (
+               SELECT json_agg(
+                 json_build_object(
+                   'id', oi.id,
+                   'productId', oi.product_id,
+                   'variantId', oi.variant_id,
+                   'productName', oi.product_name,
+                   'variantName', oi.variant_name,
+                   'selectedVariables', oi.selected_variables,
+                   'quantity', oi.quantity,
+                   'unitPrice', oi.unit_price,
+                   'totalPrice', oi.total_price
+                 )
+               )
+               FROM order_items oi
+               WHERE oi.order_id = o.id
+             ),
+             '[]'::json
+           ) as items
+    FROM orders o
+    LEFT JOIN branches b ON o.branch_id = b.id
+    WHERE o.tenant_id = $1
+    ORDER BY o.created_at DESC
+  `, [tenantId]);
+  return result.rows;
+}
+async function getOrderById(id, tenantId) {
+  const result = await query(`
+    SELECT id, tenant_id as "tenantId", order_number as "orderNumber", customer_name as "customerName",
+           customer_phone as "customerPhone", customer_email as "customerEmail", customer_address as "customerAddress",
+           whatsapp_jid as "whatsappJid", source, subtotal, delivery_fee as "deliveryFee", discount, discount_amount as "discountAmount", coupon_code as "couponCode", total,
+           currency, status, payment_method as "paymentMethod", payment_status as "paymentStatus",
+           payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl", payment_proof_status as "paymentProofStatus", notes, delivery_method as "deliveryMethod",
+           consumption_mode as "consumptionMode", table_number as "tableNumber", customer_location as "customerLocation",
+           chat_message_id as "chatMessageId", driver_id as "driverId", waze_url as "wazeUrl",
+           billing_info as "billingInfo",
+           tracking_token as "trackingToken",
+           created_at as "createdAt", updated_at as "updatedAt"
+    FROM orders 
+    WHERE id = $1 AND tenant_id = $2
+  `, [id, tenantId]);
+  if (result.rows.length === 0) return null;
+  const order = result.rows[0];
+  const itemsRes = await query(`
+    SELECT id, product_id as "productId", variant_id as "variantId", product_name as "productName",
+           variant_name as "variantName", selected_variables as "selectedVariables",
+           quantity, unit_price as "unitPrice", total_price as "totalPrice"
+    FROM order_items WHERE order_id = $1 AND tenant_id = $2
+  `, [id, tenantId]);
+  order.items = itemsRes.rows;
+  return order;
+}
+async function createOrder(tenantId, data, items, dbClient) {
+  const insertSql = `
+    INSERT INTO orders (
+      tenant_id, customer_name, customer_phone, customer_email, customer_address, whatsapp_jid,
+      source, subtotal, delivery_fee, discount, discount_amount, coupon_code, total, currency, status, payment_method, 
+      payment_status, payment_reference, payment_proof_url, payment_proof_status, notes, delivery_method, consumption_mode, table_number, customer_location, stock_deducted, billing_info
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
+    RETURNING id
+  `;
+  const discountVal = Number(data.discount || data.discountAmount || 0);
+  const params = [
+    tenantId,
+    data.customerName,
+    data.customerPhone,
+    data.customerEmail,
+    data.customerAddress,
+    data.whatsappJid,
+    data.source || "store",
+    data.subtotal,
+    data.deliveryFee || 0,
+    discountVal,
+    discountVal,
+    data.couponCode || null,
+    data.total,
+    data.currency || "CRC",
+    data.status || "pedido_recibido",
+    data.paymentMethod,
+    data.paymentStatus || "pending",
+    data.paymentReference || null,
+    data.paymentProofUrl || null,
+    data.paymentProofStatus || (data.paymentProofUrl ? "received" : "pending"),
+    data.notes || null,
+    data.deliveryMethod || "pickup",
+    data.consumptionMode || null,
+    data.tableNumber || null,
+    data.customerLocation ? JSON.stringify(data.customerLocation) : null,
+    Boolean(data.stockDeducted),
+    data.billingInfo ? JSON.stringify(data.billingInfo) : null
+  ];
+  const client = dbClient || await getClient();
+  const isInternalClient = !dbClient;
+  if (isInternalClient) {
+    await client.query("BEGIN");
+  }
+  try {
+    const result = await client.query(insertSql, params);
+    const orderId = result.rows[0].id;
+    const orderItems = items || data.items || [];
+    if (orderItems && orderItems.length > 0) {
+      for (const item of orderItems) {
+        await client.query(`
+          INSERT INTO order_items (
+            order_id, product_id, variant_id, tenant_id, product_name, variant_name, selected_variables, quantity, unit_price, total_price
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        `, [
+          orderId,
+          item.productId || null,
+          item.variantId || null,
+          tenantId,
+          item.productName,
+          item.variantName || null,
+          item.selectedVariables ? JSON.stringify(item.selectedVariables) : null,
+          item.quantity,
+          item.unitPrice,
+          Number(item.unitPrice) * Number(item.quantity)
+        ]);
+      }
+    }
+    if (isInternalClient) {
+      await client.query("COMMIT");
+    }
+    return getOrderById(orderId, tenantId);
+  } catch (err) {
+    if (isInternalClient) {
+      await client.query("ROLLBACK");
+    }
+    throw err;
+  } finally {
+    if (isInternalClient) {
+      client.release();
+    }
+  }
+}
+async function updateOrder(id, tenantId, data) {
+  const updates = [];
+  const params = [id, tenantId];
+  let paramIdx = 3;
+  const fields = [
+    "status",
+    "paymentStatus",
+    "paymentReference",
+    "notes",
+    "driverId",
+    "wazeUrl",
+    "consumptionMode",
+    "tableNumber",
+    "deliveryMethod",
+    "deliveryFee",
+    "total",
+    "customerAddress",
+    "customerLocation",
+    "billingInfo"
+  ];
+  for (const field of fields) {
+    if (data[field] !== void 0) {
+      const dbField = field.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+      if (field === "customerLocation" || field === "billingInfo") {
+        updates.push(`${dbField} = $${paramIdx++}::jsonb`);
+        params.push(data[field] ? JSON.stringify(data[field]) : null);
+      } else {
+        updates.push(`${dbField} = $${paramIdx++}`);
+        params.push(data[field]);
+      }
+    }
+  }
+  if (updates.length > 0) {
+    updates.push(`updated_at = CURRENT_TIMESTAMP`);
+    await query(`UPDATE orders SET ${updates.join(", ")} WHERE id = $1 AND tenant_id = $2`, params);
+  }
+  return getOrderById(id, tenantId);
+}
+async function updateOrderStatus(id, tenantId, status) {
+  return updateOrder(id, tenantId, { status });
+}
+async function confirmPayment(id, tenantId, paymentReference) {
+  const result = await executeOrderPaymentConfirmation(tenantId, id, {
+    paymentMethod: "manual",
+    paymentReference: paymentReference || "Confirmado manual"
+  });
+  return result.order || getOrderById(id, tenantId);
+}
+async function executeOrderPaymentConfirmation(tenantId, orderId, paymentData) {
+  const client = await getClient();
+  try {
+    await client.query("BEGIN");
+    const orderRes = await client.query(`
+      SELECT * FROM orders WHERE id = $1 AND tenant_id = $2 FOR UPDATE
+    `, [orderId, tenantId]);
+    if (orderRes.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return { success: false, error: "Orden no encontrada para este comercio" };
+    }
+    const currentOrder = orderRes.rows[0];
+    if (String(currentOrder.payment_status).toLowerCase() === "paid") {
+      await client.query("ROLLBACK");
+      const order = await getOrderById(orderId, tenantId);
+      return { success: true, alreadyProcessed: true, order: order || void 0 };
+    }
+    if (!currentOrder.stock_deducted) {
+      const itemsRes = await client.query(`
+        SELECT product_id as "productId", variant_id as "variantId", quantity
+        FROM order_items
+        WHERE order_id = $1 AND tenant_id = $2
+        ORDER BY product_id ASC, variant_id ASC NULLS FIRST
+      `, [orderId, tenantId]);
+      for (const item of itemsRes.rows) {
+        const qty = Number(item.quantity || 1);
+        if (item.productId) {
+          await client.query(`
+            SELECT id, stock, track_stock
+            FROM products
+            WHERE id = $1 AND tenant_id = $2
+            FOR UPDATE
+          `, [item.productId, tenantId]);
+          await client.query(`
+            UPDATE products
+            SET stock = GREATEST(0, stock - $1),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = $2 AND tenant_id = $3 AND track_stock = true
+          `, [qty, item.productId, tenantId]);
+          if (item.variantId) {
+            await client.query(`
+              SELECT id, stock
+              FROM product_variants
+              WHERE id = $1 AND product_id = $2
+              FOR UPDATE
+            `, [item.variantId, item.productId]);
+            await client.query(`
+              UPDATE product_variants
+              SET stock = GREATEST(0, stock - $1)
+              WHERE id = $2 AND product_id = $3
+            `, [qty, item.variantId, item.productId]);
+          }
+        }
+      }
+    }
+    const newPaymentStatus = "paid";
+    const newOrderStatus = currentOrder.status === "pending" || currentOrder.status === "pedido_recibido" ? "pedido_aceptado" : currentOrder.status;
+    await client.query(`
+      UPDATE orders
+      SET payment_status = $1,
+          status = $2,
+          tilopay_transaction_id = $3,
+          tilopay_auth_code = $4,
+          payment_reference = COALESCE($5, payment_reference),
+          payment_method = COALESCE($6, payment_method),
+          stock_deducted = true,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $7 AND tenant_id = $8
+    `, [
+      newPaymentStatus,
+      newOrderStatus,
+      paymentData.tilopayTransactionId || null,
+      paymentData.tilopayAuthCode || null,
+      paymentData.paymentReference || paymentData.tilopayTransactionId || "Tilopay",
+      paymentData.paymentMethod || "card",
+      orderId,
+      tenantId
+    ]);
+    await client.query("COMMIT");
+    const updatedOrder = await getOrderById(orderId, tenantId);
+    return { success: true, alreadyProcessed: false, order: updatedOrder || void 0 };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error(`[executeOrderPaymentConfirmation] Error en transacci\xF3n at\xF3mica de orden ${orderId}:`, err);
+    return { success: false, error: err.message || "Error en la transacci\xF3n de confirmaci\xF3n de pago" };
+  } finally {
+    client.release();
+  }
+}
+var init_orders_repo = __esm({
+  "src/server/db/orders.repo.ts"() {
+    "use strict";
+    init_pool();
+  }
+});
+
+// src/server/db/appointments.repo.ts
+var appointments_repo_exports = {};
+__export(appointments_repo_exports, {
+  createAppointment: () => createAppointment,
+  deleteAppointment: () => deleteAppointment,
+  getAppointmentById: () => getAppointmentById,
+  getAppointmentByIdUnsafeForWebhook: () => getAppointmentByIdUnsafeForWebhook,
+  getAppointmentsByTenant: () => getAppointmentsByTenant,
+  updateAppointment: () => updateAppointment,
+  updateAppointmentPayment: () => updateAppointmentPayment,
+  updateAppointmentStatus: () => updateAppointmentStatus
+});
+async function getAppointmentsByTenant(tenantId) {
+  const result = await query(`
+    SELECT id, tenant_id as "tenantId", name, whatsapp, service, 
+           date, time, amount, status, details, vehicle_model as "vehicleModel",
+           selected_variables as "selectedVariables", specialist_id as "specialistId",
+           record_id as "recordId",
+           billing_info as "billingInfo",
+           payment_method as "paymentMethod", payment_status as "paymentStatus",
+           payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
+           tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
+           created_at as "createdAt"
+    FROM appointments 
+    WHERE tenant_id = $1
+    ORDER BY date DESC, time DESC
+  `, [tenantId]);
+  return result.rows;
+}
+async function getAppointmentById(id, tenantId) {
+  const result = await query(`
+    SELECT id, tenant_id as "tenantId", name, whatsapp, service, 
+           date, time, amount, status, details, vehicle_model as "vehicleModel",
+           selected_variables as "selectedVariables", specialist_id as "specialistId",
+           record_id as "recordId",
+           billing_info as "billingInfo",
+           payment_method as "paymentMethod", payment_status as "paymentStatus",
+           payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
+           tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
+           created_at as "createdAt"
+    FROM appointments 
+    WHERE id = $1 AND tenant_id = $2
+  `, [id, tenantId]);
+  return result.rows[0] || null;
+}
+async function getAppointmentByIdUnsafeForWebhook(id) {
+  const result = await query(`
+    SELECT id, tenant_id as "tenantId", name, whatsapp, service, 
+           date, time, amount, status, details, vehicle_model as "vehicleModel",
+           selected_variables as "selectedVariables", specialist_id as "specialistId",
+           record_id as "recordId",
+           billing_info as "billingInfo",
+           payment_method as "paymentMethod", payment_status as "paymentStatus",
+           payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
+           tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
+           created_at as "createdAt"
+    FROM appointments 
+    WHERE id = $1
+  `, [id]);
+  return result.rows[0] || null;
+}
+async function createAppointment(tenantId, data) {
+  const result = await query(`
+    INSERT INTO appointments (
+      tenant_id, name, whatsapp, service, date, time, amount, status, details, vehicle_model, selected_variables, specialist_id,
+      record_id, payment_method, payment_status, payment_reference, payment_proof_url, tilopay_transaction_id, tilopay_auth_code, billing_info
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+    RETURNING id, tenant_id as "tenantId", name, whatsapp, service, 
+           date, time, amount, status, details, vehicle_model as "vehicleModel",
+           selected_variables as "selectedVariables", specialist_id as "specialistId",
+           record_id as "recordId",
+           billing_info as "billingInfo",
+           payment_method as "paymentMethod", payment_status as "paymentStatus",
+           payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
+           tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
+           created_at as "createdAt"
+  `, [
+    tenantId,
+    data.name,
+    data.whatsapp,
+    data.service,
+    data.date,
+    data.time,
+    data.amount,
+    data.status || "scheduled",
+    data.details,
+    data.vehicleModel,
+    data.selectedVariables ? JSON.stringify(data.selectedVariables) : null,
+    data.specialistId || null,
+    data.recordId || null,
+    data.paymentMethod || null,
+    data.paymentStatus || "pending",
+    data.paymentReference || null,
+    data.paymentProofUrl || null,
+    data.tilopayTransactionId || null,
+    data.tilopayAuthCode || null,
+    data.billingInfo ? JSON.stringify(data.billingInfo) : null
+  ]);
+  return result.rows[0];
+}
+async function updateAppointment(id, tenantId, data) {
+  const updates = [];
+  const params = [id, tenantId];
+  let paramIdx = 3;
+  const fields = [
+    "name",
+    "whatsapp",
+    "service",
+    "date",
+    "time",
+    "amount",
+    "status",
+    "details",
+    "vehicleModel",
+    "selectedVariables",
+    "specialistId",
+    "recordId",
+    "paymentMethod",
+    "paymentStatus",
+    "paymentReference",
+    "paymentProofUrl",
+    "tilopayTransactionId",
+    "tilopayAuthCode",
+    "billingInfo"
+  ];
+  for (const field of fields) {
+    if (data[field] !== void 0) {
+      const dbField = field.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+      if (field === "billingInfo") {
+        updates.push(`${dbField} = $${paramIdx++}::jsonb`);
+        params.push(data[field] ? JSON.stringify(data[field]) : null);
+      } else {
+        updates.push(`${dbField} = $${paramIdx++}`);
+        const val = field === "selectedVariables" ? JSON.stringify(data[field]) : data[field];
+        params.push(val);
+      }
+    }
+  }
+  if (updates.length === 0) return getAppointmentById(id, tenantId);
+  const result = await query(`
+    UPDATE appointments SET ${updates.join(", ")}
+    WHERE id = $1 AND tenant_id = $2
+    RETURNING id, tenant_id as "tenantId", name, whatsapp, service, 
+           date, time, amount, status, details, vehicle_model as "vehicleModel",
+           selected_variables as "selectedVariables", specialist_id as "specialistId",
+           record_id as "recordId",
+           billing_info as "billingInfo",
+           payment_method as "paymentMethod", payment_status as "paymentStatus",
+           payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
+           tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
+           created_at as "createdAt"
+  `, params);
+  return result.rows[0] || null;
+}
+async function updateAppointmentPayment(id, paymentData, tenantId) {
+  const updates = [];
+  const params = [id];
+  let paramIdx = 2;
+  if (paymentData.paymentStatus !== void 0) {
+    updates.push(`payment_status = $${paramIdx++}`);
+    params.push(paymentData.paymentStatus);
+    if (paymentData.paymentStatus === "paid") {
+      updates.push(`status = 'confirmed'`);
+    }
+  }
+  if (paymentData.paymentMethod !== void 0) {
+    updates.push(`payment_method = $${paramIdx++}`);
+    params.push(paymentData.paymentMethod);
+  }
+  if (paymentData.paymentReference !== void 0) {
+    updates.push(`payment_reference = $${paramIdx++}`);
+    params.push(paymentData.paymentReference);
+  }
+  if (paymentData.tilopayTransactionId !== void 0) {
+    updates.push(`tilopay_transaction_id = $${paramIdx++}`);
+    params.push(paymentData.tilopayTransactionId);
+  }
+  if (paymentData.tilopayAuthCode !== void 0) {
+    updates.push(`tilopay_auth_code = $${paramIdx++}`);
+    params.push(paymentData.tilopayAuthCode);
+  }
+  if (updates.length === 0) {
+    return tenantId ? getAppointmentById(id, tenantId) : getAppointmentByIdUnsafeForWebhook(id);
+  }
+  let whereClause = "WHERE id = $1";
+  if (tenantId) {
+    whereClause += ` AND tenant_id = $${paramIdx++}`;
+    params.push(tenantId);
+  }
+  const result = await query(`
+    UPDATE appointments SET ${updates.join(", ")}
+    ${whereClause}
+    RETURNING id, tenant_id as "tenantId", name, whatsapp, service, 
+           date, time, amount, status, details, vehicle_model as "vehicleModel",
+           selected_variables as "selectedVariables", specialist_id as "specialistId",
+           record_id as "recordId",
+           payment_method as "paymentMethod", payment_status as "paymentStatus",
+           payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
+           tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
+           created_at as "createdAt"
+  `, params);
+  return result.rows[0] || null;
+}
+async function updateAppointmentStatus(id, tenantId, status) {
+  return updateAppointment(id, tenantId, { status });
+}
+async function deleteAppointment(id, tenantId) {
+  const result = await query("DELETE FROM appointments WHERE id = $1 AND tenant_id = $2", [id, tenantId]);
+  return (result.rowCount ?? 0) > 0;
+}
+var init_appointments_repo = __esm({
+  "src/server/db/appointments.repo.ts"() {
+    "use strict";
+    init_pool();
   }
 });
 
@@ -2879,3143 +5391,6 @@ var init_records_repo = __esm({
   }
 });
 
-// src/server/db/appointments.repo.ts
-var appointments_repo_exports = {};
-__export(appointments_repo_exports, {
-  createAppointment: () => createAppointment,
-  deleteAppointment: () => deleteAppointment,
-  getAppointmentById: () => getAppointmentById,
-  getAppointmentByIdUnsafeForWebhook: () => getAppointmentByIdUnsafeForWebhook,
-  getAppointmentsByTenant: () => getAppointmentsByTenant,
-  updateAppointment: () => updateAppointment,
-  updateAppointmentPayment: () => updateAppointmentPayment,
-  updateAppointmentStatus: () => updateAppointmentStatus
-});
-async function getAppointmentsByTenant(tenantId) {
-  const result = await query(`
-    SELECT id, tenant_id as "tenantId", name, whatsapp, service, 
-           date, time, amount, status, details, vehicle_model as "vehicleModel",
-           selected_variables as "selectedVariables", specialist_id as "specialistId",
-           record_id as "recordId",
-           billing_info as "billingInfo",
-           payment_method as "paymentMethod", payment_status as "paymentStatus",
-           payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
-           tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
-           created_at as "createdAt"
-    FROM appointments 
-    WHERE tenant_id = $1
-    ORDER BY date DESC, time DESC
-  `, [tenantId]);
-  return result.rows;
-}
-async function getAppointmentById(id, tenantId) {
-  const result = await query(`
-    SELECT id, tenant_id as "tenantId", name, whatsapp, service, 
-           date, time, amount, status, details, vehicle_model as "vehicleModel",
-           selected_variables as "selectedVariables", specialist_id as "specialistId",
-           record_id as "recordId",
-           billing_info as "billingInfo",
-           payment_method as "paymentMethod", payment_status as "paymentStatus",
-           payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
-           tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
-           created_at as "createdAt"
-    FROM appointments 
-    WHERE id = $1 AND tenant_id = $2
-  `, [id, tenantId]);
-  return result.rows[0] || null;
-}
-async function getAppointmentByIdUnsafeForWebhook(id) {
-  const result = await query(`
-    SELECT id, tenant_id as "tenantId", name, whatsapp, service, 
-           date, time, amount, status, details, vehicle_model as "vehicleModel",
-           selected_variables as "selectedVariables", specialist_id as "specialistId",
-           record_id as "recordId",
-           billing_info as "billingInfo",
-           payment_method as "paymentMethod", payment_status as "paymentStatus",
-           payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
-           tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
-           created_at as "createdAt"
-    FROM appointments 
-    WHERE id = $1
-  `, [id]);
-  return result.rows[0] || null;
-}
-async function createAppointment(tenantId, data) {
-  const result = await query(`
-    INSERT INTO appointments (
-      tenant_id, name, whatsapp, service, date, time, amount, status, details, vehicle_model, selected_variables, specialist_id,
-      record_id, payment_method, payment_status, payment_reference, payment_proof_url, tilopay_transaction_id, tilopay_auth_code, billing_info
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
-    RETURNING id, tenant_id as "tenantId", name, whatsapp, service, 
-           date, time, amount, status, details, vehicle_model as "vehicleModel",
-           selected_variables as "selectedVariables", specialist_id as "specialistId",
-           record_id as "recordId",
-           billing_info as "billingInfo",
-           payment_method as "paymentMethod", payment_status as "paymentStatus",
-           payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
-           tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
-           created_at as "createdAt"
-  `, [
-    tenantId,
-    data.name,
-    data.whatsapp,
-    data.service,
-    data.date,
-    data.time,
-    data.amount,
-    data.status || "scheduled",
-    data.details,
-    data.vehicleModel,
-    data.selectedVariables ? JSON.stringify(data.selectedVariables) : null,
-    data.specialistId || null,
-    data.recordId || null,
-    data.paymentMethod || null,
-    data.paymentStatus || "pending",
-    data.paymentReference || null,
-    data.paymentProofUrl || null,
-    data.tilopayTransactionId || null,
-    data.tilopayAuthCode || null,
-    data.billingInfo ? JSON.stringify(data.billingInfo) : null
-  ]);
-  return result.rows[0];
-}
-async function updateAppointment(id, tenantId, data) {
-  const updates = [];
-  const params = [id, tenantId];
-  let paramIdx = 3;
-  const fields = [
-    "name",
-    "whatsapp",
-    "service",
-    "date",
-    "time",
-    "amount",
-    "status",
-    "details",
-    "vehicleModel",
-    "selectedVariables",
-    "specialistId",
-    "recordId",
-    "paymentMethod",
-    "paymentStatus",
-    "paymentReference",
-    "paymentProofUrl",
-    "tilopayTransactionId",
-    "tilopayAuthCode",
-    "billingInfo"
-  ];
-  for (const field of fields) {
-    if (data[field] !== void 0) {
-      const dbField = field.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
-      if (field === "billingInfo") {
-        updates.push(`${dbField} = $${paramIdx++}::jsonb`);
-        params.push(data[field] ? JSON.stringify(data[field]) : null);
-      } else {
-        updates.push(`${dbField} = $${paramIdx++}`);
-        const val = field === "selectedVariables" ? JSON.stringify(data[field]) : data[field];
-        params.push(val);
-      }
-    }
-  }
-  if (updates.length === 0) return getAppointmentById(id, tenantId);
-  const result = await query(`
-    UPDATE appointments SET ${updates.join(", ")}
-    WHERE id = $1 AND tenant_id = $2
-    RETURNING id, tenant_id as "tenantId", name, whatsapp, service, 
-           date, time, amount, status, details, vehicle_model as "vehicleModel",
-           selected_variables as "selectedVariables", specialist_id as "specialistId",
-           record_id as "recordId",
-           billing_info as "billingInfo",
-           payment_method as "paymentMethod", payment_status as "paymentStatus",
-           payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
-           tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
-           created_at as "createdAt"
-  `, params);
-  return result.rows[0] || null;
-}
-async function updateAppointmentPayment(id, paymentData, tenantId) {
-  const updates = [];
-  const params = [id];
-  let paramIdx = 2;
-  if (paymentData.paymentStatus !== void 0) {
-    updates.push(`payment_status = $${paramIdx++}`);
-    params.push(paymentData.paymentStatus);
-    if (paymentData.paymentStatus === "paid") {
-      updates.push(`status = 'confirmed'`);
-    }
-  }
-  if (paymentData.paymentMethod !== void 0) {
-    updates.push(`payment_method = $${paramIdx++}`);
-    params.push(paymentData.paymentMethod);
-  }
-  if (paymentData.paymentReference !== void 0) {
-    updates.push(`payment_reference = $${paramIdx++}`);
-    params.push(paymentData.paymentReference);
-  }
-  if (paymentData.tilopayTransactionId !== void 0) {
-    updates.push(`tilopay_transaction_id = $${paramIdx++}`);
-    params.push(paymentData.tilopayTransactionId);
-  }
-  if (paymentData.tilopayAuthCode !== void 0) {
-    updates.push(`tilopay_auth_code = $${paramIdx++}`);
-    params.push(paymentData.tilopayAuthCode);
-  }
-  if (updates.length === 0) {
-    return tenantId ? getAppointmentById(id, tenantId) : getAppointmentByIdUnsafeForWebhook(id);
-  }
-  let whereClause = "WHERE id = $1";
-  if (tenantId) {
-    whereClause += ` AND tenant_id = $${paramIdx++}`;
-    params.push(tenantId);
-  }
-  const result = await query(`
-    UPDATE appointments SET ${updates.join(", ")}
-    ${whereClause}
-    RETURNING id, tenant_id as "tenantId", name, whatsapp, service, 
-           date, time, amount, status, details, vehicle_model as "vehicleModel",
-           selected_variables as "selectedVariables", specialist_id as "specialistId",
-           record_id as "recordId",
-           payment_method as "paymentMethod", payment_status as "paymentStatus",
-           payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl",
-           tilopay_transaction_id as "tilopayTransactionId", tilopay_auth_code as "tilopayAuthCode",
-           created_at as "createdAt"
-  `, params);
-  return result.rows[0] || null;
-}
-async function updateAppointmentStatus(id, tenantId, status) {
-  return updateAppointment(id, tenantId, { status });
-}
-async function deleteAppointment(id, tenantId) {
-  const result = await query("DELETE FROM appointments WHERE id = $1 AND tenant_id = $2", [id, tenantId]);
-  return (result.rowCount ?? 0) > 0;
-}
-var init_appointments_repo = __esm({
-  "src/server/db/appointments.repo.ts"() {
-    "use strict";
-    init_pool();
-  }
-});
-
-// src/server/db/orders.repo.ts
-var orders_repo_exports = {};
-__export(orders_repo_exports, {
-  confirmPayment: () => confirmPayment,
-  createOrder: () => createOrder,
-  executeOrderPaymentConfirmation: () => executeOrderPaymentConfirmation,
-  getOrderById: () => getOrderById,
-  getOrdersByTenant: () => getOrdersByTenant,
-  updateOrder: () => updateOrder,
-  updateOrderStatus: () => updateOrderStatus
-});
-async function getOrdersByTenant(tenantId, filters) {
-  const result = await query(`
-    SELECT o.id, o.tenant_id as "tenantId", o.order_number as "orderNumber", o.customer_name as "customerName",
-           o.customer_phone as "customerPhone", o.customer_email as "customerEmail", o.customer_address as "customerAddress",
-           o.whatsapp_jid as "whatsappJid", o.source, o.subtotal, o.delivery_fee as "deliveryFee", o.discount, o.discount_amount as "discountAmount", o.coupon_code as "couponCode", o.total,
-           o.currency, o.status, o.payment_method as "paymentMethod", o.payment_status as "paymentStatus",
-           o.payment_reference as "paymentReference", o.payment_proof_url as "paymentProofUrl", o.payment_proof_status as "paymentProofStatus", o.notes, o.delivery_method as "deliveryMethod",
-           o.consumption_mode as "consumptionMode", o.table_number as "tableNumber", o.customer_location as "customerLocation",
-           o.chat_message_id as "chatMessageId", o.driver_id as "driverId", o.waze_url as "wazeUrl",
-           o.billing_info as "billingInfo",
-           o.tracking_token as "trackingToken",
-           o.branch_id as "branchId", b.name as "branchName",
-           o.created_at as "createdAt", o.updated_at as "updatedAt",
-           COALESCE(
-             (
-               SELECT json_agg(
-                 json_build_object(
-                   'id', oi.id,
-                   'productId', oi.product_id,
-                   'variantId', oi.variant_id,
-                   'productName', oi.product_name,
-                   'variantName', oi.variant_name,
-                   'selectedVariables', oi.selected_variables,
-                   'quantity', oi.quantity,
-                   'unitPrice', oi.unit_price,
-                   'totalPrice', oi.total_price
-                 )
-               )
-               FROM order_items oi
-               WHERE oi.order_id = o.id
-             ),
-             '[]'::json
-           ) as items
-    FROM orders o
-    LEFT JOIN branches b ON o.branch_id = b.id
-    WHERE o.tenant_id = $1
-    ORDER BY o.created_at DESC
-  `, [tenantId]);
-  return result.rows;
-}
-async function getOrderById(id, tenantId) {
-  const result = await query(`
-    SELECT id, tenant_id as "tenantId", order_number as "orderNumber", customer_name as "customerName",
-           customer_phone as "customerPhone", customer_email as "customerEmail", customer_address as "customerAddress",
-           whatsapp_jid as "whatsappJid", source, subtotal, delivery_fee as "deliveryFee", discount, discount_amount as "discountAmount", coupon_code as "couponCode", total,
-           currency, status, payment_method as "paymentMethod", payment_status as "paymentStatus",
-           payment_reference as "paymentReference", payment_proof_url as "paymentProofUrl", payment_proof_status as "paymentProofStatus", notes, delivery_method as "deliveryMethod",
-           consumption_mode as "consumptionMode", table_number as "tableNumber", customer_location as "customerLocation",
-           chat_message_id as "chatMessageId", driver_id as "driverId", waze_url as "wazeUrl",
-           billing_info as "billingInfo",
-           tracking_token as "trackingToken",
-           created_at as "createdAt", updated_at as "updatedAt"
-    FROM orders 
-    WHERE id = $1 AND tenant_id = $2
-  `, [id, tenantId]);
-  if (result.rows.length === 0) return null;
-  const order = result.rows[0];
-  const itemsRes = await query(`
-    SELECT id, product_id as "productId", variant_id as "variantId", product_name as "productName",
-           variant_name as "variantName", selected_variables as "selectedVariables",
-           quantity, unit_price as "unitPrice", total_price as "totalPrice"
-    FROM order_items WHERE order_id = $1 AND tenant_id = $2
-  `, [id, tenantId]);
-  order.items = itemsRes.rows;
-  return order;
-}
-async function createOrder(tenantId, data, items, dbClient) {
-  const insertSql = `
-    INSERT INTO orders (
-      tenant_id, customer_name, customer_phone, customer_email, customer_address, whatsapp_jid,
-      source, subtotal, delivery_fee, discount, discount_amount, coupon_code, total, currency, status, payment_method, 
-      payment_status, payment_reference, payment_proof_url, payment_proof_status, notes, delivery_method, consumption_mode, table_number, customer_location, stock_deducted, billing_info
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
-    RETURNING id
-  `;
-  const discountVal = Number(data.discount || data.discountAmount || 0);
-  const params = [
-    tenantId,
-    data.customerName,
-    data.customerPhone,
-    data.customerEmail,
-    data.customerAddress,
-    data.whatsappJid,
-    data.source || "store",
-    data.subtotal,
-    data.deliveryFee || 0,
-    discountVal,
-    discountVal,
-    data.couponCode || null,
-    data.total,
-    data.currency || "CRC",
-    data.status || "pedido_recibido",
-    data.paymentMethod,
-    data.paymentStatus || "pending",
-    data.paymentReference || null,
-    data.paymentProofUrl || null,
-    data.paymentProofStatus || (data.paymentProofUrl ? "received" : "pending"),
-    data.notes || null,
-    data.deliveryMethod || "pickup",
-    data.consumptionMode || null,
-    data.tableNumber || null,
-    data.customerLocation ? JSON.stringify(data.customerLocation) : null,
-    Boolean(data.stockDeducted),
-    data.billingInfo ? JSON.stringify(data.billingInfo) : null
-  ];
-  const client = dbClient || await getClient();
-  const isInternalClient = !dbClient;
-  if (isInternalClient) {
-    await client.query("BEGIN");
-  }
-  try {
-    const result = await client.query(insertSql, params);
-    const orderId = result.rows[0].id;
-    const orderItems = items || data.items || [];
-    if (orderItems && orderItems.length > 0) {
-      for (const item of orderItems) {
-        await client.query(`
-          INSERT INTO order_items (
-            order_id, product_id, variant_id, tenant_id, product_name, variant_name, selected_variables, quantity, unit_price, total_price
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-        `, [
-          orderId,
-          item.productId || null,
-          item.variantId || null,
-          tenantId,
-          item.productName,
-          item.variantName || null,
-          item.selectedVariables ? JSON.stringify(item.selectedVariables) : null,
-          item.quantity,
-          item.unitPrice,
-          Number(item.unitPrice) * Number(item.quantity)
-        ]);
-      }
-    }
-    if (isInternalClient) {
-      await client.query("COMMIT");
-    }
-    return getOrderById(orderId, tenantId);
-  } catch (err) {
-    if (isInternalClient) {
-      await client.query("ROLLBACK");
-    }
-    throw err;
-  } finally {
-    if (isInternalClient) {
-      client.release();
-    }
-  }
-}
-async function updateOrder(id, tenantId, data) {
-  const updates = [];
-  const params = [id, tenantId];
-  let paramIdx = 3;
-  const fields = [
-    "status",
-    "paymentStatus",
-    "paymentReference",
-    "notes",
-    "driverId",
-    "wazeUrl",
-    "consumptionMode",
-    "tableNumber",
-    "deliveryMethod",
-    "deliveryFee",
-    "total",
-    "customerAddress",
-    "customerLocation",
-    "billingInfo"
-  ];
-  for (const field of fields) {
-    if (data[field] !== void 0) {
-      const dbField = field.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
-      if (field === "customerLocation" || field === "billingInfo") {
-        updates.push(`${dbField} = $${paramIdx++}::jsonb`);
-        params.push(data[field] ? JSON.stringify(data[field]) : null);
-      } else {
-        updates.push(`${dbField} = $${paramIdx++}`);
-        params.push(data[field]);
-      }
-    }
-  }
-  if (updates.length > 0) {
-    updates.push(`updated_at = CURRENT_TIMESTAMP`);
-    await query(`UPDATE orders SET ${updates.join(", ")} WHERE id = $1 AND tenant_id = $2`, params);
-  }
-  return getOrderById(id, tenantId);
-}
-async function updateOrderStatus(id, tenantId, status) {
-  return updateOrder(id, tenantId, { status });
-}
-async function confirmPayment(id, tenantId, paymentReference) {
-  const result = await executeOrderPaymentConfirmation(tenantId, id, {
-    paymentMethod: "manual",
-    paymentReference: paymentReference || "Confirmado manual"
-  });
-  return result.order || getOrderById(id, tenantId);
-}
-async function executeOrderPaymentConfirmation(tenantId, orderId, paymentData) {
-  const client = await getClient();
-  try {
-    await client.query("BEGIN");
-    const orderRes = await client.query(`
-      SELECT * FROM orders WHERE id = $1 AND tenant_id = $2 FOR UPDATE
-    `, [orderId, tenantId]);
-    if (orderRes.rows.length === 0) {
-      await client.query("ROLLBACK");
-      return { success: false, error: "Orden no encontrada para este comercio" };
-    }
-    const currentOrder = orderRes.rows[0];
-    if (String(currentOrder.payment_status).toLowerCase() === "paid") {
-      await client.query("ROLLBACK");
-      const order = await getOrderById(orderId, tenantId);
-      return { success: true, alreadyProcessed: true, order: order || void 0 };
-    }
-    if (!currentOrder.stock_deducted) {
-      const itemsRes = await client.query(`
-        SELECT product_id as "productId", variant_id as "variantId", quantity
-        FROM order_items
-        WHERE order_id = $1 AND tenant_id = $2
-        ORDER BY product_id ASC, variant_id ASC NULLS FIRST
-      `, [orderId, tenantId]);
-      for (const item of itemsRes.rows) {
-        const qty = Number(item.quantity || 1);
-        if (item.productId) {
-          await client.query(`
-            SELECT id, stock, track_stock
-            FROM products
-            WHERE id = $1 AND tenant_id = $2
-            FOR UPDATE
-          `, [item.productId, tenantId]);
-          await client.query(`
-            UPDATE products
-            SET stock = GREATEST(0, stock - $1),
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = $2 AND tenant_id = $3 AND track_stock = true
-          `, [qty, item.productId, tenantId]);
-          if (item.variantId) {
-            await client.query(`
-              SELECT id, stock
-              FROM product_variants
-              WHERE id = $1 AND product_id = $2
-              FOR UPDATE
-            `, [item.variantId, item.productId]);
-            await client.query(`
-              UPDATE product_variants
-              SET stock = GREATEST(0, stock - $1)
-              WHERE id = $2 AND product_id = $3
-            `, [qty, item.variantId, item.productId]);
-          }
-        }
-      }
-    }
-    const newPaymentStatus = "paid";
-    const newOrderStatus = currentOrder.status === "pending" || currentOrder.status === "pedido_recibido" ? "pedido_aceptado" : currentOrder.status;
-    await client.query(`
-      UPDATE orders
-      SET payment_status = $1,
-          status = $2,
-          tilopay_transaction_id = $3,
-          tilopay_auth_code = $4,
-          payment_reference = COALESCE($5, payment_reference),
-          payment_method = COALESCE($6, payment_method),
-          stock_deducted = true,
-          updated_at = CURRENT_TIMESTAMP
-      WHERE id = $7 AND tenant_id = $8
-    `, [
-      newPaymentStatus,
-      newOrderStatus,
-      paymentData.tilopayTransactionId || null,
-      paymentData.tilopayAuthCode || null,
-      paymentData.paymentReference || paymentData.tilopayTransactionId || "Tilopay",
-      paymentData.paymentMethod || "card",
-      orderId,
-      tenantId
-    ]);
-    await client.query("COMMIT");
-    const updatedOrder = await getOrderById(orderId, tenantId);
-    return { success: true, alreadyProcessed: false, order: updatedOrder || void 0 };
-  } catch (err) {
-    await client.query("ROLLBACK");
-    console.error(`[executeOrderPaymentConfirmation] Error en transacci\xF3n at\xF3mica de orden ${orderId}:`, err);
-    return { success: false, error: err.message || "Error en la transacci\xF3n de confirmaci\xF3n de pago" };
-  } finally {
-    client.release();
-  }
-}
-var init_orders_repo = __esm({
-  "src/server/db/orders.repo.ts"() {
-    "use strict";
-    init_pool();
-  }
-});
-
-// src/server/db/hacienda-native.repo.ts
-var hacienda_native_repo_exports = {};
-__export(hacienda_native_repo_exports, {
-  clearHaciendaCredentials: () => clearHaciendaCredentials,
-  consumeNextConsecutive: () => consumeNextConsecutive,
-  deleteHaciendaBranch: () => deleteHaciendaBranch,
-  formatConsecutiveNumber: () => formatConsecutiveNumber,
-  generateHaciendaNumericKey: () => generateHaciendaNumericKey,
-  getCycleUsage: () => getCycleUsage,
-  getHaciendaBranchById: () => getHaciendaBranchById,
-  getHaciendaBranchByStoreBranchId: () => getHaciendaBranchByStoreBranchId,
-  getHaciendaBranchDecryptedSecrets: () => getHaciendaBranchDecryptedSecrets,
-  getHaciendaBranchesByTenant: () => getHaciendaBranchesByTenant,
-  getHaciendaConfigByTenant: () => getHaciendaConfigByTenant,
-  getHaciendaDecryptedSecrets: () => getHaciendaDecryptedSecrets,
-  getTenantPlanQuota: () => getTenantPlanQuota,
-  incrementInvoiceUsage: () => incrementInvoiceUsage,
-  saveHaciendaBranch: () => saveHaciendaBranch,
-  saveHaciendaConfig: () => saveHaciendaConfig,
-  updateBranchConnectionTestResult: () => updateBranchConnectionTestResult,
-  updateConnectionTestResult: () => updateConnectionTestResult
-});
-function computeDaysRemaining(expiresAt) {
-  if (!expiresAt) return null;
-  const dt = new Date(expiresAt);
-  if (isNaN(dt.getTime())) return null;
-  return Math.ceil((dt.getTime() - Date.now()) / 864e5);
-}
-async function getHaciendaConfigByTenant(tenantId) {
-  const res = await query(
-    `SELECT * FROM tenant_hacienda_configs WHERE tenant_id = $1`,
-    [tenantId]
-  );
-  if (res.rows.length === 0) return null;
-  const row = res.rows[0];
-  const p12ExpiresIso = row.p12_expires_at ? new Date(row.p12_expires_at).toISOString() : null;
-  let economicActivities = [];
-  if (Array.isArray(row.economic_activities_json)) {
-    economicActivities = row.economic_activities_json;
-  } else if (typeof row.economic_activities_json === "string") {
-    try {
-      economicActivities = JSON.parse(row.economic_activities_json);
-    } catch (_) {
-      economicActivities = [];
-    }
-  }
-  return {
-    id: row.id,
-    tenantId: row.tenant_id,
-    environment: row.environment || "sandbox",
-    taxpayerIdType: row.taxpayer_id_type || "01",
-    taxpayerIdNumber: row.taxpayer_id_number || "",
-    taxpayerName: row.taxpayer_name || "",
-    commercialName: row.commercial_name || "",
-    taxpayerEmail: row.taxpayer_email || "",
-    taxpayerPhone: row.taxpayer_phone || "",
-    economicActivityCode: row.economic_activity_code || "",
-    economicActivities,
-    defaultCabysCode: row.default_cabys_code || "8311100000000",
-    province: row.province || "1",
-    canton: row.canton || "01",
-    district: row.district || "01",
-    neighborhood: row.neighborhood || "01",
-    addressDetail: row.address_detail || "",
-    idpUsername: row.idp_username || "",
-    idpPasswordMasked: row.idp_password_encrypted ? "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022" : "",
-    p12Filename: row.p12_filename || "",
-    p12ExpiresAt: p12ExpiresIso,
-    p12HasCertificate: Boolean(row.p12_encrypted_blob || row.p12_filename),
-    certSubject: row.cert_subject || "",
-    certIssuer: row.cert_issuer || "",
-    certDaysRemaining: computeDaysRemaining(p12ExpiresIso),
-    branchCode: row.branch_code || "001",
-    posCode: row.pos_code || "00001",
-    defaultDocType: row.default_doc_type || "04",
-    seqFactura: Number(row.seq_factura || 1),
-    seqTiquete: Number(row.seq_tiquete || 1),
-    seqNotaCredito: Number(row.seq_nota_credito || 1),
-    multiBranchEnabled: Boolean(row.multi_branch_enabled),
-    isConnected: Boolean(row.is_connected),
-    lastTestAt: row.last_test_at ? new Date(row.last_test_at).toISOString() : null,
-    lastTestMessage: row.last_test_message || null,
-    providerMode: row.provider_mode || "BETICO_NATIVE",
-    useAlternativeProvider: Boolean(row.use_alternative_provider),
-    isSimplifiedRegime: Boolean(row.is_simplified_regime),
-    emailAutoSend: row.email_auto_send !== void 0 && row.email_auto_send !== null ? Boolean(row.email_auto_send) : true,
-    smtpHost: row.smtp_host || "",
-    smtpPort: Number(row.smtp_port || 587),
-    smtpUser: row.smtp_user || "",
-    smtpPassMasked: row.smtp_pass_encrypted ? "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022" : "",
-    resendApiKeyMasked: row.resend_api_key_encrypted ? "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022" : "",
-    active: Boolean(row.active),
-    createdAt: row.created_at ? new Date(row.created_at).toISOString() : "",
-    updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : ""
-  };
-}
-async function getHaciendaDecryptedSecrets(tenantId) {
-  const res = await query(
-    `SELECT p12_encrypted_blob, p12_pin_encrypted, idp_username, idp_password_encrypted, environment,
-            smtp_host, smtp_port, smtp_user, smtp_pass_encrypted, resend_api_key_encrypted, email_auto_send
-     FROM tenant_hacienda_configs WHERE tenant_id = $1`,
-    [tenantId]
-  );
-  if (res.rows.length === 0) return null;
-  const row = res.rows[0];
-  let p12Buffer = null;
-  if (row.p12_encrypted_blob) {
-    try {
-      const rawEncrypted = row.p12_encrypted_blob.toString("utf8");
-      const decryptedBase64 = decrypt(rawEncrypted);
-      p12Buffer = Buffer.from(decryptedBase64, "base64");
-    } catch (e) {
-      console.error("[HaciendaRepo] Error descifrando certificado .p12:", e.message);
-    }
-  }
-  const p12Pin = row.p12_pin_encrypted ? decrypt(row.p12_pin_encrypted) : "";
-  const idpPassword = row.idp_password_encrypted ? decrypt(row.idp_password_encrypted) : "";
-  const smtpPass = row.smtp_pass_encrypted ? decrypt(row.smtp_pass_encrypted) : "";
-  const resendApiKey = row.resend_api_key_encrypted ? decrypt(row.resend_api_key_encrypted) : "";
-  return {
-    p12Buffer,
-    p12Pin,
-    idpPassword,
-    idpUsername: row.idp_username || "",
-    environment: row.environment || "sandbox",
-    smtpHost: row.smtp_host || "",
-    smtpPort: Number(row.smtp_port || 587),
-    smtpUser: row.smtp_user || "",
-    smtpPass,
-    resendApiKey,
-    emailAutoSend: row.email_auto_send !== void 0 && row.email_auto_send !== null ? Boolean(row.email_auto_send) : true
-  };
-}
-async function saveHaciendaConfig(tenantId, data) {
-  const existingRes = await query(
-    `SELECT * FROM tenant_hacienda_configs WHERE tenant_id = $1`,
-    [tenantId]
-  );
-  const existing = existingRes.rows[0] || {};
-  const environment = data.environment || existing.environment || "sandbox";
-  const taxpayerIdType = data.taxpayerIdType || existing.taxpayer_id_type || "01";
-  const taxpayerIdNumber = data.taxpayerIdNumber !== void 0 ? data.taxpayerIdNumber.trim() : existing.taxpayer_id_number || "";
-  const taxpayerName = data.taxpayerName !== void 0 ? data.taxpayerName.trim() : existing.taxpayer_name || "";
-  const commercialName = data.commercialName !== void 0 ? data.commercialName.trim() : existing.commercial_name || "";
-  const taxpayerEmail = data.taxpayerEmail !== void 0 ? data.taxpayerEmail.trim() : existing.taxpayer_email || "";
-  const taxpayerPhone = data.taxpayerPhone !== void 0 ? data.taxpayerPhone.trim() : existing.taxpayer_phone || "";
-  const economicActivityCode = data.economicActivityCode !== void 0 ? data.economicActivityCode.trim() : existing.economic_activity_code || "";
-  let economicActivitiesJson = existing.economic_activities_json || [];
-  if (data.economicActivities !== void 0) {
-    if (typeof data.economicActivities === "string") {
-      try {
-        economicActivitiesJson = JSON.parse(data.economicActivities);
-      } catch (_) {
-        economicActivitiesJson = [];
-      }
-    } else if (Array.isArray(data.economicActivities)) {
-      economicActivitiesJson = data.economicActivities;
-    }
-  }
-  const defaultCabysCode = data.defaultCabysCode !== void 0 ? data.defaultCabysCode.trim() : existing.default_cabys_code || "8311100000000";
-  const province = data.province || existing.province || "1";
-  const canton = data.canton || existing.canton || "01";
-  const district = data.district || existing.district || "01";
-  const neighborhood = data.neighborhood || existing.neighborhood || "01";
-  const addressDetail = data.addressDetail !== void 0 ? data.addressDetail.trim() : existing.address_detail || "";
-  const branchCode = String(data.branchCode || existing.branch_code || "001").replace(/\D/g, "").padStart(3, "0").slice(0, 3);
-  const posCode = String(data.posCode || existing.pos_code || "00001").replace(/\D/g, "").padStart(5, "0").slice(0, 5);
-  const defaultDocType = data.defaultDocType || existing.default_doc_type || "04";
-  const seqFactura = data.seqFactura !== void 0 ? Math.max(1, Number(data.seqFactura) || 1) : Number(existing.seq_factura || 1);
-  const seqTiquete = data.seqTiquete !== void 0 ? Math.max(1, Number(data.seqTiquete) || 1) : Number(existing.seq_tiquete || 1);
-  const seqNotaCredito = data.seqNotaCredito !== void 0 ? Math.max(1, Number(data.seqNotaCredito) || 1) : Number(existing.seq_nota_credito || 1);
-  const multiBranchEnabled = data.multiBranchEnabled !== void 0 ? Boolean(data.multiBranchEnabled) : Boolean(existing.multi_branch_enabled);
-  const providerMode = data.providerMode || existing.provider_mode || "BETICO_NATIVE";
-  const useAlternativeProvider = data.useAlternativeProvider !== void 0 ? Boolean(data.useAlternativeProvider) : Boolean(existing.use_alternative_provider);
-  const isSimplifiedRegime = data.isSimplifiedRegime !== void 0 ? Boolean(data.isSimplifiedRegime) : Boolean(existing.is_simplified_regime);
-  const emailAutoSend = data.emailAutoSend !== void 0 ? Boolean(data.emailAutoSend) : existing.email_auto_send !== void 0 && existing.email_auto_send !== null ? Boolean(existing.email_auto_send) : true;
-  const smtpHost = data.smtpHost !== void 0 ? data.smtpHost.trim() : existing.smtp_host || "";
-  const smtpPort = data.smtpPort !== void 0 ? Number(data.smtpPort) || 587 : Number(existing.smtp_port || 587);
-  const smtpUser = data.smtpUser !== void 0 ? data.smtpUser.trim() : existing.smtp_user || "";
-  let smtpPassEncrypted = existing.smtp_pass_encrypted || "";
-  if (data.smtpPass && data.smtpPass.trim() && !data.smtpPass.includes("\u2022\u2022\u2022\u2022")) {
-    smtpPassEncrypted = encrypt(data.smtpPass.trim());
-  } else if (data.smtpPass === "") {
-    smtpPassEncrypted = "";
-  }
-  let resendApiKeyEncrypted = existing.resend_api_key_encrypted || "";
-  if (data.resendApiKey && data.resendApiKey.trim() && !data.resendApiKey.includes("\u2022\u2022\u2022\u2022")) {
-    resendApiKeyEncrypted = encrypt(data.resendApiKey.trim());
-  } else if (data.resendApiKey === "") {
-    resendApiKeyEncrypted = "";
-  }
-  const active = data.active !== void 0 ? Boolean(data.active) : existing.active !== void 0 ? Boolean(existing.active) : true;
-  const idpUsername = data.idpUsername !== void 0 ? data.idpUsername.trim() : existing.idp_username || "";
-  let idpPasswordEncrypted = existing.idp_password_encrypted || "";
-  if (data.idpPassword && data.idpPassword.trim() && !data.idpPassword.includes("\u2022\u2022\u2022\u2022")) {
-    idpPasswordEncrypted = encrypt(data.idpPassword.trim());
-  }
-  let p12EncryptedBlob = existing.p12_encrypted_blob;
-  let p12Filename = existing.p12_filename || "";
-  let p12ExpiresAt = existing.p12_expires_at || null;
-  let certSubject = data.certSubject !== void 0 ? data.certSubject : existing.cert_subject || "";
-  let certIssuer = data.certIssuer !== void 0 ? data.certIssuer : existing.cert_issuer || "";
-  if (data.p12Buffer && data.p12Buffer.length > 0) {
-    const base64Str = data.p12Buffer.toString("base64");
-    const encryptedStr = encrypt(base64Str);
-    p12EncryptedBlob = Buffer.from(encryptedStr, "utf8");
-    p12Filename = data.p12Filename || "certificado.p12";
-  }
-  if (data.p12ExpiresAt) {
-    p12ExpiresAt = data.p12ExpiresAt;
-  }
-  let p12PinEncrypted = existing.p12_pin_encrypted || "";
-  if (data.p12Pin && data.p12Pin.trim() && !data.p12Pin.includes("\u2022\u2022\u2022\u2022")) {
-    p12PinEncrypted = encrypt(data.p12Pin.trim());
-  }
-  await query(
-    `INSERT INTO tenant_hacienda_configs (
-      tenant_id, environment, taxpayer_id_type, taxpayer_id_number, taxpayer_name, commercial_name,
-      taxpayer_email, taxpayer_phone, economic_activity_code, economic_activities_json, default_cabys_code,
-      province, canton, district, neighborhood, address_detail, idp_username, idp_password_encrypted,
-      p12_encrypted_blob, p12_pin_encrypted, p12_filename, p12_expires_at, cert_subject, cert_issuer,
-      branch_code, pos_code, default_doc_type, seq_factura, seq_tiquete, seq_nota_credito,
-      multi_branch_enabled, provider_mode, use_alternative_provider, is_simplified_regime,
-      email_auto_send, smtp_host, smtp_port, smtp_user, smtp_pass_encrypted, resend_api_key_encrypted,
-      active, updated_at
-    ) VALUES (
-      $1, $2, $3, $4, $5, $6,
-      $7, $8, $9, $10::jsonb, $11,
-      $12, $13, $14, $15, $16, $17, $18,
-      $19, $20, $21, $22, $23, $24,
-      $25, $26, $27, $28, $29, $30,
-      $31, $32, $33, $34,
-      $35, $36, $37, $38, $39, $40,
-      $41, CURRENT_TIMESTAMP
-    )
-    ON CONFLICT (tenant_id) DO UPDATE SET
-      environment = EXCLUDED.environment,
-      taxpayer_id_type = EXCLUDED.taxpayer_id_type,
-      taxpayer_id_number = EXCLUDED.taxpayer_id_number,
-      taxpayer_name = EXCLUDED.taxpayer_name,
-      commercial_name = EXCLUDED.commercial_name,
-      taxpayer_email = EXCLUDED.taxpayer_email,
-      taxpayer_phone = EXCLUDED.taxpayer_phone,
-      economic_activity_code = EXCLUDED.economic_activity_code,
-      economic_activities_json = EXCLUDED.economic_activities_json,
-      default_cabys_code = EXCLUDED.default_cabys_code,
-      province = EXCLUDED.province,
-      canton = EXCLUDED.canton,
-      district = EXCLUDED.district,
-      neighborhood = EXCLUDED.neighborhood,
-      address_detail = EXCLUDED.address_detail,
-      idp_username = EXCLUDED.idp_username,
-      idp_password_encrypted = EXCLUDED.idp_password_encrypted,
-      p12_encrypted_blob = COALESCE(EXCLUDED.p12_encrypted_blob, tenant_hacienda_configs.p12_encrypted_blob),
-      p12_pin_encrypted = EXCLUDED.p12_pin_encrypted,
-      p12_filename = COALESCE(EXCLUDED.p12_filename, tenant_hacienda_configs.p12_filename),
-      p12_expires_at = COALESCE(EXCLUDED.p12_expires_at, tenant_hacienda_configs.p12_expires_at),
-      cert_subject = EXCLUDED.cert_subject,
-      cert_issuer = EXCLUDED.cert_issuer,
-      branch_code = EXCLUDED.branch_code,
-      pos_code = EXCLUDED.pos_code,
-      default_doc_type = EXCLUDED.default_doc_type,
-      seq_factura = EXCLUDED.seq_factura,
-      seq_tiquete = EXCLUDED.seq_tiquete,
-      seq_nota_credito = EXCLUDED.seq_nota_credito,
-      multi_branch_enabled = EXCLUDED.multi_branch_enabled,
-      provider_mode = EXCLUDED.provider_mode,
-      use_alternative_provider = EXCLUDED.use_alternative_provider,
-      is_simplified_regime = EXCLUDED.is_simplified_regime,
-      email_auto_send = EXCLUDED.email_auto_send,
-      smtp_host = EXCLUDED.smtp_host,
-      smtp_port = EXCLUDED.smtp_port,
-      smtp_user = EXCLUDED.smtp_user,
-      smtp_pass_encrypted = EXCLUDED.smtp_pass_encrypted,
-      resend_api_key_encrypted = EXCLUDED.resend_api_key_encrypted,
-      active = EXCLUDED.active,
-      updated_at = CURRENT_TIMESTAMP`,
-    [
-      tenantId,
-      environment,
-      taxpayerIdType,
-      taxpayerIdNumber,
-      taxpayerName,
-      commercialName,
-      taxpayerEmail,
-      taxpayerPhone,
-      economicActivityCode,
-      JSON.stringify(economicActivitiesJson),
-      defaultCabysCode,
-      province,
-      canton,
-      district,
-      neighborhood,
-      addressDetail,
-      idpUsername,
-      idpPasswordEncrypted,
-      p12EncryptedBlob,
-      p12PinEncrypted,
-      p12Filename,
-      p12ExpiresAt,
-      certSubject,
-      certIssuer,
-      branchCode,
-      posCode,
-      defaultDocType,
-      seqFactura,
-      seqTiquete,
-      seqNotaCredito,
-      multiBranchEnabled,
-      providerMode,
-      useAlternativeProvider,
-      isSimplifiedRegime,
-      emailAutoSend,
-      smtpHost,
-      smtpPort,
-      smtpUser,
-      smtpPassEncrypted,
-      resendApiKeyEncrypted,
-      active
-    ]
-  );
-  return await getHaciendaConfigByTenant(tenantId);
-}
-async function clearHaciendaCredentials(tenantId, target) {
-  if (target === "atv") {
-    await query(
-      `UPDATE tenant_hacienda_configs
-       SET idp_username = '', idp_password_encrypted = '', is_connected = false, updated_at = CURRENT_TIMESTAMP
-       WHERE tenant_id = $1`,
-      [tenantId]
-    );
-  } else if (target === "p12") {
-    await query(
-      `UPDATE tenant_hacienda_configs
-       SET p12_encrypted_blob = NULL, p12_pin_encrypted = '', p12_filename = '', p12_expires_at = NULL,
-           cert_subject = '', cert_issuer = '', is_connected = false, updated_at = CURRENT_TIMESTAMP
-       WHERE tenant_id = $1`,
-      [tenantId]
-    );
-  } else {
-    await query(
-      `UPDATE tenant_hacienda_configs
-       SET idp_username = '', idp_password_encrypted = '',
-           p12_encrypted_blob = NULL, p12_pin_encrypted = '', p12_filename = '', p12_expires_at = NULL,
-           cert_subject = '', cert_issuer = '', is_connected = false, updated_at = CURRENT_TIMESTAMP
-       WHERE tenant_id = $1`,
-      [tenantId]
-    );
-  }
-  return getHaciendaConfigByTenant(tenantId);
-}
-async function updateConnectionTestResult(tenantId, isConnected, message) {
-  await query(
-    `UPDATE tenant_hacienda_configs 
-     SET is_connected = $1, last_test_at = CURRENT_TIMESTAMP, last_test_message = $2, updated_at = CURRENT_TIMESTAMP
-     WHERE tenant_id = $3`,
-    [isConnected, message, tenantId]
-  );
-}
-function mapHaciendaBranchRow(row) {
-  const expiresIso = row.custom_p12_expires_at ? new Date(row.custom_p12_expires_at).toISOString() : null;
-  return {
-    id: row.id,
-    tenantId: row.tenant_id,
-    branchId: row.branch_id || null,
-    storeBranchName: row.store_branch_name || null,
-    branchName: row.branch_name || "Sucursal",
-    branchCode: row.branch_code || "002",
-    posCode: row.pos_code || "00001",
-    commercialName: row.commercial_name || "",
-    economicActivityCode: row.economic_activity_code || "",
-    province: row.province || "1",
-    canton: row.canton || "01",
-    district: row.district || "01",
-    neighborhood: row.neighborhood || "01",
-    addressDetail: row.address_detail || "",
-    seqFactura: Number(row.seq_factura || 1),
-    seqTiquete: Number(row.seq_tiquete || 1),
-    seqNotaCredito: Number(row.seq_nota_credito || 1),
-    useCustomCredentials: Boolean(row.use_custom_credentials),
-    customTaxpayerIdType: row.custom_taxpayer_id_type || "01",
-    customTaxpayerIdNumber: row.custom_taxpayer_id_number || "",
-    customTaxpayerName: row.custom_taxpayer_name || "",
-    customIdpUsername: row.custom_idp_username || "",
-    customIdpPasswordMasked: row.custom_idp_password_encrypted ? "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022" : "",
-    customP12Filename: row.custom_p12_filename || "",
-    customP12ExpiresAt: expiresIso,
-    customP12HasCertificate: Boolean(row.custom_p12_encrypted_blob || row.custom_p12_filename),
-    customCertSubject: row.custom_cert_subject || "",
-    customCertDaysRemaining: computeDaysRemaining(expiresIso),
-    isConnected: Boolean(row.is_connected),
-    lastTestAt: row.last_test_at ? new Date(row.last_test_at).toISOString() : null,
-    lastTestMessage: row.last_test_message || null,
-    active: row.active !== void 0 ? Boolean(row.active) : true,
-    createdAt: row.created_at ? new Date(row.created_at).toISOString() : "",
-    updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : ""
-  };
-}
-async function getHaciendaBranchesByTenant(tenantId) {
-  const res = await query(
-    `SELECT thb.*, b.name AS store_branch_name
-     FROM tenant_hacienda_branches thb
-     LEFT JOIN branches b ON b.id = thb.branch_id
-     WHERE thb.tenant_id = $1
-     ORDER BY thb.branch_code ASC, thb.pos_code ASC`,
-    [tenantId]
-  );
-  return res.rows.map(mapHaciendaBranchRow);
-}
-async function getHaciendaBranchById(tenantId, id) {
-  const res = await query(
-    `SELECT thb.*, b.name AS store_branch_name
-     FROM tenant_hacienda_branches thb
-     LEFT JOIN branches b ON b.id = thb.branch_id
-     WHERE thb.tenant_id = $1 AND thb.id = $2`,
-    [tenantId, id]
-  );
-  if (res.rows.length === 0) return null;
-  return mapHaciendaBranchRow(res.rows[0]);
-}
-async function getHaciendaBranchByStoreBranchId(tenantId, storeBranchId) {
-  const res = await query(
-    `SELECT thb.*, b.name AS store_branch_name
-     FROM tenant_hacienda_branches thb
-     LEFT JOIN branches b ON b.id = thb.branch_id
-     WHERE thb.tenant_id = $1 AND thb.branch_id = $2 AND thb.active = true
-     ORDER BY thb.branch_code ASC
-     LIMIT 1`,
-    [tenantId, storeBranchId]
-  );
-  if (res.rows.length === 0) return null;
-  return mapHaciendaBranchRow(res.rows[0]);
-}
-async function getHaciendaBranchDecryptedSecrets(tenantId, id) {
-  const res = await query(
-    `SELECT thb.custom_p12_encrypted_blob, thb.custom_p12_pin_encrypted, thb.custom_idp_username, thb.custom_idp_password_encrypted,
-            COALESCE(thc.environment, 'sandbox') AS environment
-     FROM tenant_hacienda_branches thb
-     LEFT JOIN tenant_hacienda_configs thc ON thc.tenant_id = thb.tenant_id
-     WHERE thb.tenant_id = $1 AND thb.id = $2`,
-    [tenantId, id]
-  );
-  if (res.rows.length === 0) return null;
-  const row = res.rows[0];
-  let p12Buffer = null;
-  if (row.custom_p12_encrypted_blob) {
-    try {
-      const rawEncrypted = row.custom_p12_encrypted_blob.toString("utf8");
-      const decryptedBase64 = decrypt(rawEncrypted);
-      p12Buffer = Buffer.from(decryptedBase64, "base64");
-    } catch (e) {
-      console.error("[HaciendaRepo] Error descifrando certificado .p12 de sucursal:", e.message);
-    }
-  }
-  const p12Pin = row.custom_p12_pin_encrypted ? decrypt(row.custom_p12_pin_encrypted) : "";
-  const idpPassword = row.custom_idp_password_encrypted ? decrypt(row.custom_idp_password_encrypted) : "";
-  return {
-    p12Buffer,
-    p12Pin,
-    idpPassword,
-    idpUsername: row.custom_idp_username || "",
-    environment: row.environment || "sandbox"
-  };
-}
-async function saveHaciendaBranch(tenantId, data) {
-  const branchCode = String(data.branchCode || "002").replace(/\D/g, "").padStart(3, "0").slice(0, 3);
-  const posCode = String(data.posCode || "00001").replace(/\D/g, "").padStart(5, "0").slice(0, 5);
-  let existing = {};
-  if (data.id) {
-    const exRes = await query(
-      `SELECT * FROM tenant_hacienda_branches WHERE tenant_id = $1 AND id = $2`,
-      [tenantId, data.id]
-    );
-    existing = exRes.rows[0] || {};
-  } else {
-    const exRes = await query(
-      `SELECT * FROM tenant_hacienda_branches WHERE tenant_id = $1 AND branch_code = $2 AND pos_code = $3`,
-      [tenantId, branchCode, posCode]
-    );
-    existing = exRes.rows[0] || {};
-  }
-  const branchId = data.branchId !== void 0 ? data.branchId || null : existing.branch_id || null;
-  const branchName = (data.branchName !== void 0 ? data.branchName : existing.branch_name || "Sucursal").trim();
-  const commercialName = (data.commercialName !== void 0 ? data.commercialName : existing.commercial_name || "").trim();
-  const economicActivityCode = (data.economicActivityCode !== void 0 ? data.economicActivityCode : existing.economic_activity_code || "").trim();
-  const province = data.province || existing.province || "1";
-  const canton = data.canton || existing.canton || "01";
-  const district = data.district || existing.district || "01";
-  const neighborhood = data.neighborhood || existing.neighborhood || "01";
-  const addressDetail = (data.addressDetail !== void 0 ? data.addressDetail : existing.address_detail || "").trim();
-  const seqFactura = data.seqFactura !== void 0 ? Math.max(1, Number(data.seqFactura) || 1) : Number(existing.seq_factura || 1);
-  const seqTiquete = data.seqTiquete !== void 0 ? Math.max(1, Number(data.seqTiquete) || 1) : Number(existing.seq_tiquete || 1);
-  const seqNotaCredito = data.seqNotaCredito !== void 0 ? Math.max(1, Number(data.seqNotaCredito) || 1) : Number(existing.seq_nota_credito || 1);
-  const useCustomCredentials = data.useCustomCredentials !== void 0 ? data.useCustomCredentials === true || data.useCustomCredentials === "true" : Boolean(existing.use_custom_credentials);
-  const customTaxpayerIdType = data.customTaxpayerIdType || existing.custom_taxpayer_id_type || "01";
-  const customTaxpayerIdNumber = (data.customTaxpayerIdNumber !== void 0 ? data.customTaxpayerIdNumber : existing.custom_taxpayer_id_number || "").trim();
-  const customTaxpayerName = (data.customTaxpayerName !== void 0 ? data.customTaxpayerName : existing.custom_taxpayer_name || "").trim();
-  const customIdpUsername = (data.customIdpUsername !== void 0 ? data.customIdpUsername : existing.custom_idp_username || "").trim();
-  let customIdpPasswordEncrypted = existing.custom_idp_password_encrypted || "";
-  if (data.customIdpPassword && data.customIdpPassword.trim() && !data.customIdpPassword.includes("\u2022\u2022\u2022\u2022")) {
-    customIdpPasswordEncrypted = encrypt(data.customIdpPassword.trim());
-  }
-  let customP12EncryptedBlob = existing.custom_p12_encrypted_blob || null;
-  let customP12Filename = existing.custom_p12_filename || "";
-  let customP12ExpiresAt = existing.custom_p12_expires_at || null;
-  let customCertSubject = data.customCertSubject !== void 0 ? data.customCertSubject : existing.custom_cert_subject || "";
-  if (data.customP12Buffer && data.customP12Buffer.length > 0) {
-    const base64Str = data.customP12Buffer.toString("base64");
-    const encryptedStr = encrypt(base64Str);
-    customP12EncryptedBlob = Buffer.from(encryptedStr, "utf8");
-    customP12Filename = data.customP12Filename || "certificado-sucursal.p12";
-  }
-  if (data.customP12ExpiresAt) {
-    customP12ExpiresAt = data.customP12ExpiresAt;
-  }
-  let customP12PinEncrypted = existing.custom_p12_pin_encrypted || "";
-  if (data.customP12Pin && data.customP12Pin.trim() && !data.customP12Pin.includes("\u2022\u2022\u2022\u2022")) {
-    customP12PinEncrypted = encrypt(data.customP12Pin.trim());
-  }
-  const active = data.active !== void 0 ? data.active === true || data.active === "true" : existing.active !== void 0 ? Boolean(existing.active) : true;
-  let savedId;
-  if (data.id && existing.id) {
-    const updRes = await query(
-      `UPDATE tenant_hacienda_branches SET
-        branch_id = $1, branch_name = $2, branch_code = $3, pos_code = $4,
-        commercial_name = $5, economic_activity_code = $6, province = $7, canton = $8,
-        district = $9, neighborhood = $10, address_detail = $11,
-        seq_factura = $12, seq_tiquete = $13, seq_nota_credito = $14,
-        use_custom_credentials = $15, custom_taxpayer_id_type = $16,
-        custom_taxpayer_id_number = $17, custom_taxpayer_name = $18,
-        custom_idp_username = $19, custom_idp_password_encrypted = $20,
-        custom_p12_encrypted_blob = $21, custom_p12_pin_encrypted = $22,
-        custom_p12_filename = $23, custom_p12_expires_at = $24,
-        custom_cert_subject = $25, active = $26, updated_at = CURRENT_TIMESTAMP
-       WHERE tenant_id = $27 AND id = $28
-       RETURNING id`,
-      [
-        branchId,
-        branchName,
-        branchCode,
-        posCode,
-        commercialName,
-        economicActivityCode,
-        province,
-        canton,
-        district,
-        neighborhood,
-        addressDetail,
-        seqFactura,
-        seqTiquete,
-        seqNotaCredito,
-        useCustomCredentials,
-        customTaxpayerIdType,
-        customTaxpayerIdNumber,
-        customTaxpayerName,
-        customIdpUsername,
-        customIdpPasswordEncrypted,
-        customP12EncryptedBlob,
-        customP12PinEncrypted,
-        customP12Filename,
-        customP12ExpiresAt,
-        customCertSubject,
-        active,
-        tenantId,
-        data.id
-      ]
-    );
-    savedId = updRes.rows[0].id;
-  } else {
-    const insRes = await query(
-      `INSERT INTO tenant_hacienda_branches (
-        tenant_id, branch_id, branch_name, branch_code, pos_code,
-        commercial_name, economic_activity_code, province, canton,
-        district, neighborhood, address_detail,
-        seq_factura, seq_tiquete, seq_nota_credito,
-        use_custom_credentials, custom_taxpayer_id_type,
-        custom_taxpayer_id_number, custom_taxpayer_name,
-        custom_idp_username, custom_idp_password_encrypted,
-        custom_p12_encrypted_blob, custom_p12_pin_encrypted,
-        custom_p12_filename, custom_p12_expires_at,
-        custom_cert_subject, active, updated_at
-      ) VALUES (
-        $1, $2, $3, $4, $5,
-        $6, $7, $8, $9,
-        $10, $11, $12,
-        $13, $14, $15,
-        $16, $17,
-        $18, $19,
-        $20, $21,
-        $22, $23,
-        $24, $25,
-        $26, $27, CURRENT_TIMESTAMP
-      )
-      ON CONFLICT (tenant_id, branch_code, pos_code) DO UPDATE SET
-        branch_id = EXCLUDED.branch_id,
-        branch_name = EXCLUDED.branch_name,
-        commercial_name = EXCLUDED.commercial_name,
-        economic_activity_code = EXCLUDED.economic_activity_code,
-        province = EXCLUDED.province,
-        canton = EXCLUDED.canton,
-        district = EXCLUDED.district,
-        neighborhood = EXCLUDED.neighborhood,
-        address_detail = EXCLUDED.address_detail,
-        seq_factura = EXCLUDED.seq_factura,
-        seq_tiquete = EXCLUDED.seq_tiquete,
-        seq_nota_credito = EXCLUDED.seq_nota_credito,
-        use_custom_credentials = EXCLUDED.use_custom_credentials,
-        custom_taxpayer_id_type = EXCLUDED.custom_taxpayer_id_type,
-        custom_taxpayer_id_number = EXCLUDED.custom_taxpayer_id_number,
-        custom_taxpayer_name = EXCLUDED.custom_taxpayer_name,
-        custom_idp_username = EXCLUDED.custom_idp_username,
-        custom_idp_password_encrypted = EXCLUDED.custom_idp_password_encrypted,
-        custom_p12_encrypted_blob = COALESCE(EXCLUDED.custom_p12_encrypted_blob, tenant_hacienda_branches.custom_p12_encrypted_blob),
-        custom_p12_pin_encrypted = EXCLUDED.custom_p12_pin_encrypted,
-        custom_p12_filename = COALESCE(EXCLUDED.custom_p12_filename, tenant_hacienda_branches.custom_p12_filename),
-        custom_p12_expires_at = COALESCE(EXCLUDED.custom_p12_expires_at, tenant_hacienda_branches.custom_p12_expires_at),
-        custom_cert_subject = EXCLUDED.custom_cert_subject,
-        active = EXCLUDED.active,
-        updated_at = CURRENT_TIMESTAMP
-      RETURNING id`,
-      [
-        tenantId,
-        branchId,
-        branchName,
-        branchCode,
-        posCode,
-        commercialName,
-        economicActivityCode,
-        province,
-        canton,
-        district,
-        neighborhood,
-        addressDetail,
-        seqFactura,
-        seqTiquete,
-        seqNotaCredito,
-        useCustomCredentials,
-        customTaxpayerIdType,
-        customTaxpayerIdNumber,
-        customTaxpayerName,
-        customIdpUsername,
-        customIdpPasswordEncrypted,
-        customP12EncryptedBlob,
-        customP12PinEncrypted,
-        customP12Filename,
-        customP12ExpiresAt,
-        customCertSubject,
-        active
-      ]
-    );
-    savedId = insRes.rows[0].id;
-  }
-  return await getHaciendaBranchById(tenantId, savedId);
-}
-async function deleteHaciendaBranch(tenantId, id) {
-  const res = await query(
-    `DELETE FROM tenant_hacienda_branches WHERE tenant_id = $1 AND id = $2`,
-    [tenantId, id]
-  );
-  return (res.rowCount || 0) > 0;
-}
-async function updateBranchConnectionTestResult(tenantId, id, isConnected, message) {
-  await query(
-    `UPDATE tenant_hacienda_branches
-     SET is_connected = $1, last_test_at = CURRENT_TIMESTAMP, last_test_message = $2, updated_at = CURRENT_TIMESTAMP
-     WHERE tenant_id = $3 AND id = $4`,
-    [isConnected, message, tenantId, id]
-  );
-}
-function formatConsecutiveNumber(branchCode, posCode, docType, sequence) {
-  const b = String(branchCode || "001").replace(/\D/g, "").padStart(3, "0").slice(-3);
-  const p = String(posCode || "00001").replace(/\D/g, "").padStart(5, "0").slice(-5);
-  const d = String(docType || "04").replace(/\D/g, "").padStart(2, "0").slice(-2);
-  const s = String(Math.max(1, Math.floor(Number(sequence) || 1))).padStart(10, "0").slice(-10);
-  return `${b}${p}${d}${s}`;
-}
-function generateHaciendaNumericKey(params) {
-  const now = params.date || /* @__PURE__ */ new Date();
-  const dd = String(now.getDate()).padStart(2, "0");
-  const mm = String(now.getMonth() + 1).padStart(2, "0");
-  const yy = String(now.getFullYear()).slice(-2);
-  const id12 = String(params.taxpayerIdNumber || "").replace(/\D/g, "").padStart(12, "0").slice(-12);
-  const consec20 = String(params.consecutive20 || "").replace(/\D/g, "").padStart(20, "0").slice(-20);
-  const sit = params.situation || "1";
-  const sec8 = (params.securityCode ? String(params.securityCode).replace(/\D/g, "") : String(Math.floor(1e7 + Math.random() * 9e7))).padStart(8, "0").slice(-8);
-  return `506${dd}${mm}${yy}${id12}${consec20}${sit}${sec8}`;
-}
-async function consumeNextConsecutive(tenantId, docType, options) {
-  const seqCol = docType === "01" ? "seq_factura" : docType === "03" ? "seq_nota_credito" : "seq_tiquete";
-  const mainConfig = await getHaciendaConfigByTenant(tenantId);
-  if (mainConfig?.multiBranchEnabled && (options?.branchId || options?.branchCode)) {
-    let branchRow = null;
-    if (options.branchId) {
-      const bRes = await query(
-        `SELECT * FROM tenant_hacienda_branches
-         WHERE tenant_id = $1 AND active = true AND (branch_id = $2 OR id::text = $2)
-         ORDER BY branch_code ASC LIMIT 1`,
-        [tenantId, options.branchId]
-      );
-      branchRow = bRes.rows[0] || null;
-    }
-    if (!branchRow && options.branchCode) {
-      const normCode = String(options.branchCode).replace(/\D/g, "").padStart(3, "0").slice(0, 3);
-      const bRes = await query(
-        `SELECT * FROM tenant_hacienda_branches
-         WHERE tenant_id = $1 AND active = true AND branch_code = $2
-         ORDER BY pos_code ASC LIMIT 1`,
-        [tenantId, normCode]
-      );
-      branchRow = bRes.rows[0] || null;
-    }
-    if (branchRow) {
-      const updRes = await query(
-        `UPDATE tenant_hacienda_branches
-         SET ${seqCol} = COALESCE(${seqCol}, 1) + 1, updated_at = CURRENT_TIMESTAMP
-         WHERE id = $1 AND tenant_id = $2
-         RETURNING (${seqCol} - 1) AS used_seq, branch_code, pos_code, branch_id, use_custom_credentials, custom_taxpayer_id_number`,
-        [branchRow.id, tenantId]
-      );
-      const r = updRes.rows[0];
-      const usedSeq2 = Number(r?.used_seq || 1);
-      const bCode2 = r?.branch_code || branchRow.branch_code || "002";
-      const pCode2 = r?.pos_code || branchRow.pos_code || "00001";
-      const taxpayerIdNumber2 = r?.use_custom_credentials && r?.custom_taxpayer_id_number ? r.custom_taxpayer_id_number : mainConfig?.taxpayerIdNumber || "3101000000";
-      const consecutiveNumber2 = formatConsecutiveNumber(bCode2, pCode2, docType, usedSeq2);
-      const numericKey2 = generateHaciendaNumericKey({ taxpayerIdNumber: taxpayerIdNumber2, consecutive20: consecutiveNumber2 });
-      return {
-        consecutiveNumber: consecutiveNumber2,
-        numericKey: numericKey2,
-        branchCode: bCode2,
-        posCode: pCode2,
-        branchId: r?.branch_id || branchRow.branch_id || branchRow.id || null,
-        taxpayerIdNumber: taxpayerIdNumber2
-      };
-    }
-  }
-  const updMain = await query(
-    `UPDATE tenant_hacienda_configs
-     SET ${seqCol} = COALESCE(${seqCol}, 1) + 1, updated_at = CURRENT_TIMESTAMP
-     WHERE tenant_id = $1
-     RETURNING (${seqCol} - 1) AS used_seq, branch_code, pos_code, taxpayer_id_number`,
-    [tenantId]
-  );
-  const row = updMain.rows[0];
-  const usedSeq = Number(row?.used_seq || 1);
-  const bCode = row?.branch_code || options?.branchCode || "001";
-  const pCode = row?.pos_code || "00001";
-  const taxpayerIdNumber = row?.taxpayer_id_number || mainConfig?.taxpayerIdNumber || "3101000000";
-  const consecutiveNumber = formatConsecutiveNumber(bCode, pCode, docType, usedSeq);
-  const numericKey = generateHaciendaNumericKey({ taxpayerIdNumber, consecutive20: consecutiveNumber });
-  return {
-    consecutiveNumber,
-    numericKey,
-    branchCode: bCode,
-    posCode: pCode,
-    branchId: options?.branchId || null,
-    taxpayerIdNumber
-  };
-}
-async function getTenantPlanQuota(tenantId) {
-  const tenantRes = await query(
-    `SELECT plan, custom_invoices_quota FROM tenants WHERE id = $1`,
-    [tenantId]
-  );
-  if (tenantRes.rows.length === 0) {
-    return { quota: 100, courtesyMargin: 10, planName: "pro" };
-  }
-  const { plan, custom_invoices_quota } = tenantRes.rows[0];
-  const normalizedPlan = (plan || "pro").toLowerCase();
-  if (custom_invoices_quota !== null && custom_invoices_quota !== void 0 && Number(custom_invoices_quota) > 0) {
-    return {
-      quota: Number(custom_invoices_quota),
-      courtesyMargin: 10,
-      planName: normalizedPlan
-    };
-  }
-  const settingsRes = await query(
-    `SELECT key, value FROM platform_settings WHERE key IN (
-      'plan_starter_invoices_quota',
-      'plan_pro_invoices_quota',
-      'plan_enterprise_invoices_quota',
-      'plan_aliado_invoices_quota',
-      'courtesy_invoices_margin'
-    )`
-  );
-  const settingsMap = {};
-  for (const row of settingsRes.rows) {
-    settingsMap[row.key] = parseInt(row.value, 10);
-  }
-  const courtesyMargin = settingsMap["courtesy_invoices_margin"] || 10;
-  let quota = 100;
-  if (normalizedPlan === "starter" || normalizedPlan === "emprendedor") {
-    quota = settingsMap["plan_starter_invoices_quota"] || 50;
-  } else if (normalizedPlan === "enterprise" || normalizedPlan === "business" || normalizedPlan === "empresa") {
-    quota = settingsMap["plan_enterprise_invoices_quota"] || 250;
-  } else if (normalizedPlan === "aliado") {
-    quota = settingsMap["plan_aliado_invoices_quota"] || 500;
-  } else {
-    quota = settingsMap["plan_pro_invoices_quota"] || 100;
-  }
-  return {
-    quota,
-    courtesyMargin,
-    planName: normalizedPlan
-  };
-}
-async function getCycleUsage(tenantId) {
-  const { quota, courtesyMargin, planName } = await getTenantPlanQuota(tenantId);
-  const tenantRes = await query(
-    `SELECT next_billing_date, created_at FROM tenants WHERE id = $1`,
-    [tenantId]
-  );
-  const nextBilling = tenantRes.rows[0]?.next_billing_date ? new Date(tenantRes.rows[0].next_billing_date) : new Date(Date.now() + 30 * 864e5);
-  const cycleEndDate = nextBilling.toISOString().split("T")[0];
-  const startDateObj = new Date(nextBilling);
-  startDateObj.setDate(startDateObj.getDate() - 30);
-  const cycleStartDate = startDateObj.toISOString().split("T")[0];
-  const usageRes = await query(
-    `SELECT invoices_emitted, courtesy_used, quota_limit 
-     FROM hacienda_usage_cycles 
-     WHERE tenant_id = $1 AND cycle_start_date = $2`,
-    [tenantId, cycleStartDate]
-  );
-  let emitted = 0;
-  let courtesyUsed = 0;
-  if (usageRes.rows.length === 0) {
-    await query(
-      `INSERT INTO hacienda_usage_cycles (tenant_id, cycle_start_date, cycle_end_date, quota_limit)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT (tenant_id, cycle_start_date) DO NOTHING`,
-      [tenantId, cycleStartDate, cycleEndDate, quota]
-    );
-  } else {
-    emitted = Number(usageRes.rows[0].invoices_emitted || 0);
-    courtesyUsed = Number(usageRes.rows[0].courtesy_used || 0);
-  }
-  const remaining = Math.max(0, quota - emitted);
-  const inCourtesy = emitted >= quota;
-  const courtesyAvailable = Math.max(0, courtesyMargin - courtesyUsed);
-  const isBlocked = emitted >= quota && courtesyUsed >= courtesyMargin;
-  return {
-    emitted,
-    quota,
-    remaining,
-    inCourtesy,
-    courtesyUsed,
-    courtesyAvailable,
-    isBlocked,
-    cycleStartDate,
-    cycleEndDate,
-    planName
-  };
-}
-async function incrementInvoiceUsage(tenantId) {
-  const usage = await getCycleUsage(tenantId);
-  if (usage.isBlocked) {
-    return {
-      success: false,
-      emitted: usage.emitted,
-      inCourtesy: true,
-      courtesyUsed: usage.courtesyUsed,
-      blocked: true
-    };
-  }
-  if (usage.emitted < usage.quota) {
-    await query(
-      `UPDATE hacienda_usage_cycles 
-       SET invoices_emitted = invoices_emitted + 1, updated_at = CURRENT_TIMESTAMP
-       WHERE tenant_id = $1 AND cycle_start_date = $2`,
-      [tenantId, usage.cycleStartDate]
-    );
-    return {
-      success: true,
-      emitted: usage.emitted + 1,
-      inCourtesy: false,
-      courtesyUsed: usage.courtesyUsed,
-      blocked: false
-    };
-  } else {
-    await query(
-      `UPDATE hacienda_usage_cycles 
-       SET invoices_emitted = invoices_emitted + 1, courtesy_used = courtesy_used + 1, updated_at = CURRENT_TIMESTAMP
-       WHERE tenant_id = $1 AND cycle_start_date = $2`,
-      [tenantId, usage.cycleStartDate]
-    );
-    return {
-      success: true,
-      emitted: usage.emitted + 1,
-      inCourtesy: true,
-      courtesyUsed: usage.courtesyUsed + 1,
-      blocked: false
-    };
-  }
-}
-var init_hacienda_native_repo = __esm({
-  "src/server/db/hacienda-native.repo.ts"() {
-    "use strict";
-    init_pool();
-    init_encryption();
-  }
-});
-
-// src/server/db/tenant-almendro.repo.ts
-var tenant_almendro_repo_exports = {};
-__export(tenant_almendro_repo_exports, {
-  getElectronicVoucherByAppointmentId: () => getElectronicVoucherByAppointmentId,
-  getElectronicVoucherByKeyOrId: () => getElectronicVoucherByKeyOrId,
-  getElectronicVoucherByOrderId: () => getElectronicVoucherByOrderId,
-  getElectronicVouchers: () => getElectronicVouchers,
-  getTenantAlmendroConfig: () => getTenantAlmendroConfig,
-  getTenantAlmendroConfigRaw: () => getTenantAlmendroConfigRaw,
-  saveElectronicVoucher: () => saveElectronicVoucher,
-  saveTenantAlmendroConfig: () => saveTenantAlmendroConfig
-});
-async function getTenantAlmendroConfig(tenantId) {
-  if (!tenantId) throw new Error("tenantId es requerido para consultar la configuraci\xF3n de Almendro");
-  const res = await query(`
-    SELECT id, tenant_id as "tenantId", is_enabled as "isEnabled",
-           billing_mode as "billingMode", environment,
-           api_key_encrypted as "apiKeyEncrypted", default_doc_type as "defaultDocType",
-           module_toggles as "moduleToggles", tax_id_type as "taxIdType",
-           tax_id_number as "taxIdNumber", legal_name as "legalName",
-           commercial_name as "commercialName", economic_activity_code as "economicActivityCode",
-           branch_code as "branchCode", pos_code as "posCode",
-           created_at as "createdAt", updated_at as "updatedAt"
-    FROM tenant_almendro_configs
-    WHERE tenant_id = $1
-  `, [tenantId]);
-  if (res.rows.length === 0) {
-    return {
-      id: "",
-      tenantId,
-      isEnabled: false,
-      billingMode: "DISABLED",
-      environment: "SANDBOX",
-      apiKeyMasked: "",
-      defaultDocType: "04",
-      moduleToggles: { ...DEFAULT_MODULE_TOGGLES },
-      isConfigured: false
-    };
-  }
-  const row = res.rows[0];
-  let rawKey = "";
-  if (row.apiKeyEncrypted) {
-    try {
-      rawKey = CryptoService.decryptForTenant(tenantId, row.apiKeyEncrypted);
-    } catch (e) {
-      console.error(`[AlmendroRepo] Error descifrando API Key para tenant ${tenantId}:`, e);
-    }
-  }
-  const toggles = row.moduleToggles ? { ...DEFAULT_MODULE_TOGGLES, ...row.moduleToggles } : { ...DEFAULT_MODULE_TOGGLES };
-  const isKeyConfigured = Boolean(rawKey && rawKey.length > 5);
-  const rawBillingMode = row.billingMode;
-  const billingMode = rawBillingMode || (row.isEnabled ? isKeyConfigured ? "ALMENDRO_AUTO" : "EXTERNAL_MANUAL" : "DISABLED");
-  const isConfigured = billingMode === "EXTERNAL_MANUAL" ? true : isKeyConfigured;
-  const isEnabled = Boolean(row.isEnabled) && billingMode !== "DISABLED";
-  return {
-    id: row.id,
-    tenantId: row.tenantId,
-    isEnabled,
-    billingMode,
-    environment: row.environment || "SANDBOX",
-    apiKeyMasked: rawKey ? CryptoService.maskSecret(rawKey) : "",
-    defaultDocType: row.defaultDocType === "01" ? "01" : "04",
-    moduleToggles: toggles,
-    taxIdType: row.taxIdType || "",
-    taxIdNumber: row.taxIdNumber || "",
-    legalName: row.legalName || "",
-    commercialName: row.commercialName || "",
-    economicActivityCode: row.economicActivityCode || "",
-    branchCode: row.branchCode || "001",
-    posCode: row.posCode || "00001",
-    isConfigured,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt
-  };
-}
-async function getTenantAlmendroConfigRaw(tenantId) {
-  if (!tenantId) return null;
-  const res = await query(`
-    SELECT is_enabled as "isEnabled", billing_mode as "billingMode", environment,
-           api_key_encrypted as "apiKeyEncrypted",
-           default_doc_type as "defaultDocType", module_toggles as "moduleToggles",
-           tax_id_type as "taxIdType", tax_id_number as "taxIdNumber",
-           legal_name as "legalName", commercial_name as "commercialName",
-           economic_activity_code as "economicActivityCode",
-           branch_code as "branchCode", pos_code as "posCode"
-    FROM tenant_almendro_configs
-    WHERE tenant_id = $1
-  `, [tenantId]);
-  if (res.rows.length === 0) return null;
-  const row = res.rows[0];
-  let apiKey = "";
-  if (row.apiKeyEncrypted) {
-    try {
-      apiKey = CryptoService.decryptForTenant(tenantId, row.apiKeyEncrypted);
-    } catch (e) {
-      console.error(`[AlmendroRepo] Error descifrando API Key raw para tenant ${tenantId}`);
-    }
-  }
-  const toggles = row.moduleToggles ? { ...DEFAULT_MODULE_TOGGLES, ...row.moduleToggles } : { ...DEFAULT_MODULE_TOGGLES };
-  const rawBillingMode = row.billingMode;
-  const billingMode = rawBillingMode || (row.isEnabled ? apiKey ? "ALMENDRO_AUTO" : "EXTERNAL_MANUAL" : "DISABLED");
-  return {
-    apiKey,
-    isEnabled: Boolean(row.isEnabled),
-    billingMode,
-    environment: row.environment || "SANDBOX",
-    defaultDocType: row.defaultDocType === "01" ? "01" : "04",
-    moduleToggles: toggles,
-    taxIdType: row.taxIdType,
-    taxIdNumber: row.taxIdNumber,
-    legalName: row.legalName,
-    commercialName: row.commercialName,
-    economicActivityCode: row.economicActivityCode,
-    branchCode: row.branchCode || "001",
-    posCode: row.posCode || "00001"
-  };
-}
-async function saveTenantAlmendroConfig(tenantId, data) {
-  if (!tenantId) throw new Error("tenantId es requerido para guardar la configuraci\xF3n de Almendro");
-  const existing = await query(`SELECT api_key_encrypted, module_toggles, billing_mode FROM tenant_almendro_configs WHERE tenant_id = $1`, [tenantId]);
-  let keyToEncrypt = existing.rows[0]?.api_key_encrypted || "";
-  if (data.apiKey && data.apiKey.trim() && !data.apiKey.includes("\u2022\u2022\u2022\u2022")) {
-    keyToEncrypt = CryptoService.encryptForTenant(tenantId, data.apiKey.trim());
-  }
-  const currentToggles = existing.rows[0]?.module_toggles || DEFAULT_MODULE_TOGGLES;
-  const mergedToggles = {
-    ...DEFAULT_MODULE_TOGGLES,
-    ...currentToggles,
-    ...data.moduleToggles || {}
-  };
-  const env2 = data.environment || "SANDBOX";
-  const docType = data.defaultDocType === "01" ? "01" : "04";
-  const branch = data.branchCode || "001";
-  const pos = data.posCode || "00001";
-  const billingMode = data.billingMode || (Boolean(data.isEnabled) ? keyToEncrypt ? "ALMENDRO_AUTO" : "EXTERNAL_MANUAL" : "DISABLED");
-  const isEnabled = Boolean(data.isEnabled) && billingMode !== "DISABLED";
-  await query(`
-    INSERT INTO tenant_almendro_configs (
-      tenant_id, is_enabled, billing_mode, environment, api_key_encrypted,
-      default_doc_type, module_toggles, tax_id_type, tax_id_number,
-      legal_name, commercial_name, economic_activity_code,
-      branch_code, pos_code, updated_at
-    )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)
-    ON CONFLICT (tenant_id) DO UPDATE SET
-      is_enabled = EXCLUDED.is_enabled,
-      billing_mode = EXCLUDED.billing_mode,
-      environment = EXCLUDED.environment,
-      api_key_encrypted = CASE WHEN $5 != '' THEN $5 ELSE tenant_almendro_configs.api_key_encrypted END,
-      default_doc_type = EXCLUDED.default_doc_type,
-      module_toggles = EXCLUDED.module_toggles,
-      tax_id_type = COALESCE(EXCLUDED.tax_id_type, tenant_almendro_configs.tax_id_type),
-      tax_id_number = COALESCE(EXCLUDED.tax_id_number, tenant_almendro_configs.tax_id_number),
-      legal_name = COALESCE(EXCLUDED.legal_name, tenant_almendro_configs.legal_name),
-      commercial_name = COALESCE(EXCLUDED.commercial_name, tenant_almendro_configs.commercial_name),
-      economic_activity_code = COALESCE(EXCLUDED.economic_activity_code, tenant_almendro_configs.economic_activity_code),
-      branch_code = EXCLUDED.branch_code,
-      pos_code = EXCLUDED.pos_code,
-      updated_at = CURRENT_TIMESTAMP
-  `, [
-    tenantId,
-    isEnabled,
-    billingMode,
-    env2,
-    keyToEncrypt,
-    docType,
-    JSON.stringify(mergedToggles),
-    data.taxIdType || null,
-    data.taxIdNumber || null,
-    data.legalName || null,
-    data.commercialName || null,
-    data.economicActivityCode || null,
-    branch,
-    pos
-  ]);
-  const updated = await getTenantAlmendroConfig(tenantId);
-  return updated;
-}
-async function saveElectronicVoucher(tenantId, voucher) {
-  if (!tenantId) throw new Error("tenantId es requerido para registrar un comprobante electr\xF3nico");
-  const res = await query(`
-    INSERT INTO electronic_vouchers (
-      tenant_id, order_id, appointment_id, court_booking_id, subscription_charge_id,
-      branch_id, branch_code, pos_code, reference_key,
-      doc_type, consecutive_number, numeric_key, receiver_id_type, receiver_id_number,
-      receiver_name, receiver_email, currency, subtotal, tax_amount, total_amount,
-      status, pdf_url, xml_signed_url, xml_response_url, hacienda_response_code,
-      hacienda_response_detail, metadata
-    )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
-    RETURNING id, tenant_id as "tenantId", order_id as "orderId", appointment_id as "appointmentId",
-              court_booking_id as "courtBookingId", subscription_charge_id as "subscriptionChargeId",
-              branch_id as "branchId", branch_code as "branchCode", pos_code as "posCode",
-              reference_key as "referenceKey",
-              doc_type as "docType", consecutive_number as "consecutiveNumber", numeric_key as "numericKey",
-              receiver_id_type as "receiverIdType", receiver_id_number as "receiverIdNumber",
-              receiver_name as "receiverName", receiver_email as "receiverEmail",
-              currency, subtotal, tax_amount as "taxAmount", total_amount as "totalAmount",
-              status, pdf_url as "pdfUrl", xml_signed_url as "xmlSignedUrl",
-              xml_response_url as "xmlResponseUrl", hacienda_response_code as "haciendaResponseCode",
-              hacienda_response_detail as "haciendaResponseDetail", metadata,
-              created_at as "createdAt", updated_at as "updatedAt"
-  `, [
-    tenantId,
-    voucher.orderId || null,
-    voucher.appointmentId || null,
-    voucher.courtBookingId || null,
-    voucher.subscriptionChargeId || null,
-    voucher.branchId || null,
-    voucher.branchCode || "001",
-    voucher.posCode || "00001",
-    voucher.referenceKey || null,
-    voucher.docType || "04",
-    voucher.consecutiveNumber || "",
-    voucher.numericKey,
-    voucher.receiverIdType || null,
-    voucher.receiverIdNumber || null,
-    voucher.receiverName || null,
-    voucher.receiverEmail || null,
-    voucher.currency || "CRC",
-    voucher.subtotal || 0,
-    voucher.taxAmount || 0,
-    voucher.totalAmount || 0,
-    voucher.status || "pending",
-    voucher.pdfUrl || null,
-    voucher.xmlSignedUrl || null,
-    voucher.xmlResponseUrl || null,
-    voucher.haciendaResponseCode || null,
-    voucher.haciendaResponseDetail || null,
-    JSON.stringify(voucher.metadata || {})
-  ]);
-  return res.rows[0];
-}
-async function getElectronicVouchers(tenantId, options) {
-  if (!tenantId) throw new Error("tenantId es requerido para consultar comprobantes");
-  const limit = Math.min(Number(options?.limit) || 50, 100);
-  const offset = Math.max(Number(options?.offset) || 0, 0);
-  const conditions = ["tenant_id = $1"];
-  const params = [tenantId];
-  let pIdx = 2;
-  if (options?.status) {
-    conditions.push(`status = $${pIdx}`);
-    params.push(options.status);
-    pIdx++;
-  }
-  if (options?.docType) {
-    conditions.push(`doc_type = $${pIdx}`);
-    params.push(options.docType);
-    pIdx++;
-  }
-  if (options?.branchCode) {
-    conditions.push(`COALESCE(branch_code, '001') = $${pIdx}`);
-    params.push(options.branchCode);
-    pIdx++;
-  }
-  if (options?.search && options.search.trim()) {
-    conditions.push(`(numeric_key ILIKE $${pIdx} OR consecutive_number ILIKE $${pIdx} OR receiver_name ILIKE $${pIdx} OR receiver_id_number ILIKE $${pIdx})`);
-    params.push(`%${options.search.trim()}%`);
-    pIdx++;
-  }
-  const whereSql = conditions.join(" AND ");
-  const countRes = await query(`SELECT COUNT(*) as total FROM electronic_vouchers WHERE ${whereSql}`, params);
-  const total = parseInt(countRes.rows[0]?.total || "0", 10);
-  params.push(limit);
-  params.push(offset);
-  const res = await query(`
-    SELECT id, tenant_id as "tenantId", order_id as "orderId", appointment_id as "appointmentId",
-           court_booking_id as "courtBookingId", subscription_charge_id as "subscriptionChargeId",
-           branch_id as "branchId", COALESCE(branch_code, '001') as "branchCode", COALESCE(pos_code, '00001') as "posCode",
-           reference_key as "referenceKey",
-           doc_type as "docType", consecutive_number as "consecutiveNumber", numeric_key as "numericKey",
-           receiver_id_type as "receiverIdType", receiver_id_number as "receiverIdNumber",
-           receiver_name as "receiverName", receiver_email as "receiverEmail",
-           currency, subtotal, tax_amount as "taxAmount", total_amount as "totalAmount",
-           status, pdf_url as "pdfUrl", xml_signed_url as "xmlSignedUrl",
-           xml_response_url as "xmlResponseUrl", hacienda_response_code as "haciendaResponseCode",
-           hacienda_response_detail as "haciendaResponseDetail", metadata,
-           created_at as "createdAt", updated_at as "updatedAt"
-    FROM electronic_vouchers
-    WHERE ${whereSql}
-    ORDER BY created_at DESC
-    LIMIT $${pIdx} OFFSET $${pIdx + 1}
-  `, params);
-  return {
-    vouchers: res.rows,
-    total
-  };
-}
-async function getElectronicVoucherByOrderId(tenantId, orderId) {
-  if (!tenantId || !orderId) return null;
-  const res = await query(`
-    SELECT id, tenant_id as "tenantId", order_id as "orderId", appointment_id as "appointmentId",
-           court_booking_id as "courtBookingId", subscription_charge_id as "subscriptionChargeId",
-           doc_type as "docType", consecutive_number as "consecutiveNumber", numeric_key as "numericKey",
-           receiver_id_type as "receiverIdType", receiver_id_number as "receiverIdNumber",
-           receiver_name as "receiverName", receiver_email as "receiverEmail",
-           currency, subtotal, tax_amount as "taxAmount", total_amount as "totalAmount",
-           status, pdf_url as "pdfUrl", xml_signed_url as "xmlSignedUrl",
-           xml_response_url as "xmlResponseUrl", hacienda_response_code as "haciendaResponseCode",
-           hacienda_response_detail as "haciendaResponseDetail", metadata,
-           created_at as "createdAt", updated_at as "updatedAt"
-    FROM electronic_vouchers
-    WHERE tenant_id = $1 AND order_id = $2
-    ORDER BY created_at DESC
-    LIMIT 1
-  `, [tenantId, orderId]);
-  return res.rows[0] || null;
-}
-async function getElectronicVoucherByAppointmentId(tenantId, appointmentId) {
-  if (!tenantId || !appointmentId) return null;
-  const res = await query(`
-    SELECT id, tenant_id as "tenantId", order_id as "orderId", appointment_id as "appointmentId",
-           court_booking_id as "courtBookingId", subscription_charge_id as "subscriptionChargeId",
-           doc_type as "docType", consecutive_number as "consecutiveNumber", numeric_key as "numericKey",
-           receiver_id_type as "receiverIdType", receiver_id_number as "receiverIdNumber",
-           receiver_name as "receiverName", receiver_email as "receiverEmail",
-           currency, subtotal, tax_amount as "taxAmount", total_amount as "totalAmount",
-           status, pdf_url as "pdfUrl", xml_signed_url as "xmlSignedUrl",
-           xml_response_url as "xmlResponseUrl", hacienda_response_code as "haciendaResponseCode",
-           hacienda_response_detail as "haciendaResponseDetail", metadata,
-           created_at as "createdAt", updated_at as "updatedAt"
-    FROM electronic_vouchers
-    WHERE tenant_id = $1 AND appointment_id = $2
-    ORDER BY created_at DESC
-    LIMIT 1
-  `, [tenantId, appointmentId]);
-  return res.rows[0] || null;
-}
-async function getElectronicVoucherByKeyOrId(keyOrId) {
-  if (!keyOrId || !keyOrId.trim()) return null;
-  const clean = keyOrId.trim();
-  const querySql = `
-    SELECT id, tenant_id as "tenantId", order_id as "orderId", appointment_id as "appointmentId",
-           court_booking_id as "courtBookingId", subscription_charge_id as "subscriptionChargeId",
-           doc_type as "docType", consecutive_number as "consecutiveNumber", numeric_key as "numericKey",
-           receiver_id_type as "receiverIdType", receiver_id_number as "receiverIdNumber",
-           receiver_name as "receiverName", receiver_email as "receiverEmail",
-           currency, subtotal, tax_amount as "taxAmount", total_amount as "totalAmount",
-           status, pdf_url as "pdfUrl", xml_signed_url as "xmlSignedUrl",
-           xml_response_url as "xmlResponseUrl", hacienda_response_code as "haciendaResponseCode",
-           hacienda_response_detail as "haciendaResponseDetail", metadata,
-           created_at as "createdAt", updated_at as "updatedAt"
-    FROM electronic_vouchers
-    WHERE numeric_key = $1
-       OR id::text = $1
-       OR order_id::text = $1
-       OR appointment_id::text = $1
-       OR metadata->'data'->>'voucher_key' = $1
-       OR metadata->>'voucher_key' = $1
-       OR metadata->>'key' = $1
-    ORDER BY created_at DESC
-    LIMIT 1
-  `;
-  const res = await query(querySql, [clean]);
-  return res.rows[0] || null;
-}
-var DEFAULT_MODULE_TOGGLES;
-var init_tenant_almendro_repo = __esm({
-  "src/server/db/tenant-almendro.repo.ts"() {
-    "use strict";
-    init_pool();
-    init_crypto_service();
-    DEFAULT_MODULE_TOGGLES = {
-      storeEnabled: true,
-      bookingsEnabled: true,
-      courtsEnabled: false,
-      restaurantEnabled: false,
-      subscriptionsEnabled: false
-    };
-  }
-});
-
-// src/server/services/voucher-email.service.ts
-var voucher_email_service_exports = {};
-__export(voucher_email_service_exports, {
-  buildOfficialHaciendaXmlBuffer: () => buildOfficialHaciendaXmlBuffer,
-  buildVoucherEmailHtml: () => buildVoucherEmailHtml,
-  sendVoucherEmailNotification: () => sendVoucherEmailNotification,
-  testTenantEmailDelivery: () => testTenantEmailDelivery
-});
-import net from "node:net";
-import tls from "node:tls";
-function escapeXml(val) {
-  return String(val ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
-}
-function buildOfficialHaciendaXmlBuffer(voucher, haciendaConfig) {
-  const docType = voucher.docType || "04";
-  const rootTag = docType === "01" ? "FacturaElectronica" : docType === "03" ? "NotaCreditoElectronica" : "TiqueteElectronico";
-  const schemaName = docType === "01" ? "facturaElectronica" : docType === "03" ? "notaCreditoElectronica" : "tiqueteElectronico";
-  const xmlns = `https://cdn.comprobanteselectronicos.go.cr/xml-schemas/v4.4/${schemaName}`;
-  const numericKey = String(voucher.numericKey || "").padStart(50, "0").slice(0, 50);
-  const consecutive = String(voucher.consecutiveNumber || "00100001040000000001").padStart(20, "0").slice(0, 20);
-  const activityCode = String(haciendaConfig?.economicActivityCode || "831110").replace(/\D/g, "").padStart(6, "0").slice(0, 6);
-  const issuedAt = voucher.createdAt ? new Date(voucher.createdAt).toISOString() : (/* @__PURE__ */ new Date()).toISOString();
-  const issuerName = haciendaConfig?.taxpayerName || haciendaConfig?.commercialName || "Emisor Autorizado CR";
-  const issuerCommercial = haciendaConfig?.commercialName || issuerName;
-  const issuerIdType = haciendaConfig?.taxpayerIdType || "01";
-  const issuerIdNumber = String(haciendaConfig?.taxpayerIdNumber || "000000000").replace(/\D/g, "");
-  const issuerEmail = haciendaConfig?.taxpayerEmail || "facturacion@betico.cr";
-  const province = String(haciendaConfig?.province || "1").slice(0, 1);
-  const canton = String(haciendaConfig?.canton || "01").padStart(2, "0").slice(0, 2);
-  const district = String(haciendaConfig?.district || "01").padStart(2, "0").slice(0, 2);
-  const neighborhood = String(haciendaConfig?.neighborhood || "01").padStart(2, "0").slice(0, 2);
-  const addressDetail = haciendaConfig?.addressDetail || "Costa Rica";
-  const metadata = voucher.metadata || {};
-  const rawItems = Array.isArray(metadata.items) && metadata.items.length > 0 ? metadata.items : [
-    {
-      lineNumber: 1,
-      cabysCode: haciendaConfig?.defaultCabysCode || "8311100000000",
-      description: "Servicios o productos facturados",
-      quantity: 1,
-      unitPrice: Number(voucher.subtotal || voucher.totalAmount || 0),
-      taxRateCode: Number(voucher.taxAmount || 0) > 0 ? "08" : "10",
-      taxRate: Number(voucher.taxAmount || 0) > 0 ? 13 : 0,
-      lineSubtotal: Number(voucher.subtotal || voucher.totalAmount || 0),
-      lineTax: Number(voucher.taxAmount || 0),
-      lineTotal: Number(voucher.totalAmount || 0)
-    }
-  ];
-  let linesXml = "";
-  rawItems.forEach((it, idx) => {
-    const lineNum = idx + 1;
-    const cabys = String(it.cabysCode || it.cabys_code || "8311100000000").replace(/\D/g, "").padStart(13, "0").slice(0, 13);
-    const qty = Number(it.quantity || 1).toFixed(3);
-    const unitPrice = Number(it.unitPrice ?? it.unit_price ?? 0).toFixed(5);
-    const sub = Number(it.lineSubtotal ?? Number(it.quantity || 1) * Number(it.unitPrice || 0)).toFixed(5);
-    const taxCode = String(it.taxRateCode || "08");
-    const taxRateNum = it.taxRate !== void 0 ? Number(it.taxRate) : taxCode === "10" ? 0 : 13;
-    const taxAmt = Number(it.lineTax ?? Number(sub) * (taxRateNum / 100)).toFixed(5);
-    const totalLine = Number(it.lineTotal ?? Number(sub) + Number(taxAmt)).toFixed(5);
-    const desc = escapeXml(String(it.description || it.detail || "Servicio").slice(0, 160));
-    linesXml += `
-    <LineaDetalle>
-      <NumeroLinea>${lineNum}</NumeroLinea>
-      <CodigoCabys>${cabys}</CodigoCabys>
-      <Cantidad>${qty}</Cantidad>
-      <UnidadMedida>Unid</UnidadMedida>
-      <Detalle>${desc}</Detalle>
-      <PrecioUnitario>${unitPrice}</PrecioUnitario>
-      <MontoTotal>${sub}</MontoTotal>
-      <SubTotal>${sub}</SubTotal>
-      <BaseImponible>${sub}</BaseImponible>
-      <Impuesto>
-        <Codigo>01</Codigo>
-        <CodigoTarifaIVA>${escapeXml(taxCode)}</CodigoTarifaIVA>
-        <Tarifa>${taxRateNum.toFixed(2)}</Tarifa>
-        <Monto>${taxAmt}</Monto>
-      </Impuesto>
-      <ImpuestoNeto>${taxAmt}</ImpuestoNeto>
-      <MontoTotalLinea>${totalLine}</MontoTotalLinea>
-    </LineaDetalle>`;
-  });
-  const receiverBlock = voucher.receiverName || voucher.receiverIdNumber || voucher.receiverEmail ? `
-  <Receptor>
-    <Nombre>${escapeXml(voucher.receiverName || "Cliente Contado")}</Nombre>${voucher.receiverIdNumber ? `
-    <Identificacion>
-      <Tipo>${escapeXml(voucher.receiverIdType || "01")}</Tipo>
-      <Numero>${escapeXml(String(voucher.receiverIdNumber).replace(/\D/g, ""))}</Numero>
-    </Identificacion>` : ""}${voucher.receiverEmail ? `
-    <CorreoElectronico>${escapeXml(voucher.receiverEmail)}</CorreoElectronico>` : ""}
-  </Receptor>` : "";
-  const refKey = voucher.referenceKey || metadata.referenceKey;
-  const referenceBlock = refKey ? `
-  <InformacionReferencia>
-    <TipoDocIR>01</TipoDocIR>
-    <Numero>${escapeXml(refKey)}</Numero>
-    <FechaEmisionIR>${escapeXml(issuedAt)}</FechaEmisionIR>
-    <Codigo>01</Codigo>
-    <Razon>Anulacion de comprobante de referencia</Razon>
-  </InformacionReferencia>` : "";
-  const subtotalVal = Number(voucher.subtotal || 0).toFixed(5);
-  const taxVal = Number(voucher.taxAmount || 0).toFixed(5);
-  const totalVal = Number(voucher.totalAmount || 0).toFixed(5);
-  const currency = escapeXml(voucher.currency || "CRC");
-  const paymentMethod = escapeXml(metadata.paymentMethod || "01");
-  const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<${rootTag} xmlns="${xmlns}" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-  <Clave>${escapeXml(numericKey)}</Clave>
-  <ProveedorSistemas>${escapeXml(issuerIdNumber || "3101000000")}</ProveedorSistemas>
-  <CodigoActividadEmisor>${escapeXml(activityCode)}</CodigoActividadEmisor>
-  <NumeroConsecutivo>${escapeXml(consecutive)}</NumeroConsecutivo>
-  <FechaEmision>${escapeXml(issuedAt)}</FechaEmision>
-  <Emisor>
-    <Nombre>${escapeXml(issuerName)}</Nombre>
-    <Identificacion>
-      <Tipo>${escapeXml(issuerIdType)}</Tipo>
-      <Numero>${escapeXml(issuerIdNumber)}</Numero>
-    </Identificacion>
-    <NombreComercial>${escapeXml(issuerCommercial)}</NombreComercial>
-    <Ubicacion>
-      <Provincia>${escapeXml(province)}</Provincia>
-      <Canton>${escapeXml(canton)}</Canton>
-      <Distrito>${escapeXml(district)}</Distrito>
-      <Barrio>${escapeXml(neighborhood)}</Barrio>
-      <OtrasSenas>${escapeXml(addressDetail)}</OtrasSenas>
-    </Ubicacion>
-    <CorreoElectronico>${escapeXml(issuerEmail)}</CorreoElectronico>
-  </Emisor>${receiverBlock}
-  <CondicionVenta>01</CondicionVenta>
-  <MedioPago>
-    <TipoMedioPago>${paymentMethod}</TipoMedioPago>
-  </MedioPago>
-  <DetalleServicio>${linesXml}
-  </DetalleServicio>
-  <ResumenFactura>
-    <CodigoTipoMoneda>
-      <CodigoMoneda>${currency}</CodigoMoneda>
-      <TipoCambio>1.00000</TipoCambio>
-    </CodigoTipoMoneda>
-    <TotalVenta>${subtotalVal}</TotalVenta>
-    <TotalVentaNeta>${subtotalVal}</TotalVentaNeta>
-    <TotalImpuesto>${taxVal}</TotalImpuesto>
-    <TotalComprobante>${totalVal}</TotalComprobante>
-  </ResumenFactura>${referenceBlock}
-</${rootTag}>`;
-  return Buffer.from(xml, "utf8");
-}
-function buildVoucherEmailHtml(params) {
-  const { voucher, haciendaConfig, storeName, pdfPublicUrl, xmlPublicUrl } = params;
-  const docLabel = voucher.docType === "01" ? "Factura Electr\xF3nica" : voucher.docType === "03" ? "Nota de Cr\xE9dito Electr\xF3nica" : "Tiquete Electr\xF3nico";
-  const issuerName = haciendaConfig?.taxpayerName || storeName;
-  const issuerId = haciendaConfig?.taxpayerIdNumber || "N/A";
-  const branchCode = voucher.branchCode || haciendaConfig?.branchCode || "001";
-  const posCode = voucher.posCode || haciendaConfig?.posCode || "00001";
-  const consecutive = voucher.consecutiveNumber || "00100001040000000001";
-  const numericKey = voucher.numericKey || "";
-  const receiverName = voucher.receiverName || "Estimado cliente";
-  const receiverId = voucher.receiverIdNumber || "Consumidor Final";
-  const currency = voucher.currency || "CRC";
-  const symbol = currency === "USD" ? "$" : "\u20A1";
-  const fmt = (n) => `${symbol}${Number(n || 0).toLocaleString("es-CR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  const metadata = voucher.metadata || {};
-  const items = Array.isArray(metadata.items) && metadata.items.length > 0 ? metadata.items : [
-    {
-      description: "Productos o servicios facturados",
-      quantity: 1,
-      unitPrice: voucher.subtotal || voucher.totalAmount || 0,
-      lineTotal: voucher.totalAmount || 0
-    }
-  ];
-  const rowsHtml = items.map((it) => {
-    const qty = Number(it.quantity || 1);
-    const unitP = Number(it.unitPrice ?? it.unit_price ?? 0);
-    const lineSub = Number(it.lineSubtotal ?? qty * unitP);
-    return `
-        <tr>
-          <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-size:13px;color:#334155;">${qty}</td>
-          <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-size:13px;color:#0f172a;font-weight:500;">${escapeXml(it.description || it.detail || "Item")}</td>
-          <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-size:13px;color:#475569;text-align:right;">${fmt(unitP)}</td>
-          <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;font-size:13px;color:#0f172a;font-weight:600;text-align:right;">${fmt(lineSub)}</td>
-        </tr>`;
-  }).join("");
-  return `<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8" />
-  <title>${escapeXml(docLabel)} - ${escapeXml(storeName)}</title>
-</head>
-<body style="margin:0;padding:24px;background-color:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-  <div style="max-width:640px;margin:0 auto;background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 4px 20px rgba(15,23,42,0.08);border:1px solid #e2e8f0;">
-    <div style="background:linear-gradient(135deg,#0f172a 0%,#1e3a8a 100%);padding:28px 32px;color:#ffffff;">
-      <div style="font-size:12px;text-transform:uppercase;letter-spacing:1px;color:#93c5fd;font-weight:700;margin-bottom:6px;">
-        Comprobante Electr\xF3nico Oficial DGT v4.4
-      </div>
-      <h1 style="margin:0;font-size:22px;font-weight:800;color:#ffffff;">${escapeXml(docLabel)}</h1>
-      <p style="margin:6px 0 0;font-size:14px;color:#cbd5e1;">
-        Emitido por <strong>${escapeXml(storeName)}</strong> (${escapeXml(issuerName)} \xB7 C\xE9dula ${escapeXml(issuerId)})
-      </p>
-    </div>
-
-    <div style="padding:28px 32px;">
-      <p style="margin:0 0 18px;font-size:15px;color:#334155;line-height:1.5;">
-        Hola <strong>${escapeXml(receiverName)}</strong>, adjunto a este correo encontrar\xE1s tu <strong>${escapeXml(docLabel)}</strong> en formato <strong>PDF</strong> y su archivo <strong>XML oficial de Hacienda</strong>.
-      </p>
-
-      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:16px;margin-bottom:22px;">
-        <div style="font-size:12px;color:#64748b;margin-bottom:4px;">Consecutivo Hacienda (Sucursal ${escapeXml(branchCode)} \xB7 Terminal ${escapeXml(posCode)})</div>
-        <div style="font-family:monospace;font-size:15px;font-weight:700;color:#0f172a;margin-bottom:10px;">${escapeXml(consecutive)}</div>
-        <div style="font-size:12px;color:#64748b;margin-bottom:4px;">Clave Num\xE9rica de 50 D\xEDgitos</div>
-        <div style="font-family:monospace;font-size:12px;color:#1e40af;word-break:break-all;font-weight:600;">${escapeXml(numericKey)}</div>
-        <div style="margin-top:10px;padding-top:10px;border-top:1px solid #e2e8f0;font-size:12px;color:#475569;">
-          <strong>Receptor:</strong> ${escapeXml(receiverName)} (${escapeXml(receiverId)})
-        </div>
-      </div>
-
-      <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
-        <thead>
-          <tr style="background:#f1f5f9;">
-            <th style="padding:10px 12px;text-align:left;font-size:12px;color:#475569;text-transform:uppercase;">Cant.</th>
-            <th style="padding:10px 12px;text-align:left;font-size:12px;color:#475569;text-transform:uppercase;">Detalle</th>
-            <th style="padding:10px 12px;text-align:right;font-size:12px;color:#475569;text-transform:uppercase;">Precio Unit.</th>
-            <th style="padding:10px 12px;text-align:right;font-size:12px;color:#475569;text-transform:uppercase;">Subtotal</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${rowsHtml}
-        </tbody>
-      </table>
-
-      <div style="background:#f8fafc;border-radius:10px;padding:16px;margin-bottom:24px;text-align:right;">
-        <div style="font-size:13px;color:#475569;margin-bottom:6px;">Subtotal Neto: <strong>${fmt(voucher.subtotal)}</strong></div>
-        <div style="font-size:13px;color:#475569;margin-bottom:8px;">Impuesto (IVA): <strong>${fmt(voucher.taxAmount)}</strong></div>
-        <div style="font-size:18px;color:#0f172a;font-weight:800;">Total Comprobante: ${fmt(voucher.totalAmount)}</div>
-      </div>
-
-      <div style="text-align:center;margin:26px 0;">
-        <a href="${escapeXml(pdfPublicUrl)}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:12px 24px;border-radius:8px;margin-right:8px;">
-          Descargar Comprobante PDF
-        </a>
-        <a href="${escapeXml(xmlPublicUrl)}" style="display:inline-block;background:#0f172a;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:12px 24px;border-radius:8px;">
-          Descargar XML Hacienda
-        </a>
-      </div>
-
-      <p style="margin:20px 0 0;font-size:12px;color:#64748b;text-align:center;line-height:1.5;">
-        Autorizado mediante resoluci\xF3n de Facturaci\xF3n Electr\xF3nica DGT-R-033-2019 y versi\xF3n 4.4 del Ministerio de Hacienda de Costa Rica.
-      </p>
-    </div>
-  </div>
-</body>
-</html>`;
-}
-async function sendMimeEmailViaSmtp(smtp, mail) {
-  return new Promise((resolve) => {
-    const boundary = `----BeticoBoundary_${Date.now().toString(16)}`;
-    const subjectB64 = Buffer.from(mail.subject, "utf8").toString("base64");
-    const fromNameB64 = Buffer.from(smtp.fromName || "Facturacion Electronica", "utf8").toString("base64");
-    const htmlB64 = Buffer.from(mail.html, "utf8").toString("base64").replace(/(.{76})/g, "$1\r\n");
-    const headers = [
-      `From: =?UTF-8?B?${fromNameB64}?= <${smtp.fromEmail}>`,
-      `To: <${mail.to}>`,
-      ...mail.replyTo ? [`Reply-To: <${mail.replyTo}>`] : [],
-      `Subject: =?UTF-8?B?${subjectB64}?=`,
-      `Date: ${(/* @__PURE__ */ new Date()).toUTCString()}`,
-      `MIME-Version: 1.0`,
-      `Content-Type: multipart/mixed; boundary="${boundary}"`
-    ];
-    const parts = [];
-    parts.push(
-      `--${boundary}\r
-Content-Type: text/html; charset="UTF-8"\r
-Content-Transfer-Encoding: base64\r
-\r
-${htmlB64}\r
-`
-    );
-    for (const att of mail.attachments) {
-      const attB64 = att.content.toString("base64").replace(/(.{76})/g, "$1\r\n");
-      parts.push(
-        `--${boundary}\r
-Content-Type: ${att.contentType}; name="${att.filename}"\r
-Content-Disposition: attachment; filename="${att.filename}"\r
-Content-Transfer-Encoding: base64\r
-\r
-${attB64}\r
-`
-      );
-    }
-    parts.push(`--${boundary}--\r
-`);
-    const rawMime = `${headers.join("\r\n")}\r
-\r
-${parts.join("")}\r
-.`;
-    let socket;
-    let step = 0;
-    let buffer = "";
-    let finished = false;
-    const finish = (result) => {
-      if (finished) return;
-      finished = true;
-      try {
-        socket?.destroy();
-      } catch (_) {
-      }
-      resolve(result);
-    };
-    const timeout = setTimeout(() => {
-      finish({ ok: false, error: "Tiempo de espera agotado conectando al servidor SMTP" });
-    }, 12e3);
-    const sendLine = (cmd) => {
-      socket.write(`${cmd}\r
-`);
-    };
-    const handleResponse = (code, fullText) => {
-      if (code >= 400) {
-        clearTimeout(timeout);
-        finish({ ok: false, error: `Error SMTP (${code}): ${fullText.trim()}` });
-        return;
-      }
-      if (step === 0 && code === 220) {
-        step = 1;
-        sendLine(`EHLO betico.cr`);
-      } else if (step === 1 && code === 250) {
-        if (smtp.port !== 465 && !(socket instanceof tls.TLSSocket) && fullText.toUpperCase().includes("STARTTLS")) {
-          step = 2;
-          sendLine("STARTTLS");
-        } else {
-          step = 3;
-          sendLine("AUTH LOGIN");
-        }
-      } else if (step === 2 && code === 220) {
-        const upgraded = tls.connect(
-          { socket, servername: smtp.host, rejectUnauthorized: false },
-          () => {
-            socket = upgraded;
-            attachListeners(upgraded);
-            step = 1;
-            sendLine(`EHLO betico.cr`);
-          }
-        );
-        upgraded.on("error", (err) => {
-          clearTimeout(timeout);
-          finish({ ok: false, error: `Error TLS SMTP: ${err.message}` });
-        });
-      } else if (step === 3 && code === 334) {
-        step = 4;
-        sendLine(Buffer.from(smtp.user, "utf8").toString("base64"));
-      } else if (step === 4 && code === 334) {
-        step = 5;
-        sendLine(Buffer.from(smtp.pass, "utf8").toString("base64"));
-      } else if (step === 5 && code === 235) {
-        step = 6;
-        sendLine(`MAIL FROM:<${smtp.fromEmail}>`);
-      } else if (step === 6 && code === 250) {
-        step = 7;
-        sendLine(`RCPT TO:<${mail.to}>`);
-      } else if (step === 7 && (code === 250 || code === 251)) {
-        step = 8;
-        sendLine("DATA");
-      } else if (step === 8 && code === 354) {
-        step = 9;
-        sendLine(rawMime);
-      } else if (step === 9 && code === 250) {
-        step = 10;
-        sendLine("QUIT");
-        clearTimeout(timeout);
-        finish({ ok: true });
-      }
-    };
-    const attachListeners = (sock) => {
-      sock.on("data", (chunk) => {
-        buffer += chunk.toString("utf8");
-        const lines = buffer.split("\r\n");
-        buffer = lines.pop() || "";
-        let multiLine = "";
-        for (const line of lines) {
-          multiLine += line + "\n";
-          if (/^\d{3} /.test(line)) {
-            const code = parseInt(line.slice(0, 3), 10);
-            const msg = multiLine;
-            multiLine = "";
-            handleResponse(code, msg);
-          }
-        }
-      });
-      sock.on("error", (err) => {
-        clearTimeout(timeout);
-        finish({ ok: false, error: `Error de red SMTP: ${err.message}` });
-      });
-    };
-    try {
-      if (smtp.port === 465) {
-        socket = tls.connect({ host: smtp.host, port: smtp.port, servername: smtp.host, rejectUnauthorized: false });
-      } else {
-        socket = net.connect({ host: smtp.host, port: smtp.port });
-      }
-      attachListeners(socket);
-    } catch (err) {
-      clearTimeout(timeout);
-      finish({ ok: false, error: err.message });
-    }
-  });
-}
-async function sendEmailViaResend(apiKey, fromAddress, mail) {
-  try {
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey.trim()}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        from: fromAddress,
-        to: [mail.to],
-        ...mail.replyTo ? { reply_to: mail.replyTo } : {},
-        subject: mail.subject,
-        html: mail.html,
-        attachments: mail.attachments.map((a) => ({
-          filename: a.filename,
-          content: a.content.toString("base64")
-        }))
-      })
-    });
-    if (res.ok) {
-      return { ok: true };
-    }
-    const errBody = await res.text().catch(() => "");
-    return { ok: false, error: `Resend API (${res.status}): ${errBody.slice(0, 150)}` };
-  } catch (err) {
-    return { ok: false, error: `Error conectando con Resend: ${err.message}` };
-  }
-}
-async function sendVoucherEmailNotification({
-  tenantId,
-  voucherKeyOrId,
-  overrideEmail
-}) {
-  const voucher = await getElectronicVoucherByKeyOrId(voucherKeyOrId);
-  if (!voucher || voucher.tenantId !== tenantId) {
-    return {
-      success: false,
-      transport: "pending_config",
-      recipient: overrideEmail || "",
-      message: "Comprobante electr\xF3nico no encontrado para este negocio."
-    };
-  }
-  let recipientEmail = (overrideEmail || voucher.receiverEmail || "").trim();
-  if (!recipientEmail && voucher.orderId) {
-    const ordRes = await query(
-      `SELECT customer_email, billing_info FROM orders WHERE id = $1 AND tenant_id = $2`,
-      [voucher.orderId, tenantId]
-    ).catch(() => ({ rows: [] }));
-    if (ordRes.rows.length > 0) {
-      const r = ordRes.rows[0];
-      const bInfo = typeof r.billing_info === "string" ? JSON.parse(r.billing_info) : r.billing_info || {};
-      recipientEmail = (bInfo?.email || r.customer_email || "").trim();
-    }
-  }
-  if (!recipientEmail && voucher.appointmentId) {
-    const appRes = await query(
-      `SELECT a.billing_info, cr.email as record_email
-       FROM appointments a
-       LEFT JOIN customer_records cr ON cr.id = a.record_id
-       WHERE a.id = $1 AND a.tenant_id = $2`,
-      [voucher.appointmentId, tenantId]
-    ).catch(() => ({ rows: [] }));
-    if (appRes.rows.length > 0) {
-      const r = appRes.rows[0];
-      const bInfo = typeof r.billing_info === "string" ? JSON.parse(r.billing_info) : r.billing_info || {};
-      recipientEmail = (bInfo?.email || r.record_email || "").trim();
-    }
-  }
-  if (!recipientEmail || !recipientEmail.includes("@")) {
-    return {
-      success: false,
-      transport: "pending_config",
-      recipient: "",
-      message: "El cliente no registr\xF3 una direcci\xF3n de correo electr\xF3nico v\xE1lida para este comprobante."
-    };
-  }
-  if (recipientEmail !== voucher.receiverEmail) {
-    await query(
-      `UPDATE electronic_vouchers SET receiver_email = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND tenant_id = $3`,
-      [recipientEmail, voucher.id, tenantId]
-    ).catch(() => {
-    });
-    voucher.receiverEmail = recipientEmail;
-  }
-  const haciendaConfig = await getHaciendaConfigByTenant(tenantId);
-  const secrets = await getHaciendaDecryptedSecrets(tenantId);
-  const { getStoreSettings: getStoreSettings2 } = await Promise.resolve().then(() => (init_store_settings_repo(), store_settings_repo_exports));
-  const { getTenantById: getTenantById2 } = await Promise.resolve().then(() => (init_tenant_repo(), tenant_repo_exports));
-  const { AlmendroService: AlmendroService2 } = await Promise.resolve().then(() => (init_almendro_service(), almendro_service_exports));
-  const store = await getStoreSettings2(tenantId).catch(() => null);
-  const tenant = await getTenantById2(tenantId).catch(() => null);
-  const storeName = haciendaConfig?.commercialName || store?.storeName || haciendaConfig?.taxpayerName || tenant?.name || "Comercio Afiliado";
-  const pdfResult = await AlmendroService2.getVoucherPdf(voucher.numericKey || voucher.id);
-  const xmlBuffer = buildOfficialHaciendaXmlBuffer(voucher, haciendaConfig);
-  const consecutive = voucher.consecutiveNumber || voucher.numericKey || voucher.id;
-  const attachments = [];
-  if (pdfResult.success && pdfResult.buffer) {
-    attachments.push({
-      filename: `Comprobante_${consecutive}.pdf`,
-      contentType: "application/pdf",
-      content: pdfResult.buffer
-    });
-  }
-  attachments.push({
-    filename: `Hacienda_${voucher.numericKey || consecutive}.xml`,
-    contentType: "application/xml",
-    content: xmlBuffer
-  });
-  const baseUrl = env.APP_URL || "https://betico.tech";
-  const pdfPublicUrl = `${baseUrl}/api/almendro/public/voucher-pdf/${voucher.numericKey || voucher.id}`;
-  const xmlPublicUrl = `${baseUrl}/api/almendro/public/voucher-xml/${voucher.numericKey || voucher.id}`;
-  const docName = voucher.docType === "01" ? "Factura Electr\xF3nica" : voucher.docType === "03" ? "Nota de Cr\xE9dito Electr\xF3nica" : "Tiquete Electr\xF3nico";
-  const subject = `${docName} #${consecutive} - ${storeName}`;
-  const html = buildVoucherEmailHtml({
-    voucher,
-    haciendaConfig,
-    storeName,
-    pdfPublicUrl,
-    xmlPublicUrl
-  });
-  const replyTo = haciendaConfig?.taxpayerEmail || void 0;
-  let transportUsed = "pending_config";
-  let sendAttempt = { ok: false, error: "Servidor de correo saliente no configurado" };
-  if (secrets?.resendApiKey) {
-    transportUsed = "resend_tenant";
-    const fromAddr = `${storeName} <${haciendaConfig?.taxpayerEmail || env.SMTP_FROM || "facturacion@betico.cr"}>`;
-    sendAttempt = await sendEmailViaResend(secrets.resendApiKey, fromAddr, {
-      to: recipientEmail,
-      replyTo,
-      subject,
-      html,
-      attachments
-    });
-  } else if (secrets?.smtpHost && secrets?.smtpUser && secrets?.smtpPass) {
-    transportUsed = "smtp_tenant";
-    sendAttempt = await sendMimeEmailViaSmtp(
-      {
-        host: secrets.smtpHost,
-        port: secrets.smtpPort || 587,
-        user: secrets.smtpUser,
-        pass: secrets.smtpPass,
-        fromEmail: secrets.smtpUser.includes("@") ? secrets.smtpUser : haciendaConfig?.taxpayerEmail || env.SMTP_FROM,
-        fromName: storeName
-      },
-      { to: recipientEmail, replyTo, subject, html, attachments }
-    );
-  } else if (env.RESEND_API_KEY) {
-    transportUsed = "resend_platform";
-    const fromAddr = `${storeName} <${env.SMTP_FROM || "facturacion@betico.cr"}>`;
-    sendAttempt = await sendEmailViaResend(env.RESEND_API_KEY, fromAddr, {
-      to: recipientEmail,
-      replyTo,
-      subject,
-      html,
-      attachments
-    });
-  } else if (env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS) {
-    transportUsed = "smtp_platform";
-    sendAttempt = await sendMimeEmailViaSmtp(
-      {
-        host: env.SMTP_HOST,
-        port: env.SMTP_PORT || 587,
-        user: env.SMTP_USER,
-        pass: env.SMTP_PASS,
-        fromEmail: env.SMTP_FROM || env.SMTP_USER,
-        fromName: storeName
-      },
-      { to: recipientEmail, replyTo, subject, html, attachments }
-    );
-  }
-  const currentMeta = voucher.metadata || {};
-  const updatedMeta = {
-    ...currentMeta,
-    emailDelivery: {
-      status: sendAttempt.ok ? "sent" : transportUsed === "pending_config" ? "queued_pending_smtp" : "failed",
-      recipient: recipientEmail,
-      transport: transportUsed,
-      sentAt: (/* @__PURE__ */ new Date()).toISOString(),
-      attachmentsCount: attachments.length,
-      error: sendAttempt.ok ? void 0 : sendAttempt.error
-    }
-  };
-  await query(
-    `UPDATE electronic_vouchers SET metadata = $1::jsonb, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND tenant_id = $3`,
-    [JSON.stringify(updatedMeta), voucher.id, tenantId]
-  ).catch(() => {
-  });
-  await query(
-    `INSERT INTO notifications_log (id, tenant_id, recipient, message, trigger_type, status)
-     VALUES ($1, $2, $3, $4, 'electronic_invoice_email', $5)`,
-    [
-      `email_${Date.now()}_${Math.floor(Math.random() * 1e3)}`,
-      tenantId,
-      recipientEmail,
-      `${docName} #${consecutive} (PDF + XML) -> ${recipientEmail}`,
-      sendAttempt.ok ? "sent" : "queued"
-    ]
-  ).catch(() => {
-  });
-  if (sendAttempt.ok) {
-    return {
-      success: true,
-      transport: transportUsed,
-      recipient: recipientEmail,
-      message: `Comprobante enviado exitosamente por correo electr\xF3nico (PDF + XML) a ${recipientEmail}`
-    };
-  }
-  if (transportUsed === "pending_config") {
-    return {
-      success: false,
-      transport: "pending_config",
-      recipient: recipientEmail,
-      message: `El comprobante qued\xF3 preparado con PDF y XML para ${recipientEmail}. Para despachar correos en tiempo real, configura el servidor SMTP o Resend en la pesta\xF1a "Credenciales y Llave .p12".`
-    };
-  }
-  return {
-    success: false,
-    transport: transportUsed,
-    recipient: recipientEmail,
-    message: `No se pudo entregar el correo a ${recipientEmail}: ${sendAttempt.error}`
-  };
-}
-async function testTenantEmailDelivery(tenantId, params) {
-  const config = await getHaciendaConfigByTenant(tenantId);
-  const secrets = await getHaciendaDecryptedSecrets(tenantId);
-  const recipient = (params.testEmail || config?.taxpayerEmail || "").trim();
-  if (!recipient || !recipient.includes("@")) {
-    return {
-      success: false,
-      message: "Ingresa un correo electr\xF3nico destinatario v\xE1lido para enviar la prueba."
-    };
-  }
-  const smtpHost = (params.smtpHost !== void 0 ? params.smtpHost : secrets?.smtpHost || "").trim();
-  const smtpPort = Number(params.smtpPort || secrets?.smtpPort || 587);
-  const smtpUser = (params.smtpUser !== void 0 ? params.smtpUser : secrets?.smtpUser || "").trim();
-  const smtpPass = params.smtpPass && !params.smtpPass.includes("\u2022\u2022\u2022\u2022") ? params.smtpPass.trim() : secrets?.smtpPass || "";
-  const resendApiKey = params.resendApiKey && !params.resendApiKey.includes("\u2022\u2022\u2022\u2022") ? params.resendApiKey.trim() : secrets?.resendApiKey || "";
-  const storeName = config?.commercialName || config?.taxpayerName || "Facturaci\xF3n Electr\xF3nica Betico";
-  const subject = `Prueba de Env\xEDo de Facturaci\xF3n Electr\xF3nica - ${storeName}`;
-  const html = `<div style="font-family:sans-serif;padding:24px;max-width:560px;margin:0 auto;border:1px solid #e2e8f0;border-radius:12px;">
-    <h2 style="color:#0f172a;margin-top:0;">Conexi\xF3n de Correo Verificada</h2>
-    <p style="color:#334155;line-height:1.5;">Este es un correo de prueba del m\xF3dulo de <strong>Facturaci\xF3n Electr\xF3nica Hacienda DGT v4.4</strong> de <strong>${escapeXml(storeName)}</strong>.</p>
-    <p style="color:#16a34a;font-weight:700;">Las facturas, tiquetes y notas de cr\xE9dito (con sus archivos PDF y XML adjuntos) llegar\xE1n correctamente al correo de tus clientes.</p>
-  </div>`;
-  if (resendApiKey) {
-    const res = await sendEmailViaResend(
-      resendApiKey,
-      `${storeName} <${config?.taxpayerEmail || env.SMTP_FROM || "facturacion@betico.cr"}>`,
-      { to: recipient, subject, html, attachments: [] }
-    );
-    return {
-      success: res.ok,
-      message: res.ok ? `Correo de prueba enviado exitosamente a ${recipient} v\xEDa Resend API.` : res.error || "Error enviando correo de prueba v\xEDa Resend."
-    };
-  }
-  if (smtpHost && smtpUser && smtpPass) {
-    const res = await sendMimeEmailViaSmtp(
-      {
-        host: smtpHost,
-        port: smtpPort,
-        user: smtpUser,
-        pass: smtpPass,
-        fromEmail: smtpUser.includes("@") ? smtpUser : config?.taxpayerEmail || env.SMTP_FROM,
-        fromName: storeName
-      },
-      { to: recipient, subject, html, attachments: [] }
-    );
-    return {
-      success: res.ok,
-      message: res.ok ? `Correo de prueba enviado exitosamente a ${recipient} v\xEDa servidor SMTP (${smtpHost}:${smtpPort}).` : res.error || "Error conectando con el servidor SMTP."
-    };
-  }
-  if (env.RESEND_API_KEY || env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS) {
-    const res = env.RESEND_API_KEY ? await sendEmailViaResend(env.RESEND_API_KEY, `${storeName} <${env.SMTP_FROM}>`, { to: recipient, subject, html, attachments: [] }) : await sendMimeEmailViaSmtp(
-      {
-        host: env.SMTP_HOST,
-        port: env.SMTP_PORT || 587,
-        user: env.SMTP_USER,
-        pass: env.SMTP_PASS,
-        fromEmail: env.SMTP_FROM || env.SMTP_USER,
-        fromName: storeName
-      },
-      { to: recipient, subject, html, attachments: [] }
-    );
-    return {
-      success: res.ok,
-      message: res.ok ? `Correo de prueba enviado exitosamente a ${recipient} usando el servidor global de la plataforma.` : res.error || "Error enviando correo con el servidor global."
-    };
-  }
-  return {
-    success: false,
-    message: "Configura tu servidor SMTP (ej. Gmail / Workspace / cPanel) o tu API Key de Resend para activar el despacho directo de correos."
-  };
-}
-var init_voucher_email_service = __esm({
-  "src/server/services/voucher-email.service.ts"() {
-    "use strict";
-    init_pool();
-    init_hacienda_native_repo();
-    init_tenant_almendro_repo();
-    init_env();
-  }
-});
-
-// src/server/services/hacienda-native.service.ts
-var hacienda_native_service_exports = {};
-__export(hacienda_native_service_exports, {
-  authenticateHaciendaIdp: () => authenticateHaciendaIdp,
-  emitCreditNoteForVoucher: () => emitCreditNoteForVoucher,
-  emitManualOrNativeVoucher: () => emitManualOrNativeVoucher,
-  inspectP12Certificate: () => inspectP12Certificate,
-  lookupHaciendaTaxpayerPublic: () => lookupHaciendaTaxpayerPublic,
-  sendVoucherWhatsAppNotification: () => sendVoucherWhatsAppNotification,
-  testBranchHaciendaConnection: () => testBranchHaciendaConnection,
-  testTenantHaciendaConnection: () => testTenantHaciendaConnection
-});
-async function inspectP12Certificate(p12Buffer, pin) {
-  if (!p12Buffer || p12Buffer.length === 0) {
-    return { valid: false, error: "Archivo de certificado vac\xEDo o no provisto" };
-  }
-  try {
-    const forge = await import("node-forge").then((m) => m.default || m).catch(() => null);
-    if (!forge) {
-      const expiresAt = new Date(Date.now() + 365 * 864e5);
-      return {
-        valid: true,
-        expiresAt,
-        issuedAt: /* @__PURE__ */ new Date(),
-        subject: "Certificado PKCS#12",
-        issuer: "Banco Central de Costa Rica (CA SINPE)",
-        serialNumber: "0001",
-        daysRemaining: 365,
-        isExpired: false
-      };
-    }
-    const p12DerString = forge.util.binary.raw.encode(new Uint8Array(p12Buffer));
-    const p12Asn1 = forge.asn1.fromDer(p12DerString);
-    const p12 = forge.pkcs12.pkcs12FromAsn1(p12Asn1, pin);
-    const OID_CERT_BAG = "1.2.840.113549.1.12.10.1.3";
-    const certBags = p12.getBags({ bagType: OID_CERT_BAG });
-    const certBagArray = certBags[OID_CERT_BAG];
-    if (!certBagArray || certBagArray.length === 0 || !certBagArray[0]?.cert) {
-      return { valid: false, error: "No se encontraron certificados v\xE1lidos en el archivo .p12" };
-    }
-    const cert = certBagArray[0].cert;
-    const notAfter = cert.validity.notAfter;
-    const notBefore = cert.validity.notBefore;
-    const commonNameAttr = cert.subject.getField("CN");
-    const commonName = commonNameAttr?.value || "Certificado Tributario Hacienda";
-    const issuerAttr = cert.issuer.getField("CN") || cert.issuer.getField("O");
-    const issuerName = issuerAttr?.value || "Banco Central de Costa Rica (CA SINPE)";
-    const daysRemaining = Math.ceil((notAfter.getTime() - Date.now()) / 864e5);
-    const isExpired = daysRemaining <= 0;
-    return {
-      valid: true,
-      expiresAt: notAfter,
-      issuedAt: notBefore,
-      subject: String(commonName),
-      issuer: String(issuerName),
-      serialNumber: String(cert.serialNumber || ""),
-      daysRemaining,
-      isExpired
-    };
-  } catch (error) {
-    console.warn("[HaciendaNativeService] Error al verificar .p12:", error.message);
-    const msg = error.message?.toLowerCase() || "";
-    if (msg.includes("mac") || msg.includes("password") || msg.includes("pkcs") || msg.includes("pin")) {
-      return { valid: false, error: "El PIN ingresado no coincide con el certificado .p12" };
-    }
-    return { valid: false, error: `No fue posible validar el certificado: ${error.message}` };
-  }
-}
-async function lookupHaciendaTaxpayerPublic(rawIdNumber) {
-  const cleanId = String(rawIdNumber || "").replace(/\D/g, "");
-  if (cleanId.length < 9 || cleanId.length > 12) {
-    return {
-      success: false,
-      error: "El n\xFAmero de identificaci\xF3n debe contener entre 9 y 12 d\xEDgitos num\xE9ricos.",
-      message: "El n\xFAmero de identificaci\xF3n debe contener entre 9 y 12 d\xEDgitos num\xE9ricos."
-    };
-  }
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 7e3);
-    const res = await fetch(`https://api.hacienda.go.cr/fe/ae?identificacion=${cleanId}`, {
-      method: "GET",
-      headers: {
-        "Accept": "application/json"
-      },
-      signal: controller.signal
-    });
-    clearTimeout(timeout);
-    if (!res.ok) {
-      return {
-        success: false,
-        error: `No se encontr\xF3 informaci\xF3n en el padr\xF3n de Hacienda para la identificaci\xF3n ${cleanId} (HTTP ${res.status})`,
-        message: `No se encontr\xF3 informaci\xF3n en el padr\xF3n de Hacienda para la identificaci\xF3n ${cleanId}`
-      };
-    }
-    const body = await res.json();
-    const name = String(body.nombre || "").trim();
-    if (!name) {
-      return {
-        success: false,
-        error: "El contribuyente no aparece registrado en el padr\xF3n de Hacienda.",
-        message: "El contribuyente no aparece registrado en el padr\xF3n de Hacienda."
-      };
-    }
-    let idType = "01";
-    const rawType = String(body.tipoIdentificacion || "").padStart(2, "0");
-    if (["01", "02", "03", "04"].includes(rawType)) {
-      idType = rawType;
-    } else if (cleanId.length === 10 && cleanId.startsWith("3")) {
-      idType = "02";
-    } else if (cleanId.length >= 11) {
-      idType = "03";
-    }
-    const regimeCode = Number(body.regimen?.codigo || 1);
-    const regimeDescription = String(body.regimen?.descripcion || "R\xE9gimen Tradicional");
-    const isSimplifiedRegime = regimeCode === 2 || regimeDescription.toLowerCase().includes("simplificad");
-    const rawActivities = Array.isArray(body.actividades) ? body.actividades : [];
-    const activities = rawActivities.map((a) => ({
-      code: String(a.codigo || "").trim(),
-      description: String(a.descripcion || "").trim(),
-      status: String(a.estado || "A").trim()
-    })).filter((a) => a.code);
-    const primaryActivityCode = activities[0]?.code || "";
-    const payloadData = {
-      name,
-      idType,
-      idNumber: cleanId,
-      regimeCode,
-      regimeDescription,
-      isSimplifiedRegime,
-      activities,
-      primaryActivityCode
-    };
-    return {
-      success: true,
-      taxpayerName: name,
-      taxpayerIdType: idType,
-      taxpayerIdNumber: cleanId,
-      regimeCode,
-      regimeDescription,
-      isSimplifiedRegime,
-      activities,
-      primaryActivityCode,
-      data: payloadData
-    };
-  } catch (err) {
-    const errMsg = err.name === "AbortError" ? "Tiempo de espera agotado consultando el padr\xF3n p\xFAblico de Hacienda (7s)." : `No fue posible conectar con el padr\xF3n de Hacienda: ${err.message}`;
-    return {
-      success: false,
-      error: errMsg,
-      message: errMsg
-    };
-  }
-}
-async function authenticateHaciendaIdp(environment, username, password) {
-  if (!username || !password) {
-    return { success: false, message: "Faltan credenciales ATV (usuario o contrase\xF1a del API de Hacienda)" };
-  }
-  const isProduction2 = environment === "production";
-  const idpUrl = isProduction2 ? "https://idp.comprobanteselectronicos.go.cr/auth/realms/rut/protocol/openid-connect/token" : "https://idp.comprobanteselectronicos.go.cr/auth/realms/rut-stag/protocol/openid-connect/token";
-  const clientId = isProduction2 ? "api-prod" : "api-stag";
-  const params = new URLSearchParams();
-  params.append("grant_type", "password");
-  params.append("client_id", clientId);
-  params.append("username", username.trim());
-  params.append("password", password.trim());
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 1e4);
-    const res = await fetch(idpUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded"
-      },
-      body: params.toString(),
-      signal: controller.signal
-    });
-    clearTimeout(timeout);
-    if (res.ok) {
-      const data = await res.json();
-      return {
-        success: true,
-        message: "\xA1Conexi\xF3n exitosa con el Ministerio de Hacienda (Token recibido)!",
-        accessToken: data.access_token,
-        expiresIn: data.expires_in
-      };
-    } else {
-      const errText = await res.text();
-      let detail = "Credenciales ATV rechazadas por Hacienda";
-      try {
-        const json = JSON.parse(errText);
-        if (json.error_description) detail = json.error_description;
-        else if (json.error) detail = json.error;
-      } catch (_) {
-      }
-      return {
-        success: false,
-        message: `Hacienda respondi\xF3 error ${res.status}: ${detail}`
-      };
-    }
-  } catch (error) {
-    if (error.name === "AbortError") {
-      return { success: false, message: "Tiempo de espera agotado al conectar con el servidor de Hacienda (10s)" };
-    }
-    return { success: false, message: `Error de red al conectar con Hacienda: ${error.message}` };
-  }
-}
-async function testTenantHaciendaConnection(tenantId) {
-  const secrets = await getHaciendaDecryptedSecrets(tenantId);
-  const config = await getHaciendaConfigByTenant(tenantId);
-  if (!secrets || !config) {
-    return {
-      success: false,
-      message: "No se ha configurado la facturaci\xF3n electr\xF3nica para este comercio"
-    };
-  }
-  let certValid = false;
-  let certExpiresAt;
-  if (secrets.p12Buffer && secrets.p12Pin) {
-    const certResult = await inspectP12Certificate(secrets.p12Buffer, secrets.p12Pin);
-    if (!certResult.valid) {
-      const msg = `Fallo en el certificado: ${certResult.error}`;
-      await updateConnectionTestResult(tenantId, false, msg);
-      return {
-        success: false,
-        message: msg,
-        details: { certValid: false, idpValid: false, environment: secrets.environment }
-      };
-    }
-    certValid = true;
-    certExpiresAt = certResult.expiresAt ? certResult.expiresAt.toISOString() : void 0;
-  }
-  if (!secrets.idpUsername || !secrets.idpPassword) {
-    const msg = "Faltan credenciales ATV (usuario o contrase\xF1a del API)";
-    await updateConnectionTestResult(tenantId, false, msg);
-    return {
-      success: false,
-      message: msg,
-      details: { certValid, idpValid: false, environment: secrets.environment }
-    };
-  }
-  const idpResult = await authenticateHaciendaIdp(
-    secrets.environment,
-    secrets.idpUsername,
-    secrets.idpPassword
-  );
-  const fullSuccess = idpResult.success && (secrets.p12Buffer ? certValid : true);
-  const statusMsg = fullSuccess ? `\u2705 Conexi\xF3n exitosa con Hacienda (${secrets.environment === "production" ? "Producci\xF3n" : "Sandbox / Pruebas"}). ${certExpiresAt ? `Certificado v\xE1lido hasta ${new Date(certExpiresAt).toLocaleDateString("es-CR")}.` : ""}` : idpResult.message;
-  await updateConnectionTestResult(tenantId, fullSuccess, statusMsg);
-  return {
-    success: fullSuccess,
-    message: statusMsg,
-    details: {
-      certValid,
-      certExpiresAt,
-      idpValid: idpResult.success,
-      environment: secrets.environment
-    }
-  };
-}
-async function testBranchHaciendaConnection(tenantId, haciendaBranchId) {
-  const branch = await getHaciendaBranchById(tenantId, haciendaBranchId);
-  if (!branch) {
-    return { success: false, message: "Sucursal de facturaci\xF3n no encontrada" };
-  }
-  if (!branch.useCustomCredentials) {
-    const mainRes = await testTenantHaciendaConnection(tenantId);
-    await updateBranchConnectionTestResult(tenantId, haciendaBranchId, mainRes.success, mainRes.message);
-    return mainRes;
-  }
-  const secrets = await getHaciendaBranchDecryptedSecrets(tenantId, haciendaBranchId);
-  if (!secrets) {
-    return { success: false, message: "No se encontraron credenciales para esta sucursal" };
-  }
-  let certValid = false;
-  let certExpiresAt;
-  if (secrets.p12Buffer && secrets.p12Pin) {
-    const certResult = await inspectP12Certificate(secrets.p12Buffer, secrets.p12Pin);
-    if (!certResult.valid) {
-      const msg = `Fallo en certificado de sucursal: ${certResult.error}`;
-      await updateBranchConnectionTestResult(tenantId, haciendaBranchId, false, msg);
-      return {
-        success: false,
-        message: msg,
-        details: { certValid: false, idpValid: false, environment: secrets.environment }
-      };
-    }
-    certValid = true;
-    certExpiresAt = certResult.expiresAt ? certResult.expiresAt.toISOString() : void 0;
-  }
-  if (!secrets.idpUsername || !secrets.idpPassword) {
-    const msg = "Faltan credenciales ATV propias de la sucursal";
-    await updateBranchConnectionTestResult(tenantId, haciendaBranchId, false, msg);
-    return {
-      success: false,
-      message: msg,
-      details: { certValid, idpValid: false, environment: secrets.environment }
-    };
-  }
-  const idpResult = await authenticateHaciendaIdp(
-    secrets.environment,
-    secrets.idpUsername,
-    secrets.idpPassword
-  );
-  const fullSuccess = idpResult.success && (secrets.p12Buffer ? certValid : true);
-  const statusMsg = fullSuccess ? `\u2705 Sucursal ${branch.branchCode} conectada con Hacienda (${secrets.environment === "production" ? "Producci\xF3n" : "Sandbox"}).` : idpResult.message;
-  await updateBranchConnectionTestResult(tenantId, haciendaBranchId, fullSuccess, statusMsg);
-  return {
-    success: fullSuccess,
-    message: statusMsg,
-    details: {
-      certValid,
-      certExpiresAt,
-      idpValid: idpResult.success,
-      environment: secrets.environment
-    }
-  };
-}
-async function emitManualOrNativeVoucher(tenantId, params) {
-  const usage = await getCycleUsage(tenantId);
-  if (usage.isBlocked) {
-    return {
-      success: false,
-      message: "Has alcanzado el l\xEDmite de comprobantes de tu plan y el margen de cortes\xEDa."
-    };
-  }
-  if (!params.items || !Array.isArray(params.items) || params.items.length === 0) {
-    return {
-      success: false,
-      message: "Debe incluir al menos una l\xEDnea de detalle en el comprobante."
-    };
-  }
-  const config = await getHaciendaConfigByTenant(tenantId);
-  const defaultCabys = config?.defaultCabysCode || "8311100000000";
-  if (config?.providerMode === "ALMENDRO_AUTO") {
-    const { AlmendroService: AlmendroService2 } = await Promise.resolve().then(() => (init_almendro_service(), almendro_service_exports));
-    let resolvedBranchCode = params.branchCode || config.branchCode || "001";
-    let resolvedPosCode = config.posCode || "00001";
-    let resolvedBranchId = params.branchId || null;
-    if (config.multiBranchEnabled && params.branchId) {
-      const b = await getHaciendaBranchById(tenantId, params.branchId);
-      if (b) {
-        resolvedBranchCode = b.branchCode;
-        resolvedPosCode = b.posCode;
-        resolvedBranchId = b.branchId || b.id;
-      }
-    }
-    const almRes = await AlmendroService2.emitVoucher(tenantId, {
-      docType: params.docType,
-      branchId: resolvedBranchId,
-      branchCode: resolvedBranchCode,
-      posCode: resolvedPosCode,
-      currency: params.currency || "CRC",
-      paymentMethod: params.paymentMethod || "01",
-      referenceKey: params.referenceKey,
-      receiver: params.receiver,
-      items: params.items.map((it) => ({
-        cabysCode: it.cabysCode || defaultCabys,
-        description: it.description,
-        quantity: Number(it.quantity) || 1,
-        unitPrice: Number(it.unitPrice) || 0,
-        taxRateCode: it.taxRateCode || (config.isSimplifiedRegime ? "10" : "08")
-      })),
-      orderId: params.orderId,
-      appointmentId: params.appointmentId,
-      courtBookingId: params.courtBookingId
-    });
-    if (almRes.success && almRes.numericKey) {
-      await incrementInvoiceUsage(tenantId);
-      const savedVoucher = await getElectronicVoucherByKeyOrId(almRes.numericKey);
-      if (config?.emailAutoSend !== false && (params.receiver?.email || params.orderId || params.appointmentId)) {
-        Promise.resolve().then(() => (init_voucher_email_service(), voucher_email_service_exports)).then(
-          ({ sendVoucherEmailNotification: sendVoucherEmailNotification2 }) => sendVoucherEmailNotification2({
-            tenantId,
-            voucherKeyOrId: almRes.numericKey,
-            overrideEmail: params.receiver?.email
-          })
-        ).catch(() => {
-        });
-      }
-      if (params.receiver?.phone) {
-        sendVoucherWhatsAppNotification({
-          tenantId,
-          customerName: params.receiver.name,
-          customerPhone: params.receiver.phone,
-          referenceLabel: savedVoucher?.consecutiveNumber || almRes.numericKey,
-          docType: params.docType,
-          numericKey: almRes.numericKey,
-          pdfUrl: almRes.pdfUrl
-        }).catch(() => {
-        });
-      }
-      return {
-        success: true,
-        voucher: savedVoucher,
-        numericKey: almRes.numericKey,
-        consecutiveNumber: savedVoucher?.consecutiveNumber || "",
-        pdfUrl: almRes.pdfUrl,
-        message: almRes.message
-      };
-    }
-    return {
-      success: false,
-      message: almRes.message
-    };
-  }
-  const consecData = await consumeNextConsecutive(tenantId, params.docType, {
-    branchId: params.branchId,
-    branchCode: params.branchCode
-  });
-  let subtotal = 0;
-  let taxAmount = 0;
-  const normalizedItems = params.items.map((item, idx) => {
-    const quantity = Math.max(1e-3, Number(item.quantity) || 1);
-    const unitPrice = Math.max(0, Number(item.unitPrice) || 0);
-    const lineSubtotal = quantity * unitPrice;
-    subtotal += lineSubtotal;
-    const taxRateCode = item.taxRateCode || (config?.isSimplifiedRegime ? "10" : "08");
-    let taxRate = 0.13;
-    if (taxRateCode === "04") taxRate = 0.04;
-    else if (taxRateCode === "02") taxRate = 0.02;
-    else if (taxRateCode === "01") taxRate = 0.01;
-    else if (taxRateCode === "10") taxRate = 0;
-    const lineTax = lineSubtotal * taxRate;
-    taxAmount += lineTax;
-    return {
-      lineNumber: idx + 1,
-      cabysCode: item.cabysCode || defaultCabys,
-      description: String(item.description || "Servicio / Producto").slice(0, 160),
-      quantity,
-      unitPrice,
-      taxRateCode,
-      taxRate: taxRate * 100,
-      lineSubtotal,
-      lineTax,
-      lineTotal: lineSubtotal + lineTax
-    };
-  });
-  const totalAmount = subtotal + taxAmount;
-  const pdfUrl = `/api/almendro/public/voucher-pdf/${consecData.numericKey}`;
-  const voucher = await saveElectronicVoucher(tenantId, {
-    orderId: params.orderId,
-    appointmentId: params.appointmentId,
-    courtBookingId: params.courtBookingId,
-    branchId: consecData.branchId,
-    branchCode: consecData.branchCode,
-    posCode: consecData.posCode,
-    referenceKey: params.referenceKey || null,
-    docType: params.docType,
-    consecutiveNumber: consecData.consecutiveNumber,
-    numericKey: consecData.numericKey,
-    receiverIdType: params.receiver?.idType || (params.receiver?.idNumber ? "01" : void 0),
-    receiverIdNumber: params.receiver?.idNumber ? params.receiver.idNumber.replace(/\D/g, "") : void 0,
-    receiverName: params.receiver?.name || "Cliente Contado",
-    receiverEmail: params.receiver?.email,
-    currency: params.currency || "CRC",
-    subtotal,
-    taxAmount,
-    totalAmount,
-    status: "accepted",
-    pdfUrl,
-    metadata: {
-      items: normalizedItems,
-      paymentMethod: params.paymentMethod || "01",
-      emittedVia: "BETICO_NATIVE",
-      referenceKey: params.referenceKey || null
-    }
-  });
-  await incrementInvoiceUsage(tenantId);
-  if (config?.emailAutoSend !== false && (params.receiver?.email || params.orderId || params.appointmentId)) {
-    try {
-      const { sendVoucherEmailNotification: sendVoucherEmailNotification2 } = await Promise.resolve().then(() => (init_voucher_email_service(), voucher_email_service_exports));
-      await sendVoucherEmailNotification2({
-        tenantId,
-        voucherKeyOrId: consecData.numericKey,
-        overrideEmail: params.receiver?.email
-      });
-    } catch (emailErr) {
-      console.warn("[HaciendaNative] Aviso enviando correo de comprobante:", emailErr?.message || emailErr);
-    }
-  }
-  if (params.receiver?.phone) {
-    sendVoucherWhatsAppNotification({
-      tenantId,
-      customerName: params.receiver.name,
-      customerPhone: params.receiver.phone,
-      referenceLabel: `Comprobante #${consecData.consecutiveNumber}`,
-      docType: params.docType,
-      numericKey: consecData.numericKey,
-      pdfUrl
-    }).catch(() => {
-    });
-  }
-  const refreshedVoucher = await getElectronicVoucherByKeyOrId(consecData.numericKey).catch(() => voucher);
-  return {
-    success: true,
-    voucher: refreshedVoucher || voucher,
-    numericKey: consecData.numericKey,
-    consecutiveNumber: consecData.consecutiveNumber,
-    pdfUrl,
-    message: "Comprobante electr\xF3nico emitido exitosamente"
-  };
-}
-async function emitCreditNoteForVoucher(tenantId, voucherId, reason) {
-  const origRes = await query(
-    `SELECT * FROM electronic_vouchers WHERE id = $1 AND tenant_id = $2`,
-    [voucherId, tenantId]
-  );
-  if (origRes.rows.length === 0) {
-    return { success: false, message: "Comprobante original no encontrado" };
-  }
-  const orig = origRes.rows[0];
-  if (orig.status === "cancelled") {
-    return { success: false, message: "Este comprobante ya fue anulado previamente con una Nota de Cr\xE9dito" };
-  }
-  const origMeta = typeof orig.metadata === "string" ? (() => {
-    try {
-      return JSON.parse(orig.metadata);
-    } catch (_) {
-      return {};
-    }
-  })() : orig.metadata || {};
-  const defaultItems = [
-    {
-      cabysCode: "8311100000000",
-      description: `${reason ? `${reason} - ` : ""}Anulaci\xF3n de comprobante ${orig.consecutive_number || orig.numeric_key}`,
-      quantity: 1,
-      unitPrice: Number(orig.subtotal || orig.total_amount || 0),
-      taxRateCode: Number(orig.tax_amount || 0) > 0 ? "08" : "10"
-    }
-  ];
-  const items = Array.isArray(origMeta.items) && origMeta.items.length > 0 ? origMeta.items.map((it) => ({
-    cabysCode: it.cabysCode || it.cabys_code || "8311100000000",
-    description: String(it.description || it.detail || "Anulaci\xF3n de l\xEDnea"),
-    quantity: Number(it.quantity) || 1,
-    unitPrice: Number(it.unitPrice ?? it.unit_price) || 0,
-    taxRateCode: it.taxRateCode || "08"
-  })) : defaultItems;
-  const res = await emitManualOrNativeVoucher(tenantId, {
-    docType: "03",
-    branchId: orig.branch_id || null,
-    branchCode: orig.branch_code || "001",
-    currency: orig.currency || "CRC",
-    paymentMethod: origMeta.paymentMethod || "01",
-    referenceKey: orig.numeric_key,
-    receiver: {
-      idType: orig.receiver_id_type || void 0,
-      idNumber: orig.receiver_id_number || void 0,
-      name: orig.receiver_name || void 0,
-      email: orig.receiver_email || void 0
-    },
-    items
-  });
-  if (!res.success) {
-    return {
-      success: false,
-      message: res.message || "No fue posible emitir la Nota de Cr\xE9dito"
-    };
-  }
-  await query(
-    `UPDATE electronic_vouchers
-     SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
-     WHERE id = $1 AND tenant_id = $2`,
-    [voucherId, tenantId]
-  );
-  return {
-    success: true,
-    creditNote: res.voucher,
-    numericKey: res.numericKey,
-    consecutiveNumber: res.consecutiveNumber,
-    pdfUrl: res.pdfUrl,
-    message: "Nota de Cr\xE9dito (03) emitida y comprobante anulado con \xE9xito"
-  };
-}
-async function sendVoucherWhatsAppNotification({
-  tenantId,
-  customerName,
-  customerPhone,
-  referenceLabel,
-  docType,
-  numericKey,
-  pdfUrl
-}) {
-  try {
-    if (!customerPhone) return false;
-    const { getTenantById: getTenantById2 } = await Promise.resolve().then(() => (init_tenant_repo(), tenant_repo_exports));
-    const { getStoreSettings: getStoreSettings2 } = await Promise.resolve().then(() => (init_store_settings_repo(), store_settings_repo_exports));
-    const { sendMessage: sendMessage2 } = await Promise.resolve().then(() => (init_evolution(), evolution_exports));
-    const tenant = await getTenantById2(tenantId);
-    const store = await getStoreSettings2(tenantId);
-    const storeName = store?.storeName || tenant?.name || "nuestro negocio";
-    const instanceName = tenant?.evolutionInstance;
-    const clean = customerPhone.replace(/\D/g, "");
-    const finalPhone = clean.length === 8 ? `506${clean}` : clean;
-    if (!instanceName || finalPhone.length < 8) {
-      return false;
-    }
-    const docName = docType === "01" ? "Factura Electr\xF3nica" : docType === "03" ? "Nota de Cr\xE9dito Electr\xF3nica" : "Tiquete Electr\xF3nico";
-    const safePdfUrl = pdfUrl && pdfUrl.startsWith("http") ? pdfUrl : `${process.env.APP_URL || "https://app.listochat.com"}/api/almendro/public/voucher-pdf/${numericKey}`;
-    const msg = `\u{1F9FE} *\xA1Tu ${docName} est\xE1 lista!*
-
-Hola *${customerName || "Estimado cliente"}*, te compartimos el comprobante electr\xF3nico correspondiente a tu *${referenceLabel}* en *${storeName}*:
-
-\u{1F517} *Descargar PDF:*
-${safePdfUrl}
-
-\u{1F511} *Clave Num\xE9rica de Hacienda:*
-\`${numericKey}\`
-
-\xA1Muchas gracias por tu preferencia y confianza! \u2B50`;
-    await sendMessage2(instanceName, finalPhone, msg);
-    await query(`
-      INSERT INTO notifications_log (id, tenant_id, recipient, message, trigger_type, status)
-      VALUES ($1, $2, $3, $4, 'electronic_invoice_sent', 'sent')
-    `, [
-      `notif_${Date.now()}`,
-      tenantId,
-      finalPhone,
-      `${docName} enviada a ${customerName || finalPhone}`
-    ]);
-    return true;
-  } catch (err) {
-    console.warn("[VoucherNotification] Error enviando WhatsApp con factura:", err.message);
-    return false;
-  }
-}
-var init_hacienda_native_service = __esm({
-  "src/server/services/hacienda-native.service.ts"() {
-    "use strict";
-    init_hacienda_native_repo();
-    init_tenant_almendro_repo();
-    init_pool();
-  }
-});
-
 // src/server/services/almendro.service.ts
 var almendro_service_exports = {};
 __export(almendro_service_exports, {
@@ -6931,6 +6306,1394 @@ ${xrefOffset}
       }
     };
     almendro_service_default = AlmendroService;
+  }
+});
+
+// src/server/services/hacienda-native.service.ts
+var hacienda_native_service_exports = {};
+__export(hacienda_native_service_exports, {
+  authenticateHaciendaIdp: () => authenticateHaciendaIdp,
+  emitCreditNoteForVoucher: () => emitCreditNoteForVoucher,
+  emitManualOrNativeVoucher: () => emitManualOrNativeVoucher,
+  emitPlatformSubscriptionInvoiceForTenant: () => emitPlatformSubscriptionInvoiceForTenant,
+  inspectP12Certificate: () => inspectP12Certificate,
+  lookupHaciendaTaxpayerPublic: () => lookupHaciendaTaxpayerPublic,
+  sendVoucherWhatsAppNotification: () => sendVoucherWhatsAppNotification,
+  testBranchHaciendaConnection: () => testBranchHaciendaConnection,
+  testTenantHaciendaConnection: () => testTenantHaciendaConnection
+});
+async function inspectP12Certificate(p12Buffer, pin) {
+  if (!p12Buffer || p12Buffer.length === 0) {
+    return { valid: false, error: "Archivo de certificado vac\xEDo o no provisto" };
+  }
+  try {
+    const forge = await import("node-forge").then((m) => m.default || m).catch(() => null);
+    if (!forge) {
+      const expiresAt = new Date(Date.now() + 365 * 864e5);
+      return {
+        valid: true,
+        expiresAt,
+        issuedAt: /* @__PURE__ */ new Date(),
+        subject: "Certificado PKCS#12",
+        issuer: "Banco Central de Costa Rica (CA SINPE)",
+        serialNumber: "0001",
+        daysRemaining: 365,
+        isExpired: false
+      };
+    }
+    const p12DerString = forge.util.binary.raw.encode(new Uint8Array(p12Buffer));
+    const p12Asn1 = forge.asn1.fromDer(p12DerString);
+    const p12 = forge.pkcs12.pkcs12FromAsn1(p12Asn1, pin);
+    const OID_CERT_BAG = "1.2.840.113549.1.12.10.1.3";
+    const certBags = p12.getBags({ bagType: OID_CERT_BAG });
+    const certBagArray = certBags[OID_CERT_BAG];
+    if (!certBagArray || certBagArray.length === 0 || !certBagArray[0]?.cert) {
+      return { valid: false, error: "No se encontraron certificados v\xE1lidos en el archivo .p12" };
+    }
+    const cert = certBagArray[0].cert;
+    const notAfter = cert.validity.notAfter;
+    const notBefore = cert.validity.notBefore;
+    const commonNameAttr = cert.subject.getField("CN");
+    const commonName = commonNameAttr?.value || "Certificado Tributario Hacienda";
+    const issuerAttr = cert.issuer.getField("CN") || cert.issuer.getField("O");
+    const issuerName = issuerAttr?.value || "Banco Central de Costa Rica (CA SINPE)";
+    const daysRemaining = Math.ceil((notAfter.getTime() - Date.now()) / 864e5);
+    const isExpired = daysRemaining <= 0;
+    return {
+      valid: true,
+      expiresAt: notAfter,
+      issuedAt: notBefore,
+      subject: String(commonName),
+      issuer: String(issuerName),
+      serialNumber: String(cert.serialNumber || ""),
+      daysRemaining,
+      isExpired
+    };
+  } catch (error) {
+    console.warn("[HaciendaNativeService] Error al verificar .p12:", error.message);
+    const msg = error.message?.toLowerCase() || "";
+    if (msg.includes("mac") || msg.includes("password") || msg.includes("pkcs") || msg.includes("pin")) {
+      return { valid: false, error: "El PIN ingresado no coincide con el certificado .p12" };
+    }
+    return { valid: false, error: `No fue posible validar el certificado: ${error.message}` };
+  }
+}
+async function lookupHaciendaTaxpayerPublic(rawIdNumber) {
+  const cleanId = String(rawIdNumber || "").replace(/\D/g, "");
+  if (cleanId.length < 9 || cleanId.length > 12) {
+    return {
+      success: false,
+      error: "El n\xFAmero de identificaci\xF3n debe contener entre 9 y 12 d\xEDgitos num\xE9ricos.",
+      message: "El n\xFAmero de identificaci\xF3n debe contener entre 9 y 12 d\xEDgitos num\xE9ricos."
+    };
+  }
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 7e3);
+    const res = await fetch(`https://api.hacienda.go.cr/fe/ae?identificacion=${cleanId}`, {
+      method: "GET",
+      headers: {
+        "Accept": "application/json"
+      },
+      signal: controller.signal
+    });
+    clearTimeout(timeout);
+    if (!res.ok) {
+      return {
+        success: false,
+        error: `No se encontr\xF3 informaci\xF3n en el padr\xF3n de Hacienda para la identificaci\xF3n ${cleanId} (HTTP ${res.status})`,
+        message: `No se encontr\xF3 informaci\xF3n en el padr\xF3n de Hacienda para la identificaci\xF3n ${cleanId}`
+      };
+    }
+    const body = await res.json();
+    const name = String(body.nombre || "").trim();
+    if (!name) {
+      return {
+        success: false,
+        error: "El contribuyente no aparece registrado en el padr\xF3n de Hacienda.",
+        message: "El contribuyente no aparece registrado en el padr\xF3n de Hacienda."
+      };
+    }
+    let idType = "01";
+    const rawType = String(body.tipoIdentificacion || "").padStart(2, "0");
+    if (["01", "02", "03", "04"].includes(rawType)) {
+      idType = rawType;
+    } else if (cleanId.length === 10 && cleanId.startsWith("3")) {
+      idType = "02";
+    } else if (cleanId.length >= 11) {
+      idType = "03";
+    }
+    const regimeCode = Number(body.regimen?.codigo || 1);
+    const regimeDescription = String(body.regimen?.descripcion || "R\xE9gimen Tradicional");
+    const isSimplifiedRegime = regimeCode === 2 || regimeDescription.toLowerCase().includes("simplificad");
+    const rawActivities = Array.isArray(body.actividades) ? body.actividades : [];
+    const activities = rawActivities.map((a) => ({
+      code: String(a.codigo || "").trim(),
+      description: String(a.descripcion || "").trim(),
+      status: String(a.estado || "A").trim()
+    })).filter((a) => a.code);
+    const primaryActivityCode = activities[0]?.code || "";
+    const payloadData = {
+      name,
+      idType,
+      idNumber: cleanId,
+      regimeCode,
+      regimeDescription,
+      isSimplifiedRegime,
+      activities,
+      primaryActivityCode
+    };
+    return {
+      success: true,
+      taxpayerName: name,
+      taxpayerIdType: idType,
+      taxpayerIdNumber: cleanId,
+      regimeCode,
+      regimeDescription,
+      isSimplifiedRegime,
+      activities,
+      primaryActivityCode,
+      data: payloadData
+    };
+  } catch (err) {
+    const errMsg = err.name === "AbortError" ? "Tiempo de espera agotado consultando el padr\xF3n p\xFAblico de Hacienda (7s)." : `No fue posible conectar con el padr\xF3n de Hacienda: ${err.message}`;
+    return {
+      success: false,
+      error: errMsg,
+      message: errMsg
+    };
+  }
+}
+async function authenticateHaciendaIdp(environment, username, password) {
+  if (!username || !password) {
+    return { success: false, message: "Faltan credenciales ATV (usuario o contrase\xF1a del API de Hacienda)" };
+  }
+  const isProduction2 = environment === "production";
+  const idpUrl = isProduction2 ? "https://idp.comprobanteselectronicos.go.cr/auth/realms/rut/protocol/openid-connect/token" : "https://idp.comprobanteselectronicos.go.cr/auth/realms/rut-stag/protocol/openid-connect/token";
+  const clientId = isProduction2 ? "api-prod" : "api-stag";
+  const params = new URLSearchParams();
+  params.append("grant_type", "password");
+  params.append("client_id", clientId);
+  params.append("username", username.trim());
+  params.append("password", password.trim());
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 1e4);
+    const res = await fetch(idpUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: params.toString(),
+      signal: controller.signal
+    });
+    clearTimeout(timeout);
+    if (res.ok) {
+      const data = await res.json();
+      return {
+        success: true,
+        message: "\xA1Conexi\xF3n exitosa con el Ministerio de Hacienda (Token recibido)!",
+        accessToken: data.access_token,
+        expiresIn: data.expires_in
+      };
+    } else {
+      const errText = await res.text();
+      let detail = "Credenciales ATV rechazadas por Hacienda";
+      try {
+        const json = JSON.parse(errText);
+        if (json.error_description) detail = json.error_description;
+        else if (json.error) detail = json.error;
+      } catch (_) {
+      }
+      return {
+        success: false,
+        message: `Hacienda respondi\xF3 error ${res.status}: ${detail}`
+      };
+    }
+  } catch (error) {
+    if (error.name === "AbortError") {
+      return { success: false, message: "Tiempo de espera agotado al conectar con el servidor de Hacienda (10s)" };
+    }
+    return { success: false, message: `Error de red al conectar con Hacienda: ${error.message}` };
+  }
+}
+async function testTenantHaciendaConnection(tenantId) {
+  const secrets = await getHaciendaDecryptedSecrets(tenantId);
+  const config = await getHaciendaConfigByTenant(tenantId);
+  if (!secrets || !config) {
+    return {
+      success: false,
+      message: "No se ha configurado la facturaci\xF3n electr\xF3nica para este comercio"
+    };
+  }
+  let certValid = false;
+  let certExpiresAt;
+  if (secrets.p12Buffer && secrets.p12Pin) {
+    const certResult = await inspectP12Certificate(secrets.p12Buffer, secrets.p12Pin);
+    if (!certResult.valid) {
+      const msg = `Fallo en el certificado: ${certResult.error}`;
+      await updateConnectionTestResult(tenantId, false, msg);
+      return {
+        success: false,
+        message: msg,
+        details: { certValid: false, idpValid: false, environment: secrets.environment }
+      };
+    }
+    certValid = true;
+    certExpiresAt = certResult.expiresAt ? certResult.expiresAt.toISOString() : void 0;
+  }
+  if (!secrets.idpUsername || !secrets.idpPassword) {
+    const msg = "Faltan credenciales ATV (usuario o contrase\xF1a del API)";
+    await updateConnectionTestResult(tenantId, false, msg);
+    return {
+      success: false,
+      message: msg,
+      details: { certValid, idpValid: false, environment: secrets.environment }
+    };
+  }
+  const idpResult = await authenticateHaciendaIdp(
+    secrets.environment,
+    secrets.idpUsername,
+    secrets.idpPassword
+  );
+  const fullSuccess = idpResult.success && (secrets.p12Buffer ? certValid : true);
+  const statusMsg = fullSuccess ? `\u2705 Conexi\xF3n exitosa con Hacienda (${secrets.environment === "production" ? "Producci\xF3n" : "Sandbox / Pruebas"}). ${certExpiresAt ? `Certificado v\xE1lido hasta ${new Date(certExpiresAt).toLocaleDateString("es-CR")}.` : ""}` : idpResult.message;
+  await updateConnectionTestResult(tenantId, fullSuccess, statusMsg);
+  return {
+    success: fullSuccess,
+    message: statusMsg,
+    details: {
+      certValid,
+      certExpiresAt,
+      idpValid: idpResult.success,
+      environment: secrets.environment
+    }
+  };
+}
+async function testBranchHaciendaConnection(tenantId, haciendaBranchId) {
+  const branch = await getHaciendaBranchById(tenantId, haciendaBranchId);
+  if (!branch) {
+    return { success: false, message: "Sucursal de facturaci\xF3n no encontrada" };
+  }
+  if (!branch.useCustomCredentials) {
+    const mainRes = await testTenantHaciendaConnection(tenantId);
+    await updateBranchConnectionTestResult(tenantId, haciendaBranchId, mainRes.success, mainRes.message);
+    return mainRes;
+  }
+  const secrets = await getHaciendaBranchDecryptedSecrets(tenantId, haciendaBranchId);
+  if (!secrets) {
+    return { success: false, message: "No se encontraron credenciales para esta sucursal" };
+  }
+  let certValid = false;
+  let certExpiresAt;
+  if (secrets.p12Buffer && secrets.p12Pin) {
+    const certResult = await inspectP12Certificate(secrets.p12Buffer, secrets.p12Pin);
+    if (!certResult.valid) {
+      const msg = `Fallo en certificado de sucursal: ${certResult.error}`;
+      await updateBranchConnectionTestResult(tenantId, haciendaBranchId, false, msg);
+      return {
+        success: false,
+        message: msg,
+        details: { certValid: false, idpValid: false, environment: secrets.environment }
+      };
+    }
+    certValid = true;
+    certExpiresAt = certResult.expiresAt ? certResult.expiresAt.toISOString() : void 0;
+  }
+  if (!secrets.idpUsername || !secrets.idpPassword) {
+    const msg = "Faltan credenciales ATV propias de la sucursal";
+    await updateBranchConnectionTestResult(tenantId, haciendaBranchId, false, msg);
+    return {
+      success: false,
+      message: msg,
+      details: { certValid, idpValid: false, environment: secrets.environment }
+    };
+  }
+  const idpResult = await authenticateHaciendaIdp(
+    secrets.environment,
+    secrets.idpUsername,
+    secrets.idpPassword
+  );
+  const fullSuccess = idpResult.success && (secrets.p12Buffer ? certValid : true);
+  const statusMsg = fullSuccess ? `\u2705 Sucursal ${branch.branchCode} conectada con Hacienda (${secrets.environment === "production" ? "Producci\xF3n" : "Sandbox"}).` : idpResult.message;
+  await updateBranchConnectionTestResult(tenantId, haciendaBranchId, fullSuccess, statusMsg);
+  return {
+    success: fullSuccess,
+    message: statusMsg,
+    details: {
+      certValid,
+      certExpiresAt,
+      idpValid: idpResult.success,
+      environment: secrets.environment
+    }
+  };
+}
+async function emitManualOrNativeVoucher(tenantId, params) {
+  const usage = await getCycleUsage(tenantId);
+  if (usage.isBlocked) {
+    return {
+      success: false,
+      message: "Has alcanzado el l\xEDmite de comprobantes de tu plan y el margen de cortes\xEDa."
+    };
+  }
+  if (!params.items || !Array.isArray(params.items) || params.items.length === 0) {
+    return {
+      success: false,
+      message: "Debe incluir al menos una l\xEDnea de detalle en el comprobante."
+    };
+  }
+  const config = await getHaciendaConfigByTenant(tenantId);
+  const defaultCabys = config?.defaultCabysCode || "8311100000000";
+  if (config?.providerMode === "ALMENDRO_AUTO") {
+    const { AlmendroService: AlmendroService2 } = await Promise.resolve().then(() => (init_almendro_service(), almendro_service_exports));
+    let resolvedBranchCode = params.branchCode || config.branchCode || "001";
+    let resolvedPosCode = config.posCode || "00001";
+    let resolvedBranchId = params.branchId || null;
+    if (config.multiBranchEnabled && params.branchId) {
+      const b = await getHaciendaBranchById(tenantId, params.branchId);
+      if (b) {
+        resolvedBranchCode = b.branchCode;
+        resolvedPosCode = b.posCode;
+        resolvedBranchId = b.branchId || b.id;
+      }
+    }
+    const almRes = await AlmendroService2.emitVoucher(tenantId, {
+      docType: params.docType,
+      branchId: resolvedBranchId,
+      branchCode: resolvedBranchCode,
+      posCode: resolvedPosCode,
+      currency: params.currency || "CRC",
+      paymentMethod: params.paymentMethod || "01",
+      referenceKey: params.referenceKey,
+      receiver: params.receiver,
+      items: params.items.map((it) => ({
+        cabysCode: it.cabysCode || defaultCabys,
+        description: it.description,
+        quantity: Number(it.quantity) || 1,
+        unitPrice: Number(it.unitPrice) || 0,
+        taxRateCode: it.taxRateCode || (config.isSimplifiedRegime ? "10" : "08")
+      })),
+      orderId: params.orderId,
+      appointmentId: params.appointmentId,
+      courtBookingId: params.courtBookingId,
+      subscriptionChargeId: params.subscriptionChargeId
+    });
+    if (almRes.success && almRes.numericKey) {
+      await incrementInvoiceUsage(tenantId);
+      const savedVoucher = await getElectronicVoucherByKeyOrId(almRes.numericKey);
+      if (config?.emailAutoSend !== false && (params.receiver?.email || params.orderId || params.appointmentId || params.subscriptionChargeId)) {
+        Promise.resolve().then(() => (init_voucher_email_service(), voucher_email_service_exports)).then(
+          ({ sendVoucherEmailNotification: sendVoucherEmailNotification2 }) => sendVoucherEmailNotification2({
+            tenantId,
+            voucherKeyOrId: almRes.numericKey,
+            overrideEmail: params.receiver?.email
+          })
+        ).catch(() => {
+        });
+      }
+      if (params.receiver?.phone) {
+        sendVoucherWhatsAppNotification({
+          tenantId,
+          customerName: params.receiver.name,
+          customerPhone: params.receiver.phone,
+          referenceLabel: savedVoucher?.consecutiveNumber || almRes.numericKey,
+          docType: params.docType,
+          numericKey: almRes.numericKey,
+          pdfUrl: almRes.pdfUrl
+        }).catch(() => {
+        });
+      }
+      return {
+        success: true,
+        voucher: savedVoucher,
+        numericKey: almRes.numericKey,
+        consecutiveNumber: savedVoucher?.consecutiveNumber || "",
+        pdfUrl: almRes.pdfUrl,
+        message: almRes.message
+      };
+    }
+    return {
+      success: false,
+      message: almRes.message
+    };
+  }
+  const consecData = await consumeNextConsecutive(tenantId, params.docType, {
+    branchId: params.branchId,
+    branchCode: params.branchCode
+  });
+  let subtotal = 0;
+  let taxAmount = 0;
+  const normalizedItems = params.items.map((item, idx) => {
+    const quantity = Math.max(1e-3, Number(item.quantity) || 1);
+    const unitPrice = Math.max(0, Number(item.unitPrice) || 0);
+    const lineSubtotal = quantity * unitPrice;
+    subtotal += lineSubtotal;
+    const taxRateCode = item.taxRateCode || (config?.isSimplifiedRegime ? "10" : "08");
+    let taxRate = 0.13;
+    if (taxRateCode === "04") taxRate = 0.04;
+    else if (taxRateCode === "02") taxRate = 0.02;
+    else if (taxRateCode === "01") taxRate = 0.01;
+    else if (taxRateCode === "10") taxRate = 0;
+    const lineTax = lineSubtotal * taxRate;
+    taxAmount += lineTax;
+    return {
+      lineNumber: idx + 1,
+      cabysCode: item.cabysCode || defaultCabys,
+      description: String(item.description || "Servicio / Producto").slice(0, 160),
+      quantity,
+      unitPrice,
+      taxRateCode,
+      taxRate: taxRate * 100,
+      lineSubtotal,
+      lineTax,
+      lineTotal: lineSubtotal + lineTax
+    };
+  });
+  const totalAmount = subtotal + taxAmount;
+  const pdfUrl = `/api/almendro/public/voucher-pdf/${consecData.numericKey}`;
+  const voucher = await saveElectronicVoucher(tenantId, {
+    orderId: params.orderId,
+    appointmentId: params.appointmentId,
+    courtBookingId: params.courtBookingId,
+    subscriptionChargeId: params.subscriptionChargeId,
+    branchId: consecData.branchId,
+    branchCode: consecData.branchCode,
+    posCode: consecData.posCode,
+    referenceKey: params.referenceKey || null,
+    docType: params.docType,
+    consecutiveNumber: consecData.consecutiveNumber,
+    numericKey: consecData.numericKey,
+    receiverIdType: params.receiver?.idType || (params.receiver?.idNumber ? "01" : void 0),
+    receiverIdNumber: params.receiver?.idNumber ? params.receiver.idNumber.replace(/\D/g, "") : void 0,
+    receiverName: params.receiver?.name || "Cliente Contado",
+    receiverEmail: params.receiver?.email,
+    currency: params.currency || "CRC",
+    subtotal,
+    taxAmount,
+    totalAmount,
+    status: "accepted",
+    pdfUrl,
+    metadata: {
+      items: normalizedItems,
+      paymentMethod: params.paymentMethod || "01",
+      emittedVia: "BETICO_NATIVE",
+      referenceKey: params.referenceKey || null
+    }
+  });
+  await incrementInvoiceUsage(tenantId);
+  if (config?.emailAutoSend !== false && (params.receiver?.email || params.orderId || params.appointmentId || params.subscriptionChargeId)) {
+    try {
+      const { sendVoucherEmailNotification: sendVoucherEmailNotification2 } = await Promise.resolve().then(() => (init_voucher_email_service(), voucher_email_service_exports));
+      await sendVoucherEmailNotification2({
+        tenantId,
+        voucherKeyOrId: consecData.numericKey,
+        overrideEmail: params.receiver?.email
+      });
+    } catch (emailErr) {
+      console.warn("[HaciendaNative] Aviso enviando correo de comprobante:", emailErr?.message || emailErr);
+    }
+  }
+  if (params.receiver?.phone) {
+    sendVoucherWhatsAppNotification({
+      tenantId,
+      customerName: params.receiver.name,
+      customerPhone: params.receiver.phone,
+      referenceLabel: `Comprobante #${consecData.consecutiveNumber}`,
+      docType: params.docType,
+      numericKey: consecData.numericKey,
+      pdfUrl
+    }).catch(() => {
+    });
+  }
+  const refreshedVoucher = await getElectronicVoucherByKeyOrId(consecData.numericKey).catch(() => voucher);
+  return {
+    success: true,
+    voucher: refreshedVoucher || voucher,
+    numericKey: consecData.numericKey,
+    consecutiveNumber: consecData.consecutiveNumber,
+    pdfUrl,
+    message: "Comprobante electr\xF3nico emitido exitosamente"
+  };
+}
+async function emitPlatformSubscriptionInvoiceForTenant(targetTenantId, options) {
+  const { getTenantById: getTenantById2 } = await Promise.resolve().then(() => (init_tenant_repo(), tenant_repo_exports));
+  const { getAdminUserByTenant: getAdminUserByTenant2 } = await Promise.resolve().then(() => (init_users_repo(), users_repo_exports));
+  const { getOrCreateSuperadminTenantId: getOrCreateSuperadminTenantId2 } = await Promise.resolve().then(() => (init_tilopay_subscription_service(), tilopay_subscription_service_exports));
+  const { getTenantAlmendroConfigRaw: getTenantAlmendroConfigRaw2 } = await Promise.resolve().then(() => (init_tenant_almendro_repo(), tenant_almendro_repo_exports));
+  const targetTenant = await getTenantById2(targetTenantId);
+  if (!targetTenant) {
+    return { success: false, message: "Inquilino no encontrado" };
+  }
+  const requestedByClient = Boolean(targetTenant.requiresSubscriptionInvoice);
+  if (!requestedByClient && !options?.forceEmit) {
+    return {
+      success: false,
+      skipped: true,
+      message: "El cliente no tiene activa la opci\xF3n de solicitud de factura electr\xF3nica."
+    };
+  }
+  const superadminTenantId = await getOrCreateSuperadminTenantId2();
+  const haciendaCfg = await getHaciendaConfigByTenant(superadminTenantId);
+  const almendroCfg = await getTenantAlmendroConfigRaw2(superadminTenantId).catch(() => null);
+  if (haciendaCfg?.providerMode === "DISABLED") {
+    return {
+      success: false,
+      skipped: true,
+      message: "La facturaci\xF3n electr\xF3nica del SuperAdmin est\xE1 deshabilitada."
+    };
+  }
+  const adminUser = await getAdminUserByTenant2(targetTenantId).catch(() => null);
+  const idNumber = String(targetTenant.billingIdNumber || "").replace(/\D/g, "");
+  const idType = targetTenant.billingIdType || (idNumber.length === 10 && idNumber.startsWith("3") ? "02" : "01");
+  const name = targetTenant.billingLegalName || targetTenant.name || "Cliente Betico";
+  const email = targetTenant.billingEmail || adminUser?.email || "";
+  const phone = targetTenant.whatsappNumber || "";
+  const docType = idNumber.length >= 9 ? "01" : "04";
+  const unitPrice = options?.amount !== void 0 ? Number(options.amount) : Number(targetTenant.customMonthlyPrice || 35e3);
+  const currency = options?.currency || targetTenant.billingCurrency || "CRC";
+  const planLabel = String(targetTenant.plan || "pro").toUpperCase();
+  const periodStr = options?.periodLabel || (/* @__PURE__ */ new Date()).toLocaleDateString("es-CR", { month: "long", year: "numeric" });
+  const defaultCabys = haciendaCfg?.defaultCabysCode || almendroCfg?.economicActivityCode || "8314100000000";
+  const emitRes = await emitManualOrNativeVoucher(superadminTenantId, {
+    docType,
+    currency,
+    paymentMethod: options?.paymentMethod || "04",
+    subscriptionChargeId: options?.subscriptionChargeId,
+    receiver: {
+      idType: idNumber ? idType : void 0,
+      idNumber: idNumber || void 0,
+      name,
+      email: email || void 0,
+      phone: phone || void 0
+    },
+    items: [
+      {
+        cabysCode: defaultCabys,
+        description: `Suscripci\xF3n Plataforma Betico SaaS - Plan ${planLabel} (${targetTenant.name} - ${periodStr})`,
+        quantity: 1,
+        unitPrice,
+        taxRateCode: haciendaCfg?.isSimplifiedRegime ? "10" : "08"
+      }
+    ]
+  });
+  return emitRes;
+}
+async function emitCreditNoteForVoucher(tenantId, voucherId, reason) {
+  const origRes = await query(
+    `SELECT * FROM electronic_vouchers WHERE id = $1 AND tenant_id = $2`,
+    [voucherId, tenantId]
+  );
+  if (origRes.rows.length === 0) {
+    return { success: false, message: "Comprobante original no encontrado" };
+  }
+  const orig = origRes.rows[0];
+  if (orig.status === "cancelled") {
+    return { success: false, message: "Este comprobante ya fue anulado previamente con una Nota de Cr\xE9dito" };
+  }
+  const origMeta = typeof orig.metadata === "string" ? (() => {
+    try {
+      return JSON.parse(orig.metadata);
+    } catch (_) {
+      return {};
+    }
+  })() : orig.metadata || {};
+  const defaultItems = [
+    {
+      cabysCode: "8311100000000",
+      description: `${reason ? `${reason} - ` : ""}Anulaci\xF3n de comprobante ${orig.consecutive_number || orig.numeric_key}`,
+      quantity: 1,
+      unitPrice: Number(orig.subtotal || orig.total_amount || 0),
+      taxRateCode: Number(orig.tax_amount || 0) > 0 ? "08" : "10"
+    }
+  ];
+  const items = Array.isArray(origMeta.items) && origMeta.items.length > 0 ? origMeta.items.map((it) => ({
+    cabysCode: it.cabysCode || it.cabys_code || "8311100000000",
+    description: String(it.description || it.detail || "Anulaci\xF3n de l\xEDnea"),
+    quantity: Number(it.quantity) || 1,
+    unitPrice: Number(it.unitPrice ?? it.unit_price) || 0,
+    taxRateCode: it.taxRateCode || "08"
+  })) : defaultItems;
+  const res = await emitManualOrNativeVoucher(tenantId, {
+    docType: "03",
+    branchId: orig.branch_id || null,
+    branchCode: orig.branch_code || "001",
+    currency: orig.currency || "CRC",
+    paymentMethod: origMeta.paymentMethod || "01",
+    referenceKey: orig.numeric_key,
+    receiver: {
+      idType: orig.receiver_id_type || void 0,
+      idNumber: orig.receiver_id_number || void 0,
+      name: orig.receiver_name || void 0,
+      email: orig.receiver_email || void 0
+    },
+    items
+  });
+  if (!res.success) {
+    return {
+      success: false,
+      message: res.message || "No fue posible emitir la Nota de Cr\xE9dito"
+    };
+  }
+  await query(
+    `UPDATE electronic_vouchers
+     SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+     WHERE id = $1 AND tenant_id = $2`,
+    [voucherId, tenantId]
+  );
+  return {
+    success: true,
+    creditNote: res.voucher,
+    numericKey: res.numericKey,
+    consecutiveNumber: res.consecutiveNumber,
+    pdfUrl: res.pdfUrl,
+    message: "Nota de Cr\xE9dito (03) emitida y comprobante anulado con \xE9xito"
+  };
+}
+async function sendVoucherWhatsAppNotification({
+  tenantId,
+  customerName,
+  customerPhone,
+  referenceLabel,
+  docType,
+  numericKey,
+  pdfUrl
+}) {
+  try {
+    if (!customerPhone) return false;
+    const { getTenantById: getTenantById2 } = await Promise.resolve().then(() => (init_tenant_repo(), tenant_repo_exports));
+    const { getStoreSettings: getStoreSettings2 } = await Promise.resolve().then(() => (init_store_settings_repo(), store_settings_repo_exports));
+    const { sendMessage: sendMessage2 } = await Promise.resolve().then(() => (init_evolution(), evolution_exports));
+    const tenant = await getTenantById2(tenantId);
+    const store = await getStoreSettings2(tenantId);
+    const storeName = store?.storeName || tenant?.name || "nuestro negocio";
+    const instanceName = tenant?.evolutionInstance || (tenant?.slug === "superadmin" ? "betico_soporte" : void 0);
+    const clean = customerPhone.replace(/\D/g, "");
+    const finalPhone = clean.length === 8 ? `506${clean}` : clean;
+    if (!instanceName || finalPhone.length < 8) {
+      return false;
+    }
+    const docName = docType === "01" ? "Factura Electr\xF3nica" : docType === "03" ? "Nota de Cr\xE9dito Electr\xF3nica" : "Tiquete Electr\xF3nico";
+    const safePdfUrl = pdfUrl && pdfUrl.startsWith("http") ? pdfUrl : `${process.env.APP_URL || "https://app.listochat.com"}/api/almendro/public/voucher-pdf/${numericKey}`;
+    const msg = `\u{1F9FE} *\xA1Tu ${docName} est\xE1 lista!*
+
+Hola *${customerName || "Estimado cliente"}*, te compartimos el comprobante electr\xF3nico correspondiente a tu *${referenceLabel}* en *${storeName}*:
+
+\u{1F517} *Descargar PDF:*
+${safePdfUrl}
+
+\u{1F511} *Clave Num\xE9rica de Hacienda:*
+\`${numericKey}\`
+
+\xA1Muchas gracias por tu preferencia y confianza! \u2B50`;
+    await sendMessage2(instanceName, finalPhone, msg);
+    await query(`
+      INSERT INTO notifications_log (id, tenant_id, recipient, message, trigger_type, status)
+      VALUES ($1, $2, $3, $4, 'electronic_invoice_sent', 'sent')
+    `, [
+      `notif_${Date.now()}`,
+      tenantId,
+      finalPhone,
+      `${docName} enviada a ${customerName || finalPhone}`
+    ]);
+    return true;
+  } catch (err) {
+    console.warn("[VoucherNotification] Error enviando WhatsApp con factura:", err.message);
+    return false;
+  }
+}
+var init_hacienda_native_service = __esm({
+  "src/server/services/hacienda-native.service.ts"() {
+    "use strict";
+    init_hacienda_native_repo();
+    init_tenant_almendro_repo();
+    init_pool();
+  }
+});
+
+// src/server/services/tilopay-subscription.service.ts
+var tilopay_subscription_service_exports = {};
+__export(tilopay_subscription_service_exports, {
+  TilopaySubscriptionService: () => TilopaySubscriptionService,
+  getOrCreateSuperadminTenantId: () => getOrCreateSuperadminTenantId,
+  getPlatformTilopayConfig: () => getPlatformTilopayConfig
+});
+async function getOrCreateSuperadminTenantId() {
+  const superadminTenant = await query(`SELECT id FROM tenants WHERE slug = 'superadmin' LIMIT 1`);
+  if (superadminTenant.rows.length > 0) {
+    return superadminTenant.rows[0].id;
+  }
+  const created = await query(`
+    INSERT INTO tenants (name, slug, active, plan)
+    VALUES ('Betico Superadmin', 'superadmin', true, 'enterprise')
+    RETURNING id
+  `);
+  return created.rows[0].id;
+}
+async function getPlatformTilopayConfig() {
+  if (process.env.TILOPAY_PLATFORM_KEY && process.env.TILOPAY_PLATFORM_USER && process.env.TILOPAY_PLATFORM_PASSWORD) {
+    return {
+      apiKey: process.env.TILOPAY_PLATFORM_KEY,
+      apiUser: process.env.TILOPAY_PLATFORM_USER,
+      apiPassword: process.env.TILOPAY_PLATFORM_PASSWORD,
+      environment: process.env.TILOPAY_PLATFORM_ENV === "PRODUCTION" ? "PRODUCTION" : "SANDBOX"
+    };
+  }
+  try {
+    const superadminId = await getOrCreateSuperadminTenantId();
+    const config = await getTenantPaymentConfigRaw(superadminId);
+    if (config && config.isEnabled && config.apiKey && config.apiUser && config.apiPassword) {
+      return {
+        apiKey: config.apiKey,
+        apiUser: config.apiUser,
+        apiPassword: config.apiPassword,
+        environment: config.environment || "PRODUCTION"
+      };
+    }
+  } catch (e) {
+    console.error("[PlatformTilopay] Error al consultar configuraci\xF3n de superadmin:", e);
+  }
+  return null;
+}
+var TilopaySubscriptionService;
+var init_tilopay_subscription_service = __esm({
+  "src/server/services/tilopay-subscription.service.ts"() {
+    "use strict";
+    init_pool();
+    init_tenant_payment_repo();
+    init_crypto_service();
+    init_tenant_billing_repo();
+    init_evolution();
+    init_env();
+    TilopaySubscriptionService = class {
+      static getBaseUrl(envType) {
+        return "https://app.tilopay.com/api/v1";
+      }
+      /**
+       * Gets SDK JWT token for platform Tilopay account.
+       */
+      static async getPlatformJwt(cfg) {
+        const baseUrl = this.getBaseUrl(cfg.environment);
+        const res = await fetch(`${baseUrl}/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: cfg.apiUser.trim(),
+            password: cfg.apiPassword.trim()
+          })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.access_token) {
+          throw new Error(data.message || data.error || "Fallo de autenticaci\xF3n con Tilopay (Plataforma).");
+        }
+        return data.access_token;
+      }
+      /**
+       * Tokenizes a credit/debit card and stores the encrypted token in DB.
+       */
+      static async registerTenantCard(tenantId, cardData) {
+        const platformCfg = await getPlatformTilopayConfig();
+        if (!platformCfg) {
+          throw new Error("La plataforma no tiene credenciales de Tilopay configuradas para cobro de suscripciones.");
+        }
+        const cleanCardNumber = cardData.cardNumber.replace(/\s+/g, "");
+        const last4 = cleanCardNumber.slice(-4);
+        let brand = "CARD";
+        if (/^4/.test(cleanCardNumber)) brand = "VISA";
+        else if (/^5[1-5]/.test(cleanCardNumber)) brand = "MASTERCARD";
+        else if (/^3[47]/.test(cleanCardNumber)) brand = "AMEX";
+        const jwt7 = await this.getPlatformJwt(platformCfg);
+        const baseUrl = this.getBaseUrl(platformCfg.environment);
+        const tokenizeRes = await fetch(`${baseUrl}/tokenize`, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${jwt7}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            key: platformCfg.apiKey,
+            cardNumber: cleanCardNumber,
+            expMonth: cardData.expMonth.padStart(2, "0"),
+            expYear: cardData.expYear.length === 2 ? `20${cardData.expYear}` : cardData.expYear,
+            cvv: cardData.cvv,
+            cardHolder: cardData.cardHolder.trim()
+          })
+        });
+        const tokenizeData = await tokenizeRes.json().catch(() => ({}));
+        const token = tokenizeData.token || tokenizeData.card_token || tokenizeData.id;
+        if (!tokenizeRes.ok || !token) {
+          console.error("[TilopaySubscription] Fall\xF3 tokenizaci\xF3n:", tokenizeData);
+          throw new Error(tokenizeData.message || tokenizeData.error || "Tilopay no pudo tokenizar la tarjeta. Verifica los datos.");
+        }
+        const encryptedToken = CryptoService.encryptForTenant(tenantId, token);
+        await saveBillingCard(tenantId, {
+          last4,
+          brand: tokenizeData.brand || brand,
+          holder: cardData.cardHolder.trim(),
+          tokenEncrypted: encryptedToken,
+          isDefault: true
+        });
+        return {
+          success: true,
+          cardLast4: last4,
+          cardBrand: tokenizeData.brand || brand
+        };
+      }
+      /**
+       * Executes a subscription charge for a tenant using their saved card token.
+       */
+      static async chargeTenantSubscription(tenantId, isManual = false) {
+        const tenantRes = await query(`
+      SELECT id, name, slug, whatsapp_number as "whatsappNumber",
+             custom_monthly_price as "customMonthlyPrice",
+             billing_currency as "billingCurrency",
+             evolution_instance as "evolutionInstance",
+             requires_subscription_invoice as "requiresSubscriptionInvoice"
+      FROM tenants
+      WHERE id = $1
+    `, [tenantId]);
+        if (tenantRes.rows.length === 0) {
+          throw new Error("Tenant no encontrado.");
+        }
+        const tenant = tenantRes.rows[0];
+        const amount = Number(tenant.customMonthlyPrice || 29);
+        const currency = tenant.billingCurrency || "CRC";
+        const card = await getDefaultBillingCard(tenantId);
+        if (!card) {
+          throw new Error("El tenant no tiene ninguna tarjeta de pago registrada.");
+        }
+        const cardToken = CryptoService.decryptForTenant(tenantId, card.tilopayTokenEncrypted);
+        if (!cardToken) {
+          throw new Error("No fue posible recuperar el token de la tarjeta.");
+        }
+        const platformCfg = await getPlatformTilopayConfig();
+        if (!platformCfg) {
+          throw new Error("Credenciales de Tilopay de la plataforma no configuradas.");
+        }
+        const jwt7 = await this.getPlatformJwt(platformCfg);
+        const baseUrl = this.getBaseUrl(platformCfg.environment);
+        const orderNumber = `SUB-${tenant.slug.substring(0, 8)}-${Date.now()}`;
+        const cleanPhone = (tenant.whatsappNumber || "88888888").replace(/\D/g, "") || "88888888";
+        const appUrl = (env.APP_URL || "https://betico.tech").replace(/\/$/, "");
+        const charge = await createBillingCharge({
+          tenantId,
+          billingCardId: card.id,
+          amount,
+          currency,
+          status: "pending",
+          tilopayOrderNumber: orderNumber
+        });
+        const chargePayload = {
+          key: platformCfg.apiKey,
+          token: cardToken,
+          amount: amount.toFixed(2),
+          currency,
+          billToFirstName: tenant.name.split(" ")[0] || "Cliente",
+          billToLastName: tenant.name.split(" ").slice(1).join(" ") || "Tenant",
+          billToEmail: "billing@betico.cr",
+          billToAddress: "Costa Rica",
+          billToAddress2: "N/A",
+          billToCity: "San Jose",
+          billToState: "SJ",
+          billToZip: "10101",
+          billToCountry: "CR",
+          billToTelephone: cleanPhone,
+          orderNumber,
+          redirect: `${appUrl}/admin`,
+          callback: `${appUrl}/api/webhooks/tilopay`
+        };
+        let chargeRes;
+        let chargeData = {};
+        try {
+          chargeRes = await fetch(`${baseUrl}/charge`, {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${jwt7}`,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify(chargePayload)
+          });
+          chargeData = await chargeRes.json().catch(() => ({}));
+        } catch (netErr) {
+          await updateBillingCharge(orderNumber, {
+            status: "failed",
+            failureReason: `Error de red: ${netErr.message}`
+          });
+          throw new Error(`Error de conexi\xF3n con Tilopay: ${netErr.message}`);
+        }
+        const isApproved = chargeRes.ok && (chargeData.status === "approved" || chargeData.status === "success" || chargeData.result_code === "1" || chargeData.result_code === "00" || chargeData.approved === true);
+        const transactionId = chargeData.transaction_id || chargeData.transactionId || chargeData.id;
+        const authCode = chargeData.auth_code || chargeData.authCode;
+        if (isApproved) {
+          await updateBillingCharge(orderNumber, {
+            status: "success",
+            transactionId: String(transactionId || ""),
+            authCode: String(authCode || "")
+          });
+          await query(`
+        UPDATE tenants
+        SET subscription_status = 'active',
+            next_billing_date = CURRENT_TIMESTAMP + INTERVAL '30 days',
+            grace_period_ends_at = null,
+            last_payment_amount = $1,
+            last_payment_ref = $2,
+            last_auto_charge_at = CURRENT_TIMESTAMP,
+            last_auto_charge_status = 'success',
+            active = true,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $3
+      `, [amount, `Tilopay #${transactionId || orderNumber}`, tenantId]);
+          await query(`
+        INSERT INTO tenant_payments (tenant_id, amount, currency, payment_method, reference, notes, status)
+        VALUES ($1, $2, $3, 'card', $4, $5, 'approved')
+      `, [tenantId, amount, currency, String(transactionId || orderNumber), `Cobro autom\xE1tico de suscripci\xF3n (Tarjeta termina en ${card.cardLast4})`]);
+          if (tenant.whatsappNumber) {
+            const priceStr = currency === "USD" ? `$${amount}` : `\u20A1${amount.toLocaleString("es-CR")}`;
+            const receiptMsg = `\u2705 *[Pago de Suscripci\xF3n Exitoso - Betico]*
+
+Hola *${tenant.name}*, tu mensualidad de *${priceStr}* ha sido cobrada exitosamente a tu tarjeta terminada en *${card.cardLast4}*.
+
+\u{1F4CB} *Referencia:* ${transactionId || orderNumber}
+\u{1F4C5} *Pr\xF3ximo cobro:* ${new Date(Date.now() + 30 * 24 * 60 * 60 * 1e3).toLocaleDateString("es-CR")}
+
+\xA1Gracias por seguir impulsando tu negocio con Betico! \u{1F680}`;
+            try {
+              await sendMessage("betico_soporte", cleanPhone, receiptMsg);
+            } catch (e) {
+            }
+          }
+          if (Boolean(tenant.requiresSubscriptionInvoice)) {
+            try {
+              const { emitPlatformSubscriptionInvoiceForTenant: emitPlatformSubscriptionInvoiceForTenant2 } = await Promise.resolve().then(() => (init_hacienda_native_service(), hacienda_native_service_exports));
+              await emitPlatformSubscriptionInvoiceForTenant2(tenantId, {
+                amount,
+                currency,
+                paymentMethod: "02",
+                subscriptionChargeId: charge?.id
+              });
+            } catch (invErr) {
+              console.warn("[TilopaySubscription] Error auto-emitiendo factura electr\xF3nica de suscripci\xF3n:", invErr?.message || invErr);
+            }
+          }
+          return {
+            success: true,
+            message: "Cobro procesado exitosamente y suscripci\xF3n renovada por 30 d\xEDas.",
+            transactionId: String(transactionId || ""),
+            orderNumber
+          };
+        } else {
+          const reason = chargeData.message || chargeData.error || `HTTP ${chargeRes.status}: Transacci\xF3n rechazada por el banco emisor.`;
+          await updateBillingCharge(orderNumber, {
+            status: "failed",
+            failureReason: reason
+          });
+          await query(`
+        UPDATE tenants
+        SET last_auto_charge_status = 'failed',
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1
+      `, [tenantId]);
+          return {
+            success: false,
+            message: `Cobro rechazado: ${reason}`,
+            orderNumber
+          };
+        }
+      }
+      /**
+       * Background batch worker for automatic recurring billing.
+       * Scans for tenants with auto_billing_enabled = true and next_billing_date <= NOW().
+       */
+      static async processRecurringBillingBatch() {
+        console.log("[TilopayAutoBilling] Escaneando suscripciones vencidas para cobro autom\xE1tico...");
+        const dueTenants = await getTenantsDueForAutoBilling();
+        console.log(`[TilopayAutoBilling] Encontrados ${dueTenants.length} tenants listos para cobro autom\xE1tico.`);
+        let successCount = 0;
+        let failedCount = 0;
+        for (const t of dueTenants) {
+          try {
+            console.log(`[TilopayAutoBilling] Procesando cobro autom\xE1tico para: ${t.name} (${t.slug})...`);
+            const res = await this.chargeTenantSubscription(t.id, false);
+            if (res.success) {
+              successCount++;
+              console.log(`[TilopayAutoBilling] \u2705 Cobro exitoso para ${t.name}: ${res.transactionId}`);
+            } else {
+              failedCount++;
+              console.warn(`[TilopayAutoBilling] \u274C Cobro rechazado para ${t.name}: ${res.message}`);
+            }
+          } catch (err) {
+            failedCount++;
+            console.error(`[TilopayAutoBilling] Error procesando cobro para ${t.name}:`, err.message);
+          }
+        }
+        return { processed: dueTenants.length, successCount, failedCount };
+      }
+      /**
+       * Actively queries the official Tilopay API (POST /api/v1/consult) with platform credentials
+       * to verify that a platform subscription or card registration transaction was authorized.
+       * Defends against spoofed webhook payloads (ISO/IEC 25010 / OWASP ASVS).
+       */
+      static async verifyPlatformTransactionStatus(orderNumber) {
+        try {
+          const platformCfg = await getPlatformTilopayConfig();
+          if (!platformCfg) {
+            return {
+              verified: false,
+              isApproved: false,
+              error: "Configuraci\xF3n de Tilopay de la plataforma no disponible para verificar suscripci\xF3n."
+            };
+          }
+          const jwt7 = await this.getPlatformJwt(platformCfg);
+          const baseUrl = this.getBaseUrl(platformCfg.environment);
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 1e4);
+          try {
+            const res = await fetch(`${baseUrl}/consult`, {
+              method: "POST",
+              headers: {
+                "Authorization": `Bearer ${jwt7}`,
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({
+                orderNumber: orderNumber.trim()
+              }),
+              signal: controller.signal
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+              const errorMsg = data.message || data.error || `HTTP ${res.status} al consultar transacci\xF3n en Tilopay`;
+              return {
+                verified: false,
+                isApproved: false,
+                error: errorMsg
+              };
+            }
+            const result = data.result || data;
+            const resultCode = String(result.result_code || result.code || result.result || "");
+            const status = String(result.status || "").toLowerCase();
+            const isApproved = resultCode === "1" || resultCode === "00" || status === "approved" || status === "success" || status === "paid" || result.approved === true;
+            const transactionId = result.transaction_id || result.transactionId || result.id;
+            const authCode = result.auth_code || result.authCode || result.authorization;
+            return {
+              verified: true,
+              isApproved,
+              transactionId: transactionId ? String(transactionId) : void 0,
+              authCode: authCode ? String(authCode) : void 0,
+              status,
+              resultCode
+            };
+          } finally {
+            clearTimeout(timeout);
+          }
+        } catch (err) {
+          console.error(`[TilopaySubscriptionService.verifyPlatformTransactionStatus] Error al verificar suscripci\xF3n ${orderNumber}:`, err);
+          return {
+            verified: false,
+            isApproved: false,
+            error: err.message || "Error de red o comunicaci\xF3n al consultar la API de Tilopay"
+          };
+        }
+      }
+    };
+  }
+});
+
+// src/server/services/ai-provider.ts
+import { generateText } from "ai";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { createOpenAI } from "@ai-sdk/openai";
+import { createAnthropic } from "@ai-sdk/anthropic";
+function getDefaultModels(provider) {
+  switch (provider) {
+    case "gemini":
+      return [
+        "gemini-2.5-flash",
+        "gemini-2.5-pro",
+        "gemini-2.5-flash-lite",
+        "gemini-1.5-flash",
+        "gemini-1.5-pro"
+      ];
+    case "openai":
+      return [
+        "gpt-4o",
+        "gpt-4o-mini",
+        "gpt-4-turbo",
+        "o1",
+        "o1-mini",
+        "o3-mini"
+      ];
+    case "anthropic":
+      return [
+        "claude-3-7-sonnet",
+        "claude-3-5-sonnet-20241022",
+        "claude-3-5-haiku-20241022"
+      ];
+    case "deepseek":
+      return [
+        "deepseek-chat",
+        "deepseek-reasoner"
+      ];
+    case "ollama":
+    case "betico_ai":
+      return [
+        "betico-ai",
+        "qwen2.5:1.5b",
+        "qwen2.5:3b"
+      ];
+    case "localai":
+      return [
+        "gpt-4",
+        "gpt-4o"
+      ];
+    default:
+      return [];
+  }
+}
+async function warmUpBeticoAI() {
+  try {
+    const ollamaUrl = process.env.OLLAMA_URL || "http://beticoia_ollama:11434/v1";
+    const baseUrl = ollamaUrl.replace(/\/v1\/?$/, "");
+    const res = await fetch(`${baseUrl}/api/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "betico-ai",
+        keep_alive: -1
+      })
+    });
+    if (res.ok) {
+      console.log("[AI-Provider] Betico AI (Ollama) warmed up and pinned in RAM (keep_alive: -1).");
+    }
+  } catch (e) {
+    console.warn("[AI-Provider] Warmup warning (Ollama no disponible en este instante):", e.message);
+  }
+}
+async function getMasterAIConfig() {
+  try {
+    const res = await query("SELECT key, value, value_encrypted FROM platform_settings WHERE key IN ('master_ai_provider', 'master_ai_key', 'master_ai_model', 'localai_url', 'localai_model', 'localai_api_key', 'localai_enabled', 'ollama_url', 'ollama_model', 'ollama_enabled')");
+    const settings = {};
+    for (const row of res.rows) {
+      if (row.value_encrypted) {
+        settings[row.key] = decrypt(row.value_encrypted);
+      } else {
+        settings[row.key] = row.value || "";
+      }
+    }
+    const ollamaEnabled = settings.ollama_enabled !== "false";
+    const ollamaUrl = settings.ollama_url || process.env.OLLAMA_URL || "http://beticoia_ollama:11434/v1";
+    const ollamaModel = settings.ollama_model || "betico-ai";
+    if (ollamaEnabled) {
+      return {
+        provider: "betico_ai",
+        apiKey: "ollama",
+        model: ollamaModel,
+        temperature: 0.7,
+        baseUrl: ollamaUrl
+      };
+    }
+    const localaiEnabled = settings.localai_enabled === "true";
+    if (localaiEnabled) {
+      return {
+        provider: "localai",
+        apiKey: settings.localai_api_key || "localai",
+        model: settings.localai_model || "gpt-4",
+        temperature: 0.7,
+        baseUrl: settings.localai_url || "http://beticoia_localai:8080/v1"
+      };
+    }
+    const provider = settings.master_ai_provider || "gemini";
+    const apiKey = settings.master_ai_key || DEFAULT_GEMINI_KEY;
+    const model = settings.master_ai_model || (provider === "gemini" ? "gemini-2.5-flash" : provider === "openai" ? "gpt-4o-mini" : "claude-3-5-haiku-20241022");
+    return {
+      provider,
+      apiKey,
+      model,
+      temperature: 0.7
+    };
+  } catch (e) {
+    return {
+      provider: "gemini",
+      apiKey: DEFAULT_GEMINI_KEY,
+      model: "gemini-2.5-flash",
+      temperature: 0.7
+    };
+  }
+}
+async function callAI(config, input, fallbackConfig) {
+  const provider = config.provider || "gemini";
+  const apiKey = config.apiKey || (provider === "gemini" ? DEFAULT_GEMINI_KEY : "");
+  let chosenModel = config.model;
+  if (provider === "gemini") {
+    if (!chosenModel || chosenModel.includes("betico") || chosenModel.includes("gpt") || chosenModel.includes("claude") || chosenModel.includes("deepseek")) {
+      chosenModel = "gemini-2.5-flash";
+    }
+  } else if (provider === "openai") {
+    if (!chosenModel || chosenModel.includes("betico") || chosenModel.includes("gemini") || chosenModel.includes("claude") || chosenModel.includes("deepseek")) {
+      chosenModel = "gpt-4o-mini";
+    }
+  } else if (provider === "anthropic") {
+    if (!chosenModel || chosenModel.includes("betico") || chosenModel.includes("gemini") || chosenModel.includes("gpt")) {
+      chosenModel = "claude-3-5-haiku-20241022";
+    }
+  } else if (provider === "deepseek") {
+    if (!chosenModel || !chosenModel.includes("deepseek")) {
+      chosenModel = "deepseek-chat";
+    }
+  } else if (provider === "betico_ai" || provider === "ollama") {
+    if (!chosenModel || chosenModel.includes("gpt") || chosenModel.includes("gemini") || chosenModel.includes("claude")) {
+      chosenModel = "betico-ai";
+    }
+  } else if (provider === "localai") {
+    if (!chosenModel || chosenModel.includes("llama") || chosenModel.includes("qwen") || chosenModel.includes("gemini") || chosenModel.includes("claude")) {
+      chosenModel = "gpt-4";
+    }
+  } else if (!chosenModel) {
+    chosenModel = provider === "openai" ? "gpt-4o-mini" : provider === "anthropic" ? "claude-3-5-haiku-20241022" : "gemini-2.5-flash";
+  }
+  const defaultModels = getDefaultModels(provider);
+  let fallbackModels;
+  if ((provider === "betico_ai" || provider === "ollama") && chosenModel.startsWith("betico-ai:tenant_")) {
+    fallbackModels = [chosenModel, "betico-ai"];
+  } else {
+    fallbackModels = [chosenModel, ...defaultModels.filter((m) => m !== chosenModel)];
+  }
+  let lastError = null;
+  for (const modelName of fallbackModels) {
+    try {
+      return await executeProvider({
+        provider,
+        apiKey,
+        model: modelName,
+        temperature: config.temperature ?? 0.7,
+        baseUrl: config.baseUrl
+      }, input);
+    } catch (error) {
+      lastError = error;
+      console.error(`Error calling AI with model ${modelName} (${provider}):`, error);
+      if (modelName.startsWith("betico-ai:tenant_")) {
+        console.warn(`[AI-Provider] Virtual model ${modelName} failed or missing in Ollama. Falling back to base betico-ai.`);
+        continue;
+      }
+      if (provider === "localai" || provider === "betico_ai" || provider === "ollama") {
+        break;
+      }
+    }
+  }
+  const effectiveFallbackConfig = fallbackConfig || (provider === "betico_ai" || provider === "ollama" || provider === "localai" ? { provider: "gemini", apiKey: DEFAULT_GEMINI_KEY, model: "gemini-2.5-flash", temperature: config.temperature ?? 0.7 } : { provider: "betico_ai", apiKey: "ollama", model: "betico-ai", temperature: config.temperature ?? 0.7, baseUrl: process.env.OLLAMA_URL || "http://beticoia_ollama:11434/v1" });
+  if (effectiveFallbackConfig && effectiveFallbackConfig.provider !== provider) {
+    try {
+      console.warn(`[AI-Provider] Primary ${provider} failed or timed out. Engaging resilient cross-fallback -> ${effectiveFallbackConfig.provider}/${effectiveFallbackConfig.model}`);
+      return await executeProvider(effectiveFallbackConfig, input);
+    } catch (fallbackErr) {
+      console.error(`[AI-Provider] Cross-fallback ${effectiveFallbackConfig.provider} also failed:`, fallbackErr?.message || fallbackErr);
+    }
+  }
+  console.error("All AI models and fallback engines failed. Last error:", lastError);
+  return {
+    text: "Hola, gracias por comunicarte con nosotros. En este momento estamos procesando tu solicitud, en breve un asesor te responder\xE1.",
+    tokensUsed: 0,
+    promptTokens: 0,
+    completionTokens: 0,
+    latencyMs: 0
+  };
+}
+async function executeProvider(config, input) {
+  let model;
+  if (config.provider === "gemini") {
+    const key = config.apiKey || DEFAULT_GEMINI_KEY;
+    const google = createGoogleGenerativeAI({ apiKey: key });
+    model = google(config.model || "gemini-2.5-flash");
+  } else if (config.provider === "openai") {
+    const openai = createOpenAI({ apiKey: config.apiKey });
+    model = openai(config.model || "gpt-4o-mini");
+  } else if (config.provider === "anthropic") {
+    const anthropic = createAnthropic({ apiKey: config.apiKey });
+    model = anthropic(config.model || "claude-3-5-haiku-20241022");
+  } else if (config.provider === "deepseek") {
+    const deepseek = createOpenAI({
+      baseURL: config.baseUrl || "https://api.deepseek.com/v1",
+      apiKey: config.apiKey
+    });
+    model = deepseek(config.model || "deepseek-chat");
+  } else if (config.provider === "ollama" || config.provider === "betico_ai") {
+    const ollama = createOpenAI({
+      baseURL: config.baseUrl || process.env.OLLAMA_URL || "http://beticoia_ollama:11434/v1",
+      apiKey: config.apiKey || "ollama"
+    });
+    model = ollama(config.model || "betico-ai");
+  } else if (config.provider === "localai") {
+    const localai = createOpenAI({
+      baseURL: config.baseUrl || process.env.LOCALAI_URL || "http://beticoia_localai:8080/v1",
+      apiKey: config.apiKey || "localai"
+    });
+    model = localai(config.model || "gpt-4");
+  } else {
+    throw new Error("Unsupported provider: " + config.provider);
+  }
+  const isLocalEngine = config.provider === "betico_ai" || config.provider === "ollama" || config.provider === "localai";
+  const defaultTimeout = isLocalEngine ? 12e4 : 45e3;
+  const timeoutMs = parseInt(process.env.AI_TIMEOUT_MS || String(defaultTimeout), 10);
+  const timeoutPromise = new Promise((_, reject) => {
+    setTimeout(() => reject(new Error(`AI inference timeout after ${Math.round(timeoutMs / 1e3)}s`)), timeoutMs);
+  });
+  const t0 = Date.now();
+  const generatePromise = (async () => {
+    let callParams = {
+      model,
+      temperature: config.temperature ?? 0.7
+    };
+    let promptLengthEstimate = 0;
+    if (typeof input === "string") {
+      callParams.prompt = input;
+      promptLengthEstimate = input.length;
+    } else {
+      let combinedSystem = input.system || "";
+      const cleanMessages = [];
+      if (input.messages && input.messages.length > 0) {
+        for (const m of input.messages) {
+          if (m.role === "system") {
+            combinedSystem = combinedSystem ? `${combinedSystem}
+
+${m.content}` : m.content;
+          } else {
+            cleanMessages.push({ role: m.role, content: m.content });
+          }
+        }
+      }
+      if (combinedSystem) {
+        callParams.system = combinedSystem;
+        promptLengthEstimate += combinedSystem.length;
+      }
+      if (cleanMessages.length > 0) {
+        callParams.messages = cleanMessages;
+        promptLengthEstimate += cleanMessages.reduce((acc, m) => acc + (m.content || "").length, 0);
+      } else if (combinedSystem) {
+        callParams.prompt = combinedSystem;
+      }
+    }
+    const { text, usage } = await generateText(callParams);
+    const latencyMs = Date.now() - t0;
+    const promptTokens = usage?.promptTokens || Math.ceil(promptLengthEstimate / 4);
+    const completionTokens = usage?.completionTokens || Math.ceil(text.length / 4);
+    const totalTokens = usage?.totalTokens || promptTokens + completionTokens;
+    console.log(`[AI-Provider] ${config.provider}/${config.model} responded in ${latencyMs}ms, tokens: in=${promptTokens}, out=${completionTokens}, total=${totalTokens}`);
+    return {
+      text,
+      tokensUsed: totalTokens,
+      promptTokens,
+      completionTokens,
+      latencyMs
+    };
+  })();
+  return await Promise.race([generatePromise, timeoutPromise]);
+}
+var DEFAULT_GEMINI_KEY;
+var init_ai_provider = __esm({
+  "src/server/services/ai-provider.ts"() {
+    "use strict";
+    init_pool();
+    init_encryption();
+    init_env();
+    DEFAULT_GEMINI_KEY = env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || "AQ.Ab8RN6IHcdDKDITkdIOjt8SznSc6lS_1grotOA6SQ6fjZnd2SQ";
   }
 });
 
@@ -8688,6 +9451,13 @@ async function runMigrations() {
     ALTER TABLE electronic_vouchers ADD COLUMN IF NOT EXISTS branch_code VARCHAR(3) DEFAULT '001';
     ALTER TABLE electronic_vouchers ADD COLUMN IF NOT EXISTS pos_code VARCHAR(5) DEFAULT '00001';
     ALTER TABLE electronic_vouchers ADD COLUMN IF NOT EXISTS reference_key VARCHAR(50);
+
+    -- Preferencia de facturaci\xF3n electr\xF3nica de suscripci\xF3n por inquilino (SuperAdmin -> Tenant)
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS requires_subscription_invoice BOOLEAN DEFAULT false;
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_id_type VARCHAR(10) DEFAULT '01';
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_id_number VARCHAR(30) DEFAULT '';
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_legal_name VARCHAR(255) DEFAULT '';
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_email VARCHAR(255) DEFAULT '';
   `).catch((err) => {
     console.warn("[Migrations] Columns addition warning:", err?.message || err);
   });
@@ -9767,543 +10537,7 @@ function startScheduledCampaignScanner() {
 init_pool();
 init_evolution();
 init_superadmin_notify_service();
-
-// src/server/services/tilopay-subscription.service.ts
-init_pool();
-init_tenant_payment_repo();
-init_crypto_service();
-
-// src/server/db/tenant-billing.repo.ts
-init_pool();
-async function getBillingCards(tenantId) {
-  const res = await query(`
-    SELECT id, tenant_id as "tenantId", card_last4 as "cardLast4",
-           card_brand as "cardBrand", card_holder as "cardHolder",
-           is_default as "isDefault", is_active as "isActive",
-           created_at as "createdAt"
-    FROM tenant_billing_cards
-    WHERE tenant_id = $1 AND is_active = true
-    ORDER BY is_default DESC, created_at DESC
-  `, [tenantId]);
-  return res.rows;
-}
-async function saveBillingCard(tenantId, data) {
-  if (data.isDefault !== false) {
-    await query(`
-      UPDATE tenant_billing_cards
-      SET is_default = false
-      WHERE tenant_id = $1
-    `, [tenantId]);
-  }
-  const res = await query(`
-    INSERT INTO tenant_billing_cards (
-      tenant_id, card_last4, card_brand, card_holder,
-      tilopay_token_encrypted, is_default, is_active
-    )
-    VALUES ($1, $2, $3, $4, $5, $6, true)
-    RETURNING id, tenant_id as "tenantId", card_last4 as "cardLast4",
-              card_brand as "cardBrand", card_holder as "cardHolder",
-              is_default as "isDefault", is_active as "isActive",
-              created_at as "createdAt"
-  `, [
-    tenantId,
-    data.last4,
-    data.brand || "CARD",
-    data.holder || "Cliente",
-    data.tokenEncrypted,
-    data.isDefault !== false
-  ]);
-  return res.rows[0];
-}
-async function getDefaultBillingCard(tenantId) {
-  const res = await query(`
-    SELECT id, tenant_id as "tenantId", card_last4 as "cardLast4",
-           card_brand as "cardBrand", card_holder as "cardHolder",
-           tilopay_token_encrypted as "tilopayTokenEncrypted",
-           is_default as "isDefault", is_active as "isActive",
-           created_at as "createdAt"
-    FROM tenant_billing_cards
-    WHERE tenant_id = $1 AND is_active = true
-    ORDER BY is_default DESC, created_at DESC
-    LIMIT 1
-  `, [tenantId]);
-  return res.rows[0] || null;
-}
-async function deactivateBillingCard(cardId, tenantId) {
-  const res = await query(`
-    UPDATE tenant_billing_cards
-    SET is_active = false, updated_at = CURRENT_TIMESTAMP
-    WHERE id = $1 AND tenant_id = $2
-  `, [cardId, tenantId]);
-  return (res.rowCount ?? 0) > 0;
-}
-async function createBillingCharge(data) {
-  const res = await query(`
-    INSERT INTO tenant_billing_charges (
-      tenant_id, billing_card_id, amount, currency,
-      period_start, period_end, status, tilopay_order_number,
-      tilopay_transaction_id, tilopay_auth_code, failure_reason
-    )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-    RETURNING id, tenant_id as "tenantId", billing_card_id as "billingCardId",
-              amount, currency, period_start as "periodStart", period_end as "periodEnd",
-              status, tilopay_order_number as "tilopayOrderNumber",
-              tilopay_transaction_id as "tilopayTransactionId",
-              tilopay_auth_code as "tilopayAuthCode",
-              failure_reason as "failureReason",
-              attempt_count as "attemptCount",
-              last_attempt_at as "lastAttemptAt",
-              created_at as "createdAt"
-  `, [
-    data.tenantId,
-    data.billingCardId || null,
-    data.amount,
-    data.currency || "CRC",
-    data.periodStart || null,
-    data.periodEnd || null,
-    data.status,
-    data.tilopayOrderNumber,
-    data.tilopayTransactionId || null,
-    data.tilopayAuthCode || null,
-    data.failureReason || null
-  ]);
-  return res.rows[0];
-}
-async function updateBillingCharge(orderNumber, update) {
-  const res = await query(`
-    UPDATE tenant_billing_charges
-    SET status = $1,
-        tilopay_transaction_id = COALESCE($2, tilopay_transaction_id),
-        tilopay_auth_code = COALESCE($3, tilopay_auth_code),
-        failure_reason = COALESCE($4, failure_reason),
-        last_attempt_at = CURRENT_TIMESTAMP
-    WHERE tilopay_order_number = $5
-    RETURNING id, tenant_id as "tenantId", billing_card_id as "billingCardId",
-              amount, currency, period_start as "periodStart", period_end as "periodEnd",
-              status, tilopay_order_number as "tilopayOrderNumber",
-              tilopay_transaction_id as "tilopayTransactionId",
-              tilopay_auth_code as "tilopayAuthCode",
-              failure_reason as "failureReason",
-              attempt_count as "attemptCount",
-              last_attempt_at as "lastAttemptAt",
-              created_at as "createdAt"
-  `, [
-    update.status,
-    update.transactionId || null,
-    update.authCode || null,
-    update.failureReason || null,
-    orderNumber
-  ]);
-  return res.rows[0] || null;
-}
-async function getBillingCharges(tenantId, limit = 20) {
-  const res = await query(`
-    SELECT id, tenant_id as "tenantId", billing_card_id as "billingCardId",
-           amount, currency, period_start as "periodStart", period_end as "periodEnd",
-           status, tilopay_order_number as "tilopayOrderNumber",
-           tilopay_transaction_id as "tilopayTransactionId",
-           tilopay_auth_code as "tilopayAuthCode",
-           failure_reason as "failureReason",
-           attempt_count as "attemptCount",
-           last_attempt_at as "lastAttemptAt",
-           created_at as "createdAt"
-    FROM tenant_billing_charges
-    WHERE tenant_id = $1
-    ORDER BY created_at DESC
-    LIMIT $2
-  `, [tenantId, limit]);
-  return res.rows;
-}
-async function getChargeByOrderNumber(orderNumber) {
-  const res = await query(`
-    SELECT id, tenant_id as "tenantId", billing_card_id as "billingCardId",
-           amount, currency, period_start as "periodStart", period_end as "periodEnd",
-           status, tilopay_order_number as "tilopayOrderNumber",
-           tilopay_transaction_id as "tilopayTransactionId",
-           tilopay_auth_code as "tilopayAuthCode",
-           failure_reason as "failureReason",
-           attempt_count as "attemptCount",
-           last_attempt_at as "lastAttemptAt",
-           created_at as "createdAt"
-    FROM tenant_billing_charges
-    WHERE tilopay_order_number = $1
-  `, [orderNumber]);
-  return res.rows[0] || null;
-}
-async function getTenantsDueForAutoBilling() {
-  const res = await query(`
-    SELECT id, name, slug, whatsapp_number as "whatsappNumber",
-           custom_monthly_price as "customMonthlyPrice",
-           billing_currency as "billingCurrency",
-           evolution_instance as "evolutionInstance",
-           subscription_status as "subscriptionStatus"
-    FROM tenants
-    WHERE auto_billing_enabled = true
-      AND active = true
-      AND next_billing_date IS NOT NULL
-      AND next_billing_date <= CURRENT_TIMESTAMP
-  `);
-  return res.rows;
-}
-
-// src/server/services/tilopay-subscription.service.ts
-init_evolution();
-init_env();
-async function getOrCreateSuperadminTenantId() {
-  const superadminTenant = await query(`SELECT id FROM tenants WHERE slug = 'superadmin' LIMIT 1`);
-  if (superadminTenant.rows.length > 0) {
-    return superadminTenant.rows[0].id;
-  }
-  const created = await query(`
-    INSERT INTO tenants (name, slug, active, plan)
-    VALUES ('Betico Superadmin', 'superadmin', true, 'enterprise')
-    RETURNING id
-  `);
-  return created.rows[0].id;
-}
-async function getPlatformTilopayConfig() {
-  if (process.env.TILOPAY_PLATFORM_KEY && process.env.TILOPAY_PLATFORM_USER && process.env.TILOPAY_PLATFORM_PASSWORD) {
-    return {
-      apiKey: process.env.TILOPAY_PLATFORM_KEY,
-      apiUser: process.env.TILOPAY_PLATFORM_USER,
-      apiPassword: process.env.TILOPAY_PLATFORM_PASSWORD,
-      environment: process.env.TILOPAY_PLATFORM_ENV === "PRODUCTION" ? "PRODUCTION" : "SANDBOX"
-    };
-  }
-  try {
-    const superadminId = await getOrCreateSuperadminTenantId();
-    const config = await getTenantPaymentConfigRaw(superadminId);
-    if (config && config.isEnabled && config.apiKey && config.apiUser && config.apiPassword) {
-      return {
-        apiKey: config.apiKey,
-        apiUser: config.apiUser,
-        apiPassword: config.apiPassword,
-        environment: config.environment || "PRODUCTION"
-      };
-    }
-  } catch (e) {
-    console.error("[PlatformTilopay] Error al consultar configuraci\xF3n de superadmin:", e);
-  }
-  return null;
-}
-var TilopaySubscriptionService = class {
-  static getBaseUrl(envType) {
-    return "https://app.tilopay.com/api/v1";
-  }
-  /**
-   * Gets SDK JWT token for platform Tilopay account.
-   */
-  static async getPlatformJwt(cfg) {
-    const baseUrl = this.getBaseUrl(cfg.environment);
-    const res = await fetch(`${baseUrl}/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        email: cfg.apiUser.trim(),
-        password: cfg.apiPassword.trim()
-      })
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data.access_token) {
-      throw new Error(data.message || data.error || "Fallo de autenticaci\xF3n con Tilopay (Plataforma).");
-    }
-    return data.access_token;
-  }
-  /**
-   * Tokenizes a credit/debit card and stores the encrypted token in DB.
-   */
-  static async registerTenantCard(tenantId, cardData) {
-    const platformCfg = await getPlatformTilopayConfig();
-    if (!platformCfg) {
-      throw new Error("La plataforma no tiene credenciales de Tilopay configuradas para cobro de suscripciones.");
-    }
-    const cleanCardNumber = cardData.cardNumber.replace(/\s+/g, "");
-    const last4 = cleanCardNumber.slice(-4);
-    let brand = "CARD";
-    if (/^4/.test(cleanCardNumber)) brand = "VISA";
-    else if (/^5[1-5]/.test(cleanCardNumber)) brand = "MASTERCARD";
-    else if (/^3[47]/.test(cleanCardNumber)) brand = "AMEX";
-    const jwt7 = await this.getPlatformJwt(platformCfg);
-    const baseUrl = this.getBaseUrl(platformCfg.environment);
-    const tokenizeRes = await fetch(`${baseUrl}/tokenize`, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${jwt7}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        key: platformCfg.apiKey,
-        cardNumber: cleanCardNumber,
-        expMonth: cardData.expMonth.padStart(2, "0"),
-        expYear: cardData.expYear.length === 2 ? `20${cardData.expYear}` : cardData.expYear,
-        cvv: cardData.cvv,
-        cardHolder: cardData.cardHolder.trim()
-      })
-    });
-    const tokenizeData = await tokenizeRes.json().catch(() => ({}));
-    const token = tokenizeData.token || tokenizeData.card_token || tokenizeData.id;
-    if (!tokenizeRes.ok || !token) {
-      console.error("[TilopaySubscription] Fall\xF3 tokenizaci\xF3n:", tokenizeData);
-      throw new Error(tokenizeData.message || tokenizeData.error || "Tilopay no pudo tokenizar la tarjeta. Verifica los datos.");
-    }
-    const encryptedToken = CryptoService.encryptForTenant(tenantId, token);
-    await saveBillingCard(tenantId, {
-      last4,
-      brand: tokenizeData.brand || brand,
-      holder: cardData.cardHolder.trim(),
-      tokenEncrypted: encryptedToken,
-      isDefault: true
-    });
-    return {
-      success: true,
-      cardLast4: last4,
-      cardBrand: tokenizeData.brand || brand
-    };
-  }
-  /**
-   * Executes a subscription charge for a tenant using their saved card token.
-   */
-  static async chargeTenantSubscription(tenantId, isManual = false) {
-    const tenantRes = await query(`
-      SELECT id, name, slug, whatsapp_number as "whatsappNumber",
-             custom_monthly_price as "customMonthlyPrice",
-             billing_currency as "billingCurrency",
-             evolution_instance as "evolutionInstance"
-      FROM tenants
-      WHERE id = $1
-    `, [tenantId]);
-    if (tenantRes.rows.length === 0) {
-      throw new Error("Tenant no encontrado.");
-    }
-    const tenant = tenantRes.rows[0];
-    const amount = Number(tenant.customMonthlyPrice || 29);
-    const currency = tenant.billingCurrency || "CRC";
-    const card = await getDefaultBillingCard(tenantId);
-    if (!card) {
-      throw new Error("El tenant no tiene ninguna tarjeta de pago registrada.");
-    }
-    const cardToken = CryptoService.decryptForTenant(tenantId, card.tilopayTokenEncrypted);
-    if (!cardToken) {
-      throw new Error("No fue posible recuperar el token de la tarjeta.");
-    }
-    const platformCfg = await getPlatformTilopayConfig();
-    if (!platformCfg) {
-      throw new Error("Credenciales de Tilopay de la plataforma no configuradas.");
-    }
-    const jwt7 = await this.getPlatformJwt(platformCfg);
-    const baseUrl = this.getBaseUrl(platformCfg.environment);
-    const orderNumber = `SUB-${tenant.slug.substring(0, 8)}-${Date.now()}`;
-    const cleanPhone = (tenant.whatsappNumber || "88888888").replace(/\D/g, "") || "88888888";
-    const appUrl = (env.APP_URL || "https://betico.tech").replace(/\/$/, "");
-    const charge = await createBillingCharge({
-      tenantId,
-      billingCardId: card.id,
-      amount,
-      currency,
-      status: "pending",
-      tilopayOrderNumber: orderNumber
-    });
-    const chargePayload = {
-      key: platformCfg.apiKey,
-      token: cardToken,
-      amount: amount.toFixed(2),
-      currency,
-      billToFirstName: tenant.name.split(" ")[0] || "Cliente",
-      billToLastName: tenant.name.split(" ").slice(1).join(" ") || "Tenant",
-      billToEmail: "billing@betico.cr",
-      billToAddress: "Costa Rica",
-      billToAddress2: "N/A",
-      billToCity: "San Jose",
-      billToState: "SJ",
-      billToZip: "10101",
-      billToCountry: "CR",
-      billToTelephone: cleanPhone,
-      orderNumber,
-      redirect: `${appUrl}/admin`,
-      callback: `${appUrl}/api/webhooks/tilopay`
-    };
-    let chargeRes;
-    let chargeData = {};
-    try {
-      chargeRes = await fetch(`${baseUrl}/charge`, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${jwt7}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(chargePayload)
-      });
-      chargeData = await chargeRes.json().catch(() => ({}));
-    } catch (netErr) {
-      await updateBillingCharge(orderNumber, {
-        status: "failed",
-        failureReason: `Error de red: ${netErr.message}`
-      });
-      throw new Error(`Error de conexi\xF3n con Tilopay: ${netErr.message}`);
-    }
-    const isApproved = chargeRes.ok && (chargeData.status === "approved" || chargeData.status === "success" || chargeData.result_code === "1" || chargeData.result_code === "00" || chargeData.approved === true);
-    const transactionId = chargeData.transaction_id || chargeData.transactionId || chargeData.id;
-    const authCode = chargeData.auth_code || chargeData.authCode;
-    if (isApproved) {
-      await updateBillingCharge(orderNumber, {
-        status: "success",
-        transactionId: String(transactionId || ""),
-        authCode: String(authCode || "")
-      });
-      await query(`
-        UPDATE tenants
-        SET subscription_status = 'active',
-            next_billing_date = CURRENT_TIMESTAMP + INTERVAL '30 days',
-            grace_period_ends_at = null,
-            last_payment_amount = $1,
-            last_payment_ref = $2,
-            last_auto_charge_at = CURRENT_TIMESTAMP,
-            last_auto_charge_status = 'success',
-            active = true,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = $3
-      `, [amount, `Tilopay #${transactionId || orderNumber}`, tenantId]);
-      await query(`
-        INSERT INTO tenant_payments (tenant_id, amount, currency, payment_method, reference, notes, status)
-        VALUES ($1, $2, $3, 'card', $4, $5, 'approved')
-      `, [tenantId, amount, currency, String(transactionId || orderNumber), `Cobro autom\xE1tico de suscripci\xF3n (Tarjeta termina en ${card.cardLast4})`]);
-      if (tenant.whatsappNumber) {
-        const priceStr = currency === "USD" ? `$${amount}` : `\u20A1${amount.toLocaleString("es-CR")}`;
-        const receiptMsg = `\u2705 *[Pago de Suscripci\xF3n Exitoso - Betico]*
-
-Hola *${tenant.name}*, tu mensualidad de *${priceStr}* ha sido cobrada exitosamente a tu tarjeta terminada en *${card.cardLast4}*.
-
-\u{1F4CB} *Referencia:* ${transactionId || orderNumber}
-\u{1F4C5} *Pr\xF3ximo cobro:* ${new Date(Date.now() + 30 * 24 * 60 * 60 * 1e3).toLocaleDateString("es-CR")}
-
-\xA1Gracias por seguir impulsando tu negocio con Betico! \u{1F680}`;
-        try {
-          await sendMessage("betico_soporte", cleanPhone, receiptMsg);
-        } catch (e) {
-        }
-      }
-      return {
-        success: true,
-        message: "Cobro procesado exitosamente y suscripci\xF3n renovada por 30 d\xEDas.",
-        transactionId: String(transactionId || ""),
-        orderNumber
-      };
-    } else {
-      const reason = chargeData.message || chargeData.error || `HTTP ${chargeRes.status}: Transacci\xF3n rechazada por el banco emisor.`;
-      await updateBillingCharge(orderNumber, {
-        status: "failed",
-        failureReason: reason
-      });
-      await query(`
-        UPDATE tenants
-        SET last_auto_charge_status = 'failed',
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = $1
-      `, [tenantId]);
-      return {
-        success: false,
-        message: `Cobro rechazado: ${reason}`,
-        orderNumber
-      };
-    }
-  }
-  /**
-   * Background batch worker for automatic recurring billing.
-   * Scans for tenants with auto_billing_enabled = true and next_billing_date <= NOW().
-   */
-  static async processRecurringBillingBatch() {
-    console.log("[TilopayAutoBilling] Escaneando suscripciones vencidas para cobro autom\xE1tico...");
-    const dueTenants = await getTenantsDueForAutoBilling();
-    console.log(`[TilopayAutoBilling] Encontrados ${dueTenants.length} tenants listos para cobro autom\xE1tico.`);
-    let successCount = 0;
-    let failedCount = 0;
-    for (const t of dueTenants) {
-      try {
-        console.log(`[TilopayAutoBilling] Procesando cobro autom\xE1tico para: ${t.name} (${t.slug})...`);
-        const res = await this.chargeTenantSubscription(t.id, false);
-        if (res.success) {
-          successCount++;
-          console.log(`[TilopayAutoBilling] \u2705 Cobro exitoso para ${t.name}: ${res.transactionId}`);
-        } else {
-          failedCount++;
-          console.warn(`[TilopayAutoBilling] \u274C Cobro rechazado para ${t.name}: ${res.message}`);
-        }
-      } catch (err) {
-        failedCount++;
-        console.error(`[TilopayAutoBilling] Error procesando cobro para ${t.name}:`, err.message);
-      }
-    }
-    return { processed: dueTenants.length, successCount, failedCount };
-  }
-  /**
-   * Actively queries the official Tilopay API (POST /api/v1/consult) with platform credentials
-   * to verify that a platform subscription or card registration transaction was authorized.
-   * Defends against spoofed webhook payloads (ISO/IEC 25010 / OWASP ASVS).
-   */
-  static async verifyPlatformTransactionStatus(orderNumber) {
-    try {
-      const platformCfg = await getPlatformTilopayConfig();
-      if (!platformCfg) {
-        return {
-          verified: false,
-          isApproved: false,
-          error: "Configuraci\xF3n de Tilopay de la plataforma no disponible para verificar suscripci\xF3n."
-        };
-      }
-      const jwt7 = await this.getPlatformJwt(platformCfg);
-      const baseUrl = this.getBaseUrl(platformCfg.environment);
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 1e4);
-      try {
-        const res = await fetch(`${baseUrl}/consult`, {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${jwt7}`,
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            orderNumber: orderNumber.trim()
-          }),
-          signal: controller.signal
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          const errorMsg = data.message || data.error || `HTTP ${res.status} al consultar transacci\xF3n en Tilopay`;
-          return {
-            verified: false,
-            isApproved: false,
-            error: errorMsg
-          };
-        }
-        const result = data.result || data;
-        const resultCode = String(result.result_code || result.code || result.result || "");
-        const status = String(result.status || "").toLowerCase();
-        const isApproved = resultCode === "1" || resultCode === "00" || status === "approved" || status === "success" || status === "paid" || result.approved === true;
-        const transactionId = result.transaction_id || result.transactionId || result.id;
-        const authCode = result.auth_code || result.authCode || result.authorization;
-        return {
-          verified: true,
-          isApproved,
-          transactionId: transactionId ? String(transactionId) : void 0,
-          authCode: authCode ? String(authCode) : void 0,
-          status,
-          resultCode
-        };
-      } finally {
-        clearTimeout(timeout);
-      }
-    } catch (err) {
-      console.error(`[TilopaySubscriptionService.verifyPlatformTransactionStatus] Error al verificar suscripci\xF3n ${orderNumber}:`, err);
-      return {
-        verified: false,
-        isApproved: false,
-        error: err.message || "Error de red o comunicaci\xF3n al consultar la API de Tilopay"
-      };
-    }
-  }
-};
-
-// src/server/services/subscription.service.ts
+init_tilopay_subscription_service();
 async function checkSubscriptionLifecycles() {
   try {
     const now = /* @__PURE__ */ new Date();
@@ -16036,7 +16270,12 @@ router2.post("/", async (req, res) => {
       latitude,
       longitude,
       googleMapsUrl,
-      google_maps_url
+      google_maps_url,
+      requiresSubscriptionInvoice,
+      billingIdType,
+      billingIdNumber,
+      billingLegalName,
+      billingEmail
     } = req.body;
     if (!name) {
       res.status(400).json({ error: "El nombre del negocio es requerido" });
@@ -16087,7 +16326,12 @@ router2.post("/", async (req, res) => {
       aiPriorityLevel: req.body.aiPriorityLevel !== void 0 ? Number(req.body.aiPriorityLevel) || 0 : 0,
       aiModel: "gemini-2.5-flash",
       aiProvider: "gemini",
-      active: true
+      active: true,
+      requiresSubscriptionInvoice: Boolean(requiresSubscriptionInvoice),
+      billingIdType: billingIdType || req.body.fiscalTipoIdentificacion || "01",
+      billingIdNumber: billingIdNumber ?? req.body.fiscalIdentificacion ? String(billingIdNumber ?? req.body.fiscalIdentificacion).trim() : "",
+      billingLegalName: billingLegalName ?? req.body.fiscalNombreReceptor ? String(billingLegalName ?? req.body.fiscalNombreReceptor).trim() : "",
+      billingEmail: billingEmail ?? req.body.fiscalEmailReceptor ? String(billingEmail ?? req.body.fiscalEmailReceptor).trim() : finalEmail || ""
     });
     if (finalEmail) {
       await createUser({
@@ -16143,6 +16387,25 @@ router2.put("/:id", async (req, res) => {
     if (body.active !== void 0) tenantUpdateData.active = Boolean(body.active);
     if (body.isAiPilot !== void 0) tenantUpdateData.isAiPilot = Boolean(body.isAiPilot);
     if (body.aiPriorityLevel !== void 0) tenantUpdateData.aiPriorityLevel = Number(body.aiPriorityLevel) || 0;
+    if (body.requiresSubscriptionInvoice !== void 0) {
+      tenantUpdateData.requiresSubscriptionInvoice = Boolean(body.requiresSubscriptionInvoice);
+    }
+    const resolvedIdType = body.billingIdType ?? body.fiscalTipoIdentificacion;
+    if (resolvedIdType !== void 0) {
+      tenantUpdateData.billingIdType = String(resolvedIdType || "01").trim();
+    }
+    const resolvedIdNumber = body.billingIdNumber ?? body.fiscalIdentificacion;
+    if (resolvedIdNumber !== void 0) {
+      tenantUpdateData.billingIdNumber = String(resolvedIdNumber || "").trim();
+    }
+    const resolvedLegalName = body.billingLegalName ?? body.fiscalNombreReceptor;
+    if (resolvedLegalName !== void 0) {
+      tenantUpdateData.billingLegalName = String(resolvedLegalName || "").trim();
+    }
+    const resolvedBillEmail = body.billingEmail ?? body.fiscalEmailReceptor;
+    if (resolvedBillEmail !== void 0) {
+      tenantUpdateData.billingEmail = String(resolvedBillEmail || "").trim();
+    }
     if (body.isTrial !== void 0) {
       if (body.isTrial) {
         tenantUpdateData.subscriptionStatus = "trial";
@@ -16351,6 +16614,74 @@ router2.get("/:id/dossier", async (req, res) => {
     res.status(500).json({ error: "Error al obtener expediente del cliente" });
   }
 });
+router2.put("/:id/billing-preference", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const body = req.body || {};
+    const {
+      requiresSubscriptionInvoice
+    } = body;
+    const resolvedIdType = body.billingIdType ?? body.fiscalTipoIdentificacion;
+    const resolvedIdNumber = body.billingIdNumber ?? body.fiscalIdentificacion;
+    const resolvedLegalName = body.billingLegalName ?? body.fiscalNombreReceptor;
+    const resolvedBillEmail = body.billingEmail ?? body.fiscalEmailReceptor;
+    const updatePayload = {};
+    if (requiresSubscriptionInvoice !== void 0) {
+      updatePayload.requiresSubscriptionInvoice = Boolean(requiresSubscriptionInvoice);
+    }
+    if (resolvedIdType !== void 0) {
+      updatePayload.billingIdType = String(resolvedIdType || "01").trim();
+    }
+    if (resolvedIdNumber !== void 0) {
+      updatePayload.billingIdNumber = String(resolvedIdNumber || "").trim();
+    }
+    if (resolvedLegalName !== void 0) {
+      updatePayload.billingLegalName = String(resolvedLegalName || "").trim();
+    }
+    if (resolvedBillEmail !== void 0) {
+      updatePayload.billingEmail = String(resolvedBillEmail || "").trim();
+    }
+    const updated = await updateTenant(id, updatePayload);
+    if (!updated) {
+      res.status(404).json({ error: "Inquilino no encontrado" });
+      return;
+    }
+    await logAuditEvent(id, req.user.userId, "update_billing_preference", "tenant", id, updatePayload, req.ip, req.headers["user-agent"]);
+    res.json({
+      success: true,
+      tenant: updated,
+      message: "Preferencia de facturaci\xF3n actualizada"
+    });
+  } catch (error) {
+    console.error("Error updating billing preference:", error);
+    res.status(500).json({ error: error.message || "Error al actualizar preferencia de facturaci\xF3n" });
+  }
+});
+router2.post("/:id/emit-subscription-invoice", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { emitPlatformSubscriptionInvoiceForTenant: emitPlatformSubscriptionInvoiceForTenant2 } = await Promise.resolve().then(() => (init_hacienda_native_service(), hacienda_native_service_exports));
+    const result = await emitPlatformSubscriptionInvoiceForTenant2(id, {
+      amount: req.body?.amount !== void 0 ? Number(req.body.amount) : void 0,
+      currency: req.body?.currency,
+      paymentMethod: req.body?.paymentMethod || "04",
+      periodLabel: req.body?.periodLabel,
+      forceEmit: true
+    });
+    if (!result.success) {
+      res.status(400).json(result);
+      return;
+    }
+    res.json({
+      ...result,
+      clave: result.numericKey,
+      consecutivo: result.consecutiveNumber
+    });
+  } catch (error) {
+    console.error("Error emitting subscription invoice:", error);
+    res.status(500).json({ success: false, message: error.message || "Error al emitir factura de suscripci\xF3n" });
+  }
+});
 router2.post("/:id/record-payment", async (req, res) => {
   try {
     const { id } = req.params;
@@ -16381,8 +16712,28 @@ router2.post("/:id/record-payment", async (req, res) => {
       [daysToExtend, proofUrl || null, reference || null, payAmount, notes || null, id]
     );
     await logAuditEvent(id, req.user.userId, "record_payment", "financial", id, { amount: payAmount, reference, daysToExtend }, req.ip, req.headers["user-agent"]);
+    let invoiceResult = null;
+    if (Boolean(tenant.requiresSubscriptionInvoice) === true || req.body?.emitInvoice === true) {
+      try {
+        const { emitPlatformSubscriptionInvoiceForTenant: emitPlatformSubscriptionInvoiceForTenant2 } = await Promise.resolve().then(() => (init_hacienda_native_service(), hacienda_native_service_exports));
+        invoiceResult = await emitPlatformSubscriptionInvoiceForTenant2(id, {
+          amount: payAmount,
+          currency: payCurrency,
+          paymentMethod: paymentMethod === "card" ? "02" : "04",
+          forceEmit: Boolean(req.body?.emitInvoice)
+        });
+      } catch (invErr) {
+        console.warn("[record-payment] Error auto-emitting subscription invoice:", invErr?.message || invErr);
+        invoiceResult = { success: false, message: invErr?.message || "Error al emitir factura electr\xF3nica" };
+      }
+    }
     const updated = await getTenantById(id);
-    res.json({ success: true, message: "Pago registrado con \xE9xito y suscripci\xF3n extendida", tenant: updated });
+    res.json({
+      success: true,
+      message: "Pago registrado con \xE9xito y suscripci\xF3n extendida",
+      tenant: updated,
+      invoiceResult
+    });
   } catch (error) {
     console.error("Error recording payment:", error);
     res.status(500).json({ error: "Error al registrar pago" });
@@ -16481,7 +16832,16 @@ router2.get("/billing/collections", async (req, res) => {
         trafficLabel,
         trafficColor,
         subscriptionStatus: t.subscriptionStatus || "active",
-        internalNotes: t.internalNotes || ""
+        internalNotes: t.internalNotes || "",
+        requiresSubscriptionInvoice: Boolean(t.requiresSubscriptionInvoice),
+        billingIdType: t.billingIdType || "01",
+        billingIdNumber: t.billingIdNumber || "",
+        billingLegalName: t.billingLegalName || t.name,
+        billingEmail: t.billingEmail || admin?.email || "",
+        fiscalTipoIdentificacion: t.billingIdType || "01",
+        fiscalIdentificacion: t.billingIdNumber || "",
+        fiscalNombreReceptor: t.billingLegalName || t.name,
+        fiscalEmailReceptor: t.billingEmail || admin?.email || ""
       };
     }));
     res.json({
@@ -16506,9 +16866,17 @@ var tenant_routes_default = router2;
 import { Router as Router3 } from "express";
 
 // src/server/middleware/tenantContext.ts
-function tenantContext(req, res, next) {
-  if (req.user && req.user.tenantId) {
-    req.tenantId = req.user.tenantId;
+async function tenantContext(req, res, next) {
+  try {
+    if (req.user && req.user.tenantId) {
+      req.tenantId = req.user.tenantId;
+    }
+    if (req.user?.role === "superadmin") {
+      const { getOrCreateSuperadminTenantId: getOrCreateSuperadminTenantId2 } = await Promise.resolve().then(() => (init_tilopay_subscription_service(), tilopay_subscription_service_exports));
+      req.tenantId = await getOrCreateSuperadminTenantId2();
+    }
+  } catch (err) {
+    console.warn("[tenantContext] Error resolving tenantId:", err);
   }
   next();
 }
@@ -21037,7 +21405,16 @@ router21.post("/tenants/create", async (req, res) => {
       customMonthlyPrice,
       billingCurrency,
       isTrial,
-      trialDays = 15
+      trialDays = 15,
+      requiresSubscriptionInvoice,
+      billingIdType,
+      billingIdNumber,
+      billingLegalName,
+      billingEmail,
+      fiscalTipoIdentificacion,
+      fiscalIdentificacion,
+      fiscalNombreReceptor,
+      fiscalEmailReceptor
     } = req.body;
     if (!name || !email || !slug) {
       res.status(400).json({ error: "Nombre, slug y correo son obligatorios" });
@@ -21059,13 +21436,17 @@ router21.post("/tenants/create", async (req, res) => {
     const tenantRes = await query(`
       INSERT INTO tenants (
         name, slug, plan, whatsapp_number, custom_monthly_price, billing_currency,
-        subscription_status, trial_ends_at, next_billing_date, active
+        subscription_status, trial_ends_at, next_billing_date, active,
+        requires_subscription_invoice, billing_id_type, billing_id_number, billing_legal_name, billing_email
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, $11, $12, $13, $14)
       RETURNING id, name, slug, plan, whatsapp_number as "whatsappNumber",
                 custom_monthly_price as "customMonthlyPrice", billing_currency as "billingCurrency",
                 subscription_status as "subscriptionStatus", trial_ends_at as "trialEndsAt",
-                next_billing_date as "nextBillingDate", created_at as "createdAt"
+                next_billing_date as "nextBillingDate", created_at as "createdAt",
+                requires_subscription_invoice as "requiresSubscriptionInvoice",
+                billing_id_type as "billingIdType", billing_id_number as "billingIdNumber",
+                billing_legal_name as "billingLegalName", billing_email as "billingEmail"
     `, [
       name,
       cleanSlug,
@@ -21075,7 +21456,12 @@ router21.post("/tenants/create", async (req, res) => {
       currency,
       trialEnabled ? "trial" : "active",
       trialEnabled ? trialEnd : null,
-      trialEnabled ? trialEnd : new Date(Date.now() + 30 * 24 * 60 * 60 * 1e3)
+      trialEnabled ? trialEnd : new Date(Date.now() + 30 * 24 * 60 * 60 * 1e3),
+      Boolean(requiresSubscriptionInvoice),
+      billingIdType ?? fiscalTipoIdentificacion ? String(billingIdType ?? fiscalTipoIdentificacion).trim() : "01",
+      billingIdNumber ?? fiscalIdentificacion ? String(billingIdNumber ?? fiscalIdentificacion).trim() : "",
+      billingLegalName ?? fiscalNombreReceptor ? String(billingLegalName ?? fiscalNombreReceptor).trim() : "",
+      billingEmail ?? fiscalEmailReceptor ? String(billingEmail ?? fiscalEmailReceptor).trim() : email.toLowerCase().trim()
     ]);
     const tenant = tenantRes.rows[0];
     await query(`
@@ -21129,7 +21515,14 @@ router21.post("/tenants/:id/approve-payment", async (req, res) => {
   try {
     const tenantId = req.params.id;
     const { days = 30 } = req.body;
-    const tenantRes = await query(`SELECT id, name, slug, whatsapp_number FROM tenants WHERE id = $1`, [tenantId]);
+    const tenantRes = await query(`
+      SELECT id, name, slug, whatsapp_number,
+             requires_subscription_invoice as "requiresSubscriptionInvoice",
+             custom_monthly_price as "customMonthlyPrice",
+             billing_currency as "billingCurrency"
+      FROM tenants
+      WHERE id = $1
+    `, [tenantId]);
     if (tenantRes.rows.length === 0) {
       res.status(404).json({ error: "Inquilino no encontrado" });
       return;
@@ -21163,7 +21556,23 @@ Tu suscripci\xF3n ha sido renovada por 30 d\xEDas hasta el *${nextBilling.toLoca
       slug: tenant.slug,
       renewedUntil: nextBilling.toLocaleDateString("es-CR")
     });
-    res.json({ success: true, message: "Pago aprobado y suscripci\xF3n renovada" });
+    let invoiceResult = null;
+    if (Boolean(tenant.requiresSubscriptionInvoice) === true || req.body?.emitInvoice === true) {
+      try {
+        const { emitPlatformSubscriptionInvoiceForTenant: emitPlatformSubscriptionInvoiceForTenant2 } = await Promise.resolve().then(() => (init_hacienda_native_service(), hacienda_native_service_exports));
+        invoiceResult = await emitPlatformSubscriptionInvoiceForTenant2(tenantId, {
+          forceEmit: Boolean(req.body?.emitInvoice)
+        });
+      } catch (invErr) {
+        console.warn("[approve-payment] Error emitting subscription invoice:", invErr?.message || invErr);
+        invoiceResult = { success: false, message: invErr?.message || "Error al emitir factura electr\xF3nica" };
+      }
+    }
+    res.json({
+      success: true,
+      message: "Pago aprobado y suscripci\xF3n renovada",
+      invoiceResult
+    });
   } catch (error) {
     console.error("Error approving payment:", error);
     res.status(500).json({ error: "Error al aprobar pago" });
@@ -22987,8 +23396,10 @@ import { Router as Router29 } from "express";
 init_appointments_repo();
 init_tenant_repo();
 init_evolution();
+init_tenant_billing_repo();
 init_crypto_service();
 init_almendro_service();
+init_tilopay_subscription_service();
 var router29 = Router29();
 router29.post("/", async (req, res) => {
   res.status(200).json({ received: true, timestamp: (/* @__PURE__ */ new Date()).toISOString() });
@@ -23390,6 +23801,8 @@ var tilopay_webhook_routes_default = router29;
 // src/server/routes/superadmin-billing.routes.ts
 import { Router as Router30 } from "express";
 init_pool();
+init_tenant_billing_repo();
+init_tilopay_subscription_service();
 init_tenant_payment_repo();
 init_env();
 var router30 = Router30();
@@ -23824,6 +24237,8 @@ import { Router as Router32 } from "express";
 import jwtLib from "jsonwebtoken";
 init_pool();
 init_tenant_repo();
+init_tenant_billing_repo();
+init_tilopay_subscription_service();
 init_evolution();
 init_env();
 var router32 = Router32();
@@ -24790,6 +25205,7 @@ var almendro_routes_default = router34;
 
 // src/server/routes/superadmin-almendro.routes.ts
 import { Router as Router35 } from "express";
+init_tilopay_subscription_service();
 init_tenant_almendro_repo();
 init_almendro_service();
 init_pool();
@@ -24893,7 +25309,6 @@ router35.get("/vouchers", async (req, res) => {
 });
 router35.post("/emit-subscription-invoice/:chargeId", async (req, res) => {
   try {
-    const superadminTenantId = await getOrCreateSuperadminTenantId();
     const { chargeId } = req.params;
     const chargeRes = await query(`
       SELECT c.*, t.name as "tenantName", t.slug as "tenantSlug",
@@ -24908,7 +25323,7 @@ router35.post("/emit-subscription-invoice/:chargeId", async (req, res) => {
     }
     const charge = chargeRes.rows[0];
     const existingVoucher = await query(`
-      SELECT id, numeric_key as "numericKey", pdf_url as "pdfUrl"
+      SELECT id, numeric_key as "numericKey", consecutive_number as "consecutiveNumber", pdf_url as "pdfUrl"
       FROM electronic_vouchers
       WHERE subscription_charge_id = $1
     `, [chargeId]);
@@ -24917,29 +25332,19 @@ router35.post("/emit-subscription-invoice/:chargeId", async (req, res) => {
         success: true,
         alreadyEmitted: true,
         numericKey: existingVoucher.rows[0].numericKey,
+        consecutiveNumber: existingVoucher.rows[0].consecutiveNumber,
         pdfUrl: existingVoucher.rows[0].pdfUrl,
         message: "Este cobro ya cuenta con comprobante electr\xF3nico emitido."
       });
       return;
     }
-    const subtotal = Number(charge.amount) || 0;
-    const description = `Suscripci\xF3n Betico SaaS - ${charge.tenantName || charge.tenantSlug} (Periodo ${charge.period_start || "Mes Actual"})`;
-    const emitRes = await AlmendroService.emitVoucher(superadminTenantId, {
-      docType: "04",
-      // Tiquete electrónico por defecto para B2B simple o 01 si hay cédula jurídica
-      subscriptionChargeId: charge.id,
+    const { emitPlatformSubscriptionInvoiceForTenant: emitPlatformSubscriptionInvoiceForTenant2 } = await Promise.resolve().then(() => (init_hacienda_native_service(), hacienda_native_service_exports));
+    const emitRes = await emitPlatformSubscriptionInvoiceForTenant2(charge.tenant_id, {
+      amount: Number(charge.amount) || void 0,
       currency: charge.currency || "CRC",
-      items: [
-        {
-          cabysCode: "8314100000000",
-          // Servicios de desarrollo de software y aplicaciones
-          description,
-          quantity: 1,
-          unitPrice: subtotal,
-          taxRateCode: "08"
-          // 13% IVA
-        }
-      ]
+      paymentMethod: "02",
+      subscriptionChargeId: charge.id,
+      forceEmit: true
     });
     if (!emitRes.success) {
       res.status(400).json({ error: emitRes.message });
@@ -24948,8 +25353,10 @@ router35.post("/emit-subscription-invoice/:chargeId", async (req, res) => {
     res.json({
       success: true,
       numericKey: emitRes.numericKey,
+      consecutiveNumber: emitRes.consecutiveNumber,
       pdfUrl: emitRes.pdfUrl,
-      message: "Factura de suscripci\xF3n emitida con \xE9xito."
+      voucher: emitRes.voucher,
+      message: emitRes.message || "Factura de suscripci\xF3n emitida con \xE9xito."
     });
   } catch (error) {
     console.error("[SuperAdminAlmendro] Error emitiendo factura de suscripci\xF3n:", error);

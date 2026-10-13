@@ -41,6 +41,11 @@ interface Tenant {
   evolutionInstance?: string;
   isAiPilot?: boolean;
   aiPriorityLevel?: number;
+  requiresSubscriptionInvoice?: boolean;
+  billingIdType?: string;
+  billingIdNumber?: string;
+  billingLegalName?: string;
+  billingEmail?: string;
   createdAt: string;
 }
 
@@ -98,9 +103,15 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
     longitude: '',
     googleMapsUrl: '',
     isAiPilot: false,
-    aiPriorityLevel: 0
+    aiPriorityLevel: 0,
+    requiresSubscriptionInvoice: false,
+    billingIdType: '01',
+    billingIdNumber: '',
+    billingLegalName: '',
+    billingEmail: ''
   });
   const [savingTenant, setSavingTenant] = useState(false);
+  const [searchingPadron, setSearchingPadron] = useState(false);
   const [extendModalTenant, setExtendModalTenant] = useState<Tenant | null>(null);
   const [extendDays, setExtendDays] = useState(30);
   const [resetModalTenant, setResetModalTenant] = useState<Tenant | null>(null);
@@ -108,7 +119,7 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
   const [resettingPassword, setResettingPassword] = useState(false);
   const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
 
-  // 2. AI ENGINE & PLAYGROUND STATE
+  // 2. AI ENGINE Y PLAYGROUND STATE
   const [ollamaUrl, setOllamaUrl] = useState('http://beticoia_ollama:11434/v1');
   const [ollamaModel, setOllamaModel] = useState('betico-ai');
   const [availableOllamaModels, setAvailableOllamaModels] = useState<string[]>([
@@ -137,7 +148,7 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
   const [playgroundResult, setPlaygroundResult] = useState<any>(null);
   const [testingPlayground, setTestingPlayground] = useState(false);
 
-  // 3. AI USAGE & QUOTAS STATE
+  // 3. AI USAGE Y QUOTAS STATE
   const [aiUsageList, setAiUsageList] = useState<any[]>([]);
   const [loadingAiUsage, setLoadingAiUsage] = useState(false);
   const [quotaStarterTokens, setQuotaStarterTokens] = useState(25000);
@@ -152,7 +163,7 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
   const [loadingInstances, setLoadingInstances] = useState(false);
   const [connectingInstance, setConnectingInstance] = useState<string | null>(null);
 
-  // 5. SYSTEM & DEPLOY STATE
+  // 5. SYSTEM Y DEPLOY STATE
   const [deployWebhookApp, setDeployWebhookApp] = useState((import.meta as any).env?.VITE_DEPLOY_WEBHOOK_APP || 'http://2.25.103.200:3000/api/deploy/f5abd18bdaaff3ce20c24522c9c72beac7c756d9260d995b');
   const [deployWebhookLocalai, setDeployWebhookLocalai] = useState((import.meta as any).env?.VITE_DEPLOY_WEBHOOK_LOCALAI || 'http://2.25.103.200:3000/api/deploy/4317a4ff5a1ed51532fc824fb9547b6ae20847cd3ef8ea4e');
   const [deployingTarget, setDeployingTarget] = useState<string | null>(null);
@@ -585,12 +596,18 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
       )}
 
       {/* ========================================================================= */}
-      {/* VISTA COBRANZA & CUENTAS POR COBRAR */}
+      {/* VISTA COBRANZA Y CUENTAS POR COBRAR */}
       {/* ========================================================================= */}
-      {activeTab === 'collections' && <BillingCollectionsView />}
+      {activeTab === 'collections' && (
+        <BillingCollectionsView
+          onOpenSuperAdminBilling={(subTab) =>
+            handleTabChange(subTab ? 'sa_facturacion_' + subTab : 'sa_facturacion_credenciales')
+          }
+        />
+      )}
 
       {/* ========================================================================= */}
-      {/* VISTA 1: INQUILINOS & NEGOCIOS */}
+      {/* VISTA 1: INQUILINOS Y NEGOCIOS */}
       {/* ========================================================================= */}
       {activeTab === 'tenants' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -600,7 +617,7 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Building2 size={26} color="var(--primary)" />
-                <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 'bold' }}>Inquilinos & Negocios</h1>
+                <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 'bold' }}>Inquilinos y Negocios</h1>
               </div>
               <p style={{ margin: '4px 0 0 0', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
                 Control maestro de comercios suscritos, planes, credenciales y acceso directo a portales
@@ -641,7 +658,8 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
                     name: '', slug: '', contactName: '', email: '', phone: '',
                     plan: 'starter', customMonthlyPrice: 29, billingCurrency: 'CRC', isTrial: true, trialDays: 15,
                     address: '', latitude: '', longitude: '', googleMapsUrl: '',
-                    isAiPilot: false, aiPriorityLevel: 0
+                    isAiPilot: false, aiPriorityLevel: 0,
+                    requiresSubscriptionInvoice: false, billingIdType: '01', billingIdNumber: '', billingLegalName: '', billingEmail: ''
                   });
                   setShowModal(true);
                 }}
@@ -812,7 +830,7 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
             </div>
           )}
 
-          {/* GROWTH & USERS ANALYTICS PANEL (Collapsible) */}
+          {/* GROWTH Y USERS ANALYTICS PANEL (Collapsible) */}
           {showGrowthAnalytics && (
             <div style={{
               backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '14px',
@@ -823,7 +841,7 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <BarChart2 size={20} color="var(--primary)" />
                   <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 'bold' }}>
-                    Analítica de Crecimiento & Usuarios
+                    Analítica de Crecimiento y Usuarios
                   </h3>
                 </div>
                 <button
@@ -860,7 +878,7 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
                 </div>
 
                 <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '8px', border: '1px solid var(--border)' }}>
-                  <div style={{ fontSize: '0.72rem', color: '#2563eb', fontWeight: 600 }}>STAFF & COLABORADORES</div>
+                  <div style={{ fontSize: '0.72rem', color: '#2563eb', fontWeight: 600 }}>STAFF Y COLABORADORES</div>
                   <div style={{ fontSize: '1.35rem', fontWeight: 'bold', color: '#2563eb', marginTop: '2px' }}>
                     {growthData?.totals?.users?.staff || 0}
                   </div>
@@ -980,7 +998,7 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
             </div>
           )}
 
-          {/* Search & View Toggle */}
+          {/* Search y View Toggle */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
             <div style={{ position: 'relative', flex: 1, minWidth: '260px' }}>
               <Search size={16} color="var(--text-muted)" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
@@ -1040,6 +1058,14 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
                       }}>
                         {t.subscriptionStatus === 'suspended' ? '🔴 Suspendido' : t.subscriptionStatus === 'trial' ? '🔵 En Prueba' : '🟢 Activo'}
                       </span>
+                      {t.requiresSubscriptionInvoice && (
+                        <span style={{
+                          padding: '2px 7px', borderRadius: '10px', fontSize: '0.68rem', fontWeight: 'bold',
+                          backgroundColor: '#eef2ff', color: '#3730a3', border: '1px solid #c7d2fe'
+                        }}>
+                          🧾 Solicitó Factura
+                        </span>
+                      )}
                       {t.isAiPilot && (
                         <span style={{
                           padding: '2px 7px', borderRadius: '10px', fontSize: '0.68rem', fontWeight: 'bold',
@@ -1169,7 +1195,12 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
                           longitude: t.longitude != null ? String(t.longitude) : '',
                           googleMapsUrl: t.googleMapsUrl || '',
                           isAiPilot: Boolean(t.isAiPilot),
-                          aiPriorityLevel: t.aiPriorityLevel || 0
+                          aiPriorityLevel: t.aiPriorityLevel || 0,
+                          requiresSubscriptionInvoice: Boolean(t.requiresSubscriptionInvoice),
+                          billingIdType: t.billingIdType || '01',
+                          billingIdNumber: t.billingIdNumber || '',
+                          billingLegalName: t.billingLegalName || '',
+                          billingEmail: t.billingEmail || ''
                         });
                         setShowModal(true);
                       }}
@@ -1198,7 +1229,7 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
                 <thead>
                   <tr style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid var(--border)', textAlign: 'left', color: 'var(--text-muted)' }}>
                     <th style={{ padding: '12px 14px' }}>Comercio</th>
-                    <th style={{ padding: '12px 14px' }}>Plan & Precio</th>
+                    <th style={{ padding: '12px 14px' }}>Plan y Precio</th>
                     <th style={{ padding: '12px 14px' }}>WhatsApp</th>
                     <th style={{ padding: '12px 14px' }}>Estado</th>
                     <th style={{ padding: '12px 14px', textAlign: 'right' }}>Acciones</th>
@@ -1307,6 +1338,16 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
                         }}>
                           {t.subscriptionStatus === 'suspended' ? 'Suspendido' : t.subscriptionStatus === 'trial' ? 'Prueba' : 'Activo'}
                         </span>
+                        {t.requiresSubscriptionInvoice && (
+                          <div style={{ marginTop: '4px' }}>
+                            <span style={{
+                              padding: '2px 6px', borderRadius: '8px', fontSize: '0.68rem', fontWeight: 'bold',
+                              backgroundColor: '#eef2ff', color: '#3730a3'
+                            }}>
+                              🧾 Solicitó Factura
+                            </span>
+                          </div>
+                        )}
                         {t.isAiPilot && (
                           <div style={{ marginTop: '4px' }}>
                             <span style={{
@@ -1361,7 +1402,12 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
                                 longitude: t.longitude != null ? String(t.longitude) : '',
                                 googleMapsUrl: t.googleMapsUrl || '',
                                 isAiPilot: Boolean(t.isAiPilot),
-                                aiPriorityLevel: t.aiPriorityLevel || 0
+                                aiPriorityLevel: t.aiPriorityLevel || 0,
+                                requiresSubscriptionInvoice: Boolean(t.requiresSubscriptionInvoice),
+                                billingIdType: t.billingIdType || '01',
+                                billingIdNumber: t.billingIdNumber || '',
+                                billingLegalName: t.billingLegalName || '',
+                                billingEmail: t.billingEmail || ''
                               });
                               setShowModal(true);
                             }}
@@ -1382,7 +1428,7 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
       )}
 
       {/* ========================================================================= */}
-      {/* VISTA 2: FINANZAS & FACTURACIÓN */}
+      {/* VISTA 2: FINANZAS Y FACTURACIÓN */}
       {/* ========================================================================= */}
       {activeTab === 'financials' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -1390,14 +1436,14 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <DollarSign size={26} color="#16a34a" />
-              <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 'bold' }}>Finanzas & Suscripciones</h1>
+              <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 'bold' }}>Finanzas y Suscripciones</h1>
             </div>
             <p style={{ margin: '4px 0 0 0', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
               Control de ingresos recurrentes (MRR), aprobación de comprobantes SINPE y gestión de prórrogas
             </p>
           </div>
 
-          {/* Pending Proofs Alert & List */}
+          {/* Pending Proofs Alert y List */}
           <div style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '14px', padding: '22px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
               <Award size={20} color="var(--primary)" />
@@ -1441,7 +1487,7 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
       )}
 
       {/* ========================================================================= */}
-      {/* VISTA 3: MOTOR LOCALAI & MODELOS */}
+      {/* VISTA 3: MOTOR LOCALAI Y MODELOS */}
       {/* ========================================================================= */}
       {activeTab === 'ai_engine' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
@@ -1449,7 +1495,7 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Bot size={26} color="var(--primary)" />
-              <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 'bold' }}>Motor Betico IA & Modelos</h1>
+              <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 'bold' }}>Motor Betico IA y Modelos</h1>
             </div>
             <p style={{ margin: '4px 0 0 0', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
               Centro neurálgico de tu Inteligencia Artificial privada. Configura modelos, prueba inferencia y monitorea el estado del servidor.
@@ -1468,7 +1514,7 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
               </div>
               <div>
                 <strong style={{ fontSize: '1.05rem', color: aiEngineStatus?.online ? '#166534' : '#991b1b' }}>
-                  {aiEngineStatus?.online ? '🟢 Motor Betico IA (Ollama) Operativo & Respondiendo' : '🔴 Motor Betico IA Fuera de Línea'}
+                  {aiEngineStatus?.online ? '🟢 Motor Betico IA (Ollama) Operativo y Respondiendo' : '🔴 Motor Betico IA Fuera de Línea'}
                 </strong>
                 <div style={{ fontSize: '0.8rem', color: aiEngineStatus?.online ? '#15803d' : '#b91c1c', marginTop: '2px' }}>
                   Endpoint: <code>{ollamaUrl}</code> {aiEngineStatus?.latencyMs ? '• Latencia Ping: ' + aiEngineStatus.latencyMs + 'ms' : ''} • Modelo: <strong>{ollamaModel}</strong>
@@ -1493,7 +1539,7 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
             </button>
           </div>
 
-          {/* Server Config & Failover Grid */}
+          {/* Server Config y Failover Grid */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '18px' }}>
             
             {/* Ollama Betico AI Config */}
@@ -1541,10 +1587,10 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
               </div>
             </div>
 
-            {/* Kokoro TTS & Whisper Config */}
+            {/* Kokoro TTS y Whisper Config */}
             <div style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '14px', padding: '22px' }}>
               <h3 style={{ margin: '0 0 14px 0', fontSize: '1.05rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Bot size={18} color="#0284c7" /> Audio: Voz (Kokoro) & Transcripción (Whisper)
+                <Bot size={18} color="#0284c7" /> Audio: Voz (Kokoro) y Transcripción (Whisper)
               </h3>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -1729,7 +1775,7 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
       )}
 
       {/* ========================================================================= */}
-      {/* VISTA 4: CONSUMO & CUOTAS */}
+      {/* VISTA 4: CONSUMO Y CUOTAS */}
       {/* ========================================================================= */}
       {activeTab === 'ai_usage' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -1737,7 +1783,7 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <TrendingUp size={26} color="var(--primary)" />
-              <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 'bold' }}>Monitoreo de Consumo & Cuotas de Tokens</h1>
+              <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 'bold' }}>Monitoreo de Consumo y Cuotas de Tokens</h1>
             </div>
             <p style={{ margin: '4px 0 0 0', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
               Monitorea el uso de tokens de cada cliente, ajusta cuotas globales por plan y asigna límites personalizados a clientes VIP
@@ -1899,7 +1945,7 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
             {/* Bot de Ventas */}
             <div style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '14px', padding: '22px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <strong style={{ fontSize: '1.1rem' }}>🤖 Bot de Ventas & Demos</strong>
+                <strong style={{ fontSize: '1.1rem' }}>🤖 Bot de Ventas y Demos</strong>
                 <span style={{ fontSize: '0.72rem', backgroundColor: '#dcfce7', color: '#15803d', padding: '3px 8px', borderRadius: '8px', fontWeight: 'bold' }}>
                   betico_ventas
                 </span>
@@ -1976,7 +2022,7 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
       )}
 
       {/* ========================================================================= */}
-      {/* VISTA 6: SERVIDOR & DESPLIEGUES */}
+      {/* VISTA 6: SERVIDOR Y DESPLIEGUES */}
       {/* ========================================================================= */}
       {activeTab === 'system' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -1984,7 +2030,7 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Server size={26} color="var(--primary)" />
-              <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 'bold' }}>Servidor, DB & Despliegues</h1>
+              <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 'bold' }}>Servidor, DB y Despliegues</h1>
             </div>
             <p style={{ margin: '4px 0 0 0', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
               Métricas reales del servidor, estado de PostgreSQL y disparadores de compilación en VPS
@@ -2221,7 +2267,7 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
       )}
 
       {/* ========================================================================= */}
-      {/* VISTA 7: ALERTAS & NOTIFICACIONES */}
+      {/* VISTA 7: ALERTAS Y NOTIFICACIONES */}
       {/* ========================================================================= */}
       {activeTab === 'notifications' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '700px' }}>
@@ -2229,7 +2275,7 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Phone size={26} color="var(--primary)" />
-              <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 'bold' }}>Alertas & Notificaciones</h1>
+              <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 'bold' }}>Alertas y Notificaciones</h1>
             </div>
             <p style={{ margin: '4px 0 0 0', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
               Configura a qué número de WhatsApp deseas recibir avisos de nuevos registros, comprobantes y avisos de morosidad
@@ -2264,7 +2310,7 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
       )}
 
       {/* ========================================================================= */}
-      {/* VISTA 8: AUDITORÍA & ACCESOS */}
+      {/* VISTA 8: AUDITORÍA Y ACCESOS */}
       {/* ========================================================================= */}
       {activeTab === 'audit' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -2272,7 +2318,7 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <ShieldCheck size={26} color="var(--primary)" />
-              <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 'bold' }}>Auditoría & Seguridad</h1>
+              <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 'bold' }}>Auditoría y Seguridad</h1>
             </div>
             <p style={{ margin: '4px 0 0 0', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
               Registro cronológico de inicios de sesión, cambios de contraseña y accesos administrativos
@@ -2482,11 +2528,132 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
                 </div>
               </div>
 
-              {/* PROGRAMA PILOTO BETICO AI & PRIORIDAD DE COLA */}
+              {/* FACTURACIÓN ELECTRÓNICA DE SUSCRIPCIÓN (HACIENDA CR) */}
+              <div style={{ backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '10px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontWeight: 'bold', fontSize: '0.84rem', color: '#1e3a8a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    🧾 Facturación Electrónica de Suscripción (Hacienda CR)
+                  </div>
+                  <span style={{ fontSize: '0.72rem', backgroundColor: formData.requiresSubscriptionInvoice ? '#dbeafe' : '#f1f5f9', color: formData.requiresSubscriptionInvoice ? '#1d4ed8' : '#64748b', padding: '2px 8px', borderRadius: '12px', fontWeight: 'bold' }}>
+                    {formData.requiresSubscriptionInvoice ? '✅ Factura Automática Activa' : '⚪ Opcional / No Solicitada'}
+                  </span>
+                </div>
+
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 700, color: '#1e293b' }}>
+                  <input
+                    type="checkbox"
+                    checked={formData.requiresSubscriptionInvoice || false}
+                    onChange={(e) => setFormData({ ...formData, requiresSubscriptionInvoice: e.target.checked })}
+                    style={{ width: '16px', height: '16px' }}
+                  />
+                  <span>El cliente solicitó factura electrónica</span>
+                </label>
+
+                <p style={{ margin: 0, fontSize: '0.74rem', color: '#1e40af', lineHeight: '1.35' }}>
+                  Al activar esta casilla, Betico Facturas emitirá y enviará automáticamente la Factura Electrónica oficial de Hacienda al correo del cliente cada vez que se registre un pago de suscripción mensual.
+                </p>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '10px', marginTop: '4px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 'bold', marginBottom: '4px', color: '#1e3a8a' }}>
+                      Cédula Física o Jurídica
+                    </label>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <input
+                        type="text"
+                        placeholder="Ej: 3101123456"
+                        value={formData.fiscalIdentificacion || ''}
+                        onChange={(e) => setFormData({ ...formData, fiscalIdentificacion: e.target.value })}
+                        style={{ flex: 1, padding: '7px 10px', borderRadius: '6px', border: '1px solid #93c5fd', fontSize: '0.82rem', backgroundColor: 'white' }}
+                      />
+                      <button
+                        type="button"
+                        disabled={searchingPadron}
+                        onClick={async () => {
+                          const clean = (formData.fiscalIdentificacion || '').replace(/[^0-9]/g, '');
+                          if (clean.length < 9) {
+                            alert('Ingrese al menos 9 dígitos para consultar el Padrón de Hacienda.');
+                            return;
+                          }
+                          setSearchingPadron(true);
+                          try {
+                            const res = await api.get(`/api/billing/native/padron/${clean}`);
+                            if (res?.found && res?.nombre) {
+                              setFormData(prev => ({
+                                ...prev,
+                                fiscalIdentificacion: clean,
+                                fiscalTipoIdentificacion: res.tipoIdentificacion || prev.fiscalTipoIdentificacion || '02',
+                                fiscalNombreReceptor: res.nombre
+                              }));
+                            } else {
+                              alert('No se encontró contribuyente con esa cédula en Hacienda.');
+                            }
+                          } catch (err: any) {
+                            alert('Error consultando Hacienda: ' + (err.message || 'Error'));
+                          } finally {
+                            setSearchingPadron(false);
+                          }
+                        }}
+                        style={{
+                          padding: '6px 10px', backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '6px',
+                          fontSize: '0.74rem', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap'
+                        }}
+                      >
+                        {searchingPadron ? '...' : 'Buscar en Hacienda'}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 'bold', marginBottom: '4px', color: '#1e3a8a' }}>
+                      Tipo de Cédula
+                    </label>
+                    <select
+                      value={formData.fiscalTipoIdentificacion || '01'}
+                      onChange={(e) => setFormData({ ...formData, fiscalTipoIdentificacion: e.target.value })}
+                      style={{ width: '100%', padding: '7px 10px', borderRadius: '6px', border: '1px solid #93c5fd', fontSize: '0.82rem', backgroundColor: 'white' }}
+                    >
+                      <option value="01">01 - Cédula Física</option>
+                      <option value="02">02 - Cédula Jurídica</option>
+                      <option value="03">03 - DIMEX</option>
+                      <option value="04">04 - NITE</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 'bold', marginBottom: '4px', color: '#1e3a8a' }}>
+                      Nombre o Razón Social Fiscal
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Nombre en Hacienda (o usa nombre del comercio)"
+                      value={formData.fiscalNombreReceptor || ''}
+                      onChange={(e) => setFormData({ ...formData, fiscalNombreReceptor: e.target.value })}
+                      style={{ width: '100%', padding: '7px 10px', borderRadius: '6px', border: '1px solid #93c5fd', fontSize: '0.82rem', backgroundColor: 'white' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 'bold', marginBottom: '4px', color: '#1e3a8a' }}>
+                      Correo para Recepción de Factura
+                    </label>
+                    <input
+                      type="email"
+                      placeholder="correo@empresa.com (o usa correo admin)"
+                      value={formData.fiscalEmailReceptor || ''}
+                      onChange={(e) => setFormData({ ...formData, fiscalEmailReceptor: e.target.value })}
+                      style={{ width: '100%', padding: '7px 10px', borderRadius: '6px', border: '1px solid #93c5fd', fontSize: '0.82rem', backgroundColor: 'white' }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* PROGRAMA PILOTO BETICO AI Y PRIORIDAD DE COLA */}
               <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '10px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ fontWeight: 'bold', fontSize: '0.82rem', color: '#166534', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <Zap size={15} color="#16a34a" /> Programa Piloto Betico AI & Prioridad en Cola
+                    <Zap size={15} color="#16a34a" /> Programa Piloto Betico AI y Prioridad en Cola
                   </div>
                   <span style={{ fontSize: '0.72rem', backgroundColor: formData.isAiPilot ? '#dcfce7' : '#f1f5f9', color: formData.isAiPilot ? '#15803d' : '#64748b', padding: '2px 8px', borderRadius: '12px', fontWeight: 'bold' }}>
                     {formData.isAiPilot ? '🚀 Piloto VIP Activo' : '⚪ Estándar'}
@@ -2523,11 +2690,11 @@ export default function SuperAdminPanel({ activeTabProp = 'tenants', onTabChange
                 </p>
               </div>
 
-              {/* UBICACIÓN DEL NEGOCIO & NAVEGACIÓN GPS */}
+              {/* UBICACIÓN DEL NEGOCIO Y NAVEGACIÓN GPS */}
               <div style={{ backgroundColor: '#f8fafc', border: '1px solid var(--border)', borderRadius: '10px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ fontWeight: 'bold', fontSize: '0.82rem', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <MapPin size={15} color="#ef4444" /> Ubicación Física & Enlace GPS
+                    <MapPin size={15} color="#ef4444" /> Ubicación Física y Enlace GPS
                   </div>
                   <button
                     type="button"

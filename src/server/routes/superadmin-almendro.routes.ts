@@ -143,7 +143,6 @@ router.get('/vouchers', async (req: Request, res: Response): Promise<void> => {
  */
 router.post('/emit-subscription-invoice/:chargeId', async (req: Request, res: Response): Promise<void> => {
   try {
-    const superadminTenantId = await getOrCreateSuperadminTenantId();
     const { chargeId } = req.params;
 
     // Retrieve charge and tenant details
@@ -164,7 +163,7 @@ router.post('/emit-subscription-invoice/:chargeId', async (req: Request, res: Re
 
     // Check if voucher already exists for this charge
     const existingVoucher = await query(`
-      SELECT id, numeric_key as "numericKey", pdf_url as "pdfUrl"
+      SELECT id, numeric_key as "numericKey", consecutive_number as "consecutiveNumber", pdf_url as "pdfUrl"
       FROM electronic_vouchers
       WHERE subscription_charge_id = $1
     `, [chargeId]);
@@ -174,28 +173,20 @@ router.post('/emit-subscription-invoice/:chargeId', async (req: Request, res: Re
         success: true,
         alreadyEmitted: true,
         numericKey: existingVoucher.rows[0].numericKey,
+        consecutiveNumber: existingVoucher.rows[0].consecutiveNumber,
         pdfUrl: existingVoucher.rows[0].pdfUrl,
         message: 'Este cobro ya cuenta con comprobante electrónico emitido.'
       });
       return;
     }
 
-    const subtotal = Number(charge.amount) || 0;
-    const description = `Suscripción Betico SaaS - ${charge.tenantName || charge.tenantSlug} (Periodo ${charge.period_start || 'Mes Actual'})`;
-
-    const emitRes = await AlmendroService.emitVoucher(superadminTenantId, {
-      docType: '04', // Tiquete electrónico por defecto para B2B simple o 01 si hay cédula jurídica
-      subscriptionChargeId: charge.id,
+    const { emitPlatformSubscriptionInvoiceForTenant } = await import('../services/hacienda-native.service.js');
+    const emitRes = await emitPlatformSubscriptionInvoiceForTenant(charge.tenant_id, {
+      amount: Number(charge.amount) || undefined,
       currency: charge.currency || 'CRC',
-      items: [
-        {
-          cabysCode: '8314100000000', // Servicios de desarrollo de software y aplicaciones
-          description,
-          quantity: 1,
-          unitPrice: subtotal,
-          taxRateCode: '08' // 13% IVA
-        }
-      ]
+      paymentMethod: '02',
+      subscriptionChargeId: charge.id,
+      forceEmit: true
     });
 
     if (!emitRes.success) {
@@ -206,8 +197,10 @@ router.post('/emit-subscription-invoice/:chargeId', async (req: Request, res: Re
     res.json({
       success: true,
       numericKey: emitRes.numericKey,
+      consecutiveNumber: emitRes.consecutiveNumber,
       pdfUrl: emitRes.pdfUrl,
-      message: 'Factura de suscripción emitida con éxito.'
+      voucher: emitRes.voucher,
+      message: emitRes.message || 'Factura de suscripción emitida con éxito.'
     });
   } catch (error: any) {
     console.error('[SuperAdminAlmendro] Error emitiendo factura de suscripción:', error);
