@@ -411,6 +411,40 @@ describe('Módulo Dedicado de Facturación Electrónica Hacienda (DGT v4.4) y Mu
       assert.ok(adminTenantsCode.includes('requiresSubscriptionInvoice'));
       assert.ok(adminTenantsCode.includes('/emit-subscription-invoice'));
     });
+
+    it('admin-app (Betico Ops) y ElectronicBillingView aplican paleta adaptativa y variables CSS de alto contraste en modo oscuro', () => {
+      const adminIndexHtml = fs.readFileSync(path.resolve('admin-app/index.html'), 'utf8');
+      const adminAppCode = fs.readFileSync(path.resolve('admin-app/src/client/App.tsx'), 'utf8');
+      const adminBillingCode = fs.readFileSync(path.resolve('admin-app/src/client/components/BillingManager.tsx'), 'utf8');
+      const viewCode = fs.readFileSync(viewPath, 'utf8');
+
+      // 1. Variables CSS de tema oscuro en admin-app/index.html
+      assert.ok(adminIndexHtml.includes('--surface: #0f2426'));
+      assert.ok(adminIndexHtml.includes('--background: #091819'));
+      assert.ok(adminIndexHtml.includes('--text: #FAF8F5'));
+      assert.ok(adminIndexHtml.includes('--text-muted: #cbd5e1'));
+
+      // 2. Prop darkMode={true} pasada en admin-app
+      assert.ok(adminAppCode.includes('darkMode={true}'));
+      assert.ok(adminBillingCode.includes('darkMode={true}'));
+
+      // 3. Reglas CSS de alto contraste y tokens palette.* en ElectronicBillingView.tsx
+      assert.ok(viewCode.includes('eb-billing-root eb-dark'));
+      assert.ok(viewCode.includes('const palette = {'));
+      assert.ok(viewCode.includes('palette.primarySoftBg'));
+      assert.ok(viewCode.includes('palette.successSoftBg'));
+      assert.ok(viewCode.includes('palette.warnSoftBg'));
+      assert.ok(viewCode.includes('palette.dangerSoftBg'));
+
+      // 4. Ningún fondo claro fijo remanente dentro del JSX después de const palette
+      const jsxPortion = viewCode.slice(viewCode.indexOf('return ('));
+      assert.ok(!jsxPortion.includes("'#eff6ff'"), 'No debe quedar #eff6ff fijo en el JSX');
+      assert.ok(!jsxPortion.includes("'#f0fdf4'"), 'No debe quedar #f0fdf4 fijo en el JSX');
+      assert.ok(!jsxPortion.includes("'#fef2f2'"), 'No debe quedar #fef2f2 fijo en el JSX');
+      assert.ok(!jsxPortion.includes("'#f8fafc'"), 'No debe quedar #f8fafc fijo en el JSX');
+      assert.ok(!jsxPortion.includes("'#64748b'"), 'No debe quedar #64748b fijo en el JSX');
+      assert.ok(!jsxPortion.includes("'#475569'"), 'No debe quedar #475569 fijo en el JSX');
+    });
   });
 });
 
