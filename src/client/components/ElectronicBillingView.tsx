@@ -32,6 +32,7 @@ import { formatShortDateTime } from '../utils/dateFormat';
 export interface ElectronicBillingViewProps {
   initialTab?: 'comprobantes' | 'credenciales' | 'sucursales';
   isSuperAdminMode?: boolean;
+  darkMode?: boolean;
 }
 
 interface EconomicActivityItem {
@@ -169,8 +170,19 @@ function formatConsecutivePreview(branchCode: string, posCode: string, docType: 
   return `${b}${p}${d}${s}`;
 }
 
-export default function ElectronicBillingView({ initialTab, isSuperAdminMode = false }: ElectronicBillingViewProps) {
+export default function ElectronicBillingView({ initialTab, isSuperAdminMode = false, darkMode = false }: ElectronicBillingViewProps) {
   const api = useApi();
+
+  const [autoDark, setAutoDark] = useState(false);
+  useEffect(() => {
+    if (typeof window !== 'undefined' && document.body) {
+      const bg = window.getComputedStyle(document.body).backgroundColor;
+      if (bg === 'rgb(11, 25, 26)' || bg === 'rgb(7, 18, 19)' || document.title.includes('Betico Ops')) {
+        setAutoDark(true);
+      }
+    }
+  }, []);
+  const isDark = Boolean(darkMode || autoDark);
 
   // Navegación interna sincronizada con la barra lateral
   const [activeTab, setActiveTab] = useState<'comprobantes' | 'credenciales' | 'sucursales'>(
@@ -1177,9 +1189,41 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
     }
   };
 
+  const palette = {
+    surface: isDark ? '#0f2426' : '#ffffff',
+    surfaceAlt: isDark ? '#091819' : '#f8fafc',
+    surfaceMuted: isDark ? '#132e31' : '#f1f5f9',
+    inputBg: isDark ? '#071415' : '#ffffff',
+    border: isDark ? '#1e4245' : '#e2e8f0',
+    text: isDark ? '#FAF8F5' : '#0f172a',
+    textSecondary: isDark ? '#e2e8f0' : '#334155',
+    textMuted: isDark ? '#cbd5e1' : '#475569',
+    primary: isDark ? '#34D399' : '#2563eb',
+    primaryBtnBg: isDark ? '#059669' : '#2563eb',
+    primaryBtnText: '#ffffff',
+    primarySoftBg: isDark ? 'rgba(52, 211, 153, 0.14)' : '#eff6ff',
+    primarySoftBorder: isDark ? 'rgba(52, 211, 153, 0.4)' : '#bfdbfe',
+    primarySoftText: isDark ? '#6ee7b7' : '#1d4ed8',
+    indigoSoftBg: isDark ? 'rgba(99, 102, 241, 0.18)' : '#eef2ff',
+    indigoSoftBorder: isDark ? 'rgba(129, 140, 248, 0.45)' : '#c7d2fe',
+    indigoSoftText: isDark ? '#e0e7ff' : '#3730a3',
+    successSoftBg: isDark ? 'rgba(16, 185, 129, 0.15)' : '#f0fdf4',
+    successBadgeBg: isDark ? 'rgba(16, 185, 129, 0.22)' : '#dcfce7',
+    successSoftBorder: isDark ? 'rgba(52, 211, 153, 0.45)' : '#86efac',
+    successText: isDark ? '#6ee7b7' : '#166534',
+    warnSoftBg: isDark ? 'rgba(245, 158, 11, 0.16)' : '#fffbeb',
+    warnSoftBorder: isDark ? 'rgba(251, 191, 36, 0.45)' : '#fde68a',
+    warnText: isDark ? '#fde68a' : '#92400e',
+    dangerSoftBg: isDark ? 'rgba(239, 68, 68, 0.16)' : '#fef2f2',
+    dangerSoftBorder: isDark ? 'rgba(248, 113, 113, 0.45)' : '#fca5a5',
+    dangerText: isDark ? '#fca5a5' : '#b91c1c',
+    purpleSoftBg: isDark ? 'rgba(168, 85, 247, 0.18)' : '#faf5ff',
+    purpleText: isDark ? '#e9d5ff' : '#6b21a8'
+  };
+
   if (loading) {
     return (
-      <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
+      <div style={{ padding: '40px', textAlign: 'center', color: palette.textMuted }}>
         <RefreshCw size={24} className="animate-spin" style={{ margin: '0 auto 12px auto' }} />
         <p>Cargando Módulo de Facturación Electrónica Costa Rica (Hacienda DGT v4.4)...</p>
       </div>
@@ -1201,7 +1245,58 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
     effectiveDaysRemaining !== null && effectiveDaysRemaining > 0 && effectiveDaysRemaining < 30;
 
   return (
-    <div style={{ maxWidth: '1080px', margin: '0 auto', padding: '20px 16px' }}>
+    <div
+      className={isDark ? 'eb-billing-root eb-dark' : 'eb-billing-root eb-light'}
+      style={{
+        maxWidth: '1080px',
+        margin: '0 auto',
+        padding: '20px 16px',
+        color: palette.text,
+        ['--surface' as any]: palette.surface,
+        ['--background' as any]: palette.surfaceAlt,
+        ['--border' as any]: palette.border,
+        ['--text' as any]: palette.text,
+        ['--text-muted' as any]: palette.textMuted,
+        ['--text-secondary' as any]: palette.textSecondary,
+        ['--primary' as any]: palette.primary
+      }}
+    >
+      <style>{`
+        .eb-billing-root.eb-dark input:not([type="checkbox"]):not([type="radio"]),
+        .eb-billing-root.eb-dark select,
+        .eb-billing-root.eb-dark textarea {
+          background-color: #071415 !important;
+          color: #FAF8F5 !important;
+          border-color: #234e52 !important;
+        }
+        .eb-billing-root.eb-dark select option {
+          background-color: #091819;
+          color: #FAF8F5;
+        }
+        .eb-billing-root.eb-dark input::placeholder,
+        .eb-billing-root.eb-dark textarea::placeholder {
+          color: #94a3b8 !important;
+        }
+        .eb-billing-root.eb-dark label,
+        .eb-billing-root.eb-dark h1,
+        .eb-billing-root.eb-dark h2,
+        .eb-billing-root.eb-dark h3,
+        .eb-billing-root.eb-dark h4,
+        .eb-billing-root.eb-dark strong,
+        .eb-billing-root.eb-dark td {
+          color: #FAF8F5;
+        }
+        .eb-billing-root.eb-dark th {
+          color: #cbd5e1;
+        }
+        .eb-billing-root.eb-light input:not([type="checkbox"]):not([type="radio"]),
+        .eb-billing-root.eb-light select,
+        .eb-billing-root.eb-light textarea {
+          color: #0f172a;
+          background-color: #ffffff;
+        }
+      `}</style>
+
       {/* CABECERA SUPERIOR */}
       <div
         style={{
@@ -1211,8 +1306,8 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
           justifyContent: 'space-between',
           flexWrap: 'wrap',
           gap: '16px',
-          backgroundColor: 'var(--surface)',
-          border: '1px solid var(--border)',
+          backgroundColor: palette.surface,
+          border: `1px solid ${palette.border}`,
           borderRadius: '14px',
           padding: '18px 22px',
           boxShadow: 'var(--shadow-xs)'
@@ -1221,10 +1316,10 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div
             style={{
-              backgroundColor: '#eff6ff',
+              backgroundColor: palette.primarySoftBg,
               padding: '10px',
               borderRadius: '12px',
-              color: 'var(--primary)',
+              color: palette.primary,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center'
@@ -1239,9 +1334,9 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: '6px',
-                  backgroundColor: '#eef2ff',
-                  color: '#4338ca',
-                  border: '1px solid #c7d2fe',
+                  backgroundColor: palette.indigoSoftBg,
+                  color: palette.indigoSoftText,
+                  border: `1px solid ${palette.indigoSoftBorder}`,
                   borderRadius: '999px',
                   padding: '3px 10px',
                   fontSize: '0.7rem',
@@ -1254,12 +1349,12 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                 SUPERADMIN PLATAFORMA · FACTURACIÓN OFICIAL A TENANTS (BETICO FACTURAS)
               </div>
             )}
-            <h1 style={{ margin: 0, fontSize: '1.3rem', fontWeight: '800', color: 'var(--text)' }}>
+            <h1 style={{ margin: 0, fontSize: '1.3rem', fontWeight: '800', color: palette.text }}>
               {isSuperAdminMode
                 ? 'Betico Facturas — Facturación Electrónica de Suscripciones (Hacienda DGT v4.4)'
                 : 'Módulo de Facturación Electrónica Costa Rica (Hacienda DGT v4.4)'}
             </h1>
-            <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+            <span style={{ fontSize: '0.82rem', color: palette.textMuted }}>
               {isSuperAdminMode
                 ? 'Cuenta fiscal de la plataforma Betico para facturar suscripciones a comercios clientes con firma XAdES-EPES'
                 : 'Emisión directa de Facturas Electrónicas (01), Tiquetes (04) y Notas de Crédito (03) con firma XAdES-EPES'}
@@ -1277,20 +1372,20 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
               borderRadius: '20px',
               backgroundColor:
                 billingMode === 'BETICO_NATIVE'
-                  ? '#dcfce7'
+                  ? palette.successBadgeBg
                   : billingMode === 'ALMENDRO_AUTO'
-                  ? '#eff6ff'
+                  ? palette.primarySoftBg
                   : billingMode === 'EXTERNAL_MANUAL'
-                  ? '#f3e8ff'
-                  : '#f1f5f9',
+                  ? palette.purpleSoftBg
+                  : palette.surfaceMuted,
               color:
                 billingMode === 'BETICO_NATIVE'
-                  ? '#15803d'
+                  ? palette.successText
                   : billingMode === 'ALMENDRO_AUTO'
-                  ? '#1d4ed8'
+                  ? palette.primarySoftText
                   : billingMode === 'EXTERNAL_MANUAL'
-                  ? '#7e22ce'
-                  : '#64748b'
+                  ? palette.purpleText
+                  : palette.textMuted
             }}
           >
             {billingMode === 'BETICO_NATIVE'
@@ -1311,9 +1406,9 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
               display: 'inline-flex',
               alignItems: 'center',
               gap: '5px',
-              backgroundColor: isConnected ? '#ecfdf5' : '#fef9c3',
-              color: isConnected ? '#047857' : '#854d0e',
-              border: `1px solid ${isConnected ? '#a7f3d0' : '#fde68a'}`
+              backgroundColor: isConnected ? palette.successSoftBg : palette.warnSoftBg,
+              color: isConnected ? palette.successText : palette.warnText,
+              border: `1px solid ${isConnected ? palette.successSoftBorder : palette.warnSoftBorder}`
             }}
           >
             {isConnected ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
@@ -1328,7 +1423,7 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
           display: 'flex',
           gap: '8px',
           marginBottom: '24px',
-          borderBottom: '2px solid var(--border)',
+          borderBottom: `2px solid ${palette.border}`,
           paddingBottom: '2px',
           overflowX: 'auto'
         }}
@@ -1342,9 +1437,9 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
             gap: '8px',
             padding: '11px 18px',
             border: 'none',
-            borderBottom: activeTab === 'comprobantes' ? '3px solid var(--primary)' : '3px solid transparent',
-            backgroundColor: activeTab === 'comprobantes' ? '#eff6ff' : 'transparent',
-            color: activeTab === 'comprobantes' ? 'var(--primary)' : 'var(--text-muted)',
+            borderBottom: activeTab === 'comprobantes' ? `3px solid ${palette.primary}` : '3px solid transparent',
+            backgroundColor: activeTab === 'comprobantes' ? palette.primarySoftBg : 'transparent',
+            color: activeTab === 'comprobantes' ? palette.primary : palette.textMuted,
             fontWeight: activeTab === 'comprobantes' ? '800' : '600',
             fontSize: '0.9rem',
             borderRadius: '8px 8px 0 0',
@@ -1365,9 +1460,9 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
             gap: '8px',
             padding: '11px 18px',
             border: 'none',
-            borderBottom: activeTab === 'credenciales' ? '3px solid var(--primary)' : '3px solid transparent',
-            backgroundColor: activeTab === 'credenciales' ? '#eff6ff' : 'transparent',
-            color: activeTab === 'credenciales' ? 'var(--primary)' : 'var(--text-muted)',
+            borderBottom: activeTab === 'credenciales' ? `3px solid ${palette.primary}` : '3px solid transparent',
+            backgroundColor: activeTab === 'credenciales' ? palette.primarySoftBg : 'transparent',
+            color: activeTab === 'credenciales' ? palette.primary : palette.textMuted,
             fontWeight: activeTab === 'credenciales' ? '800' : '600',
             fontSize: '0.9rem',
             borderRadius: '8px 8px 0 0',
@@ -1388,9 +1483,9 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
             gap: '8px',
             padding: '11px 18px',
             border: 'none',
-            borderBottom: activeTab === 'sucursales' ? '3px solid var(--primary)' : '3px solid transparent',
-            backgroundColor: activeTab === 'sucursales' ? '#eff6ff' : 'transparent',
-            color: activeTab === 'sucursales' ? 'var(--primary)' : 'var(--text-muted)',
+            borderBottom: activeTab === 'sucursales' ? `3px solid ${palette.primary}` : '3px solid transparent',
+            backgroundColor: activeTab === 'sucursales' ? palette.primarySoftBg : 'transparent',
+            color: activeTab === 'sucursales' ? palette.primary : palette.textMuted,
             fontWeight: activeTab === 'sucursales' ? '800' : '600',
             fontSize: '0.9rem',
             borderRadius: '8px 8px 0 0',
@@ -1415,8 +1510,8 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
             usage?.planName === 'superadmin_platform' ? (
               <div
                 style={{
-                  backgroundColor: '#f0fdf4',
-                  border: '1px solid #86efac',
+                  backgroundColor: palette.successSoftBg,
+                  border: `1px solid ${palette.successSoftBorder}`,
                   borderRadius: '14px',
                   padding: '20px',
                   boxShadow: 'var(--shadow-xs)',
@@ -1429,15 +1524,15 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
               >
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
-                    <Award size={18} color="#15803d" />
-                    <h3 style={{ margin: 0, fontSize: '1.0rem', fontWeight: '800', color: '#14532d' }}>
+                    <Award size={18} color={palette.successText} />
+                    <h3 style={{ margin: 0, fontSize: '1.0rem', fontWeight: '800', color: palette.successText }}>
                       Cuenta Fiscal SuperAdmin (Plataforma Betico) — Emisión Ilimitada de Comprobantes
                     </h3>
                     <span
                       style={{
-                        backgroundColor: '#dcfce7',
-                        color: '#166534',
-                        border: '1px solid #86efac',
+                        backgroundColor: palette.successBadgeBg,
+                        color: palette.successText,
+                        border: `1px solid ${palette.successSoftBorder}`,
                         fontSize: '0.72rem',
                         fontWeight: '800',
                         padding: '2px 10px',
@@ -1447,16 +1542,16 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                       SIN LÍMITE DE CUOTA
                     </span>
                   </div>
-                  <p style={{ margin: 0, fontSize: '0.82rem', color: '#166534' }}>
+                  <p style={{ margin: 0, fontSize: '0.82rem', color: palette.textSecondary }}>
                     Emite facturas electrónicas (01), tiquetes (04) y notas de crédito (03) a todos tus tenants con envío directo de PDF y XML por correo.
                   </p>
                 </div>
 
                 <div style={{ textAlign: 'right' }}>
-                  <span style={{ fontSize: '1.35rem', fontWeight: '900', color: '#15803d' }}>
+                  <span style={{ fontSize: '1.35rem', fontWeight: '900', color: palette.successText }}>
                     {(usage as any)?.emittedCount ?? usage?.emitted ?? 0}
                   </span>
-                  <span style={{ fontSize: '0.82rem', color: '#166534', marginLeft: '6px', fontWeight: '700' }}>
+                  <span style={{ fontSize: '0.82rem', color: palette.textSecondary, marginLeft: '6px', fontWeight: '700' }}>
                     comprobantes emitidos este mes
                   </span>
                 </div>
@@ -1464,14 +1559,11 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
             ) : (
               <div
                 style={{
-                  backgroundColor: 'var(--surface)',
-                  border: `1px solid ${isOverLimit ? '#fca5a5' : isNearLimit ? '#fde68a' : 'var(--border)'}`,
+                  backgroundColor: isOverLimit ? palette.dangerSoftBg : palette.surface,
+                  border: `1px solid ${isOverLimit ? palette.dangerSoftBorder : isNearLimit ? palette.warnSoftBorder : palette.border}`,
                   borderRadius: '14px',
                   padding: '20px',
-                  boxShadow: 'var(--shadow-xs)',
-                  background: isOverLimit
-                    ? 'linear-gradient(180deg, #fff5f5 0%, var(--surface) 100%)'
-                    : 'var(--surface)'
+                  boxShadow: 'var(--shadow-xs)'
                 }}
               >
                 <div
@@ -1486,15 +1578,15 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                 >
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
-                      <Award size={18} color="var(--primary)" />
-                      <h3 style={{ margin: 0, fontSize: '1.0rem', fontWeight: '800', color: 'var(--text)' }}>
+                      <Award size={18} color={palette.primary} />
+                      <h3 style={{ margin: 0, fontSize: '1.0rem', fontWeight: '800', color: palette.text }}>
                         Cuota Mensual de Facturación ({usage.planName.toUpperCase()})
                       </h3>
                       {usage.inCourtesy && (
                         <span
                           style={{
-                            backgroundColor: '#fef3c7',
-                            color: '#b453d9',
+                            backgroundColor: palette.warnSoftBg,
+                            color: palette.warnText,
                             fontSize: '0.72rem',
                             fontWeight: '800',
                             padding: '2px 8px',
@@ -1505,16 +1597,16 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                         </span>
                       )}
                     </div>
-                    <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                    <p style={{ margin: 0, fontSize: '0.82rem', color: palette.textMuted }}>
                       Tu plan incluye <strong>{usage.quota} comprobantes oficiales</strong> cada mes sin costo adicional.
                     </p>
                   </div>
 
                   <div style={{ textAlign: 'right' }}>
-                    <span style={{ fontSize: '1.25rem', fontWeight: '900', color: isOverLimit ? '#dc2626' : 'var(--text)' }}>
+                    <span style={{ fontSize: '1.25rem', fontWeight: '900', color: isOverLimit ? palette.dangerText : palette.text }}>
                       {usage.emitted} / {usage.quota}
                     </span>
-                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginLeft: '4px' }}>
+                    <span style={{ fontSize: '0.8rem', color: palette.textMuted, marginLeft: '4px' }}>
                       comprobantes
                     </span>
                   </div>
@@ -1524,7 +1616,7 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                   style={{
                     width: '100%',
                     height: '10px',
-                    backgroundColor: '#e2e8f0',
+                    backgroundColor: palette.surfaceMuted,
                     borderRadius: '6px',
                     overflow: 'hidden',
                     marginBottom: '10px'
@@ -1547,7 +1639,7 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                     justifyContent: 'space-between',
                     alignItems: 'center',
                     fontSize: '0.78rem',
-                    color: 'var(--text-muted)',
+                    color: palette.textMuted,
                     flexWrap: 'wrap',
                     gap: '8px'
                   }}
@@ -1567,8 +1659,8 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
           {/* 2. Barra de Acción y Facturador Rápido Manual */}
           <div
             style={{
-              backgroundColor: 'var(--surface)',
-              border: '1px solid var(--border)',
+              backgroundColor: palette.surface,
+              border: `1px solid ${palette.border}`,
               borderRadius: '14px',
               padding: '20px',
               boxShadow: 'var(--shadow-xs)'
@@ -1584,10 +1676,10 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
               }}
             >
               <div>
-                <h2 style={{ margin: 0, fontSize: '1.05rem', fontWeight: '800', color: 'var(--text)' }}>
+                <h2 style={{ margin: 0, fontSize: '1.05rem', fontWeight: '800', color: palette.text }}>
                   Facturador Rápido Manual
                 </h2>
-                <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                <span style={{ fontSize: '0.82rem', color: palette.textMuted }}>
                   Emite al instante una Factura Electrónica (01) o Tiquete Electrónico (04) directo a Hacienda y WhatsApp
                 </span>
               </div>
@@ -1601,13 +1693,13 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                   gap: '8px',
                   padding: '10px 18px',
                   borderRadius: '8px',
-                  border: 'none',
-                  backgroundColor: showManualInvoicer ? '#475569' : 'var(--primary)',
-                  color: 'white',
+                  border: showManualInvoicer ? `1px solid ${palette.border}` : 'none',
+                  backgroundColor: showManualInvoicer ? palette.surfaceMuted : palette.primaryBtnBg,
+                  color: showManualInvoicer ? palette.text : palette.primaryBtnText,
                   fontWeight: '800',
                   fontSize: '0.86rem',
                   cursor: 'pointer',
-                  boxShadow: '0 2px 6px rgba(37,99,235,0.2)'
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.2)'
                 }}
               >
                 <Plus size={16} />
@@ -1623,7 +1715,7 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                 style={{
                   marginTop: '18px',
                   paddingTop: '18px',
-                  borderTop: '1px solid var(--border)',
+                  borderTop: `1px solid ${palette.border}`,
                   display: 'flex',
                   flexDirection: 'column',
                   gap: '18px'
@@ -1638,7 +1730,7 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                   }}
                 >
                   <div>
-                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', marginBottom: '5px' }}>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', marginBottom: '5px', color: palette.text }}>
                       Tipo de Comprobante *
                     </label>
                     <select
@@ -1648,8 +1740,9 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                         width: '100%',
                         padding: '9px 12px',
                         borderRadius: '8px',
-                        border: '1px solid var(--border)',
-                        backgroundColor: 'var(--background)',
+                        border: `1px solid ${palette.border}`,
+                        backgroundColor: palette.inputBg,
+                        color: palette.text,
                         fontWeight: '700'
                       }}
                     >
@@ -1659,7 +1752,7 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                   </div>
 
                   <div>
-                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', marginBottom: '5px' }}>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', marginBottom: '5px', color: palette.text }}>
                       Sucursal Emisora *
                     </label>
                     <select
@@ -1669,8 +1762,9 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                         width: '100%',
                         padding: '9px 12px',
                         borderRadius: '8px',
-                        border: '1px solid var(--border)',
-                        backgroundColor: 'var(--background)',
+                        border: `1px solid ${palette.border}`,
+                        backgroundColor: palette.inputBg,
+                        color: palette.text,
                         fontWeight: '600'
                       }}
                     >
@@ -1688,7 +1782,7 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                   </div>
 
                   <div>
-                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', marginBottom: '5px' }}>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', marginBottom: '5px', color: palette.text }}>
                       Medio de Pago *
                     </label>
                     <select
@@ -1698,8 +1792,9 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                         width: '100%',
                         padding: '9px 12px',
                         borderRadius: '8px',
-                        border: '1px solid var(--border)',
-                        backgroundColor: 'var(--background)',
+                        border: `1px solid ${palette.border}`,
+                        backgroundColor: palette.inputBg,
+                        color: palette.text,
                         fontWeight: '600'
                       }}
                     >
@@ -1710,7 +1805,7 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                   </div>
 
                   <div>
-                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', marginBottom: '5px' }}>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', marginBottom: '5px', color: palette.text }}>
                       Moneda *
                     </label>
                     <select
@@ -1720,8 +1815,9 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                         width: '100%',
                         padding: '9px 12px',
                         borderRadius: '8px',
-                        border: '1px solid var(--border)',
-                        backgroundColor: 'var(--background)',
+                        border: `1px solid ${palette.border}`,
+                        backgroundColor: palette.inputBg,
+                        color: palette.text,
                         fontWeight: '700'
                       }}
                     >
@@ -1735,8 +1831,8 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                 {isSuperAdminMode && (
                   <div
                     style={{
-                      backgroundColor: '#eef2ff',
-                      border: '1px solid #c7d2fe',
+                      backgroundColor: palette.indigoSoftBg,
+                      border: `1px solid ${palette.indigoSoftBorder}`,
                       borderRadius: '12px',
                       padding: '14px 16px'
                     }}
@@ -1746,7 +1842,7 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                         display: 'block',
                         fontSize: '0.82rem',
                         fontWeight: '800',
-                        color: '#3730a3',
+                        color: palette.indigoSoftText,
                         marginBottom: '6px'
                       }}
                     >
@@ -1796,10 +1892,10 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                           minWidth: '280px',
                           padding: '9px 12px',
                           borderRadius: '8px',
-                          border: '1px solid #a5b4fc',
-                          backgroundColor: '#ffffff',
+                          border: `1px solid ${palette.indigoSoftBorder}`,
+                          backgroundColor: palette.inputBg,
                           fontWeight: '700',
-                          color: '#1e1b4b',
+                          color: palette.text,
                           fontSize: '0.84rem'
                         }}
                       >
@@ -1825,7 +1921,7 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                             <button
                               type="button"
                               onClick={handleConsultReceiverPadron}
-                              disabled={padronReceiverLoading}
+                              disabled={searchingReceiverPadron}
                               style={{
                                 padding: '9px 14px',
                                 borderRadius: '8px',
@@ -1834,14 +1930,14 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                                 color: '#ffffff',
                                 fontWeight: '700',
                                 fontSize: '0.8rem',
-                                cursor: padronReceiverLoading ? 'wait' : 'pointer',
+                                cursor: searchingReceiverPadron ? 'wait' : 'pointer',
                                 display: 'inline-flex',
                                 alignItems: 'center',
                                 gap: '6px'
                               }}
                             >
                               <Search size={14} />
-                              {padronReceiverLoading ? 'Consultando...' : 'Consultar Cédula en Hacienda'}
+                              {searchingReceiverPadron ? 'Consultando...' : 'Consultar Cédula en Hacienda'}
                             </button>
                           );
                         }
@@ -1854,18 +1950,18 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                 {/* Datos del Cliente Receptor */}
                 <div
                   style={{
-                    backgroundColor: '#f8fafc',
-                    border: '1px solid var(--border)',
+                    backgroundColor: palette.surfaceAlt,
+                    border: `1px solid ${palette.border}`,
                     borderRadius: '12px',
                     padding: '16px'
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
-                    <strong style={{ fontSize: '0.88rem', color: 'var(--text)' }}>
+                    <strong style={{ fontSize: '0.88rem', color: palette.text }}>
                       Datos del Cliente Receptor{' '}
                       {manualDocType === '01' ? '(Obligatorio para Factura 01)' : '(Opcional para Tiquete 04)'}
                     </strong>
-                    <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
+                    <span style={{ fontSize: '0.76rem', color: palette.textMuted }}>
                       Consulta el padrón oficial de Hacienda por número de cédula
                     </span>
                   </div>
@@ -1878,7 +1974,7 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                     }}
                   >
                     <div>
-                      <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '700', marginBottom: '4px' }}>
+                      <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '700', marginBottom: '4px', color: palette.text }}>
                         Cédula del Cliente {manualDocType === '01' ? '*' : ''}
                       </label>
                       <div style={{ display: 'flex', gap: '6px' }}>
@@ -1892,8 +1988,9 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                             flex: 1,
                             padding: '8px 10px',
                             borderRadius: '8px',
-                            border: '1px solid var(--border)',
-                            backgroundColor: 'white'
+                            border: `1px solid ${palette.border}`,
+                            backgroundColor: palette.inputBg,
+                            color: palette.text
                           }}
                         />
                         <button
@@ -1903,9 +2000,9 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                           style={{
                             padding: '8px 12px',
                             borderRadius: '8px',
-                            border: '1px solid var(--primary)',
-                            backgroundColor: '#eff6ff',
-                            color: 'var(--primary)',
+                            border: `1px solid ${palette.primarySoftBorder}`,
+                            backgroundColor: palette.primarySoftBg,
+                            color: palette.primarySoftText,
                             fontWeight: '700',
                             fontSize: '0.76rem',
                             cursor: 'pointer',
@@ -1918,7 +2015,7 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                     </div>
 
                     <div>
-                      <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '700', marginBottom: '4px' }}>
+                      <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '700', marginBottom: '4px', color: palette.text }}>
                         Tipo de Identificación
                       </label>
                       <select
@@ -1928,8 +2025,9 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                           width: '100%',
                           padding: '8px 10px',
                           borderRadius: '8px',
-                          border: '1px solid var(--border)',
-                          backgroundColor: 'white'
+                          border: `1px solid ${palette.border}`,
+                          backgroundColor: palette.inputBg,
+                          color: palette.text
                         }}
                       >
                         <option value="01">01 - Cédula Física</option>
@@ -1940,7 +2038,7 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                     </div>
 
                     <div>
-                      <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '700', marginBottom: '4px' }}>
+                      <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '700', marginBottom: '4px', color: palette.text }}>
                         Nombre o Razón Social {manualDocType === '01' ? '*' : ''}
                       </label>
                       <input
@@ -1953,14 +2051,15 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                           width: '100%',
                           padding: '8px 10px',
                           borderRadius: '8px',
-                          border: '1px solid var(--border)',
-                          backgroundColor: 'white'
+                          border: `1px solid ${palette.border}`,
+                          backgroundColor: palette.inputBg,
+                          color: palette.text
                         }}
                       />
                     </div>
 
                     <div>
-                      <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '700', marginBottom: '4px' }}>
+                      <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '700', marginBottom: '4px', color: palette.text }}>
                         Correo Electrónico
                       </label>
                       <input
@@ -1972,14 +2071,15 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                           width: '100%',
                           padding: '8px 10px',
                           borderRadius: '8px',
-                          border: '1px solid var(--border)',
-                          backgroundColor: 'white'
+                          border: `1px solid ${palette.border}`,
+                          backgroundColor: palette.inputBg,
+                          color: palette.text
                         }}
                       />
                     </div>
 
                     <div>
-                      <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '700', marginBottom: '4px' }}>
+                      <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '700', marginBottom: '4px', color: palette.text }}>
                         Teléfono WhatsApp (Envío PDF)
                       </label>
                       <input
@@ -1991,8 +2091,9 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                           width: '100%',
                           padding: '8px 10px',
                           borderRadius: '8px',
-                          border: '1px solid var(--border)',
-                          backgroundColor: 'white'
+                          border: `1px solid ${palette.border}`,
+                          backgroundColor: palette.inputBg,
+                          color: palette.text
                         }}
                       />
                     </div>
@@ -2009,7 +2110,7 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                       marginBottom: '10px'
                     }}
                   >
-                    <strong style={{ fontSize: '0.9rem', color: 'var(--text)' }}>
+                    <strong style={{ fontSize: '0.9rem', color: palette.text }}>
                       Líneas de Detalle del Comprobante
                     </strong>
                     <button
@@ -2021,9 +2122,9 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                         gap: '5px',
                         padding: '6px 12px',
                         borderRadius: '6px',
-                        border: '1px solid var(--primary)',
-                        backgroundColor: '#eff6ff',
-                        color: 'var(--primary)',
+                        border: `1px solid ${palette.primarySoftBorder}`,
+                        backgroundColor: palette.primarySoftBg,
+                        color: palette.primarySoftText,
                         fontWeight: '700',
                         fontSize: '0.78rem',
                         cursor: 'pointer'
@@ -2042,14 +2143,14 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                           gridTemplateColumns: '2fr 1.1fr 0.7fr 1fr 1.2fr auto',
                           gap: '8px',
                           alignItems: 'end',
-                          backgroundColor: 'var(--background)',
+                          backgroundColor: palette.surfaceAlt,
                           padding: '10px',
                           borderRadius: '8px',
-                          border: '1px solid var(--border)'
+                          border: `1px solid ${palette.border}`
                         }}
                       >
                         <div>
-                          <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '3px' }}>
+                          <label style={{ display: 'block', fontSize: '0.72rem', color: palette.textMuted, marginBottom: '3px' }}>
                             Descripción #{idx + 1}
                           </label>
                           <input
@@ -2058,24 +2159,24 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                             placeholder="Producto o servicio"
                             value={line.description}
                             onChange={(e) => handleUpdateManualLine(line.id, 'description', e.target.value)}
-                            style={{ width: '100%', padding: '7px 9px', borderRadius: '6px', border: '1px solid var(--border)' }}
+                            style={{ width: '100%', padding: '7px 9px', borderRadius: '6px', border: `1px solid ${palette.border}`, backgroundColor: palette.inputBg, color: palette.text }}
                           />
                         </div>
 
                         <div>
-                          <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '3px' }}>
+                          <label style={{ display: 'block', fontSize: '0.72rem', color: palette.textMuted, marginBottom: '3px' }}>
                             Código CABYS (13 díg.)
                           </label>
                           <input
                             type="text"
                             value={line.cabysCode}
                             onChange={(e) => handleUpdateManualLine(line.id, 'cabysCode', e.target.value)}
-                            style={{ width: '100%', padding: '7px 9px', borderRadius: '6px', border: '1px solid var(--border)', fontFamily: 'monospace' }}
+                            style={{ width: '100%', padding: '7px 9px', borderRadius: '6px', border: `1px solid ${palette.border}`, backgroundColor: palette.inputBg, color: palette.text, fontFamily: 'monospace' }}
                           />
                         </div>
 
                         <div>
-                          <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '3px' }}>
+                          <label style={{ display: 'block', fontSize: '0.72rem', color: palette.textMuted, marginBottom: '3px' }}>
                             Cant.
                           </label>
                           <input
@@ -2084,12 +2185,12 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                             step="any"
                             value={line.quantity}
                             onChange={(e) => handleUpdateManualLine(line.id, 'quantity', Number(e.target.value))}
-                            style={{ width: '100%', padding: '7px 9px', borderRadius: '6px', border: '1px solid var(--border)' }}
+                            style={{ width: '100%', padding: '7px 9px', borderRadius: '6px', border: `1px solid ${palette.border}`, backgroundColor: palette.inputBg, color: palette.text }}
                           />
                         </div>
 
                         <div>
-                          <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '3px' }}>
+                          <label style={{ display: 'block', fontSize: '0.72rem', color: palette.textMuted, marginBottom: '3px' }}>
                             Precio Unitario (₡)
                           </label>
                           <input
@@ -2098,18 +2199,18 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                             step="any"
                             value={line.unitPrice}
                             onChange={(e) => handleUpdateManualLine(line.id, 'unitPrice', Number(e.target.value))}
-                            style={{ width: '100%', padding: '7px 9px', borderRadius: '6px', border: '1px solid var(--border)' }}
+                            style={{ width: '100%', padding: '7px 9px', borderRadius: '6px', border: `1px solid ${palette.border}`, backgroundColor: palette.inputBg, color: palette.text }}
                           />
                         </div>
 
                         <div>
-                          <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '3px' }}>
+                          <label style={{ display: 'block', fontSize: '0.72rem', color: palette.textMuted, marginBottom: '3px' }}>
                             Tarifa IVA Hacienda
                           </label>
                           <select
                             value={line.taxRateCode}
                             onChange={(e) => handleUpdateManualLine(line.id, 'taxRateCode', e.target.value)}
-                            style={{ width: '100%', padding: '7px 9px', borderRadius: '6px', border: '1px solid var(--border)' }}
+                            style={{ width: '100%', padding: '7px 9px', borderRadius: '6px', border: `1px solid ${palette.border}`, backgroundColor: palette.inputBg, color: palette.text }}
                           >
                             <option value="08">13% IVA General (08)</option>
                             <option value="04">4% Reducido (04)</option>
@@ -2126,9 +2227,9 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                           style={{
                             padding: '8px',
                             borderRadius: '6px',
-                            border: '1px solid #fecaca',
-                            backgroundColor: '#fef2f2',
-                            color: '#dc2626',
+                            border: `1px solid ${palette.dangerSoftBorder}`,
+                            backgroundColor: palette.dangerSoftBg,
+                            color: palette.dangerText,
                             cursor: manualLines.length <= 1 ? 'not-allowed' : 'pointer',
                             opacity: manualLines.length <= 1 ? 0.4 : 1
                           }}
@@ -2150,17 +2251,17 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                     flexWrap: 'wrap',
                     gap: '16px',
                     paddingTop: '12px',
-                    borderTop: '1px solid var(--border)'
+                    borderTop: `1px solid ${palette.border}`
                   }}
                 >
-                  <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', fontSize: '0.88rem' }}>
+                  <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', fontSize: '0.88rem', color: palette.text }}>
                     <span>
                       Subtotal: <strong>₡{manualTotals.subtotal.toLocaleString('es-CR')}</strong>
                     </span>
                     <span>
                       IVA: <strong>₡{manualTotals.tax.toLocaleString('es-CR')}</strong>
                     </span>
-                    <span style={{ fontSize: '1.05rem', color: 'var(--primary)', fontWeight: '900' }}>
+                    <span style={{ fontSize: '1.05rem', color: palette.primary, fontWeight: '900' }}>
                       Total: ₡{manualTotals.total.toLocaleString('es-CR')}
                     </span>
                   </div>
@@ -2176,7 +2277,7 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                       borderRadius: '8px',
                       border: 'none',
                       backgroundColor: '#16a34a',
-                      color: 'white',
+                      color: '#ffffff',
                       fontWeight: '800',
                       fontSize: '0.9rem',
                       cursor: emittingManual ? 'not-allowed' : 'pointer',
@@ -2194,8 +2295,8 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
           {/* 3. Historial de Comprobantes Emitidos */}
           <div
             style={{
-              backgroundColor: 'var(--surface)',
-              border: '1px solid var(--border)',
+              backgroundColor: palette.surface,
+              border: `1px solid ${palette.border}`,
               borderRadius: '14px',
               padding: '22px',
               boxShadow: 'var(--shadow-xs)'
@@ -2212,10 +2313,10 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
               }}
             >
               <div>
-                <h2 style={{ fontSize: '1.08rem', fontWeight: '800', margin: 0, color: 'var(--text)' }}>
+                <h2 style={{ fontSize: '1.08rem', fontWeight: '800', margin: 0, color: palette.text }}>
                   Historial de Comprobantes Emitidos
                 </h2>
-                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                <span style={{ fontSize: '0.78rem', color: palette.textMuted }}>
                   Facturas, tiquetes y notas de crédito firmados ante el Ministerio de Hacienda
                 </span>
               </div>
@@ -2230,9 +2331,9 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                   gap: '6px',
                   padding: '8px 14px',
                   borderRadius: '8px',
-                  border: '1px solid var(--border)',
-                  backgroundColor: 'var(--background)',
-                  color: 'var(--text)',
+                  border: `1px solid ${palette.border}`,
+                  backgroundColor: palette.surfaceMuted,
+                  color: palette.text,
                   cursor: 'pointer',
                   fontSize: '0.82rem',
                   fontWeight: '700'
@@ -2265,8 +2366,9 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                     width: '100%',
                     padding: '8px 12px',
                     borderRadius: '8px',
-                    border: '1px solid var(--border)',
-                    backgroundColor: 'var(--background)',
+                    border: `1px solid ${palette.border}`,
+                    backgroundColor: palette.inputBg,
+                    color: palette.text,
                     fontSize: '0.82rem'
                   }}
                 />
@@ -2281,8 +2383,9 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                 style={{
                   padding: '8px 10px',
                   borderRadius: '8px',
-                  border: '1px solid var(--border)',
-                  backgroundColor: 'var(--background)',
+                  border: `1px solid ${palette.border}`,
+                  backgroundColor: palette.inputBg,
+                  color: palette.text,
                   fontSize: '0.82rem'
                 }}
               >
@@ -2304,8 +2407,9 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                 style={{
                   padding: '8px 10px',
                   borderRadius: '8px',
-                  border: '1px solid var(--border)',
-                  backgroundColor: 'var(--background)',
+                  border: `1px solid ${palette.border}`,
+                  backgroundColor: palette.inputBg,
+                  color: palette.text,
                   fontSize: '0.82rem'
                 }}
               >
@@ -2324,8 +2428,9 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                 style={{
                   padding: '8px 10px',
                   borderRadius: '8px',
-                  border: '1px solid var(--border)',
-                  backgroundColor: 'var(--background)',
+                  border: `1px solid ${palette.border}`,
+                  backgroundColor: palette.inputBg,
+                  color: palette.text,
                   fontSize: '0.82rem'
                 }}
               >
@@ -2338,7 +2443,7 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
             </div>
 
             {vouchers.length === 0 ? (
-              <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--text-muted)' }}>
+              <div style={{ padding: '32px 16px', textAlign: 'center', color: palette.textMuted }}>
                 <FileText size={32} style={{ margin: '0 auto 10px auto', opacity: 0.4 }} />
                 <p style={{ margin: 0, fontSize: '0.9rem' }}>No se encontraron comprobantes electrónicos con estos filtros.</p>
                 <span style={{ fontSize: '0.78rem' }}>
@@ -2349,7 +2454,7 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.83rem' }}>
                   <thead>
-                    <tr style={{ borderBottom: '2px solid var(--border)', textAlign: 'left', color: 'var(--text-muted)' }}>
+                    <tr style={{ borderBottom: `2px solid ${palette.border}`, textAlign: 'left', color: palette.textMuted }}>
                       <th style={{ padding: '10px 8px' }}>Fecha</th>
                       <th style={{ padding: '10px 8px' }}>Sucursal / Consecutivo</th>
                       <th style={{ padding: '10px 8px' }}>Tipo</th>
@@ -2368,8 +2473,8 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                       const vBranch = v.branchCode || (v.consecutiveNumber ? v.consecutiveNumber.slice(0, 3) : '001');
 
                       return (
-                        <tr key={v.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                          <td style={{ padding: '10px 8px', whiteSpace: 'nowrap' }}>
+                        <tr key={v.id} style={{ borderBottom: `1px solid ${palette.border}` }}>
+                          <td style={{ padding: '10px 8px', whiteSpace: 'nowrap', color: palette.text }}>
                             {formatShortDateTime(v.createdAt)}
                           </td>
                           <td style={{ padding: '10px 8px' }}>
@@ -2378,8 +2483,8 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                                 display: 'inline-block',
                                 padding: '2px 7px',
                                 borderRadius: '6px',
-                                backgroundColor: '#f1f5f9',
-                                color: '#334155',
+                                backgroundColor: palette.surfaceMuted,
+                                color: palette.textSecondary,
                                 fontWeight: '800',
                                 fontSize: '0.72rem',
                                 marginRight: '6px'
@@ -2388,7 +2493,7 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                               Suc. {vBranch}
                             </span>
                             {v.consecutiveNumber && (
-                              <div style={{ fontFamily: 'monospace', fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                              <div style={{ fontFamily: 'monospace', fontSize: '0.74rem', color: palette.textMuted, marginTop: '2px' }}>
                                 {v.consecutiveNumber}
                               </div>
                             )}
@@ -2401,9 +2506,9 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                                 fontSize: '0.72rem',
                                 fontWeight: '800',
                                 backgroundColor:
-                                  v.docType === '01' ? '#eff6ff' : v.docType === '03' ? '#fef3c7' : '#f1f5f9',
+                                  v.docType === '01' ? palette.primarySoftBg : v.docType === '03' ? palette.warnSoftBg : palette.surfaceMuted,
                                 color:
-                                  v.docType === '01' ? '#2563eb' : v.docType === '03' ? '#b45309' : '#475569'
+                                  v.docType === '01' ? palette.primarySoftText : v.docType === '03' ? palette.warnText : palette.textSecondary
                               }}
                             >
                               {v.docType === '01'
@@ -2418,7 +2523,7 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                               padding: '10px 8px',
                               fontFamily: 'monospace',
                               fontSize: '0.75rem',
-                              color: 'var(--text-muted)'
+                              color: palette.textMuted
                             }}
                             title={v.numericKey || ''}
                           >
@@ -2427,11 +2532,11 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                               : 'En proceso'}
                           </td>
                           <td style={{ padding: '10px 8px' }}>
-                            <div style={{ fontWeight: '600', color: 'var(--text)' }}>
+                            <div style={{ fontWeight: '600', color: palette.text }}>
                               {v.receiverName || 'Cliente Contado'}
                             </div>
                             {v.receiverIdNumber && (
-                              <div style={{ fontSize: '0.73rem', color: 'var(--text-muted)' }}>
+                              <div style={{ fontSize: '0.73rem', color: palette.textMuted }}>
                                 ID: {v.receiverIdNumber}
                               </div>
                             )}
@@ -2439,7 +2544,7 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                               <div
                                 style={{
                                   fontSize: '0.72rem',
-                                  color: '#2563eb',
+                                  color: palette.primarySoftText,
                                   display: 'flex',
                                   alignItems: 'center',
                                   gap: '4px',
@@ -2451,8 +2556,8 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                                 {(v.metadata as any)?.emailDelivery?.status === 'sent' && (
                                   <span
                                     style={{
-                                      backgroundColor: '#dcfce7',
-                                      color: '#166534',
+                                      backgroundColor: palette.successBadgeBg,
+                                      color: palette.successText,
                                       padding: '1px 5px',
                                       borderRadius: '4px',
                                       fontSize: '0.67rem',
@@ -2465,7 +2570,7 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                               </div>
                             )}
                           </td>
-                          <td style={{ padding: '10px 8px', fontWeight: '700', color: 'var(--text)' }}>
+                          <td style={{ padding: '10px 8px', fontWeight: '700', color: palette.text }}>
                             {v.currency === 'USD' ? '$' : '₡'}
                             {Number(v.totalAmount).toLocaleString('es-CR')}
                           </td>
@@ -2480,19 +2585,19 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                                 alignItems: 'center',
                                 gap: '4px',
                                 backgroundColor: isCancelled
-                                  ? '#f1f5f9'
+                                  ? palette.surfaceMuted
                                   : isAccepted
-                                  ? '#dcfce7'
+                                  ? palette.successBadgeBg
                                   : isRejected
-                                  ? '#fee2e2'
-                                  : '#fef9c3',
+                                  ? palette.dangerSoftBg
+                                  : palette.warnSoftBg,
                                 color: isCancelled
-                                  ? '#475569'
+                                  ? palette.textSecondary
                                   : isAccepted
-                                  ? '#15803d'
+                                  ? palette.successText
                                   : isRejected
-                                  ? '#dc2626'
-                                  : '#854d0e'
+                                  ? palette.dangerText
+                                  : palette.warnText
                               }}
                             >
                               {isAccepted ? (
@@ -2523,8 +2628,9 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                                   gap: '4px',
                                   padding: '5px 9px',
                                   borderRadius: '6px',
-                                  backgroundColor: '#eff6ff',
-                                  color: 'var(--primary)',
+                                  border: `1px solid ${palette.primarySoftBorder}`,
+                                  backgroundColor: palette.primarySoftBg,
+                                  color: palette.primarySoftText,
                                   textDecoration: 'none',
                                   fontSize: '0.74rem',
                                   fontWeight: '700'
@@ -2545,8 +2651,9 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                                   gap: '4px',
                                   padding: '5px 9px',
                                   borderRadius: '6px',
-                                  backgroundColor: '#f1f5f9',
-                                  color: '#334155',
+                                  border: `1px solid ${palette.border}`,
+                                  backgroundColor: palette.surfaceMuted,
+                                  color: palette.textSecondary,
                                   textDecoration: 'none',
                                   fontSize: '0.74rem',
                                   fontWeight: '700'
@@ -2567,9 +2674,9 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                                   gap: '4px',
                                   padding: '5px 9px',
                                   borderRadius: '6px',
-                                  border: '1px solid #bfdbfe',
-                                  backgroundColor: '#eff6ff',
-                                  color: '#1d4ed8',
+                                  border: `1px solid ${palette.primarySoftBorder}`,
+                                  backgroundColor: palette.primarySoftBg,
+                                  color: palette.primarySoftText,
                                   cursor: 'pointer',
                                   fontSize: '0.73rem',
                                   fontWeight: '700'
@@ -2593,9 +2700,9 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                                     gap: '4px',
                                     padding: '5px 9px',
                                     borderRadius: '6px',
-                                    border: '1px solid #fecaca',
-                                    backgroundColor: '#fef2f2',
-                                    color: '#b91c1c',
+                                    border: `1px solid ${palette.dangerSoftBorder}`,
+                                    backgroundColor: palette.dangerSoftBg,
+                                    color: palette.dangerText,
                                     cursor: 'pointer',
                                     fontSize: '0.73rem',
                                     fontWeight: '700'
@@ -2631,8 +2738,8 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
           {/* 1. Selector de Modalidad de Facturación */}
           <div
             style={{
-              backgroundColor: 'var(--surface)',
-              border: '1px solid var(--border)',
+              backgroundColor: palette.surface,
+              border: `1px solid ${palette.border}`,
               borderRadius: '14px',
               padding: '22px',
               boxShadow: 'var(--shadow-xs)'
@@ -2643,13 +2750,13 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                 fontSize: '1.05rem',
                 fontWeight: '800',
                 margin: '0 0 14px 0',
-                color: 'var(--text)',
+                color: palette.text,
                 display: 'flex',
                 alignItems: 'center',
                 gap: '8px'
               }}
             >
-              <FileText size={18} color="var(--primary)" /> Modalidad de Facturación Electrónica
+              <FileText size={18} color={palette.primary} /> Modalidad de Facturación Electrónica
             </h2>
 
             <div
@@ -2666,13 +2773,13 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                 style={{
                   padding: '16px',
                   borderRadius: '12px',
-                  border: `2px solid ${billingMode === 'BETICO_NATIVE' ? 'var(--primary)' : 'var(--border)'}`,
-                  backgroundColor: billingMode === 'BETICO_NATIVE' ? '#f0fdf4' : 'var(--surface)',
+                  border: `2px solid ${billingMode === 'BETICO_NATIVE' ? palette.primary : palette.border}`,
+                  backgroundColor: billingMode === 'BETICO_NATIVE' ? palette.successSoftBg : palette.surfaceAlt,
                   cursor: 'pointer'
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                  <span style={{ fontWeight: '800', fontSize: '0.94rem', color: billingMode === 'BETICO_NATIVE' ? '#166534' : 'var(--text)' }}>
+                  <span style={{ fontWeight: '800', fontSize: '0.94rem', color: billingMode === 'BETICO_NATIVE' ? palette.successText : palette.text }}>
                     ⚡ Betico Facturación Electrónica Nativa
                   </span>
                   <input
@@ -2682,7 +2789,7 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                     onChange={() => setBillingMode('BETICO_NATIVE')}
                   />
                 </div>
-                <p style={{ margin: 0, fontSize: '0.79rem', color: '#475569', lineHeight: '1.4' }}>
+                <p style={{ margin: 0, fontSize: '0.79rem', color: palette.textSecondary, lineHeight: '1.4' }}>
                   Conexión directa oficial con el Ministerio de Hacienda (DGT v4.4) con tu llave criptográfica .p12 y usuario ATV.
                 </p>
               </div>
@@ -2693,13 +2800,13 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                 style={{
                   padding: '16px',
                   borderRadius: '12px',
-                  border: `2px solid ${billingMode === 'EXTERNAL_MANUAL' ? '#7c3aed' : 'var(--border)'}`,
-                  backgroundColor: billingMode === 'EXTERNAL_MANUAL' ? '#faf5ff' : 'var(--surface)',
+                  border: `2px solid ${billingMode === 'EXTERNAL_MANUAL' ? '#a855f7' : palette.border}`,
+                  backgroundColor: billingMode === 'EXTERNAL_MANUAL' ? palette.purpleSoftBg : palette.surfaceAlt,
                   cursor: 'pointer'
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                  <span style={{ fontWeight: '800', fontSize: '0.94rem', color: billingMode === 'EXTERNAL_MANUAL' ? '#6b21a8' : 'var(--text)' }}>
+                  <span style={{ fontWeight: '800', fontSize: '0.94rem', color: billingMode === 'EXTERNAL_MANUAL' ? palette.purpleText : palette.text }}>
                     📋 Facturación Externa y Manual
                   </span>
                   <input
@@ -2709,7 +2816,7 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                     onChange={() => setBillingMode('EXTERNAL_MANUAL')}
                   />
                 </div>
-                <p style={{ margin: 0, fontSize: '0.79rem', color: '#64748b', lineHeight: '1.4' }}>
+                <p style={{ margin: 0, fontSize: '0.79rem', color: palette.textSecondary, lineHeight: '1.4' }}>
                   Captura los datos fiscales del cliente en pedidos o reservas para facturarlos manualmente en otro sistema.
                 </p>
               </div>
@@ -2720,13 +2827,13 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                 style={{
                   padding: '16px',
                   borderRadius: '12px',
-                  border: `2px solid ${billingMode === 'DISABLED' ? '#dc2626' : 'var(--border)'}`,
-                  backgroundColor: billingMode === 'DISABLED' ? '#fef2f2' : 'var(--surface)',
+                  border: `2px solid ${billingMode === 'DISABLED' ? '#ef4444' : palette.border}`,
+                  backgroundColor: billingMode === 'DISABLED' ? palette.dangerSoftBg : palette.surfaceAlt,
                   cursor: 'pointer'
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                  <span style={{ fontWeight: '800', fontSize: '0.94rem', color: billingMode === 'DISABLED' ? '#991b1b' : 'var(--text)' }}>
+                  <span style={{ fontWeight: '800', fontSize: '0.94rem', color: billingMode === 'DISABLED' ? palette.dangerText : palette.text }}>
                     🚫 Deshabilitada
                   </span>
                   <input
@@ -2736,14 +2843,14 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                     onChange={() => setBillingMode('DISABLED')}
                   />
                 </div>
-                <p style={{ margin: 0, fontSize: '0.79rem', color: '#64748b', lineHeight: '1.4' }}>
+                <p style={{ margin: 0, fontSize: '0.79rem', color: palette.textSecondary, lineHeight: '1.4' }}>
                   No solicita datos fiscales ni emite comprobantes electrónicos.
                 </p>
               </div>
             </div>
 
-            <div style={{ borderTop: '1px solid var(--border)', paddingTop: '12px' }}>
-              <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.82rem' }}>
+            <div style={{ borderTop: `1px solid ${palette.border}`, paddingTop: '12px' }}>
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.82rem', color: palette.text }}>
                 <input
                   type="checkbox"
                   checked={showAlternativeProvider}
@@ -2764,13 +2871,13 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                     marginTop: '12px',
                     padding: '14px',
                     borderRadius: '10px',
-                    border: `2px solid ${billingMode === 'ALMENDRO_AUTO' ? '#2563eb' : 'var(--border)'}`,
-                    backgroundColor: billingMode === 'ALMENDRO_AUTO' ? '#eff6ff' : 'var(--background)',
+                    border: `2px solid ${billingMode === 'ALMENDRO_AUTO' ? palette.primary : palette.border}`,
+                    backgroundColor: billingMode === 'ALMENDRO_AUTO' ? palette.primarySoftBg : palette.surfaceAlt,
                     cursor: 'pointer'
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <strong style={{ fontSize: '0.88rem' }}>⚡ Almendro API (Proveedor Alternativo)</strong>
+                    <strong style={{ fontSize: '0.88rem', color: palette.text }}>⚡ Almendro API (Proveedor Alternativo)</strong>
                     <input
                       type="radio"
                       name="billingMode"
@@ -2786,14 +2893,14 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
           {/* 2. Selector de Entorno de Hacienda */}
           <div
             style={{
-              backgroundColor: 'var(--surface)',
-              border: '1px solid var(--border)',
+              backgroundColor: palette.surface,
+              border: `1px solid ${palette.border}`,
               borderRadius: '14px',
               padding: '20px',
               boxShadow: 'var(--shadow-xs)'
             }}
           >
-            <label style={{ display: 'block', fontSize: '0.88rem', fontWeight: '800', marginBottom: '8px', color: 'var(--text)' }}>
+            <label style={{ display: 'block', fontSize: '0.88rem', fontWeight: '800', marginBottom: '8px', color: palette.text }}>
               Entorno de Hacienda (DGT)
             </label>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px' }}>
@@ -2802,15 +2909,15 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                 style={{
                   padding: '14px',
                   borderRadius: '10px',
-                  border: `2px solid ${environment === 'sandbox' ? '#d97706' : 'var(--border)'}`,
-                  backgroundColor: environment === 'sandbox' ? '#fffbeb' : 'var(--background)',
+                  border: `2px solid ${environment === 'sandbox' ? '#f59e0b' : palette.border}`,
+                  backgroundColor: environment === 'sandbox' ? palette.warnSoftBg : palette.surfaceAlt,
                   cursor: 'pointer'
                 }}
               >
-                <div style={{ fontWeight: '800', fontSize: '0.9rem', color: '#92400e' }}>
+                <div style={{ fontWeight: '800', fontSize: '0.9rem', color: environment === 'sandbox' ? palette.warnText : palette.text }}>
                   🧪 Sandbox (Pruebas y Certificación)
                 </div>
-                <div style={{ fontSize: '0.76rem', color: '#78350f', marginTop: '4px' }}>
+                <div style={{ fontSize: '0.76rem', color: palette.textSecondary, marginTop: '4px' }}>
                   Usa credenciales @stag para validar emisión sin validez tributaria real.
                 </div>
               </div>
@@ -2820,15 +2927,15 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                 style={{
                   padding: '14px',
                   borderRadius: '10px',
-                  border: `2px solid ${environment === 'production' ? '#16a34a' : 'var(--border)'}`,
-                  backgroundColor: environment === 'production' ? '#f0fdf4' : 'var(--background)',
+                  border: `2px solid ${environment === 'production' ? '#10b981' : palette.border}`,
+                  backgroundColor: environment === 'production' ? palette.successSoftBg : palette.surfaceAlt,
                   cursor: 'pointer'
                 }}
               >
-                <div style={{ fontWeight: '800', fontSize: '0.9rem', color: '#166534' }}>
+                <div style={{ fontWeight: '800', fontSize: '0.9rem', color: environment === 'production' ? palette.successText : palette.text }}>
                   🏛️ Producción (Hacienda Real)
                 </div>
-                <div style={{ fontSize: '0.76rem', color: '#15803d', marginTop: '4px' }}>
+                <div style={{ fontSize: '0.76rem', color: palette.textSecondary, marginTop: '4px' }}>
                   Usa credenciales @prod para emitir comprobantes oficiales ante la DGT.
                 </div>
               </div>
@@ -2838,8 +2945,8 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
           {/* 3. Sección A: Credenciales del API en ATV (Usuario y Contraseña IDP) */}
           <div
             style={{
-              backgroundColor: 'var(--surface)',
-              border: '1px solid var(--border)',
+              backgroundColor: palette.surface,
+              border: `1px solid ${palette.border}`,
               borderRadius: '14px',
               padding: '22px',
               boxShadow: 'var(--shadow-xs)'
@@ -2847,10 +2954,10 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '14px' }}>
               <div>
-                <h2 style={{ fontSize: '1.05rem', fontWeight: '800', margin: 0, color: 'var(--text)' }}>
+                <h2 style={{ fontSize: '1.05rem', fontWeight: '800', margin: 0, color: palette.text }}>
                   Sección A: Credenciales del API en ATV (Usuario y Contraseña IDP)
                 </h2>
-                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                <span style={{ fontSize: '0.8rem', color: palette.textMuted }}>
                   Credenciales OAuth2 generadas en la Administración Tributaria Virtual
                 </span>
               </div>
@@ -2864,7 +2971,7 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                   gap: '6px',
                   background: 'none',
                   border: 'none',
-                  color: 'var(--primary)',
+                  color: palette.primary,
                   fontSize: '0.82rem',
                   fontWeight: '700',
                   cursor: 'pointer'
@@ -2882,17 +2989,17 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
             {showAtvGuide && (
               <div
                 style={{
-                  backgroundColor: '#f8fafc',
-                  border: '1px solid #e2e8f0',
+                  backgroundColor: palette.surfaceAlt,
+                  border: `1px solid ${palette.border}`,
                   borderRadius: '10px',
                   padding: '14px 16px',
                   marginBottom: '16px',
                   fontSize: '0.82rem',
                   lineHeight: '1.5',
-                  color: '#334155'
+                  color: palette.textSecondary
                 }}
               >
-                <strong style={{ display: 'block', marginBottom: '6px', color: 'var(--text)' }}>
+                <strong style={{ display: 'block', marginBottom: '6px', color: palette.text }}>
                   Pasos oficiales en el portal ATV de Hacienda:
                 </strong>
                 <ol style={{ margin: 0, paddingLeft: '20px' }}>
@@ -2902,7 +3009,7 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                       href="https://atv.hacienda.go.cr"
                       target="_blank"
                       rel="noreferrer"
-                      style={{ color: 'var(--primary)', fontWeight: 'bold' }}
+                      style={{ color: palette.primary, fontWeight: 'bold' }}
                     >
                       atv.hacienda.go.cr
                     </a>{' '}
@@ -2922,7 +3029,7 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '14px', marginBottom: '16px' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', marginBottom: '5px' }}>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', marginBottom: '5px', color: palette.text }}>
                   Usuario del API de Hacienda *
                 </label>
                 <input
@@ -2934,15 +3041,16 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                     width: '100%',
                     padding: '9px 12px',
                     borderRadius: '8px',
-                    border: '1px solid var(--border)',
-                    backgroundColor: 'var(--background)'
+                    border: `1px solid ${palette.border}`,
+                    backgroundColor: palette.inputBg,
+                    color: palette.text
                   }}
                 />
               </div>
 
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
-                  <label style={{ fontSize: '0.82rem', fontWeight: '700' }}>
+                  <label style={{ fontSize: '0.82rem', fontWeight: '700', color: palette.text }}>
                     Contraseña del API de Hacienda *
                   </label>
                   {hasIdpPassword && !isEditingPassword && (
@@ -2955,7 +3063,7 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                       style={{
                         background: 'none',
                         border: 'none',
-                        color: 'var(--primary)',
+                        color: palette.primary,
                         fontSize: '0.78rem',
                         fontWeight: '700',
                         cursor: 'pointer'
@@ -2970,11 +3078,11 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                   <div
                     style={{
                       padding: '9px 12px',
-                      backgroundColor: '#f1f5f9',
+                      backgroundColor: palette.surfaceMuted,
                       borderRadius: '8px',
-                      border: '1px solid var(--border)',
+                      border: `1px solid ${palette.border}`,
                       fontSize: '0.85rem',
-                      color: 'var(--text-muted)'
+                      color: palette.textSecondary
                     }}
                   >
                     •••••••• (Guardada de forma segura)
@@ -2989,8 +3097,9 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                       width: '100%',
                       padding: '9px 12px',
                       borderRadius: '8px',
-                      border: '1px solid var(--border)',
-                      backgroundColor: 'var(--background)'
+                      border: `1px solid ${palette.border}`,
+                      backgroundColor: palette.inputBg,
+                      color: palette.text
                     }}
                   />
                 )}
@@ -3003,9 +3112,9 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                   padding: '12px 14px',
                   borderRadius: '10px',
                   marginBottom: '14px',
-                  border: `1px solid ${atvQuickResult.success ? '#86efac' : '#fca5a5'}`,
-                  backgroundColor: atvQuickResult.success ? '#f0fdf4' : '#fef2f2',
-                  color: atvQuickResult.success ? '#166534' : '#991b1b',
+                  border: `1px solid ${atvQuickResult.success ? palette.successSoftBorder : palette.dangerSoftBorder}`,
+                  backgroundColor: atvQuickResult.success ? palette.successSoftBg : palette.dangerSoftBg,
+                  color: atvQuickResult.success ? palette.successText : palette.dangerText,
                   fontSize: '0.83rem',
                   display: 'flex',
                   alignItems: 'center',
@@ -3028,9 +3137,9 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                   gap: '6px',
                   padding: '8px 16px',
                   borderRadius: '8px',
-                  border: '1px solid var(--primary)',
-                  backgroundColor: '#eff6ff',
-                  color: 'var(--primary)',
+                  border: `1px solid ${palette.primarySoftBorder}`,
+                  backgroundColor: palette.primarySoftBg,
+                  color: palette.primarySoftText,
                   fontWeight: '700',
                   fontSize: '0.82rem',
                   cursor: 'pointer'
@@ -3050,9 +3159,9 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                     gap: '6px',
                     padding: '8px 14px',
                     borderRadius: '8px',
-                    border: '1px solid #fecaca',
-                    backgroundColor: '#fef2f2',
-                    color: '#dc2626',
+                    border: `1px solid ${palette.dangerSoftBorder}`,
+                    backgroundColor: palette.dangerSoftBg,
+                    color: palette.dangerText,
                     fontWeight: '700',
                     fontSize: '0.8rem',
                     cursor: 'pointer'
@@ -3068,8 +3177,8 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
           {/* 4. Sección B: Llave Criptográfica de Firma Digital (.p12) y PIN */}
           <div
             style={{
-              backgroundColor: 'var(--surface)',
-              border: '1px solid var(--border)',
+              backgroundColor: palette.surface,
+              border: `1px solid ${palette.border}`,
               borderRadius: '14px',
               padding: '22px',
               boxShadow: 'var(--shadow-xs)'
@@ -3077,10 +3186,10 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '14px' }}>
               <div>
-                <h2 style={{ fontSize: '1.05rem', fontWeight: '800', margin: 0, color: 'var(--text)' }}>
+                <h2 style={{ fontSize: '1.05rem', fontWeight: '800', margin: 0, color: palette.text }}>
                   Sección B: Llave Criptográfica de Firma Digital (.p12) y PIN
                 </h2>
-                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                <span style={{ fontSize: '0.8rem', color: palette.textMuted }}>
                   Certificado tributario para firma electrónica XAdES-EPES de tus comprobantes
                 </span>
               </div>
@@ -3094,7 +3203,7 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                   gap: '6px',
                   background: 'none',
                   border: 'none',
-                  color: 'var(--primary)',
+                  color: palette.primary,
                   fontSize: '0.82rem',
                   fontWeight: '700',
                   cursor: 'pointer'
@@ -3110,17 +3219,17 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
             {showP12Guide && (
               <div
                 style={{
-                  backgroundColor: '#f8fafc',
-                  border: '1px solid #e2e8f0',
+                  backgroundColor: palette.surfaceAlt,
+                  border: `1px solid ${palette.border}`,
                   borderRadius: '10px',
                   padding: '14px 16px',
                   marginBottom: '16px',
                   fontSize: '0.82rem',
                   lineHeight: '1.5',
-                  color: '#334155'
+                  color: palette.textSecondary
                 }}
               >
-                <strong style={{ display: 'block', marginBottom: '6px', color: 'var(--text)' }}>
+                <strong style={{ display: 'block', marginBottom: '6px', color: palette.text }}>
                   Pasos para descargar tu Llave Criptográfica .p12 en ATV:
                 </strong>
                 <ol style={{ margin: 0, paddingLeft: '20px' }}>
@@ -3135,8 +3244,8 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
             {hasExistingCert && (
               <div
                 style={{
-                  backgroundColor: isCertExpired ? '#fef2f2' : isCertExpiringSoon ? '#fffbeb' : '#f0fdf4',
-                  border: `1px solid ${isCertExpired ? '#fca5a5' : isCertExpiringSoon ? '#fde68a' : '#bbf7d0'}`,
+                  backgroundColor: isCertExpired ? palette.dangerSoftBg : isCertExpiringSoon ? palette.warnSoftBg : palette.successSoftBg,
+                  border: `1px solid ${isCertExpired ? palette.dangerSoftBorder : isCertExpiringSoon ? palette.warnSoftBorder : palette.successSoftBorder}`,
                   borderRadius: '12px',
                   padding: '16px',
                   marginBottom: '16px'
@@ -3144,8 +3253,8 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '10px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <ShieldCheck size={20} color={isCertExpired ? '#dc2626' : isCertExpiringSoon ? '#d97706' : '#16a34a'} />
-                    <strong style={{ fontSize: '0.92rem', color: 'var(--text)' }}>
+                    <ShieldCheck size={20} color={isCertExpired ? palette.dangerText : isCertExpiringSoon ? palette.warnText : palette.successText} />
+                    <strong style={{ fontSize: '0.92rem', color: palette.text }}>
                       Inspector de Certificado Criptográfico
                     </strong>
                   </div>
@@ -3156,8 +3265,8 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                       fontWeight: '800',
                       padding: '3px 10px',
                       borderRadius: '12px',
-                      backgroundColor: '#dcfce7',
-                      color: '#15803d'
+                      backgroundColor: palette.successBadgeBg,
+                      color: palette.successText
                     }}
                   >
                     🔒 Cifrado AES-256-GCM en Bóveda
@@ -3173,30 +3282,30 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                   }}
                 >
                   <div>
-                    <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.74rem' }}>
+                    <span style={{ color: palette.textMuted, display: 'block', fontSize: '0.74rem' }}>
                       Archivo cargado:
                     </span>
-                    <strong>{certFilename || 'llave_criptografica.p12'}</strong>
+                    <strong style={{ color: palette.text }}>{certFilename || 'llave_criptografica.p12'}</strong>
                   </div>
 
                   <div>
-                    <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.74rem' }}>
+                    <span style={{ color: palette.textMuted, display: 'block', fontSize: '0.74rem' }}>
                       Titular del Certificado (Subject):
                     </span>
-                    <strong>{certSubject || taxpayerName || 'Certificado Tributario Hacienda'}</strong>
+                    <strong style={{ color: palette.text }}>{certSubject || taxpayerName || 'Certificado Tributario Hacienda'}</strong>
                   </div>
 
                   <div>
-                    <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.74rem' }}>
+                    <span style={{ color: palette.textMuted, display: 'block', fontSize: '0.74rem' }}>
                       Fecha de Vencimiento:
                     </span>
-                    <strong>
+                    <strong style={{ color: palette.text }}>
                       {certExpiresAt ? new Date(certExpiresAt).toLocaleDateString('es-CR') : 'Verificada en bóveda'}
                     </strong>
                   </div>
 
                   <div>
-                    <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.74rem' }}>
+                    <span style={{ color: palette.textMuted, display: 'block', fontSize: '0.74rem' }}>
                       Estado de Vigencia y Días Restantes:
                     </span>
                     {effectiveDaysRemaining !== null ? (
@@ -3209,11 +3318,11 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                           fontWeight: '800',
                           fontSize: '0.76rem',
                           backgroundColor: isCertExpired
-                            ? '#fee2e2'
+                            ? palette.dangerSoftBg
                             : isCertExpiringSoon
-                            ? '#fef3c7'
-                            : '#dcfce7',
-                          color: isCertExpired ? '#dc2626' : isCertExpiringSoon ? '#b45309' : '#15803d'
+                            ? palette.warnSoftBg
+                            : palette.successBadgeBg,
+                          color: isCertExpired ? palette.dangerText : isCertExpiringSoon ? palette.warnText : palette.successText
                         }}
                       >
                         {isCertExpired
@@ -3221,7 +3330,7 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                           : `Vigente (${effectiveDaysRemaining} días restantes)`}
                       </span>
                     ) : (
-                      <strong style={{ color: '#15803d' }}>Vigente</strong>
+                      <strong style={{ color: palette.successText }}>Vigente</strong>
                     )}
                   </div>
                 </div>
@@ -3230,7 +3339,7 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '14px', marginBottom: '16px' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', marginBottom: '5px' }}>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', marginBottom: '5px', color: palette.text }}>
                   {hasExistingCert ? 'Reemplazar archivo .p12 / .pfx' : 'Archivo de Certificado (.p12 / .pfx) *'}
                 </label>
                 <input
@@ -3241,15 +3350,16 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                     width: '100%',
                     padding: '7px 10px',
                     borderRadius: '8px',
-                    border: '1px solid var(--border)',
-                    backgroundColor: 'var(--background)',
+                    border: `1px solid ${palette.border}`,
+                    backgroundColor: palette.inputBg,
+                    color: palette.text,
                     fontSize: '0.82rem'
                   }}
                 />
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', marginBottom: '5px' }}>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', marginBottom: '5px', color: palette.text }}>
                   PIN de 4 dígitos del Certificado *
                 </label>
                 <input
@@ -3262,8 +3372,9 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                     width: '100%',
                     padding: '9px 12px',
                     borderRadius: '8px',
-                    border: '1px solid var(--border)',
-                    backgroundColor: 'var(--background)'
+                    border: `1px solid ${palette.border}`,
+                    backgroundColor: palette.inputBg,
+                    color: palette.text
                   }}
                 />
               </div>
@@ -3275,9 +3386,9 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                   padding: '12px 14px',
                   borderRadius: '10px',
                   marginBottom: '14px',
-                  border: `1px solid ${p12TestResult.success ? '#86efac' : '#fca5a5'}`,
-                  backgroundColor: p12TestResult.success ? '#f0fdf4' : '#fef2f2',
-                  color: p12TestResult.success ? '#166534' : '#991b1b',
+                  border: `1px solid ${p12TestResult.success ? palette.successSoftBorder : palette.dangerSoftBorder}`,
+                  backgroundColor: p12TestResult.success ? palette.successSoftBg : palette.dangerSoftBg,
+                  color: p12TestResult.success ? palette.successText : palette.dangerText,
                   fontSize: '0.83rem',
                   display: 'flex',
                   alignItems: 'center',
@@ -3300,9 +3411,9 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                   gap: '6px',
                   padding: '8px 16px',
                   borderRadius: '8px',
-                  border: '1px solid var(--primary)',
-                  backgroundColor: '#eff6ff',
-                  color: 'var(--primary)',
+                  border: `1px solid ${palette.primarySoftBorder}`,
+                  backgroundColor: palette.primarySoftBg,
+                  color: palette.primarySoftText,
                   fontWeight: '700',
                   fontSize: '0.82rem',
                   cursor: 'pointer'
@@ -3322,9 +3433,9 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                     gap: '6px',
                     padding: '8px 14px',
                     borderRadius: '8px',
-                    border: '1px solid #fecaca',
-                    backgroundColor: '#fef2f2',
-                    color: '#dc2626',
+                    border: `1px solid ${palette.dangerSoftBorder}`,
+                    backgroundColor: palette.dangerSoftBg,
+                    color: palette.dangerText,
                     fontWeight: '700',
                     fontSize: '0.8rem',
                     cursor: 'pointer'
@@ -3340,8 +3451,8 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
           {/* Sección C: Entrega Prioritaria de Facturas al Correo del Cliente (PDF y XML) */}
           <div
             style={{
-              backgroundColor: 'var(--surface)',
-              border: '1px solid var(--border)',
+              backgroundColor: palette.surface,
+              border: `1px solid ${palette.border}`,
               borderRadius: '14px',
               padding: '20px',
               boxShadow: 'var(--shadow-xs)'
@@ -3349,8 +3460,8 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Mail size={19} color="var(--primary)" />
-                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: '700' }}>
+                <Mail size={19} color={palette.primary} />
+                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: '700', color: palette.text }}>
                   Sección C: Entrega Prioritaria de Facturas al Correo del Cliente (PDF y XML)
                 </h3>
               </div>
@@ -3360,16 +3471,16 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                   fontWeight: '700',
                   padding: '4px 10px',
                   borderRadius: '999px',
-                  backgroundColor: emailAutoSend ? '#dcfce7' : '#f1f5f9',
-                  color: emailAutoSend ? '#15803d' : '#475569',
-                  border: `1px solid ${emailAutoSend ? '#86efac' : '#cbd5e1'}`
+                  backgroundColor: emailAutoSend ? palette.successBadgeBg : palette.surfaceMuted,
+                  color: emailAutoSend ? palette.successText : palette.textSecondary,
+                  border: `1px solid ${emailAutoSend ? palette.successSoftBorder : palette.border}`
                 }}
               >
                 {emailAutoSend ? 'Envío Automático Activo (PDF + XML)' : 'Envío Automático Pausado'}
               </span>
             </div>
 
-            <p style={{ margin: '0 0 14px 0', fontSize: '0.84rem', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+            <p style={{ margin: '0 0 14px 0', fontSize: '0.84rem', color: palette.textSecondary, lineHeight: '1.5' }}>
               Cada vez que un cliente realice un pedido en tu tienda, agende una cita o se le emita una factura manual e ingrese su correo electrónico, el sistema le enviará automáticamente el <strong>PDF del Comprobante</strong> y el <strong>XML Oficial DGT v4.4</strong> adjuntos.
             </p>
 
@@ -3377,8 +3488,8 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
               style={{
                 padding: '14px 16px',
                 borderRadius: '10px',
-                backgroundColor: emailAutoSend ? '#f0fdf4' : '#f8fafc',
-                border: `1px solid ${emailAutoSend ? '#86efac' : 'var(--border)'}`,
+                backgroundColor: emailAutoSend ? palette.successSoftBg : palette.surfaceAlt,
+                border: `1px solid ${emailAutoSend ? palette.successSoftBorder : palette.border}`,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
@@ -3387,10 +3498,10 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
               }}
             >
               <div>
-                <div style={{ fontWeight: '700', fontSize: '0.88rem', color: 'var(--text)' }}>
+                <div style={{ fontWeight: '700', fontSize: '0.88rem', color: palette.text }}>
                   Enviar automáticamente facturas y tiquetes al correo del cliente
                 </div>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                <div style={{ fontSize: '0.78rem', color: palette.textSecondary, marginTop: '2px' }}>
                   Adjunta el PDF representativo y el archivo XML oficial de Hacienda en el correo que el cliente registró en el sistema.
                 </div>
               </div>
@@ -3398,7 +3509,7 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                 type="checkbox"
                 checked={emailAutoSend}
                 onChange={(e) => setEmailAutoSend(e.target.checked)}
-                style={{ width: '20px', height: '20px', accentColor: 'var(--primary)', cursor: 'pointer' }}
+                style={{ width: '20px', height: '20px', accentColor: palette.primary, cursor: 'pointer' }}
               />
             </div>
 
@@ -3406,21 +3517,21 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
               style={{
                 padding: '16px',
                 borderRadius: '10px',
-                backgroundColor: '#f8fafc',
-                border: '1px solid var(--border)',
+                backgroundColor: palette.surfaceAlt,
+                border: `1px solid ${palette.border}`,
                 marginBottom: '14px'
               }}
             >
-              <div style={{ fontWeight: '700', fontSize: '0.84rem', color: 'var(--text)', marginBottom: '4px' }}>
+              <div style={{ fontWeight: '700', fontSize: '0.84rem', color: palette.text, marginBottom: '4px' }}>
                 Servidor de Correo del Comercio (Opcional: SMTP Propio o Resend API)
               </div>
-              <p style={{ margin: '0 0 14px 0', fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: '1.45' }}>
+              <p style={{ margin: '0 0 14px 0', fontSize: '0.78rem', color: palette.textSecondary, lineHeight: '1.45' }}>
                 Si deseas que las facturas salgan directamente desde el correo oficial de tu negocio (por ejemplo Gmail con Contraseña de Aplicación, Google Workspace, Office 365 o tu propio hosting), configura aquí tu servidor SMTP o llave de Resend. Si lo dejas en blanco, se utilizará el servidor global de la plataforma.
               </p>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '12px' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', marginBottom: '5px' }}>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', marginBottom: '5px', color: palette.text }}>
                     Servidor SMTP (Host)
                   </label>
                   <input
@@ -3432,13 +3543,14 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                       width: '100%',
                       padding: '9px 12px',
                       borderRadius: '8px',
-                      border: '1px solid var(--border)',
-                      backgroundColor: 'var(--background)'
+                      border: `1px solid ${palette.border}`,
+                      backgroundColor: palette.inputBg,
+                      color: palette.text
                     }}
                   />
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', marginBottom: '5px' }}>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', marginBottom: '5px', color: palette.text }}>
                     Puerto SMTP
                   </label>
                   <input
@@ -3450,13 +3562,14 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                       width: '100%',
                       padding: '9px 12px',
                       borderRadius: '8px',
-                      border: '1px solid var(--border)',
-                      backgroundColor: 'var(--background)'
+                      border: `1px solid ${palette.border}`,
+                      backgroundColor: palette.inputBg,
+                      color: palette.text
                     }}
                   />
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', marginBottom: '5px' }}>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', marginBottom: '5px', color: palette.text }}>
                     Usuario o Correo SMTP
                   </label>
                   <input
@@ -3468,13 +3581,14 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                       width: '100%',
                       padding: '9px 12px',
                       borderRadius: '8px',
-                      border: '1px solid var(--border)',
-                      backgroundColor: 'var(--background)'
+                      border: `1px solid ${palette.border}`,
+                      backgroundColor: palette.inputBg,
+                      color: palette.text
                     }}
                   />
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', marginBottom: '5px' }}>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', marginBottom: '5px', color: palette.text }}>
                     Contraseña SMTP o App Password
                   </label>
                   <input
@@ -3486,15 +3600,16 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                       width: '100%',
                       padding: '9px 12px',
                       borderRadius: '8px',
-                      border: '1px solid var(--border)',
-                      backgroundColor: 'var(--background)'
+                      border: `1px solid ${palette.border}`,
+                      backgroundColor: palette.inputBg,
+                      color: palette.text
                     }}
                   />
                 </div>
               </div>
 
               <div style={{ marginTop: '12px' }}>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', marginBottom: '5px' }}>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', marginBottom: '5px', color: palette.text }}>
                   Alternativa Cloud: Resend API Key (Opcional)
                 </label>
                 <input
@@ -3506,8 +3621,9 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                     width: '100%',
                     padding: '9px 12px',
                     borderRadius: '8px',
-                    border: '1px solid var(--border)',
-                    backgroundColor: 'var(--background)'
+                    border: `1px solid ${palette.border}`,
+                    backgroundColor: palette.inputBg,
+                    color: palette.text
                   }}
                 />
               </div>
@@ -3518,9 +3634,9 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                 style={{
                   padding: '12px 16px',
                   borderRadius: '8px',
-                  border: `1px solid ${emailTestResult.success ? '#86efac' : '#fca5a5'}`,
-                  backgroundColor: emailTestResult.success ? '#f0fdf4' : '#fef2f2',
-                  color: emailTestResult.success ? '#166534' : '#991b1b',
+                  border: `1px solid ${emailTestResult.success ? palette.successSoftBorder : palette.dangerSoftBorder}`,
+                  backgroundColor: emailTestResult.success ? palette.successSoftBg : palette.dangerSoftBg,
+                  color: emailTestResult.success ? palette.successText : palette.dangerText,
                   fontSize: '0.84rem',
                   display: 'flex',
                   alignItems: 'center',
@@ -3544,9 +3660,9 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                   gap: '6px',
                   padding: '8px 16px',
                   borderRadius: '8px',
-                  border: '1px solid var(--primary)',
-                  backgroundColor: '#eff6ff',
-                  color: 'var(--primary)',
+                  border: `1px solid ${palette.primarySoftBorder}`,
+                  backgroundColor: palette.primarySoftBg,
+                  color: palette.primarySoftText,
                   fontWeight: '700',
                   fontSize: '0.82rem',
                   cursor: 'pointer'
@@ -3555,7 +3671,7 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                 {testingEmail ? <RefreshCw size={14} className="animate-spin" /> : <Send size={14} />}
                 <span>{testingEmail ? 'Enviando correo de prueba...' : 'Probar Envío de Correo'}</span>
               </button>
-              <span style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
+              <span style={{ fontSize: '0.76rem', color: palette.textSecondary }}>
                 Recuerda hacer clic en <strong>Guardar Credenciales y Llave</strong> abajo después de configurar tu correo.
               </span>
             </div>
@@ -3567,16 +3683,16 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
               style={{
                 padding: '16px 20px',
                 borderRadius: '12px',
-                border: `1px solid ${testResult.success ? '#86efac' : '#fca5a5'}`,
-                backgroundColor: testResult.success ? '#f0fdf4' : '#fef2f2',
+                border: `1px solid ${testResult.success ? palette.successSoftBorder : palette.dangerSoftBorder}`,
+                backgroundColor: testResult.success ? palette.successSoftBg : palette.dangerSoftBg,
                 display: 'flex',
                 alignItems: 'flex-start',
                 gap: '12px'
               }}
             >
-              {testResult.success ? <CheckCircle2 size={22} color="#16a34a" /> : <AlertCircle size={22} color="#dc2626" />}
-              <div style={{ fontSize: '0.86rem', lineHeight: '1.5', color: testResult.success ? '#166534' : '#991b1b' }}>
-                <strong style={{ display: 'block', marginBottom: '2px' }}>
+              {testResult.success ? <CheckCircle2 size={22} color={palette.successText} /> : <AlertCircle size={22} color={palette.dangerText} />}
+              <div style={{ fontSize: '0.86rem', lineHeight: '1.5', color: testResult.success ? palette.successText : palette.dangerText }}>
+                <strong style={{ display: 'block', marginBottom: '2px', color: testResult.success ? palette.successText : palette.dangerText }}>
                   {testResult.success ? 'Conexión Exitosa con Hacienda' : 'Error en la Prueba de Conexión'}
                 </strong>
                 <span>{testResult.message}</span>
@@ -3596,15 +3712,15 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                 gap: '8px',
                 padding: '11px 22px',
                 borderRadius: '8px',
-                border: '1px solid var(--border)',
-                backgroundColor: 'var(--surface)',
-                color: 'var(--text)',
+                border: `1px solid ${palette.border}`,
+                backgroundColor: palette.surfaceMuted,
+                color: palette.text,
                 cursor: testing ? 'not-allowed' : 'pointer',
                 fontWeight: '700',
                 fontSize: '0.9rem'
               }}
             >
-              {testing ? <RefreshCw size={16} className="animate-spin" /> : <Zap size={16} color="var(--primary)" />}
+              {testing ? <RefreshCw size={16} className="animate-spin" /> : <Zap size={16} color={palette.primary} />}
               <span>{testing ? 'Verificando con Hacienda...' : 'Prueba Integral con Hacienda'}</span>
             </button>
 
@@ -3618,12 +3734,12 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                 padding: '11px 26px',
                 borderRadius: '8px',
                 border: 'none',
-                backgroundColor: 'var(--primary)',
-                color: 'white',
+                backgroundColor: palette.primaryBtnBg,
+                color: palette.primaryBtnText,
                 cursor: saving ? 'not-allowed' : 'pointer',
                 fontWeight: '800',
                 fontSize: '0.9rem',
-                boxShadow: '0 2px 8px rgba(37,99,235,0.25)'
+                boxShadow: '0 2px 8px rgba(0,0,0,0.25)'
               }}
             >
               {saving ? <RefreshCw size={16} className="animate-spin" /> : <Check size={16} />}
@@ -3661,9 +3777,9 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                   padding: '12px 14px',
                   borderRadius: '10px',
                   marginBottom: '16px',
-                  border: `1px solid ${padronMessage.type === 'success' ? '#86efac' : '#fca5a5'}`,
-                  backgroundColor: padronMessage.type === 'success' ? '#f0fdf4' : '#fef2f2',
-                  color: padronMessage.type === 'success' ? '#166534' : '#991b1b',
+                  border: `1px solid ${padronMessage.type === 'success' ? palette.successSoftBorder : palette.dangerSoftBorder}`,
+                  backgroundColor: padronMessage.type === 'success' ? palette.successSoftBg : palette.dangerSoftBg,
+                  color: padronMessage.type === 'success' ? palette.successText : palette.dangerText,
                   fontSize: '0.82rem',
                   display: 'flex',
                   alignItems: 'center',
@@ -3708,9 +3824,9 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                     style={{
                       padding: '9px 12px',
                       borderRadius: '8px',
-                      border: '1px solid var(--primary)',
-                      backgroundColor: '#eff6ff',
-                      color: 'var(--primary)',
+                      border: `1px solid ${palette.primarySoftBorder}`,
+                      backgroundColor: palette.primarySoftBg,
+                      color: palette.primarySoftText,
                       fontWeight: '700',
                       fontSize: '0.78rem',
                       cursor: 'pointer',
@@ -3832,8 +3948,9 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                       width: '100%',
                       padding: '8px 10px',
                       borderRadius: '8px',
-                      border: '1px solid var(--primary)',
-                      backgroundColor: '#eff6ff',
+                      border: `1px solid ${palette.primarySoftBorder}`,
+                      backgroundColor: palette.primarySoftBg,
+                      color: palette.primarySoftText,
                       marginBottom: '6px',
                       fontSize: '0.8rem',
                       fontWeight: '600'
@@ -3908,8 +4025,8 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                 marginBottom: '16px',
                 padding: '15px',
                 borderRadius: '12px',
-                border: `1px solid ${isSimplifiedRegime ? '#93c5fd' : 'var(--border)'}`,
-                backgroundColor: isSimplifiedRegime ? '#eff6ff' : 'var(--background)'
+                border: `1px solid ${isSimplifiedRegime ? palette.primarySoftBorder : 'var(--border)'}`,
+                backgroundColor: isSimplifiedRegime ? palette.primarySoftBg : 'var(--background)'
               }}
             >
               <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer' }}>
@@ -3923,10 +4040,10 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                   style={{ width: '18px', height: '18px', marginTop: '2px' }}
                 />
                 <div>
-                  <strong style={{ fontSize: '0.88rem', color: isSimplifiedRegime ? '#1e40af' : 'var(--text)' }}>
+                  <strong style={{ fontSize: '0.88rem', color: isSimplifiedRegime ? palette.primarySoftText : 'var(--text)' }}>
                     Régimen de Tributación Simplificada (RTS)
                   </strong>
-                  <p style={{ margin: '3px 0 0 0', fontSize: '0.79rem', color: '#64748b' }}>
+                  <p style={{ margin: '3px 0 0 0', fontSize: '0.79rem', color: palette.textMuted }}>
                     Emite por defecto Tiquete Electrónico (04) y cambia automáticamente a Factura Electrónica (01) cuando el cliente proporciona sus datos fiscales.
                   </p>
                 </div>
@@ -4249,8 +4366,8 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                                   fontWeight: '800',
                                   padding: '2px 8px',
                                   borderRadius: '8px',
-                                  backgroundColor: '#eff6ff',
-                                  color: 'var(--primary)'
+                                  backgroundColor: palette.primarySoftBg,
+                                  color: palette.primarySoftText
                                 }}
                               >
                                 Sucursal {b.branchCode} · Caja {b.posCode}
@@ -4265,8 +4382,8 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                                   fontWeight: '700',
                                   padding: '2px 8px',
                                   borderRadius: '10px',
-                                  backgroundColor: storeLabel ? '#dcfce7' : '#f1f5f9',
-                                  color: storeLabel ? '#15803d' : '#64748b'
+                                  backgroundColor: storeLabel ? palette.successBadgeBg : palette.surfaceMuted,
+                                  color: storeLabel ? palette.successText : palette.textMuted
                                 }}
                               >
                                 {storeLabel
@@ -4287,8 +4404,8 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                                   fontWeight: '700',
                                   padding: '3px 8px',
                                   borderRadius: '8px',
-                                  backgroundColor: b.useCustomCredentials ? '#fef3c7' : '#f1f5f9',
-                                  color: b.useCustomCredentials ? '#b45309' : '#475569'
+                                  backgroundColor: b.useCustomCredentials ? palette.warnSoftBg : palette.surfaceMuted,
+                                  color: b.useCustomCredentials ? palette.warnText : palette.textSecondary
                                 }}
                               >
                                 {b.useCustomCredentials
@@ -4306,9 +4423,9 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                               style={{
                                 padding: '5px 10px',
                                 borderRadius: '6px',
-                                border: '1px solid var(--primary)',
-                                backgroundColor: '#eff6ff',
-                                color: 'var(--primary)',
+                                border: `1px solid ${palette.primarySoftBorder}`,
+                                backgroundColor: palette.primarySoftBg,
+                                color: palette.primarySoftText,
                                 fontSize: '0.75rem',
                                 fontWeight: '700',
                                 cursor: 'pointer'
@@ -4340,9 +4457,9 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                               style={{
                                 padding: '5px 10px',
                                 borderRadius: '6px',
-                                border: '1px solid #fecaca',
-                                backgroundColor: '#fef2f2',
-                                color: '#dc2626',
+                                border: `1px solid ${palette.dangerSoftBorder}`,
+                                backgroundColor: palette.dangerSoftBg,
+                                color: palette.dangerText,
                                 fontSize: '0.75rem',
                                 fontWeight: '700',
                                 cursor: 'pointer'
@@ -4433,7 +4550,7 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                       ))}
                     </select>
                     {storeBranches.length === 0 && (
-                      <span style={{ display: 'block', fontSize: '0.75rem', color: '#b45309', marginTop: '4px' }}>
+                      <span style={{ display: 'block', fontSize: '0.75rem', color: palette.warnText, marginTop: '4px' }}>
                         Nota: Aún no has creado sedes operativas en el módulo Sedes y Sucursales. Puedes crear esta sucursal fiscal ahora y vincularla después.
                       </span>
                     )}
@@ -4608,8 +4725,9 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                           gap: '8px',
                           padding: '10px 12px',
                           borderRadius: '8px',
-                          border: `1px solid ${!bUseCustomCredentials ? 'var(--primary)' : 'var(--border)'}`,
-                          backgroundColor: !bUseCustomCredentials ? '#eff6ff' : 'var(--background)',
+                          border: `1px solid ${!bUseCustomCredentials ? palette.primarySoftBorder : 'var(--border)'}`,
+                          backgroundColor: !bUseCustomCredentials ? palette.primarySoftBg : 'var(--background)',
+                          color: !bUseCustomCredentials ? palette.primarySoftText : palette.text,
                           cursor: 'pointer',
                           fontSize: '0.82rem'
                         }}
@@ -4632,8 +4750,9 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                           gap: '8px',
                           padding: '10px 12px',
                           borderRadius: '8px',
-                          border: `1px solid ${bUseCustomCredentials ? 'var(--primary)' : 'var(--border)'}`,
-                          backgroundColor: bUseCustomCredentials ? '#eff6ff' : 'var(--background)',
+                          border: `1px solid ${bUseCustomCredentials ? palette.primarySoftBorder : 'var(--border)'}`,
+                          backgroundColor: bUseCustomCredentials ? palette.primarySoftBg : 'var(--background)',
+                          color: bUseCustomCredentials ? palette.primarySoftText : palette.text,
                           cursor: 'pointer',
                           fontSize: '0.82rem'
                         }}
@@ -4656,7 +4775,7 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                           marginTop: '12px',
                           padding: '14px',
                           borderRadius: '10px',
-                          backgroundColor: '#f8fafc',
+                          backgroundColor: palette.surfaceAlt,
                           border: '1px solid var(--border)',
                           display: 'grid',
                           gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
@@ -4745,6 +4864,7 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                         borderRadius: '8px',
                         border: '1px solid var(--border)',
                         backgroundColor: 'transparent',
+                        color: palette.text,
                         cursor: 'pointer',
                         fontWeight: '700'
                       }}

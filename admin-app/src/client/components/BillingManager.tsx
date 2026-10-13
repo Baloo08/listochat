@@ -403,7 +403,7 @@ export default function BillingManager({ onOpenHacienda }: BillingManagerProps) 
 
       {/* Render ElectronicBillingView directly when in Hacienda tabs */}
       {(activeView === 'comprobantes' || activeView === 'credenciales' || activeView === 'sucursales') && (
-        <ElectronicBillingView key={activeView} initialTab={activeView} isSuperAdminMode={true} />
+        <ElectronicBillingView key={activeView} initialTab={activeView} isSuperAdminMode={true} darkMode={true} />
       )}
 
       {/* Render Cobranza y Suscripciones view */}

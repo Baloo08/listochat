@@ -350,7 +350,7 @@ export default function App() {
         {currentTab === 'billing' && <BillingManager onOpenHacienda={handleOpenHacienda} />}
         {currentTab === 'hacienda' && (
           <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '20px 24px' }}>
-            <ElectronicBillingView key={haciendaSubTab} initialTab={haciendaSubTab} isSuperAdminMode={true} />
+            <ElectronicBillingView key={haciendaSubTab} initialTab={haciendaSubTab} isSuperAdminMode={true} darkMode={true} />
           </div>
         )}
         {currentTab === 'system' && <SystemHealth />}
