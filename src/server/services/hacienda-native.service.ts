@@ -482,6 +482,7 @@ export async function emitManualOrNativeVoucher(
       unitPrice: number;
       taxRateCode?: string;
     }>;
+    pricesIncludeTax?: boolean;
     orderId?: string;
     appointmentId?: string;
     courtBookingId?: string;
@@ -596,23 +597,47 @@ export async function emitManualOrNativeVoucher(
     branchCode: params.branchCode
   });
 
+  const pricesIncludeTax = params.pricesIncludeTax !== undefined
+    ? Boolean(params.pricesIncludeTax)
+    : (config?.pricesIncludeTax ?? true);
+
+  const defaultTaxRateCode = config?.defaultTaxRateCode || (config?.isSimplifiedRegime ? '10' : '08');
+
   let subtotal = 0;
   let taxAmount = 0;
 
   const normalizedItems = params.items.map((item, idx) => {
     const quantity = Math.max(0.001, Number(item.quantity) || 1);
-    const unitPrice = Math.max(0, Number(item.unitPrice) || 0);
-    const lineSubtotal = quantity * unitPrice;
-    subtotal += lineSubtotal;
+    const inputUnitPrice = Math.max(0, Number(item.unitPrice) || 0);
 
-    const taxRateCode = item.taxRateCode || (config?.isSimplifiedRegime ? '10' : '08');
+    const taxRateCode = item.taxRateCode || defaultTaxRateCode;
     let taxRate = 0.13;
     if (taxRateCode === '04') taxRate = 0.04;
     else if (taxRateCode === '02') taxRate = 0.02;
     else if (taxRateCode === '01') taxRate = 0.01;
     else if (taxRateCode === '10') taxRate = 0.0;
 
-    const lineTax = lineSubtotal * taxRate;
+    let unitPriceNet: number;
+    let lineSubtotal: number;
+    let lineTax: number;
+    let lineTotal: number;
+
+    if (pricesIncludeTax && taxRate > 0) {
+      // Precios comerciales con IVA incluido (Desglose fiscal oficial DGT v4.4)
+      const grossTotal = quantity * inputUnitPrice;
+      unitPriceNet = Math.round((inputUnitPrice / (1 + taxRate)) * 100000) / 100000;
+      lineSubtotal = Math.round((grossTotal / (1 + taxRate)) * 100) / 100;
+      lineTax = Math.round((grossTotal - lineSubtotal) * 100) / 100;
+      lineTotal = Math.round(grossTotal * 100) / 100;
+    } else {
+      // Precios netos antes de IVA (Más IVA)
+      unitPriceNet = inputUnitPrice;
+      lineSubtotal = Math.round((quantity * unitPriceNet) * 100) / 100;
+      lineTax = Math.round((lineSubtotal * taxRate) * 100) / 100;
+      lineTotal = Math.round((lineSubtotal + lineTax) * 100) / 100;
+    }
+
+    subtotal += lineSubtotal;
     taxAmount += lineTax;
 
     return {
@@ -620,16 +645,19 @@ export async function emitManualOrNativeVoucher(
       cabysCode: item.cabysCode || defaultCabys,
       description: String(item.description || 'Servicio / Producto').slice(0, 160),
       quantity,
-      unitPrice,
+      unitPrice: unitPriceNet,
+      unitPriceGross: inputUnitPrice,
       taxRateCode,
       taxRate: taxRate * 100,
       lineSubtotal,
       lineTax,
-      lineTotal: lineSubtotal + lineTax
+      lineTotal
     };
   });
 
-  const totalAmount = subtotal + taxAmount;
+  subtotal = Math.round(subtotal * 100) / 100;
+  taxAmount = Math.round(taxAmount * 100) / 100;
+  const totalAmount = Math.round((subtotal + taxAmount) * 100) / 100;
   const pdfUrl = `/api/almendro/public/voucher-pdf/${consecData.numericKey}`;
 
   const voucher = await saveElectronicVoucher(tenantId, {
@@ -656,6 +684,7 @@ export async function emitManualOrNativeVoucher(
     pdfUrl,
     metadata: {
       items: normalizedItems,
+      pricesIncludeTax,
       paymentMethod: params.paymentMethod || '01',
       emittedVia: 'BETICO_NATIVE',
       referenceKey: params.referenceKey || null

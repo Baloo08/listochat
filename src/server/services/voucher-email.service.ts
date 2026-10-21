@@ -824,11 +824,22 @@ export async function testTenantEmailDelivery(
       },
       { to: recipient, subject, html, attachments: [] }
     );
+    let friendlyMsg = res.error || 'Error conectando con el servidor SMTP.';
+    if (!res.ok && res.error) {
+      if (res.error.includes('535') || res.error.toLowerCase().includes('username and password not accepted') || res.error.toLowerCase().includes('badcredentials')) {
+        friendlyMsg = `Error de autenticación (535): Usuario o contraseña rechazados por el servidor de correo. Si utilizas Gmail o Google Workspace, Google bloquea la contraseña normal; debes activar la verificación en dos pasos y generar una 'Contraseña de Aplicación' de 16 caracteres en myaccount.google.com/apppasswords.`;
+      } else if (res.error.includes('ETIMEDOUT') || res.error.includes('ECONNREFUSED') || res.error.includes('ENOTFOUND')) {
+        friendlyMsg = `No fue posible conectar con el servidor SMTP (${smtpHost}:${smtpPort}). Verifica que el nombre del host esté bien escrito y que el puerto sea 587 (TLS) o 465 (SSL).`;
+      } else if (res.error.toLowerCase().includes('tls') || res.error.toLowerCase().includes('cert')) {
+        friendlyMsg = `Error de negociación TLS/SSL con el servidor SMTP. Si usas puerto 465 utiliza SSL directo; si usas puerto 587 utiliza STARTTLS. Detalle: ${res.error}`;
+      }
+    }
+
     return {
       success: res.ok,
       message: res.ok
         ? `Correo de prueba enviado exitosamente a ${recipient} vía servidor SMTP (${smtpHost}:${smtpPort}).`
-        : (res.error || 'Error conectando con el servidor SMTP.')
+        : friendlyMsg
     };
   }
 

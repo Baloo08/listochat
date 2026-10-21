@@ -53,6 +53,8 @@ export interface TenantHaciendaConfig {
   smtpUser: string;
   smtpPassMasked: string;
   resendApiKeyMasked: string;
+  pricesIncludeTax: boolean;
+  defaultTaxRateCode: '08' | '04' | '02' | '01' | '10';
   active: boolean;
   createdAt: string;
   updatedAt: string;
@@ -191,6 +193,8 @@ export async function getHaciendaConfigByTenant(tenantId: string): Promise<Tenan
     smtpUser: row.smtp_user || '',
     smtpPassMasked: row.smtp_pass_encrypted ? '••••••••' : '',
     resendApiKeyMasked: row.resend_api_key_encrypted ? '••••••••' : '',
+    pricesIncludeTax: row.prices_include_tax !== undefined && row.prices_include_tax !== null ? Boolean(row.prices_include_tax) : true,
+    defaultTaxRateCode: (['08', '04', '02', '01', '10'].includes(String(row.default_tax_rate_code)) ? String(row.default_tax_rate_code) : '08') as '08' | '04' | '02' | '01' | '10',
     active: Boolean(row.active),
     createdAt: row.created_at ? new Date(row.created_at).toISOString() : '',
     updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : ''
@@ -299,6 +303,8 @@ export async function saveHaciendaConfig(
     smtpUser?: string;
     smtpPass?: string;
     resendApiKey?: string;
+    pricesIncludeTax?: boolean;
+    defaultTaxRateCode?: '08' | '04' | '02' | '01' | '10' | string;
     active?: boolean;
   }
 ): Promise<TenantHaciendaConfig> {
@@ -368,6 +374,12 @@ export async function saveHaciendaConfig(
   }
 
   const active = data.active !== undefined ? Boolean(data.active) : (existing.active !== undefined ? Boolean(existing.active) : true);
+  const pricesIncludeTax = data.pricesIncludeTax !== undefined
+    ? Boolean(data.pricesIncludeTax)
+    : (existing.prices_include_tax !== undefined && existing.prices_include_tax !== null ? Boolean(existing.prices_include_tax) : true);
+  const defaultTaxRateCode = data.defaultTaxRateCode !== undefined
+    ? (['08', '04', '02', '01', '10'].includes(String(data.defaultTaxRateCode)) ? String(data.defaultTaxRateCode) : '08')
+    : (existing.default_tax_rate_code || '08');
 
   // ATV Username y Password
   const idpUsername = data.idpUsername !== undefined ? data.idpUsername.trim() : (existing.idp_username || '');
@@ -407,7 +419,7 @@ export async function saveHaciendaConfig(
       branch_code, pos_code, default_doc_type, seq_factura, seq_tiquete, seq_nota_credito,
       multi_branch_enabled, provider_mode, use_alternative_provider, is_simplified_regime,
       email_auto_send, smtp_host, smtp_port, smtp_user, smtp_pass_encrypted, resend_api_key_encrypted,
-      active, updated_at
+      active, prices_include_tax, default_tax_rate_code, updated_at
     ) VALUES (
       $1, $2, $3, $4, $5, $6,
       $7, $8, $9, $10::jsonb, $11,
@@ -416,7 +428,7 @@ export async function saveHaciendaConfig(
       $25, $26, $27, $28, $29, $30,
       $31, $32, $33, $34,
       $35, $36, $37, $38, $39, $40,
-      $41, CURRENT_TIMESTAMP
+      $41, $42, $43, CURRENT_TIMESTAMP
     )
     ON CONFLICT (tenant_id) DO UPDATE SET
       environment = EXCLUDED.environment,
@@ -459,6 +471,8 @@ export async function saveHaciendaConfig(
       smtp_pass_encrypted = EXCLUDED.smtp_pass_encrypted,
       resend_api_key_encrypted = EXCLUDED.resend_api_key_encrypted,
       active = EXCLUDED.active,
+      prices_include_tax = EXCLUDED.prices_include_tax,
+      default_tax_rate_code = EXCLUDED.default_tax_rate_code,
       updated_at = CURRENT_TIMESTAMP`,
     [
       tenantId, environment, taxpayerIdType, taxpayerIdNumber, taxpayerName, commercialName,
@@ -468,7 +482,7 @@ export async function saveHaciendaConfig(
       branchCode, posCode, defaultDocType, seqFactura, seqTiquete, seqNotaCredito,
       multiBranchEnabled, providerMode, useAlternativeProvider, isSimplifiedRegime,
       emailAutoSend, smtpHost, smtpPort, smtpUser, smtpPassEncrypted, resendApiKeyEncrypted,
-      active
+      active, pricesIncludeTax, defaultTaxRateCode
     ]
   );
 

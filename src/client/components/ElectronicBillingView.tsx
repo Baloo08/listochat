@@ -82,6 +82,8 @@ interface NativeConfig {
   smtpUser?: string;
   smtpPassMasked?: string;
   resendApiKeyMasked?: string;
+  pricesIncludeTax?: boolean;
+  defaultTaxRateCode?: '08' | '04' | '02' | '01' | '10';
   active: boolean;
 }
 
@@ -232,6 +234,12 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
   const [multiBranchEnabled, setMultiBranchEnabled] = useState<boolean>(false);
   const [defaultDocType, setDefaultDocType] = useState<'01' | '04'>('04');
   const [isSimplifiedRegime, setIsSimplifiedRegime] = useState(false);
+  const [pricesIncludeTax, setPricesIncludeTax] = useState<boolean>(true);
+  const [defaultTaxRateCode, setDefaultTaxRateCode] = useState<'08' | '04' | '02' | '01' | '10'>('08');
+  const [manualPricesIncludeTax, setManualPricesIncludeTax] = useState<boolean>(true);
+  const [showEmailGuide, setShowEmailGuide] = useState<boolean>(false);
+  const [emailGuideTab, setEmailGuideTab] = useState<'gmail' | 'outlook' | 'hosting' | 'resend'>('gmail');
+  const [testRecipientEmail, setTestRecipientEmail] = useState<string>('');
 
   // Consulta en Padrón de Hacienda (Tab 3)
   const [consultingPadron, setConsultingPadron] = useState(false);
@@ -435,6 +443,12 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
         setIsEditingSmtpPass(!c.smtpPassMasked);
         setHasResendApiKey(Boolean(c.resendApiKeyMasked));
         setIsEditingResendKey(!c.resendApiKeyMasked);
+        setPricesIncludeTax(c.pricesIncludeTax !== undefined ? Boolean(c.pricesIncludeTax) : true);
+        setDefaultTaxRateCode(c.defaultTaxRateCode || '08');
+        setManualPricesIncludeTax(c.pricesIncludeTax !== undefined ? Boolean(c.pricesIncludeTax) : true);
+        if (c.taxpayerEmail) {
+          setTestRecipientEmail((prev) => prev || c.taxpayerEmail);
+        }
 
         if (!c.idpPasswordMasked) {
           setIsEditingPassword(true);
@@ -772,6 +786,8 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
         formData.append('multiBranchEnabled', String(multiBranchEnabled));
         formData.append('defaultDocType', defaultDocType);
         formData.append('isSimplifiedRegime', String(isSimplifiedRegime));
+        formData.append('pricesIncludeTax', String(pricesIncludeTax));
+        formData.append('defaultTaxRateCode', defaultTaxRateCode);
         formData.append('providerMode', billingMode);
         formData.append('useAlternativeProvider', String(showAlternativeProvider));
         formData.append('idpUsername', idpUsername);
@@ -844,6 +860,8 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
           providerMode: billingMode,
           useAlternativeProvider: showAlternativeProvider,
           isSimplifiedRegime,
+          pricesIncludeTax,
+          defaultTaxRateCode,
           emailAutoSend
         });
 
@@ -942,13 +960,24 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
   const manualTotals = manualLines.reduce(
     (acc, line) => {
       const qty = Math.max(0, Number(line.quantity) || 0);
-      const price = Math.max(0, Number(line.unitPrice) || 0);
-      const lineSub = qty * price;
+      const inputPrice = Math.max(0, Number(line.unitPrice) || 0);
       const taxRateInfo = TAX_RATE_MAP[line.taxRateCode] || TAX_RATE_MAP['08'];
-      const lineTax = lineSub * (taxRateInfo.rate / 100);
-      acc.subtotal += lineSub;
-      acc.tax += lineTax;
-      acc.total += lineSub + lineTax;
+      const rate = taxRateInfo.rate / 100;
+
+      if (manualPricesIncludeTax && rate > 0) {
+        const grossLine = qty * inputPrice;
+        const lineSub = Math.round((grossLine / (1 + rate)) * 100) / 100;
+        const lineTax = Math.round((grossLine - lineSub) * 100) / 100;
+        acc.subtotal += lineSub;
+        acc.tax += lineTax;
+        acc.total += grossLine;
+      } else {
+        const lineSub = Math.round((qty * inputPrice) * 100) / 100;
+        const lineTax = Math.round((lineSub * rate) * 100) / 100;
+        acc.subtotal += lineSub;
+        acc.tax += lineTax;
+        acc.total += lineSub + lineTax;
+      }
       return acc;
     },
     { subtotal: 0, tax: 0, total: 0 }
@@ -977,6 +1006,7 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
         branchCode: manualBranchCode || branchCode || '001',
         haciendaBranchId: selectedBranchObj?.id || undefined,
         paymentMethod: manualPaymentMethod,
+        pricesIncludeTax: manualPricesIncludeTax,
         receiver: {
           idType: manualReceiverIdType,
           idNumber: manualReceiverId.trim(),
@@ -2107,31 +2137,78 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                       display: 'flex',
                       justifyContent: 'space-between',
                       alignItems: 'center',
+                      flexWrap: 'wrap',
+                      gap: '10px',
                       marginBottom: '10px'
                     }}
                   >
-                    <strong style={{ fontSize: '0.9rem', color: palette.text }}>
-                      Líneas de Detalle del Comprobante
-                    </strong>
-                    <button
-                      type="button"
-                      onClick={handleAddManualLine}
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '5px',
-                        padding: '6px 12px',
-                        borderRadius: '6px',
-                        border: `1px solid ${palette.primarySoftBorder}`,
-                        backgroundColor: palette.primarySoftBg,
-                        color: palette.primarySoftText,
-                        fontWeight: '700',
-                        fontSize: '0.78rem',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      <Plus size={14} /> Agregar Línea
-                    </button>
+                    <div>
+                      <strong style={{ fontSize: '0.9rem', color: palette.text, display: 'block' }}>
+                        Líneas de Detalle del Comprobante
+                      </strong>
+                      <span style={{ fontSize: '0.74rem', color: palette.textMuted }}>
+                        {manualPricesIncludeTax
+                          ? 'Los precios ingresados incluyen IVA. El sistema desglosa automáticamente la base imponible y el impuesto.'
+                          : 'Los precios ingresados son netos (sin impuesto). El sistema sumará el IVA al total.'}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                      <div style={{ display: 'inline-flex', borderRadius: '8px', padding: '2px', backgroundColor: palette.surfaceAlt, border: `1px solid ${palette.border}` }}>
+                        <button
+                          type="button"
+                          onClick={() => setManualPricesIncludeTax(true)}
+                          style={{
+                            padding: '4px 10px',
+                            borderRadius: '6px',
+                            border: 'none',
+                            backgroundColor: manualPricesIncludeTax ? palette.primary : 'transparent',
+                            color: manualPricesIncludeTax ? '#ffffff' : palette.textSecondary,
+                            fontSize: '0.74rem',
+                            fontWeight: '700',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          IVA Incluido
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setManualPricesIncludeTax(false)}
+                          style={{
+                            padding: '4px 10px',
+                            borderRadius: '6px',
+                            border: 'none',
+                            backgroundColor: !manualPricesIncludeTax ? palette.primary : 'transparent',
+                            color: !manualPricesIncludeTax ? '#ffffff' : palette.textSecondary,
+                            fontSize: '0.74rem',
+                            fontWeight: '700',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Más IVA
+                        </button>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleAddManualLine}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          padding: '6px 12px',
+                          borderRadius: '6px',
+                          border: `1px solid ${palette.primarySoftBorder}`,
+                          backgroundColor: palette.primarySoftBg,
+                          color: palette.primarySoftText,
+                          fontWeight: '700',
+                          fontSize: '0.78rem',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <Plus size={14} /> Agregar Línea
+                      </button>
+                    </div>
                   </div>
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -2256,13 +2333,13 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                 >
                   <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', fontSize: '0.88rem', color: palette.text }}>
                     <span>
-                      Subtotal: <strong>₡{manualTotals.subtotal.toLocaleString('es-CR')}</strong>
+                      Subtotal (Base): <strong>₡{manualTotals.subtotal.toLocaleString('es-CR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
                     </span>
                     <span>
-                      IVA: <strong>₡{manualTotals.tax.toLocaleString('es-CR')}</strong>
+                      IVA: <strong>₡{manualTotals.tax.toLocaleString('es-CR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
                     </span>
                     <span style={{ fontSize: '1.05rem', color: palette.primary, fontWeight: '900' }}>
-                      Total: ₡{manualTotals.total.toLocaleString('es-CR')}
+                      Total a Cobrar: ₡{manualTotals.total.toLocaleString('es-CR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                   </div>
 
@@ -3522,12 +3599,269 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                 marginBottom: '14px'
               }}
             >
-              <div style={{ fontWeight: '700', fontSize: '0.84rem', color: palette.text, marginBottom: '4px' }}>
-                Servidor de Correo del Comercio (Opcional: SMTP Propio o Resend API)
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '8px' }}>
+                <div style={{ fontWeight: '700', fontSize: '0.86rem', color: palette.text }}>
+                  Servidor de Correo del Comercio (Opcional: SMTP Propio o Resend API)
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowEmailGuide(!showEmailGuide)}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '5px 10px',
+                    borderRadius: '6px',
+                    border: `1px solid ${palette.primarySoftBorder}`,
+                    backgroundColor: palette.primarySoftBg,
+                    color: palette.primarySoftText,
+                    fontSize: '0.76rem',
+                    fontWeight: '700',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <HelpCircle size={14} />
+                  <span>{showEmailGuide ? 'Ocultar Guía de Ayuda' : 'Ver Guía de Ayuda Paso a Paso'}</span>
+                </button>
               </div>
-              <p style={{ margin: '0 0 14px 0', fontSize: '0.78rem', color: palette.textSecondary, lineHeight: '1.45' }}>
-                Si deseas que las facturas salgan directamente desde el correo oficial de tu negocio (por ejemplo Gmail con Contraseña de Aplicación, Google Workspace, Office 365 o tu propio hosting), configura aquí tu servidor SMTP o llave de Resend. Si lo dejas en blanco, se utilizará el servidor global de la plataforma.
+
+              <p style={{ margin: '0 0 12px 0', fontSize: '0.78rem', color: palette.textSecondary, lineHeight: '1.45' }}>
+                Si deseas que las facturas y tiquetes salgan directamente desde el correo de tu negocio (por ejemplo Gmail, Google Workspace, Outlook o tu hosting propio), configura aquí tu servidor SMTP o llave de Resend. Si lo dejas en blanco, el sistema utilizará el servidor global de la plataforma.
               </p>
+
+              {/* Botones de Autocompletado Rápido */}
+              <div style={{ marginBottom: '14px', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.74rem', color: palette.textMuted, fontWeight: '700' }}>
+                  Autocompletar servidor:
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSmtpHost('smtp.gmail.com');
+                    setSmtpPort(587);
+                    setIsEditingSmtpPass(true);
+                    setShowEmailGuide(true);
+                    setEmailGuideTab('gmail');
+                  }}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    border: `1px solid ${palette.border}`,
+                    backgroundColor: palette.surface,
+                    color: palette.text,
+                    fontSize: '0.74rem',
+                    fontWeight: '600',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Gmail / Google Workspace
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSmtpHost('smtp.office365.com');
+                    setSmtpPort(587);
+                    setIsEditingSmtpPass(true);
+                    setShowEmailGuide(true);
+                    setEmailGuideTab('outlook');
+                  }}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    border: `1px solid ${palette.border}`,
+                    backgroundColor: palette.surface,
+                    color: palette.text,
+                    fontSize: '0.74rem',
+                    fontWeight: '600',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Outlook / Office 365
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const domain = (smtpUser || taxpayerEmail || '').split('@')[1] || 'tudominio.com';
+                    setSmtpHost(`mail.${domain}`);
+                    setSmtpPort(465);
+                    setIsEditingSmtpPass(true);
+                    setShowEmailGuide(true);
+                    setEmailGuideTab('hosting');
+                  }}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    border: `1px solid ${palette.border}`,
+                    backgroundColor: palette.surface,
+                    color: palette.text,
+                    fontSize: '0.74rem',
+                    fontWeight: '600',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Hosting Propio (cPanel)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowEmailGuide(true);
+                    setEmailGuideTab('resend');
+                  }}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    border: `1px solid ${palette.border}`,
+                    backgroundColor: palette.surface,
+                    color: palette.text,
+                    fontSize: '0.74rem',
+                    fontWeight: '600',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Resend API (Cloud)
+                </button>
+              </div>
+
+              {/* Guía Interactiva Desplegable */}
+              {showEmailGuide && (
+                <div
+                  style={{
+                    marginBottom: '16px',
+                    padding: '14px',
+                    borderRadius: '10px',
+                    backgroundColor: palette.surface,
+                    border: `1px solid ${palette.primarySoftBorder}`
+                  }}
+                >
+                  <div style={{ display: 'flex', gap: '8px', borderBottom: `1px solid ${palette.border}`, paddingBottom: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      onClick={() => setEmailGuideTab('gmail')}
+                      style={{
+                        padding: '4px 10px',
+                        borderRadius: '6px',
+                        border: 'none',
+                        backgroundColor: emailGuideTab === 'gmail' ? palette.primary : 'transparent',
+                        color: emailGuideTab === 'gmail' ? '#ffffff' : palette.textSecondary,
+                        fontSize: '0.74rem',
+                        fontWeight: '700',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Gmail y Google Workspace
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEmailGuideTab('outlook')}
+                      style={{
+                        padding: '4px 10px',
+                        borderRadius: '6px',
+                        border: 'none',
+                        backgroundColor: emailGuideTab === 'outlook' ? palette.primary : 'transparent',
+                        color: emailGuideTab === 'outlook' ? '#ffffff' : palette.textSecondary,
+                        fontSize: '0.74rem',
+                        fontWeight: '700',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Outlook y Microsoft 365
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEmailGuideTab('hosting')}
+                      style={{
+                        padding: '4px 10px',
+                        borderRadius: '6px',
+                        border: 'none',
+                        backgroundColor: emailGuideTab === 'hosting' ? palette.primary : 'transparent',
+                        color: emailGuideTab === 'hosting' ? '#ffffff' : palette.textSecondary,
+                        fontSize: '0.74rem',
+                        fontWeight: '700',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Hosting Propio y Webmail
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEmailGuideTab('resend')}
+                      style={{
+                        padding: '4px 10px',
+                        borderRadius: '6px',
+                        border: 'none',
+                        backgroundColor: emailGuideTab === 'resend' ? palette.primary : 'transparent',
+                        color: emailGuideTab === 'resend' ? '#ffffff' : palette.textSecondary,
+                        fontSize: '0.74rem',
+                        fontWeight: '700',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Resend API (Cloud)
+                    </button>
+                  </div>
+
+                  {emailGuideTab === 'gmail' && (
+                    <div style={{ fontSize: '0.78rem', color: palette.text, lineHeight: '1.5' }}>
+                      <p style={{ margin: '0 0 6px 0', fontWeight: '700' }}>
+                        ¿Cómo obtener la Contraseña de Aplicación de 16 caracteres de Gmail?
+                      </p>
+                      <ol style={{ margin: '0 0 8px 18px', padding: 0 }}>
+                        <li>Ingresa a tu cuenta de Google y asegúrate de tener activada la <strong>Verificación en dos pasos</strong>.</li>
+                        <li>Abre la sección oficial de Contraseñas de Aplicación de Google: <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer" style={{ color: palette.primary, fontWeight: '700' }}>myaccount.google.com/apppasswords</a>.</li>
+                        <li>En el campo del nombre escribe <strong>Betico Facturas</strong> y presiona <strong>Crear</strong>.</li>
+                        <li>Google te mostrará una contraseña amarilla de 16 letras (ejemplo: <code>abcd efgh ijkl mnop</code>). Cópiala sin espacios y pégala en el campo <strong>Contraseña SMTP</strong>.</li>
+                      </ol>
+                      <div style={{ padding: '8px 12px', borderRadius: '6px', backgroundColor: palette.amberSoftBg, border: `1px solid ${palette.amberSoftBorder}`, color: palette.amberText, fontSize: '0.74rem' }}>
+                        <strong>Aviso de Seguridad:</strong> Tu contraseña normal de iniciar sesión en Gmail no funciona para envíos SMTP directos. Es un requisito obligatorio de Google generar esta contraseña de aplicación.
+                      </div>
+                    </div>
+                  )}
+
+                  {emailGuideTab === 'outlook' && (
+                    <div style={{ fontSize: '0.78rem', color: palette.text, lineHeight: '1.5' }}>
+                      <p style={{ margin: '0 0 6px 0', fontWeight: '700' }}>
+                        Configuración para Outlook, Hotmail y Microsoft 365:
+                      </p>
+                      <ul style={{ margin: '0 0 8px 18px', padding: 0 }}>
+                        <li><strong>Servidor SMTP:</strong> <code>smtp.office365.com</code> (o <code>smtp-mail.outlook.com</code>).</li>
+                        <li><strong>Puerto:</strong> <code>587</code> con cifrado STARTTLS.</li>
+                        <li><strong>Usuario:</strong> Tu dirección completa (ej. <code>contacto@tunegocio.com</code> o <code>@outlook.com</code>).</li>
+                        <li>Si tu cuenta tiene verificación multifactor, genera una contraseña de aplicación en la seguridad de tu perfil Microsoft.</li>
+                      </ul>
+                    </div>
+                  )}
+
+                  {emailGuideTab === 'hosting' && (
+                    <div style={{ fontSize: '0.78rem', color: palette.text, lineHeight: '1.5' }}>
+                      <p style={{ margin: '0 0 6px 0', fontWeight: '700' }}>
+                        Configuración para Dominio Propio, cPanel o Webmail (Hostinger, GoDaddy, etc.):
+                      </p>
+                      <ul style={{ margin: '0 0 8px 18px', padding: 0 }}>
+                        <li><strong>Servidor SMTP:</strong> Habitualmente <code>mail.tudominio.com</code>.</li>
+                        <li><strong>Puerto:</strong> Recomendado <code>465</code> (con SSL directo) o <code>587</code> (con TLS).</li>
+                        <li><strong>Usuario:</strong> La cuenta completa creada en tu panel (ej. <code>facturacion@tudominio.com</code>).</li>
+                        <li><strong>Contraseña:</strong> La clave que asignaste a ese buzón en tu panel de control.</li>
+                      </ul>
+                    </div>
+                  )}
+
+                  {emailGuideTab === 'resend' && (
+                    <div style={{ fontSize: '0.78rem', color: palette.text, lineHeight: '1.5' }}>
+                      <p style={{ margin: '0 0 6px 0', fontWeight: '700' }}>
+                        Alternativa Cloud recomendada: Resend API
+                      </p>
+                      <p style={{ margin: '0 0 6px 0' }}>
+                        Resend ofrece 3,000 correos gratis al mes con máxima tasa de entrega en la bandeja de entrada principal (evitando la carpeta de spam).
+                      </p>
+                      <ol style={{ margin: '0 0 8px 18px', padding: 0 }}>
+                        <li>Crea tu cuenta en <a href="https://resend.com" target="_blank" rel="noreferrer" style={{ color: palette.primary, fontWeight: '700' }}>resend.com</a>.</li>
+                        <li>Crea una API Key y pégala en el campo <strong>Alternativa Cloud: Resend API Key</strong>.</li>
+                        <li>No necesitas configurar servidores, puertos ni contraseñas SMTP.</li>
+                      </ol>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '12px' }}>
                 <div>
@@ -3650,27 +3984,44 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
             )}
 
             <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
-              <button
-                type="button"
-                onClick={handleTestEmailDelivery}
-                disabled={testingEmail}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '8px 16px',
-                  borderRadius: '8px',
-                  border: `1px solid ${palette.primarySoftBorder}`,
-                  backgroundColor: palette.primarySoftBg,
-                  color: palette.primarySoftText,
-                  fontWeight: '700',
-                  fontSize: '0.82rem',
-                  cursor: 'pointer'
-                }}
-              >
-                {testingEmail ? <RefreshCw size={14} className="animate-spin" /> : <Send size={14} />}
-                <span>{testingEmail ? 'Enviando correo de prueba...' : 'Probar Envío de Correo'}</span>
-              </button>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                <input
+                  type="email"
+                  value={testRecipientEmail}
+                  onChange={(e) => setTestRecipientEmail(e.target.value)}
+                  placeholder="correo.para.prueba@ejemplo.com"
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: '8px',
+                    border: `1px solid ${palette.border}`,
+                    backgroundColor: palette.inputBg,
+                    color: palette.text,
+                    fontSize: '0.82rem',
+                    minWidth: '260px'
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => handleTestEmailDelivery(testRecipientEmail)}
+                  disabled={testingEmail}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '8px 16px',
+                    borderRadius: '8px',
+                    border: `1px solid ${palette.primarySoftBorder}`,
+                    backgroundColor: palette.primarySoftBg,
+                    color: palette.primarySoftText,
+                    fontWeight: '700',
+                    fontSize: '0.82rem',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {testingEmail ? <RefreshCw size={14} className="animate-spin" /> : <Send size={14} />}
+                  <span>{testingEmail ? 'Enviando prueba...' : 'Probar Envío de Correo'}</span>
+                </button>
+              </div>
               <span style={{ fontSize: '0.76rem', color: palette.textSecondary }}>
                 Recuerda hacer clic en <strong>Guardar Credenciales y Llave</strong> abajo después de configurar tu correo.
               </span>
@@ -4017,6 +4368,57 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
                   <option value="01">01 - Factura Electrónica</option>
                 </select>
               </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', marginBottom: '5px' }}>
+                  Tarifa de IVA Predeterminada del Comercio *
+                </label>
+                <select
+                  value={defaultTaxRateCode}
+                  onChange={(e) => setDefaultTaxRateCode(e.target.value as any)}
+                  style={{
+                    width: '100%',
+                    padding: '9px 12px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border)',
+                    backgroundColor: 'var(--background)'
+                  }}
+                >
+                  <option value="08">13% IVA General (Comercio general, restaurantes y servicios)</option>
+                  <option value="04">4% Tarifa Reducida (Servicios de salud privada, medicina y odontología)</option>
+                  <option value="02">2% Tarifa Reducida (Medicamentos, insumos médicos y educación)</option>
+                  <option value="01">1% Tarifa Reducida (Canasta básica tributaria y agropecuario)</option>
+                  <option value="10">0% Exento (Servicios y productos exentos de IVA)</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Tratamiento de Precios con IVA Incluido */}
+            <div
+              style={{
+                marginBottom: '16px',
+                padding: '15px',
+                borderRadius: '12px',
+                border: `1px solid ${pricesIncludeTax ? palette.primarySoftBorder : 'var(--border)'}`,
+                backgroundColor: pricesIncludeTax ? palette.primarySoftBg : 'var(--background)'
+              }}
+            >
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={pricesIncludeTax}
+                  onChange={(e) => setPricesIncludeTax(e.target.checked)}
+                  style={{ width: '18px', height: '18px', marginTop: '2px' }}
+                />
+                <div>
+                  <strong style={{ fontSize: '0.88rem', color: pricesIncludeTax ? palette.primarySoftText : 'var(--text)' }}>
+                    Los precios registrados en mi catálogo, tienda y citas incluyen IVA (Predeterminado Costa Rica)
+                  </strong>
+                  <p style={{ margin: '3px 0 0 0', fontSize: '0.79rem', color: palette.textMuted, lineHeight: '1.4' }}>
+                    Al facturar pedidos de tienda o citas de agendamiento, el sistema desglosa automáticamente la base imponible y el impuesto sin cobrar montos adicionales al precio de lista. Si desactivas esta casilla, el impuesto se sumará sobre el precio registrado (modo más IVA).
+                  </p>
+                </div>
+              </label>
             </div>
 
             {/* Tarjeta de Régimen de Tributación Simplificada (RTS) */}

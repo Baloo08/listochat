@@ -514,6 +514,9 @@ export class AlmendroService {
       const docType: '01' | '04' = receiverIdNumber ? '01' : defaultDoc;
       const defaultCabys = isNativeActive ? (nativeCfg?.defaultCabysCode || '8311100000000') : '8311100000000';
 
+      const defaultTaxRate = nativeCfg?.defaultTaxRateCode || '08';
+      const pricesIncludeTax = nativeCfg?.pricesIncludeTax ?? true;
+
       // Prepare line items
       const items: VoucherLineItem[] = (order.items && order.items.length > 0)
         ? order.items.map(it => ({
@@ -521,14 +524,14 @@ export class AlmendroService {
             description: `${it.productName}${it.variantName ? ` - ${it.variantName}` : ''}`,
             quantity: Number(it.quantity) || 1,
             unitPrice: Number(it.unitPrice) || 0,
-            taxRateCode: '08' // 13% IVA
+            taxRateCode: (it as any).taxRateCode || defaultTaxRate
           }))
         : [{
             cabysCode: defaultCabys,
             description: `Consumo / Pedido #ORD-${order.orderNumber}`,
             quantity: 1,
             unitPrice: Number(order.subtotal || order.total) || 0,
-            taxRateCode: '08'
+            taxRateCode: defaultTaxRate
           }];
 
       // Add delivery fee as line item if present and > 0
@@ -558,6 +561,7 @@ export class AlmendroService {
           branchId: orderBranchId,
           currency: order.currency || 'CRC',
           paymentMethod: paymentMethodCode,
+          pricesIncludeTax,
           receiver: {
             idType: receiverIdNumber ? receiverIdType : undefined,
             idNumber: receiverIdNumber,
@@ -717,6 +721,9 @@ export class AlmendroService {
       const defaultDoc = isNativeActive ? (nativeCfg?.defaultDocType || '04') : (config?.defaultDocType || '04');
       const docType: '01' | '04' = receiverIdNumber ? '01' : defaultDoc;
       const defaultCabys = isNativeActive ? (nativeCfg?.defaultCabysCode || '8311100000000') : '8311100000000';
+      const isHealthService = /salud|dental|médic|medic|odontol|psicol|nutri|terapia/i.test(appt.service || '');
+      const defaultTaxRate = nativeCfg?.defaultTaxRateCode || (isHealthService ? '04' : '08');
+      const pricesIncludeTax = nativeCfg?.pricesIncludeTax ?? true;
       const unitPrice = Number(appt.amount) || 0;
 
       const items = [
@@ -725,7 +732,7 @@ export class AlmendroService {
           description: `Servicio: ${appt.service}${appt.vehicleModel ? ` (${appt.vehicleModel})` : ''}`,
           quantity: 1,
           unitPrice,
-          taxRateCode: '08'
+          taxRateCode: defaultTaxRate
         }
       ];
 
@@ -736,6 +743,7 @@ export class AlmendroService {
           docType,
           appointmentId: appt.id,
           paymentMethod: '01',
+          pricesIncludeTax,
           receiver: {
             idType: receiverIdNumber ? receiverIdType : undefined,
             idNumber: receiverIdNumber,

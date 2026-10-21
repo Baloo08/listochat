@@ -195,6 +195,8 @@ router.post('/config', upload.single('certificateFile'), async (req: Request, re
       smtpUser: body.smtpUser,
       smtpPass: body.smtpPass,
       resendApiKey: body.resendApiKey,
+      pricesIncludeTax: body.pricesIncludeTax !== undefined ? (body.pricesIncludeTax === 'true' || body.pricesIncludeTax === true) : undefined,
+      defaultTaxRateCode: body.defaultTaxRateCode ? String(body.defaultTaxRateCode).trim() : undefined,
       active: body.active !== undefined ? (body.active === 'true' || body.active === true) : undefined
     });
 

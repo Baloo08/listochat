@@ -1276,6 +1276,8 @@ export async function runMigrations() {
     ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS smtp_user VARCHAR(255) DEFAULT '';
     ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS smtp_pass_encrypted TEXT DEFAULT '';
     ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS resend_api_key_encrypted TEXT DEFAULT '';
+    ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS prices_include_tax BOOLEAN DEFAULT true;
+    ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS default_tax_rate_code VARCHAR(5) DEFAULT '08';
 
     CREATE TABLE IF NOT EXISTS tenant_hacienda_branches (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
