@@ -39,10 +39,12 @@ export default function StoreSettings() {
   const [storeEnabled, setStoreEnabled] = useState(true);
   const [storeMode, setStoreMode] = useState<'retail' | 'restaurant'>('retail');
   const [storeModules, setStoreModules] = useState<StoreModulesConfig>({
+    whatsappEnabled: true,
     storeEnabled: true,
     bookingsEnabled: true,
     courtsEnabled: false,
-    loyaltyEnabled: false
+    loyaltyEnabled: false,
+    billingEnabled: true
   });
   const [storeName, setStoreName] = useState('');
   const [storeSlug, setStoreSlug] = useState('');
@@ -249,10 +251,13 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
           setStoreMode(data.storeMode || 'retail');
           if (data.storeModules) {
             setStoreModules({
+              ...data.storeModules,
+              whatsappEnabled: data.storeModules.whatsappEnabled !== false,
               storeEnabled: data.storeModules.storeEnabled !== false,
               bookingsEnabled: data.storeModules.bookingsEnabled !== false,
               courtsEnabled: data.storeModules.courtsEnabled === true,
-              loyaltyEnabled: data.storeModules.loyaltyEnabled === true
+              loyaltyEnabled: data.storeModules.loyaltyEnabled === true,
+              billingEnabled: data.storeModules.billingEnabled !== false
             });
           }
           if (data.storeSchedule) {
@@ -585,6 +590,10 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
         pickupEnabled
       });
 
+      window.dispatchEvent(new CustomEvent('betico:store-config-updated', {
+        detail: { storeMode, storeModules }
+      }));
+
       // Sincronizar estado habilitado de Tilopay si está configurado
       let tiloWarning = false;
       if (tiloEnabled || acceptSinpeTilopay) {
@@ -688,7 +697,7 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
       {/* Top Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
         <div>
-          <h2 style={{ margin: '0 0 5px 0', fontSize: '1.5rem', fontWeight: 'bold' }}>Configuración de Tienda, Envíos & Operación</h2>
+          <h2 style={{ margin: '0 0 5px 0', fontSize: '1.5rem', fontWeight: 'bold' }}>Configuración de Tienda, Envíos y Operación</h2>
           <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.9rem' }}>
             Control de módulos, modalidad de comandas/pedidos, cálculo de envíos, horarios y diseño visual
           </p>
@@ -748,7 +757,7 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
       </div>
 
       {/* Tabs with Clean Lucide SVG Icons */}
-      <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', marginBottom: '25px', gap: '10px', overflowX: 'auto' }}>
+      <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', marginBottom: '25px', gap: '10px', flexWrap: 'wrap' }}>
         <button
           onClick={() => setActiveTab('general')}
           style={{
@@ -759,7 +768,7 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
             fontWeight: 'bold', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap'
           }}
         >
-          <Store size={17} /> General & Módulos
+          <Store size={17} /> General y Módulos
         </button>
 
         <button
@@ -772,7 +781,7 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
             fontWeight: 'bold', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap'
           }}
         >
-          <Utensils size={17} /> Consumo en Local, Mesas & Fases
+          <Utensils size={17} /> Consumo en Local, Mesas y Fases
         </button>
 
         <button
@@ -785,7 +794,7 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
             fontWeight: 'bold', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap'
           }}
         >
-          <Truck size={17} /> Envíos & Delivery a Domicilio
+          <Truck size={17} /> Envíos y Delivery a Domicilio
         </button>
 
         <button
@@ -824,7 +833,7 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
             fontWeight: 'bold', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap'
           }}
         >
-          <Palette size={17} /> Diseño Visual & Tipografía
+          <Palette size={17} /> Diseño Visual y Tipografía
         </button>
 
         <button
@@ -855,9 +864,22 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
             </p>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px' }}>
+              <label style={{ padding: '16px', borderRadius: '10px', border: `2px solid ${storeModules.whatsappEnabled !== false ? '#16a34a' : '#e2e8f0'}`, backgroundColor: storeModules.whatsappEnabled !== false ? 'rgba(22, 163, 74, 0.05)' : '#f8fafc', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div>
+                  <div style={{ fontWeight: 'bold', fontSize: '0.95rem', color: '#1e293b' }}>Asistente de WhatsApp</div>
+                  <div style={{ fontSize: '0.8rem', color: '#64748b' }}>Atención automática 24/7, CRM y campañas por WhatsApp.</div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={storeModules.whatsappEnabled !== false}
+                  onChange={(e) => setStoreModules({ ...storeModules, whatsappEnabled: e.target.checked })}
+                  style={{ width: '20px', height: '20px', cursor: 'pointer' }}
+                />
+              </label>
+
               <label style={{ padding: '16px', borderRadius: '10px', border: `2px solid ${storeModules.storeEnabled ? 'var(--primary)' : '#e2e8f0'}`, backgroundColor: storeModules.storeEnabled ? 'rgba(22, 163, 74, 0.05)' : '#f8fafc', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div>
-                  <div style={{ fontWeight: 'bold', fontSize: '0.95rem', color: '#1e293b' }}>Módulo de Tienda / Menú & Pedidos</div>
+                  <div style={{ fontWeight: 'bold', fontSize: '0.95rem', color: '#1e293b' }}>Módulo de Tienda / Menú y Pedidos</div>
                   <div style={{ fontSize: '0.8rem', color: '#64748b' }}>Catálogo de productos, comandas y envíos.</div>
                 </div>
                 <input
@@ -870,7 +892,7 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
 
               <label style={{ padding: '16px', borderRadius: '10px', border: `2px solid ${storeModules.bookingsEnabled ? '#2563eb' : '#e2e8f0'}`, backgroundColor: storeModules.bookingsEnabled ? 'rgba(37, 99, 235, 0.05)' : '#f8fafc', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div>
-                  <div style={{ fontWeight: 'bold', fontSize: '0.95rem', color: '#1e293b' }}>Módulo de Reservas & Citas</div>
+                  <div style={{ fontWeight: 'bold', fontSize: '0.95rem', color: '#1e293b' }}>Módulo de Reservas y Citas</div>
                   <div style={{ fontSize: '0.8rem', color: '#64748b' }}>Agenda online, servicios y cupos de atención.</div>
                 </div>
                 <input
@@ -896,13 +918,26 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
 
               <label style={{ padding: '16px', borderRadius: '10px', border: `2px solid ${storeModules.loyaltyEnabled ? '#10b981' : '#e2e8f0'}`, backgroundColor: storeModules.loyaltyEnabled ? 'rgba(16, 185, 129, 0.05)' : '#f8fafc', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div>
-                  <div style={{ fontWeight: 'bold', fontSize: '0.95rem', color: '#1e293b' }}>Módulo de Fidelización & Club de Clientes</div>
+                  <div style={{ fontWeight: 'bold', fontSize: '0.95rem', color: '#1e293b' }}>Módulo de Fidelización y Club de Clientes</div>
                   <div style={{ fontSize: '0.8rem', color: '#64748b' }}>Tarjetas de puntos, sellos digitales y monedero de clientes.</div>
                 </div>
                 <input
                   type="checkbox"
                   checked={Boolean(storeModules.loyaltyEnabled)}
                   onChange={(e) => setStoreModules({ ...storeModules, loyaltyEnabled: e.target.checked })}
+                  style={{ width: '20px', height: '20px', cursor: 'pointer' }}
+                />
+              </label>
+
+              <label style={{ padding: '16px', borderRadius: '10px', border: `2px solid ${storeModules.billingEnabled !== false ? '#059669' : '#e2e8f0'}`, backgroundColor: storeModules.billingEnabled !== false ? 'rgba(5, 150, 105, 0.05)' : '#f8fafc', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div>
+                  <div style={{ fontWeight: 'bold', fontSize: '0.95rem', color: '#1e293b' }}>Módulo de Cobros y Facturación</div>
+                  <div style={{ fontSize: '0.8rem', color: '#64748b' }}>Facturación electrónica Hacienda y gestión de suscripción.</div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={storeModules.billingEnabled !== false}
+                  onChange={(e) => setStoreModules({ ...storeModules, billingEnabled: e.target.checked })}
                   style={{ width: '20px', height: '20px', cursor: 'pointer' }}
                 />
               </label>
@@ -2298,7 +2333,7 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
             
             {/* Left: Design Form Controls */}
             <div style={{ backgroundColor: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '18px' }}>
-              <h3 style={{ margin: '0 0 4px 0', fontSize: '1.15rem', fontWeight: 'bold' }}>Estilo Visual, Fondo & Tipografía</h3>
+              <h3 style={{ margin: '0 0 4px 0', fontSize: '1.15rem', fontWeight: 'bold' }}>Estilo Visual, Fondo y Tipografía</h3>
               <p style={{ margin: '0 0 10px 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                 Personaliza la estética visual de tu tienda pública o menú digital.
               </p>
@@ -2519,7 +2554,7 @@ Hola *{repartidor}*, tienes un nuevo pedido para entregar:
 
               {/* 6. Primary Brand Color */}
               <div>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '6px' }}>Color Primario de Marca (Botones & Precios)</label>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '6px' }}>Color Primario de Marca (Botones y Precios)</label>
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' }}>
                   {COLOR_PRESETS.map(c => (
                     <div

@@ -78,7 +78,7 @@ export async function upsertStoreSettings(tenantId: string, data: Partial<StoreS
     ON CONFLICT (tenant_id) DO UPDATE SET
       store_enabled = EXCLUDED.store_enabled,
       store_mode = EXCLUDED.store_mode,
-      store_modules = EXCLUDED.store_modules,
+      store_modules = COALESCE(store_settings.store_modules, '{}'::jsonb) || COALESCE(EXCLUDED.store_modules, '{}'::jsonb),
       restaurant_config = EXCLUDED.restaurant_config,
       delivery_config = EXCLUDED.delivery_config,
       correos_cr_config = EXCLUDED.correos_cr_config,

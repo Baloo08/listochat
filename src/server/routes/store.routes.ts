@@ -47,4 +47,49 @@ router.post('/', async (req, res) => {
   }
 });
 
+const updateModulesHandler = async (req: any, res: any) => {
+  try {
+    const existing = await getStoreSettings(req.tenantId!);
+    const incomingModules = req.body?.storeModules || req.body || {};
+    const currentModules = existing?.storeModules || { storeEnabled: true, bookingsEnabled: true };
+    const mergedModules = {
+      ...currentModules,
+      ...incomingModules
+    };
+    const nextStoreMode = req.body?.storeMode || existing?.storeMode || 'retail';
+    const nextStoreEnabled = mergedModules.storeEnabled !== false;
+
+    if (existing) {
+      const saved = await saveStoreSettings(req.tenantId!, {
+        ...existing,
+        storeEnabled: nextStoreEnabled,
+        storeMode: nextStoreMode,
+        storeModules: mergedModules
+      });
+      res.json({
+        success: true,
+        storeMode: saved.storeMode || nextStoreMode,
+        storeModules: saved.storeModules || mergedModules
+      });
+    } else {
+      const saved = await saveStoreSettings(req.tenantId!, {
+        storeEnabled: nextStoreEnabled,
+        storeMode: nextStoreMode,
+        storeModules: mergedModules
+      });
+      res.json({
+        success: true,
+        storeMode: saved.storeMode || nextStoreMode,
+        storeModules: saved.storeModules || mergedModules
+      });
+    }
+  } catch (error) {
+    console.error('Error al actualizar módulos del panel:', error);
+    res.status(500).json({ error: 'Error al actualizar configuración de módulos' });
+  }
+};
+
+router.post('/modules', updateModulesHandler);
+router.patch('/modules', updateModulesHandler);
+
 export default router;

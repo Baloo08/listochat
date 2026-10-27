@@ -319,6 +319,11 @@ export interface StoreModulesConfig {
   courtsEnabled?: boolean;
   branchesEnabled?: boolean;
   loyaltyEnabled?: boolean;
+  whatsappEnabled?: boolean;
+  billingEnabled?: boolean;
+  onboardingCompleted?: boolean;
+  businessNiche?: string;
+  businessPurposes?: string[];
 }
 
 export interface StoreSettings {

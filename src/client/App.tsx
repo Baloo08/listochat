@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from './hooks/useAuth';
 import Login from './components/Login';
-import GuidedTourModal from './components/GuidedTourModal';
+import GuidedTourModal, { SIX_MODULES_CATALOG } from './components/GuidedTourModal';
+import { StoreModulesConfig } from '../shared/types';
 import Dashboard from './components/Dashboard';
 import ChatsInbox from './components/ChatsInbox';
 import Bookings from './components/Bookings';
@@ -83,7 +84,9 @@ import {
   Gift,
   Tag,
   Award,
-  QrCode
+  QrCode,
+  Sliders,
+  Check
 } from 'lucide-react';
 
 
@@ -252,6 +255,7 @@ function MainApp({ pathname }: { pathname: string }) {
       url.searchParams.set('tab', target);
       url.searchParams.delete('sa_tab');
       url.searchParams.delete('card_status');
+      url.searchParams.delete('tour');
       window.history.replaceState(null, '', url.pathname + url.search);
     } catch (e) {}
 
@@ -260,6 +264,22 @@ function MainApp({ pathname }: { pathname: string }) {
       sessionStorage.setItem(`betico_active_tab_${scope}`, target);
       if (user?.role !== 'superadmin') {
         sessionStorage.setItem('betico_active_tab_tenant', target);
+      }
+    } catch (e) {}
+  };
+
+  const handleCloseTourModal = () => {
+    setShowTourModal(false);
+    try {
+      if (user?.tenantId) {
+        localStorage.setItem(`betico_tour_dismissed_${user.tenantId}`, 'true');
+      }
+      localStorage.setItem('betico_tour_dismissed', 'true');
+      localStorage.removeItem('betico_tour_active');
+      const url = new URL(window.location.href);
+      if (url.searchParams.has('tour')) {
+        url.searchParams.delete('tour');
+        window.history.replaceState(null, '', url.pathname + url.search);
       }
     } catch (e) {}
   };
@@ -288,25 +308,175 @@ function MainApp({ pathname }: { pathname: string }) {
 
   // Tenant customization
   const [storeMode, setStoreMode] = useState<'retail' | 'restaurant'>('retail');
-  const [storeModules, setStoreModules] = useState<{
-    storeEnabled: boolean;
-    bookingsEnabled: boolean;
-    courtsEnabled?: boolean;
-    branchesEnabled?: boolean;
-    loyaltyEnabled?: boolean;
-  }>({
-    storeEnabled: true,
-    bookingsEnabled: true,
-    courtsEnabled: false,
-    branchesEnabled: false,
-    loyaltyEnabled: false
+  const [storeModules, setStoreModules] = useState<StoreModulesConfig>(() => {
+    try {
+      const cached = localStorage.getItem('betico_store_modules_cache');
+      if (cached) {
+        return JSON.parse(cached);
+      }
+    } catch (e) {}
+    return {
+      whatsappEnabled: true,
+      storeEnabled: true,
+      bookingsEnabled: true,
+      courtsEnabled: false,
+      branchesEnabled: false,
+      loyaltyEnabled: false,
+      billingEnabled: true
+    };
   });
+  const [showModuleSwitcher, setShowModuleSwitcher] = useState<boolean>(false);
+  const [expandedModules, setExpandedModules] = useState<Record<string, boolean>>({
+    whatsapp: true,
+    tienda: true,
+    reservas: false,
+    canchas: false,
+    fidelizacion: false,
+    facturacion: false
+  });
+
+  const pageToModule: Record<string, string> = {
+    whatsapp: 'whatsapp',
+    chats: 'whatsapp',
+    queue: 'whatsapp',
+    campaigns: 'whatsapp',
+    agente: 'whatsapp',
+    secretario: 'whatsapp',
+    asesor: 'whatsapp',
+    tienda: 'tienda',
+    productos: 'tienda',
+    ordenes: 'tienda',
+    reservas: 'reservas',
+    servicios: 'reservas',
+    canchas: 'canchas',
+    canchas_reservas: 'canchas',
+    fidelidad: 'fidelizacion',
+    fidelidad_ajustes: 'fidelizacion',
+    fidelidad_billeteras: 'fidelizacion',
+    fidelidad_clientes: 'fidelizacion',
+    fidelidad_promociones: 'fidelizacion',
+    fidelidad_cupones: 'fidelizacion',
+    facturacion: 'facturacion',
+    facturacion_comprobantes: 'facturacion',
+    facturacion_credenciales: 'facturacion',
+    facturacion_sucursales: 'facturacion',
+    suscripcion: 'facturacion'
+  };
+
+  const ensureAtLeastOneModuleActive = (mods: StoreModulesConfig): StoreModulesConfig => {
+    const hasAnyActive =
+      mods.whatsappEnabled !== false ||
+      mods.storeEnabled !== false ||
+      mods.bookingsEnabled !== false ||
+      Boolean(mods.courtsEnabled) ||
+      Boolean(mods.loyaltyEnabled) ||
+      mods.billingEnabled !== false;
+    if (!hasAnyActive) {
+      return { ...mods, whatsappEnabled: true };
+    }
+    return mods;
+  };
+
+  const saveModuleConfiguration = async (config: {
+    storeModules: StoreModulesConfig;
+    storeMode?: 'retail' | 'restaurant';
+  }) => {
+    const nextModules = ensureAtLeastOneModuleActive(config.storeModules);
+    const nextMode = config.storeMode || storeMode;
+    setStoreModules(nextModules);
+    if (config.storeMode) setStoreMode(config.storeMode);
+    try {
+      localStorage.setItem('betico_store_modules_cache', JSON.stringify(nextModules));
+      if (user?.tenantId) {
+        localStorage.setItem(`betico_store_modules_cache_${user.tenantId}`, JSON.stringify(nextModules));
+        localStorage.setItem(`betico_tour_dismissed_${user.tenantId}`, 'true');
+      }
+    } catch (e) {}
+    try {
+      const token = localStorage.getItem('token');
+      if (token) {
+        await fetch('/api/store/modules', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            storeModules: nextModules,
+            storeMode: nextMode
+          })
+        });
+      }
+    } catch (e) {}
+  };
+
+  const toggleSingleModule = (moduleKey: string) => {
+    let next: StoreModulesConfig = { ...storeModules };
+    if (moduleKey === 'whatsapp') next.whatsappEnabled = next.whatsappEnabled === false;
+    if (moduleKey === 'tienda') next.storeEnabled = next.storeEnabled === false;
+    if (moduleKey === 'reservas') next.bookingsEnabled = next.bookingsEnabled === false;
+    if (moduleKey === 'canchas') next.courtsEnabled = !next.courtsEnabled;
+    if (moduleKey === 'fidelizacion') next.loyaltyEnabled = !next.loyaltyEnabled;
+    if (moduleKey === 'facturacion') next.billingEnabled = next.billingEnabled === false;
+
+    next = ensureAtLeastOneModuleActive(next);
+    saveModuleConfiguration({ storeModules: next });
+
+    const isNowEnabled =
+      moduleKey === 'whatsapp' ? next.whatsappEnabled !== false :
+      moduleKey === 'tienda' ? next.storeEnabled !== false :
+      moduleKey === 'reservas' ? next.bookingsEnabled !== false :
+      moduleKey === 'canchas' ? Boolean(next.courtsEnabled) :
+      moduleKey === 'fidelizacion' ? Boolean(next.loyaltyEnabled) :
+      next.billingEnabled !== false;
+
+    if (isNowEnabled) {
+      setExpandedModules(prev => ({ ...prev, [moduleKey]: true }));
+    } else if (pageToModule[currentPage] === moduleKey) {
+      const firstActive = SIX_MODULES_CATALOG.find(m =>
+        m.key === 'whatsapp' ? next.whatsappEnabled !== false :
+        m.key === 'tienda' ? next.storeEnabled !== false :
+        m.key === 'reservas' ? next.bookingsEnabled !== false :
+        m.key === 'canchas' ? Boolean(next.courtsEnabled) :
+        m.key === 'fidelizacion' ? Boolean(next.loyaltyEnabled) :
+        next.billingEnabled !== false
+      );
+      navigateToTab(firstActive ? firstActive.defaultTab : 'dashboard');
+    }
+  };
 
   const toggleSidebar = () => {
     const nextState = !isSidebarCollapsed;
     setIsSidebarCollapsed(nextState);
     localStorage.setItem('sidebar_collapsed', String(nextState));
   };
+
+  useEffect(() => {
+    const handleStoreConfigUpdated = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      if (!detail) return;
+      if (detail.storeMode) setStoreMode(detail.storeMode);
+      if (detail.storeModules) {
+        const safeModules = ensureAtLeastOneModuleActive(detail.storeModules);
+        setStoreModules(safeModules);
+        try {
+          localStorage.setItem('betico_store_modules_cache', JSON.stringify(safeModules));
+          if (user?.tenantId) {
+            localStorage.setItem(`betico_store_modules_cache_${user.tenantId}`, JSON.stringify(safeModules));
+          }
+        } catch (_err) {}
+      }
+    };
+    window.addEventListener('betico:store-config-updated', handleStoreConfigUpdated);
+    return () => window.removeEventListener('betico:store-config-updated', handleStoreConfigUpdated);
+  }, [user?.tenantId]);
+
+  useEffect(() => {
+    const modKey = pageToModule[currentPage];
+    if (modKey) {
+      setExpandedModules(prev => (prev[modKey] ? prev : { ...prev, [modKey]: true }));
+    }
+  }, [currentPage]);
 
   useEffect(() => {
     if (!isAuthenticated || !user) return;
@@ -348,13 +518,34 @@ function MainApp({ pathname }: { pathname: string }) {
           if (data) {
             setStoreMode(data.storeMode || 'retail');
             if (data.storeModules) {
-              setStoreModules({
+              const resolvedModules = ensureAtLeastOneModuleActive({
+                ...data.storeModules,
+                whatsappEnabled: data.storeModules.whatsappEnabled !== false,
                 storeEnabled: data.storeModules.storeEnabled !== false,
                 bookingsEnabled: data.storeModules.bookingsEnabled !== false,
                 courtsEnabled: data.storeModules.courtsEnabled === true,
                 branchesEnabled: data.storeModules.branchesEnabled === true,
-                loyaltyEnabled: data.storeModules.loyaltyEnabled === true
+                loyaltyEnabled: data.storeModules.loyaltyEnabled === true,
+                billingEnabled: data.storeModules.billingEnabled !== false
               });
+              setStoreModules(resolvedModules);
+              try {
+                localStorage.setItem('betico_store_modules_cache', JSON.stringify(resolvedModules));
+                if (user.tenantId) {
+                  localStorage.setItem(`betico_store_modules_cache_${user.tenantId}`, JSON.stringify(resolvedModules));
+                }
+              } catch (e) {}
+
+              const isDismissedForTenant = user.tenantId
+                ? Boolean(localStorage.getItem(`betico_tour_dismissed_${user.tenantId}`))
+                : Boolean(localStorage.getItem('betico_tour_dismissed'));
+
+              if (
+                data.storeModules.onboardingCompleted === false &&
+                !isDismissedForTenant
+              ) {
+                setShowTourModal(true);
+              }
             }
           }
         }
@@ -472,7 +663,10 @@ function MainApp({ pathname }: { pathname: string }) {
   }
 
   interface NavGroup {
+    key?: string;
     title: string;
+    icon?: React.ReactNode;
+    badge?: number;
     items: NavItem[];
   }
 
@@ -519,119 +713,97 @@ function MainApp({ pathname }: { pathname: string }) {
   const isEnterpriseOrFranquicia = ['enterprise', 'business', 'franquicia', 'empresa'].includes((user as any)?.tenantPlan || '');
   const branchesEnabled = storeModules.branchesEnabled === true || isEnterpriseOrFranquicia;
 
+  // Minimalist SVG general access dock
+  const generalAccessItems: NavItem[] = [
+    { id: 'dashboard', label: 'Dashboard', icon: <Home size={18} /> },
+    { id: 'sitio', label: 'Sitio Web', icon: <Globe size={18} /> },
+    { id: 'usuarios', label: 'Equipo y Usuarios', icon: <Users size={18} /> },
+    ...(branchesEnabled ? [{ id: 'sucursales', label: 'Sedes y Sucursales', icon: <Building2 size={18} /> }] : []),
+    { id: 'configuracion', label: 'Ajustes Generales', icon: <Settings size={18} /> }
+  ];
+
+  // The 6 core modules with accordion sub-tabs
   const tenantNavGroups: NavGroup[] = [
-    // 1. OPERACIONES
-    {
-      title: 'OPERACIONES',
+    // 1. Asistente de WhatsApp
+    ...(storeModules.whatsappEnabled !== false ? [{
+      key: 'whatsapp',
+      title: 'Asistente de WhatsApp',
+      icon: <MessageSquare size={18} />,
       items: [
-        { id: 'dashboard', label: 'Dashboard', icon: <Home size={18} /> }
-      ]
-    },
-
-    // 2. COMUNICACIÓN
-    {
-      title: 'COMUNICACIÓN',
-      items: [
-        { id: 'whatsapp', label: 'WhatsApp y Bot', icon: <Phone size={18} /> },
-        { id: 'chats', label: 'Chats en Vivo', icon: <MessageSquare size={18} /> },
-        { id: 'queue', label: 'Cola de Mensajes', icon: <Clock size={18} /> },
-        { id: 'campaigns', label: 'Difusión y Campañas', icon: <Send size={18} /> },
-        { id: 'agente', label: 'Personalidad Agente IA', icon: <Bot size={18} /> },
-        { id: 'secretario', label: 'Secretario WhatsApp', icon: <Shield size={18} /> },
-        { id: 'asesor', label: 'Asesor de Negocio', icon: <Sparkles size={18} /> }
-      ]
-    },
-
-    // 3. SITIO WEB
-    {
-      title: 'SITIO WEB',
-      items: [
-        { id: 'sitio', label: 'Sitio Web', icon: <Globe size={18} /> }
-      ]
-    },
-
-    // 4. TIENDA o MENÚ (Condicional por storeEnabled y storeMode)
-    ...(storeModules.storeEnabled !== false ? [
-      storeMode === 'restaurant' ? {
-        title: 'MENÚ',
-        items: [
-          { id: 'tienda', label: 'Ajuste de Tienda', icon: <ShoppingBag size={18} /> },
-          { id: 'productos', label: 'Menú y Platillos', icon: <Package size={18} /> },
-          {
-            id: 'ordenes',
-            label: 'Comandas y Cocina',
-            icon: <ClipboardList size={18} />,
-            badge: unreadOrdersCount > 0 ? unreadOrdersCount : undefined
-          }
-        ]
-      } : {
-        title: 'TIENDA',
-        items: [
-          { id: 'tienda', label: 'Ajuste de Tienda', icon: <ShoppingBag size={18} /> },
-          { id: 'productos', label: 'Productos y Catálogo', icon: <Package size={18} /> },
-          {
-            id: 'ordenes',
-            label: 'Pedidos y Despacho',
-            icon: <ClipboardList size={18} />,
-            badge: unreadOrdersCount > 0 ? unreadOrdersCount : undefined
-          }
-        ]
-      }
-    ] : []),
-
-    // 5. CANCHAS (Condicional por courtsEnabled)
-    ...(storeModules.courtsEnabled ? [{
-      title: 'CANCHAS',
-      items: [
-        { id: 'canchas', label: 'Gestión de Canchas', icon: <Trophy size={18} /> },
-        { id: 'canchas_reservas', label: 'Reserva de Canchas', icon: <CalendarCheck size={18} /> }
+        { id: 'whatsapp', label: 'WhatsApp y Bot', icon: <Phone size={16} /> },
+        { id: 'chats', label: 'Chats en Vivo', icon: <MessageSquare size={16} /> },
+        { id: 'agente', label: 'Personalidad Agente IA', icon: <Bot size={16} /> },
+        { id: 'secretario', label: 'Secretario WhatsApp', icon: <Shield size={16} /> },
+        { id: 'asesor', label: 'Asesor de Negocio', icon: <Sparkles size={16} /> },
+        { id: 'campaigns', label: 'Difusión y Campañas', icon: <Send size={16} /> },
+        { id: 'queue', label: 'Cola de Mensajes', icon: <Clock size={16} /> }
       ]
     }] : []),
 
-    // 6. RESERVAS Y CITAS (Condicional por bookingsEnabled)
+    // 2. Tienda
+    ...(storeModules.storeEnabled !== false ? [{
+      key: 'tienda',
+      title: 'Tienda',
+      icon: <ShoppingBag size={18} />,
+      badge: unreadOrdersCount > 0 ? unreadOrdersCount : undefined,
+      items: [
+        { id: 'tienda', label: 'Ajuste de Tienda', icon: <ShoppingBag size={16} /> },
+        { id: 'productos', label: storeMode === 'restaurant' ? 'Menú y Platillos' : 'Productos y Catálogo', icon: <Package size={16} /> },
+        {
+          id: 'ordenes',
+          label: storeMode === 'restaurant' ? 'Comandas y Cocina' : 'Pedidos y Despacho',
+          icon: <ClipboardList size={16} />,
+          badge: unreadOrdersCount > 0 ? unreadOrdersCount : undefined
+        }
+      ]
+    }] : []),
+
+    // 3. Reservas
     ...(storeModules.bookingsEnabled !== false ? [{
-      title: 'RESERVAS Y CITAS',
+      key: 'reservas',
+      title: 'Reservas',
+      icon: <Calendar size={18} />,
       items: [
-        { id: 'reservas', label: 'Reservas', icon: <Calendar size={18} /> },
-        { id: 'servicios', label: 'Servicios Profesionales', icon: <Wrench size={18} /> }
+        { id: 'reservas', label: 'Reservas', icon: <Calendar size={16} /> },
+        { id: 'servicios', label: 'Servicios Profesionales', icon: <Wrench size={16} /> }
       ]
     }] : []),
 
-    // 7. FIDELIZACIÓN (Condicional por loyaltyEnabled)
+    // 4. Canchas
+    ...(storeModules.courtsEnabled ? [{
+      key: 'canchas',
+      title: 'Canchas',
+      icon: <Trophy size={18} />,
+      items: [
+        { id: 'canchas', label: 'Gestión de Canchas', icon: <Trophy size={16} /> },
+        { id: 'canchas_reservas', label: 'Reserva de Canchas', icon: <CalendarCheck size={16} /> }
+      ]
+    }] : []),
+
+    // 5. Tarjetas de fidelización
     ...(storeModules.loyaltyEnabled ? [{
-      title: 'FIDELIZACIÓN',
+      key: 'fidelizacion',
+      title: 'Tarjetas de fidelización',
+      icon: <Gift size={18} />,
       items: [
-        { id: 'fidelidad_ajustes', label: 'Ajustes de Tarjeta', icon: <Gift size={18} /> },
-        { id: 'fidelidad_clientes', label: 'Clientes Registrados', icon: <Users size={18} /> },
-        { id: 'fidelidad_promociones', label: 'Promociones Activas', icon: <Tag size={18} /> }
+        { id: 'fidelidad_ajustes', label: 'Ajustes de Tarjeta', icon: <Gift size={16} /> },
+        { id: 'fidelidad_billeteras', label: 'Billeteras Móviles', icon: <CreditCard size={16} /> },
+        { id: 'fidelidad_clientes', label: 'Clientes Registrados', icon: <Users size={16} /> },
+        { id: 'fidelidad_promociones', label: 'Promociones Activas', icon: <Award size={16} /> },
+        { id: 'fidelidad_cupones', label: 'Cupones y Canjes', icon: <Tag size={16} /> }
       ]
     }] : []),
 
-    // 8. FACTURACIÓN HACIENDA
-    {
-      title: 'FACTURACIÓN HACIENDA',
+    // 6. Cobros y Facturación
+    ...(storeModules.billingEnabled !== false ? [{
+      key: 'facturacion',
+      title: 'Cobros y Facturación',
+      icon: <FileText size={18} />,
       items: [
-        { id: 'facturacion_comprobantes', label: 'Comprobantes y Emisión', icon: <FileText size={18} /> },
-        { id: 'facturacion_credenciales', label: 'Credenciales y Llave .p12', icon: <ShieldCheck size={18} /> },
-        { id: 'facturacion_sucursales', label: 'Datos Fiscales y Sucursales', icon: <Building2 size={18} /> }
-      ]
-    },
-
-    // 9. CONFIGURACIÓN
-    {
-      title: 'CONFIGURACIÓN',
-      items: [
-        { id: 'configuracion', label: 'Ajustes Generales', icon: <Settings size={18} /> },
-        { id: 'suscripcion', label: 'Mi Suscripción y Pagos', icon: <CreditCard size={18} /> },
-        { id: 'usuarios', label: 'Equipo y Usuarios', icon: <Users size={18} /> }
-      ]
-    },
-
-    // 10. SEDES Y SUCURSALES (Condicional por plan / branchesEnabled)
-    ...(branchesEnabled ? [{
-      title: 'SEDES Y SUCURSALES',
-      items: [
-        { id: 'sucursales', label: 'Sedes y Sucursales', icon: <Building2 size={18} /> }
+        { id: 'facturacion_comprobantes', label: 'Comprobantes y Emisión', icon: <FileText size={16} /> },
+        { id: 'facturacion_credenciales', label: 'Credenciales y Llave .p12', icon: <ShieldCheck size={16} /> },
+        { id: 'facturacion_sucursales', label: 'Datos Fiscales y Sucursales', icon: <Building2 size={16} /> },
+        { id: 'suscripcion', label: 'Mi Suscripción y Pagos', icon: <CreditCard size={16} /> }
       ]
     }] : [])
   ];
@@ -642,16 +814,46 @@ function MainApp({ pathname }: { pathname: string }) {
     navigateToTab(pageId);
   };
 
+  const toggleAccordionGroup = (group: NavGroup) => {
+    const key = group.key || group.title;
+    if (isSidebarCollapsed && group.items.length > 0) {
+      handleNavClick(group.items[0].id);
+      return;
+    }
+    setExpandedModules(prev => ({
+      ...prev,
+      [key]: !prev[key]
+    }));
+  };
+
+  const isModuleEnabledByKey = (key: string) => {
+    if (key === 'whatsapp') return storeModules.whatsappEnabled !== false;
+    if (key === 'tienda') return storeModules.storeEnabled !== false;
+    if (key === 'reservas') return storeModules.bookingsEnabled !== false;
+    if (key === 'canchas') return Boolean(storeModules.courtsEnabled);
+    if (key === 'fidelizacion') return Boolean(storeModules.loyaltyEnabled);
+    if (key === 'facturacion') return storeModules.billingEnabled !== false;
+    return false;
+  };
+
+  const isNavItemActive = (itemId: string) => {
+    if (currentPage === itemId) return true;
+    if (currentPage === 'facturacion' && itemId === 'facturacion_comprobantes') return true;
+    if (currentPage === 'fidelidad' && itemId === 'fidelidad_ajustes') return true;
+    if (currentPage === 'sa_facturacion' && itemId === 'sa_facturacion_comprobantes') return true;
+    return false;
+  };
+
   const renderContent = () => {
     if (user?.role === 'superadmin') {
       if (currentPage === 'sa_facturacion' || currentPage === 'sa_facturacion_comprobantes') {
-        return <ElectronicBillingView initialTab="comprobantes" isSuperAdminMode={true} />;
+        return <ElectronicBillingView initialTab="comprobantes" isSuperAdminMode={true} hideTabBar={true} />;
       }
       if (currentPage === 'sa_facturacion_credenciales') {
-        return <ElectronicBillingView initialTab="credenciales" isSuperAdminMode={true} />;
+        return <ElectronicBillingView initialTab="credenciales" isSuperAdminMode={true} hideTabBar={true} />;
       }
       if (currentPage === 'sa_facturacion_sucursales') {
-        return <ElectronicBillingView initialTab="sucursales" isSuperAdminMode={true} />;
+        return <ElectronicBillingView initialTab="sucursales" isSuperAdminMode={true} hideTabBar={true} />;
       }
 
       const tabMap: Record<string, 'tenants' | 'collections' | 'financials' | 'ai_engine' | 'ai_usage' | 'bots' | 'system' | 'notifications' | 'audit'> = {
@@ -693,11 +895,15 @@ function MainApp({ pathname }: { pathname: string }) {
         case 'sucursales': return <BranchesManager />;
         case 'fidelidad':
         case 'fidelidad_ajustes':
-          return <LoyaltyManager initialTab="ajustes" />;
+          return <LoyaltyManager initialTab="ajustes" hideTabBar={true} onTabChange={(tab) => navigateToTab(`fidelidad_${tab}`)} />;
+        case 'fidelidad_billeteras':
+          return <LoyaltyManager initialTab="billeteras" hideTabBar={true} onTabChange={(tab) => navigateToTab(`fidelidad_${tab}`)} />;
         case 'fidelidad_clientes':
-          return <LoyaltyManager initialTab="clientes" />;
+          return <LoyaltyManager initialTab="clientes" hideTabBar={true} onTabChange={(tab) => navigateToTab(`fidelidad_${tab}`)} />;
         case 'fidelidad_promociones':
-          return <LoyaltyManager initialTab="promociones" />;
+          return <LoyaltyManager initialTab="promociones" hideTabBar={true} onTabChange={(tab) => navigateToTab(`fidelidad_${tab}`)} />;
+        case 'fidelidad_cupones':
+          return <LoyaltyManager initialTab="cupones" hideTabBar={true} onTabChange={(tab) => navigateToTab(`fidelidad_${tab}`)} />;
         case 'agente': return <AgentPromptStudio />;
         case 'secretario': return <SecretaryManager />;
         case 'asesor': return <BusinessAdvisorView />;
@@ -706,11 +912,11 @@ function MainApp({ pathname }: { pathname: string }) {
         case 'usuarios': return <UsersManagement />;
         case 'facturacion':
         case 'facturacion_comprobantes':
-          return <ElectronicBillingView initialTab="comprobantes" />;
+          return <ElectronicBillingView initialTab="comprobantes" hideTabBar={true} />;
         case 'facturacion_credenciales':
-          return <ElectronicBillingView initialTab="credenciales" />;
+          return <ElectronicBillingView initialTab="credenciales" hideTabBar={true} />;
         case 'facturacion_sucursales':
-          return <ElectronicBillingView initialTab="sucursales" />;
+          return <ElectronicBillingView initialTab="sucursales" hideTabBar={true} />;
         case 'suscripcion': return <TenantSubscriptionView />;
         case 'configuracion': return <TenantSettings />;
         default: return <Dashboard />;
@@ -720,8 +926,103 @@ function MainApp({ pathname }: { pathname: string }) {
 
   const sidebarWidth = isSidebarCollapsed ? '72px' : '260px';
 
+  // Clean Skeleton Backdrop while new user answers the Welcome Onboarding Modal
+  if (showTourModal && user?.role !== 'superadmin') {
+    return (
+      <div
+        data-testid="onboarding-skeleton-backdrop"
+        style={{
+          display: 'flex',
+          height: '100dvh',
+          maxHeight: '100dvh',
+          width: '100%',
+          maxWidth: '100vw',
+          overflow: 'hidden',
+          backgroundColor: 'var(--background)',
+          fontFamily: "'Poppins', 'Plus Jakarta Sans', system-ui, sans-serif"
+        }}
+      >
+        <div
+          className="desktop-only-sidebar"
+          style={{
+            width: '250px',
+            height: '100dvh',
+            backgroundColor: 'var(--surface)',
+            borderRight: '1px solid var(--border)',
+            padding: '20px 16px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '14px',
+            flexShrink: 0
+          }}
+        >
+          <div style={{ height: '32px', width: '115px', borderRadius: '8px', backgroundColor: '#e2e8f0' }} />
+          <div style={{ height: '34px', width: '100%', borderRadius: '8px', backgroundColor: '#f1f5f9', marginTop: '6px' }} />
+          {[1, 2, 3, 4].map(n => (
+            <div key={n} style={{ height: '38px', width: '100%', borderRadius: '10px', backgroundColor: '#f1f5f9' }} />
+          ))}
+        </div>
+
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100dvh', overflow: 'hidden' }}>
+          <div
+            style={{
+              height: '62px',
+              borderBottom: '1px solid var(--border)',
+              backgroundColor: 'var(--surface)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '0 24px'
+            }}
+          >
+            <div style={{ height: '20px', width: '150px', borderRadius: '6px', backgroundColor: '#e2e8f0' }} />
+            <div style={{ height: '30px', width: '30px', borderRadius: '50%', backgroundColor: '#e2e8f0' }} />
+          </div>
+          <div
+            style={{
+              flex: 1,
+              padding: '28px',
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+              gap: '20px',
+              alignContent: 'start'
+            }}
+          >
+            {[1, 2, 3].map(n => (
+              <div
+                key={n}
+                style={{
+                  height: '130px',
+                  borderRadius: '16px',
+                  backgroundColor: 'var(--surface)',
+                  border: '1px solid var(--border)',
+                  padding: '20px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between'
+                }}
+              >
+                <div style={{ height: '14px', width: '50%', borderRadius: '6px', backgroundColor: '#f1f5f9' }} />
+                <div style={{ height: '28px', width: '35%', borderRadius: '8px', backgroundColor: '#e2e8f0' }} />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <GuidedTourModal
+          isOpen={showTourModal}
+          onClose={handleCloseTourModal}
+          onNavigateToTab={(tabId) => handleNavClick(tabId)}
+          currentModules={storeModules}
+          currentStoreMode={storeMode}
+          onApplyConfiguration={saveModuleConfiguration}
+        />
+      </div>
+    );
+  }
+
   return (
-    <div style={{ display: 'flex', minHeight: '100dvh', backgroundColor: 'var(--background)', fontFamily: "'Poppins', 'Plus Jakarta Sans', system-ui, sans-serif", width: '100%', overflowX: 'hidden' }}>
+    <div style={{ display: 'flex', height: '100dvh', maxHeight: '100dvh', backgroundColor: 'var(--background)', fontFamily: "'Poppins', 'Plus Jakarta Sans', system-ui, sans-serif", width: '100%', maxWidth: '100vw', overflow: 'hidden' }}>
 
       {/* Global CSS for Mobile vs Desktop */}
       <style>{`
@@ -777,6 +1078,7 @@ function MainApp({ pathname }: { pathname: string }) {
               boxShadow: '4px 0 30px rgba(0,0,0,0.4)',
               zIndex: 1000000,
               overflowY: 'auto',
+              overflowX: 'hidden',
               WebkitOverflowScrolling: 'touch'
             }}
           >
@@ -817,55 +1119,235 @@ function MainApp({ pathname }: { pathname: string }) {
               </button>
             </div>
 
-            {/* Drawer Navigation Links */}
-            <nav style={{ flex: 1, padding: '14px 0', overflowY: 'auto' }}>
-              {navGroups.map((group, gIdx) => (
-                <div key={gIdx} style={{ marginBottom: '16px' }}>
-                  <div style={{ padding: '4px 18px 6px 18px', fontSize: '0.68rem', fontWeight: '800', color: '#94a3b8', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-                    {group.title}
-                  </div>
-
-                  {group.items.map(item => {
-                    const isActive = currentPage === item.id;
+            {/* Minimalist SVG Dock in Mobile Drawer for Tenants */}
+            {user?.role !== 'superadmin' && (
+              <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px', backgroundColor: '#f8fafc' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  {generalAccessItems.map(gItem => {
+                    const isActive = currentPage === gItem.id;
                     return (
                       <button
-                        key={item.id}
+                        key={gItem.id}
                         type="button"
-                        onClick={() => handleNavClick(item.id)}
+                        onClick={() => handleNavClick(gItem.id)}
+                        title={gItem.label}
+                        aria-label={gItem.label}
+                        style={{
+                          width: '34px',
+                          height: '34px',
+                          borderRadius: '8px',
+                          border: isActive ? '1px solid var(--primary)' : '1px solid transparent',
+                          backgroundColor: isActive ? 'var(--primary-light)' : 'transparent',
+                          color: isActive ? 'var(--primary)' : '#64748b',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {gItem.icon}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowModuleSwitcher(prev => !prev)}
+                    title="Activar o desactivar módulos"
+                    aria-label="Activar o desactivar módulos"
+                    style={{
+                      width: '34px',
+                      height: '34px',
+                      borderRadius: '8px',
+                      border: showModuleSwitcher ? '1px solid var(--primary)' : '1px solid var(--border)',
+                      backgroundColor: showModuleSwitcher ? 'var(--primary-light)' : '#ffffff',
+                      color: showModuleSwitcher ? 'var(--primary)' : '#64748b',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <Sliders size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      setShowTourModal(true);
+                    }}
+                    title="Personalizar panel"
+                    aria-label="Personalizar panel"
+                    style={{
+                      width: '34px',
+                      height: '34px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border)',
+                      backgroundColor: '#ffffff',
+                      color: 'var(--primary)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <Sparkles size={16} />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Inline Module Switcher in Mobile Drawer */}
+            {user?.role !== 'superadmin' && showModuleSwitcher && (
+              <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', backgroundColor: '#f8fafc', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {SIX_MODULES_CATALOG.map(mod => {
+                  const enabled = isModuleEnabledByKey(mod.key);
+                  return (
+                    <button
+                      key={mod.key}
+                      type="button"
+                      onClick={() => toggleSingleModule(mod.key)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '7px 10px',
+                        borderRadius: '8px',
+                        border: enabled ? '1px solid var(--primary)' : '1px solid #e2e8f0',
+                        backgroundColor: enabled ? 'var(--primary-light)' : '#ffffff',
+                        color: '#0f172a',
+                        fontSize: '0.8rem',
+                        fontWeight: enabled ? 700 : 500,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <span>{mod.label}</span>
+                      <span
+                        style={{
+                          width: '18px',
+                          height: '18px',
+                          borderRadius: '4px',
+                          backgroundColor: enabled ? 'var(--primary)' : '#e2e8f0',
+                          color: '#ffffff',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}
+                      >
+                        {enabled && <Check size={12} />}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Drawer Navigation Links (Accordion for Tenants) */}
+            <nav style={{ flex: 1, padding: '12px 0', overflowY: 'auto', overflowX: 'hidden' }}>
+              {navGroups.map((group, gIdx) => {
+                const groupKey = group.key || group.title;
+                const isGroupActive = group.items.some(i => isNavItemActive(i.id));
+                const isExpanded = user?.role === 'superadmin' ? true : Boolean(expandedModules[groupKey]);
+                return (
+                  <div key={gIdx} style={{ marginBottom: '8px' }}>
+                    {user?.role === 'superadmin' ? (
+                      <div style={{ padding: '4px 18px 6px 18px', fontSize: '0.68rem', fontWeight: '800', color: '#94a3b8', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                        {group.title}
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => toggleAccordionGroup(group)}
                         style={{
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'space-between',
                           width: 'calc(100% - 20px)',
-                          margin: '3px 10px',
-                          padding: '10px 14px',
-                          borderRadius: '8px',
-                          border: isActive ? '1px solid var(--primary)' : '1px solid transparent',
-                          backgroundColor: isActive ? 'var(--primary-light)' : 'transparent',
-                          color: isActive ? 'var(--primary)' : 'var(--text)',
-                          fontWeight: isActive ? '800' : '600',
+                          margin: '2px 10px',
+                          padding: '10px 12px',
+                          borderRadius: '10px',
+                          border: 'none',
+                          backgroundColor: isGroupActive ? 'var(--primary-light)' : 'transparent',
+                          color: isGroupActive ? 'var(--primary)' : 'var(--text)',
+                          fontWeight: 700,
+                          fontSize: '0.88rem',
                           cursor: 'pointer',
-                          fontSize: '0.9rem',
                           textAlign: 'left'
                         }}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          <span style={{ color: isActive ? 'var(--primary)' : '#64748b', display: 'flex', alignItems: 'center' }}>
-                            {item.icon}
-                          </span>
-                          <span>{item.label}</span>
+                          {group.icon && (
+                            <span style={{ color: isGroupActive ? 'var(--primary)' : '#64748b', display: 'flex' }}>
+                              {group.icon}
+                            </span>
+                          )}
+                          <span>{group.title}</span>
                         </div>
-
-                        {item.badge && (
-                          <span style={{ backgroundColor: '#ef4444', color: 'white', fontSize: '0.72rem', fontWeight: '800', padding: '2px 8px', borderRadius: '12px' }}>
-                            {item.badge}
-                          </span>
-                        )}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          {group.badge && (
+                            <span style={{ backgroundColor: '#ef4444', color: 'white', fontSize: '0.7rem', fontWeight: 800, padding: '1px 7px', borderRadius: '12px' }}>
+                              {group.badge}
+                            </span>
+                          )}
+                          <ChevronRight
+                            size={16}
+                            style={{
+                              color: '#64748b',
+                              transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                              transition: 'transform 0.2s ease'
+                            }}
+                          />
+                        </div>
                       </button>
-                    );
-                  })}
-                </div>
-              ))}
+                    )}
+
+                    {isExpanded && (
+                      <div style={user?.role === 'superadmin' ? {} : { paddingLeft: '14px', marginLeft: '20px', borderLeft: '2px solid #e2e8f0', marginTop: '2px' }}>
+                        {group.items.map(item => {
+                          const isActive = isNavItemActive(item.id);
+                          return (
+                            <button
+                              key={item.id}
+                              type="button"
+                              onClick={() => handleNavClick(item.id)}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                width: 'calc(100% - 14px)',
+                                margin: '2px 6px',
+                                padding: '8px 10px',
+                                borderRadius: '8px',
+                                border: 'none',
+                                backgroundColor: isActive ? 'var(--primary-light)' : 'transparent',
+                                color: isActive ? 'var(--primary)' : 'var(--text)',
+                                fontWeight: isActive ? '700' : '500',
+                                cursor: 'pointer',
+                                fontSize: '0.84rem',
+                                textAlign: 'left'
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ color: isActive ? 'var(--primary)' : '#64748b', display: 'flex', alignItems: 'center' }}>
+                                  {item.icon}
+                                </span>
+                                <span>{item.label}</span>
+                              </div>
+
+                              {item.badge && (
+                                <span style={{ backgroundColor: '#ef4444', color: 'white', fontSize: '0.7rem', fontWeight: '800', padding: '1px 7px', borderRadius: '12px' }}>
+                                  {item.badge}
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </nav>
 
             {/* Drawer Footer with Logout */}
@@ -896,7 +1378,7 @@ function MainApp({ pathname }: { pathname: string }) {
         </div>
       )}
 
-      {/* 2. DESKTOP PERMANENT SIDEBAR */}
+      {/* 2. DESKTOP PERMANENT SIDEBAR (Fixed/Sticky, zero blank scroll space) */}
       <div
         className="desktop-only-sidebar"
         style={{
@@ -904,8 +1386,10 @@ function MainApp({ pathname }: { pathname: string }) {
           backgroundColor: 'var(--surface)',
           borderRight: '1px solid var(--border)',
           flexDirection: 'column',
-          position: 'relative',
-          height: '100vh',
+          position: 'sticky',
+          top: 0,
+          height: '100dvh',
+          maxHeight: '100dvh',
           zIndex: 50,
           transition: 'width 0.2s ease',
           overflow: 'hidden',
@@ -920,7 +1404,8 @@ function MainApp({ pathname }: { pathname: string }) {
           justifyContent: isSidebarCollapsed ? 'center' : 'space-between',
           alignItems: 'center',
           height: '62px',
-          boxSizing: 'border-box'
+          boxSizing: 'border-box',
+          flexShrink: 0
         }}>
           {!isSidebarCollapsed ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -969,65 +1454,316 @@ function MainApp({ pathname }: { pathname: string }) {
           </button>
         </div>
 
-        {/* Grouped Sidebar Navigation */}
-        <nav style={{ flex: 1, padding: '14px 0', overflowY: 'auto' }}>
-          {navGroups.map((group, gIdx) => (
-            <div key={gIdx} style={{ marginBottom: isSidebarCollapsed ? '12px' : '16px' }}>
-              {!isSidebarCollapsed && (
-                <div style={{ padding: '6px 18px 4px 18px', fontSize: '0.68rem', fontWeight: '800', color: '#94a3b8', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-                  {group.title}
-                </div>
-              )}
-
-              {group.items.map(item => {
-                const isActive = currentPage === item.id;
+        {/* Minimalist SVG Dock for General Accesses + Module Switcher */}
+        {user?.role !== 'superadmin' && (
+          <div
+            style={{
+              padding: isSidebarCollapsed ? '8px 6px' : '8px 12px',
+              borderBottom: '1px solid var(--border)',
+              backgroundColor: '#f8fafc',
+              display: 'flex',
+              flexDirection: isSidebarCollapsed ? 'column' : 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '4px',
+              flexShrink: 0
+            }}
+          >
+            <div style={{ display: 'flex', flexDirection: isSidebarCollapsed ? 'column' : 'row', alignItems: 'center', gap: '3px' }}>
+              {generalAccessItems.map(gItem => {
+                const isActive = currentPage === gItem.id;
                 return (
                   <button
-                    key={item.id}
-                    onClick={() => handleNavClick(item.id)}
-                    title={isSidebarCollapsed ? item.label : undefined}
+                    key={gItem.id}
+                    type="button"
+                    onClick={() => handleNavClick(gItem.id)}
+                    title={gItem.label}
+                    aria-label={gItem.label}
                     style={{
+                      width: '32px',
+                      height: '32px',
+                      borderRadius: '8px',
+                      border: isActive ? '1px solid var(--primary)' : '1px solid transparent',
+                      backgroundColor: isActive ? 'var(--primary-light)' : 'transparent',
+                      color: isActive ? 'var(--primary)' : '#64748b',
                       display: 'flex',
                       alignItems: 'center',
-                      justifyContent: isSidebarCollapsed ? 'center' : 'space-between',
-                      width: isSidebarCollapsed ? 'calc(100% - 16px)' : 'calc(100% - 20px)',
-                      margin: isSidebarCollapsed ? '3px 8px' : '2px 10px',
-                      padding: isSidebarCollapsed ? '10px 0' : '9px 12px',
-                      borderRadius: 'var(--radius-md)',
-                      border: 'none',
-                      backgroundColor: isActive ? 'var(--primary-light)' : 'transparent',
-                      color: isActive ? 'var(--primary)' : 'var(--text)',
-                      fontWeight: isActive ? '700' : '500',
-                      cursor: 'pointer',
-                      fontSize: '0.86rem',
-                      position: 'relative'
+                      justifyContent: 'center',
+                      cursor: 'pointer'
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: isSidebarCollapsed ? 0 : '10px', justifyContent: isSidebarCollapsed ? 'center' : 'flex-start' }}>
-                      <span style={{ color: isActive ? 'var(--primary)' : '#64748b', display: 'flex', alignItems: 'center' }}>
-                        {item.icon}
-                      </span>
-                      {!isSidebarCollapsed && <span>{item.label}</span>}
-                    </div>
-                    {item.badge && !isSidebarCollapsed && (
-                      <span style={{ backgroundColor: '#ef4444', color: 'white', fontSize: '0.7rem', fontWeight: '800', padding: '2px 7px', borderRadius: 'var(--radius-full)' }}>
-                        {item.badge}
-                      </span>
-                    )}
+                    {gItem.icon}
                   </button>
                 );
               })}
             </div>
-          ))}
+
+            <div style={{ display: 'flex', flexDirection: isSidebarCollapsed ? 'column' : 'row', alignItems: 'center', gap: '3px' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  if (isSidebarCollapsed) {
+                    setIsSidebarCollapsed(false);
+                    setShowModuleSwitcher(true);
+                  } else {
+                    setShowModuleSwitcher(prev => !prev);
+                  }
+                }}
+                title="Activar o desactivar módulos"
+                aria-label="Activar o desactivar módulos"
+                style={{
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '8px',
+                  border: showModuleSwitcher ? '1px solid var(--primary)' : '1px solid var(--border)',
+                  backgroundColor: showModuleSwitcher ? 'var(--primary-light)' : '#ffffff',
+                  color: showModuleSwitcher ? 'var(--primary)' : '#64748b',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer'
+                }}
+              >
+                <Sliders size={15} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowTourModal(true)}
+                title="Personalizar panel"
+                aria-label="Personalizar panel"
+                style={{
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border)',
+                  backgroundColor: '#ffffff',
+                  color: 'var(--primary)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer'
+                }}
+              >
+                <Sparkles size={15} />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Inline Module Toggles in Desktop Sidebar */}
+        {user?.role !== 'superadmin' && showModuleSwitcher && !isSidebarCollapsed && (
+          <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', backgroundColor: '#f8fafc', display: 'flex', flexDirection: 'column', gap: '5px', flexShrink: 0 }}>
+            {SIX_MODULES_CATALOG.map(mod => {
+              const enabled = isModuleEnabledByKey(mod.key);
+              return (
+                <button
+                  key={mod.key}
+                  type="button"
+                  onClick={() => toggleSingleModule(mod.key)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '6px 10px',
+                    borderRadius: '8px',
+                    border: enabled ? '1px solid var(--primary)' : '1px solid #e2e8f0',
+                    backgroundColor: enabled ? 'var(--primary-light)' : '#ffffff',
+                    color: '#0f172a',
+                    fontSize: '0.78rem',
+                    fontWeight: enabled ? 700 : 500,
+                    cursor: 'pointer'
+                  }}
+                >
+                  <span>{mod.label}</span>
+                  <span
+                    style={{
+                      width: '17px',
+                      height: '17px',
+                      borderRadius: '4px',
+                      backgroundColor: enabled ? 'var(--primary)' : '#e2e8f0',
+                      color: '#ffffff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                  >
+                    {enabled && <Check size={11} />}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Grouped / Accordion Sidebar Navigation */}
+        <nav style={{ flex: 1, padding: '10px 0', overflowY: 'auto', overflowX: 'hidden' }}>
+          {navGroups.map((group, gIdx) => {
+            const groupKey = group.key || group.title;
+            const isGroupActive = group.items.some(i => isNavItemActive(i.id));
+            const isExpanded = user?.role === 'superadmin' ? true : Boolean(expandedModules[groupKey]);
+
+            if (user?.role === 'superadmin') {
+              return (
+                <div key={gIdx} style={{ marginBottom: isSidebarCollapsed ? '12px' : '16px' }}>
+                  {!isSidebarCollapsed && (
+                    <div style={{ padding: '6px 18px 4px 18px', fontSize: '0.68rem', fontWeight: '800', color: '#94a3b8', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                      {group.title}
+                    </div>
+                  )}
+
+                  {group.items.map(item => {
+                    const isActive = isNavItemActive(item.id);
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => handleNavClick(item.id)}
+                        title={isSidebarCollapsed ? item.label : undefined}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: isSidebarCollapsed ? 'center' : 'space-between',
+                          width: isSidebarCollapsed ? 'calc(100% - 16px)' : 'calc(100% - 20px)',
+                          margin: isSidebarCollapsed ? '3px 8px' : '2px 10px',
+                          padding: isSidebarCollapsed ? '10px 0' : '9px 12px',
+                          borderRadius: 'var(--radius-md)',
+                          border: 'none',
+                          backgroundColor: isActive ? 'var(--primary-light)' : 'transparent',
+                          color: isActive ? 'var(--primary)' : 'var(--text)',
+                          fontWeight: isActive ? '700' : '500',
+                          cursor: 'pointer',
+                          fontSize: '0.86rem',
+                          position: 'relative'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: isSidebarCollapsed ? 0 : '10px', justifyContent: isSidebarCollapsed ? 'center' : 'flex-start' }}>
+                          <span style={{ color: isActive ? 'var(--primary)' : '#64748b', display: 'flex', alignItems: 'center' }}>
+                            {item.icon}
+                          </span>
+                          {!isSidebarCollapsed && <span>{item.label}</span>}
+                        </div>
+                        {item.badge && !isSidebarCollapsed && (
+                          <span style={{ backgroundColor: '#ef4444', color: 'white', fontSize: '0.7rem', fontWeight: '800', padding: '2px 7px', borderRadius: 'var(--radius-full)' }}>
+                            {item.badge}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            }
+
+            return (
+              <div key={groupKey} style={{ marginBottom: '6px' }}>
+                <button
+                  type="button"
+                  onClick={() => toggleAccordionGroup(group)}
+                  title={isSidebarCollapsed ? group.title : undefined}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: isSidebarCollapsed ? 'center' : 'space-between',
+                    width: isSidebarCollapsed ? 'calc(100% - 16px)' : 'calc(100% - 20px)',
+                    margin: isSidebarCollapsed ? '3px 8px' : '2px 10px',
+                    padding: isSidebarCollapsed ? '10px 0' : '10px 12px',
+                    borderRadius: 'var(--radius-md)',
+                    border: 'none',
+                    backgroundColor: isGroupActive ? 'var(--primary-light)' : 'transparent',
+                    color: isGroupActive ? 'var(--primary)' : 'var(--text)',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    fontSize: '0.88rem',
+                    textAlign: 'left'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: isSidebarCollapsed ? 0 : '10px', justifyContent: isSidebarCollapsed ? 'center' : 'flex-start', minWidth: 0 }}>
+                    {group.icon && (
+                      <span style={{ color: isGroupActive ? 'var(--primary)' : '#64748b', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+                        {group.icon}
+                      </span>
+                    )}
+                    {!isSidebarCollapsed && (
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {group.title}
+                      </span>
+                    )}
+                  </div>
+
+                  {!isSidebarCollapsed && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                      {group.badge && (
+                        <span style={{ backgroundColor: '#ef4444', color: 'white', fontSize: '0.68rem', fontWeight: '800', padding: '1px 6px', borderRadius: 'var(--radius-full)' }}>
+                          {group.badge}
+                        </span>
+                      )}
+                      <ChevronRight
+                        size={15}
+                        style={{
+                          color: isGroupActive ? 'var(--primary)' : '#94a3b8',
+                          transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                          transition: 'transform 0.2s ease'
+                        }}
+                      />
+                    </div>
+                  )}
+                </button>
+
+                {!isSidebarCollapsed && isExpanded && (
+                  <div style={{ paddingLeft: '10px', marginLeft: '20px', borderLeft: '2px solid #e2e8f0', marginTop: '2px', marginBottom: '4px' }}>
+                    {group.items.map(item => {
+                      const isActive = isNavItemActive(item.id);
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => handleNavClick(item.id)}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            width: 'calc(100% - 12px)',
+                            margin: '2px 4px',
+                            padding: '7px 10px',
+                            borderRadius: '8px',
+                            border: 'none',
+                            backgroundColor: isActive ? 'var(--primary-light)' : 'transparent',
+                            color: isActive ? 'var(--primary)' : 'var(--text)',
+                            fontWeight: isActive ? '700' : '500',
+                            cursor: 'pointer',
+                            fontSize: '0.82rem',
+                            textAlign: 'left'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                            <span style={{ color: isActive ? 'var(--primary)' : '#64748b', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+                              {item.icon}
+                            </span>
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {item.label}
+                            </span>
+                          </div>
+                          {item.badge && (
+                            <span style={{ backgroundColor: '#ef4444', color: 'white', fontSize: '0.68rem', fontWeight: '800', padding: '1px 6px', borderRadius: 'var(--radius-full)', flexShrink: 0 }}>
+                              {item.badge}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </nav>
       </div>
 
       {/* 3. MAIN CONTENT AREA */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: '100dvh', width: '100%', overflowX: 'hidden' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100dvh', maxHeight: '100dvh', minWidth: 0, width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
         
         {/* Impersonation Banner */}
         {isImpersonating && (
-          <div style={{ backgroundColor: '#fef3c7', color: '#92400e', padding: '8px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #fde68a', fontSize: '0.82rem', fontWeight: '500' }}>
+          <div style={{ backgroundColor: '#fef3c7', color: '#92400e', padding: '8px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #fde68a', fontSize: '0.82rem', fontWeight: '500', flexShrink: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <ShieldAlert size={16} color="#d97706" />
               <span>Viendo portal de <strong>{impersonatedTenantName}</strong>.</span>
@@ -1052,7 +1788,8 @@ function MainApp({ pathname }: { pathname: string }) {
           padding: '0 20px',
           boxShadow: 'var(--shadow-xs)',
           gap: '8px',
-          boxSizing: 'border-box'
+          boxSizing: 'border-box',
+          flexShrink: 0
         }}>
           {/* Left Side: Prominent Menu Button + Title */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
@@ -1120,6 +1857,12 @@ function MainApp({ pathname }: { pathname: string }) {
                 currentPage === 'canchas_reservas' ? 'Reserva de Canchas' :
                 currentPage === 'reservas' ? 'Reservas' :
                 currentPage === 'servicios' ? 'Servicios Profesionales' :
+                currentPage === 'fidelidad' ? 'Tarjetas de fidelización' :
+                currentPage === 'fidelidad_ajustes' ? 'Ajustes de Tarjeta' :
+                currentPage === 'fidelidad_billeteras' ? 'Billeteras Móviles' :
+                currentPage === 'fidelidad_clientes' ? 'Clientes Registrados' :
+                currentPage === 'fidelidad_promociones' ? 'Promociones Activas' :
+                currentPage === 'fidelidad_cupones' ? 'Cupones y Canjes' :
                 currentPage === 'configuracion' ? 'Ajustes Generales' :
                 currentPage === 'suscripcion' ? 'Mi Suscripción y Pagos' :
                 currentPage === 'facturacion' ? 'Facturación Electrónica' :
@@ -1153,8 +1896,8 @@ function MainApp({ pathname }: { pathname: string }) {
                 color: '#047857',
                 flexShrink: 0
               }}
-              title="Tutorial y Ayuda de Betico"
-              aria-label="Tutorial"
+              title="Personalizar panel"
+              aria-label="Personalizar panel"
             >
               <HelpCircle size={20} color="#059669" />
             </button>
@@ -1210,7 +1953,7 @@ function MainApp({ pathname }: { pathname: string }) {
         </header>
 
         {/* PAGE CONTENT CONTAINER */}
-        <main style={{ flex: 1, padding: '20px 16px 80px 16px', overflowY: 'auto' }}>
+        <main style={{ flex: 1, padding: '20px 16px 80px 16px', overflowY: 'auto', overflowX: 'hidden', minWidth: 0, maxWidth: '100%', boxSizing: 'border-box' }}>
           <TabErrorBoundary key={currentPage}>
             {renderContent()}
           </TabErrorBoundary>
@@ -1338,8 +2081,11 @@ function MainApp({ pathname }: { pathname: string }) {
       {showTourModal && (
         <GuidedTourModal
           isOpen={showTourModal}
-          onClose={() => setShowTourModal(false)}
+          onClose={handleCloseTourModal}
           onNavigateToTab={(tabId) => handleNavClick(tabId)}
+          currentModules={storeModules}
+          currentStoreMode={storeMode}
+          onApplyConfiguration={saveModuleConfiguration}
         />
       )}
 

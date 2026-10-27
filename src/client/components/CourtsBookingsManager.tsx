@@ -1426,7 +1426,7 @@ export default function CourtsBookingsManager() {
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'var(--text-muted)' }}>Fecha & Hora:</span>
+                <span style={{ color: 'var(--text-muted)' }}>Fecha y Hora:</span>
                 <strong style={{ color: 'var(--text)' }}>{formatFriendlyDate(selectedBooking.date)} a las {formatTime12h(selectedBooking.time)}</strong>
               </div>
 

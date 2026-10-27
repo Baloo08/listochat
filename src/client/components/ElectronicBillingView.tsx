@@ -33,6 +33,7 @@ export interface ElectronicBillingViewProps {
   initialTab?: 'comprobantes' | 'credenciales' | 'sucursales';
   isSuperAdminMode?: boolean;
   darkMode?: boolean;
+  hideTabBar?: boolean;
 }
 
 interface EconomicActivityItem {
@@ -172,7 +173,7 @@ function formatConsecutivePreview(branchCode: string, posCode: string, docType: 
   return `${b}${p}${d}${s}`;
 }
 
-export default function ElectronicBillingView({ initialTab, isSuperAdminMode = false, darkMode = false }: ElectronicBillingViewProps) {
+export default function ElectronicBillingView({ initialTab, isSuperAdminMode = false, darkMode = false, hideTabBar = false }: ElectronicBillingViewProps) {
   const api = useApi();
 
   const [autoDark, setAutoDark] = useState(false);
@@ -1448,6 +1449,7 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
       </div>
 
       {/* BARRA DE 3 PESTAÑAS INTERNAS */}
+      {!hideTabBar && (
       <div
         style={{
           display: 'flex',
@@ -1455,7 +1457,7 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
           marginBottom: '24px',
           borderBottom: `2px solid ${palette.border}`,
           paddingBottom: '2px',
-          overflowX: 'auto'
+          flexWrap: 'wrap'
         }}
       >
         <button
@@ -1527,6 +1529,7 @@ export default function ElectronicBillingView({ initialTab, isSuperAdminMode = f
           <span>Datos Fiscales y Sucursales</span>
         </button>
       </div>
+      )}
 
       {/* =====================================================================
           PESTAÑA 1: COMPROBANTES Y EMISIÓN

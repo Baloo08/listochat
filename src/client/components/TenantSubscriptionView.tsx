@@ -163,7 +163,7 @@ export default function TenantSubscriptionView() {
       {/* Page Title */}
       <div style={{ marginBottom: '24px' }}>
         <h1 style={{ fontSize: '1.6rem', fontWeight: '800', color: '#0f172a', margin: '0 0 6px 0' }}>
-          Mi Suscripción & Pagos
+          Mi Suscripción y Pagos
         </h1>
         <p style={{ margin: 0, color: '#64748b', fontSize: '0.9rem' }}>
           Gestiona tu plan recurrente de Betico, método de cobro bancario e historial de facturación.

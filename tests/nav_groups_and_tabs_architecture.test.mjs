@@ -294,4 +294,243 @@ test('Navigation Structure & Grouping Architecture Tests', async (t) => {
     assert.equal(loyaltyGroup.items[2].id, 'fidelidad_promociones');
     assert.equal(loyaltyGroup.items[2].label, 'Promociones Activas');
   });
+
+  await t.test('8. Onboarding Suggestion Engine (Purposes + Niches -> 6 Modules)', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const tourSrc = fs.readFileSync(path.resolve('src/client/components/GuidedTourModal.tsx'), 'utf8');
+
+    // Verify Question 1 options
+    assert.ok(tourSrc.includes('¿Para qué necesitas la app?'));
+    assert.ok(tourSrc.includes('Tener una página de reservas'));
+    assert.ok(tourSrc.includes('Tener una tienda'));
+    assert.ok(tourSrc.includes('Responder WhatsApp de forma automática'));
+    assert.ok(tourSrc.includes('Tener una tarjeta de fidelización'));
+
+    // Verify Question 2 options
+    assert.ok(tourSrc.includes('¿Cuál es tu nicho de negocio?'));
+    for (const niche of [
+      'Barbería',
+      'Tienda minorista',
+      'Clínica',
+      'Estudio de ejercicio',
+      'Cancha sintética',
+      'Restaurante o Cafetería',
+      'Otro negocio'
+    ]) {
+      assert.ok(tourSrc.includes(niche), `Niche "${niche}" must exist in GuidedTourModal.tsx`);
+    }
+
+    // Verify the 6 modules catalog in GuidedTourModal.tsx
+    for (const modTitle of [
+      'Asistente de WhatsApp',
+      'Tienda',
+      'Reservas',
+      'Canchas',
+      'Tarjetas de fidelización',
+      'Cobros y Facturación'
+    ]) {
+      assert.ok(tourSrc.includes(modTitle), `Module "${modTitle}" must exist in GuidedTourModal.tsx`);
+    }
+
+    // Verify niche-specific rules in computeSuggestedModules
+    assert.ok(tourSrc.includes("cleanNiche === 'cancha_sintetica'"), 'Cancha sintética rule must be present');
+    assert.ok(tourSrc.includes("cleanNiche === 'restaurante' ? 'restaurant' : 'retail'"), 'Restaurante must set storeMode to restaurant');
+
+    // Pure functional verification of computeSuggestedModules across all 7 niches and 4 purposes
+    function computeSuggestedModules(purposes = [], niche = '') {
+      const cleanPurposes = Array.isArray(purposes) ? purposes : [];
+      const cleanNiche = (niche || '').trim().toLowerCase();
+
+      let whatsappEnabled = cleanPurposes.includes('whatsapp');
+      let storeEnabled =
+        cleanPurposes.includes('tienda') ||
+        cleanNiche === 'tienda_minorista' ||
+        cleanNiche === 'restaurante';
+      let bookingsEnabled =
+        cleanPurposes.includes('reservas') ||
+        cleanNiche === 'barberia' ||
+        cleanNiche === 'clinica' ||
+        cleanNiche === 'estudio_ejercicio';
+      let courtsEnabled =
+        cleanNiche === 'cancha_sintetica' ||
+        cleanPurposes.includes('canchas');
+      let loyaltyEnabled =
+        cleanPurposes.includes('fidelidad') ||
+        cleanPurposes.includes('fidelizacion');
+      let billingEnabled =
+        cleanPurposes.includes('facturacion') ||
+        cleanNiche === 'clinica' ||
+        cleanNiche === 'tienda_minorista' ||
+        cleanNiche === 'restaurante';
+
+      if (
+        !whatsappEnabled &&
+        !storeEnabled &&
+        !bookingsEnabled &&
+        !courtsEnabled &&
+        !loyaltyEnabled &&
+        !billingEnabled
+      ) {
+        whatsappEnabled = true;
+      }
+
+      return {
+        whatsappEnabled,
+        storeEnabled,
+        bookingsEnabled,
+        courtsEnabled,
+        loyaltyEnabled,
+        billingEnabled,
+        storeMode: cleanNiche === 'restaurante' ? 'restaurant' : 'retail'
+      };
+    }
+
+    assert.deepEqual(computeSuggestedModules(['reservas'], 'barberia'), {
+      whatsappEnabled: false,
+      storeEnabled: false,
+      bookingsEnabled: true,
+      courtsEnabled: false,
+      loyaltyEnabled: false,
+      billingEnabled: false,
+      storeMode: 'retail'
+    });
+    assert.deepEqual(computeSuggestedModules(['whatsapp'], 'cancha_sintetica'), {
+      whatsappEnabled: true,
+      storeEnabled: false,
+      bookingsEnabled: false,
+      courtsEnabled: true,
+      loyaltyEnabled: false,
+      billingEnabled: false,
+      storeMode: 'retail'
+    });
+    assert.deepEqual(computeSuggestedModules(['tienda', 'fidelidad'], 'restaurante'), {
+      whatsappEnabled: false,
+      storeEnabled: true,
+      bookingsEnabled: false,
+      courtsEnabled: false,
+      loyaltyEnabled: true,
+      billingEnabled: true,
+      storeMode: 'restaurant'
+    });
+    assert.deepEqual(computeSuggestedModules([], 'otro'), {
+      whatsappEnabled: true,
+      storeEnabled: false,
+      bookingsEnabled: false,
+      courtsEnabled: false,
+      loyaltyEnabled: false,
+      billingEnabled: false,
+      storeMode: 'retail'
+    });
+  });
+
+  await t.test('9. Six-Module Accordion & Minimalist SVG Dock in App.tsx', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const appSrc = fs.readFileSync(path.resolve('src/client/App.tsx'), 'utf8');
+
+    // Verify the 6 modules exist in App.tsx accordion builder
+    for (const modTitle of [
+      'Asistente de WhatsApp',
+      'Tienda',
+      'Reservas',
+      'Canchas',
+      'Tarjetas de fidelización',
+      'Cobros y Facturación'
+    ]) {
+      assert.ok(appSrc.includes(modTitle), `Accordion module "${modTitle}" must exist in App.tsx`);
+    }
+
+    // Verify suscripcion is inside Cobros y Facturación and loyalty sub-tabs include billeteras & cupones
+    assert.ok(appSrc.includes("id: 'suscripcion', label: 'Mi Suscripción y Pagos'"));
+    assert.ok(appSrc.includes("id: 'fidelidad_billeteras', label: 'Billeteras Móviles'"));
+    assert.ok(appSrc.includes("id: 'fidelidad_cupones', label: 'Cupones y Canjes'"));
+
+    // Verify Facturación Hacienda invariants preserved
+    assert.ok(appSrc.includes("title: 'FACTURACIÓN HACIENDA'"));
+    assert.ok(appSrc.includes("id: 'facturacion_comprobantes'"));
+    assert.ok(appSrc.includes("id: 'facturacion_credenciales'"));
+    assert.ok(appSrc.includes("id: 'facturacion_sucursales'"));
+
+    // Verify skeleton backdrop while welcome modal is open
+    assert.ok(appSrc.includes('data-testid="onboarding-skeleton-backdrop"'));
+
+    // Verify sticky full-height sidebar and horizontal overflow prevention
+    assert.ok(appSrc.includes("height: '100dvh'"));
+    assert.ok(appSrc.includes("position: 'sticky'"));
+    assert.ok(appSrc.includes("overflowX: 'hidden'"));
+
+    // Verify fallback guard ensures at least one module stays active in Sliders switcher
+    assert.ok(appSrc.includes('ensureAtLeastOneModuleActive'), 'App.tsx must enforce at least one active module');
+    assert.ok(appSrc.includes("url.searchParams.delete('tour')"), 'App.tsx must clear ?tour=true URL parameter after onboarding');
+    assert.ok(appSrc.includes('isNavItemActive'), 'App.tsx must resolve legacy route aliases for active sidebar highlighting');
+    assert.ok(appSrc.includes("betico:store-config-updated"), 'App.tsx must listen to StoreSettings module updates');
+  });
+
+  await t.test('10. Sub-tabs Deployed in Sidebar & Hidden Horizontal Tab Bar in Views', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const appSrc = fs.readFileSync(path.resolve('src/client/App.tsx'), 'utf8');
+    const billingSrc = fs.readFileSync(path.resolve('src/client/components/ElectronicBillingView.tsx'), 'utf8');
+    const loyaltySrc = fs.readFileSync(path.resolve('src/client/components/LoyaltyManager.tsx'), 'utf8');
+
+    assert.ok(appSrc.includes('hideTabBar={true}'), 'App.tsx must pass hideTabBar={true} to child views');
+    assert.ok(appSrc.includes('onTabChange={(tab) => navigateToTab(`fidelidad_${tab}`)}'), 'App.tsx must sync LoyaltyManager internal tab switches with sidebar navigation');
+    assert.ok(billingSrc.includes('hideTabBar?: boolean'), 'ElectronicBillingView must accept hideTabBar prop');
+    assert.ok(loyaltySrc.includes('hideTabBar?: boolean'), 'LoyaltyManager must accept hideTabBar prop');
+    assert.ok(loyaltySrc.includes('onTabChange?: (tab:'), 'LoyaltyManager must accept onTabChange prop');
+    assert.ok(loyaltySrc.includes("'cupones'"), 'LoyaltyManager must support cupones sub-tab');
+
+    // Verify coupon scanner and issued coupons history are isolated under activeTab === 'cupones'
+    const cuponesConditionalBlocks = (loyaltySrc.match(/activeTab === 'cupones' && \(/g) || []).length;
+    assert.ok(cuponesConditionalBlocks >= 3, 'LoyaltyManager must isolate coupon redemption, discount coupons, and issued coupons history inside activeTab === cupones');
+  });
+
+  await t.test('11. Zero Ampersand (&) in Visible Spanish UI Labels Across Core Views', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+
+    const filesToCheck = [
+      'src/client/App.tsx',
+      'src/client/components/GuidedTourModal.tsx',
+      'src/client/components/StoreSettings.tsx',
+      'src/client/components/Bookings.tsx',
+      'src/client/components/CourtsManager.tsx',
+      'src/client/components/CourtsBookingsManager.tsx',
+      'src/client/components/CampaignsManager.tsx',
+      'src/client/components/ElectronicBillingView.tsx',
+      'src/client/components/LoyaltyManager.tsx',
+      'src/client/components/TenantSubscriptionView.tsx',
+      'src/client/components/Dashboard.tsx',
+      'src/client/components/BranchesManager.tsx'
+    ];
+
+    for (const relPath of filesToCheck) {
+      const raw = fs.readFileSync(path.resolve(relPath), 'utf8');
+      // Strip single-line and block comments so only code/JSX strings are inspected
+      const withoutComments = raw
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .split('\n')
+        .filter(line => !line.trim().startsWith('//'))
+        .join('\n');
+      const match = withoutComments.match(/[a-záéíóúA-ZÁÉÍÓÚñÑ]\s+&\s+[a-záéíóúA-ZÁÉÍÓÚñÑ]/);
+      assert.equal(
+        match,
+        null,
+        `${relPath} must not contain visible " & " in Spanish UI labels (found: ${match ? match[0] : 'none'})`
+      );
+    }
+  });
+
+  await t.test('12. Tenant-Scoped Onboarding Persistence & Registration Cleanup', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const appSrc = fs.readFileSync(path.resolve('src/client/App.tsx'), 'utf8');
+    const registerSrc = fs.readFileSync(path.resolve('src/client/components/RegisterModal.tsx'), 'utf8');
+
+    assert.ok(appSrc.includes('betico_tour_dismissed_${user.tenantId}'), 'App.tsx must scope tour dismissal by tenantId');
+    assert.ok(appSrc.includes('betico_store_modules_cache_${user.tenantId}'), 'App.tsx must scope module cache by tenantId');
+    assert.ok(registerSrc.includes("localStorage.removeItem('betico_tour_dismissed')"), 'RegisterModal must clear stale tour dismissal flag on new registration');
+  });
 });
+

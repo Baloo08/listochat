@@ -9,12 +9,20 @@ import { useApi } from '../hooks/useApi';
 import { LoyaltyProgram, LoyaltyCard, LoyaltyPromotion, LoyaltyRewardVoucher, LoyaltyTransaction, DiscountCoupon, TenantWalletConfig } from '../../shared/types';
 
 interface LoyaltyManagerProps {
-  initialTab?: 'ajustes' | 'billeteras' | 'clientes' | 'promociones';
+  initialTab?: 'ajustes' | 'billeteras' | 'clientes' | 'promociones' | 'cupones';
+  hideTabBar?: boolean;
+  onTabChange?: (tab: 'ajustes' | 'billeteras' | 'clientes' | 'promociones' | 'cupones') => void;
 }
 
-export default function LoyaltyManager({ initialTab = 'ajustes' }: LoyaltyManagerProps) {
+export default function LoyaltyManager({ initialTab = 'ajustes', hideTabBar = false, onTabChange }: LoyaltyManagerProps) {
   const { fetchWithAuth } = useApi();
-  const [activeTab, setActiveTab] = useState<'ajustes' | 'billeteras' | 'clientes' | 'promociones'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'ajustes' | 'billeteras' | 'clientes' | 'promociones' | 'cupones'>(initialTab);
+  const switchTab = (tab: 'ajustes' | 'billeteras' | 'clientes' | 'promociones' | 'cupones') => {
+    setActiveTab(tab);
+    if (onTabChange) {
+      onTabChange(tab);
+    }
+  };
   const [loading, setLoading] = useState(true);
   const [savingProgram, setSavingProgram] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -661,10 +669,11 @@ export default function LoyaltyManager({ initialTab = 'ajustes' }: LoyaltyManage
       )}
 
       {/* Navigation Sub-Tabs */}
-      <div style={{ display: 'flex', gap: '8px', borderBottom: '2px solid var(--border, #e2e8f0)', paddingBottom: '2px', overflowX: 'auto' }}>
+      {!hideTabBar && (
+      <div style={{ display: 'flex', gap: '8px', borderBottom: '2px solid var(--border, #e2e8f0)', paddingBottom: '2px', flexWrap: 'wrap' }}>
         <button
           type="button"
-          onClick={() => setActiveTab('ajustes')}
+          onClick={() => switchTab('ajustes')}
           style={{
             padding: '10px 20px',
             borderRadius: '8px 8px 0 0',
@@ -684,7 +693,7 @@ export default function LoyaltyManager({ initialTab = 'ajustes' }: LoyaltyManage
 
         <button
           type="button"
-          onClick={() => setActiveTab('billeteras')}
+          onClick={() => switchTab('billeteras')}
           style={{
             padding: '10px 20px',
             borderRadius: '8px 8px 0 0',
@@ -707,7 +716,7 @@ export default function LoyaltyManager({ initialTab = 'ajustes' }: LoyaltyManage
 
         <button
           type="button"
-          onClick={() => setActiveTab('clientes')}
+          onClick={() => switchTab('clientes')}
           style={{
             padding: '10px 20px',
             borderRadius: '8px 8px 0 0',
@@ -727,7 +736,7 @@ export default function LoyaltyManager({ initialTab = 'ajustes' }: LoyaltyManage
 
         <button
           type="button"
-          onClick={() => setActiveTab('promociones')}
+          onClick={() => switchTab('promociones')}
           style={{
             padding: '10px 20px',
             borderRadius: '8px 8px 0 0',
@@ -741,10 +750,31 @@ export default function LoyaltyManager({ initialTab = 'ajustes' }: LoyaltyManage
             display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap'
           }}
         >
+          <Award size={18} />
+          <span>Promociones Activas</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => switchTab('cupones')}
+          style={{
+            padding: '10px 20px',
+            borderRadius: '8px 8px 0 0',
+            border: 'none',
+            background: 'none',
+            cursor: 'pointer',
+            fontSize: '0.92rem',
+            fontWeight: activeTab === 'cupones' ? '700' : '500',
+            color: activeTab === 'cupones' ? 'var(--primary, #2563eb)' : 'var(--text-muted, #64748b)',
+            borderBottom: activeTab === 'cupones' ? '3px solid var(--primary, #2563eb)' : '3px solid transparent',
+            display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap'
+          }}
+        >
           <Tag size={18} />
-          <span>Cupones, Promociones y Canjes</span>
+          <span>Cupones y Canjes</span>
         </button>
       </div>
+      )}
 
       {/* ========================================================================= */}
       {/* TAB 1: AJUSTES DE TARJETA */}
@@ -989,7 +1019,7 @@ export default function LoyaltyManager({ initialTab = 'ajustes' }: LoyaltyManage
 
               <button
                 type="button"
-                onClick={() => setActiveTab('billeteras')}
+                onClick={() => switchTab('billeteras')}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -1056,7 +1086,7 @@ export default function LoyaltyManager({ initialTab = 'ajustes' }: LoyaltyManage
                       if (!walletConfig.googleHasKey) {
                         alert('⚠️ Para habilitar Google Wallet, primero debes ingresar tu ID de Emisor y Cuenta de Servicio RSA en la pestaña Billeteras Móviles.');
                       }
-                      setActiveTab('billeteras');
+                      switchTab('billeteras');
                     }}
                     style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: 'var(--primary, #2563eb)' }}
                   />
@@ -1104,7 +1134,7 @@ export default function LoyaltyManager({ initialTab = 'ajustes' }: LoyaltyManage
                       if (!walletConfig.appleHasCertificate) {
                         alert('⚠️ Para habilitar Apple Wallet, primero debes cargar tu certificado .p12 en la pestaña Billeteras Móviles.');
                       }
-                      setActiveTab('billeteras');
+                      switchTab('billeteras');
                     }}
                     style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: 'var(--primary, #2563eb)' }}
                   />
@@ -2004,10 +2034,11 @@ export default function LoyaltyManager({ initialTab = 'ajustes' }: LoyaltyManage
       {/* ========================================================================= */}
       {/* TAB 3: CUPONES, PROMOCIONES Y CANJES */}
       {/* ========================================================================= */}
-      {activeTab === 'promociones' && (
+      {(activeTab === 'promociones' || activeTab === 'cupones') && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           
           {/* Quick Voucher / Coupon Scanner and Redeem Box */}
+          {activeTab === 'cupones' && (
           <div style={{ backgroundColor: '#f8fafc', padding: '20px', borderRadius: '12px', border: '2px dashed #93c5fd', display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Ticket size={22} color="var(--primary)" />
@@ -2017,7 +2048,7 @@ export default function LoyaltyManager({ initialTab = 'ajustes' }: LoyaltyManage
               Ingresa el código alfanumérico que presenta el cliente: cupón promocional (ej. VERANO10) o premio de fidelidad (ej. VOUCH-...):
             </p>
 
-            <div style={{ display: 'flex', gap: '10px', maxWidth: '480px' }}>
+            <div style={{ display: 'flex', gap: '10px', maxWidth: '480px', flexWrap: 'wrap' }}>
               <input
                 type="text"
                 placeholder="Código de cupón o premio (ej. VERANO10, VOUCH-...)"
@@ -2031,7 +2062,7 @@ export default function LoyaltyManager({ initialTab = 'ajustes' }: LoyaltyManage
                     }
                   }
                 }}
-                style={{ flex: 1, padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', textTransform: 'uppercase', fontWeight: '700' }}
+                style={{ flex: 1, minWidth: '200px', padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', textTransform: 'uppercase', fontWeight: '700' }}
               />
               <button
                 type="button"
@@ -2063,8 +2094,10 @@ export default function LoyaltyManager({ initialTab = 'ajustes' }: LoyaltyManage
               </div>
             )}
           </div>
+          )}
 
           {/* Section: Cupones de Descuento Promocionales */}
+          {activeTab === 'cupones' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
               <div>
@@ -2178,8 +2211,10 @@ export default function LoyaltyManager({ initialTab = 'ajustes' }: LoyaltyManage
               )}
             </div>
           </div>
+          )}
 
           {/* Active Promotions Section */}
+          {activeTab === 'promociones' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
               <div>
@@ -2243,8 +2278,10 @@ export default function LoyaltyManager({ initialTab = 'ajustes' }: LoyaltyManage
               )}
             </div>
           </div>
+          )}
 
           {/* Vouchers History Table */}
+          {activeTab === 'cupones' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '700', color: '#1e293b' }}>Registro de Cupones Emitidos</h3>
             <div style={{ backgroundColor: '#ffffff', borderRadius: '10px', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
@@ -2318,6 +2355,7 @@ export default function LoyaltyManager({ initialTab = 'ajustes' }: LoyaltyManage
               </div>
             </div>
           </div>
+          )}
 
         </div>
       )}

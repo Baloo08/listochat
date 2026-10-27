@@ -779,7 +779,7 @@ export default function Bookings() {
             gap: '8px'
           }}
         >
-          <Clock size={18} /> Horarios & Disponibilidad
+          <Clock size={18} /> Horarios y Disponibilidad
         </button>
 
         <button
@@ -902,8 +902,8 @@ export default function Bookings() {
                   <tr style={{ borderBottom: '1px solid var(--border)', backgroundColor: '#f8fafc', color: 'var(--text-muted)', textAlign: 'left' }}>
                     <th style={{ padding: '12px 16px' }}>Cliente</th>
                     <th style={{ padding: '12px 16px' }}>Servicio</th>
-                    <th style={{ padding: '12px 16px' }}>Fecha & Hora</th>
-                    <th style={{ padding: '12px 16px' }}>Monto & Pago</th>
+                    <th style={{ padding: '12px 16px' }}>Fecha y Hora</th>
+                    <th style={{ padding: '12px 16px' }}>Monto y Pago</th>
                     <th style={{ padding: '12px 16px' }}>Estado</th>
                     <th style={{ padding: '12px 16px', textAlign: 'right' }}>Acciones</th>
                   </tr>
@@ -1703,7 +1703,7 @@ export default function Bookings() {
               </div>
 
               <div style={{ padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0', backgroundColor: 'white' }}>
-                <h4 style={{ margin: '0 0 6px 0', fontSize: '0.95rem', fontWeight: 'bold' }}>Google Calendar & Android</h4>
+                <h4 style={{ margin: '0 0 6px 0', fontSize: '0.95rem', fontWeight: 'bold' }}>Google Calendar y Android</h4>
                 <p style={{ margin: '0 0 12px 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                   En Google Calendar web, haz clic en Otros calendarios (+) - Desde URL y pega el enlace copiado arriba.
                 </p>

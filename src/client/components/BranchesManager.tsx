@@ -111,7 +111,7 @@ export default function BranchesManager() {
         <div>
           <h1 style={{ fontSize: '1.5rem', fontWeight: '800', margin: '0 0 4px 0', color: 'var(--text)', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Building2 size={26} color="var(--primary)" />
-            Sucursales & Franquicias
+            Sucursales y Franquicias
           </h1>
           <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-muted)' }}>
             Administra tus puntos de venta físicos, teléfonos SINPE propios por sede y asignación de pedidos.

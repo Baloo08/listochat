@@ -61,6 +61,13 @@ export default function RegisterModal({ isOpen, onClose, initialPlan = 'pro' }: 
         if (data.tenant?.slug) {
           localStorage.setItem('last_tenant_slug', data.tenant.slug);
         }
+        localStorage.removeItem('betico_tour_dismissed');
+        localStorage.removeItem('betico_onboarding_done');
+        localStorage.removeItem('betico_store_modules_cache');
+        if (data.tenant?.id) {
+          localStorage.removeItem(`betico_tour_dismissed_${data.tenant.id}`);
+          localStorage.removeItem(`betico_store_modules_cache_${data.tenant.id}`);
+        }
         localStorage.setItem('betico_tour_active', 'true');
         setRegisteredToken(data.token);
         setStep(2);

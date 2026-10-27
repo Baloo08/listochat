@@ -425,7 +425,7 @@ export default function CourtsManager() {
       )}
 
       {/* TABS */}
-      <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', marginBottom: '20px', gap: '8px' }}>
+      <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', marginBottom: '20px', gap: '8px', flexWrap: 'wrap' }}>
         <button
           type="button"
           onClick={() => setActiveTab('canchas')}
@@ -449,7 +449,7 @@ export default function CourtsManager() {
             fontWeight: '700', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px'
           }}
         >
-          <Palette size={18} /> Personalización & Diseño
+          <Palette size={18} /> Personalización y Diseño
         </button>
 
         <button
@@ -462,7 +462,7 @@ export default function CourtsManager() {
             fontWeight: '700', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px'
           }}
         >
-          <Sliders size={18} /> Reglas Deportivas & Modos
+          <Sliders size={18} /> Reglas Deportivas y Modos
         </button>
       </div>
 
@@ -765,7 +765,7 @@ export default function CourtsManager() {
           {/* Card: Colores & Tipografía */}
           <div style={{ backgroundColor: 'var(--surface)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border)' }}>
             <h3 style={{ margin: '0 0 16px 0', fontSize: '1.1rem', fontWeight: '800', color: 'var(--text)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Palette size={18} color="var(--primary)" /> Paleta de Colores & Estilo Visual
+              <Palette size={18} color="var(--primary)" /> Paleta de Colores y Estilo Visual
             </h3>
 
             {/* Presets */}
@@ -846,9 +846,9 @@ export default function CourtsManager() {
                   onChange={e => setConfig({ ...config, theme: { ...config.theme, fontFamily: e.target.value } })}
                   style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: 'var(--background)', color: 'var(--text)', fontSize: '0.85rem', fontWeight: '600' }}
                 >
-                  <option value="Inter">Inter (Moderna & Limpia)</option>
-                  <option value="Outfit">Outfit (Deportiva & Geométrica)</option>
-                  <option value="Poppins">Poppins (Redonda & Amigable)</option>
+                  <option value="Inter">Inter (Moderna y Limpia)</option>
+                  <option value="Outfit">Outfit (Deportiva y Geométrica)</option>
+                  <option value="Poppins">Poppins (Redonda y Amigable)</option>
                   <option value="Roboto">Roboto (Estándar)</option>
                   <option value="Montserrat">Montserrat (Elegante)</option>
                 </select>

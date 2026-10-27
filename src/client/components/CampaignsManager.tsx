@@ -315,7 +315,7 @@ Puedes ver nuestro catálogo completo aquí.`,
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <MessageCircle size={26} color="var(--primary)" />
-            <h1 style={{ margin: 0, fontSize: '1.6rem', fontWeight: 'bold' }}>Marketing & Automatizaciones WhatsApp</h1>
+            <h1 style={{ margin: 0, fontSize: '1.6rem', fontWeight: 'bold' }}>Marketing y Automatizaciones WhatsApp</h1>
           </div>
           <p style={{ margin: '4px 0 0 0', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
             Campañas masivas programadas, directorio CRM de clientes y recordatorios automáticos de citas
@@ -337,7 +337,7 @@ Puedes ver nuestro catálogo completo aquí.`,
       </div>
 
       {/* Tabs Bar */}
-      <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', marginBottom: '24px', gap: '10px' }}>
+      <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', marginBottom: '24px', gap: '10px', flexWrap: 'wrap' }}>
         <button
           onClick={() => setActiveTab('campaigns')}
           style={{
@@ -348,7 +348,7 @@ Puedes ver nuestro catálogo completo aquí.`,
             fontWeight: 'bold', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px'
           }}
         >
-          <Send size={18} /> Difusión & Campañas
+          <Send size={18} /> Difusión y Campañas
         </button>
 
         <button

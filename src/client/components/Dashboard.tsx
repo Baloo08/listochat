@@ -129,7 +129,7 @@ export default function Dashboard() {
       textColor: '#c2410c'
     },
     {
-      label: `Reservas & Citas (${periodLabel})`,
+      label: `Reservas y Citas (${periodLabel})`,
       value: `${stats.appointments}`,
       subtitle: (
         <span style={{ fontSize: '0.75rem', color: '#047857' }}>
@@ -185,7 +185,7 @@ export default function Dashboard() {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 14px', borderRadius: 'var(--radius-full)', backgroundColor: '#ecfdf5', border: '1px solid #a7f3d0', fontSize: '0.8rem', fontWeight: '600', color: '#047857' }}>
           <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#10b981', display: 'inline-block', boxShadow: '0 0 6px #10b981' }}></span>
-          Sistema Operativo & Conectado
+          Sistema Operativo y Conectado
         </div>
       </div>
 
@@ -381,7 +381,7 @@ export default function Dashboard() {
           <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '10px', padding: '14px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
               <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#166534', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Calendar size={15} color="#166534" /> Servicios & Reservas
+                <Calendar size={15} color="#166534" /> Servicios y Reservas
               </span>
               <span style={{ fontSize: '0.72rem', backgroundColor: '#dcfce7', color: '#166534', padding: '2px 8px', borderRadius: '12px', fontWeight: 'bold' }}>
                 {stats.appointmentsCompleted || 0} completadas
@@ -402,7 +402,7 @@ export default function Dashboard() {
           <div style={{ backgroundColor: '#faf5ff', border: '1px solid #e9d5ff', borderRadius: '10px', padding: '14px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
               <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#6b21a8', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <ShoppingBag size={15} color="#6b21a8" /> Catálogo & Tienda Online
+                <ShoppingBag size={15} color="#6b21a8" /> Catálogo y Tienda Online
               </span>
               <span style={{ fontSize: '0.72rem', backgroundColor: '#f3e8ff', color: '#6b21a8', padding: '2px 8px', borderRadius: '12px', fontWeight: 'bold' }}>
                 {stats.ordersPaid || 0} pagadas

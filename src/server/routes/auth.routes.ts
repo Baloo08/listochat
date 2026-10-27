@@ -187,7 +187,13 @@ router.post('/register', async (req, res) => {
       currency: 'CRC',
       storeEnabled: true,
       storeMode: 'retail',
-      storeModules: { storeEnabled: true, bookingsEnabled: true }
+      storeModules: {
+        storeEnabled: true,
+        bookingsEnabled: true,
+        whatsappEnabled: true,
+        billingEnabled: true,
+        onboardingCompleted: false
+      }
     });
 
     // Initialize default website settings
