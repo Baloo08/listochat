@@ -2963,7 +2963,7 @@ async function upsertStoreSettings(tenantId, data) {
     ON CONFLICT (tenant_id) DO UPDATE SET
       store_enabled = EXCLUDED.store_enabled,
       store_mode = EXCLUDED.store_mode,
-      store_modules = EXCLUDED.store_modules,
+      store_modules = COALESCE(store_settings.store_modules, '{}'::jsonb) || COALESCE(EXCLUDED.store_modules, '{}'::jsonb),
       restaurant_config = EXCLUDED.restaurant_config,
       delivery_config = EXCLUDED.delivery_config,
       correos_cr_config = EXCLUDED.correos_cr_config,
@@ -9637,6 +9637,12 @@ function normalizeDateInput(inputDate, referenceDate = /* @__PURE__ */ new Date(
   }
   return getTodayCR(referenceDate);
 }
+function getTomorrowCR(referenceDate = /* @__PURE__ */ new Date()) {
+  const parts = getNowCR(referenceDate);
+  const d = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + 1, 12, 0, 0));
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+}
 
 // src/server/services/reminder.service.ts
 var DEFAULT_REMINDER_CONFIG = {
@@ -14204,16 +14210,6 @@ async function createBookingFromCommand(tenantId, bookingData) {
       console.warn(`[createBookingFromCommand] Rejected past slot: ${bookingDate} ${bookingTime}`);
       throw new Error(`El horario ${bookingDate} a las ${bookingTime} ya pas\xF3 en la hora de Costa Rica. Por favor selecciona una hora futura.`);
     }
-    const collisionCheck = await query(`
-      SELECT id, name, time 
-      FROM appointments 
-      WHERE tenant_id = $1 AND date = $2::date AND time = $3 AND status NOT IN ('cancelled', 'cancelado')
-      LIMIT 1
-    `, [tenantId, bookingDate, bookingTime]);
-    if (collisionCheck.rows.length > 0) {
-      console.warn(`[createBookingFromCommand] Conflict detected: Slot ${bookingDate} ${bookingTime} is already booked.`);
-      throw new Error(`El horario ${bookingDate} a las ${bookingTime} ya se encuentra reservado.`);
-    }
     let specialistId = void 0;
     if (bookingData.specialistId) {
       specialistId = bookingData.specialistId;
@@ -14223,6 +14219,27 @@ async function createBookingFromCommand(tenantId, bookingData) {
         (s) => s.name.toLowerCase().includes(bookingData.specialistName.toLowerCase()) || bookingData.specialistName.toLowerCase().includes(s.name.toLowerCase())
       );
       if (matchedSpec) specialistId = matchedSpec.id;
+    }
+    const schedule = await getScheduleSettings(tenantId);
+    const maxParallelSlots = specialistId ? 1 : schedule?.globalParallelSlots || 1;
+    const normalizedTime = normalizeTo24Hour(bookingTime);
+    let collisionSql = `
+      SELECT COUNT(*) as count 
+      FROM appointments 
+      WHERE tenant_id = $1 AND date = $2::date 
+        AND (time = $3::time OR time = $4)
+        AND status NOT IN ('cancelled', 'cancelado')
+    `;
+    const collisionParams = [tenantId, bookingDate, normalizedTime || bookingTime, bookingTime];
+    if (specialistId) {
+      collisionSql += ` AND (specialist_id = $5 OR specialist_id IS NULL)`;
+      collisionParams.push(specialistId);
+    }
+    const collisionCheck = await query(collisionSql, collisionParams);
+    const currentBookedCount = parseInt(collisionCheck.rows[0]?.count || "0", 10);
+    if (currentBookedCount >= maxParallelSlots) {
+      console.warn(`[createBookingFromCommand] Conflict detected: Slot ${bookingDate} ${bookingTime} is fully booked (${currentBookedCount}/${maxParallelSlots}).`);
+      throw new Error(`El horario ${bookingDate} a las ${bookingTime} ya se encuentra reservado.`);
     }
     let recordId = bookingData.recordId;
     let customerRecord = null;
@@ -14277,23 +14294,39 @@ async function createBookingFromCommand(tenantId, bookingData) {
     throw error;
   }
 }
-async function cancelBookingFromWhatsApp(tenantId, phone, cancelData) {
+async function cancelBookingFromWhatsApp(tenantId, phone, cancelDataOrDate, serviceParam) {
   try {
-    const clean = phone.replace(/\D/g, "");
+    const clean = (phone || "").replace(/\D/g, "");
+    let cancelData = {};
+    if (typeof cancelDataOrDate === "string") {
+      cancelData = { date: cancelDataOrDate, service: serviceParam };
+    } else if (typeof cancelDataOrDate === "object" && cancelDataOrDate !== null) {
+      cancelData = cancelDataOrDate;
+    }
     let sql = `
       SELECT * FROM appointments 
-      WHERE tenant_id = $1 AND REPLACE(whatsapp, '+', '') LIKE '%' || $2 || '%' 
-        AND status IN ('scheduled', 'confirmed', 'pending')
+      WHERE tenant_id = $1 AND status IN ('scheduled', 'confirmed', 'pending')
     `;
-    const params = [tenantId, clean.slice(-8)];
-    let paramIdx = 3;
-    if (cancelData?.date) {
-      sql += ` AND date = $${paramIdx++}::date`;
-      params.push(cancelData.date);
-    }
-    if (cancelData?.service) {
-      sql += ` AND service ILIKE $${paramIdx++}`;
-      params.push(`%${cancelData.service}%`);
+    const params = [tenantId];
+    let paramIdx = 2;
+    const rawCode = cancelData.appointmentId || (phone && /^(#?APT-|[0-9a-fA-F-]{8,})/i.test(phone.trim()) ? phone.trim() : null);
+    if (rawCode) {
+      const cleanCode = rawCode.replace(/^#?APT-?/i, "").trim();
+      sql += ` AND id::text ILIKE $${paramIdx++} || '%'`;
+      params.push(cleanCode);
+    } else {
+      if (clean && clean.length >= 8) {
+        sql += ` AND REPLACE(whatsapp, '+', '') LIKE '%' || $${paramIdx++} || '%'`;
+        params.push(clean.slice(-8));
+      }
+      if (cancelData?.date) {
+        sql += ` AND date = $${paramIdx++}::date`;
+        params.push(normalizeDateInput(cancelData.date));
+      }
+      if (cancelData?.service) {
+        sql += ` AND service ILIKE $${paramIdx++}`;
+        params.push(`%${cancelData.service}%`);
+      }
     }
     sql += ` ORDER BY date ASC, time ASC LIMIT 1`;
     const res = await query(sql, params);
@@ -14304,7 +14337,7 @@ async function cancelBookingFromWhatsApp(tenantId, phone, cancelData) {
     const appt = res.rows[0];
     const updated = await updateAppointment(appt.id, tenantId, { status: "cancelled" });
     console.log(`[CancelBooking] Successfully cancelled appointment ${appt.id} for ${appt.name} (${appt.service} - ${appt.date} ${appt.time})`);
-    return updated;
+    return updated || { ...appt, status: "cancelled" };
   } catch (error) {
     console.error("Error cancelling booking from WhatsApp:", error);
     return null;
@@ -14357,6 +14390,259 @@ async function rescheduleBookingFromWhatsApp(tenantId, phone, rescheduleData) {
     console.error("Error rescheduling booking from WhatsApp:", error);
     return null;
   }
+}
+function normalizeTo24Hour(timeStr) {
+  if (!timeStr) return "";
+  const clean = timeStr.trim();
+  if (/am|pm/i.test(clean)) {
+    const isPm = /pm/i.test(clean);
+    const parts2 = clean.replace(/am|pm/i, "").trim().split(":");
+    let h = parseInt(parts2[0], 10);
+    const m = parseInt(parts2[1], 10) || 0;
+    if (isPm && h !== 12) h += 12;
+    if (!isPm && h === 12) h = 0;
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  }
+  const parts = clean.split(":");
+  if (parts.length >= 2) {
+    return `${parts[0].padStart(2, "0")}:${parts[1].padStart(2, "0")}`;
+  }
+  return clean;
+}
+function format24To12Hour(time24) {
+  if (!time24) return "";
+  const [hStr, mStr] = time24.split(":");
+  let h = parseInt(hStr, 10);
+  const m = parseInt(mStr, 10) || 0;
+  const period = h >= 12 ? "PM" : "AM";
+  if (h === 0) h = 12;
+  else if (h > 12) h -= 12;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")} ${period}`;
+}
+async function calculateAvailableSlotsForDate(tenantId, targetDate, specialistId) {
+  const dateStr = normalizeDateInput(targetDate);
+  const schedule = await getScheduleSettings(tenantId);
+  const todayCR = getTodayCR();
+  const currentMinutesNow = getCurrentMinutesCR();
+  if (dateStr < todayCR) {
+    return {
+      date: dateStr,
+      availableSlots: [],
+      availableSlots24: [],
+      maxParallelSlots: 0,
+      totalAvailable: 0,
+      isClosed: true,
+      isVacation: false,
+      summaryText: "Fecha pasada (no disponible para reservas)"
+    };
+  }
+  if (schedule?.vacationConfig?.enabled) {
+    const v = schedule.vacationConfig;
+    if (v.startDate && v.endDate && dateStr >= v.startDate && dateStr <= v.endDate) {
+      return {
+        date: dateStr,
+        availableSlots: [],
+        availableSlots24: [],
+        maxParallelSlots: 0,
+        totalAvailable: 0,
+        isClosed: true,
+        isVacation: true,
+        vacationMessage: v.message || "Cerrado temporalmente por vacaciones",
+        summaryText: "Cerrado temporalmente por vacaciones"
+      };
+    }
+  }
+  const dayOfWeek = getDayOfWeekCR(dateStr);
+  let candidateSlots24 = [];
+  let isCustomSpecialist = false;
+  if (specialistId) {
+    const specRes = await query(`SELECT * FROM specialists WHERE id = $1 AND tenant_id = $2`, [specialistId, tenantId]);
+    const specialist = specRes.rows[0];
+    if (specialist) {
+      if (specialist.active === false) {
+        return {
+          date: dateStr,
+          availableSlots: [],
+          availableSlots24: [],
+          maxParallelSlots: 0,
+          totalAvailable: 0,
+          isClosed: true,
+          isVacation: false,
+          summaryText: "El profesional no se encuentra disponible temporalmente"
+        };
+      }
+      if (specialist.schedule_type === "custom_per_day" && specialist.schedule_config) {
+        const specCfg = typeof specialist.schedule_config === "string" ? JSON.parse(specialist.schedule_config) : specialist.schedule_config;
+        const daySchedule = specCfg.perDaySchedule?.[dayOfWeek] || specCfg.perDaySchedule?.[String(dayOfWeek)];
+        if (!daySchedule || daySchedule.enabled === false) {
+          return {
+            date: dateStr,
+            availableSlots: [],
+            availableSlots24: [],
+            maxParallelSlots: 0,
+            totalAvailable: 0,
+            isClosed: true,
+            isVacation: false,
+            summaryText: "El profesional no atiende este d\xEDa"
+          };
+        }
+        isCustomSpecialist = true;
+        const slotStep = schedule?.jornadaConfig?.slotMinutes || 45;
+        const [startH, startM] = (daySchedule.startHour || "08:00").split(":").map(Number);
+        const [endH, endM] = (daySchedule.endHour || "17:00").split(":").map(Number);
+        let currM = startH * 60 + startM;
+        const endMinutes = endH * 60 + endM;
+        const hasBreak = Boolean(daySchedule.hasBreak && daySchedule.breakStart && daySchedule.breakEnd);
+        let breakStartM = 0;
+        let breakEndM = 0;
+        if (hasBreak) {
+          const [bsh, bsm] = daySchedule.breakStart.split(":").map(Number);
+          const [beh, bem] = daySchedule.breakEnd.split(":").map(Number);
+          breakStartM = bsh * 60 + bsm;
+          breakEndM = beh * 60 + bem;
+        }
+        while (currM + slotStep <= endMinutes) {
+          if (hasBreak && currM < breakEndM && currM + slotStep > breakStartM) {
+            currM = breakEndM;
+            continue;
+          }
+          const h = Math.floor(currM / 60);
+          const m = currM % 60;
+          candidateSlots24.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
+          currM += slotStep;
+        }
+      }
+    }
+  }
+  if (!isCustomSpecialist) {
+    if (schedule?.scheduleMode === "jornada" || !schedule) {
+      const j = schedule?.jornadaConfig || {
+        startHour: "08:00",
+        endHour: "17:00",
+        slotMinutes: 45,
+        hasBreak: true,
+        breakStart: "12:00",
+        breakEnd: "13:00",
+        daysEnabled: [1, 2, 3, 4, 5, 6]
+      };
+      if (!j.daysEnabled.includes(dayOfWeek)) {
+        return {
+          date: dateStr,
+          availableSlots: [],
+          availableSlots24: [],
+          maxParallelSlots: 0,
+          totalAvailable: 0,
+          isClosed: true,
+          isVacation: false,
+          summaryText: "Cerrado este d\xEDa seg\xFAn horario del comercio"
+        };
+      }
+      const [startH, startM] = (j.startHour || "08:00").split(":").map(Number);
+      const [endH, endM] = (j.endHour || "17:00").split(":").map(Number);
+      const dayBreak = j.perDayBreaks?.[dayOfWeek];
+      const hasBreakThisDay = dayBreak !== void 0 ? dayBreak.hasBreak : j.hasBreak !== false;
+      const breakStartStr = dayBreak?.breakStart || j.breakStart || "12:00";
+      const breakEndStr = dayBreak?.breakEnd || j.breakEnd || "13:00";
+      const [breakStartH, breakStartM] = breakStartStr.split(":").map(Number);
+      const [breakEndH, breakEndM] = breakEndStr.split(":").map(Number);
+      const slotStep = j.slotMinutes || 45;
+      let currentMinutes = startH * 60 + startM;
+      const endMinutes = endH * 60 + endM;
+      const breakStartMinutes = breakStartH * 60 + breakStartM;
+      const breakEndMinutes = breakEndH * 60 + breakEndM;
+      while (currentMinutes + slotStep <= endMinutes) {
+        if (hasBreakThisDay && currentMinutes < breakEndMinutes && currentMinutes + slotStep > breakStartMinutes) {
+          currentMinutes = breakEndMinutes;
+          continue;
+        }
+        const h = Math.floor(currentMinutes / 60);
+        const m = currentMinutes % 60;
+        candidateSlots24.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
+        currentMinutes += slotStep;
+      }
+    } else if (schedule?.scheduleMode === "fechas") {
+      const f = schedule.fechasConfig || { enabledDates: [], slotsByDate: {} };
+      if (!f.enabledDates.includes(dateStr)) {
+        return {
+          date: dateStr,
+          availableSlots: [],
+          availableSlots24: [],
+          maxParallelSlots: 0,
+          totalAvailable: 0,
+          isClosed: true,
+          isVacation: false,
+          summaryText: "Sin citas habilitadas para esta fecha"
+        };
+      }
+      candidateSlots24 = f.slotsByDate?.[dateStr] || ["09:00", "10:00", "11:00", "14:00", "15:00", "16:00"];
+    } else if (schedule?.scheduleMode === "bloques") {
+      const b = schedule.bloquesConfig || { days: {}, slotMinutes: 45 };
+      const dayNames = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+      const d = /* @__PURE__ */ new Date(`${dateStr}T12:00:00Z`);
+      const dayKey = dayNames[d.getUTCDay()];
+      const blocks = b.days?.[dayKey] || [];
+      const slotStep = b.slotMinutes || 45;
+      for (const block of blocks) {
+        const [bStartH, bStartM] = block.start.split(":").map(Number);
+        const [bEndH, bEndM] = block.end.split(":").map(Number);
+        let curr = bStartH * 60 + bStartM;
+        const end = bEndH * 60 + bEndM;
+        while (curr + slotStep <= end) {
+          const h = Math.floor(curr / 60);
+          const m = curr % 60;
+          candidateSlots24.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
+          curr += slotStep;
+        }
+      }
+    }
+  }
+  let activeApptsRows = [];
+  let maxParallelSlots = 1;
+  if (specialistId) {
+    maxParallelSlots = 1;
+    const activeAppts = await query(`
+      SELECT time FROM appointments
+      WHERE tenant_id = $1 AND date = $2::date AND specialist_id = $3 AND status NOT IN ('cancelled', 'cancelado')
+    `, [tenantId, dateStr, specialistId]);
+    activeApptsRows = activeAppts.rows;
+  } else {
+    maxParallelSlots = schedule?.globalParallelSlots || 1;
+    const activeAppts = await query(`
+      SELECT time FROM appointments
+      WHERE tenant_id = $1 AND date = $2::date AND status NOT IN ('cancelled', 'cancelado')
+    `, [tenantId, dateStr]);
+    activeApptsRows = activeAppts.rows;
+  }
+  const timeCountMap = {};
+  for (const row of activeApptsRows) {
+    const rawTime = (row.time || "").trim();
+    const t24 = normalizeTo24Hour(rawTime);
+    timeCountMap[t24] = (timeCountMap[t24] || 0) + 1;
+    if (rawTime !== t24) {
+      timeCountMap[rawTime] = (timeCountMap[rawTime] || 0) + 1;
+    }
+  }
+  const isToday = dateStr === todayCR;
+  const filteredSlots24 = candidateSlots24.filter((slot) => {
+    if (isToday) {
+      const [sh, sm] = slot.split(":").map(Number);
+      if (sh * 60 + sm <= currentMinutesNow) {
+        return false;
+      }
+    }
+    return (timeCountMap[slot] || 0) < maxParallelSlots;
+  });
+  const availableSlots12 = filteredSlots24.map(format24To12Hour);
+  return {
+    date: dateStr,
+    availableSlots: availableSlots12,
+    availableSlots24: filteredSlots24,
+    maxParallelSlots,
+    totalAvailable: availableSlots12.length,
+    isClosed: candidateSlots24.length === 0,
+    isVacation: false,
+    summaryText: availableSlots12.length > 0 ? `${availableSlots12.length} horarios libres disponibles` : "No hay horarios disponibles"
+  };
 }
 
 // src/server/services/order.service.ts
@@ -14961,6 +15247,158 @@ async function authenticateSecretarySession(tenantId, authorizedPhoneId, session
 }
 
 // src/server/services/secretary.service.ts
+function parseTimeToMinutes(timeStr) {
+  if (!timeStr) return 0;
+  const clean = timeStr.trim();
+  if (/am|pm/i.test(clean)) {
+    const isPm = /pm/i.test(clean);
+    const parts2 = clean.replace(/am|pm/i, "").trim().split(":");
+    let h2 = parseInt(parts2[0], 10) || 0;
+    const m2 = parseInt(parts2[1], 10) || 0;
+    if (isPm && h2 !== 12) h2 += 12;
+    if (!isPm && h2 === 12) h2 = 0;
+    return h2 * 60 + m2;
+  }
+  const parts = clean.split(":");
+  const h = parseInt(parts[0], 10) || 0;
+  const m = parseInt(parts[1], 10) || 0;
+  return h * 60 + m;
+}
+function cleanDisplayTime(timeStr) {
+  if (!timeStr) return "";
+  const clean = timeStr.trim();
+  if (/am|pm/i.test(clean)) {
+    const isPm = /pm/i.test(clean);
+    const parts2 = clean.replace(/am|pm/i, "").trim().split(":");
+    const h = parseInt(parts2[0], 10) || 0;
+    const m = parseInt(parts2[1], 10) || 0;
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")} ${isPm ? "PM" : "AM"}`;
+  }
+  const parts = clean.split(":");
+  const h24 = `${String(parts[0] || "0").padStart(2, "0")}:${String(parts[1] || "0").padStart(2, "0")}`;
+  return format24To12Hour(h24);
+}
+function formatVisualAgendaForWhatsApp(appointments = [], courtBookings = [], dateStr) {
+  if ((!appointments || appointments.length === 0) && (!courtBookings || courtBookings.length === 0)) {
+    return `\u{1F4C5} *AGENDA OPERATIVA \u2014 ${dateStr}*
+
+No hay citas ni partidos programados para esta fecha.`;
+  }
+  let confirmed = 0;
+  let pending = 0;
+  let completed = 0;
+  for (const a of appointments) {
+    const st = (a.status || "").toLowerCase();
+    if (st === "confirmed" || st === "confirmada") confirmed++;
+    else if (st === "completed" || st === "completado" || st === "completada" || st === "realizada") completed++;
+    else pending++;
+  }
+  let text = `\u{1F4C5} *AGENDA OPERATIVA \u2014 ${dateStr}*
+\u{1F4CA} Total de citas: *${appointments.length}* (\u{1F7E2} ${confirmed} confirmadas, \u{1F7E1} ${pending} pendientes, \u{1F535} ${completed} realizadas)
+`;
+  const sorted = [...appointments].sort((a, b) => {
+    return parseTimeToMinutes(a.time) - parseTimeToMinutes(b.time);
+  });
+  const morning = [];
+  const afternoon = [];
+  const night = [];
+  for (const appt of sorted) {
+    const minutes = parseTimeToMinutes(appt.time);
+    const hour = Math.floor(minutes / 60);
+    if (hour < 12) {
+      morning.push(appt);
+    } else if (hour < 18) {
+      afternoon.push(appt);
+    } else {
+      night.push(appt);
+    }
+  }
+  const formatItem = (a) => {
+    const st = (a.status || "").toLowerCase();
+    const stBadge = st === "confirmed" || st === "confirmada" ? "\u{1F7E2} Confirmada" : st === "completed" || st === "completado" || st === "completada" || st === "realizada" ? "\u{1F535} Realizada" : "\u{1F7E1} Pendiente";
+    const payStatus = (a.payment_status || a.paymentStatus || "").toLowerCase();
+    const payBadge = payStatus === "paid" || payStatus === "pagado" ? "Pagado" : "Cobro Pendiente";
+    const amountNum = Number(a.amount || 0);
+    const amountStr = amountNum > 0 ? ` \u2022 \u20A1${amountNum.toLocaleString("es-CR")} (${payBadge})` : ` \u2022 (${payBadge})`;
+    const specName = a.specialist_name || a.specialistName;
+    const specStr = specName && specName !== "General" ? `
+  \u2702\uFE0F Especialista: ${specName}` : "";
+    const phone = a.whatsapp || a.phone;
+    const phoneStr = phone ? ` (Tel: ${phone})` : "";
+    const formattedTime = cleanDisplayTime(a.time);
+    return `\u2022 *${formattedTime}* \u2014 ${a.service || "Servicio"}
+  \u{1F464} ${a.name || "Cliente"}${phoneStr}${specStr}
+  \u{1F4B0} Estado: ${stBadge}${amountStr}`;
+  };
+  if (morning.length > 0) {
+    text += `
+\u{1F305} *BLOQUE MA\xD1ANA (Antes de 12:00 PM)*
+` + morning.map(formatItem).join("\n\n");
+  }
+  if (afternoon.length > 0) {
+    text += `
+
+\u{1F306} *BLOQUE TARDE (12:00 PM a 06:00 PM)*
+` + afternoon.map(formatItem).join("\n\n");
+  }
+  if (night.length > 0) {
+    text += `
+
+\u{1F319} *BLOQUE NOCHE (06:00 PM en adelante)*
+` + night.map(formatItem).join("\n\n");
+  }
+  if (courtBookings && courtBookings.length > 0) {
+    const sortedCourts = [...courtBookings].sort((a, b) => {
+      return parseTimeToMinutes(a.time) - parseTimeToMinutes(b.time);
+    });
+    text += `
+
+\u26BD *CANCHAS Y PARTIDOS*
+` + sortedCourts.map((c) => {
+      const mode = c.booking_mode || c.bookingMode || "partido";
+      const modeLabel = mode === "match" ? "Reto Mejenga" : "Partido Completo";
+      const court = c.court_name || c.courtName || "Cancha";
+      const captain = c.team_a_captain || c.team_a_name || c.captainName || "Capit\xE1n";
+      const cStatus = (c.status || "").toLowerCase() === "confirmed" ? "\u{1F7E2} Confirmada" : "\u{1F7E1} Pendiente";
+      const formattedTime = cleanDisplayTime(c.time);
+      return `\u2022 *${formattedTime}* \u2014 ${court} (${modeLabel})
+  \u{1F3C6} Capit\xE1n: ${captain}
+  \u{1F4CC} Estado: ${cStatus}`;
+    }).join("\n\n");
+  }
+  return text;
+}
+async function getAppointmentsForDate(tenantId, dateStr) {
+  try {
+    const res = await query(`
+      SELECT a.id, a.date, a.time, a.service, a.name, a.whatsapp, a.status, a.payment_status, a.amount,
+             COALESCE(s.name, 'General') as specialist_name
+      FROM appointments a
+      LEFT JOIN specialists s ON a.specialist_id = s.id
+      WHERE a.tenant_id = $1 AND a.date = $2::date AND a.status NOT IN ('cancelled', 'cancelado')
+      ORDER BY a.time ASC
+    `, [tenantId, dateStr]);
+    return res.rows;
+  } catch (err) {
+    console.error("[SecretaryService] Error consultando citas por fecha:", err);
+    return [];
+  }
+}
+async function getCourtBookingsForDate(tenantId, dateStr) {
+  try {
+    const res = await query(`
+      SELECT cb.id, cb.date, cb.time, cb.booking_mode, cb.team_a_name, cb.team_a_captain, cb.status, c.name as court_name
+      FROM court_bookings cb
+      JOIN courts c ON cb.court_id = c.id
+      WHERE cb.tenant_id = $1 AND cb.date = $2::date AND cb.status NOT IN ('cancelled')
+      ORDER BY cb.time ASC
+    `, [tenantId, dateStr]);
+    return res.rows;
+  } catch (err) {
+    console.error("[SecretaryService] Error consultando reservas de canchas:", err);
+    return [];
+  }
+}
 async function handleSecretaryInboundMessage(tenantId, cleanPhone, remoteJid, userMessage, pushName, instanceName) {
   const secretary = await getAuthorizedPhoneByNumber(tenantId, cleanPhone);
   if (!secretary || !secretary.active) {
@@ -15047,35 +15485,83 @@ Esto garantiza privacidad total, procesamiento sin l\xEDmites de cuota y auditor
     model: tenant.aiModel || "gemini-2.5-flash",
     temperature: 0.3
   };
-  const [appointmentsContext, courtsContext, servicesList] = await Promise.all([
+  const tomorrowStr = getTomorrowCR();
+  const [
+    appointmentsContext,
+    courtsContext,
+    servicesList,
+    todaySlots,
+    tomorrowSlots,
+    todayApptsList,
+    todayCourtsList,
+    tomorrowApptsList,
+    tomorrowCourtsList
+  ] = await Promise.all([
     queryAppointmentsForSecretary(tenantId, todayStr),
     queryCourtsForSecretary(tenantId, todayStr),
-    queryServicesForSecretary(tenantId)
+    queryServicesForSecretary(tenantId),
+    calculateAvailableSlotsForDate(tenantId, todayStr),
+    calculateAvailableSlotsForDate(tenantId, tomorrowStr),
+    getAppointmentsForDate(tenantId, todayStr),
+    getCourtBookingsForDate(tenantId, todayStr),
+    getAppointmentsForDate(tenantId, tomorrowStr),
+    getCourtBookingsForDate(tenantId, tomorrowStr)
   ]);
+  const todayVisualAgenda = formatVisualAgendaForWhatsApp(todayApptsList, todayCourtsList, todayStr);
+  const tomorrowVisualAgenda = formatVisualAgendaForWhatsApp(tomorrowApptsList, tomorrowCourtsList, tomorrowStr);
   const secretarySystemPrompt = `
 Eres el Secretario Virtual Interno de ${tenantName}.
 Tu interlocutor es ${secretary.name} (${secretary.role}), personal autorizado de la empresa.
 Fecha y hora actual oficial en Costa Rica: ${todayStr} a las ${timeStr} (UTC-6).
 
 INFORMACI\xD3N OPERATIVA DEL COMERCIO:
+\u{1F4C5} AGENDA OPERATIVA PREFORMATEADA DE HOY (${todayStr}):
+${todayVisualAgenda}
+
+\u{1F4C5} AGENDA OPERATIVA PREFORMATEADA DE MA\xD1ANA (${tomorrowStr}):
+${tomorrowVisualAgenda}
+
 \u{1F4C5} CITAS AGENDADAS (Pr\xF3ximos d\xEDas):
 ${appointmentsContext || "No hay citas registradas para hoy ni pr\xF3ximos d\xEDas."}
 
 \u26BD CANCHAS Y RESERVAS DEPORTIVAS:
 ${courtsContext || "No hay reservas de canchas para hoy."}
 
+\u23F0 HORARIOS LIBRES REALES CALCULADOS:
+\u2022 Hoy (${todayStr}): ${todaySlots.availableSlots.length > 0 ? todaySlots.availableSlots.join(", ") : "Sin turnos disponibles"}
+\u2022 Ma\xF1ana (${tomorrowStr}): ${tomorrowSlots.availableSlots.length > 0 ? tomorrowSlots.availableSlots.join(", ") : "Sin turnos disponibles"}
+
 \u{1F6E0}\uFE0F CAT\xC1LOGO DE SERVICIOS:
 ${servicesList}
 
 INSTRUCCIONES Y REGLAS DE RESPUESTA:
 1. Responde de forma ejecutiva, clara, ordenada y con respeto y calidez tica.
-2. Tienes acceso completo a la informaci\xF3n operativa. Si te preguntan por la agenda, da el listado ordenado por hora con el nombre del cliente, tel\xE9fono y estado.
-3. Si el secretario te pide agendar una cita para un cliente, emite al final del mensaje:
-<<<COMMAND_BOOKING: {"service":"nombre servicio","date":"YYYY-MM-DD","time":"HH:MM","customerName":"Nombre Cliente","customerPhone":"Tel\xE9fono"}>>>
-4. Si el secretario te pide cancelar una cita, emite al final del mensaje:
-<<<COMMAND_CANCEL_BOOKING: {"date":"YYYY-MM-DD","customerPhone":"Tel\xE9fono o ID","reason":"solicitado por administraci\xF3n"}>>>
-5. NUNCA inventes informaci\xF3n. Si un horario est\xE1 ocupado, dilo claramente.
-6. En texto en espa\xF1ol NUNCA uses el signo '&', siempre usa la conjunci\xF3n 'y'.
+2. FORMATO VISUAL DE AGENDA (Al consultar agenda o citas del d\xEDa):
+   Estructura obligatoriamente la respuesta por bloques horarios con vi\xF1etas y emojis:
+   - \u{1F305} *BLOQUE MA\xD1ANA (Antes de 12:00 PM)*
+   - \u{1F306} *BLOQUE TARDE (12:00 PM a 06:00 PM)*
+   - \u{1F319} *BLOQUE NOCHE (06:00 PM en adelante)*
+   Para cada cita muestra:
+   \u2022 *HH:MM* \u2014 [Servicio]
+     \u{1F464} [Nombre Cliente] (Tel: [Tel\xE9fono])
+     \u2702\uFE0F Especialista: [Nombre Especialista]
+     \u{1F4B0} Estado: [\u{1F7E2} Confirmada / \u{1F7E1} Pendiente / \u{1F535} Realizada] \u2022 \u20A1[Monto] ([Pagado / Cobro Pendiente])
+   Si hay reservas de canchas, incluye el bloque:
+   - \u26BD *CANCHAS Y PARTIDOS*
+     \u2022 *HH:MM* \u2014 [Nombre Cancha] ([Modo])
+       \u{1F3C6} Capit\xE1n: [Nombre Capit\xE1n]
+       \u{1F4CC} Estado: [\u{1F7E2} Confirmada / \u{1F7E1} Pendiente]
+3. CONSULTA DE HORARIOS LIBRES / DISPONIBILIDAD:
+   Usa \xDANICAMENTE los turnos listados en HORARIOS LIBRES REALES CALCULADOS. Jam\xE1s inventes horas que no est\xE9n en esa lista. Si no hay espacios libres, ind\xEDcalo con franqueza.
+4. COMANDOS DE AGENDAMIENTO:
+   Si el personal te pide agendar una cita para un cliente, emite al final del mensaje:
+<<<COMMAND_BOOKING: {"service":"nombre servicio","date":"YYYY-MM-DD","time":"HH:MM","customerName":"Nombre Cliente","customerPhone":"Tel\xE9fono","specialistName":"Especialista opcional"}>>>
+5. COMANDOS DE CANCELACI\xD3N:
+   Si el personal te pide cancelar una cita, emite al final del mensaje:
+<<<COMMAND_CANCEL_BOOKING: {"date":"YYYY-MM-DD","customerPhone":"Tel\xE9fono o ID","service":"Servicio opcional","reason":"solicitado por administraci\xF3n"}>>>
+6. NUNCA inventes informaci\xF3n. Si un horario est\xE1 ocupado, dilo claramente.
+7. REGLA DE IDIOMA EN ESPA\xD1OL:
+   En texto en espa\xF1ol NUNCA uses el signo '&', siempre usa la conjunci\xF3n copulativa 'y'.
 `.trim();
   try {
     const aiResponse = await callAI(aiConfig, {
@@ -15083,8 +15569,11 @@ INSTRUCCIONES Y REGLAS DE RESPUESTA:
       messages: [{ role: "user", content: userMessage }]
     });
     const replyText = aiResponse.text || "Entendido. \xBFEn qu\xE9 m\xE1s puedo asistirte?";
-    await executeSecretaryCommands(tenantId, replyText);
-    const cleanReply = replyText.replace(/<<<COMMAND_[^>]+>>>/g, "").trim();
+    const { executionNotes } = await executeSecretaryCommands(tenantId, replyText);
+    let cleanReply = replyText.replace(/<<<COMMAND_[^>]+>>>/g, "").trim();
+    if (executionNotes.length > 0) {
+      cleanReply += "\n\n" + executionNotes.join("\n\n");
+    }
     await sendMessage(instanceName, cleanPhone, cleanReply);
     await saveSecretaryLog(tenantId, remoteJid, cleanReply);
     return { handled: true, replyText: cleanReply, status: "ai_replied" };
@@ -15118,7 +15607,7 @@ async function buildDailyOperationalSummary(tenantId, todayStr) {
     `, [tenantId, todayStr]);
     const a = apptsRes.rows[0] || {};
     const courtsCount = courtsRes.rows[0]?.total || 0;
-    return `\u2022 Citas hoy: ${a.total || 0} (${a.confirmed || 0} confirmadas, ${a.pending || 0} pendientes, ${a.completed || 0} realizadas)
+    return `\u2022 Citas hoy: ${a.total || 0} (\u{1F7E2} ${a.confirmed || 0} confirmadas, \u{1F7E1} ${a.pending || 0} pendientes, \u{1F535} ${a.completed || 0} realizadas)
 \u2022 Partidos/Canchas hoy: ${courtsCount} reservas activas
 \u2022 Cobrado en citas hoy: \u20A1${Number(a.paid_amount || 0).toLocaleString("es-CR")}`;
   } catch (err) {
@@ -15127,15 +15616,17 @@ async function buildDailyOperationalSummary(tenantId, todayStr) {
 }
 async function queryAppointmentsForSecretary(tenantId, todayStr) {
   const res = await query(`
-    SELECT date, time, service, name, whatsapp, status, payment_status, amount
-    FROM appointments
-    WHERE tenant_id = $1 AND date >= $2::date AND status NOT IN ('cancelled', 'cancelado')
-    ORDER BY date ASC, time ASC
+    SELECT a.date, a.time, a.service, a.name, a.whatsapp, a.status, a.payment_status, a.amount,
+           COALESCE(s.name, 'General') as specialist_name
+    FROM appointments a
+    LEFT JOIN specialists s ON a.specialist_id = s.id
+    WHERE a.tenant_id = $1 AND a.date >= $2::date AND a.status NOT IN ('cancelled', 'cancelado')
+    ORDER BY a.date ASC, a.time ASC
     LIMIT 25
   `, [tenantId, todayStr]);
   if (res.rows.length === 0) return "";
   return res.rows.map(
-    (r) => `  \u2022 ${r.date} a las ${r.time}: ${r.service} para ${r.name || "Cliente"} (Tel: ${r.whatsapp || "N/A"}) [Estado: ${r.status}, Pago: ${r.payment_status}]`
+    (r) => `  \u2022 ${r.date} a las ${r.time}: ${r.service} para ${r.name || "Cliente"} (Tel: ${r.whatsapp || "N/A"}, Especialista: ${r.specialist_name}) [Estado: ${r.status}, Pago: ${r.payment_status}]`
   ).join("\n");
 }
 async function queryCourtsForSecretary(tenantId, todayStr) {
@@ -15165,26 +15656,64 @@ async function queryServicesForSecretary(tenantId) {
   ).join("\n");
 }
 async function executeSecretaryCommands(tenantId, replyText) {
+  const executionNotes = [];
+  let createdBooking = null;
+  let cancelledBooking = null;
   const bookingMatch = replyText.match(/<<<COMMAND_BOOKING:\s*({[\s\S]*?})>>>/);
   if (bookingMatch) {
     try {
       const data = JSON.parse(bookingMatch[1]);
-      await createBookingFromCommand(tenantId, data);
-      console.log("[SecretaryService] Cita agendada por secretario IA:", data);
+      const appt = await createBookingFromCommand(tenantId, data);
+      createdBooking = appt;
+      const apptCode = appt?.id ? `#APT-${String(appt.id).slice(0, 8).toUpperCase()}` : "#APT-CONFIRMADA";
+      executionNotes.push(
+        `\u2705 *Cita Agendada Exitosamente (${apptCode}):*
+\u2022 Cliente: ${appt.name || data.customerName || "Cliente"}
+\u2022 Servicio: ${appt.service || data.service}
+\u2022 Fecha y Hora: ${appt.date} a las ${appt.time}
+\u2022 Monto: \u20A1${Number(appt.amount || 0).toLocaleString("es-CR")}`
+      );
+      console.log("[SecretaryService] Cita agendada por secretario IA:", appt);
     } catch (err) {
       console.error("[SecretaryService] Error ejecutando COMMAND_BOOKING:", err);
+      executionNotes.push(
+        `\u26A0\uFE0F *No se pudo agendar la cita:* ${err?.message || "El horario solicitado no est\xE1 disponible o colisiona con otra cita."}`
+      );
     }
   }
   const cancelMatch = replyText.match(/<<<COMMAND_CANCEL_BOOKING:\s*({[\s\S]*?})>>>/);
   if (cancelMatch) {
     try {
       const data = JSON.parse(cancelMatch[1]);
-      await cancelBookingFromWhatsApp(tenantId, data.customerPhone || "", data.date || "", data.service || "");
-      console.log("[SecretaryService] Cita cancelada por secretario IA:", data);
+      const cancelled = await cancelBookingFromWhatsApp(
+        tenantId,
+        data.customerPhone || "",
+        {
+          date: data.date,
+          service: data.service,
+          reason: data.reason,
+          appointmentId: data.appointmentId || data.id
+        }
+      );
+      if (cancelled) {
+        cancelledBooking = cancelled;
+        const apptCode = cancelled?.id ? `#APT-${String(cancelled.id).slice(0, 8).toUpperCase()}` : "";
+        executionNotes.push(
+          `\u{1F5D1}\uFE0F *Cita Cancelada Exitosamente${apptCode ? " (" + apptCode + ")" : ""}:*
+Se cancel\xF3 la cita de *${cancelled.name || data.customerPhone}* para *${cancelled.service || "Servicio"}* el d\xEDa *${cancelled.date}* a las *${cancelled.time}*.`
+        );
+        console.log("[SecretaryService] Cita cancelada por secretario IA:", cancelled);
+      } else {
+        executionNotes.push(
+          `\u26A0\uFE0F *No se encontr\xF3 ninguna cita activa* para cancelar con los datos proporcionados (Fecha: ${data.date || "N/A"}, Tel\xE9fono: ${data.customerPhone || "N/A"}).`
+        );
+      }
     } catch (err) {
       console.error("[SecretaryService] Error ejecutando COMMAND_CANCEL_BOOKING:", err);
+      executionNotes.push(`\u26A0\uFE0F *Error al procesar la cancelaci\xF3n:* ${err?.message || "No fue posible cancelar la cita."}`);
     }
   }
+  return { executionNotes, createdBooking, cancelledBooking };
 }
 async function saveSecretaryLog(tenantId, remoteJid, text) {
   try {
@@ -15953,7 +16482,13 @@ router.post("/register", async (req, res) => {
       currency: "CRC",
       storeEnabled: true,
       storeMode: "retail",
-      storeModules: { storeEnabled: true, bookingsEnabled: true }
+      storeModules: {
+        storeEnabled: true,
+        bookingsEnabled: true,
+        whatsappEnabled: true,
+        billingEnabled: true,
+        onboardingCompleted: false
+      }
     });
     await saveWebsiteSettings(tenant.id, {
       websiteEnabled: true,
@@ -18417,6 +18952,48 @@ router10.post("/", async (req, res) => {
     res.status(500).json({ error: "Error al guardar configuraci\xF3n de tienda" });
   }
 });
+var updateModulesHandler = async (req, res) => {
+  try {
+    const existing = await getStoreSettings(req.tenantId);
+    const incomingModules = req.body?.storeModules || req.body || {};
+    const currentModules = existing?.storeModules || { storeEnabled: true, bookingsEnabled: true };
+    const mergedModules = {
+      ...currentModules,
+      ...incomingModules
+    };
+    const nextStoreMode = req.body?.storeMode || existing?.storeMode || "retail";
+    const nextStoreEnabled = mergedModules.storeEnabled !== false;
+    if (existing) {
+      const saved = await saveStoreSettings(req.tenantId, {
+        ...existing,
+        storeEnabled: nextStoreEnabled,
+        storeMode: nextStoreMode,
+        storeModules: mergedModules
+      });
+      res.json({
+        success: true,
+        storeMode: saved.storeMode || nextStoreMode,
+        storeModules: saved.storeModules || mergedModules
+      });
+    } else {
+      const saved = await saveStoreSettings(req.tenantId, {
+        storeEnabled: nextStoreEnabled,
+        storeMode: nextStoreMode,
+        storeModules: mergedModules
+      });
+      res.json({
+        success: true,
+        storeMode: saved.storeMode || nextStoreMode,
+        storeModules: saved.storeModules || mergedModules
+      });
+    }
+  } catch (error) {
+    console.error("Error al actualizar m\xF3dulos del panel:", error);
+    res.status(500).json({ error: "Error al actualizar configuraci\xF3n de m\xF3dulos" });
+  }
+};
+router10.post("/modules", updateModulesHandler);
+router10.patch("/modules", updateModulesHandler);
 var store_routes_default = router10;
 
 // src/server/routes/products.routes.ts

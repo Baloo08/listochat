@@ -252,6 +252,8 @@ async function getHaciendaConfigByTenant(tenantId) {
     smtpUser: row.smtp_user || "",
     smtpPassMasked: row.smtp_pass_encrypted ? "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022" : "",
     resendApiKeyMasked: row.resend_api_key_encrypted ? "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022" : "",
+    pricesIncludeTax: row.prices_include_tax !== void 0 && row.prices_include_tax !== null ? Boolean(row.prices_include_tax) : true,
+    defaultTaxRateCode: ["08", "04", "02", "01", "10"].includes(String(row.default_tax_rate_code)) ? String(row.default_tax_rate_code) : "08",
     active: Boolean(row.active),
     createdAt: row.created_at ? new Date(row.created_at).toISOString() : "",
     updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : ""
@@ -353,6 +355,8 @@ async function saveHaciendaConfig(tenantId, data) {
     resendApiKeyEncrypted = "";
   }
   const active = data.active !== void 0 ? Boolean(data.active) : existing.active !== void 0 ? Boolean(existing.active) : true;
+  const pricesIncludeTax = data.pricesIncludeTax !== void 0 ? Boolean(data.pricesIncludeTax) : existing.prices_include_tax !== void 0 && existing.prices_include_tax !== null ? Boolean(existing.prices_include_tax) : true;
+  const defaultTaxRateCode = data.defaultTaxRateCode !== void 0 ? ["08", "04", "02", "01", "10"].includes(String(data.defaultTaxRateCode)) ? String(data.defaultTaxRateCode) : "08" : existing.default_tax_rate_code || "08";
   const idpUsername = data.idpUsername !== void 0 ? data.idpUsername.trim() : existing.idp_username || "";
   let idpPasswordEncrypted = existing.idp_password_encrypted || "";
   if (data.idpPassword && data.idpPassword.trim() && !data.idpPassword.includes("\u2022\u2022\u2022\u2022")) {
@@ -385,7 +389,7 @@ async function saveHaciendaConfig(tenantId, data) {
       branch_code, pos_code, default_doc_type, seq_factura, seq_tiquete, seq_nota_credito,
       multi_branch_enabled, provider_mode, use_alternative_provider, is_simplified_regime,
       email_auto_send, smtp_host, smtp_port, smtp_user, smtp_pass_encrypted, resend_api_key_encrypted,
-      active, updated_at
+      active, prices_include_tax, default_tax_rate_code, updated_at
     ) VALUES (
       $1, $2, $3, $4, $5, $6,
       $7, $8, $9, $10::jsonb, $11,
@@ -394,7 +398,7 @@ async function saveHaciendaConfig(tenantId, data) {
       $25, $26, $27, $28, $29, $30,
       $31, $32, $33, $34,
       $35, $36, $37, $38, $39, $40,
-      $41, CURRENT_TIMESTAMP
+      $41, $42, $43, CURRENT_TIMESTAMP
     )
     ON CONFLICT (tenant_id) DO UPDATE SET
       environment = EXCLUDED.environment,
@@ -437,6 +441,8 @@ async function saveHaciendaConfig(tenantId, data) {
       smtp_pass_encrypted = EXCLUDED.smtp_pass_encrypted,
       resend_api_key_encrypted = EXCLUDED.resend_api_key_encrypted,
       active = EXCLUDED.active,
+      prices_include_tax = EXCLUDED.prices_include_tax,
+      default_tax_rate_code = EXCLUDED.default_tax_rate_code,
       updated_at = CURRENT_TIMESTAMP`,
     [
       tenantId,
@@ -479,7 +485,9 @@ async function saveHaciendaConfig(tenantId, data) {
       smtpUser,
       smtpPassEncrypted,
       resendApiKeyEncrypted,
-      active
+      active,
+      pricesIncludeTax,
+      defaultTaxRateCode
     ]
   );
   return await getHaciendaConfigByTenant(tenantId);
@@ -1656,7 +1664,7 @@ async function upsertStoreSettings(tenantId, data) {
     ON CONFLICT (tenant_id) DO UPDATE SET
       store_enabled = EXCLUDED.store_enabled,
       store_mode = EXCLUDED.store_mode,
-      store_modules = EXCLUDED.store_modules,
+      store_modules = COALESCE(store_settings.store_modules, '{}'::jsonb) || COALESCE(EXCLUDED.store_modules, '{}'::jsonb),
       restaurant_config = EXCLUDED.restaurant_config,
       delivery_config = EXCLUDED.delivery_config,
       correos_cr_config = EXCLUDED.correos_cr_config,
@@ -2764,9 +2772,19 @@ async function testTenantEmailDelivery(tenantId, params) {
       },
       { to: recipient, subject, html, attachments: [] }
     );
+    let friendlyMsg = res.error || "Error conectando con el servidor SMTP.";
+    if (!res.ok && res.error) {
+      if (res.error.includes("535") || res.error.toLowerCase().includes("username and password not accepted") || res.error.toLowerCase().includes("badcredentials")) {
+        friendlyMsg = `Error de autenticaci\xF3n (535): Usuario o contrase\xF1a rechazados por el servidor de correo. Si utilizas Gmail o Google Workspace, Google bloquea la contrase\xF1a normal; debes activar la verificaci\xF3n en dos pasos y generar una 'Contrase\xF1a de Aplicaci\xF3n' de 16 caracteres en myaccount.google.com/apppasswords.`;
+      } else if (res.error.includes("ETIMEDOUT") || res.error.includes("ECONNREFUSED") || res.error.includes("ENOTFOUND")) {
+        friendlyMsg = `No fue posible conectar con el servidor SMTP (${smtpHost}:${smtpPort}). Verifica que el nombre del host est\xE9 bien escrito y que el puerto sea 587 (TLS) o 465 (SSL).`;
+      } else if (res.error.toLowerCase().includes("tls") || res.error.toLowerCase().includes("cert")) {
+        friendlyMsg = `Error de negociaci\xF3n TLS/SSL con el servidor SMTP. Si usas puerto 465 utiliza SSL directo; si usas puerto 587 utiliza STARTTLS. Detalle: ${res.error}`;
+      }
+    }
     return {
       success: res.ok,
-      message: res.ok ? `Correo de prueba enviado exitosamente a ${recipient} v\xEDa servidor SMTP (${smtpHost}:${smtpPort}).` : res.error || "Error conectando con el servidor SMTP."
+      message: res.ok ? `Correo de prueba enviado exitosamente a ${recipient} v\xEDa servidor SMTP (${smtpHost}:${smtpPort}).` : friendlyMsg
     };
   }
   if (env.RESEND_API_KEY || env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS) {
@@ -5040,19 +5058,20 @@ var init_almendro_service = __esm({
           const defaultDoc = isNativeActive ? nativeCfg?.defaultDocType || "04" : config?.defaultDocType || "04";
           const docType = receiverIdNumber ? "01" : defaultDoc;
           const defaultCabys = isNativeActive ? nativeCfg?.defaultCabysCode || "8311100000000" : "8311100000000";
+          const defaultTaxRate = nativeCfg?.defaultTaxRateCode || "08";
+          const pricesIncludeTax = nativeCfg?.pricesIncludeTax ?? true;
           const items = order.items && order.items.length > 0 ? order.items.map((it) => ({
             cabysCode: defaultCabys,
             description: `${it.productName}${it.variantName ? ` - ${it.variantName}` : ""}`,
             quantity: Number(it.quantity) || 1,
             unitPrice: Number(it.unitPrice) || 0,
-            taxRateCode: "08"
-            // 13% IVA
+            taxRateCode: it.taxRateCode || defaultTaxRate
           })) : [{
             cabysCode: defaultCabys,
             description: `Consumo / Pedido #ORD-${order.orderNumber}`,
             quantity: 1,
             unitPrice: Number(order.subtotal || order.total) || 0,
-            taxRateCode: "08"
+            taxRateCode: defaultTaxRate
           }];
           if (Number(order.deliveryFee) > 0) {
             items.push({
@@ -5074,6 +5093,7 @@ var init_almendro_service = __esm({
               branchId: orderBranchId,
               currency: order.currency || "CRC",
               paymentMethod: paymentMethodCode,
+              pricesIncludeTax,
               receiver: {
                 idType: receiverIdNumber ? receiverIdType : void 0,
                 idNumber: receiverIdNumber,
@@ -5213,6 +5233,9 @@ var init_almendro_service = __esm({
           const defaultDoc = isNativeActive ? nativeCfg?.defaultDocType || "04" : config?.defaultDocType || "04";
           const docType = receiverIdNumber ? "01" : defaultDoc;
           const defaultCabys = isNativeActive ? nativeCfg?.defaultCabysCode || "8311100000000" : "8311100000000";
+          const isHealthService = /salud|dental|médic|medic|odontol|psicol|nutri|terapia/i.test(appt.service || "");
+          const defaultTaxRate = nativeCfg?.defaultTaxRateCode || (isHealthService ? "04" : "08");
+          const pricesIncludeTax = nativeCfg?.pricesIncludeTax ?? true;
           const unitPrice = Number(appt.amount) || 0;
           const items = [
             {
@@ -5220,7 +5243,7 @@ var init_almendro_service = __esm({
               description: `Servicio: ${appt.service}${appt.vehicleModel ? ` (${appt.vehicleModel})` : ""}`,
               quantity: 1,
               unitPrice,
-              taxRateCode: "08"
+              taxRateCode: defaultTaxRate
             }
           ];
           let voucherRes;
@@ -5230,6 +5253,7 @@ var init_almendro_service = __esm({
               docType,
               appointmentId: appt.id,
               paymentMethod: "01",
+              pricesIncludeTax,
               receiver: {
                 idType: receiverIdNumber ? receiverIdType : void 0,
                 idNumber: receiverIdNumber,
@@ -6839,35 +6863,54 @@ async function emitManualOrNativeVoucher(tenantId, params) {
     branchId: params.branchId,
     branchCode: params.branchCode
   });
+  const pricesIncludeTax = params.pricesIncludeTax !== void 0 ? Boolean(params.pricesIncludeTax) : config?.pricesIncludeTax ?? true;
+  const defaultTaxRateCode = config?.defaultTaxRateCode || (config?.isSimplifiedRegime ? "10" : "08");
   let subtotal = 0;
   let taxAmount = 0;
   const normalizedItems = params.items.map((item, idx) => {
     const quantity = Math.max(1e-3, Number(item.quantity) || 1);
-    const unitPrice = Math.max(0, Number(item.unitPrice) || 0);
-    const lineSubtotal = quantity * unitPrice;
-    subtotal += lineSubtotal;
-    const taxRateCode = item.taxRateCode || (config?.isSimplifiedRegime ? "10" : "08");
+    const inputUnitPrice = Math.max(0, Number(item.unitPrice) || 0);
+    const taxRateCode = item.taxRateCode || defaultTaxRateCode;
     let taxRate = 0.13;
     if (taxRateCode === "04") taxRate = 0.04;
     else if (taxRateCode === "02") taxRate = 0.02;
     else if (taxRateCode === "01") taxRate = 0.01;
     else if (taxRateCode === "10") taxRate = 0;
-    const lineTax = lineSubtotal * taxRate;
+    let unitPriceNet;
+    let lineSubtotal;
+    let lineTax;
+    let lineTotal;
+    if (pricesIncludeTax && taxRate > 0) {
+      const grossTotal = quantity * inputUnitPrice;
+      unitPriceNet = Math.round(inputUnitPrice / (1 + taxRate) * 1e5) / 1e5;
+      lineSubtotal = Math.round(grossTotal / (1 + taxRate) * 100) / 100;
+      lineTax = Math.round((grossTotal - lineSubtotal) * 100) / 100;
+      lineTotal = Math.round(grossTotal * 100) / 100;
+    } else {
+      unitPriceNet = inputUnitPrice;
+      lineSubtotal = Math.round(quantity * unitPriceNet * 100) / 100;
+      lineTax = Math.round(lineSubtotal * taxRate * 100) / 100;
+      lineTotal = Math.round((lineSubtotal + lineTax) * 100) / 100;
+    }
+    subtotal += lineSubtotal;
     taxAmount += lineTax;
     return {
       lineNumber: idx + 1,
       cabysCode: item.cabysCode || defaultCabys,
       description: String(item.description || "Servicio / Producto").slice(0, 160),
       quantity,
-      unitPrice,
+      unitPrice: unitPriceNet,
+      unitPriceGross: inputUnitPrice,
       taxRateCode,
       taxRate: taxRate * 100,
       lineSubtotal,
       lineTax,
-      lineTotal: lineSubtotal + lineTax
+      lineTotal
     };
   });
-  const totalAmount = subtotal + taxAmount;
+  subtotal = Math.round(subtotal * 100) / 100;
+  taxAmount = Math.round(taxAmount * 100) / 100;
+  const totalAmount = Math.round((subtotal + taxAmount) * 100) / 100;
   const pdfUrl = `/api/almendro/public/voucher-pdf/${consecData.numericKey}`;
   const voucher = await saveElectronicVoucher(tenantId, {
     orderId: params.orderId,
@@ -6893,6 +6936,7 @@ async function emitManualOrNativeVoucher(tenantId, params) {
     pdfUrl,
     metadata: {
       items: normalizedItems,
+      pricesIncludeTax,
       paymentMethod: params.paymentMethod || "01",
       emittedVia: "BETICO_NATIVE",
       referenceKey: params.referenceKey || null
@@ -9178,7 +9222,7 @@ function classifySubagent(messageText) {
   if (/cancha|canchas|partido|f[uú]tbol|p[aá]del|mejenga|gramilla|reservar cancha|alquiler cancha|crt-|#res-/i.test(lower)) {
     return {
       id: "courts",
-      name: "Canchas & Deportes",
+      name: "Canchas y Deportes",
       badgeColor: "#fb923c",
       badgeBg: "rgba(249, 115, 22, 0.15)"
     };
@@ -9186,7 +9230,7 @@ function classifySubagent(messageText) {
   if (/servicio|servicios|cita|citas|agenda|agendar|turno|atenci[oó]n|doctor|especialista|disponibilidad de horario/i.test(lower)) {
     return {
       id: "booking",
-      name: "Citas & Agenda",
+      name: "Citas y Agenda",
       badgeColor: "#facc15",
       badgeBg: "rgba(234, 179, 8, 0.15)"
     };
@@ -9202,14 +9246,14 @@ function classifySubagent(messageText) {
   if (/precio|costo|cu[aá]nto|venden|cat[aá]logo|men[uú]|producto|productos|comprar|pedir|orden|pedido|foto|llevar|delivery|env[ií]o|carrito|sinpe|transferencia|efectivo|tarjeta|pago|pagar/i.test(lower)) {
     return {
       id: "sales",
-      name: "Ventas & Cat\xE1logo",
+      name: "Ventas y Cat\xE1logo",
       badgeColor: "#34d399",
       badgeBg: "rgba(52, 211, 153, 0.15)"
     };
   }
   return {
     id: "general",
-    name: "Asistente General / FAQ",
+    name: "Asistente General y Preguntas Frecuentes",
     badgeColor: "#60a5fa",
     badgeBg: "rgba(96, 165, 250, 0.15)"
   };
@@ -9327,15 +9371,14 @@ router8.get("/tenants", async (req, res) => {
 });
 router8.get("/conversations", async (req, res) => {
   try {
-    const tenantId = req.query.tenantId;
-    let queryText = `
+    const queryText = `
       SELECT DISTINCT ON (m.tenant_id, m.remote_jid)
         m.remote_jid as "remoteJid",
         m.tenant_id as "tenantId",
         t.name as "tenantName",
         t.slug as "tenantSlug",
         t.evolution_instance as "evolutionInstance",
-        COALESCE(m.push_name, 'Cliente') as "pushName",
+        COALESCE(m.push_name, 'Cliente Betico') as "pushName",
         m.message_text as "lastMessage",
         m.created_at as "lastMessageTime",
         m.from_me as "lastFromMe",
@@ -9344,14 +9387,11 @@ router8.get("/conversations", async (req, res) => {
       FROM chat_messages m
       JOIN tenants t ON t.id = m.tenant_id
       LEFT JOIN chat_sessions s ON s.tenant_id = m.tenant_id AND s.remote_jid = m.remote_jid
+      WHERE (t.slug = 'superadmin' OR t.evolution_instance IN ('betico_ventas', 'betico_soporte'))
+      ORDER BY m.tenant_id, m.remote_jid, m.created_at DESC
+      LIMIT 50
     `;
-    const params = [];
-    if (tenantId && tenantId !== "all") {
-      queryText += ` WHERE m.tenant_id = $1 `;
-      params.push(tenantId);
-    }
-    queryText += ` ORDER BY m.tenant_id, m.remote_jid, m.created_at DESC LIMIT 50`;
-    const result = await query(queryText, params);
+    const result = await query(queryText);
     const conversations = result.rows.map((conv) => {
       const subagent = classifySubagent(conv.lastMessage || "");
       return {
@@ -9364,7 +9404,7 @@ router8.get("/conversations", async (req, res) => {
     res.json(conversations);
   } catch (error) {
     console.error("[Live Chats] Error loading conversations:", error);
-    res.status(500).json({ error: "Error al cargar conversaciones en vivo" });
+    res.status(500).json({ error: "Error al cargar conversaciones de bots maestros" });
   }
 });
 router8.get("/messages", async (req, res) => {
@@ -9374,6 +9414,15 @@ router8.get("/messages", async (req, res) => {
     return;
   }
   try {
+    const tenantCheck = await query(`SELECT slug, evolution_instance FROM tenants WHERE id = $1`, [tenantId]);
+    const tRow = tenantCheck.rows[0];
+    const isMaster = tRow && (tRow.slug === "superadmin" || ["betico_ventas", "betico_soporte"].includes(tRow.evolution_instance));
+    if (!isMaster) {
+      res.status(403).json({
+        error: "Acceso restringido por privacidad: Los mensajes de clientes de comercios pertenecen exclusivamente al panel privado de cada comercio."
+      });
+      return;
+    }
     const result = await query(
       `SELECT id, tenant_id as "tenantId", remote_jid as "remoteJid",
               push_name as "pushName", from_me as "fromMe", message_text as "messageText",
@@ -9410,7 +9459,14 @@ router8.post("/reply", async (req, res) => {
       return;
     }
     const tenant = tenantRes.rows[0];
-    const instanceName = tenant.evolution_instance || `tenant_${tenant.slug}`;
+    const isMaster = tenant.slug === "superadmin" || ["betico_ventas", "betico_soporte"].includes(tenant.evolution_instance);
+    if (!isMaster) {
+      res.status(403).json({
+        error: "Acceso restringido: Solo se permite responder a chats de los Bots Maestros oficiales de Betico."
+      });
+      return;
+    }
+    const instanceName = tenant.evolution_instance || "betico_soporte";
     const cleanPhone = String(remoteJid).replace(/@.+$/, "").replace(/\D/g, "");
     try {
       await fetch(`${EVOLUTION_API_URL3}/message/sendText/${instanceName}`, {
@@ -9461,6 +9517,15 @@ router8.post("/toggle-ai", async (req, res) => {
       res.status(400).json({ error: "tenantId y remoteJid son requeridos" });
       return;
     }
+    const tenantRes = await query(`SELECT id, slug, evolution_instance FROM tenants WHERE id = $1`, [tenantId]);
+    const tenant = tenantRes.rows[0];
+    const isMaster = tenant && (tenant.slug === "superadmin" || ["betico_ventas", "betico_soporte"].includes(tenant.evolution_instance));
+    if (!isMaster) {
+      res.status(403).json({
+        error: "Acceso restringido: Solo se permite alternar modo en chats de los Bots Maestros oficiales."
+      });
+      return;
+    }
     await query(
       `INSERT INTO chat_sessions (tenant_id, remote_jid, is_human_mode, updated_at)
        VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
@@ -9476,6 +9541,88 @@ router8.post("/toggle-ai", async (req, res) => {
   } catch (error) {
     console.error("[Live Chats Toggle AI] Error:", error);
     res.status(500).json({ error: "Error al alternar modo del chat" });
+  }
+});
+router8.get("/tenants-telemetry", async (req, res) => {
+  try {
+    const tenantsRes = await query(`
+      SELECT id, name, slug, whatsapp_number as "whatsappNumber",
+             evolution_instance as "evolutionInstance",
+             ai_api_key_encrypted as "aiApiKeyEncrypted",
+             ai_provider as "aiProvider",
+             ai_model as "aiModel",
+             active
+      FROM tenants
+      WHERE slug != 'superadmin'
+      ORDER BY name ASC
+    `);
+    const todayMessagesRes = await query(`
+      SELECT tenant_id, COUNT(*) as count
+      FROM chat_messages
+      WHERE created_at >= CURRENT_DATE
+      GROUP BY tenant_id
+    `);
+    const todayMap = {};
+    for (const r of todayMessagesRes.rows) {
+      todayMap[r.tenant_id] = parseInt(r.count || "0", 10);
+    }
+    const recentMsgsRes = await query(`
+      SELECT tenant_id, message_text
+      FROM chat_messages
+      WHERE created_at >= (CURRENT_DATE - INTERVAL '7 days')
+      LIMIT 2000
+    `);
+    const distributionMap = {};
+    for (const msg of recentMsgsRes.rows) {
+      const tId = msg.tenant_id;
+      if (!distributionMap[tId]) {
+        distributionMap[tId] = { sales: 0, booking: 0, courts: 0, loyalty: 0, general: 0, handoff: 0 };
+      }
+      const sub = classifySubagent(msg.message_text || "");
+      distributionMap[tId][sub.id] = (distributionMap[tId][sub.id] || 0) + 1;
+    }
+    const telemetryList = tenantsRes.rows.map((t) => {
+      const todayCount = todayMap[t.id] || 0;
+      const rawDist = distributionMap[t.id] || { sales: 0, booking: 0, courts: 0, loyalty: 0, general: 0, handoff: 0 };
+      const totalDist = Object.values(rawDist).reduce((sum, v) => sum + v, 0);
+      const subagentsDistribution = totalDist > 0 ? {
+        sales: Math.round(rawDist.sales / totalDist * 100),
+        booking: Math.round(rawDist.booking / totalDist * 100),
+        courts: Math.round(rawDist.courts / totalDist * 100),
+        loyalty: Math.round(rawDist.loyalty / totalDist * 100),
+        general: Math.round(rawDist.general / totalDist * 100),
+        handoff: Math.round(rawDist.handoff / totalDist * 100)
+      } : {
+        sales: 20,
+        booking: 20,
+        courts: 0,
+        loyalty: 10,
+        general: 50,
+        handoff: 0
+      };
+      const hasByok = Boolean(t.aiApiKeyEncrypted && String(t.aiApiKeyEncrypted).trim() !== "");
+      const isConnected = Boolean(t.active && t.evolutionInstance);
+      return {
+        id: t.id,
+        name: t.name,
+        slug: t.slug,
+        whatsappNumber: t.whatsappNumber || null,
+        evolutionInstance: t.evolutionInstance || null,
+        connectionStatus: isConnected ? "connected" : "disconnected",
+        todayMessagesCount: todayCount,
+        activeSubagentsDistribution: subagentsDistribution,
+        aiHealth: {
+          status: hasByok ? "ok" : "no_key",
+          provider: t.aiProvider || "gemini",
+          model: t.aiModel || "gemini-2.5-flash",
+          byokActive: hasByok
+        }
+      };
+    });
+    res.json(telemetryList);
+  } catch (error) {
+    console.error("[Tenants Telemetry] Error:", error);
+    res.status(500).json({ error: "Error al consultar telemetr\xEDa t\xE9cnica de comercios" });
   }
 });
 var bots_chats_routes_default = router8;
@@ -9681,6 +9828,8 @@ router9.post("/config", upload.single("certificateFile"), async (req, res) => {
       smtpUser: body.smtpUser,
       smtpPass: body.smtpPass,
       resendApiKey: body.resendApiKey,
+      pricesIncludeTax: body.pricesIncludeTax !== void 0 ? body.pricesIncludeTax === "true" || body.pricesIncludeTax === true : void 0,
+      defaultTaxRateCode: body.defaultTaxRateCode ? String(body.defaultTaxRateCode).trim() : void 0,
       active: body.active !== void 0 ? body.active === "true" || body.active === true : void 0
     });
     res.json({
@@ -11611,6 +11760,8 @@ async function runMigrations() {
     ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS smtp_user VARCHAR(255) DEFAULT '';
     ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS smtp_pass_encrypted TEXT DEFAULT '';
     ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS resend_api_key_encrypted TEXT DEFAULT '';
+    ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS prices_include_tax BOOLEAN DEFAULT true;
+    ALTER TABLE tenant_hacienda_configs ADD COLUMN IF NOT EXISTS default_tax_rate_code VARCHAR(5) DEFAULT '08';
 
     CREATE TABLE IF NOT EXISTS tenant_hacienda_branches (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

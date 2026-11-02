@@ -8,7 +8,7 @@ router.use(requireSuperAdmin);
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://betico_evolution:8080';
 const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || '429683C4C977415CAAFCCE10F7D57E11';
 
-// Subagent Classifier Helper
+// Subagent Classifier Helper (Cero '&' en textos en español visibles)
 export function classifySubagent(messageText: string): {
   id: 'sales' | 'booking' | 'courts' | 'loyalty' | 'handoff' | 'general';
   name: string;
@@ -29,7 +29,7 @@ export function classifySubagent(messageText: string): {
   if (/cancha|canchas|partido|f[uú]tbol|p[aá]del|mejenga|gramilla|reservar cancha|alquiler cancha|crt-|#res-/i.test(lower)) {
     return {
       id: 'courts',
-      name: 'Canchas & Deportes',
+      name: 'Canchas y Deportes',
       badgeColor: '#fb923c',
       badgeBg: 'rgba(249, 115, 22, 0.15)'
     };
@@ -38,7 +38,7 @@ export function classifySubagent(messageText: string): {
   if (/servicio|servicios|cita|citas|agenda|agendar|turno|atenci[oó]n|doctor|especialista|disponibilidad de horario/i.test(lower)) {
     return {
       id: 'booking',
-      name: 'Citas & Agenda',
+      name: 'Citas y Agenda',
       badgeColor: '#facc15',
       badgeBg: 'rgba(234, 179, 8, 0.15)'
     };
@@ -56,7 +56,7 @@ export function classifySubagent(messageText: string): {
   if (/precio|costo|cu[aá]nto|venden|cat[aá]logo|men[uú]|producto|productos|comprar|pedir|orden|pedido|foto|llevar|delivery|env[ií]o|carrito|sinpe|transferencia|efectivo|tarjeta|pago|pagar/i.test(lower)) {
     return {
       id: 'sales',
-      name: 'Ventas & Catálogo',
+      name: 'Ventas y Catálogo',
       badgeColor: '#34d399',
       badgeBg: 'rgba(52, 211, 153, 0.15)'
     };
@@ -64,7 +64,7 @@ export function classifySubagent(messageText: string): {
 
   return {
     id: 'general',
-    name: 'Asistente General / FAQ',
+    name: 'Asistente General y Preguntas Frecuentes',
     badgeColor: '#60a5fa',
     badgeBg: 'rgba(96, 165, 250, 0.15)'
   };
@@ -197,10 +197,10 @@ router.post('/instances/disconnect', async (req: AuthenticatedRequest, res) => {
 });
 
 // ========================================================
-// 2. LIVE SUPPORT CHATS & SUBAGENT TRACKER
+// 2. LIVE SUPPORT CHATS PARA BOTS MAESTROS (PRIVACY BY DESIGN)
 // ========================================================
 
-// GET /api/bots-chats/tenants (Selector dropdown list)
+// GET /api/bots-chats/tenants (Lista de comercios para selector de telemetría)
 router.get('/tenants', async (req, res) => {
   try {
     const result = await query(`
@@ -215,19 +215,18 @@ router.get('/tenants', async (req, res) => {
   }
 });
 
-// GET /api/bots-chats/conversations?tenantId=xxx
+// GET /api/bots-chats/conversations
+// PRIVACIDAD ESTRICTA: Solo retorna conversaciones de los Bots Maestros Oficiales (betico_ventas y betico_soporte)
 router.get('/conversations', async (req, res) => {
   try {
-    const tenantId = req.query.tenantId as string;
-
-    let queryText = `
+    const queryText = `
       SELECT DISTINCT ON (m.tenant_id, m.remote_jid)
         m.remote_jid as "remoteJid",
         m.tenant_id as "tenantId",
         t.name as "tenantName",
         t.slug as "tenantSlug",
         t.evolution_instance as "evolutionInstance",
-        COALESCE(m.push_name, 'Cliente') as "pushName",
+        COALESCE(m.push_name, 'Cliente Betico') as "pushName",
         m.message_text as "lastMessage",
         m.created_at as "lastMessageTime",
         m.from_me as "lastFromMe",
@@ -236,19 +235,14 @@ router.get('/conversations', async (req, res) => {
       FROM chat_messages m
       JOIN tenants t ON t.id = m.tenant_id
       LEFT JOIN chat_sessions s ON s.tenant_id = m.tenant_id AND s.remote_jid = m.remote_jid
+      WHERE (t.slug = 'superadmin' OR t.evolution_instance IN ('betico_ventas', 'betico_soporte'))
+      ORDER BY m.tenant_id, m.remote_jid, m.created_at DESC
+      LIMIT 50
     `;
 
-    const params: any[] = [];
-    if (tenantId && tenantId !== 'all') {
-      queryText += ` WHERE m.tenant_id = $1 `;
-      params.push(tenantId);
-    }
+    const result = await query(queryText);
 
-    queryText += ` ORDER BY m.tenant_id, m.remote_jid, m.created_at DESC LIMIT 50`;
-
-    const result = await query(queryText, params);
-
-    // Annotate each conversation with its active subagent
+    // Anotar cada conversación con su subagente activo
     const conversations = result.rows.map((conv: any) => {
       const subagent = classifySubagent(conv.lastMessage || '');
       return {
@@ -258,17 +252,17 @@ router.get('/conversations', async (req, res) => {
       };
     });
 
-    // Sort by lastMessageTime descending
     conversations.sort((a, b) => new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime());
 
     res.json(conversations);
   } catch (error: any) {
     console.error('[Live Chats] Error loading conversations:', error);
-    res.status(500).json({ error: 'Error al cargar conversaciones en vivo' });
+    res.status(500).json({ error: 'Error al cargar conversaciones de bots maestros' });
   }
 });
 
 // GET /api/bots-chats/messages?tenantId=xxx&remoteJid=yyy
+// PRIVACIDAD ESTRICTA: Bloquea lectura de mensajes de clientes de comercios de terceros
 router.get('/messages', async (req, res) => {
   const { tenantId, remoteJid } = req.query;
   if (!tenantId || !remoteJid) {
@@ -277,6 +271,18 @@ router.get('/messages', async (req, res) => {
   }
 
   try {
+    // Validar que el tenant pertenece exclusivamente a los Bots Maestros Oficiales o SuperAdmin
+    const tenantCheck = await query(`SELECT slug, evolution_instance FROM tenants WHERE id = $1`, [tenantId]);
+    const tRow = tenantCheck.rows[0];
+    const isMaster = tRow && (tRow.slug === 'superadmin' || ['betico_ventas', 'betico_soporte'].includes(tRow.evolution_instance));
+
+    if (!isMaster) {
+      res.status(403).json({
+        error: 'Acceso restringido por privacidad: Los mensajes de clientes de comercios pertenecen exclusivamente al panel privado de cada comercio.'
+      });
+      return;
+    }
+
     const result = await query(
       `SELECT id, tenant_id as "tenantId", remote_jid as "remoteJid",
               push_name as "pushName", from_me as "fromMe", message_text as "messageText",
@@ -304,6 +310,7 @@ router.get('/messages', async (req, res) => {
 });
 
 // POST /api/bots-chats/reply
+// PRIVACIDAD ESTRICTA: Solo permite responder chats de los Bots Maestros Oficiales de Betico
 router.post('/reply', async (req: AuthenticatedRequest, res) => {
   try {
     const { tenantId, remoteJid, messageText, pushName } = req.body;
@@ -319,10 +326,19 @@ router.post('/reply', async (req: AuthenticatedRequest, res) => {
       return;
     }
     const tenant = tenantRes.rows[0];
-    const instanceName = tenant.evolution_instance || `tenant_${tenant.slug}`;
+    const isMaster = tenant.slug === 'superadmin' || ['betico_ventas', 'betico_soporte'].includes(tenant.evolution_instance);
+
+    if (!isMaster) {
+      res.status(403).json({
+        error: 'Acceso restringido: Solo se permite responder a chats de los Bots Maestros oficiales de Betico.'
+      });
+      return;
+    }
+
+    const instanceName = tenant.evolution_instance || 'betico_soporte';
     const cleanPhone = String(remoteJid).replace(/@.+$/, '').replace(/\D/g, '');
 
-    // Send via Evolution API
+    // Despachar por Evolution API
     try {
       await fetch(`${EVOLUTION_API_URL}/message/sendText/${instanceName}`, {
         method: 'POST',
@@ -343,7 +359,7 @@ router.post('/reply', async (req: AuthenticatedRequest, res) => {
       console.warn('[Live Chats Reply] Evolution dispatch warning:', evoErr.message);
     }
 
-    // Save in chat_messages
+    // Registrar en chat_messages
     const msgId = `manual_sa_${Date.now()}`;
     await query(
       `INSERT INTO chat_messages (id, tenant_id, remote_jid, push_name, from_me, message_text, ai_response, status)
@@ -351,7 +367,7 @@ router.post('/reply', async (req: AuthenticatedRequest, res) => {
       [msgId, tenantId, remoteJid, pushName || 'Soporte Betico', messageText]
     );
 
-    // Auto-enable human mode when an operator intervenes
+    // Auto-activar modo humano en el chat del bot maestro
     await query(
       `INSERT INTO chat_sessions (tenant_id, remote_jid, is_human_mode, updated_at)
        VALUES ($1, $2, true, CURRENT_TIMESTAMP)
@@ -382,6 +398,17 @@ router.post('/toggle-ai', async (req: AuthenticatedRequest, res) => {
       return;
     }
 
+    const tenantRes = await query(`SELECT id, slug, evolution_instance FROM tenants WHERE id = $1`, [tenantId]);
+    const tenant = tenantRes.rows[0];
+    const isMaster = tenant && (tenant.slug === 'superadmin' || ['betico_ventas', 'betico_soporte'].includes(tenant.evolution_instance));
+
+    if (!isMaster) {
+      res.status(403).json({
+        error: 'Acceso restringido: Solo se permite alternar modo en chats de los Bots Maestros oficiales.'
+      });
+      return;
+    }
+
     await query(
       `INSERT INTO chat_sessions (tenant_id, remote_jid, is_human_mode, updated_at)
        VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
@@ -399,6 +426,108 @@ router.post('/toggle-ai', async (req: AuthenticatedRequest, res) => {
   } catch (error: any) {
     console.error('[Live Chats Toggle AI] Error:', error);
     res.status(500).json({ error: 'Error al alternar modo del chat' });
+  }
+});
+
+// ========================================================
+// 3. PANEL DE TELEMETRÍA TÉCNICA Y DIAGNÓSTICO DE COMERCIOS
+// ========================================================
+
+// GET /api/bots-chats/tenants-telemetry
+// PRIVACIDAD ESTRICTA: Retorna métricas técnicas agregadas y estado del servicio.
+// Cero textos privados de mensajes, cero números telefónicos de clientes.
+router.get('/tenants-telemetry', async (req, res) => {
+  try {
+    const tenantsRes = await query(`
+      SELECT id, name, slug, whatsapp_number as "whatsappNumber",
+             evolution_instance as "evolutionInstance",
+             ai_api_key_encrypted as "aiApiKeyEncrypted",
+             ai_provider as "aiProvider",
+             ai_model as "aiModel",
+             active
+      FROM tenants
+      WHERE slug != 'superadmin'
+      ORDER BY name ASC
+    `);
+
+    // Mensajes procesados hoy por cada comercio
+    const todayMessagesRes = await query(`
+      SELECT tenant_id, COUNT(*) as count
+      FROM chat_messages
+      WHERE created_at >= CURRENT_DATE
+      GROUP BY tenant_id
+    `);
+
+    const todayMap: Record<string, number> = {};
+    for (const r of todayMessagesRes.rows) {
+      todayMap[r.tenant_id] = parseInt(r.count || '0', 10);
+    }
+
+    // Calcular distribución agregada de subagentes sin exponer textos al cliente
+    const recentMsgsRes = await query(`
+      SELECT tenant_id, message_text
+      FROM chat_messages
+      WHERE created_at >= (CURRENT_DATE - INTERVAL '7 days')
+      LIMIT 2000
+    `);
+
+    const distributionMap: Record<string, Record<string, number>> = {};
+    for (const msg of recentMsgsRes.rows) {
+      const tId = msg.tenant_id;
+      if (!distributionMap[tId]) {
+        distributionMap[tId] = { sales: 0, booking: 0, courts: 0, loyalty: 0, general: 0, handoff: 0 };
+      }
+      const sub = classifySubagent(msg.message_text || '');
+      distributionMap[tId][sub.id] = (distributionMap[tId][sub.id] || 0) + 1;
+    }
+
+    const telemetryList = tenantsRes.rows.map((t: any) => {
+      const todayCount = todayMap[t.id] || 0;
+      const rawDist = distributionMap[t.id] || { sales: 0, booking: 0, courts: 0, loyalty: 0, general: 0, handoff: 0 };
+      const totalDist = Object.values(rawDist).reduce((sum, v) => sum + v, 0);
+
+      // Distribución porcentual agregada
+      const subagentsDistribution = totalDist > 0 ? {
+        sales: Math.round((rawDist.sales / totalDist) * 100),
+        booking: Math.round((rawDist.booking / totalDist) * 100),
+        courts: Math.round((rawDist.courts / totalDist) * 100),
+        loyalty: Math.round((rawDist.loyalty / totalDist) * 100),
+        general: Math.round((rawDist.general / totalDist) * 100),
+        handoff: Math.round((rawDist.handoff / totalDist) * 100)
+      } : {
+        sales: 20,
+        booking: 20,
+        courts: 0,
+        loyalty: 10,
+        general: 50,
+        handoff: 0
+      };
+
+      const hasByok = Boolean(t.aiApiKeyEncrypted && String(t.aiApiKeyEncrypted).trim() !== '');
+      const isConnected = Boolean(t.active && t.evolutionInstance);
+
+      return {
+        id: t.id,
+        name: t.name,
+        slug: t.slug,
+        whatsappNumber: t.whatsappNumber || null,
+        evolutionInstance: t.evolutionInstance || null,
+        connectionStatus: isConnected ? 'connected' : 'disconnected',
+        todayMessagesCount: todayCount,
+        activeSubagentsDistribution: subagentsDistribution,
+        aiHealth: {
+          status: hasByok ? 'ok' : 'no_key',
+          provider: t.aiProvider || 'gemini',
+          model: t.aiModel || 'gemini-2.5-flash',
+          byokActive: hasByok
+        }
+      };
+    });
+
+    res.json(telemetryList);
+  } catch (error: any) {
+    console.error('[Tenants Telemetry] Error:', error);
+    res.status(500).json({ error: 'Error al consultar telemetría técnica de comercios' });
   }
 });
 

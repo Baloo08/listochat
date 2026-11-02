@@ -222,3 +222,13 @@ export function normalizeDateInput(inputDate: any, referenceDate: Date = new Dat
   }
   return getTodayCR(referenceDate);
 }
+
+/**
+ * Retorna la fecha de MAÑANA en Costa Rica exactamente en formato 'YYYY-MM-DD'.
+ */
+export function getTomorrowCR(referenceDate: Date = new Date()): string {
+  const parts = getNowCR(referenceDate);
+  const d = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + 1, 12, 0, 0));
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+}

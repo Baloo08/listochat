@@ -15,7 +15,11 @@ import {
   Phone,
   Sparkles,
   ChevronRight,
-  Headphones
+  Headphones,
+  Activity,
+  Lock,
+  BarChart3,
+  Cpu
 } from 'lucide-react';
 import { useAdminApi } from '../useAdminApi';
 
@@ -25,14 +29,6 @@ interface Instance {
   phoneNumber?: string;
   status: string;
   qrCode?: string | null;
-}
-
-interface Tenant {
-  id: string;
-  name: string;
-  slug: string;
-  whatsappNumber?: string;
-  evolutionInstance?: string;
 }
 
 interface Conversation {
@@ -73,27 +69,54 @@ interface Message {
   };
 }
 
+interface TenantTelemetry {
+  id: string;
+  name: string;
+  slug: string;
+  whatsappNumber?: string | null;
+  evolutionInstance?: string | null;
+  connectionStatus: 'connected' | 'disconnected';
+  todayMessagesCount: number;
+  activeSubagentsDistribution: {
+    sales: number;
+    booking: number;
+    courts: number;
+    loyalty: number;
+    general: number;
+    handoff: number;
+  };
+  aiHealth: {
+    status: 'ok' | 'no_key' | 'quota_error' | 'recent_errors';
+    provider: string;
+    model: string;
+    byokActive: boolean;
+  };
+}
+
 export default function MasterBotsAndLiveChats() {
   const api = useAdminApi();
 
-  // Master instances states
+  // Estados de instancias maestras
   const [instances, setInstances] = useState<Instance[]>([]);
   const [loadingInstances, setLoadingInstances] = useState(false);
   const [connectingType, setConnectingType] = useState<string | null>(null);
 
-  // Live chats states
-  const [tenants, setTenants] = useState<Tenant[]>([]);
-  const [selectedTenantFilter, setSelectedTenantFilter] = useState<string>('all');
+  // Estados de chats de bots maestros
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loadingConversations, setLoadingConversations] = useState(false);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
 
-  // Active chat thread
+  // Hilo de mensajes en vivo del bot maestro
   const [messages, setMessages] = useState<Message[]>([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [replyText, setReplyText] = useState('');
   const [sendingReply, setSendingReply] = useState(false);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
+
+  // Estados de telemetría de comercios
+  const [telemetryList, setTelemetryList] = useState<TenantTelemetry[]>([]);
+  const [loadingTelemetry, setLoadingTelemetry] = useState(false);
+  const [telemetrySearch, setTelemetrySearch] = useState('');
 
   const loadInstances = async () => {
     try {
@@ -107,19 +130,10 @@ export default function MasterBotsAndLiveChats() {
     }
   };
 
-  const loadTenants = async () => {
-    try {
-      const data = await api.get('/api/bots-chats/tenants');
-      if (Array.isArray(data)) setTenants(data);
-    } catch (e: any) {
-      console.warn('Error cargando comercios:', e);
-    }
-  };
-
-  const loadConversations = async (tenantId = selectedTenantFilter) => {
+  const loadConversations = async () => {
     try {
       setLoadingConversations(true);
-      const data = await api.get(`/api/bots-chats/conversations?tenantId=${tenantId}`);
+      const data = await api.get('/api/bots-chats/conversations');
       if (Array.isArray(data)) {
         setConversations(data);
         if (data.length > 0 && !selectedConversation) {
@@ -127,9 +141,21 @@ export default function MasterBotsAndLiveChats() {
         }
       }
     } catch (e: any) {
-      console.warn('Error cargando conversaciones:', e);
+      console.warn('Error cargando conversaciones de bots maestros:', e);
     } finally {
       setLoadingConversations(false);
+    }
+  };
+
+  const loadTelemetry = async () => {
+    try {
+      setLoadingTelemetry(true);
+      const data = await api.get('/api/bots-chats/tenants-telemetry');
+      if (Array.isArray(data)) setTelemetryList(data);
+    } catch (e: any) {
+      console.warn('Error cargando telemetría de comercios:', e);
+    } finally {
+      setLoadingTelemetry(false);
     }
   };
 
@@ -149,12 +175,13 @@ export default function MasterBotsAndLiveChats() {
 
   useEffect(() => {
     loadInstances();
-    loadTenants();
-    loadConversations('all');
+    loadConversations();
+    loadTelemetry();
 
-    // Polling every 12 seconds for fresh chat updates
+    // Polling cada 12 segundos para actualización de telemetría y mensajes
     const interval = setInterval(() => {
-      loadConversations(selectedTenantFilter);
+      loadConversations();
+      loadTelemetry();
       if (selectedConversation) {
         api.get(`/api/bots-chats/messages?tenantId=${selectedConversation.tenantId}&remoteJid=${encodeURIComponent(selectedConversation.remoteJid)}`)
           .then(res => { if (Array.isArray(res)) setMessages(res); })
@@ -163,7 +190,7 @@ export default function MasterBotsAndLiveChats() {
     }, 12000);
 
     return () => clearInterval(interval);
-  }, [selectedTenantFilter, selectedConversation?.remoteJid]);
+  }, [selectedConversation?.remoteJid]);
 
   const handleConnectInstance = async (type: string) => {
     setConnectingType(type);
@@ -224,7 +251,6 @@ export default function MasterBotsAndLiveChats() {
         pushName: 'Soporte Betico'
       });
       setReplyText('');
-      // Reload message thread
       const updatedMsgs = await api.get(`/api/bots-chats/messages?tenantId=${selectedConversation.tenantId}&remoteJid=${encodeURIComponent(selectedConversation.remoteJid)}`);
       if (Array.isArray(updatedMsgs)) setMessages(updatedMsgs);
       setActionNotice('Mensaje enviado con éxito por WhatsApp');
@@ -235,26 +261,32 @@ export default function MasterBotsAndLiveChats() {
     }
   };
 
+  const filteredTelemetry = telemetryList.filter(t => 
+    t.name.toLowerCase().includes(telemetrySearch.toLowerCase()) ||
+    t.slug.toLowerCase().includes(telemetrySearch.toLowerCase())
+  );
+
   return (
     <div style={{ padding: '24px', maxWidth: '1400px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
       
-      {/* HEADER */}
+      {/* ENCABEZADO PRINCIPAL */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <MessageSquare size={26} style={{ color: '#34D399' }} />
             <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 800, color: '#FAF8F5' }}>
-              Bots Maestros y Monitoreo de Chats en Vivo
+              Bots Maestros y Telemetría Técnica
             </h1>
           </div>
           <p style={{ margin: '4px 0 0 0', color: '#94a3b8', fontSize: '0.85rem' }}>
-            Conexión de bots centrales de WhatsApp y supervisión en tiempo real con clasificador de subagentes IA
+            Atención en vivo para prospectos de Betico y panel de salud técnica para comercios con privacidad garantizada
           </p>
         </div>
         <button
           onClick={() => {
             loadInstances();
-            loadConversations(selectedTenantFilter);
+            loadConversations();
+            loadTelemetry();
           }}
           style={{
             display: 'flex',
@@ -292,7 +324,7 @@ export default function MasterBotsAndLiveChats() {
         </div>
       )}
 
-      {/* SECCIÓN 1: BOTS MAESTROS DE WHATSAPP (VENTAS Y SOPORTE) */}
+      {/* SECCIÓN 1: INSTANCIAS MAESTRAS DE WHATSAPP (VENTAS Y SOPORTE) */}
       <div style={{ backgroundColor: '#0f2426', border: '1px solid #1a3e40', borderRadius: '16px', padding: '22px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
           <Shield size={18} color="#34D399" />
@@ -404,51 +436,25 @@ export default function MasterBotsAndLiveChats() {
         </div>
       </div>
 
-      {/* SECCIÓN 2: CHATS EN VIVO CON SELECCIÓN DE TENANT Y SEGUIMIENTO DE SUBAGENTES */}
+      {/* SECCIÓN 2: CHATS EN VIVO EXCLUSIVOS DE LOS BOTS MAESTROS DE BETICO */}
       <div style={{ backgroundColor: '#0f2426', border: '1px solid #1a3e40', borderRadius: '16px', padding: '22px' }}>
-        
-        {/* Selector de Tenant */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
+        <div style={{ marginBottom: '16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <Building2 size={20} color="#34D399" />
+            <MessageSquare size={20} color="#34D399" />
             <h2 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: '#FAF8F5' }}>
-              Auditoría y Soporte en Vivo por Comercio
+              Bandeja de Chats en Vivo — Bots Maestros de Betico
             </h2>
           </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '0.82rem', color: '#94a3b8' }}>Filtrar Comercio:</span>
-            <select
-              value={selectedTenantFilter}
-              onChange={(e) => {
-                setSelectedTenantFilter(e.target.value);
-                loadConversations(e.target.value);
-              }}
-              style={{
-                padding: '8px 12px',
-                backgroundColor: '#071213',
-                color: '#FAF8F5',
-                border: '1px solid #234b4e',
-                borderRadius: '8px',
-                fontSize: '0.85rem',
-                fontWeight: 600,
-                outline: 'none',
-                cursor: 'pointer'
-              }}
-            >
-              <option value="all">⚡ Todos los Comercios Activos</option>
-              {tenants.map(t => (
-                <option key={t.id} value={t.id}>{t.name} (/{t.slug})</option>
-              ))}
-            </select>
-          </div>
+          <p style={{ margin: '4px 0 0 0', color: '#94a3b8', fontSize: '0.82rem' }}>
+            Atención en tiempo real para prospectos y usuarios que contactan directamente los números oficiales de Betico.
+          </p>
         </div>
 
-        {/* CONTENEDOR SPLIT: LISTA DE CHATS (IZQUIERDA) Y HILO DE CONVERSACIÓN (DERECHA) */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 380px) 1fr', gap: '16px', minHeight: '520px' }}>
+        {/* CONTENEDOR SPLIT: LISTA DE CHATS MAESTROS (IZQUIERDA) Y HILO DE CONVERSACIÓN (DERECHA) */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 380px) 1fr', gap: '16px', minHeight: '480px' }}>
           
-          {/* LISTA DE CONVERSACIONES */}
-          <div style={{ backgroundColor: '#071213', border: '1px solid #1a3e40', borderRadius: '12px', overflowY: 'auto', maxHeight: '580px' }}>
+          {/* LISTA DE CONVERSACIONES MAESTRAS */}
+          <div style={{ backgroundColor: '#071213', border: '1px solid #1a3e40', borderRadius: '12px', overflowY: 'auto', maxHeight: '520px' }}>
             {loadingConversations ? (
               <div style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>
                 <RotateCw size={24} className="animate-spin" style={{ margin: '0 auto 8px auto', color: '#34D399' }} />
@@ -456,7 +462,7 @@ export default function MasterBotsAndLiveChats() {
               </div>
             ) : conversations.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '40px', color: '#64748b', fontSize: '0.85rem' }}>
-                No hay conversaciones registradas para el filtro seleccionado.
+                No hay conversaciones recientes en los bots maestros de Betico.
               </div>
             ) : (
               conversations.map(conv => {
@@ -476,7 +482,7 @@ export default function MasterBotsAndLiveChats() {
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
                       <span style={{ fontSize: '0.9rem', fontWeight: 700, color: '#FAF8F5' }}>
-                        {conv.pushName || 'Cliente'}
+                        {conv.pushName || 'Prospecto Betico'}
                       </span>
                       <span style={{ fontSize: '0.7rem', color: '#64748b' }}>
                         {new Date(conv.lastMessageTime).toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit' })}
@@ -484,14 +490,13 @@ export default function MasterBotsAndLiveChats() {
                     </div>
 
                     <div style={{ fontSize: '0.75rem', color: '#34D399', fontWeight: 600, marginBottom: '6px' }}>
-                      {conv.tenantName} (/{conv.tenantSlug})
+                      Instancia: {conv.evolutionInstance || 'betico_oficial'}
                     </div>
 
                     <div style={{ fontSize: '0.8rem', color: '#94a3b8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: '8px' }}>
                       {conv.lastFromMe ? 'Asistente: ' : ''}{conv.lastMessage}
                     </div>
 
-                    {/* SUBAGENT BADGE Y MODO HUMANO */}
                     <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
                       <span style={{
                         fontSize: '0.68rem',
@@ -537,7 +542,7 @@ export default function MasterBotsAndLiveChats() {
                       </span>
                     </div>
                     <div style={{ fontSize: '0.75rem', color: '#34D399', marginTop: '2px' }}>
-                      Comercio: <strong>{selectedConversation.tenantName}</strong> • Instancia: <code>{selectedConversation.evolutionInstance || 'N/A'}</code>
+                      Bot Maestro Oficial • Instancia: <code>{selectedConversation.evolutionInstance || 'betico'}</code>
                     </div>
                   </div>
 
@@ -562,7 +567,7 @@ export default function MasterBotsAndLiveChats() {
                 </div>
 
                 {/* Área de Mensajes */}
-                <div style={{ flex: 1, padding: '18px', overflowY: 'auto', maxHeight: '420px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ flex: 1, padding: '18px', overflowY: 'auto', maxHeight: '360px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   {loadingMessages ? (
                     <div style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>
                       <RotateCw size={24} className="animate-spin" style={{ margin: '0 auto 8px auto', color: '#34D399' }} />
@@ -619,7 +624,7 @@ export default function MasterBotsAndLiveChats() {
                   )}
                 </div>
 
-                {/* Input de Respuesta Manual de Soporte */}
+                {/* Formulario de Respuesta Manual de Soporte */}
                 <form onSubmit={handleSendReply} style={{ padding: '12px 16px', borderTop: '1px solid #1a3e40', display: 'flex', gap: '8px' }}>
                   <input
                     type="text"
@@ -663,12 +668,181 @@ export default function MasterBotsAndLiveChats() {
             ) : (
               <div style={{ textAlign: 'center', padding: '60px 20px', color: '#64748b' }}>
                 <MessageSquare size={36} style={{ margin: '0 auto 12px auto', color: '#163638' }} />
-                <p style={{ margin: 0 }}>Selecciona una conversación a la izquierda para ver el historial y actuar.</p>
+                <p style={{ margin: 0 }}>Selecciona una conversación a la izquierda para interactuar en vivo con el cliente de Betico.</p>
               </div>
             )}
           </div>
 
         </div>
+      </div>
+
+      {/* SECCIÓN 3: PANEL DE TELEMETRÍA TÉCNICA Y DIAGNÓSTICO DE SALUD DE COMERCIOS */}
+      <div style={{ backgroundColor: '#0f2426', border: '1px solid #1a3e40', borderRadius: '16px', padding: '22px' }}>
+        
+        {/* Banner de Privacidad Estricta */}
+        <div style={{
+          backgroundColor: '#091c1e',
+          border: '1px solid #1b4b4e',
+          borderRadius: '12px',
+          padding: '14px 18px',
+          marginBottom: '20px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px'
+        }}>
+          <Lock size={22} style={{ color: '#34D399', flexShrink: 0 }} />
+          <div>
+            <strong style={{ color: '#FAF8F5', fontSize: '0.9rem' }}>
+              🔒 Privacidad por Diseño Activa (GDPR y Protección de Datos)
+            </strong>
+            <p style={{ margin: '2px 0 0 0', color: '#94a3b8', fontSize: '0.8rem' }}>
+              Las conversaciones y números de teléfono de clientes de comercios pertenecen exclusivamente al panel privado de cada comercio. Betico Ops solo monitoriza telemetría técnica agregada, volumen de mensajes y salud del motor de IA.
+            </p>
+          </div>
+        </div>
+
+        {/* Header de Telemetría con Buscador */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px', flexWrap: 'wrap', gap: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <Activity size={20} color="#34D399" />
+            <h2 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: '#FAF8F5' }}>
+              Telemetría Técnica y Diagnóstico de Salud de Comercios
+            </h2>
+          </div>
+
+          <input
+            type="text"
+            value={telemetrySearch}
+            onChange={(e) => setTelemetrySearch(e.target.value)}
+            placeholder="Buscar por comercio o slug..."
+            style={{
+              padding: '8px 14px',
+              backgroundColor: '#071213',
+              color: '#FAF8F5',
+              border: '1px solid #234b4e',
+              borderRadius: '8px',
+              fontSize: '0.85rem',
+              outline: 'none',
+              width: '240px'
+            }}
+          />
+        </div>
+
+        {/* GRID DE TARJETAS DE TELEMETRÍA */}
+        {loadingTelemetry ? (
+          <div style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>
+            <RotateCw size={24} className="animate-spin" style={{ margin: '0 auto 8px auto', color: '#34D399' }} />
+            <span>Cargando telemetría de comercios...</span>
+          </div>
+        ) : filteredTelemetry.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '40px', color: '#64748b', fontSize: '0.85rem' }}>
+            No se encontraron comercios registrados para los criterios de búsqueda.
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))', gap: '16px' }}>
+            {filteredTelemetry.map(t => {
+              const isConnected = t.connectionStatus === 'connected';
+              return (
+                <div
+                  key={t.id}
+                  style={{
+                    backgroundColor: '#091819',
+                    border: '1px solid #1a3e40',
+                    borderRadius: '14px',
+                    padding: '18px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '14px'
+                  }}
+                >
+                  {/* Encabezado del Comercio */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Building2 size={18} color="#34D399" />
+                        <strong style={{ fontSize: '1rem', color: '#FAF8F5' }}>{t.name}</strong>
+                      </div>
+                      <span style={{ fontSize: '0.75rem', color: '#34D399', fontWeight: 600 }}>
+                        /{t.slug} {t.whatsappNumber ? `• Tel: +${t.whatsappNumber}` : ''}
+                      </span>
+                    </div>
+
+                    <span style={{
+                      fontSize: '0.72rem',
+                      fontWeight: 700,
+                      padding: '3px 8px',
+                      borderRadius: '6px',
+                      backgroundColor: isConnected ? 'rgba(52, 211, 153, 0.15)' : 'rgba(148, 163, 184, 0.15)',
+                      color: isConnected ? '#34D399' : '#94a3b8',
+                      border: isConnected ? '1px solid rgba(52, 211, 153, 0.3)' : '1px solid rgba(148, 163, 184, 0.3)'
+                    }}>
+                      {isConnected ? '🟢 WhatsApp Conectado' : '⚪ Desconectado'}
+                    </span>
+                  </div>
+
+                  {/* Volumen de Mensajes Hoy */}
+                  <div style={{ backgroundColor: '#071213', border: '1px solid #142e30', borderRadius: '10px', padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Mensajes procesados hoy:</span>
+                    <strong style={{ fontSize: '0.95rem', color: '#FAF8F5' }}>
+                      💬 {t.todayMessagesCount.toLocaleString('es-CR')}
+                    </strong>
+                  </div>
+
+                  {/* Desglose de Subagentes Activos */}
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                      <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 600 }}>
+                        Distribución de Subagentes:
+                      </span>
+                      <BarChart3 size={13} color="#94a3b8" />
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '0.7rem', padding: '2px 6px', borderRadius: '4px', backgroundColor: 'rgba(52, 211, 153, 0.15)', color: '#34d399', fontWeight: 700 }}>
+                        Ventas {t.activeSubagentsDistribution.sales}%
+                      </span>
+                      <span style={{ fontSize: '0.7rem', padding: '2px 6px', borderRadius: '4px', backgroundColor: 'rgba(234, 179, 8, 0.15)', color: '#facc15', fontWeight: 700 }}>
+                        Citas {t.activeSubagentsDistribution.booking}%
+                      </span>
+                      {t.activeSubagentsDistribution.courts > 0 && (
+                        <span style={{ fontSize: '0.7rem', padding: '2px 6px', borderRadius: '4px', backgroundColor: 'rgba(249, 115, 22, 0.15)', color: '#fb923c', fontWeight: 700 }}>
+                          Canchas {t.activeSubagentsDistribution.courts}%
+                        </span>
+                      )}
+                      <span style={{ fontSize: '0.7rem', padding: '2px 6px', borderRadius: '4px', backgroundColor: 'rgba(192, 132, 252, 0.15)', color: '#c084fc', fontWeight: 700 }}>
+                        Fidelización {t.activeSubagentsDistribution.loyalty}%
+                      </span>
+                      <span style={{ fontSize: '0.7rem', padding: '2px 6px', borderRadius: '4px', backgroundColor: 'rgba(96, 165, 250, 0.15)', color: '#60a5fa', fontWeight: 700 }}>
+                        General {t.activeSubagentsDistribution.general}%
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Estado de Salud de IA / BYOK */}
+                  <div style={{ borderTop: '1px solid #142e30', paddingTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Cpu size={14} color="#34D399" />
+                      <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Motor de IA:</span>
+                    </div>
+
+                    {t.aiHealth.byokActive ? (
+                      <span style={{ fontSize: '0.72rem', color: '#34D399', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <CheckCircle2 size={12} />
+                        BYOK Activo ({t.aiHealth.model})
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: '0.72rem', color: '#facc15', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <AlertTriangle size={12} />
+                        Sin Clave Propia (BYOK)
+                      </span>
+                    )}
+                  </div>
+
+                </div>
+              );
+            })}
+          </div>
+        )}
 
       </div>
 
