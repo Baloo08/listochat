@@ -7287,10 +7287,124 @@ var init_branches_repo = __esm({
   }
 });
 
+// ../src/server/services/audio-transcriber.service.ts
+var audio_transcriber_service_exports = {};
+__export(audio_transcriber_service_exports, {
+  transcribeAudio: () => transcribeAudio,
+  transcribeAudioWithGemini: () => transcribeAudioWithGemini,
+  transcribeAudioWithWhisper: () => transcribeAudioWithWhisper
+});
+async function transcribeAudioWithGemini(base64Audio, mimetype = "audio/ogg", apiKey) {
+  try {
+    const cleanBase64 = base64Audio.replace(/^data:audio\/[a-z0-9]+;base64,/, "").trim();
+    if (!cleanBase64) {
+      return { success: false, text: "", error: "Audio base64 vac\xEDo" };
+    }
+    const key = apiKey || DEFAULT_GEMINI_KEY;
+    const cleanMime = (mimetype || "audio/ogg").split(";")[0].trim();
+    const models = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-flash-latest"];
+    for (const modelName of models) {
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${key}`;
+        const response = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [
+                  {
+                    inlineData: {
+                      mimeType: cleanMime,
+                      data: cleanBase64
+                    }
+                  },
+                  {
+                    text: "Por favor transcribe con exactitud lo que dice este mensaje de voz o audio en espa\xF1ol (Costa Rica / Latinoam\xE9rica). Devuelve \xFAnicamente el texto exacto sin saludos, explicaciones ni comentarios adicionales."
+                  }
+                ]
+              }
+            ],
+            generationConfig: {
+              temperature: 0.2
+            }
+          })
+        });
+        if (response.ok) {
+          const data = await response.json();
+          const candidateText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
+          if (candidateText) {
+            console.log(`[AudioTranscriber] Transcribed audio successfully (${candidateText.length} chars): "${candidateText}"`);
+            return { success: true, text: candidateText };
+          }
+        } else {
+          const errText = await response.text();
+          console.warn(`[AudioTranscriber] Model ${modelName} returned status ${response.status}: ${errText}`);
+        }
+      } catch (err) {
+        console.warn(`[AudioTranscriber] Error trying ${modelName}:`, err.message);
+      }
+    }
+    return { success: false, text: "", error: "No se pudo transcribir el audio con los modelos disponibles" };
+  } catch (error) {
+    console.error("[AudioTranscriber] Fatal transcription error:", error);
+    return { success: false, text: "", error: error.message || "Error desconocido" };
+  }
+}
+async function transcribeAudioWithWhisper(base64Audio, mimetype = "audio/ogg", prompt) {
+  try {
+    const LOCALAI_URL = process.env.LOCALAI_URL || "http://beticoia_localai:8080/v1";
+    const cleanBase64 = base64Audio.replace(/^data:audio\/[a-z0-9]+;base64,/, "").trim();
+    if (!cleanBase64) return { success: false, text: "", error: "Audio base64 vac\xEDo" };
+    const audioBuffer = Buffer.from(cleanBase64, "base64");
+    const ext = mimetype.includes("ogg") ? "ogg" : mimetype.includes("mp3") ? "mp3" : mimetype.includes("mp4") ? "mp4" : "ogg";
+    const blob = new Blob([audioBuffer], { type: mimetype });
+    const formData = new FormData();
+    formData.append("file", blob, `audio.${ext}`);
+    formData.append("model", "whisper-1");
+    formData.append("language", "es");
+    if (prompt && prompt.trim()) {
+      formData.append("prompt", prompt.trim().slice(0, 300));
+    }
+    const response = await fetch(`${LOCALAI_URL}/audio/transcriptions`, {
+      method: "POST",
+      headers: { "Authorization": "Bearer localai" },
+      body: formData
+    });
+    if (response.ok) {
+      const data = await response.json();
+      const text = data.text?.trim() || "";
+      if (text) {
+        console.log(`[AudioTranscriber] Whisper transcribed: "${text}"`);
+        return { success: true, text };
+      }
+    }
+    console.warn(`[AudioTranscriber] Whisper failed (${response.status}), falling back to Gemini...`);
+    return { success: false, text: "", error: `Whisper returned ${response.status}` };
+  } catch (error) {
+    console.warn("[AudioTranscriber] Whisper error, falling back to Gemini:", error.message);
+    return { success: false, text: "", error: error.message };
+  }
+}
+async function transcribeAudio(base64Audio, mimetype = "audio/ogg", apiKey, prompt) {
+  const whisperResult = await transcribeAudioWithWhisper(base64Audio, mimetype, prompt);
+  if (whisperResult.success) return whisperResult;
+  console.log("[AudioTranscriber] Falling back to Gemini for transcription...");
+  return transcribeAudioWithGemini(base64Audio, mimetype, apiKey);
+}
+var DEFAULT_GEMINI_KEY;
+var init_audio_transcriber_service = __esm({
+  "../src/server/services/audio-transcriber.service.ts"() {
+    "use strict";
+    init_env();
+    DEFAULT_GEMINI_KEY = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || env.GEMINI_API_KEY || "AQ.Ab8RN6IHcdDKDITkdIOjt8SznSc6lS_1grotOA6SQ6fjZnd2SQ";
+  }
+});
+
 // src/server/index.ts
 import express from "express";
 import cors from "cors";
-import path from "path";
+import path2 from "path";
 import { fileURLToPath } from "url";
 import dotenv3 from "dotenv";
 
@@ -10498,6 +10612,810 @@ router10.post("/emit-order-invoice/:orderId", async (req, res) => {
 });
 var almendro_routes_default = router10;
 
+// src/server/routes/copilot.routes.ts
+import { Router as Router11 } from "express";
+import crypto7 from "crypto";
+import multer2 from "multer";
+
+// src/server/services/copilot-processor.ts
+import fs from "fs";
+import path from "path";
+import * as XLSX from "xlsx";
+function sanitizeSpanishText(str) {
+  if (!str) return str;
+  return str.replace(/\s*&\s*/g, " y ");
+}
+function classifyMimeType(mimeType, filename) {
+  const cleanMime = (mimeType || "").toLowerCase().trim();
+  const cleanName = (filename || "").toLowerCase().trim();
+  const ext = cleanName.includes(".") ? cleanName.split(".").pop() || "" : "";
+  if (cleanMime.startsWith("image/") || ["png", "jpg", "jpeg", "webp", "gif", "svg"].includes(ext)) {
+    let badge = "IMAGEN";
+    if (cleanMime.includes("png") || ext === "png") badge = "PNG";
+    else if (cleanMime.includes("jpeg") || cleanMime.includes("jpg") || ext === "jpg" || ext === "jpeg") badge = "JPEG";
+    else if (cleanMime.includes("webp") || ext === "webp") badge = "WEBP";
+    return { category: "image", detectedMime: cleanMime || `image/${ext || "jpeg"}`, extension: ext || "png", badgeLabel: badge };
+  }
+  if (cleanMime === "application/pdf" || ext === "pdf") {
+    return { category: "pdf", detectedMime: "application/pdf", extension: "pdf", badgeLabel: "PDF" };
+  }
+  if (cleanMime === "text/csv" || cleanMime.includes("spreadsheet") || cleanMime.includes("excel") || ["csv", "xlsx", "xls"].includes(ext)) {
+    let badge = "EXCEL/CSV";
+    if (cleanMime === "text/csv" || ext === "csv") badge = "CSV";
+    else if (ext === "xlsx" || cleanMime.includes("openxmlformats")) badge = "XLSX";
+    return { category: "spreadsheet", detectedMime: cleanMime || (ext === "csv" ? "text/csv" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"), extension: ext || "csv", badgeLabel: badge };
+  }
+  if (cleanMime.startsWith("audio/") || ["webm", "mp3", "wav", "ogg", "m4a"].includes(ext)) {
+    let badge = "AUDIO";
+    if (cleanMime.includes("webm") || ext === "webm") badge = "AUDIO/WEBM";
+    else if (cleanMime.includes("mp3") || ext === "mp3") badge = "AUDIO/MP3";
+    else if (cleanMime.includes("wav") || ext === "wav") badge = "AUDIO/WAV";
+    return { category: "audio", detectedMime: cleanMime || `audio/${ext || "webm"}`, extension: ext || "webm", badgeLabel: badge };
+  }
+  return { category: "unknown", detectedMime: cleanMime || "application/octet-stream", extension: ext || "bin", badgeLabel: "ARCHIVO" };
+}
+function parsePrice(val) {
+  if (typeof val === "number") return isNaN(val) ? 0 : Math.round(val);
+  if (!val) return 0;
+  const str = String(val).trim();
+  const cleaned = str.replace(/[^\d.,]/g, "");
+  if (!cleaned) return 0;
+  if (cleaned.includes(".") && cleaned.includes(",")) {
+    const lastDot = cleaned.lastIndexOf(".");
+    const lastComma = cleaned.lastIndexOf(",");
+    if (lastDot > lastComma) {
+      const noThousands = cleaned.replace(/,/g, "");
+      const num2 = parseFloat(noThousands);
+      return isNaN(num2) ? 0 : Math.round(num2);
+    } else {
+      const noThousands = cleaned.replace(/\./g, "").replace(/,/g, ".");
+      const num2 = parseFloat(noThousands);
+      return isNaN(num2) ? 0 : Math.round(num2);
+    }
+  }
+  if (cleaned.includes(".")) {
+    const parts = cleaned.split(".");
+    if (parts.length > 2 || parts[1].length === 3) {
+      const num3 = parseFloat(parts.join(""));
+      return isNaN(num3) ? 0 : Math.round(num3);
+    }
+    const num2 = parseFloat(cleaned);
+    return isNaN(num2) ? 0 : Math.round(num2);
+  }
+  if (cleaned.includes(",")) {
+    const parts = cleaned.split(",");
+    if (parts.length > 2 || parts[1].length === 3) {
+      const num3 = parseFloat(parts.join(""));
+      return isNaN(num3) ? 0 : Math.round(num3);
+    }
+    const normalized = cleaned.replace(/,/g, ".");
+    const num2 = parseFloat(normalized);
+    return isNaN(num2) ? 0 : Math.round(num2);
+  }
+  const num = parseFloat(cleaned);
+  return isNaN(num) ? 0 : Math.round(num);
+}
+function generateSlug(name) {
+  const base = sanitizeSpanishText(name || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return base || `comercio-${Date.now().toString().slice(-4)}`;
+}
+function detectCostaRicaTaxId(text) {
+  if (!text) return null;
+  const jurMatch = text.match(/\b(3[-\s]?\d{3}[-\s]?\d{6})\b/) || text.match(/\b(3\d{9})\b/);
+  if (jurMatch) {
+    const raw = jurMatch[1].replace(/\D/g, "");
+    if (raw.length === 10) {
+      return { idType: "02", idNumber: raw };
+    }
+  }
+  const fisMatch = text.match(/\b([1-9][-\s]?\d{4}[-\s]?\d{4})\b/) || text.match(/\b([1-9]\d{8})\b/);
+  if (fisMatch) {
+    const raw = fisMatch[1].replace(/\D/g, "");
+    if (raw.length === 9) {
+      return { idType: "01", idNumber: raw };
+    }
+  }
+  const dimMatch = text.match(/\b(\d{11,12})\b/);
+  if (dimMatch) {
+    return { idType: "03", idNumber: dimMatch[1] };
+  }
+  return null;
+}
+function extractCatalogFromSpreadsheet(buffer) {
+  try {
+    const workbook = XLSX.read(buffer, { type: "buffer" });
+    const sheetNames = workbook.SheetNames || [];
+    if (sheetNames.length === 0) return [];
+    const allItems = [];
+    for (const sheetName of sheetNames) {
+      const worksheet = workbook.Sheets[sheetName];
+      if (!worksheet) continue;
+      const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+      if (!rows || rows.length === 0) continue;
+      let headerRowIdx = -1;
+      let nameCol = -1;
+      let priceCol = -1;
+      let categoryCol = -1;
+      let descriptionCol = -1;
+      for (let r = 0; r < Math.min(rows.length, 6); r++) {
+        const row = rows[r];
+        if (!Array.isArray(row)) continue;
+        for (let c = 0; c < row.length; c++) {
+          const val = String(row[c] || "").toLowerCase().trim();
+          if (["nombre", "producto", "platillo", "articulo", "art\xEDculo", "servicio", "item", "name", "title"].some((k) => val.includes(k))) {
+            if (nameCol === -1) nameCol = c;
+          }
+          if (["precio", "costo", "monto", "price", "valor", "crc", "colones"].some((k) => val.includes(k))) {
+            if (priceCol === -1) priceCol = c;
+          }
+          if (["categoria", "categor\xEDa", "seccion", "secci\xF3n", "rubro", "category"].some((k) => val.includes(k))) {
+            if (categoryCol === -1) categoryCol = c;
+          }
+          if (["descripcion", "descripci\xF3n", "detalle", "description"].some((k) => val.includes(k))) {
+            if (descriptionCol === -1) descriptionCol = c;
+          }
+        }
+        if (nameCol !== -1 && priceCol !== -1) {
+          headerRowIdx = r;
+          break;
+        }
+      }
+      if (headerRowIdx === -1 && (nameCol === -1 || priceCol === -1)) {
+        continue;
+      }
+      if (nameCol === -1) nameCol = 0;
+      if (priceCol === -1) priceCol = 1;
+      const startRow = headerRowIdx >= 0 ? headerRowIdx + 1 : 0;
+      const defaultCategory = !["hoja1", "sheet1", "libro", "datos"].includes(sheetName.toLowerCase()) ? sanitizeSpanishText(sheetName.trim()) : "General";
+      for (let r = startRow; r < rows.length; r++) {
+        const row = rows[r];
+        if (!Array.isArray(row) || row.length === 0) continue;
+        const rawName = String(row[nameCol] || "").trim();
+        if (!rawName || rawName.toLowerCase() === "nombre" || rawName.toLowerCase() === "producto") continue;
+        const rawPrice = row[priceCol];
+        const price = parsePrice(rawPrice);
+        if (price <= 0 && isNaN(price)) continue;
+        const category = categoryCol !== -1 && row[categoryCol] ? String(row[categoryCol]).trim() : defaultCategory;
+        const description = descriptionCol !== -1 && row[descriptionCol] ? String(row[descriptionCol]).trim() : void 0;
+        allItems.push({
+          name: sanitizeSpanishText(rawName),
+          price,
+          category: category ? sanitizeSpanishText(category) : "General",
+          description: description ? sanitizeSpanishText(description) : ""
+        });
+      }
+    }
+    return allItems;
+  } catch (err) {
+    console.warn("[Copilot XLSX Parser] Error procesando archivo de hoja de calculo:", err);
+    return [];
+  }
+}
+function extractTextFromPdfBuffer(buffer) {
+  const content = buffer.toString("latin1");
+  const textChunks = [];
+  const tjRegex = /\(([^)]+)\)\s*(?:Tj|'|")/g;
+  let match;
+  while ((match = tjRegex.exec(content)) !== null) {
+    textChunks.push(match[1]);
+  }
+  const hexRegex = /<([0-9A-Fa-f]+)>\s*Tj/g;
+  while ((match = hexRegex.exec(content)) !== null) {
+    try {
+      const decoded = Buffer.from(match[1], "hex").toString("utf8");
+      textChunks.push(decoded);
+    } catch (_) {
+    }
+  }
+  const streamRegex = /stream\r?\n([\s\S]*?)\r?\nendstream/g;
+  while ((match = streamRegex.exec(content)) !== null) {
+    const rawStream = match[1];
+    const cleanStream = rawStream.replace(/[^\x20-\x7E\r\n]/g, " ");
+    if (cleanStream.length > 40) {
+      textChunks.push(cleanStream);
+    }
+  }
+  return textChunks.join(" ");
+}
+function extractFiscalDataFromText(text) {
+  if (!text) return null;
+  const taxId = detectCostaRicaTaxId(text);
+  const result = {};
+  if (taxId) {
+    result.idType = taxId.idType;
+    result.idNumber = taxId.idNumber;
+  }
+  const namePatterns = [
+    /(?:Razón Social|Razon Social|Nombre o Razón Social|Contribuyente|Denominación|Nombre)[\s:]+([A-Za-z0-9áéíóúÁÉÍÓÚñÑ\s.,]+?)(?=\s*(?:Cédula|Cedula|Identificación|Identificacion|\b(?:y\s+)?correo\b|\b(?:y\s+)?email\b|Fecha|Estado|Tipo|$))/i,
+    /(?:Sociedad|Empresa|Comercio)[\s:]+([A-Za-z0-9áéíóúÁÉÍÓÚñÑ\s.,]+?)(?=\s*(?:Cédula|Cedula|\b(?:y\s+)?correo\b|\b(?:y\s+)?email\b|$))/i
+  ];
+  for (const pat of namePatterns) {
+    const m = text.match(pat);
+    if (m && m[1]) {
+      let legal = m[1].trim().replace(/[\r\n]+/g, " ");
+      legal = legal.replace(/\s+y$/i, "").trim();
+      if (legal.length > 3) {
+        result.legalName = sanitizeSpanishText(legal);
+        break;
+      }
+    }
+  }
+  const emailMatch = text.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
+  if (emailMatch) {
+    result.email = emailMatch[1].toLowerCase().trim();
+  }
+  if (Object.keys(result).length === 0) {
+    return null;
+  }
+  return result;
+}
+function capitalizeItemName(str) {
+  const clean = sanitizeSpanishText(str.trim());
+  if (!clean) return clean;
+  return clean.charAt(0).toUpperCase() + clean.slice(1);
+}
+function cleanItemName(name) {
+  let cleaned = sanitizeSpanishText(name.trim());
+  cleaned = cleaned.replace(/^(?:(?:y\s+)?(?:agrega(?:r)?|añade|añadir|incluye|incluir|servicio(?:\s+de)?|producto(?:\s+de)?|platillo(?:\s+de)?)\s+)+/i, "");
+  return cleaned.trim();
+}
+function extractCatalogFromText(text) {
+  const items = [];
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const itemRegex = /(?:^|[-*•\s])\s*([A-Za-z0-9áéíóúÁÉÍÓÚñÑ\s]+?)\s*(?:[:=–—-]|\bpor\b|\ba\b|\ben\b)\s*(?:₡|CRC|\$)?\s*([0-9]+(?:[.,][0-9]+)*)\s*(?:colones|crc)?(?:\s*\(([^)]+)\))?/i;
+  for (const line of lines) {
+    const parts = line.split(/(?:;|\.\s+|,\s*|\s+y\s+)/);
+    for (const part of parts) {
+      const match = part.match(itemRegex);
+      if (match) {
+        const rawName = match[1].trim();
+        const rawPrice = match[2];
+        const category = match[3]?.trim();
+        const cleanedName = cleanItemName(rawName);
+        const lowerName = cleanedName.toLowerCase();
+        if (["whatsapp", "telefono", "tel\xE9fono", "cedula", "c\xE9dula", "plan", "correo", "email"].some((k) => lowerName.includes(k))) {
+          continue;
+        }
+        const price = parsePrice(rawPrice);
+        if (cleanedName.length >= 2 && price > 0) {
+          items.push({
+            name: capitalizeItemName(cleanedName),
+            price,
+            category: category ? sanitizeSpanishText(category) : "General"
+          });
+        }
+      }
+    }
+  }
+  return items;
+}
+function detectNicheAndModules(text) {
+  const lower = text.toLowerCase();
+  const modules = {};
+  let niche;
+  if (["restaurante", "comida", "pizza", "pizzas", "pizzeria", "pizzer\xEDa", "pasta", "pastas", "hamburguesa", "cafeteria", "cafeter\xEDa", "cafe", "caf\xE9", "sushi", "bar", "comidas", "comanda", "platillo"].some((w) => lower.includes(w))) {
+    niche = "restaurante";
+    modules.store = true;
+  }
+  if (["barberia", "barber\xEDa", "barbero", "peluqueria", "peluquer\xEDa", "salon", "sal\xF3n", "spa", "estetica", "est\xE9tica", "clinica", "cl\xEDnica", "consultorio", "veterinaria", "dentista", "u\xF1as", "citas", "reservas", "corte"].some((w) => lower.includes(w))) {
+    niche = "citas_servicios";
+    modules.bookings = true;
+  }
+  if (["padel", "p\xE1del", "cancha", "canchas", "futbol", "f\xFAtbol", "tenis", "basket", "deportivo", "club deportivo"].some((w) => lower.includes(w))) {
+    niche = "canchas";
+    modules.courts = true;
+  }
+  if (["fidelizacion", "fidelizaci\xF3n", "puntos", "sellos", "cashback", "recompensas", "lealtad"].some((w) => lower.includes(w))) {
+    modules.loyalty = true;
+  }
+  if (["factura", "facturas", "facturacion", "facturaci\xF3n", "hacienda", "tiquete", "cabys", "tributaria", "comprobante"].some((w) => lower.includes(w))) {
+    modules.billing = true;
+  }
+  return { niche, modules };
+}
+function detectPlan(text) {
+  const lower = text.toLowerCase();
+  if (lower.includes("plan enterprise") || lower.includes("enterprise")) return "enterprise";
+  if (lower.includes("plan business") || lower.includes("business")) return "business";
+  if (lower.includes("plan pro") || lower.includes("pro")) return "pro";
+  if (lower.includes("plan starter") || lower.includes("starter")) return "starter";
+  return void 0;
+}
+function detectBusinessName(text) {
+  const patterns = [
+    // 1. Asignaciones explícitas con dos puntos o igual (ej. Nuevo negocio: Cafetería El Grano de Oro)
+    /(?:nuevo\s+)?(?:comercio|negocio|restaurante|barbería|barberia|cafetería|cafeteria|panadería|panaderia|clínica|clinica)\s*[:=]\s*["']?([A-Za-z0-9áéíóúÁÉÍÓÚñÑ\s]{3,50}?)["']?(?=\s*(?:,|con|\.|\n|plan|slug|whatsapp|correo|email|y|$))/i,
+    /(?:nombre(?:\s*comercial|\s*del\s*negocio|\s*del\s*comercio)?)\s*[:=]\s*["']?([A-Za-z0-9áéíóúÁÉÍÓÚñÑ\s]{3,50}?)["']?(?=\s*(?:,|con|\.|\n|plan|slug|whatsapp|correo|email|y|$))/i,
+    // 2. Patrones con llamado / llamada / con nombre explícito
+    /(?:crear?|montar?|configurar?|alta|abrir|registrar?|nuevo)?\s*(?:un|una)?\s*(?:comercio|negocio|restaurante|barbería|barberia|cafetería|cafeteria|panadería|panaderia|taller|clínica|clinica|gimnasio)\s+(?:llamado|llamada|con nombre|nombre)\s*[:]?\s*["']?([A-Za-z0-9áéíóúÁÉÍÓÚñÑ\s]{3,50}?)["']?(?=\s*(?:,|con|\.|\n|plan|slug|whatsapp|correo|email|y|$))/i,
+    /(?:se\s*llama|llamado|llamada)\s+["']?([A-Za-z0-9áéíóúÁÉÍÓÚñÑ\s]{3,50}?)["']?(?=\s*(?:,|con|\.|\n|plan|slug|whatsapp|correo|email|y|$))/i,
+    // 3. Patrones de creación directa sin la palabra 'llamado' (ej. Crear restaurante La Cabaña del Chef con...)
+    /(?:crear?|montar?|configurar?|alta|abrir|registrar?)\s+(?:un|una)?\s*(?:comercio|negocio|restaurante|barbería|barberia|cafetería|cafeteria|panadería|panaderia|taller|clínica|clinica|gimnasio)\s+["']?([A-Za-z0-9áéíóúÁÉÍÓÚñÑ\s]{3,50}?)["']?(?=\s*(?:,|con|\.|\n|plan|slug|whatsapp|correo|email|y|$))/i,
+    // 4. Notas de voz dictadas y entrecomillados
+    /(?:nota\s*de\s*voz\s*dictada|dictado|dictada|nota\s*de\s*audio)\s*[:]\s*["']?([A-Za-z0-9áéíóúÁÉÍÓÚñÑ\s]{3,50}?)["']?(?=\s*(?:,|con|\.|\n|plan|slug|whatsapp|correo|email|y|$))/i,
+    /["']([A-Za-z0-9áéíóúÁÉÍÓÚñÑ\s]{3,40})["']/i
+  ];
+  for (const pat of patterns) {
+    const match = text.match(pat);
+    if (match && match[1]) {
+      const clean = match[1].trim();
+      const lower = clean.toLowerCase();
+      if (!["un", "el", "la", "mi", "nuevo", "comercio", "negocio"].includes(lower)) {
+        return sanitizeSpanishText(clean);
+      }
+    }
+  }
+  return void 0;
+}
+function detectCostaRicaPhone(text) {
+  const crMatch = text.match(/(?:\+?506[\s-]?)?([245678]\d{3}[-\s]?\d{4})\b/);
+  if (crMatch) {
+    const raw = crMatch[1].replace(/\D/g, "");
+    if (raw.length === 8) {
+      return `${raw.slice(0, 4)}-${raw.slice(4)}`;
+    }
+  }
+  return void 0;
+}
+function generateAssistantResponse(delta, filesProcessed, voiceTranscription) {
+  const parts = [];
+  if (voiceTranscription) {
+    parts.push(`He transcrito tu nota de voz: "${voiceTranscription}".`);
+  }
+  if (delta.name) {
+    parts.push(`He registrado el nombre comercial **${delta.name}**.`);
+  }
+  if (delta.slug) {
+    parts.push(`Asign\xE9 el slug p\xFAblico \`${delta.slug}\`.`);
+  }
+  if (delta.whatsappNumber) {
+    parts.push(`Configur\xE9 el n\xFAmero de WhatsApp **${delta.whatsappNumber}**.`);
+  }
+  if (delta.plan) {
+    parts.push(`Seleccion\xE9 el plan **${delta.plan.toUpperCase()}**.`);
+  }
+  if (delta.logoUrl) {
+    parts.push(`Guard\xE9 el logotipo institucional.`);
+  }
+  if (delta.bannerUrl) {
+    parts.push(`Asign\xE9 el banner de portada.`);
+  }
+  if (delta.modules) {
+    const activeMods = [];
+    if (delta.modules.store) activeMods.push("Tienda en L\xEDnea");
+    if (delta.modules.bookings) activeMods.push("Citas y Reservas");
+    if (delta.modules.courts) activeMods.push("Canchas Deportivas");
+    if (delta.modules.loyalty) activeMods.push("Club de Fidelizaci\xF3n");
+    if (delta.modules.billing) activeMods.push("Facturaci\xF3n Electr\xF3nica");
+    if (activeMods.length > 0) {
+      parts.push(`Habilit\xE9 los m\xF3dulos de ${activeMods.join(", ")}.`);
+    }
+  }
+  if (delta.fiscal?.idNumber) {
+    parts.push(`Detect\xE9 los datos fiscales de Costa Rica: C\xE9dula ${delta.fiscal.idNumber} y Raz\xF3n Social "${delta.fiscal.legalName || "Registrada"}".`);
+  } else if (delta.fiscal?.email) {
+    parts.push(`Registr\xE9 el correo fiscal ${delta.fiscal.email}.`);
+  }
+  if (delta.catalogItems && delta.catalogItems.length > 0) {
+    parts.push(`Extraje ${delta.catalogItems.length} elementos iniciales para el cat\xE1logo con precios en colones.`);
+  }
+  if (filesProcessed && filesProcessed.length > 0) {
+    parts.unshift(`Proces\xE9 con \xE9xito los archivos adjuntos (${filesProcessed.join(", ")}).`);
+  }
+  if (parts.length === 0) {
+    return sanitizeSpanishText(
+      "\xA1Hola! Soy tu Copilot de Onboarding Betico. Dime el nombre de tu comercio, qu\xE9 tipo de negocio es (restaurante, barber\xEDa, canchas deportivas, etc.), sube tu logotipo, listas de precios en Excel o constancia de situaci\xF3n tributaria en PDF, o graba una nota de voz para configurarlo todo autom\xE1ticamente."
+    );
+  }
+  return sanitizeSpanishText(
+    `\xA1Listo! ${parts.join(" ")} Revisa la vista previa en vivo en el panel derecho y presiona "Confirmar y Crear Comercio" para guardarlo en Betico Ops.`
+  );
+}
+function saveUploadFile(filename, buffer) {
+  const uploadDir2 = process.env.UPLOAD_DIR || path.resolve(process.cwd(), "uploads");
+  if (!fs.existsSync(uploadDir2)) {
+    fs.mkdirSync(uploadDir2, { recursive: true });
+  }
+  const cleanName = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const safeFilename = `copilot_${Date.now()}_${cleanName}`;
+  const filePath = path.join(uploadDir2, safeFilename);
+  fs.writeFileSync(filePath, buffer);
+  return `/uploads/${safeFilename}`;
+}
+async function tryTranscribeAudio(base64Audio, mimetype) {
+  try {
+    const mod = await Promise.resolve().then(() => (init_audio_transcriber_service(), audio_transcriber_service_exports));
+    if (mod && typeof mod.transcribeAudio === "function") {
+      const res = await mod.transcribeAudio(base64Audio, mimetype);
+      if (res && res.success && res.text) {
+        return res.text.trim();
+      }
+    }
+  } catch (err) {
+  }
+  return "";
+}
+function applyTextEntities(text, current, delta) {
+  if (!text || !text.trim()) return;
+  const foundName = detectBusinessName(text);
+  if (foundName) {
+    delta.name = foundName;
+    if (!current.slug) {
+      delta.slug = generateSlug(foundName);
+    }
+  }
+  const foundPhone = detectCostaRicaPhone(text);
+  if (foundPhone) delta.whatsappNumber = foundPhone;
+  const foundPlan = detectPlan(text);
+  if (foundPlan) delta.plan = foundPlan;
+  const { niche, modules } = detectNicheAndModules(text);
+  if (niche) delta.niche = niche;
+  if (Object.keys(modules).length > 0) {
+    delta.modules = {
+      store: modules.store ?? delta.modules?.store ?? current.modules?.store ?? false,
+      bookings: modules.bookings ?? delta.modules?.bookings ?? current.modules?.bookings ?? false,
+      courts: modules.courts ?? delta.modules?.courts ?? current.modules?.courts ?? false,
+      loyalty: modules.loyalty ?? delta.modules?.loyalty ?? current.modules?.loyalty ?? false,
+      billing: modules.billing ?? delta.modules?.billing ?? current.modules?.billing ?? false
+    };
+  }
+  const fiscalFromText = extractFiscalDataFromText(text);
+  if (fiscalFromText) {
+    delta.fiscal = {
+      idType: fiscalFromText.idType || delta.fiscal?.idType || current.fiscal?.idType || "01",
+      idNumber: fiscalFromText.idNumber || delta.fiscal?.idNumber || current.fiscal?.idNumber || "",
+      legalName: fiscalFromText.legalName || delta.fiscal?.legalName || current.fiscal?.legalName || delta.name || current.name || "",
+      email: fiscalFromText.email || delta.fiscal?.email || current.fiscal?.email || ""
+    };
+    if (fiscalFromText.idNumber) {
+      if (!delta.modules) delta.modules = { ...current.modules || { store: true, bookings: false, courts: false, loyalty: false, billing: false } };
+      delta.modules.billing = true;
+    }
+  }
+  const textCatalog = extractCatalogFromText(text);
+  if (textCatalog.length > 0) {
+    delta.catalogItems = [...delta.catalogItems || current.catalogItems || [], ...textCatalog];
+  }
+}
+async function processMultimodalInput(input) {
+  const current = input.currentProfile || {};
+  const delta = {};
+  const recognizedFiles = [];
+  const processedNames = [];
+  let voiceTranscription;
+  const textInput = (input.message || "").trim();
+  if (textInput) {
+    applyTextEntities(textInput, current, delta);
+  }
+  if (input.audioBase64) {
+    recognizedFiles.push({
+      name: "Nota de voz.webm",
+      mimeType: "audio/webm",
+      category: "audio",
+      badgeLabel: "AUDIO/VOZ"
+    });
+    processedNames.push("Nota de voz");
+    try {
+      const b64 = input.audioBase64.includes(";base64,") ? input.audioBase64.split(";base64,")[1] : input.audioBase64;
+      const audioBuffer = Buffer.from(b64, "base64");
+      saveUploadFile("nota_de_voz.webm", audioBuffer);
+      const transcribed = await tryTranscribeAudio(b64, "audio/webm");
+      if (transcribed) {
+        voiceTranscription = transcribed;
+        applyTextEntities(transcribed, current, delta);
+      }
+    } catch (aErr) {
+      console.warn("[Copilot AudioBase64] Advertencia procesando nota de voz:", aErr);
+    }
+  }
+  if (Array.isArray(input.files) && input.files.length > 0) {
+    for (const file of input.files) {
+      const { category, detectedMime, badgeLabel } = classifyMimeType(file.mimeType, file.name);
+      recognizedFiles.push({
+        name: file.name,
+        mimeType: detectedMime,
+        category,
+        badgeLabel
+      });
+      processedNames.push(file.name);
+      let buffer;
+      let rawBase64 = file.data;
+      if (file.data.startsWith("data:")) {
+        const base64Index = file.data.indexOf(";base64,");
+        rawBase64 = base64Index !== -1 ? file.data.substring(base64Index + 8) : file.data;
+        buffer = Buffer.from(rawBase64, "base64");
+      } else {
+        try {
+          buffer = Buffer.from(file.data, "base64");
+        } catch (_) {
+          buffer = Buffer.from(file.data, "utf8");
+        }
+      }
+      if (category === "image") {
+        const lowerName = file.name.toLowerCase();
+        const savedUrl = saveUploadFile(file.name, buffer);
+        if (["banner", "portada", "cover", "fondo", "encabezado"].some((k) => lowerName.includes(k))) {
+          delta.bannerUrl = savedUrl;
+        } else if (["logo", "logotipo", "icono", "icon", "avatar", "perfil"].some((k) => lowerName.includes(k))) {
+          delta.logoUrl = savedUrl;
+        } else if (!current.logoUrl && !delta.logoUrl) {
+          delta.logoUrl = savedUrl;
+        } else {
+          delta.bannerUrl = savedUrl;
+        }
+      } else if (category === "spreadsheet") {
+        const extracted = extractCatalogFromSpreadsheet(buffer);
+        if (extracted.length > 0) {
+          delta.catalogItems = [...delta.catalogItems || current.catalogItems || [], ...extracted];
+          if (!delta.modules) delta.modules = { ...current.modules || { store: true, bookings: false, courts: false, loyalty: false, billing: false } };
+          delta.modules.store = true;
+        }
+      } else if (category === "pdf") {
+        const pdfText = extractTextFromPdfBuffer(buffer);
+        const fiscal = extractFiscalDataFromText(pdfText);
+        if (fiscal) {
+          delta.fiscal = {
+            idType: fiscal.idType || current.fiscal?.idType || "01",
+            idNumber: fiscal.idNumber || current.fiscal?.idNumber || "",
+            legalName: fiscal.legalName || current.fiscal?.legalName || delta.name || current.name || "",
+            email: fiscal.email || current.fiscal?.email || ""
+          };
+          if (!delta.modules) delta.modules = { ...current.modules || { store: true, bookings: false, courts: false, loyalty: false, billing: false } };
+          delta.modules.billing = true;
+        }
+        const pdfCatalog = extractCatalogFromText(pdfText);
+        if (pdfCatalog.length > 0) {
+          delta.catalogItems = [...delta.catalogItems || current.catalogItems || [], ...pdfCatalog];
+        }
+      } else if (category === "audio") {
+        saveUploadFile(file.name, buffer);
+        const transcribed = await tryTranscribeAudio(rawBase64, detectedMime);
+        if (transcribed) {
+          voiceTranscription = (voiceTranscription ? `${voiceTranscription} | ` : "") + transcribed;
+          applyTextEntities(transcribed, current, delta);
+        }
+      }
+    }
+  }
+  const assistantMessage = generateAssistantResponse(delta, processedNames, voiceTranscription);
+  return {
+    assistantMessage: sanitizeSpanishText(assistantMessage),
+    profileDelta: delta,
+    recognizedFiles
+  };
+}
+
+// src/server/routes/copilot.routes.ts
+var router11 = Router11();
+router11.use(requireSuperAdmin);
+var MAIN_APP_URL3 = process.env.MAIN_APP_URL || "https://betico.tech";
+var upload2 = multer2({
+  storage: multer2.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024 }
+  // 25 MB
+});
+router11.post("/process", upload2.any(), async (req, res) => {
+  try {
+    const body = req.body || {};
+    const message = body.message || "";
+    const audioBase64 = body.audioBase64 || "";
+    let currentProfile = {};
+    if (body.currentProfile) {
+      if (typeof body.currentProfile === "string") {
+        try {
+          currentProfile = JSON.parse(body.currentProfile);
+        } catch (_) {
+        }
+      } else {
+        currentProfile = body.currentProfile;
+      }
+    }
+    const files = [];
+    if (Array.isArray(body.files)) {
+      for (const f of body.files) {
+        if (f && f.name && f.data) {
+          files.push({
+            name: f.name,
+            mimeType: f.mimeType || "application/octet-stream",
+            data: f.data
+          });
+        }
+      }
+    }
+    if (Array.isArray(req.files) && req.files.length > 0) {
+      for (const file of req.files) {
+        files.push({
+          name: file.originalname,
+          mimeType: file.mimetype,
+          data: file.buffer.toString("base64")
+        });
+      }
+    }
+    const result = await processMultimodalInput({
+      message,
+      audioBase64,
+      files,
+      currentProfile
+    });
+    res.json(result);
+  } catch (error) {
+    console.error("[Copilot Process] Error:", error);
+    res.status(500).json({
+      error: sanitizeSpanishText("Error al procesar la entrada multimodal en el Copilot"),
+      details: error?.message
+    });
+  }
+});
+router11.post("/finalize", async (req, res) => {
+  try {
+    const {
+      name,
+      slug,
+      plan = "starter",
+      adminEmail,
+      whatsappNumber,
+      logoUrl,
+      bannerUrl,
+      modules = { store: true, bookings: false, courts: false, loyalty: false, billing: false },
+      fiscal = {},
+      catalogItems = []
+    } = req.body;
+    if (!name) {
+      res.status(400).json({ error: sanitizeSpanishText("El nombre del comercio es requerido") });
+      return;
+    }
+    const initialSlug = slug ? generateSlug(slug) : generateSlug(name);
+    let cleanSlug = initialSlug;
+    const existing = await query("SELECT id FROM tenants WHERE slug = $1", [cleanSlug]);
+    if (existing.rows.length > 0) {
+      cleanSlug = `${initialSlug}-${Date.now().toString().slice(-4)}`;
+    }
+    const trialDays = 15;
+    const requiresInvoice = Boolean(fiscal.idNumber && fiscal.idNumber.length >= 9);
+    const tenantRes = await query(
+      `INSERT INTO tenants (
+        name, slug, plan, active, whatsapp_number, custom_monthly_price,
+        billing_currency, trial_ends_at, subscription_status,
+        requires_subscription_invoice, billing_id_type, billing_id_number,
+        billing_legal_name, billing_email
+      ) VALUES ($1, $2, $3, true, $4, $5, $6, CURRENT_TIMESTAMP + (INTERVAL '1 day' * $7), 'trial', $8, $9, $10, $11, $12)
+      RETURNING *`,
+      [
+        name.trim(),
+        cleanSlug,
+        plan,
+        whatsappNumber || null,
+        0,
+        "CRC",
+        trialDays,
+        requiresInvoice,
+        fiscal.idType || "01",
+        fiscal.idNumber || "",
+        fiscal.legalName || name.trim(),
+        fiscal.email || adminEmail || ""
+      ]
+    );
+    const tenant = tenantRes.rows[0];
+    const finalEmail = adminEmail ? String(adminEmail).toLowerCase().trim() : fiscal.email ? String(fiscal.email).toLowerCase().trim() : `admin@${cleanSlug}.cr`;
+    const tempPassword = crypto7.randomBytes(6).toString("hex") + "!Aa1";
+    const pwdHash = hashPassword(tempPassword);
+    await query(
+      `INSERT INTO users (tenant_id, name, email, password_hash, role, active)
+       VALUES ($1, $2, $3, $4, 'admin', true)`,
+      [tenant.id, `${name.trim()} Admin`, finalEmail, pwdHash]
+    );
+    await query(
+      `INSERT INTO store_settings (
+        tenant_id, store_name, store_slug, currency, store_enabled,
+        store_logo_url, store_banner_url, store_modules
+      ) VALUES ($1, $2, $3, 'CRC', $4, $5, $6, $7)
+      ON CONFLICT (tenant_id) DO UPDATE SET
+        store_name = EXCLUDED.store_name,
+        store_slug = EXCLUDED.store_slug,
+        store_logo_url = COALESCE(EXCLUDED.store_logo_url, store_settings.store_logo_url),
+        store_banner_url = COALESCE(EXCLUDED.store_banner_url, store_settings.store_banner_url),
+        store_modules = EXCLUDED.store_modules`,
+      [
+        tenant.id,
+        name.trim(),
+        cleanSlug,
+        Boolean(modules.store !== false),
+        logoUrl || null,
+        bannerUrl || null,
+        JSON.stringify(modules)
+      ]
+    ).catch((err) => console.warn("[Copilot Finalize] Advertencia en store_settings:", err?.message));
+    if (Array.isArray(catalogItems) && catalogItems.length > 0) {
+      for (let i = 0; i < catalogItems.length; i++) {
+        const item = catalogItems[i];
+        if (!item || !item.name) continue;
+        const itemSlug = generateSlug(`${item.name}-${i + 1}`);
+        await query(
+          `INSERT INTO products (
+            tenant_id, name, slug, price, currency, category, description,
+            active, stock, track_stock
+          ) VALUES ($1, $2, $3, $4, 'CRC', $5, $6, true, 100, false)
+          ON CONFLICT (tenant_id, slug) DO NOTHING`,
+          [
+            tenant.id,
+            item.name.trim(),
+            itemSlug,
+            item.price || 0,
+            item.category || "General",
+            item.description || ""
+          ]
+        ).catch(() => {
+        });
+        if (modules.bookings || item.category && item.category.toLowerCase().includes("servicio")) {
+          await query(
+            `INSERT INTO services (
+              tenant_id, name, price, duration, category, active
+            ) VALUES ($1, $2, $3, '30 min', $4, true)`,
+            [
+              tenant.id,
+              item.name.trim(),
+              item.price || 0,
+              item.category || "General"
+            ]
+          ).catch(() => {
+          });
+        }
+      }
+    }
+    if (fiscal.idNumber && fiscal.idNumber.length >= 9) {
+      await query(
+        `INSERT INTO tenant_hacienda_configs (
+          tenant_id, taxpayer_id_type, taxpayer_id_number, taxpayer_name,
+          taxpayer_email, environment, is_connected
+        ) VALUES ($1, $2, $3, $4, $5, 'sandbox', false)
+        ON CONFLICT (tenant_id) DO UPDATE SET
+          taxpayer_id_type = EXCLUDED.taxpayer_id_type,
+          taxpayer_id_number = EXCLUDED.taxpayer_id_number,
+          taxpayer_name = EXCLUDED.taxpayer_name,
+          taxpayer_email = EXCLUDED.taxpayer_email`,
+        [
+          tenant.id,
+          fiscal.idType || "01",
+          fiscal.idNumber,
+          fiscal.legalName || name.trim(),
+          fiscal.email || finalEmail
+        ]
+      ).catch((err) => console.warn("[Copilot Finalize] Advertencia en tenant_hacienda_configs:", err?.message));
+    }
+    await logAdminAction(
+      req.user.userId,
+      "create_tenant_copilot",
+      "tenant",
+      tenant.id,
+      {
+        name,
+        slug: cleanSlug,
+        plan,
+        adminEmail: finalEmail,
+        modules,
+        catalogItemsCount: catalogItems.length,
+        hasFiscal: Boolean(fiscal.idNumber)
+      },
+      req
+    );
+    res.status(201).json({
+      success: true,
+      tenant,
+      adminEmail: finalEmail,
+      tempPassword,
+      storeUrl: `${MAIN_APP_URL3}/store/${cleanSlug}`,
+      adminUrl: `${MAIN_APP_URL3}/login`
+    });
+  } catch (error) {
+    console.error("[Copilot Finalize] Error:", error);
+    res.status(500).json({
+      error: sanitizeSpanishText("Error al crear y configurar el comercio en la base de datos"),
+      details: error?.message
+    });
+  }
+});
+var copilot_routes_default = router11;
+
 // ../src/server/db/migrations.ts
 init_pool();
 init_users_repo();
@@ -11822,7 +12740,7 @@ async function runMigrations() {
 // src/server/index.ts
 dotenv3.config();
 var __filename = fileURLToPath(import.meta.url);
-var __dirname = path.dirname(__filename);
+var __dirname = path2.dirname(__filename);
 var app = express();
 var PORT = process.env.PORT || 3e3;
 app.use(cors());
@@ -11847,9 +12765,12 @@ app.use("/api/almendro", almendro_routes_default);
 app.use("/api/audit", audit_routes_default);
 app.use("/api/platform", platform_routes_default);
 app.use("/api/bots-chats", bots_chats_routes_default);
+app.use("/api/copilot", copilot_routes_default);
+var uploadDir = process.env.UPLOAD_DIR || path2.resolve(process.cwd(), "uploads");
+app.use("/uploads", express.static(uploadDir));
 app.use(express.static(__dirname));
 app.get("*", (req, res) => {
-  const indexPath = path.join(__dirname, "index.html");
+  const indexPath = path2.join(__dirname, "index.html");
   res.sendFile(indexPath, (err) => {
     if (err) {
       res.status(404).send("Betico Admin Ops: Frontend build not found. Please run build first.");

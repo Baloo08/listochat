@@ -11,15 +11,17 @@ import {
   XCircle,
   RefreshCw,
   AlertCircle,
-  FileText
+  FileText,
+  Sparkles
 } from 'lucide-react';
 import { useAdminApi } from '../useAdminApi';
 
 interface TenantsManagerProps {
   onOpenHacienda?: (subTab?: 'comprobantes' | 'credenciales' | 'sucursales') => void;
+  onOpenCopilot?: () => void;
 }
 
-export default function TenantsManager({ onOpenHacienda }: TenantsManagerProps) {
+export default function TenantsManager({ onOpenHacienda, onOpenCopilot }: TenantsManagerProps) {
   const api = useAdminApi();
   const [tenants, setTenants] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -300,6 +302,30 @@ export default function TenantsManager({ onOpenHacienda }: TenantsManagerProps) 
             >
               <FileText size={15} />
               Configurar Hacienda CR
+            </button>
+          )}
+
+          {onOpenCopilot && (
+            <button
+              onClick={onOpenCopilot}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '10px 18px',
+                backgroundColor: '#0B3C3D',
+                border: '1px solid #34D399',
+                borderRadius: '8px',
+                color: '#34D399',
+                fontSize: '0.9rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                boxShadow: '0 2px 8px rgba(52, 211, 153, 0.15)',
+                transition: 'all 0.2s'
+              }}
+            >
+              <Sparkles size={16} />
+              Crear Comercio con Copilot IA
             </button>
           )}
 

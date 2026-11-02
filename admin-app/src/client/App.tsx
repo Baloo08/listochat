@@ -11,12 +11,14 @@ import {
   Loader2,
   MessageSquare,
   Sliders,
-  FileText
+  FileText,
+  Sparkles
 } from 'lucide-react';
 import { useAdminAuth } from './useAdminAuth';
 import LoginView from './components/LoginView';
 import MonitoringCenter from './components/MonitoringCenter';
 import TenantsManager from './components/TenantsManager';
+import BusinessOnboardingCopilot from './components/BusinessOnboardingCopilot';
 import SystemHealth from './components/SystemHealth';
 import BillingManager from './components/BillingManager';
 import AuditLogsView from './components/AuditLogsView';
@@ -24,7 +26,7 @@ import MasterBotsAndLiveChats from './components/MasterBotsAndLiveChats';
 import PlatformSettingsView from './components/PlatformSettingsView';
 import ElectronicBillingView from '../../../src/client/components/ElectronicBillingView';
 
-type Tab = 'monitoring' | 'tenants' | 'bots' | 'billing' | 'hacienda' | 'system' | 'platform' | 'audit';
+type Tab = 'monitoring' | 'tenants' | 'copilot' | 'bots' | 'billing' | 'hacienda' | 'system' | 'platform' | 'audit';
 
 export default function App() {
   const { isAuthenticated, user, loading, login, logout } = useAdminAuth();
@@ -145,6 +147,27 @@ export default function App() {
             >
               <Building2 size={15} />
               Negocios
+            </button>
+
+            <button
+              onClick={() => setCurrentTab('copilot')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '8px 12px',
+                borderRadius: '8px',
+                border: currentTab === 'copilot' ? '1px solid #34D399' : 'none',
+                backgroundColor: currentTab === 'copilot' ? '#0f2426' : 'transparent',
+                color: currentTab === 'copilot' ? '#34D399' : '#94a3b8',
+                fontWeight: currentTab === 'copilot' ? 700 : 500,
+                fontSize: '0.82rem',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+            >
+              <Sparkles size={15} />
+              Copilot de Negocios
             </button>
 
             <button
@@ -345,7 +368,8 @@ export default function App() {
       {/* Main Body View */}
       <main>
         {currentTab === 'monitoring' && <MonitoringCenter onOpenHacienda={handleOpenHacienda} />}
-        {currentTab === 'tenants' && <TenantsManager onOpenHacienda={handleOpenHacienda} />}
+        {currentTab === 'tenants' && <TenantsManager onOpenHacienda={handleOpenHacienda} onOpenCopilot={() => setCurrentTab('copilot')} />}
+        {currentTab === 'copilot' && <BusinessOnboardingCopilot onNavigateToTenants={() => setCurrentTab('tenants')} />}
         {currentTab === 'bots' && <MasterBotsAndLiveChats />}
         {currentTab === 'billing' && <BillingManager onOpenHacienda={handleOpenHacienda} />}
         {currentTab === 'hacienda' && (

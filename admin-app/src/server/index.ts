@@ -14,6 +14,7 @@ import platformRoutes from './routes/platform.routes.js';
 import botsChatsRoutes from './routes/bots-chats.routes.js';
 import billingNativeRoutes from '../../../src/server/routes/billing-native.routes.js';
 import almendroRoutes from '../../../src/server/routes/almendro.routes.js';
+import copilotRoutes from './routes/copilot.routes.js';
 import { runMigrations } from '../../../src/server/db/migrations.js';
 
 dotenv.config();
@@ -53,6 +54,11 @@ app.use('/api/almendro', almendroRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/platform', platformRoutes);
 app.use('/api/bots-chats', botsChatsRoutes);
+app.use('/api/copilot', copilotRoutes);
+
+// Static uploads (images, logos, banners)
+const uploadDir = process.env.UPLOAD_DIR || path.resolve(process.cwd(), 'uploads');
+app.use('/uploads', express.static(uploadDir));
 
 // Static assets (Vite frontend)
 app.use(express.static(__dirname));
